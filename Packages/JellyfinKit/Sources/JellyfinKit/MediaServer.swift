@@ -131,6 +131,8 @@ public protocol MediaServer: AnyObject, Sendable, HomePageSource {
     func metadataRefresh(_ itemID: String) async throws
     func setWatchlist(itemID: String, an: Bool) async throws
     func setWatched(itemID: String, an: Bool) async throws
+    /// Who watched a title; `nil` on a server without the Jelly Twiggy plugin (see ``Watcher``).
+    func watchers(itemID: String) async -> [Watcher]?
     func pointBackSet(itemID: String) async throws
     #if DEBUG
     /// The server's user data of one title as it came, and putting it back (offline

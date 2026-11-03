@@ -132,16 +132,12 @@
 "dem Server" = "dem Server";
 "Ähnliches" = "Ähnliches";
 "Übersicht öffnen" = "Übersicht öffnen";
-
-/* Wiedergabemenue: Bildformat (08.09.2026) */
 "Bildformat" = "Bildformat";
 "Formatfüllend" = "Formatfüllend";
 "Füllen" = "Füllen";
 "Ganzes Bild" = "Ganzes Bild";
 "Original" = "Original";
 "Keine" = "Keine";
-
-/* Technikschild (08.09.2026) */
 "Anzeigen" = "Anzeigen";
 "Beschädigt" = "Beschädigt";
 "Bild" = "Bild";
@@ -158,11 +154,7 @@
 "Verworfen" = "Verworfen";
 "Vorrat" = "Vorrat";
 "Zeigt Ø" = "Zeigt Ø";
-
-/* Merkliste als eigene Seite (08.09.2026) */
 "Merkliste" = "Merkliste";
-
-/* Seerr (08.09.2026) */
 "Adresse" = "Adresse";
 "Verbunden" = "Verbunden";
 "Nicht verbunden" = "Nicht verbunden";
@@ -174,8 +166,6 @@
 "Getrennt" = "Getrennt";
 "Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen." = "Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen.";
 "Keine Verbindung" = "Keine Verbindung";
-
-/* Seerr */
 "Abbrechen" = "Abbrechen";
 "Anfragen" = "Anfragen";
 "Anfragen über Seerr" = "Anfragen über Seerr";
@@ -185,8 +175,6 @@
 "wartet" = "wartet";
 "angefragt" = "angefragt";
 "teilweise" = "teilweise";
-
-/* Downloads */
 "%lld Folgen" = "%lld Folgen";
 "%lld Titel" = "%lld Titel";
 "%d Titel auf diesem Rechner" = "%d Titel auf diesem Rechner";
@@ -222,8 +210,6 @@
 "Wartet" = "Wartet";
 "Was du hier ablegst, läuft auch ohne Netz." = "Was du hier ablegst, läuft auch ohne Netz.";
 "Wird geladen." = "Wird geladen.";
-
-/* Seerr-Seite und Downloads */
 "%lld Min." = "%lld Min.";
 "%lld Staffeln anfragen" = "%lld Staffeln anfragen";
 "Abwählen" = "Abwählen";
@@ -241,8 +227,6 @@
 "Zuklappen" = "Zuklappen";
 "frei" = "frei";
 "Ähnliche Titel" = "Ähnliche Titel";
-
-/* Seerr-Zugang */
 "Aktiv" = "Aktiv";
 "Sitzung abgelaufen" = "Sitzung abgelaufen";
 "Seerr nicht erreichbar" = "Seerr nicht erreichbar";
@@ -250,26 +234,18 @@
 "Puffer" = "Puffer";
 "Discord" = "Discord";
 "Zeigt im Profil, was gerade läuft" = "Zeigt im Profil, was gerade läuft";
-
-/* Personenseite */
 "Geboren %@" = "Geboren %@";
 "%1$@ in %2$@" = "%1$@ in %2$@";
 "Mehr" = "Mehr";
 "Weniger" = "Weniger";
 "Auf deinem Server gibt es sonst nichts mit %@." = "Auf deinem Server gibt es sonst nichts mit %@.";
-
-/* Kachelplakette (E16) */
 "1 Staffel" = "1 Staffel";
 "%lld Staffeln" = "%lld Staffeln";
-
-/* Suchverlauf */
 "Zuletzt gesucht" = "Zuletzt gesucht";
 "Löschen" = "Löschen";
 "Staffel" = "Staffel";
 "Zuletzt hinzugefügte Filme" = "Zuletzt hinzugefügte Filme";
 "Zuletzt hinzugefügte Serien" = "Zuletzt hinzugefügte Serien";
-
-/* Kontokarte und Serveraufnahme */
 "Server hinzufügen" = "Server hinzufügen";
 "Ein zweiter Jellyfin, eigene Konten" = "Ein zweiter Jellyfin, eigene Konten";
 "Klicken zum Wechseln" = "Klicken zum Wechseln";
@@ -279,8 +255,6 @@
 "Weiter" = "Weiter";
 "Prüfe …" = "Prüfe …";
 "Diese Adresse ergibt keinen Server." = "Diese Adresse ergibt keinen Server.";
-
-/* Darstellung: Startseite und Genres */
 "Startseite" = "Startseite";
 "Reihen" = "Reihen";
 "Reihen, ihre Folge und Genres" = "Reihen, ihre Folge und Genres";
@@ -307,8 +281,6 @@
 "Neu hinzugefügt" = "Neu hinzugefügt";
 "Nur über WLAN" = "Nur über WLAN";
 "Downloads warten, bis du im WLAN bist" = "Downloads warten, bis du im WLAN bist";
-
-/* Leerzustaende der Raster — Wortlaut aus dem Katalog, nicht neu erfunden. */
 "Noch nichts gemerkt" = "Noch nichts gemerkt";
 "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier." = "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier.";
 "Nichts in diesem Genre" = "Nichts in diesem Genre";
@@ -327,8 +299,6 @@
 "Staffel laden" = "Staffel laden";
 "%d Folgen werden geladen." = "%d Folgen werden geladen.";
 "Staffeln wählen" = "Staffeln wählen";
-
-/* Stufe 4: Spurwahl und Uebernahmeauswahl */
 "Erzwungen" = "Erzwungen";
 "Hörgeschädigt" = "Hörgeschädigt";
 "Datei" = "Datei";
@@ -339,8 +309,6 @@
 "Fragen stellen und sagen, was fehlt" = "Fragen stellen und sagen, was fehlt";
 "Fehler melden" = "Fehler melden";
 "Auf GitHub, deine App-Version ist schon eingetragen" = "Auf GitHub, deine App-Version ist schon eingetragen";
-
-/* Aktualisierung (nur Windows) */
 "Nach Updates suchen" = "Nach Updates suchen";
 "Swiftly fragt bei GitHub, ob es eine neuere Version gibt" = "Swiftly fragt bei GitHub, ob es eine neuere Version gibt";
 "Wird gesucht …" = "Wird gesucht …";
@@ -356,7 +324,6 @@
 "Der Installer ließ sich nicht starten." = "Der Installer ließ sich nicht starten.";
 "Das Herunterladen ist abgebrochen." = "Das Herunterladen ist abgebrochen.";
 "VLC lädt noch" = "VLC lädt noch";
-
 "%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?" = "%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?";
 "Aktualisieren" = "Aktualisieren";
 "Der Server" = "Der Server";
@@ -366,9 +333,7 @@
 "Sobald in dieser Bibliothek etwas liegt, taucht es hier auf." = "Sobald in dieser Bibliothek etwas liegt, taucht es hier auf.";
 "Unter „%@“ liegt gerade nichts. Nimm einen anderen Filter." = "Unter „%@“ liegt gerade nichts. Nimm einen anderen Filter.";
 "Zurück" = "Zurück";
-
 "Lad was runter, bevor der Zug ins Funkloch fährt." = "Lad was runter, bevor der Zug ins Funkloch fährt.";
-
 "%@ laden" = "%@ laden";
 "1 Folge" = "1 Folge";
 "Danach %@ frei" = "Danach %@ frei";
@@ -380,8 +345,6 @@
 "Nur ungesehene" = "Nur ungesehene";
 "alles da" = "alles da";
 "wird gelesen …" = "wird gelesen …";
-
-/* Eigene Header (Issue #4) */
 "Erweitert" = "Erweitert";
 "Header-Name" = "Header-Name";
 "Wert" = "Wert";
@@ -405,17 +368,12 @@
 "geladen" = "geladen";
 "gesehen" = "gesehen";
 "lädt" = "lädt";
-
-/* Downloads: Ladeauswahl und Serienseite (Mac 89299260, cc4e6e75) */
 "%@ von %@" = "%@ von %@";
 "Download entfernen" = "Download entfernen";
 "Swiftly hat einen Discord" = "Swiftly hat einen Discord";
 "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst." = "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst.";
-
 "Kleinere Fassungen gibt der Server für dieses Konto nicht frei." = "Kleinere Fassungen gibt der Server für dieses Konto nicht frei.";
 "Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt." = "Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt.";
-
-/* Bedienhilfe: Namen für Bildschirmleser, Tastenkürzel. */
 "Gesehen" = "Gesehen";
 "Nach oben" = "Nach oben";
 "Nach unten" = "Nach unten";
@@ -424,7 +382,6 @@
 "Zu %@ wechseln" = "Zu %@ wechseln";
 "%lld Prozent gesehen" = "%lld Prozent gesehen";
 "Strg+%@" = "Strg+%@";
-/* Player: Untertitel- und Tonverzoegerung */
 "Verzögerung" = "Verzögerung";
 "Zurücksetzen" = "Zurücksetzen";
 "Früher" = "Früher";
@@ -432,7 +389,6 @@
 "Untertitelverzögerung %@" = "Untertitelverzögerung %@";
 "Tonverzögerung %@" = "Tonverzögerung %@";
 "Ohne Grafikbeschleunigung" = "Ohne Grafikbeschleunigung";
-/* Gemeinsam schauen (SyncPlay) — Wortlaut aus dem Xcode-Katalog. */
 "Gemeinsam schauen" = "Gemeinsam schauen";
 "Filmabend" = "Filmabend";
 "Name der Gruppe" = "Name der Gruppe";
@@ -451,19 +407,14 @@
 "mit %@" = "mit %@";
 "Gemeinsam · %@" = "Gemeinsam · %@";
 "Gruppe verlassen" = "Gruppe verlassen";
-
-/* Einzahl (UX-Audit 27.09.) */
 "1 Titel" = "1 Titel";
 "1 Staffel anfragen" = "1 Staffel anfragen";
 "1 Serie" = "1 Serie";
 "1 Film" = "1 Film";
 "1 Folge wird geladen." = "1 Folge wird geladen.";
 "1 Titel auf diesem Rechner" = "1 Titel auf diesem Rechner";
-
-/* 1.0.5: Neuerungen vom iPhone */
 "Endet um %@" = "Endet um %@";
 "Restzeit" = "Restzeit";
-"Wechselt zwischen Restzeit und Ende" = "Wechselt zwischen Restzeit und Ende";
 "Karte schließen" = "Karte schließen";
 "Nächste Folge abspielen: %@" = "Nächste Folge abspielen: %@";
 "in %lld s" = "in %lld s";
@@ -552,8 +503,6 @@
 "19,99 €" = "19,99 €";
 "4,99 €" = "4,99 €";
 "9,99 €" = "9,99 €";
-
-/* Unterstützer-Seiten wie am Mac */
 "Violett" = "Violett";
 "Koralle" = "Koralle";
 "Türkis" = "Türkis";
@@ -575,14 +524,9 @@
 "Dieser Schlüssel gehört zu einer anderen App." = "Dieser Schlüssel gehört zu einer anderen App.";
 "Unterstützer im Monatsabo" = "Unterstützer im Monatsabo";
 "Seit %@. Gilt bis %@ und verlängert sich von selbst, solange das Abo läuft." = "Seit %@. Gilt bis %@ und verlängert sich von selbst, solange das Abo läuft.";
-
-/* Merkliste abschaltbar */
 "Seite, Filter und Knopf auf Film- und Serienseiten" = "Seite, Filter und Knopf auf Film- und Serienseiten";
-/* Buchstabenleiste neben „Nach Name“ */
 "Alphabetische Suche in Listen" = "Alphabetische Suche in Listen";
 "Alphabet" = "Alphabet";
-
-/* Auswahl am Abspielen-Knopf, wenn ein Titel mehrere Fassungen hat */
 "Fassung wählen" = "Fassung wählen";
 "Übergeben an …" = "Übergeben an …";
 "Senden" = "Senden";
@@ -597,8 +541,6 @@
 "Konto" = "Konto";
 "Einstellungen auf allen Geräten gleich halten" = "Einstellungen auf allen Geräten gleich halten";
 "Sprachen, Überspringen und Startseite liegen auf deinem Server" = "Sprachen, Überspringen und Startseite liegen auf deinem Server";
-
-/* Subtitle appearance */
 "Auch ASS und SSA sehen dann aus wie oben. Schilder rutschen als Zeile nach unten." = "Auch ASS und SSA sehen dann aus wie oben. Schilder rutschen als Zeile nach unten.";
 "Aufwendige Untertitel" = "Aufwendige Untertitel";
 "Aussehen" = "Aussehen";
@@ -639,8 +581,6 @@
 "ohne Rand" = "ohne Rand";
 "ohne Schatten" = "ohne Schatten";
 "unten" = "unten";
-
-/* Server kinds: Plex, Emby */
 "Adresse rein und anmelden, oder per Quick Connect ganz ohne Passwort." = "Adresse rein und anmelden, oder per Quick Connect ganz ohne Passwort.";
 "Adresse von deinem Server rein, dann Name und Passwort." = "Adresse von deinem Server rein, dann Name und Passwort.";
 "Als %@" = "Als %@";
@@ -656,7 +596,9 @@
 "Dieses Profil hat eine PIN. Gib sie hier ein." = "Dieses Profil hat eine PIN. Gib sie hier ein.";
 "Du bleibst bei allen angemeldet und wechselst auf der Profilseite zwischen ihnen." = "Du bleibst bei allen angemeldet und wechselst auf der Profilseite zwischen ihnen.";
 "Ein weiterer %@-Server mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen." = "Ein weiterer %@-Server mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen.";
-"Einmal bei Plex anmelden, deine Server sucht die App dann selbst raus." = "Einmal bei Plex anmelden, deine Server sucht die App dann selbst raus.";
+"Einmal bei Plex anmelden, die App findet deine Server." = "Einmal bei Plex anmelden, die App findet deine Server.";
+"Mit Jellyfin anmelden" = "Mit Jellyfin anmelden";
+"https:// kannst du weglassen. Du bleibst auch beim anderen Server angemeldet." = "https:// kannst du weglassen. Du bleibst auch beim anderen Server angemeldet.";
 "Gleich bekommst du einen Code. Den gibst du am Handy oder Computer auf plex.tv/link ein." = "Gleich bekommst du einen Code. Den gibst du am Handy oder Computer auf plex.tv/link ein.";
 "Jedes Profil hat seinen eigenen Fortschritt." = "Jedes Profil hat seinen eigenen Fortschritt.";
 "Jellyfin, Plex oder Emby, eigene Konten" = "Jellyfin, Plex oder Emby, eigene Konten";
@@ -691,3 +633,29 @@
 "Ausprobieren" = "Ausprobieren";
 "Verstanden" = "Verstanden";
 "Geschenk, bleibt für immer in deiner Sammlung" = "Geschenk, bleibt für immer in deiner Sammlung";
+"Vorwärts" = "Vorwärts";
+"Endzeit im Player" = "Endzeit im Player";
+"Noch %lld Min." = "Noch %lld Min.";
+"Regie" = "Regie";
+"Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal." = "Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal.";
+"Geh auf %@ und gib diesen Code ein." = "Geh auf %@ und gib diesen Code ein.";
+"Qualität, Sprache, Player" = "Qualität, Sprache, Player";
+"Jellyfin, Emby oder Plex, auch gemischt" = "Jellyfin, Emby oder Plex, auch gemischt";
+"Dein aktueller Look" = "Dein aktueller Look";
+"Downloads, Server, Sync" = "Downloads, Server, Sync";
+"Server und Dienste" = "Server und Dienste";
+"Synchronisierung" = "Synchronisierung";
+"Auf allen Geräten gleich" = "Auf allen Geräten gleich";
+"Liegt auf deinem Server" = "Liegt auf deinem Server";
+"Titel offline schauen" = "Titel offline schauen";
+"Mit einem Kaffee Danke sagen" = "Mit einem Kaffee Danke sagen";
+"Über Seerr anfragen" = "Über Seerr anfragen";
+"Weiteres" = "Weiteres";
+"Pause" = "Pause";
+"ab %@" = "ab %@";
+"Im Netzwerk gefunden" = "Im Netzwerk gefunden";
+"Gesehen von" = "Gesehen von";
+"Zeigt auf Titelseiten, wer einen Titel gesehen hat" = "Zeigt auf Titelseiten, wer einen Titel gesehen hat";
+"heute" = "heute";
+"gestern" = "gestern";
+"vor %@ Tagen" = "vor %@ Tagen";

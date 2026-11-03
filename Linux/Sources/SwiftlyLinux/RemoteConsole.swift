@@ -75,11 +75,21 @@ extension App {
         case "darstellung": subpageOpen(.presentation)
         case "serverart":   subpageOpen(.kindPicker)
         case "plex":        subpageOpen(.plexSignIn)
+        case "jellyfin":    serverOnboardingKind = .jellyfin; serverOnboardingFromPicker = true; serverOnboardingOpen(nil)
         case "emby":        serverOnboardingKind = .emby; serverOnboardingFromPicker = true; serverOnboardingOpen(nil)
         case "quickconnect": subpageOpen(.quickConnect)
         case "zurueck":     back()
+        case "pfeilzurueck": navBackStep()
+        case "pfeilvor":     navForwardStep()
 
         #if DEBUG
+        /// `bild:/tmp/x.png` renders the window's own render tree into a PNG: a real GTK
+        /// frame, no screen grab, so it also works where the compositor hides the window.
+        /// The open popover on its own (it is a separate surface and not part of `bild:`).
+        case "bildpanel" where parts.count > 1:
+            windowSnapshot(to: parts[1], of: openPanel)
+        case "bild" where parts.count > 1:
+            windowSnapshot(to: parts[1])
         /// The supporter screens, to compare them with the Mac.
         case "looks":       lookOpenOnHome()
         case "kauf":        supportSheetClose(); supportSheetShow()
@@ -112,6 +122,67 @@ extension App {
             scaleSurface(Double(parts.count > 1 ? parts[1] : "") ?? 1)
 
         /// Open the first title of a row without knowing its ID.
+        /// Activate the n-th button with a CSS class on the current page (`klick:swiftly-chip:1`,
+        /// `klick:swiftly-detailsymbol:last`), so popovers can be photographed.
+        case "klick":
+            let spec = parts.count > 1 ? parts[1].split(separator: ":").map(String.init) : []
+            guard let cls = spec.first else { break }
+            var hits: [Widget] = []
+            func collect(_ w: Widget!) {
+                guard let w else { return }
+                if gtk_widget_has_css_class(w, cls) != 0 { hits.append(w) }
+                var kind = gtk_widget_get_first_child(w)
+                while let k = kind { collect(k); kind = gtk_widget_get_next_sibling(k) }
+            }
+            collect(window)
+            let wanted = spec.count > 1 ? spec[1] : "0"
+            let hit = wanted == "last" ? hits.last : (Int(wanted).flatMap { hits.indices.contains($0) ? hits[$0] : nil })
+            if let hit { _ = gtk_widget_activate(hit) } else { AppLog.writeOut("[Fern] klick: kein Treffer (\(hits.count))") }
+
+        #if DEBUG
+        /// **Open a page without a click**, for renders: `film`, `serie` (first title of that kind,
+        /// or `film:<id>` / `serie:<id>`), `person` (first cast member of the first movie, or
+        /// `person:<id>`).
+        case "film", "serie", "person":
+            guard let client else { break }
+            let kind = parts[0]
+            let given = parts.count > 1 ? parts[1] : nil
+            Task.detached { [self] in
+                if kind == "person" {
+                    var who: Person?
+                    do {
+                        let list = (try? await client.items(limit: 20, recursive: true, includeItemTypes: ["Movie"]))?.items ?? []
+                        for short in list {
+                            if let full = try? await client.item(id: short.id),
+                               let first = full.actors.first { who = first; break }
+                        }
+                    }
+                    guard let who else { AppLog.writeOut("[Fern] person: niemand gefunden"); return }
+                    onMainThread { self.openPerson(who, origin: "Film") }
+                    return
+                }
+                let type = kind == "film" ? "Movie" : "Series"
+                if let given, let one = try? await client.item(id: given) {
+                    onMainThread { self.openIt(one) }
+                    return
+                }
+                let list = (try? await client.items(limit: 1, recursive: true, includeItemTypes: [type]))?.items ?? []
+                guard let one = list.first else { AppLog.writeOut("[Fern] \(kind): nichts gefunden"); return }
+                onMainThread { self.openIt(one) }
+            }
+
+        /// **Empty and failed states of the current grid page** (`zustand:fehler|leer|filter`):
+        /// the page is replaced by the state a failed or empty response would show.
+        case "zustand":
+            let which = parts.count > 1 ? parts[1] : "leer"
+            if which == "filter" { filterSet(section, .unwatched) }
+            // The state sits under the tiles, so the tiles go, as with an empty response.
+            gridItems[section] = []
+            if let grid = gridField[section] { gridFill(grid, []) }
+            if let field = emptyField[section] { gtk_widget_set_visible(field, 1) }
+            gridStateShow(section, disrupted: which == "fehler", empty: true)
+        #endif
+
         case "ersterTitel":
             if let firstOne = gridItems[section]?.first ?? lastStartRail.first {
                 openIt(firstOne)
@@ -570,7 +641,7 @@ extension App {
 
         /// What is shown at the right under the timeline.
         case "restzeit":
-            print("[Pult] restzeit \(widgetTexts(playerRemaining)) alsEnde \(selection.remainingTimeAsEnd)")
+            print("[Pult] restzeit \(widgetTexts(playerRemaining)) alsEnde \(selection.endTimeInPlayer)")
             fflush(nil)
 
         /// The color of the open detail page: class, rules in the stylesheet.
@@ -668,3 +739,29 @@ func widgetTexts(_ w: Widget!) -> [String] {
     }
     return texts
 }
+
+#if DEBUG
+extension App {
+    /// Renders the whole window into a PNG (debug only, for comparing with `out/mac/`).
+    func windowSnapshot(to path: String, of target: Widget? = nil) {
+        guard let window else { AppLog.writeOut("[Bild] kein Fenster"); return }
+        let target: Widget = target ?? window
+        guard let paintable = gtk_widget_paintable_new(target) else { return }
+        let width = gtk_widget_get_width(target), height = gtk_widget_get_height(target)
+        guard width > 0, height > 0, let snapshot = gtk_snapshot_new() else {
+            AppLog.writeOut("[Bild] kein Bild: \(width)x\(height), Fenster nicht gezeichnet")
+            return
+        }
+        gdk_paintable_snapshot(paintable, snapshot, Double(width), Double(height))
+        guard let node = gtk_snapshot_free_to_node(snapshot),
+              let native = gtk_widget_get_native(window),
+              let renderer = gtk_native_get_renderer(native),
+              let texture = gsk_renderer_render_texture(renderer, node, nil) else {
+            AppLog.writeOut("[Bild] Rendern fehlgeschlagen")
+            return
+        }
+        gdk_texture_save_to_png(texture, path)
+        AppLog.writeOut("[Bild] \(path) \(width)x\(height)")
+    }
+}
+#endif

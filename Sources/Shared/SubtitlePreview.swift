@@ -60,7 +60,7 @@ extension SubtitleLook.Position {
 }
 
 extension SubtitleLook {
-    /// The value of the entry row ("Aussehen der Untertitel").
+    /// The value of the entry row ("Untertitel-Stil").
     var entryValue: String {
         isStandard ? String(localized: "Standard") : String(localized: "Eigenes")
     }

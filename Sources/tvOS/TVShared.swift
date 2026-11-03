@@ -51,7 +51,7 @@ struct OfferingBadge: View {
 
         var body: some View {
             HStack(spacing: 14) {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(Theme.tile)
                 VStack(alignment: .leading, spacing: 1) {
                     label
@@ -230,8 +230,8 @@ struct TVSharedPanel: View {
                        perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
             HStack(spacing: 20) {
-                Image(systemName: symbol)
-                    .font(.system(size: 28, weight: .medium))
+                Image(icon: symbol)
+                    .font(.app(size: 28, weight: .medium))
                     .frame(width: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: title)
@@ -326,7 +326,7 @@ struct TVGroupsRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "person.2.fill")
+            Image(icon: "person.2.fill")
                 .foregroundStyle(Theme.accent)
             // Name and participants come from the server, shown verbatim.
             Text(verbatim: name)
@@ -345,8 +345,8 @@ struct TVGroupsEvent: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            Image(systemName: symbol)
-                .font(.system(size: 28, weight: .medium))
+            Image(icon: symbol)
+                .font(.app(size: 28, weight: .medium))
                 .foregroundStyle(Theme.accent)
             Text(verbatim: text)
                 .font(Theme.body)

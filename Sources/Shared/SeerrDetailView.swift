@@ -235,8 +235,8 @@ struct SeerrDetailView: View {
                 Button(action: pressed) {
                     HStack(spacing: 8) {
                         // No ring: the text says "Wird angefragt…".
-                        Image(systemName: confirmed ? "checkmark" : "plus")
-                            .font(.system(size: 15, weight: .semibold))
+                        Image(icon: confirmed ? "checkmark" : "plus", size: 15)
+                            .font(.app(size: 15, weight: .semibold))
                             .opacity(running ? 0.5 : 1)
                         Text(buttonText)
                     }
@@ -399,9 +399,9 @@ struct SeerrDetailView: View {
                     }
                     Spacer(minLength: 8)
                     if st.state.requestable {
-                        Image(systemName: selected.contains(st.number)
-                                ? "checkmark.square.fill" : "square")
-                            .font(.system(size: 17))
+                        Image(icon: selected.contains(st.number)
+                                ? "checkmark.square.fill" : "square", size: 17)
+                            .font(.app(size: 17))
                             .foregroundStyle(selected.contains(st.number)
                                 ? Theme.accent : Theme.fontVeryQuiet)
                     } else {

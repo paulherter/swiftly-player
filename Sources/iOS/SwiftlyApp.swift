@@ -10,6 +10,8 @@ struct SwiftlyApp: App {
             BetaRedirectView()
             #else
             RootView()
+                // Text without its own font is Inter too, not SF.
+                .font(.app(size: 17))
             #endif
         }
             // **Without this a background download is left hanging.**

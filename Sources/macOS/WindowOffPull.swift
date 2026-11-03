@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import JellyfinKit
 import OSLog
 import SwiftUI
 
@@ -54,9 +55,12 @@ enum WindowOffPull {
         let tick = Timer(timeInterval: 1.5, repeats: true) { _ in
             MainActor.assumeIsolated {
                 guard FileManager.default.fileExists(atPath: kickoff.path) else { return }
+                let page = (try? String(contentsOf: kickoff, encoding: .utf8))?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 try? FileManager.default.removeItem(at: kickoff)
-                produce()
+                if page.isEmpty { produce() } else { stage(page) }
             }
+            Task { await askDesk() }
         }
         // In `.common` mode, otherwise the timer stalls while the mouse button is held or a
         // menu is open.
@@ -80,6 +84,88 @@ enum WindowOffPull {
     /// from `DerivedData` or an older build, it may take the request first, and the image
     /// shows its window. Before a capture check that
     /// `pgrep -f "Contents/MacOS/Swiftly" | wc -l` is **1**.
+    /// **The same request over loopback.** A session outside the sandbox may not read the
+    /// container (macOS guards other apps' data), so a helper on `127.0.0.1:47811` can hand
+    /// out page names (`GET /next`) and take the image back (`POST /png/<page>`). Nothing
+    /// listens there normally; the request then fails at once and costs nothing.
+    private static let desk = URL(string: "http://127.0.0.1:47811")!
+    private static var deskBusy = false
+
+    private static func askDesk() async {
+        guard !deskBusy else { return }
+        deskBusy = true
+        defer { deskBusy = false }
+        var request = URLRequest(url: desk.appendingPathComponent("next"))
+        request.timeoutInterval = 1
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let page = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !page.isEmpty else { return }
+        stage(page)
+    }
+
+    private static func deliver(_ png: Data, page: String) {
+        var request = URLRequest(url: desk.appendingPathComponent("png").appendingPathComponent(page))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 5
+        Task { _ = try? await URLSession.shared.upload(for: request, from: png) }
+    }
+
+    /// Search term the offscreen search page starts with.
+    static var searchTerm: String?
+    private static var stages: [NSWindow] = []
+
+    /// **A page drawn in a window nobody sees.** `abzug.jetzt` holding a page name
+    /// ("filme", "film", "allgemein" …) opens a second, borderless `MainView` far outside
+    /// every screen, walks it to that page and writes `abzug-<page>.png` after a few
+    /// seconds. The visible window is not touched, so this works while Paul uses the app.
+    static func stage(_ script: String) {
+        let parts = script.split(separator: " ", maxSplits: 1).map(String.init)
+        let page = parts[0]
+        searchTerm = parts.count > 1 ? parts[1] : nil
+        let size = NSSize(width: 1280, height: 800)
+        let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -40000, y: -40000), size: size),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.ignoresMouseEvents = true
+        let host = NSHostingView(rootView: MainView(model: AppModel.only, script: page)
+            .frame(width: size.width, height: size.height)
+            .preferredColorScheme(.dark)
+            .tint(Theme.accent))
+        window.contentView = host
+        window.orderBack(nil)
+        stages.append(window)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 7) {
+            MainActor.assumeIsolated {
+                host.layoutSubtreeIfNeeded()
+                let area = host.bounds
+                if let store = host.bitmapImageRepForCachingDisplay(in: area) {
+                    host.cacheDisplay(in: area, to: store)
+                    let file = folder.appendingPathComponent("abzug-\(page).png")
+                    if let png = store.representation(using: .png, properties: [:]) {
+                        try? png.write(to: file)
+                        deliver(png, page: page.replacingOccurrences(of: " ", with: "_"))
+                    }
+                    AppLog.writeOut("[Abzug] \(page): \(store.pixelsWide)x\(store.pixelsHigh)")
+                }
+                window.orderOut(nil)
+                window.contentView = nil
+                searchTerm = nil
+                stages.removeAll { $0 === window }
+            }
+        }
+    }
+
+    /// The frontmost window, drawn now and handed to the desk helper as `name`
+    /// (the motion probe's evidence of where something lands).
+    static func capture(_ name: String) {
+        guard let content = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil })?.contentView,
+              let store = content.bitmapImageRepForCachingDisplay(in: content.bounds) else { return }
+        content.cacheDisplay(in: content.bounds, to: store)
+        if let data = store.representation(using: .png, properties: [:]) { deliver(data, page: name) }
+    }
+
     static func produce() {
         guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }),
               let content = window.contentView else {
@@ -379,13 +465,156 @@ struct BareSame: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(0 ..< 100, id: \.self) { nr in
                     Text(verbatim: "Zeile \(nr + 1)")
-                        .font(.system(size: 15))
+                        .font(.app(size: 15))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 24)
                         .frame(height: 46)
                     Divider()
                 }
             }
+        }
+    }
+}
+
+/// **The transitions Paul felt hanging, measured one by one.**
+///
+/// Like ``ScrollProbe`` it drives its own app, through the same commands the menu sends,
+/// and only when the environment asks:
+///
+///     SWIFTLY_MOTIONPROBE=1 .../Swiftly.app/Contents/MacOS/Swiftly
+///
+/// For a second after each step it records the gaps between frames of the window and
+/// logs one line: frames, dropped frames (over 1.5 times the target) and the longest gap.
+/// The look is only *tried on* (`LookStore.tryOn`), which stores nothing.
+@MainActor
+enum MotionProbe {
+    private static let log = Logger(subsystem: "de.paulherter.swiftly", category: "bewegungsprobe")
+
+    static func start() {
+        guard ProcessInfo.processInfo.environment["SWIFTLY_MOTIONPROBE"] != nil else { return }
+        log.notice("Probe angefordert — Start in 14 s")
+        Task {
+            try? await Task.sleep(for: .seconds(14))
+            guard let window = NSApp.windows.first(where: { $0.isVisible }) else {
+                log.notice("kein sichtbares Fenster")
+                return
+            }
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            CommandPost.dispatch(.movies)
+            try? await Task.sleep(for: .seconds(3))
+            await step("ruhe filme", in: window) {}
+            for round in 1 ... 3 {
+                await step("profil auf \(round)", in: window) { CommandPost.dispatch(.switchProfile) }
+                await step("profil zu \(round)", in: window) { CommandPost.dispatch(.back) }
+            }
+            CommandPost.dispatch(.switchProfile)
+            try? await Task.sleep(for: .seconds(1.5))
+            await step("ruhe profil", in: window) {}
+            await step("profil → start", in: window, seconds: 1.6) { GiftFlow.shared.goHome() }
+            await step("ruhe start", in: window) {}
+            let store = LookStore.shared
+            if let other = Look.all.first(where: { $0.id != store.saved.lookID }) {
+                await step("look anprobiert", in: window) {
+                    Motion.recolor {
+                        store.beginPreview()
+                        store.tryOn(store.saved.switching(to: other))
+                    }
+                }
+                await step("look zurück", in: window) {
+                    Motion.recolor { store.endPreview() }
+                }
+            }
+            // The real way from the profile's look card: home, then the panel; "Use" on the
+            // look already worn saves nothing and only closes.
+            CommandPost.dispatch(.switchProfile)
+            try? await Task.sleep(for: .seconds(1.5))
+            await step("looks öffnen", in: window, seconds: 1.6) { SupportFlow.shared.openLooks() }
+            await step("look nehmen", in: window, seconds: 1.6) { GiftFlow.shared.use(store.saved) }
+            await landing(in: window)
+            CommandPost.dispatch(.movies)
+            try? await Task.sleep(for: .seconds(2))
+            await step("filme → start", in: window, seconds: 1.6) { CommandPost.dispatch(.start) }
+            log.notice("Probe beendet")
+        }
+    }
+
+    /// **Where the account switch's image lands**, without switching: a plain accent disc
+    /// flies to the sidebar avatar. One picture just before the swap (only the disc) and one
+    /// after (only the real avatar) go to the desk helper; their centers must match.
+    private static func landing(in window: NSWindow) async {
+        let flow = AccountSwitchTransition.shared
+        let aim = flow.target
+        guard aim.width > 0 else { log.notice("landung: kein ziel gemeldet"); return }
+        let from = CGRect(x: aim.midX + 380, y: aim.midY - 320, width: 72, height: 72)
+        let curve = AccountSwitchTransition.Curve(from: CGPoint(x: from.midX, y: from.midY), size: from.width,
+                                                  to: CGPoint(x: aim.midX, y: aim.midY), targetSize: flow.targetSize)
+        let begin = CACurrentMediaTime()
+        func until(_ t: Double) async {
+            try? await Task.sleep(for: .seconds(max(0, t - (CACurrentMediaTime() - begin))))
+        }
+        let meter = Meter()
+        meter.attach(to: window)
+        flow.start(account: "probe", image: Circle().fill(Theme.accent), from: from, area: Theme.area,
+                   address: nil) {}
+        await until(curve.swap - 0.04)
+        WindowOffPull.capture("landung-flug")
+        let during = flow.target
+        await until(curve.swap + 0.35)
+        WindowOffPull.capture("landung-echt")
+        await until(curve.paintEnd + 0.2)
+        let row = meter.finish()
+        log.notice("""
+            landung: ziel \(Int(aim.midX), privacy: .public),\(Int(aim.midY), privacy: .public) \
+            beim tausch \(Int(during.midX), privacy: .public),\(Int(during.midY), privacy: .public) \
+            groesse \(Int(flow.targetSize), privacy: .public) · \(row, privacy: .public)
+            """)
+        try? await Task.sleep(for: .seconds(0.4))
+    }
+
+    private static func step(_ name: String, in window: NSWindow, seconds: Double = 1.2,
+                             _ action: () -> Void) async {
+        let meter = Meter()
+        meter.attach(to: window)
+        action()
+        try? await Task.sleep(for: .seconds(seconds))
+        let row = meter.finish()
+        log.notice("\(name, privacy: .public): \(row, privacy: .public)")
+        try? await Task.sleep(for: .seconds(0.4))
+    }
+
+    @MainActor private final class Meter: NSObject {
+        private var connection: CADisplayLink?
+        private var last: CFTimeInterval = 0
+        private var gaps: [Double] = []
+        private var target = 1000.0 / 120
+        private var cpuStart: UInt64 = 0
+
+        func attach(to window: NSWindow) {
+            cpuStart = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+            guard let view = window.contentView else { return }
+            let new = view.displayLink(target: self, selector: #selector(tick))
+            new.add(to: .main, forMode: .common)
+            connection = new
+        }
+
+        @objc private func tick(_ connection: CADisplayLink) {
+            let now = CACurrentMediaTime()
+            let should = connection.targetTimestamp - connection.timestamp
+            if should > 0 { target = should * 1000 }
+            defer { last = now }
+            guard last > 0 else { return }
+            gaps.append((now - last) * 1000)
+        }
+
+        func finish() -> String {
+            connection?.invalidate()
+            connection = nil
+            // Main-thread CPU over the step; both ends run on the main thread.
+            let busy = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - cpuStart) / 1e6
+            let dropped = gaps.filter { $0 > target * 1.5 }.count
+            return String(format: "%d Bilder · %d ausgefallen · längste Lücke %.1f ms · Soll %.1f ms · Hauptthread %.0f ms",
+                          gaps.count, dropped, gaps.max() ?? 0, target, busy)
         }
     }
 }

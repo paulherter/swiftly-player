@@ -42,7 +42,7 @@ struct VolumeSlider: View {
                 .overlay(alignment: .bottomLeading) {
                     if pulls || expanded {
                         Text(verbatim: "\(Int((value * 100).rounded())) %")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.app(size: 11, weight: .semibold))
                             .monospacedDigit()
                             .foregroundStyle(Theme.fontQuiet)
                             .frame(width: 44)

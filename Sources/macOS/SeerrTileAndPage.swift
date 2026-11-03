@@ -56,7 +56,7 @@ struct SeerrTile: View {
     private var mark: some View {
         if hit.state != .present {
             HStack(spacing: 4) {
-                Image(systemName: hit.state.symbol)
+                Image(icon: hit.state.symbol)
                     .font(Theme.badge)
                 if let word = hit.state.shortWord {
                     Text(verbatim: word).font(Theme.badge)
@@ -277,7 +277,7 @@ struct SeerrDetailView: View {
                 .foregroundStyle(Theme.fontQuiet)
             if let rating = detail?.rating {
                 HStack(spacing: 5) {
-                    Image(systemName: "star.fill").font(.system(size: 11))
+                    Image(icon: "star.fill").font(.app(size: 11))
                         .accessibilityHidden(true)
                     // `String(format:)` as next door: the real page shows "8.4", not "8,4". Two
                     // spellings of the same number on two pages would be inconsistent.
@@ -287,8 +287,8 @@ struct SeerrDetailView: View {
                 .foregroundStyle(Theme.fontQuiet)
             }
             HStack(spacing: 6) {
-                Image(systemName: state.symbol)
-                    .font(.system(size: 11, weight: .semibold))
+                Image(icon: state.symbol)
+                    .font(.app(size: 11, weight: .semibold))
                     .accessibilityHidden(true)
                 Text(state.word)
                     .font(Theme.tile)
@@ -388,7 +388,7 @@ struct SeerrDetailView: View {
                     else { selected.insert(st.number) }
                 } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: st.state.requestable
+                        Image(icon: st.state.requestable
                               ? (selected.contains(st.number) ? "checkmark.square.fill" : "square")
                               : "checkmark.circle")
                             .font(Theme.listTitle)

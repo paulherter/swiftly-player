@@ -31,9 +31,9 @@ private struct LicenseRow<Destination: Hashable>: View {
                             .multilineTextAlignment(.leading)
                     }
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.fontVeryQuiet)
+                    Image(icon: "chevron.right", size: 13)
+                        .font(.app(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.font)
                         .accessibilityHidden(true)
                 }
                 .foregroundStyle(Theme.font)
@@ -61,7 +61,6 @@ struct LicensesView: View {
         ZStack(alignment: .top) {
             Theme.reason.ignoresSafeArea()
             VStack(alignment: .leading, spacing: 0) {
-                SubpageHeader(title: String(localized: "Open-Source-Lizenzen")) { back() }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Swiftly Player nutzt VLCKit und libVLC von VideoLAN (LGPL 2.1 oder später). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.")
@@ -85,6 +84,7 @@ struct LicensesView: View {
                 }
                 .scrollIndicators(.hidden)
             }
+            .fadingUnderSubpageHeader(title: String(localized: "Open-Source-Lizenzen")) { back() }
         }
         .tint(Theme.accent)
         #if os(iOS)
@@ -138,7 +138,6 @@ struct LicenseView: View {
         ZStack(alignment: .top) {
             Theme.reason.ignoresSafeArea()
             VStack(alignment: .leading, spacing: 0) {
-                SubpageHeader(title: component.name) { back() }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         CardView {
@@ -173,6 +172,7 @@ struct LicenseView: View {
                 }
                 .scrollIndicators(.hidden)
             }
+            .fadingUnderSubpageHeader(title: component.name) { back() }
         }
         .tint(Theme.accent)
         #if os(iOS)
@@ -191,9 +191,9 @@ struct LicenseView: View {
                     .multilineTextAlignment(.leading)
                 // Shows that the row opens the address; the accent is reserved for state.
                 if leadsRoute {
-                    Image(systemName: "arrow.up.right")
+                    Image(icon: "arrow.up.right")
                         .font(Theme.small)
-                        .foregroundStyle(Theme.fontVeryQuiet)
+                        .foregroundStyle(Theme.font)
                         .accessibilityHidden(true)
                 }
             }
@@ -239,7 +239,6 @@ struct LicenseOfferingView: View {
         ZStack(alignment: .top) {
             Theme.reason.ignoresSafeArea()
             VStack(alignment: .leading, spacing: 0) {
-                SubpageHeader(title: String(localized: "Quelltext und Angebot")) { back() }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         if let offering {
@@ -274,6 +273,7 @@ struct LicenseOfferingView: View {
                 }
                 .scrollIndicators(.hidden)
             }
+            .fadingUnderSubpageHeader(title: String(localized: "Quelltext und Angebot")) { back() }
         }
         .tint(Theme.accent)
         #if os(iOS)

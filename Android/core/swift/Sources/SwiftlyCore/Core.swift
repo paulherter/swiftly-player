@@ -379,6 +379,27 @@ public final class Kern: @unchecked Sendable {
         }
     }
 
+    /// **One round of ``ServerDiscovery``**: ask the local network, listen, merge with what
+    /// earlier rounds found. Kotlin repeats it while the page is open and passes the last
+    /// answer back as `known`, so the core keeps no state for a page.
+    /// `except` (JSON `["address", …]`): servers already offered elsewhere on the page.
+    /// Answer: `[{"id","name","adresse","kurz"}]`, sorted by name.
+    public func serverSearch(known: String, except: String) async -> String {
+        let before = ((try? JSONDecoder().decode([FoundServerResponse].self, from: Data(known.utf8))) ?? [])
+            .map { FoundServer(id: $0.id, name: $0.name, address: $0.address) }
+        let taken = (try? JSONDecoder().decode([String].self, from: Data(except.utf8))) ?? []
+        let now = ServerDiscovery.shown(ServerDiscovery.merged(before, await ServerDiscovery.search()),
+                                        except: taken)
+        return (try? json(now.map {
+            FoundServerResponse(id: $0.id, name: $0.name, address: $0.address, short: $0.shortAddress)
+        })) ?? "[]"
+    }
+
+    /// The pause between two rounds of ``serverSearch(known:except:)``, in milliseconds.
+    public func serverSearchPause() -> Int {
+        Int(ServerDiscovery.pause.components.seconds * 1000)
+    }
+
     /// Answer: the session as JSON. Kotlin stores it encrypted and passes it back to
     /// ``sessionSet(json:)`` at the next start.
     public func signIn(user: String, password: String) async throws -> String {
@@ -639,6 +660,12 @@ public final class Kern: @unchecked Sendable {
         readBundles(bundle).active?.activeOne.accountKey ?? ""
     }
 
+    /// The addresses of the bundle's servers, JSON `["…"]`: what "Server hinzufügen" does
+    /// not offer as a found server.
+    public static func bundleServers(bundle: String) -> String {
+        encoded(readBundles(bundle).bundles.values.flatMap { $0.server.map(\.absoluteString) })
+    }
+
     /// Migration: the old single session as a bundle.
     public static func bundleFromSession(session: String) -> String {
         guard let s = sessionRead(session) else { return "" }
@@ -718,7 +745,9 @@ public final class Kern: @unchecked Sendable {
                 .compactMap { r in
                     guard let (landscape, new, mark, items) = content[r], !items.isEmpty else { return nil }
                     return RailsResponse(titleKey: r.railsTitle, name: nil, landscape: landscape,
-                                         tiles: items.map { tile($0, newAccess: new, withMark: mark, a) })
+                                         tiles: items.map { tile($0, newAccess: new, withMark: mark, a) },
+                                         jumpArt: r.libraryJump?.art,
+                                         jumpSorting: r.libraryJump?.sorting.rawValue)
                 }
             // Between the fixed rows and the genre rows, in the order of the choice.
             let je = Dictionary((await libraryState).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -3673,6 +3702,25 @@ public final class Kern: @unchecked Sendable {
         }
     }
 
+    /// **Who has watched a title** (Jelly Twiggy plugin). `"absent"`: the server has no plugin (or is not
+    /// Jellyfin): Kotlin remembers that per server and shows nothing. `""`: no answer this time, ask again later. Otherwise a JSON
+    /// array (possibly `[]`) of `WatcherResponse`. The ring value and the image address are decided here.
+    public func watchers(id: String) async -> String {
+        guard let c = client, let a = addresses else { return "" }
+        // Only Jellyfin has the plugin; Emby and Plex are "absent" for good.
+        guard let jelly = c as? JellyfinClient, jelly.serverKind == .jellyfin else { return "absent" }
+        guard let list = await c.watchers(itemID: id) else {
+            return await jelly.watchersPluginMissing ? "absent" : ""
+        }
+        return Self.encoded(list.map { w in
+            WatcherResponse(id: w.userID, name: w.name,
+                            image: w.imageTag.flatMap { _ in a.user(w.userID, mark: w.imageTag, border: 96)?.absoluteString },
+                            plays: w.playCount,
+                            last: w.lastWatched.map { Int64($0.timeIntervalSince1970 * 1000) },
+                            ring: w.ring)
+        })
+    }
+
     /// Everything that can play as this title's trailer, in the order to try it
     /// (`TrailerChoice`, the same rule as on every other platform). `[]` when there is none or
     /// not connected. `canOpenWeb`: the phone opens a link in the browser, the TV has none and
@@ -3754,7 +3802,8 @@ public final class Kern: @unchecked Sendable {
 
     /// The same lines as `PosterTile`: for an episode series and number, otherwise title and year.
     /// The badge comes from `DisplayRules.tileMark`; Kotlin only inserts the wording.
-    private func gridTile(_ i: Item, _ a: ImageAddress) -> GridTileResponse {
+    /// `sorting` decides the tile's key for the index strip (``AlphabetIndex/key(of:sorting:)``).
+    private func gridTile(_ i: Item, _ a: ImageAddress, sorting: Sorting = .name) -> GridTileResponse {
         let episode = i.type == "Episode"
         let (mark, figure): (String?, Int) = switch DisplayRules.tileMark(
             art: i.type, seasons: i.childCount, watched: i.userData?.played,
@@ -3770,7 +3819,7 @@ public final class Kern: @unchecked Sendable {
             poster: ImageSelection.portrait(i, addresses: a)?.absoluteString,
             progress: i.userData?.playedPercentage.map { $0 / 100 },
             mark: mark, markCount: figure,
-            letter: AlphabetIndex.letter(name: i.name, sortName: i.sortName))
+            letter: AlphabetIndex.key(of: i, sorting: sorting))
     }
 
     func json<T: Encodable>(_ value: T) throws -> String {
@@ -3913,16 +3962,20 @@ public final class Kern: @unchecked Sendable {
         case letters = "buchstaben"
     }
         let title: [GridTileResponse]; let total: Int; let filtered, evenMore: Bool
-        /// The letter strip, with the first page of a "By name" list only.
+        /// The index strip (letters, years or ratings), with the first page only.
         var letters: [LetterEntry]? = nil
     }
-    /// One letter of the strip (``AlphabetIndex/Entry``): `{"buchstabe","ab"}`.
+    /// One entry of the strip (``AlphabetIndex/Entry``):
+    /// `{"buchstabe","ab","anzeige","luecke"}`. `buchstabe` is the key, `anzeige` what the
+    /// strip shows ("25" for "2025"), `luecke` a dot before the entry (the next year or rating).
     struct LetterEntry: Encodable {
     enum CodingKeys: String, CodingKey {
         case letter = "buchstabe"
         case first = "ab"
+        case label = "anzeige"
+        case gap = "luecke"
     }
-        let letter: String; let first: Int
+        let letter: String; let first: Int; let label: String; let gap: Bool
     }
 
     /// The naturally sorted list for a grid: fresh with the first page, kept for the next.
@@ -3934,9 +3987,23 @@ public final class Kern: @unchecked Sendable {
         return list
     }
 
-    private static func letters(_ list: [Item]) -> [LetterEntry] {
-        AlphabetIndex(titles: list.map { ($0.name, $0.sortName) }).entries
-            .map { LetterEntry(letter: $0.letter, first: $0.first) }
+    private static func letters(_ list: [Item], sorting: Sorting = .name) -> [LetterEntry] {
+        AlphabetIndex(items: list, sorting: sorting).entries
+            .map { LetterEntry(letter: $0.letter, first: $0.first, label: $0.label, gap: $0.gap) }
+    }
+
+    /// **The strip for an order other than "By name"**: the whole list once, slim, in the
+    /// grid's order (``AppModel/indexList``). With the first page only; `nil` if the server
+    /// does not answer, then the grid simply has no strip.
+    private func otherLetters(_ c: any MediaServer, _ source: ShelfSource, _ s: Sorting,
+                              _ f: LibraryFilter) async -> [LetterEntry]? {
+        guard let list = try? await c.items(parentID: source.parent, limit: 0, startIndex: 0,
+                                            sortBy: s.inputField, sortOrder: source.bearing(s),
+                                            filters: f.jellyfinFilter, isWatched: f.isWatched,
+                                            recursive: source.recursive, includeItemTypes: source.types,
+                                            ids: [], personIDs: [], genres: [], slim: true).items
+        else { return nil }
+        return Self.letters(list, sorting: s)
     }
     private struct CollectionEntry: Encodable {
     enum CodingKeys: String, CodingKey {
@@ -4101,7 +4168,15 @@ public final class Kern: @unchecked Sendable {
                                             recursive: source.recursive, includeItemTypes: source.types)
                 }
                 : nil
-            let letters = since == 0 ? natural.map(Self.letters) : nil
+            // `await` cannot sit in the autoclosure of `??` or `?:`, hence the plain branches.
+            let letters: [LetterEntry]?
+            if since > 0 {
+                letters = nil
+            } else if let natural {
+                letters = Self.letters(natural)
+            } else {
+                letters = await otherLetters(c, source, s, f)
+            }
             func page(_ start: Int, _ amount: Int) async throws -> ItemsResponse {
                 if let natural { return try await c.naturalPage(natural, since: start, count: amount) }
                 return try await c.items(parentID: source.parent, limit: amount, startIndex: start,
@@ -4111,7 +4186,7 @@ public final class Kern: @unchecked Sendable {
             }
             guard source.isFiltering else {
                 let answer = try await page(since, count)
-                return try json(SectionPagesResponse(title: answer.items.map { gridTile($0, a) },
+                return try json(SectionPagesResponse(title: answer.items.map { gridTile($0, a, sorting: s) },
                                                       total: answer.totalRecordCount,
                                                       filtered: false, evenMore: false, letters: letters))
             }
@@ -4146,7 +4221,7 @@ public final class Kern: @unchecked Sendable {
             } while new.count < count / 2 && offset < raw
             let done = (key: key, filterRef: filterRef, offset: offset, raw: raw)
             locked { _filter = done }
-            return try json(SectionPagesResponse(title: new.map { gridTile($0, a) }, total: filterRef.total,
+            return try json(SectionPagesResponse(title: new.map { gridTile($0, a, sorting: s) }, total: filterRef.total,
                                                   filtered: true,
                                                   evenMore: ListRules.stillMorePresent(loaded: offset, total: raw),
                                                   letters: letters))
@@ -4267,8 +4342,9 @@ public final class Kern: @unchecked Sendable {
                                             sortBy: s.inputField, sortOrder: source.bearing(s),
                                             filters: f.jellyfinFilter, isWatched: f.isWatched,
                                             recursive: source.recursive, includeItemTypes: source.types)
-            return try json(GridPagesResponse(title: answer.items.map { gridTile($0, a) },
-                                                total: answer.totalRecordCount))
+            let letters = since == 0 ? await otherLetters(c, source, s, f) : nil
+            return try json(GridPagesResponse(title: answer.items.map { gridTile($0, a, sorting: s) },
+                                                total: answer.totalRecordCount, letters: letters))
         }
     }
 
@@ -4319,6 +4395,16 @@ struct ServerResponse: Encodable {
         case address = "adresse"
     }
  let name, version, address: String }
+struct FoundServerResponse: Codable {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case address = "adresse"
+        case short = "kurz"
+    }
+    let id, name, address: String
+    var short = ""
+}
 struct HomeResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case rails = "reihen"
@@ -4333,6 +4419,8 @@ struct RailsResponse: Encodable {
         case tiles = "kacheln"
         case library = "bibliothek"
         case collection = "sammlung"
+        case jumpArt = "sprungArt"
+        case jumpSorting = "sprungSortierung"
     }
     /// German wording as key; Kotlin translates with `translated(...)`.
     let titleKey: String?
@@ -4343,6 +4431,10 @@ struct RailsResponse: Encodable {
     /// Only for a chosen library or collection: its ID; the row's header opens it.
     var library: String? = nil
     var collection: Bool = false
+    /// New movies and new series: the area (`movies`, `tvshows`) and the order (`Sorting`
+    /// raw value) the header opens; `StartRail.libraryJump`.
+    var jumpArt: String? = nil
+    var jumpSorting: String? = nil
 }
 struct GridPagesResponse: Encodable {
     enum CodingKeys: String, CodingKey {
@@ -4351,7 +4443,7 @@ struct GridPagesResponse: Encodable {
         case letters = "buchstaben"
     }
  let title: [GridTileResponse]; let total: Int
-    /// The letter strip, with the first page of a "By name" list only.
+    /// The index strip (letters, years or ratings), with the first page only.
     var letters: [Kern.LetterEntry]? = nil }
 struct GridTileResponse: Encodable {
     enum CodingKeys: String, CodingKey {
@@ -4835,6 +4927,9 @@ struct FieldResponse: Encodable {
         case extras
     }
  let similar: [GridTileResponse]; let extras: [ExtraResponse] }
+/// One entry of `Kern.watchers`: `last` in milliseconds since 1970, `ring` 0...1 (`Watcher.ring`).
+struct WatcherResponse: Encodable {
+    let id, name: String; let image: String?; let plays: Int; let last: Int64?; let ring: Double }
 struct ExtraResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case id

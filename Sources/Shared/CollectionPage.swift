@@ -94,10 +94,10 @@ struct CollectionView: View {
 
     // MARK: Letter strip
 
-    /// Only sorted by name, switched on, and with more than one letter.
+    /// Switched on, and with more than one entry for the order on screen.
     private var shownAlphabet: AlphabetIndex? {
-        guard model.alphabetShown, state.sorting == .name,
-              let alphabet = state.alphabet, alphabet.isUseful else { return nil }
+        guard model.alphabetShown,
+              let alphabet = state.currentAlphabet else { return nil }
         return alphabet
     }
 
@@ -109,9 +109,9 @@ struct CollectionView: View {
 
     /// The letter of the first loaded title on screen, written only when it changes.
     private func updateTopLetter() {
-        guard shownAlphabet != nil,
+        guard let alphabet = shownAlphabet,
               let item = state.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
-        let letter = AlphabetIndex.letter(name: item.name, sortName: item.sortName)
+        let letter = alphabet.key(of: item)
         if letter != topLetter { topLetter = letter }
     }
 
@@ -141,7 +141,7 @@ struct CollectionView: View {
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.tileSpacing),
                                      count: columns),
-                      alignment: .leading, spacing: 20) {
+                      alignment: .leading, spacing: Theme.gridRowGap) {
                 ForEach(state.items) { item in
                     NavigationLink(value: item) {
                         PosterTile(model: model, item: item, width: nil)
@@ -269,7 +269,7 @@ struct CollectionMosaic: View {
     private func inputField(url: URL?, width: CGFloat, height: CGFloat) -> some View {
         Picture(url: url, width: width, height: height, corner: 0) {
             Theme.area.overlay {
-                Image(systemName: "film").foregroundStyle(Theme.fontVeryQuiet)
+                Image(icon: "film").foregroundStyle(Theme.font)
             }
         }
     }
@@ -423,9 +423,9 @@ struct CollectionRail: View {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 5) {
                                 RailTitle(text: "Teil der Sammlung")
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(Theme.fontVeryQuiet)
+                                Image(icon: "chevron.right", size: 13)
+                                    .font(.app(size: 13, weight: .semibold))
+                                    .foregroundStyle(Theme.font)
                             }
                             Text(verbatim: rail.collection.item.name)
                                 .font(Theme.body)

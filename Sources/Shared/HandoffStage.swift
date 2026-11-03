@@ -191,11 +191,11 @@ enum HandoffStyle {
                               metrics: HandoffCard.Metrics) -> some View {
         VStack(alignment: .leading, spacing: metrics.spacing * 0.25) {
             Text(verbatim: z.title)
-                .font(.system(size: metrics.title, weight: .semibold))
+                .font(.app(size: metrics.title, weight: .semibold))
                 .foregroundStyle(Theme.font)
             if let under = z.under {
                 Text(verbatim: under)
-                    .font(.system(size: metrics.small))
+                    .font(.app(size: metrics.small))
                     .foregroundStyle(Theme.fontQuiet)
             }
         }

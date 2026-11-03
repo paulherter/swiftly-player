@@ -180,6 +180,13 @@ struct PlayerScreen: View {
         _position = State(initialValue: startAt)
         _item = State(initialValue: item)
         _plan = State(initialValue: plan)
+        // Shoot path (DEBUG, `-ohneBild`): the control layer as if playing, without a stream.
+        if PlayerShoot.withoutImage {
+            _position = State(initialValue: PlayerShoot.position)
+            _duration = State(initialValue: PlayerShoot.duration)
+            _firstImagePresent = State(initialValue: true)
+            _openLayer = State(initialValue: PlayerShoot.layer ? .tracks : nil)
+        }
     }
 
     private var controlsPresent: Bool {
@@ -258,6 +265,9 @@ struct PlayerScreen: View {
                     }
                 }
 
+            if PlayerShoot.withoutImage {
+                ShootBackdrop()
+            } else {
             VideoSurface(url: startPlan.url, startAt: startAt,
                          container: startPlan.container,
                          buffer: model.bufferLevel,
@@ -280,6 +290,7 @@ struct PlayerScreen: View {
                 }
                 new.jumpReported = { target in reporter.jumpReported(target: target) }
                 new.tracksReported = { tracks in reporter.tracksSelected(tracks) }
+            }
             }
 
             // **Opaque, not just a ring.**
@@ -310,7 +321,7 @@ struct PlayerScreen: View {
             }
 
             // While the card is up, the scrim dims the picture as with open controls, and the card lies in front.
-            scrim.opacity(controlsPresent || (episodesCardPresent && cardsSwitch == nil) ? 1 : 0)
+            scrim.opacity(controlsPresent || layerOpen || (episodesCardPresent && cardsSwitch == nil) ? 1 : 0)
                 .animation(Theme.controlsFade, value: episodesCardPresent)
 
             cardsLayer
@@ -562,6 +573,15 @@ struct PlayerScreen: View {
             }
         }
         .task { await observe() }
+        // Shoot path (DEBUG `-ohneBild`): focus on "Nächste Folge", set again until it sticks. With `-ebene` the layer places its own focus.
+        .task {
+            guard PlayerShoot.withoutImage, !PlayerShoot.layer else { return }
+            for wait in [100, 300, 700, 1500] {
+                try? await Task.sleep(for: .milliseconds(wait))
+                guard !Task.isCancelled else { return }
+                if focus != .offering { focus = .offering }
+            }
+        }
         .task { await lookUp(for: item) }
         // Check once per title whether the server has preview images.
         .task(id: item.id) { await trickplay.load(model: model, item: item, plan: plan) }
@@ -581,7 +601,7 @@ struct PlayerScreen: View {
         .onChange(of: duration) { _, _ in hubReport() }
         .task(id: fadeOutMark) {
             // Take nothing away while paused: whoever paused is not looking at the picture but wants to know where they are.
-            guard controlsVisible, running else { return }
+            guard controlsVisible, running, !PlayerShoot.withoutImage else { return }
             // 8 s instead of 4: the bar disappeared noticeably faster than in other Apple TV clients (Swiftfin uses 10 s).
             try? await Task.sleep(for: .seconds(8))
             guard !Task.isCancelled, !layerOpen else { return }
@@ -612,22 +632,12 @@ struct PlayerScreen: View {
         // The bands are double the iPhone sizes (400 instead of 200, 520 instead of 260), the same rule as for type.
         //
         // As an `overlay` on the surface they do not count towards its size; on iPhone exactly that blew up the player when they sat in a stack.
-        Color.black.opacity(0.30)
-            .overlay(alignment: .top) {
-                LinearGradient(stops: [.init(color: .black.opacity(0.55), location: 0),
-                                       .init(color: .black.opacity(0.55), location: 0.45),
-                                       .init(color: .clear, location: 1)],
-                               startPoint: .top, endPoint: .bottom)
-                    .frame(height: 400)
-            }
-            .overlay(alignment: .bottom) {
-                LinearGradient(stops: [.init(color: .clear, location: 0),
-                                       .init(color: .black.opacity(0.42), location: 0.55),
-                                       .init(color: .black.opacity(0.62), location: 1)],
-                               startPoint: .top, endPoint: .bottom)
-                    .frame(height: 520)
-            }
-            .clipped()
+        // The design's one gradient over the whole picture: .65 black at the top, clear from 32 % to 62 %, .8 black at the bottom.
+        LinearGradient(stops: [.init(color: .black.opacity(0.65), location: 0),
+                               .init(color: .clear, location: 0.32),
+                               .init(color: .clear, location: 0.62),
+                               .init(color: .black.opacity(0.8), location: 1)],
+                       startPoint: .top, endPoint: .bottom)
             .ignoresSafeArea()
             .allowsHitTesting(false)
     }
@@ -644,7 +654,7 @@ struct PlayerScreen: View {
     private var metaText: String? {
         if item.type == "Episode" {
             if let season = item.parentIndexNumber, let episode = item.indexNumber {
-                return String(localized: "Staffel \(season) · Folge \(episode)")
+                return String(localized: "S\(season) · F\(episode) · \(item.name)")
             }
             return item.contextLine
         }
@@ -675,7 +685,8 @@ struct PlayerScreen: View {
                        preview: { trickplay.image(at: $0, model: model) },
                        // Both bounds, not just the start: where the intro starts does not say where it ends.
                        sectionLimits: sections.flatMap { [$0.from, $0.until] },
-                       chapter: chapter)
+                       chapter: chapter,
+                       buffered: PlayerShoot.withoutImage ? PlayerShoot.buffered : nil)
                 .focused($focus, equals: .bar)
                 // The bar is a drawing: the position exists only as bar length. Without a value it would be silent.
                 .accessibilityElement(children: .combine)
@@ -683,7 +694,8 @@ struct PlayerScreen: View {
                 .accessibilityValue(Text(verbatim: spokenState))
         }
         .padding(.horizontal, Theme.edgePage)
-        .padding(.vertical, Theme.edgeTop)
+        .padding(.top, Theme.edgeTop)
+        .padding(.bottom, PlayerMetric.bottom)
     }
 
     /// For VoiceOver: position, length and, if there is one, the chapter.
@@ -700,8 +712,9 @@ struct PlayerScreen: View {
             VStack(alignment: .leading, spacing: PlayerMetric.titleSpacing) {
                 Text(verbatim: titleLine)
                     .font(PlayerMetric.title)
-                    .tracking(Theme.lockTitle)
+                    .tracking(PlayerMetric.titleTracking)
                     .lineLimit(1)
+                    .frame(height: PlayerMetric.titleLine)
                     .hidden()
                     .accessibilityHidden(true)
                 HStack(spacing: 16) {
@@ -710,13 +723,14 @@ struct PlayerScreen: View {
                         TVGroupsRow(name: group.name, withWhom: gemeinsam.withWhom)
                     } else if let metaText { Text(verbatim: metaText) }
                     if !plan.isLossless {
-                        Label(plan.method.rawValue, systemImage: "exclamationmark.triangle.fill")
+                        Label(plan.method.rawValue, icon: "exclamationmark.triangle.fill")
                             .foregroundStyle(Theme.warning)
                     }
                 }
                 .font(PlayerMetric.meta)
                 .foregroundStyle(Theme.fontQuiet)
                 .lineLimit(1)
+                .frame(height: PlayerMetric.metaLine)
             }
 
             Spacer(minLength: 0)
@@ -748,17 +762,30 @@ struct PlayerScreen: View {
         }
     }
 
-    /// **The title top left, one layer above everything.** With the episode layer open it stays right here; if it lived in the header it would fade out with the controls and back in within the layer, flickering.
+    /// **The head, one layer above everything.** The title stays where it is with a layer open; if it lived in the header it would fade out with the controls and back in within the layer, flickering. Over the audio and settings layers the meta line stays too (design: "head stays"); the icons do not (see below).
     private var stateTitle: some View {
-        let present = controlsPresent || openLayer == .episodes
+        let present = controlsPresent || layerOpen
+        let copy = openLayer == .tracks || openLayer == .settings
         return HStack(alignment: .top, spacing: 24) {
-            Text(verbatim: titleLine)
-                .font(PlayerMetric.title)
-                .tracking(Theme.lockTitle)
-                .foregroundStyle(Theme.font)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: PlayerMetric.titleSpacing) {
+                Text(verbatim: titleLine)
+                    .font(PlayerMetric.title)
+                    .tracking(PlayerMetric.titleTracking)
+                    .foregroundStyle(Theme.font)
+                    .lineLimit(1)
+                    .frame(height: PlayerMetric.titleLine)
+                if copy, let metaText {
+                    Text(verbatim: metaText)
+                        .font(PlayerMetric.meta)
+                        .foregroundStyle(Theme.fontQuiet)
+                        .lineLimit(1)
+                        .frame(height: PlayerMetric.metaLine)
+                }
+            }
             Spacer(minLength: 0)
-            // Same space as the header icons, so the title gets the same width here.
+            // **No icons over a layer**, as with "Folgen": a lit white icon beside the
+            // layer's own focused row left it unclear what had focus (round 3 on the
+            // device). Same space as the header icons, so the title keeps its width.
             Color.clear.frame(width: PlayerMetric.iconRail(count: iconCount), height: 1)
         }
         .padding(.horizontal, Theme.edgePage)
@@ -788,10 +815,16 @@ struct PlayerScreen: View {
         case .settings: .settings
         }
         focus = target
+        // **Set again until it sticks.** The buttons become focusable in the same pass in
+        // which the layer leaves, and SwiftUI drops the first assignment; one retry was not
+        // always enough, and focus fell into the picture instead (round 3 on the device).
         focusCatchUp {
-            try? await Task.sleep(for: .milliseconds(80))
-            guard !Task.isCancelled, openLayer == nil, controlsPresent else { return }
-            focus = target
+            for _ in 0..<8 {
+                try? await Task.sleep(for: .milliseconds(60))
+                guard !Task.isCancelled, openLayer == nil else { return }
+                if focus == target { return }
+                if controlsPresent { focus = target }
+            }
         }
     }
 
@@ -848,18 +881,18 @@ struct PlayerScreen: View {
         }
         .padding(.horizontal, Theme.edgePage)
         // Same dimensions as the controls' bar, so the pill never overlaps it, open or not.
-        .padding(.bottom, Theme.edgeTop + PlayerMetric.bar + PlayerMetric.overBar)
+        .padding(.bottom, PlayerMetric.bottom + PlayerMetric.bar + PlayerMetric.overBar)
     }
 
     private var offeringPill: some View {
         Button(action: offeringRun) {
             // **White pill with the skip icon**, for both offers, as in the design and on iPhone. The label is built as a `String` in the package; `verbatim` prevents a second lookup.
             HStack(spacing: 14) {
-                Image(systemName: "forward.end.fill")
+                Image(icon: "forward.end.fill", size: 28)
                 Text(verbatim: offering.label)
             }
         }
-        .buttonStyle(PillsStyle(fillContent: nil))
+        .buttonStyle(PillsStyle(underline: PlayerShoot.withoutImage ? PlayerShoot.countdown : nil))
         .accessibilityLabel(Text(verbatim: offering.label))
     }
 
@@ -870,6 +903,8 @@ struct PlayerScreen: View {
 
     /// Which button applies. Same rule as on iOS; it lives in the package so the four platforms do not drift apart.
     private var offering: ButtonOffering {
+        // Shoot path: the pill is always there.
+        if PlayerShoot.withoutImage { return .nextEpisode }
         // No button during the switch: a second press meant two switches.
         guard !switches else { return .nobody }
         return SectionLogic.offering(position: position, duration: duration,
@@ -1989,6 +2024,8 @@ struct TimeBar: View {
     var sectionLimits: [Double] = []
     /// **Chapters divide the bar into pieces.** While scrubbing, the one containing the target is raised, and its name appears above the preview. Same addition as on iPhone.
     var chapter: [Chapter] = []
+    /// Buffered up to this second, drawn as a lighter stretch behind the played part. `nil`: not known (VLC reports no amount); only the shoot path sets it.
+    var buffered: Double? = nil
 
     private var seeks: Bool { mark != nil }
 
@@ -2014,19 +2051,19 @@ struct TimeBar: View {
         return min(max(seconds / duration, 0), 1)
     }
 
-    /// Eight points when paused, twelve while scrubbing; with chapters only the piece containing the target (``ChapterMask``).
-    private let barHeight: CGFloat = 8
-    private let barHeightRaised: CGFloat = 12
+    /// Ten points (design: h10, radius 5), fourteen while scrubbing; with chapters only the piece containing the target (``ChapterMask``).
+    private let barHeight: CGFloat = 10
+    private let barHeightRaised: CGFloat = 14
     private let grip: CGFloat = 36
     /// How wide the box above the handle really is: with a chapter name but without a preview image it depends on the name.
     @State private var boxWidth: CGFloat = 0
 
     var body: some View {
-        HStack(spacing: 28) {
+        HStack(spacing: 24) {
             // **Paused shows here**, at the start of the bar, not in the middle of the picture where it lay over the technical badge. Only the pause icon: whoever plays needs no sign for it.
             HStack(spacing: 16) {
                 if !running {
-                    Image(systemName: "pause.fill")
+                    Image(icon: "pause.fill")
                         .foregroundStyle(Theme.font)
                         .transition(.opacity)
                         .accessibilityHidden(true)
@@ -2044,6 +2081,12 @@ struct TimeBar: View {
                 ZStack(alignment: .leading) {
                     ZStack(alignment: .leading) {
                         Rectangle().fill(PlayerMetric.barReason)
+
+                        // Buffered stretch, between the track and the played part.
+                        if let buffered {
+                            Rectangle().fill(PlayerMetric.barBuffered)
+                                .frame(width: width * share(buffered))
+                        }
 
                         // Up to the real position: that has been seen. In the bar's thickness, not the mask's; otherwise its end would be a flat arc instead of a round one when paused.
                         Capsule().fill(Theme.font)
@@ -2089,7 +2132,7 @@ struct TimeBar: View {
 
             remainingTime
         }
-        .font(.system(size: PlayerMetric.time).monospacedDigit())
+        .font(.app(size: PlayerMetric.time).monospacedDigit())
         .foregroundStyle(Theme.fontQuiet)
         .focusable()
         // The middle button lands on the focused view.
@@ -2099,15 +2142,14 @@ struct TimeBar: View {
             switch bearing {
             case .left:  jump(-back)
             case .right: jump(forward)
-            // **Down toggles the remaining time**, the counterpart of tapping the remaining time on iPhone. Nothing under the bar could take focus; the time itself is not a focus target, or there would be one more step between bar and seeking.
-            case .down:  asEnd.toggle(); wake()
             default:     wake()
             }
         }
     }
 
-    /// **Remaining time or end**, as on iPhone: "-12:34" or "Ends at 22:41", same place, same type; the choice is kept.
-    @AppStorage("restzeitAlsEnde") private var asEnd = false
+    /// **Remaining time or end**, as on iPhone: "-12:34" or "Ends at 22:41", same place, same type.
+    /// The choice is the shared setting "Endzeit im Player" (off by default), not a remote gesture.
+    @AppStorage(PlayerEndTime.key) private var asEnd = PlayerEndTime.standard
 
     private var remainingTime: some View {
         let rest = max(duration - position, 0)
@@ -2146,12 +2188,12 @@ struct TimeBar: View {
             HStack(spacing: 12) {
                 if !name.isEmpty {
                     Text(verbatim: name)
-                        .font(.system(size: PlayerMetric.previewTime))
+                        .font(.app(size: PlayerMetric.previewTime))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
                 Text(PlayTime.text(shown))
-                    .font(.system(size: PlayerMetric.previewTime, weight: .semibold).monospacedDigit())
+                    .font(.app(size: PlayerMetric.previewTime, weight: .semibold).monospacedDigit())
                     .layoutPriority(1)
             }
             .foregroundStyle(Theme.font)
@@ -2167,47 +2209,44 @@ struct TimeBar: View {
     }
 }
 
-/// **The skip pill:** dark surface with white text at rest, white surface with dark text when focused, like the icon buttons.
+/// **The skip pill:** dark surface with white text at rest, white capsule with dark text when focused, like the icon buttons.
 ///
+/// Design: h72, 36 pt inset, capsule, 28 / 600, magnified x1.06 from its right edge, a 6 pt underline at the bottom showing the countdown.
 struct PillsStyle: ButtonStyle {
-    /// Countdown: the fill's clock from the left. `nil` without.
-    var fillContent: FillClock? = nil
+    /// Share of the underline (countdown), `nil` without.
+    var underline: Double? = nil
 
     func makeBody(configuration: Configuration) -> some View {
-        ContentBody(configuration: configuration, fillContent: fillContent)
+        ContentBody(configuration: configuration, underline: underline)
     }
 
     private struct ContentBody: View {
         let configuration: ButtonStyleConfiguration
-        let fillContent: FillClock?
+        let underline: Double?
         @Environment(\.isFocused) private var focus
 
         var body: some View {
             configuration.label
-                .font(Theme.button)
-                // **Focus = the surface turns white**, as with the icon buttons (`IconButtonStyle`): dark surface with white text at rest, white surface with dark text and magnification when focused. Before, the pill was always white and focus was only a 6 % magnification, which at three meters barely showed whether a click would hit it.
+                .font(.app(size: 28, weight: .semibold))
+                // **Focus = the surface turns white**, as with the icon buttons (`IconButtonStyle`).
                 .foregroundStyle(focus ? Theme.reason : Theme.font)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, 36)
                 .frame(height: 72)
-                // **The countdown as a fill, not as a number.** Dark on white, not in accent color: in the player that belongs to the bar's handle while scrubbing.
                 .background {
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
-                            .fill(focus ? Theme.font : Color.black.opacity(0.55))
-                        if let fillContent {
-                            TimelineView(.animation) { time in
-                                GeometryReader { g in
-                                    Rectangle()
-                                        .fill((focus ? Theme.reason : Theme.font).opacity(0.16))
-                                        .frame(width: g.size.width * fillContent.share(now: time.date))
-                                }
+                    ZStack(alignment: .bottomLeading) {
+                        Capsule().fill(focus ? Theme.font : Color.black.opacity(0.55))
+                        if let underline {
+                            GeometryReader { g in
+                                Rectangle()
+                                    .fill(Color(red: 16 / 255, green: 16 / 255, blue: 16 / 255).opacity(0.35))
+                                    .frame(width: g.size.width * underline, height: 6)
+                                    .frame(maxHeight: .infinity, alignment: .bottom)
                             }
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+                    .clipShape(Capsule())
                 }
-                // **No shadow.** The brand rule: no shadows, not on iPhone, not under the focused tile on TV, nowhere. Magnification and surface already do the job; a soft shadow turns to mud at three meters.
-                .scaleEffect(configuration.isPressed ? 0.97 : (focus ? Theme.focusMagnifier : 1))
+                .scaleEffect(configuration.isPressed ? 0.97 : (focus ? Theme.focusMagnifier : 1), anchor: .trailing)
                 .animation(Theme.focusAnimation, value: focus)
         }
     }
@@ -2450,5 +2489,26 @@ final class ClickRing {
                 self.edge = nil
             }
         }
+    }
+}
+
+
+/// Dark green radial placeholder for the video on the shoot path (`-ohneBild`); the design's `playerBack` (ellipse 1200 x 700 at 1100 / 420, #4a5a3a to #141a10 at 75 %).
+struct ShootBackdrop: View {
+    var body: some View {
+        ZStack {
+            Color(red: 0x14 / 255, green: 0x1a / 255, blue: 0x10 / 255)
+            RadialGradient(colors: [Color(red: 0x4a / 255, green: 0x5a / 255, blue: 0x3a / 255),
+                                    Color(red: 0x14 / 255, green: 0x1a / 255, blue: 0x10 / 255)],
+                           center: .center, startRadius: 0, endRadius: 900)
+                .frame(width: 1800, height: 1800)
+                // A circle squeezed to the ellipse 1200 x 700.
+                .scaleEffect(x: 1, y: 700.0 / 1200.0)
+                .position(x: 1100, y: 420)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 }

@@ -20,7 +20,13 @@ import java.util.WeakHashMap
  */
 @Composable
 fun VisibilityProtection() {
-    val window = LocalContext.current.activityWindow() ?: return
+    val context = LocalContext.current
+    val window = context.activityWindow() ?: return
+    // Debug builds opened with the `page` launch extra (render runs, see `DebugOpen`) are not protected:
+    // the protection made every screenshot of the sign-in pages solid black. Release builds never skip it.
+    val forRender = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
+        ((context as? ContextWrapper)?.let { var c: Context = it; while (c is ContextWrapper && c !is Activity) c = c.baseContext; (c as? Activity)?.intent?.hasExtra("page") } == true)
+    if (forRender) return
     DisposableEffect(window) {
         val n = (lockOut[window] ?: 0) + 1
         lockOut[window] = n

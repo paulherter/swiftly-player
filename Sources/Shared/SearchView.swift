@@ -107,7 +107,7 @@ struct SearchView: View {
                     BlurHeader {
                         // Centered so title and profile mark sit on one line - like every other root page.
                         HStack(alignment: .center, spacing: 0) {
-                            Text("Suchen").font(Theme.titleLarge).tracking(Theme.lockTitle)
+                            Text("Suche").font(Theme.titleLarge).tracking(Theme.lockTitle)
                             Spacer(minLength: 0)
                             if !wide {
                                 HeaderTargets(name: model.session?.userName ?? "?",
@@ -148,9 +148,9 @@ struct SearchView: View {
                             inField = false
                             searchMode = false
                         } label: {
-                            Image(systemName: "xmark")
+                            Image(icon: "xmark", size: 15)
                                 .font(Theme.listTitle)
-                                .foregroundStyle(Theme.fontQuiet)
+                                .foregroundStyle(Theme.font)
                                 .frame(width: 36, height: 36)
                                 .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                                 .frame(width: 44, height: 44)
@@ -330,11 +330,11 @@ struct SearchView: View {
             // not a heading but the label of the tiles below. So list row and not
             // `Theme.group`: the capitals belong to the three blocks, not their parts.
             Text(title)
-                .growing(15, .semibold)
-                .foregroundStyle(Theme.fontQuiet)
+                .growing(Theme.rowTitleSize, .semibold)
+                .foregroundStyle(Theme.font)
                 .padding(.horizontal, Theme.margin(wide: wide))
-                .padding(.top, 14)
-                .padding(.bottom, wide ? 10 : 6)
+                .padding(.top, Theme.cardGap - 10)
+                .padding(.bottom, 12)
 
             // Narrow a row list, wide a grid - TV does the same. A row with a 52 thumbnail
             // followed by 900 pt of nothing is no longer a list.
@@ -346,11 +346,11 @@ struct SearchView: View {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(),
                                                              spacing: Theme.tileSpacing),
                                          count: Theme.columns(usableNow: usableNow, wide: wide)),
-                          alignment: .leading, spacing: 20) {
+                          alignment: .leading, spacing: Theme.gridRowGap) {
                     ForEach(entries) { item in
                         NavigationLink(value: item) {
                             PosterTile(model: model, item: item, width: nil,
-                                       inquiry: item.hitInfo)
+                                       inquiry: item.groupedHitInfo)
                         }
                         .buttonStyle(Theme.PressButton())
                         // The usual way: open a hit. Only that fills "Recent searches", not just
@@ -369,11 +369,11 @@ struct SearchView: View {
                                                              spacing: Theme.tileSpacing),
                                          count: Theme.columns(usableNow: usableNow, wide: wide)),
                           // 20 as in Library, Watchlist and Genre - narrow search was the only one at 16.
-                          alignment: .leading, spacing: 20) {
+                          alignment: .leading, spacing: Theme.gridRowGap) {
                     ForEach(entries) { item in
                         NavigationLink(value: item) {
                             PosterTile(model: model, item: item, width: nil,
-                                       inquiry: item.hitInfo)
+                                       inquiry: item.groupedHitInfo)
                         }
                         .buttonStyle(Theme.PressButton())
                         // The usual way: open a hit. Only that fills "Recent searches", not just
@@ -420,9 +420,9 @@ struct SearchView: View {
     /// tracking and colour are reused, not the container.
     private func category(_ text: LocalizedStringKey) -> some View {
         Text(text)
-            .font(Theme.rail)
-            .tracking(Theme.lockRail)
-            .foregroundStyle(Theme.fontQuiet)
+            .font(Theme.section)
+            .tracking(Theme.lockSection)
+            .foregroundStyle(Theme.font)
     }
 
     private func seerrGrid(usableNow: CGFloat) -> some View {
@@ -430,7 +430,7 @@ struct SearchView: View {
                                                      spacing: Theme.tileSpacing),
                                  count: Theme.columns(usableNow: usableNow, wide: wide)),
                   // 20: the same grid row spacing as everywhere else.
-                  alignment: .leading, spacing: 20) {
+                  alignment: .leading, spacing: Theme.gridRowGap) {
             ForEach(seerrHit) { t in
                 NavigationLink(value: t) { SeerrTile(hit: t) }
                     .buttonStyle(Theme.PressRow())
@@ -480,9 +480,9 @@ struct SearchView: View {
                     inField = false
                 } label: {
                     HStack(spacing: 12) {
-                        Image(systemName: "clock.arrow.circlepath")
+                        Image(icon: "clock.arrow.circlepath")
                             .font(Theme.body)
-                            .foregroundStyle(Theme.fontVeryQuiet)
+                            .foregroundStyle(Theme.font)
                             .frame(width: 20)
                             .accessibilityHidden(true)
                         Text(verbatim: word)
@@ -515,12 +515,12 @@ struct SearchView: View {
     /// never, when nothing has been done yet.
     private var emptyHint: some View {
         VStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
+            Image(icon: "magnifyingglass", size: 44)
                 // Used to be 34 in `.light`. That weight no longer exists - three weights,
                 // regular is the lightest. And 44 is the size at which `Leerzustand` sets its
                 // glyph: two glyphs of the same role, one measure.
-                .font(.system(size: 44))
-                .foregroundStyle(Theme.fontVeryQuiet)
+                .font(.app(size: 44))
+                .foregroundStyle(Theme.font)
             Text("Filme, Serien und Folgen durchsuchen")
                 .growing(15)
                 .foregroundStyle(Theme.fontQuiet)

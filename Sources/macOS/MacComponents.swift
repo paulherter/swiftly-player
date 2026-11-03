@@ -21,6 +21,9 @@ struct SidebarRow: View {
     /// an English user could get something else.
     var name: String?
     let active: Bool
+    /// The menu shortcut, shown quietly at the right edge ("⌘2"): the sidebar is where
+    /// the shortcuts are learned. `nil` for rows without one.
+    var shortcut: String?
     let pick: () -> Void
 
     @State private var hovers = false
@@ -28,21 +31,28 @@ struct SidebarRow: View {
     var body: some View {
         Button(action: pick) {
             HStack(spacing: 10) {
-                Image(systemName: symbol)
-                    .font(Theme.body.weight(.medium))
-                    .frame(width: 17)
+                Image(icon: symbol, size: 18)
+                    .font(.app(size: 18))
+                    .frame(width: 18)
                 Group {
                     if let name { Text(verbatim: name) } else { Text(label) }
                 }
-                .font(Theme.body.weight(.medium))
+                // **One weight in both states** would keep the width; the design sets the
+                // active row semibold, and the row is wide enough that nothing shifts.
+                .font(.app(size: 14, weight: active ? .semibold : .medium))
                 .lineLimit(1)
                 Spacer(minLength: 0)
+                if let shortcut {
+                    Text(verbatim: shortcut)
+                        .font(.app(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                }
             }
             .padding(.horizontal, 10)
             .frame(height: Theme.rowHeight)
             .foregroundStyle(foreground)
             .background(background,
-                        in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(Theme.PressRow())
@@ -59,7 +69,7 @@ struct SidebarRow: View {
     /// The accent marks selection, same as on iOS where the active tab carries it.
     /// Hover deliberately gets only white: it says "the pointer is here", not "chosen".
     private var background: Color {
-        if active { return Theme.accent.opacity(0.10) }
+        if active { return Theme.accent.opacity(0.12) }
         return hovers ? Theme.hoverArea : .clear
     }
 }
@@ -72,7 +82,7 @@ struct SidebarCategory: View {
         // and capitals read worse and are spelled out letter by letter by VoiceOver.
         // macOS sidebar sections have long been set this way: 11 semibold, muted.
         Text(text)
-            .font(Theme.group)
+            .font(.app(size: 12, weight: .semibold))
             .foregroundStyle(Theme.fontVeryQuiet)
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -89,6 +99,8 @@ struct Chip: View {
     let active: Bool
     /// Countdown in the player: the clock fills from the left (`FillClock`).
     var fillContent: FillClock? = nil
+    /// **A popup pill** (filter, sorting): 13/600, a caret on the right, 12 in.
+    var caret: Bool = false
     let pick: () -> Void
 
     @State private var hovers = false
@@ -96,16 +108,23 @@ struct Chip: View {
 
     var body: some View {
         Button(action: pick) {
-            HStack(spacing: 6) {
+            HStack(spacing: caret ? 7 : 6) {
                 if let symbol {
-                    Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+                    Image(icon: symbol, size: caret ? 14 : 11)
+                        .font(.app(size: caret ? 14 : 11, weight: .semibold))
                 }
                 // **One weight, not two.** Semibold is wider than regular and the chips sit side
-                // by side, so every neighbor to the right shifted on toggle. 13 medium is used in
+                // by side, so every neighbor to the right shifted on toggle. One weight is used in
                 // both states.
-                Text(label).font(Theme.tile)
+                Text(label).font(caret ? .app(size: 13, weight: .semibold) : Theme.tile)
+                if caret {
+                    Image(icon: "chevron.down", size: 11)
+                        .font(.app(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.fontQuiet)
+                        .accessibilityHidden(true)
+                }
             }
-            .padding(.horizontal, 13)
+            .padding(.horizontal, caret ? 12 : 13)
             // **30, not 28**: pills and chips are 30 high.
             .frame(height: 30)
             .foregroundStyle(active ? Theme.font : Theme.fontQuiet)
@@ -166,7 +185,7 @@ struct PrimaryButton: View {
             HStack(spacing: 9) {
                 // **17 semibold.** 16 is on no step of the type scale; 17 is the section-heading
                 // size, and a primary button should be at least as loud.
-                Image(systemName: symbol).font(Theme.categoryLarge)
+                Image(icon: symbol).font(Theme.categoryLarge)
                     .accessibilityHidden(true)
                 Text(label).font(Theme.categoryLarge)
                 if let abbreviation {
@@ -216,7 +235,7 @@ struct ActionButton: View {
             // a label is square; it carries a surface instead of a drawn edge, and the one
             // fully filled element of the page stays the primary button. Active therefore
             // means accent on the symbol, not white behind it.
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(Theme.categoryLarge)
                 .frame(width: mass, height: mass)
                 .foregroundStyle(active ? Theme.accent : Theme.font)
@@ -296,13 +315,13 @@ struct PosterCell: View {
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(verbatim: title)
-                        .font(Theme.tileTitleText)
+                        .font(Theme.tileCaption)
                         .foregroundStyle(Theme.font)
                         .lineLimit(1)
                     if let secondLine {
                         Text(verbatim: secondLine)
                             .font(Theme.secondLine)
-                            .foregroundStyle(Theme.fontQuiet)
+                            .foregroundStyle(Theme.fontVeryQuiet)
                             .lineLimit(1)
                     }
                 }
@@ -365,10 +384,10 @@ struct LandscapeTile: View {
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(verbatim: title)
-                        .font(Theme.tileTitleText).foregroundStyle(Theme.font).lineLimit(1)
+                        .font(Theme.tileCaption).foregroundStyle(Theme.font).lineLimit(1)
                     if let secondLine {
                         Text(verbatim: secondLine)
-                            .font(Theme.secondLine).foregroundStyle(Theme.fontQuiet).lineLimit(1)
+                            .font(Theme.secondLine).foregroundStyle(Theme.fontVeryQuiet).lineLimit(1)
                     }
                 }
             }
@@ -577,7 +596,7 @@ struct TileBadge: View {
         // checkmark are on no step; there are three weights, and `.bold` is not one of them.
         HStack(spacing: 3) {
             if mark == .watched {
-                Image(systemName: "checkmark").font(Theme.badge)
+                Image(icon: "checkmark").font(Theme.badge)
             }
             if let text = wording {
                 Text(verbatim: text).font(Theme.badge).tracking(Theme.badgeLock)
@@ -637,8 +656,8 @@ struct EmptyState: View {
                 Circle()
                     .fill(Theme.area)
                     .frame(width: 78, height: 78)
-                Image(systemName: symbol)
-                    .font(.system(size: 44))
+                Image(icon: symbol)
+                    .font(.app(size: 44))
                     .foregroundStyle(Theme.fontQuiet)
                     .animation(loads && !Theme.motionReduced
                                ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
@@ -730,8 +749,8 @@ struct DisturbHint: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Image(systemName: "externaldrive.badge.xmark")
-                .font(.system(size: 30))
+            Image(icon: "externaldrive.badge.xmark")
+                .font(.app(size: 30))
                 .foregroundStyle(Theme.fontQuiet)
                 .padding(.bottom, 14)
 
@@ -796,8 +815,8 @@ struct ActionList: View {
         // background is the surface and the one edge `rand` exists for. Corner radius 16
         // like every other own surface.
         .background {
-            let form = RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous)
-            form.fill(Theme.raised).overlay { form.strokeBorder(Theme.margin, lineWidth: 1) }
+            let form = RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous)
+            form.fill(Theme.area).overlay { form.strokeBorder(Theme.margin, lineWidth: 1) }
         }
     }
 }
@@ -812,7 +831,7 @@ struct ActionRow: View {
         Button(action: pick) {
             HStack(spacing: 10) {
                 // Symbol 15 in a 20 wide column; 14 is on no step of the scale.
-                Image(systemName: action.symbol)
+                Image(icon: action.symbol)
                     .font(Theme.body)
                     .frame(width: 20)
                     .accessibilityHidden(true)
@@ -820,8 +839,8 @@ struct ActionRow: View {
                 Spacer(minLength: 0)
             }
             .foregroundStyle(action.cautionary ? Theme.warning : Theme.font)
-            .padding(.horizontal, 12)
-            .frame(height: Theme.rowHeight)
+            .padding(.horizontal, 14)
+            .frame(height: 36)
             .background(hovers ? Theme.hoverArea : .clear)
             .contentShape(Rectangle())
         }
@@ -861,7 +880,7 @@ struct BackArrow: View {
 
     var body: some View {
         Button(action: back) {
-            Image(systemName: "chevron.left")
+            Image(icon: "chevron.left")
                 .font(Theme.rail)
                 .foregroundStyle(hovers ? Theme.font : Theme.fontQuiet)
                 .frame(width: 40, height: 40)
@@ -871,6 +890,53 @@ struct BackArrow: View {
         .onHover { hovers = $0 }
         .animation(Theme.timeFloat, value: hovers)
         .accessibilityLabel(Text("Zurück"))
+    }
+}
+
+/// **Back and forward, as in Finder and Safari.** The top-left pair of the content
+/// area: caret left, caret right, 30 x 28 each. An arrow with nowhere to go stays in
+/// place at 35 %, so nothing beside it ever jumps.
+///
+/// **Exists once**, in `MainView`, above every page; the bars of the pages only keep
+/// its place free (`NavArrows.width`).
+struct NavArrows: View {
+    static let width: CGFloat = 62
+
+    let canBack: Bool
+    let canForward: Bool
+    let back: () -> Void
+    let forward: () -> Void
+
+    var body: some View {
+        HStack(spacing: 2) {
+            NavArrow(symbol: "chevron.left", enabled: canBack, action: back)
+                .accessibilityLabel(Text("Zurück"))
+            NavArrow(symbol: "chevron.right", enabled: canForward, action: forward)
+                .accessibilityLabel(Text("Vorwärts"))
+        }
+    }
+}
+
+private struct NavArrow: View {
+    let symbol: String
+    let enabled: Bool
+    let action: () -> Void
+    @State private var hovers = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(icon: symbol, size: 16)
+                .font(.app(size: 16, weight: .medium))
+                .foregroundStyle(Theme.font)
+                .frame(width: 30, height: 28)
+                .background(hovers && enabled ? Theme.hoverArea : .clear,
+                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(Theme.PressButton())
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.35)
+        .onHover { hovers = $0 }
     }
 }
 
@@ -936,32 +1002,23 @@ struct DetailHeader: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
-            BackArrow(back: back)
+        HStack(spacing: 0) {
+            Color.clear.frame(width: NavArrows.width, height: 28)
 
             Text(verbatim: title)
-                .font(Theme.categoryLarge)
-                .tracking(Theme.lockCategory)
+                .font(.app(size: 14, weight: .semibold))
                 .foregroundStyle(Theme.font)
                 .lineLimit(1)
                 .opacity(strength)
+                .padding(.leading, 12)
 
             Spacer(minLength: 0)
         }
-        // **Flush with the content.** The window controls sit above the sidebar, not above
-        // the content area, so no extra spacing is needed. The arrow sits on the same line
-        // as "Weiterschauen" on the home page; the 8 pt offset is the button's own padding.
-        .padding(.leading, Theme.edgeSpacing - 8)
-        .padding(.trailing, Theme.edgeSpacing)
-        // Since content scrolls under the title bar, the arrow would otherwise sit on the
-        // window edge. 24 puts it at the same height as the sidebar's wordmark.
-        .padding(.top, 24)
-        // **Air below the text.** The bar reaches slightly lower than its content; otherwise
-        // the title sits on the hairline. The amount appears twice: once as spacing, so the
-        // text stays in place, and once in the height, so the bar grows downward instead of
-        // pushing the text along.
-        .padding(.bottom, 10)
-        .frame(height: Theme.titleHeight + 24 + 10, alignment: .bottom)
+        // **The toolbar of the design:** 52 high, 20 in from the content edge on the left,
+        // 16 on the right; ‹ › and the title on one line.
+        .padding(.leading, 20)
+        .padding(.trailing, 16)
+        .frame(height: Theme.toolbarHeight)
         // **The bar that appears while scrolling:** a hairline at the bottom, behind it the
         // background, which becomes opaque with the scroll distance.
         //
@@ -1140,7 +1197,7 @@ struct PagingRail<ContentBody: View>: View {
     private func arrow(_ symbol: String, _ name: LocalizedStringKey,
                        _ pick: @escaping () -> Void) -> some View {
         Button(action: pick) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(Theme.listTitle)
                 .foregroundStyle(Theme.font)
                 .frame(width: 34, height: 34)
@@ -1286,14 +1343,14 @@ extension View {
 }
 
 struct SelectionButton<Record: Identifiable>: View {
-    let symbol: String
+    var symbol: String?
     /// What currently applies: the button's label.
     let value: String
     let entries: [Record]
     let label: (Record) -> String
     let isSelected: (Record) -> Bool
     let select: (Record) -> Void
-    var panelWidth: CGFloat = 220
+    var panelWidth: CGFloat = 190
 
     /// Which one am I among the choice buttons; see `SelectionSupervision`.
     @State private var identifier = UUID()
@@ -1301,7 +1358,7 @@ struct SelectionButton<Record: Identifiable>: View {
     private var opened: Bool { supervision.opened == identifier }
 
     var body: some View {
-        Chip(label: value, symbol: opened ? "chevron.up" : symbol, active: opened) {
+        Chip(label: value, symbol: symbol, active: opened, caret: true) {
             withAnimation(Theme.leap) {
                 // **If another one is open, this click counts as a click elsewhere.** It closes the
                 // other and does nothing else, as a menu on the Mac behaves.
@@ -1380,8 +1437,8 @@ struct SelectionPanel<Record: Identifiable>: View {
         .frame(width: width, alignment: .leading)
         // No shadow anywhere. The surface and the one edge `rand` exists for separate the panel from the background.
         .background {
-            let form = RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous)
-            form.fill(Theme.raised).overlay { form.strokeBorder(Theme.margin, lineWidth: 1) }
+            let form = RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous)
+            form.fill(Theme.area).overlay { form.strokeBorder(Theme.margin, lineWidth: 1) }
         }
     }
 }
@@ -1402,6 +1459,8 @@ struct TitleSelection<Record: Identifiable>: View {
     let label: (Record) -> String
     let isSelected: (Record) -> Bool
     var category: (Record) -> LocalizedStringKey? = { _ in nil }
+    /// **In the toolbar:** 14/600 with a small quiet caret, as "Filme ⌄" in the design.
+    var compact = false
     let select: (Record) -> Void
 
     @State private var identifier = UUID()
@@ -1419,17 +1478,19 @@ struct TitleSelection<Record: Identifiable>: View {
                 }
             }
         } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            HStack(alignment: compact ? .center : .firstTextBaseline, spacing: compact ? 5 : 6) {
                 title
-                    .font(Theme.titleLarge)
-                    .tracking(Theme.lockTitle)
+                    .font(compact ? .app(size: 14, weight: .semibold) : Theme.titleLarge)
+                    .tracking(compact ? 0 : Theme.lockTitle)
                     .foregroundStyle(Theme.font)
                     .lineLimit(1)
-                Image(systemName: opened ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(hovers || opened ? Theme.font : Theme.fontQuiet)
+                Image(icon: opened ? "chevron.up" : "chevron.down", size: compact ? 11 : 15)
+                    .font(.app(size: compact ? 11 : 15, weight: .semibold))
+                    .foregroundStyle(hovers || opened ? Theme.font
+                                     : (compact ? Theme.fontVeryQuiet : Theme.fontQuiet))
                     .accessibilityHidden(true)
             }
+            .frame(height: compact ? 28 : nil)
             .contentShape(Rectangle())
         }
         .buttonStyle(Theme.PressButton())
@@ -1451,7 +1512,7 @@ struct TitleSelection<Record: Identifiable>: View {
                     select(entryRecord)
                     withAnimation(Theme.leap) { supervision.opened = nil }
                 }
-                .offset(y: 44)
+                .offset(y: compact ? 32 : 44)
                 .transition(.expand(from: .topLeading))
                 .zIndex(40)
             }
@@ -1473,20 +1534,20 @@ private struct SelectionPanelRow: View {
         Button(action: pick) {
             HStack(spacing: 8) {
                 Text(verbatim: text)
-                    .font(Theme.body)
-                    .foregroundStyle(selected ? Theme.font : Theme.fontQuiet)
+                    .font(.app(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.font)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if selected {
-                    Image(systemName: "checkmark")
-                        .font(Theme.listTitle)
+                    Image(icon: "checkmark", size: 14)
+                        .font(.app(size: 14, weight: .semibold))
                         .foregroundStyle(Theme.font)
                         .frame(width: 14)
                         .accessibilityHidden(true)
                 }
             }
-            .padding(.horizontal, 12)
-            .frame(height: Theme.rowHeight)
+            .padding(.horizontal, 14)
+            .frame(height: 36)
             .background(hovers ? Theme.hoverArea : .clear)
             .contentShape(Rectangle())
         }
@@ -1528,12 +1589,7 @@ struct StateBar: View {
     /// Computed, not typed: if the top margin changes, the point moves with it.
     var since: CGFloat = max(Theme.contentTop + 33 - Theme.headerBarHeight, 0)
     var over: CGFloat = 26
-    /// **The back arrow stays put when there is one.**
-    ///
-    /// On a library subpage the arrow sits in the content and would scroll under the bar,
-    /// so someone far down could only get back with Cmd+[. It belongs in the bar, and
-    /// unlike the title it does not fade in: an exit that only exists after some scroll
-    /// distance is none.
+    /// The page's own way back (Escape); ‹ › themselves stand in `MainView`.
     var back: (() -> Void)?
 
     private var strength: Double {
@@ -1542,42 +1598,29 @@ struct StateBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
-            if let back {
-                BackArrow(back: back)
-                    .padding(.leading, -8)
-            }
+        HStack(spacing: 0) {
+            Color.clear.frame(width: NavArrows.width, height: 28)
             Group {
                 if let name { Text(verbatim: name) } else { Text(title) }
             }
-            .font(Theme.categoryLarge)
-            .tracking(Theme.lockCategory)
+            .font(.app(size: 14, weight: .semibold))
             .foregroundStyle(Theme.font)
             .lineLimit(1)
             .opacity(strength)
+            .padding(.leading, 12)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, Theme.edgeSpacing)
-        .frame(height: Theme.headerBarHeight, alignment: .center)
+        .padding(.leading, 20)
+        .padding(.trailing, 16)
+        .frame(height: Theme.toolbarHeight, alignment: .center)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(alignment: .bottom) {
-            Rectangle().fill(Theme.line).frame(height: 1).opacity(strength)
-        }
-        // **No permanent gradient: the background arrives only with scrolling.**
-        //
-        // There used to be a `LinearGradient` from `reason` to transparent that depended on
-        // nothing; only the opaque surface beneath followed `staerke`. So the gradient always
-        // lay over the title, even on a page that was not scrolled.
-        //
-        // On the iPhone it has a job: content runs under the clock and battery, which need
-        // backing. On the Mac the window bar sits above, so there is nothing to cover.
-        //
-        // It was also a translucent layer over a moving surface, which has to be recomposited
-        // every frame even when nothing of it is visible.
+        // **A light shade, only once content runs under it** (design: `#101010` at 78 %
+        // fading to nothing). At rest the page shows through untouched.
         .background {
-            Theme.reason.opacity(strength)
+            LinearGradient(colors: [Theme.reason.opacity(0.78), Theme.reason.opacity(0)],
+                           startPoint: .top, endPoint: .bottom)
+                .opacity(strength)
                 .ignoresSafeArea(edges: .top)
-                // The background takes no clicks, only the arrow inside it.
                 .allowsHitTesting(false)
         }
     }
@@ -1638,5 +1681,59 @@ extension AnyTransition {
         Theme.motionReduced
             ? .opacity
             : .scale(scale: 0.94, anchor: anchor).combined(with: .opacity)
+    }
+}
+
+// MARK: - Quick Connect code
+
+/// **The code while this Mac waits for someone to approve it.**
+///
+/// Three pages sign in with a code: the first sign-in, "Server hinzufügen" and
+/// "Weiteres Konto". Each shows it in the window instead of a sheet, so the server
+/// it belongs to stays visible; the block is the same on all three, only the
+/// sentence above differs.
+struct QuickConnectCode: View {
+    let state: QuickConnectModel
+    let hint: LocalizedStringKey
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let preGait = state.preGait {
+                Text(hint)
+                    .font(Theme.secondLine)
+                    .foregroundStyle(Theme.fontQuiet)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 26)
+
+                Text(verbatim: preGait.code)
+                    // 28 bold is the highest step of the scale; 40 was above it.
+                    .font(Theme.titleLarge.monospacedDigit())
+                    .tracking(6)
+                    .foregroundStyle(Theme.font)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+                    .background(Theme.area,
+                                in: RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
+                    // A click copies the code to the clipboard; it is usually pasted right next to it
+                    // in a browser window.
+                    .copyable(preGait.code)
+                    .padding(.top, 14)
+
+                Text("Läuft ab in \(state.secondsLeft / 60):\(String(format: "%02d", state.secondsLeft % 60))")
+                    .font(Theme.secondLine)
+                    .foregroundStyle(Theme.fontVeryQuiet)
+                    .padding(.top, 14)
+            } else if let error = state.error {
+                Text(verbatim: error)
+                    .font(Theme.secondLine)
+                    .foregroundStyle(Theme.warning)
+                    .padding(.top, 26)
+            } else {
+                // The code is coming; until then its shape is shown.
+                LoadField(corner: Theme.cornerField)
+                    .frame(width: 240, height: 64)
+                    .padding(.top, 26)
+            }
+        }
     }
 }

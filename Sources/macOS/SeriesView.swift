@@ -180,7 +180,9 @@ struct SeriesView: View {
                            loadSelection: {
                                withAnimation(Theme.leap) { selectionOpen.toggle() }
                            },
-                           selectionOpen: selectionOpen)
+                           selectionOpen: selectionOpen,
+                           // The design's series head ends at the buttons; the tabs follow.
+                           showsOverview: false)
                     // **The header draws above what comes after it.**
                     //
                     // Without this the More menu ends up behind the tab row and the episode list:
@@ -188,20 +190,24 @@ struct SeriesView: View {
                     // top. Both showed through each other.
                     .zIndex(1)
 
+                WatchersRow(model: model, item: series)
+                    .padding(.horizontal, DetailPageMetric.left)
+                    .padding(.top, 34)
+
                 TabRail(pick: $tab, cases: extras.isEmpty ? [.episodes, .cast, .similarOne]
                                                                     : SeriesView.PageTab.allCases)
-                    .padding(.top, 26)
+                    .padding(.top, 34)
 
                 segment
-                    .padding(.horizontal, Theme.edgeSpacing)
-                    .padding(.top, 20)
+                    .padding(.horizontal, DetailPageMetric.left)
+                    .padding(.top, 14)
             }
             .padding(.bottom, 40)
             // **The color of the header image under the page**, as on the movie page and the
             // iPhone (`MoodReason`). It sits on the content so it scrolls with the
             // header; buttons, season pill and list pick it up through `onImageTint`.
             .background(alignment: .top) {
-                MoodReason(url: model.headerImageURL(for: series), since: Theme.heroHeightValue)
+                MoodReason(url: model.headerImageURL(for: series), since: DetailPageMetric.heroImage)
             }
             .environment(\.onImageTint, true)
             .environment(\.imageColorSource, model.headerImageURL(for: series))
@@ -242,8 +248,8 @@ struct SeriesView: View {
                                        proceed: { selectedEpisodes, quality, audio in
                                            selectionLoad(selectedEpisodes, quality, audio)
                                        })
-                            .padding(.leading, Theme.edgeSpacing)
-                            .padding(.top, Theme.heroHeightValue + 8)
+                            .padding(.leading, DetailPageMetric.left)
+                            .padding(.top, DetailPageMetric.railBottom + 8)
                     }
                     .transition(.opacity)
                     .zIndex(40)
@@ -263,8 +269,8 @@ struct SeriesView: View {
                                   opened: $seasonPanelOpen)
                             // Under the button that opened it. The download selection is the only way here,
                             // so there is only one place.
-                            .padding(.leading, Theme.edgeSpacing)
-                            .padding(.top, Theme.heroHeightValue + 8)
+                            .padding(.leading, DetailPageMetric.left)
+                            .padding(.top, DetailPageMetric.railBottom + 8)
                     }
                     .transition(.opacity)
                 }
@@ -408,7 +414,8 @@ struct SeriesView: View {
                     // is fixed (`imageHeight + 24`), so the jump when scrolling up stays small where
                     // laziness pays off.
                     let rows = ForEach(episodes, id: \.id) { episode in
-                        EpisodesRow(model: model, episode: episode)
+                        EpisodesRow(model: model, episode: episode,
+                                    download: { withAnimation(Theme.leap) { selectionOpen.toggle() } })
                             // **Right-click: the tile menu**, as on every tile (``TileMenu``).
                             .tileMenu(episode, model: model,
                                          afterwards: { await episodesLoad() })
@@ -416,13 +423,14 @@ struct SeriesView: View {
                     }
                     Group {
                         if episodes.count > 60 {
-                            LazyVStack(spacing: 0) { rows }
+                            LazyVStack(spacing: 6) { rows }
                         } else {
-                            VStack(spacing: 0) { rows }
+                            VStack(spacing: 6) { rows }
                         }
                     }
+                    // The image lines up with the page edge; only the hover fill reaches past it.
+                    .padding(.leading, -10)
                     .transition(.opacity)
-                    .padding(.horizontal, -Theme.edgeSpacing)
                 }
             }
 
@@ -590,17 +598,19 @@ struct TabRail: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 26) {
+            HStack(spacing: 28) {
                 ForEach(cases, id: \.self) { fall in
                     TabButton(label: fall.label,
                                 active: pick == fall) { pick = fall }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, Theme.edgeSpacing)
-
             Rectangle().fill(Theme.line).frame(height: 1)
         }
+        // 820 wide from the 36 margin, like the episode list under it.
+        .frame(maxWidth: 820, alignment: .leading)
+        .padding(.leading, DetailPageMetric.left)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -656,6 +666,33 @@ struct TabButton: View {
 /// The season pill. Opens the list **in place**, no `Menu`, no sheet. A `Menu`
 /// would be the obvious choice and is wrong for that reason: it brings system
 /// metrics, system corners and a system material.
+/// The season button of the design: 34 high, radius 8, surface fill, name 15/600 and a caret.
+fileprivate struct SeasonPill: View {
+    let label: String
+    let opened: Bool
+    let pick: () -> Void
+    @State private var hovers = false
+
+    var body: some View {
+        Button(action: pick) {
+            HStack(spacing: 6) {
+                Text(verbatim: label).font(.app(size: 15, weight: .semibold))
+                Image(icon: opened ? "chevron.up" : "chevron.down", size: 11)
+                    .font(.app(size: 11, weight: .semibold))
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(Theme.font)
+            .padding(.horizontal, 11)
+            .frame(height: 34)
+            .background(hovers ? Theme.raised : Theme.area,
+                        in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Theme.PressButton())
+        .onHover { hovers = $0 }
+    }
+}
+
 struct SeasonSelection: View {
     let seasons: [Item]
     @Binding var selected: Item?
@@ -670,9 +707,7 @@ struct SeasonSelection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Chip(label: selected?.name ?? String(localized: "Staffel"),
-                 symbol: opened ? "chevron.up" : "chevron.down",
-                 active: false) {
+            SeasonPill(label: selected?.name ?? String(localized: "Staffel"), opened: opened) {
                 withAnimation(Theme.leap) { opened.toggle() }
             }
 
@@ -775,7 +810,7 @@ struct SeasonRow: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if selected {
-                    Image(systemName: "checkmark")
+                    Image(icon: "checkmark")
                         .font(Theme.listTitle)
                         .foregroundStyle(Theme.font)
                         .frame(width: 14)
@@ -813,6 +848,8 @@ struct EpisodesRow: View {
     /// would stay on `wish` unchanged, because `PlayerScreen` reads its `@State`
     /// values from `wish` only when it is first created.
     var action: ((Item) -> Void)?
+    /// Opens the page's download choice. Without it (the player) the hover shows no download.
+    var download: (() -> Void)?
 
     @State private var hovers = false
     /// Overwritten by the episode's state once the task below has run; until then
@@ -822,83 +859,61 @@ struct EpisodesRow: View {
     private var watched: Bool { watchedRemember ?? episode.isWatched }
     @Environment(PlayControls.self) private var controls
 
-    /// 16 : 9, the same ratio as the 116 × 65 of the iPhone.
+    /// 16 : 9, the same ratio as the 116 x 65 of the iPhone.
     private let imageWidth: CGFloat = 160
     private let imageHeight: CGFloat = 90
 
     var body: some View {
-        HStack(alignment: .top, spacing: 18) {
+        HStack(alignment: .top, spacing: 0) {
             // **A button, not `onTapGesture`.**
             //
             // A tap gesture on an `HStack` cannot be used with VoiceOver or keyboard-only
             // navigation, so no episode could be started that way. The button wraps **only**
-            // image and text; the right column stays outside, because a button inside a
+            // image and text; the hover icons stay outside, because a button inside a
             // button swallows the click (see `TileWrapper`).
             Button { if let action { action(episode) } else { controls.launch(episode) } } label: {
-            HStack(alignment: .top, spacing: 18) {
-            ZStack {
-                // **The episode's own image, not the series'.**
-                //
-                // `landscapeImageURL` deliberately uses `item.seriesId ?? item.id`. That is right for
-                // the tiles under "Weiterschauen", where the series image is wanted. In an
-                // episode list it returns the **same** image for every row. The iPhone version
-                // uses `imageURL(for: episode, maxHeight: 220)`, the episode's own thumbnail.
-                //
-                // **The thumbnail carries the watch state.** It already shows the progress bar,
-                // which says how far along the user is; the checkmark is its end. That puts the
-                // watch state in one place instead of two, and the right column belongs to the
-                // download.
-                ImageArea(image: model.imageURL(for: episode, maxHeight: 220),
-                            width: imageWidth, height: imageHeight,
-                            // A full bar **and** a checkmark would be the same information twice.
-                            progress: watched ? nil : progress,
-                            symbolText: "tv")
-                    .watchedCheckmark(watched, border: 20, spacing: 6)
-                    // **Under the pointer the still image grows; the row does not light up**, like
-                    // every tile (`scale 1.04`, `zeitSchweben`). A full bright strip across the
-                    // whole width was too loud for a list.
-                    .scaleEffect(hovers ? 1.04 : 1)
-                if hovers {
-                    Circle()
-                        .fill(Theme.reason.opacity(0.78))
-                        .frame(width: 38, height: 38)
-                        .overlay {
-                            Image(systemName: "play.fill")
+                HStack(alignment: .top, spacing: 16) {
+                    // **The episode's own image, not the series'.** `landscapeImageURL` uses
+                    // `item.seriesId ?? item.id`, which would give every row the same image.
+                    //
+                    // **The thumbnail carries the watch state**: its flush bottom bar is full for
+                    // a watched episode, so the inline check next to the title is the only mark.
+                    ImageArea(image: model.imageURL(for: episode, maxHeight: 220),
+                                width: imageWidth, height: imageHeight,
+                                progress: watched ? 1 : progress,
+                                symbolText: "tv")
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 8) {
+                            Text(verbatim: headerLine)
                                 .font(Theme.listTitle)
                                 .foregroundStyle(Theme.font)
+                                .lineLimit(2)
+                            // **In progress: the remaining time instead of the runtime.**
+                            if let seconds = episode.runtimeSeconds {
+                                Text(verbatim: (watched ? nil : episode.remainingTimeText) ?? runtime(seconds))
+                                    .font(.app(size: 12))
+                                    .foregroundStyle(Theme.fontVeryQuiet)
+                                    .lineLimit(1)
+                            }
+                            if watched {
+                                Image(icon: "checkmark.circle.fill", size: 14)
+                                    .foregroundStyle(Theme.fontVeryQuiet)
+                                    .accessibilityHidden(true)
+                            }
                         }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
-                    // Title of a row with an image: 15 semibold. 14 is not on any type scale.
-                    Text(verbatim: headerLine)
-                        .font(Theme.listTitle)
-                        // Watched items recede; they do not disappear.
-                        .foregroundStyle(watched ? Theme.fontQuiet : Theme.font)
-                        .lineLimit(2)
-                    Spacer(minLength: 0)
-                    // **In progress: the remaining time instead of the runtime**, like `EpisodesRow`
-                    // on the iPhone ("Noch 24 Minuten"). The bar in the image says how far; the
-                    // word says how long is left.
-                    if let seconds = episode.runtimeSeconds {
-                        Text(verbatim: (watched ? nil : episode.remainingTimeText) ?? runtime(seconds))
-                            .font(Theme.secondLine)
-                            .foregroundStyle(Theme.fontVeryQuiet)
+                        // Cleaned up; episode overviews often contain `<br>` in the raw text.
+                        if let text = episode.description, !text.isEmpty {
+                            Text(verbatim: text)
+                                .font(.app(size: 13))
+                                .foregroundStyle(Theme.fontQuiet)
+                                .lineLimit(3)
+                                .multilineTextAlignment(.leading)
+                        }
                     }
+                    Spacer(minLength: 0)
                 }
-                // Cleaned up; episode overviews often contain `<br>` in the raw text.
-                if let text = episode.description, !text.isEmpty {
-                    Text(verbatim: text)
-                        .font(Theme.secondLine)
-                        .foregroundStyle(Theme.fontQuiet)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                }
-            }
-            }
-            .contentShape(Rectangle())
+                .contentShape(Rectangle())
             }
             .buttonStyle(Theme.PressRow())
             .accessibilityLabel(Text(verbatim: headerLine))
@@ -906,23 +921,51 @@ struct EpisodesRow: View {
             .accessibilityHint(Text("Abspielen"))
             .accessibilityAddTraits(watched ? [.isButton, .isSelected] : .isButton)
 
-            // **No checkmark button at the row end.** It appeared on hover and was a second
-            // way to set the watch state. The way is now the right-click menu
-            // (`tileMenu`), as on every tile. The checkmark as *information* is on the
-            // image.
-
+            // **Download and More appear under the pointer** (a pointer cannot swipe). Always in
+            // the layout, only faded, so the text does not reflow on hover.
+            HStack(spacing: 14) {
+                if let download {
+                    Button(action: download) {
+                        Image(icon: "arrow.down.circle", size: 18).font(.app(size: 18))
+                    }
+                    .buttonStyle(Theme.PressButton())
+                    .help(Text("Laden"))
+                    .accessibilityLabel(Text("Laden"))
+                }
+                Menu {
+                    Button("Abspielen") {
+                        if let action { action(episode) } else { controls.launch(episode) }
+                    }
+                    Button(watched ? "Als ungesehen markieren" : "Als gesehen markieren") {
+                        let target = !watched
+                        watchedRemember = target
+                        Task {
+                            if await model.setWatched(episode, an: target) != nil { watchedRemember = !target }
+                        }
+                    }
+                } label: {
+                    Image(icon: "ellipsis", size: 18).font(.app(size: 18))
+                }
+                .menuStyle(.button)
+                .buttonStyle(Theme.PressButton())
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel(Text("Mehr"))
+            }
+            .foregroundStyle(Theme.fontQuiet)
+            .padding(.leading, 12)
+            .padding(.top, 2)
+            .opacity(hovers ? 1 : 0)
+            .allowsHitTesting(hovers)
         }
-        .padding(.vertical, 12)
-        // The section margin, applied inside here so the hover area reaches the window
-        // edge while the content stays on the same line as everywhere else. The 6 pt
-        // compensation is the row's own inner padding.
-        .padding(.horizontal, Theme.edgeSpacing - 6)
-        // **Fixed row height.** A `LazyVStack` builds only what is visible and
-        // estimates the rest. When the estimate is wrong, the scroll area jumps on fast
-        // scrolling up, and the more episodes the farther. With a fixed height there is
-        // nothing to estimate. 90 for the image, 12 margin twice; title and text stay
-        // below that with their line limits.
-        .frame(height: imageHeight + 24)
+        .padding(10)
+        // **Fixed row height.** A `LazyVStack` builds only what is visible and estimates the
+        // rest; with a fixed height there is nothing to estimate. 90 for the image, 10 margin
+        // twice; title and text stay below that with their line limits.
+        .frame(height: imageHeight + 20)
+        .frame(maxWidth: 820)
+        .background(hovers ? Theme.groupsArea : .clear,
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contentShape(Rectangle())
         .onHover { hovers = $0 }
         .animation(Theme.timeFloat, value: hovers)

@@ -19,7 +19,85 @@ final class Navigator {
     /// you were.
     private var stack: [Region: [PagesTarget]] = [:]
 
+    /// **One history for the whole window, as in a browser.**
+    ///
+    /// There used to be a forward list per section and no way back across sections:
+    /// from the profile opened over "Filme", a click on "Start" and back again lost the
+    /// profile, and the arrows meant something different on every page. Now every step
+    /// that goes somewhere new (a page, a sidebar row) records where the window stood,
+    /// and back/forward walk that record, sections included.
+    struct Place: Equatable {
+        var section: Region
+        var pages: [PagesTarget]
+    }
+    private var history: [Place] = []
+    private var future: [Place] = []
+
     func pages(_ section: Region) -> [PagesTarget] { stack[section] ?? [] }
+
+    private func here(_ section: Region) -> Place { Place(section: section, pages: pages(section)) }
+
+    func canBack(_ section: Region) -> Bool {
+        let now = here(section)
+        return history.contains { $0 != now }
+    }
+    func canForward(_ section: Region) -> Bool {
+        let now = here(section)
+        return future.contains { $0 != now }
+    }
+
+    /// A sidebar row or shortcut leaves `section` for another one.
+    func leave(_ section: Region) {
+        history.append(here(section))
+        future = []
+    }
+
+    /// One step back. Returns the section to show when it is another one.
+    func goBack(from section: Region) -> Region? {
+        let now = here(section)
+        while let place = history.popLast() {
+            guard place != now else { continue }
+            future.append(now)
+            return restore(place, from: section)
+        }
+        return nil
+    }
+
+    func goForward(from section: Region) -> Region? {
+        let now = here(section)
+        while let place = future.popLast() {
+            guard place != now else { continue }
+            history.append(now)
+            return restore(place, from: section)
+        }
+        return nil
+    }
+
+    /// **Same section: the pages slide as with any back or open.** A shorter stack
+    /// slides out to the right, a deeper one is set without animation and `MainView`
+    /// slides the new pages in a frame later. Another section is only set; the caller
+    /// switches to it.
+    private func restore(_ place: Place, from section: Region) -> Region? {
+        guard place.section == section else {
+            stack[place.section] = place.pages
+            return place.section
+        }
+        let now = pages(section)
+        if place.pages.count < now.count, Array(now.prefix(place.pages.count)) == place.pages {
+            withAnimation(Theme.timePagesPush) { stack[section] = place.pages }
+        } else {
+            stack[section] = place.pages
+        }
+        return nil
+    }
+
+    /// A page closed itself or a back step came from the page: forward can return to it.
+    private func wentBack(from old: Place) {
+        let now = here(old.section)
+        guard now != old else { return }
+        future.append(old)
+        while history.last == now { history.removeLast() }
+    }
 
     func openIt(_ target: PagesTarget, in section: Region) {
         // **Pushed without animation.** The page should be in place and laid out first;
@@ -30,6 +108,8 @@ final class Navigator {
             back(in: section, until: spot + 1)
             return
         }
+        history.append(here(section))
+        future = []
         stack[section, default: []].append(target)
     }
 
@@ -42,6 +122,8 @@ final class Navigator {
     /// the page where switching happens. If it went too, it would have to be reopened
     /// between two switches, but the strip exists precisely for switching repeatedly.
     func emptyAll() {
+        history = []
+        future = []
         guard stack.contains(where: { !$0.value.isEmpty }) else { return }
         withAnimation(Theme.timePagesPush) {
             for (section, pages) in stack {
@@ -60,6 +142,8 @@ final class Navigator {
     /// The exception from the account-stack rule still applies to every other switch, e.g. signing in on a
     /// new server, after which the user wants to see that server in the profile.
     func clearEverything() {
+        history = []
+        future = []
         guard stack.contains(where: { !$0.value.isEmpty }) else { return }
         // With reduced motion only the fade, like the still image on iPhone, which fades
         // instead of sliding away.
@@ -76,10 +160,11 @@ final class Navigator {
     /// Between the `guard` and the `removeLast` the stack was empty, and `removeLast` on
     /// an empty array traps.
     func back(in section: Region) {
+        let old = here(section)
         withAnimation(Theme.timePagesPush) {
-            guard !(stack[section] ?? []).isEmpty else { return }
-            stack[section]?.removeLast()
+            guard stack[section]?.popLast() != nil else { return }
         }
+        wentBack(from: old)
     }
 
     /// **Go back, but only from exactly this page.**
@@ -89,18 +174,22 @@ final class Navigator {
     /// would then also remove the page below, which when adding a server was the
     /// profile page where the user wanted to see the new server.
     func close(_ target: PagesTarget, in section: Region) {
+        let old = here(section)
         withAnimation(Theme.timePagesPush) {
             guard stack[section]?.last == target else { return }
             stack[section]?.removeLast()
         }
+        wentBack(from: old)
     }
 
     /// Go back until only `depth` pages remain, in **one** motion.
     func back(in section: Region, until depth: Int) {
+        let old = here(section)
         withAnimation(Theme.timePagesPush) {
             guard let pages = stack[section], pages.count > depth else { return }
             stack[section] = Array(pages.prefix(depth))
         }
+        wentBack(from: old)
     }
 
     /// Whether the account branch lies on this stack (see `PagesTarget.inAccountBranch`).

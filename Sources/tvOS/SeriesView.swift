@@ -103,6 +103,9 @@ struct SeriesView: View {
     @State private var episodesDisturbed = false
     @State private var similarDisturbed = false
     @State private var moreOpen = false
+    #if DEBUG
+    @State private var debugScroll = ScrollPosition()
+    #endif
     @State private var seasonSelectionOpen = false
     /// Which episode tile has focus.
     @FocusState private var atEpisode: String?
@@ -133,10 +136,10 @@ struct SeriesView: View {
                 header
 
                 railsSection {
-                    HStack(spacing: 34) {
+                    HStack(spacing: 24) {
                         RailTitle(text: "Folgen")
-                        if seasons.count > 1, let season = selectedSeason {
-                            SeasonPill(name: season.name, opened: $seasonSelectionOpen)
+                        if seasons.count > 1 || selectedSeason != nil {
+                            SeasonPill(name: selectedSeason?.name ?? seasons.first?.name ?? String(localized: "Staffel 1"), opened: $seasonSelectionOpen)
                                 .focused($atSeasonPill)
                                 .panelTrigger("staffel")
                         }
@@ -145,6 +148,9 @@ struct SeriesView: View {
                     episodesStrip
                 }
                 .opacity(inFade ? 1 : 0)
+
+                WatchersStrip(model: model, item: series)
+                    .opacity(inFade ? 1 : 0)
 
                 if !actors.isEmpty {
                     railsSection {
@@ -194,6 +200,9 @@ struct SeriesView: View {
             .padding(.bottom, Theme.completionPadding)
         }
         .scrollIndicators(.hidden)
+        #if DEBUG
+        .scrollPosition($debugScroll)
+        #endif
         // Margins as on the movie page; see there.
         .ignoresSafeArea()
         // **The whole page background tints to the backdrop.**
@@ -251,6 +260,19 @@ struct SeriesView: View {
         // `episodeFront` stays: it decides which episode sits **at the front** of the
         // row. That is scroll position, not focus; the two had been confused.
         .defaultFocus($atPrimaryButton, true, priority: .userInitiated)
+        #if DEBUG
+        // `-zeige serie`: focus on episode 3, no button focused (design: serie).
+        .task(id: episodes.count) {
+            guard DebugLaunch.has("-zeige", "serie"), episodes.count > 2 else { return }
+            for wait in [400, 900] {
+                try? await Task.sleep(for: .milliseconds(wait))
+                atEpisode = episodes[2].id
+            }
+            // Focus scrolls the page; the design shows it unscrolled.
+            try? await Task.sleep(for: .milliseconds(300))
+            debugScroll.scrollTo(y: 0)
+        }
+        #endif
         .onChange(of: moreOpen) { _, opened in if !opened { atMoreButton = true } }
         .onChange(of: seasonSelectionOpen) { _, opened in if !opened { atSeasonPill = true } }
         .onChange(of: atPrimaryButton) { _, an in if an { lastFocus = .primaryButton } }
@@ -297,7 +319,7 @@ struct SeriesView: View {
     /// on the row's first button on opening. Focus is white, as everywhere
     /// here.
     private var header: some View {
-        DetailHeader(model: model, item: current, plan: plan) {
+        DetailHeader(model: model, item: current, plan: plan, heroTrim: 40) {
             // **Instant applies only to what was already there.**
             // Title, details, description, image and background were already on the home
             // page: they appear at once and do not move. The button row was not, so it
@@ -317,11 +339,11 @@ struct SeriesView: View {
                     ZStack(alignment: .leading) {
                         if !statePresent {
                             Label(String(localized: "Abspielen \("S00 • F00")"),
-                                  systemImage: "play.fill")
+                                  icon: "play.fill")
                                 .hidden()
                                 .accessibilityHidden(true)
                         }
-                        Label(primaryButtonText, systemImage: "play.fill")
+                        Label(primaryButtonText, icon: "play.fill")
                     }
                     .transaction { $0.animation = nil }
                 }
@@ -348,7 +370,7 @@ struct SeriesView: View {
                 // the same as the button next to it.
                 if begun {
                     Button { launch(nextWith, since: 0) } label: {
-                        Image(systemName: "arrow.counterclockwise").font(Theme.button)
+                        Image(icon: "arrow.counterclockwise").font(Theme.button)
                     }
                     .buttonStyle(ThemedButtonStyle(onlySymbol: true))
                     .accessibilityLabel(Text("Von vorn"))

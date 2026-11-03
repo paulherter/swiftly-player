@@ -203,6 +203,7 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
     var title by remember(target.id) { mutableStateOf(app.titleCache[target.id]) }
     var similar by remember(target.id) { mutableStateOf<List<GridTile>>(emptyList()) }
     var extras by remember(target.id) { mutableStateOf<List<Extra>>(emptyList()) }
+    var watchers by remember(target.id) { mutableStateOf<List<Watcher>>(emptyList()) }
     var similarDisturbed by remember(target.id) { mutableStateOf(false) }
     var collections by remember(target.id) { mutableStateOf<List<CollectionRailsData>>(emptyList()) }
     /** Everything below the description has been answered, see `load`. */
@@ -251,8 +252,10 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                             catch (e: CancellationException) { throw e } catch (_: Exception) { null } }
             val b = async { fieldFetch() }
             val c = async { collectionRailsLoad(app.kern, target.id) }
-            val new = a.await(); val surroundings = b.await(); val rails = c.await()
+            val d = async { watchersLoad(app, target.id) }
+            val new = a.await(); val surroundings = b.await(); val rails = c.await(); val seen = d.await()
             // From here on without interruption: everything lands in the same frame.
+            watchers = seen
             new?.let { title = it; app.titleCache[target.id] = it; remembered = it.remembered; watched = it.watched }
             titleDisturbed = new == null && title == null
             fieldAccept(surroundings)
@@ -300,11 +303,11 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
             Hero(t?.headerImage, name, t?.secondaryLine.orEmpty(), mood,
                 logo = if (app.settings.titleAsLogo) t?.logo else null)
 
-            Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 14.dp),
-                   verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 4.dp),
+                   verticalArrangement = Arrangement.spacedBy(Theme.blockGap)) {
                 ProofRow(t)
-                // Button and action row as one block: 8 between them, 14 to everything else.
-                Column(Modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Button and action row as one block: `actionGap` between them, `blockGap` to everything else.
+                Column(Modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(Theme.actionGap)) {
                 val menu = LocalTileMenu.current
                 PlayButtons(t,
                     // Long press: the title's tile menu, as on its tile.
@@ -316,19 +319,19 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                     retry = { titleDisturbed = false; section.launch { load() } })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (app.settings.watchlist) {
-                        ActionButton(if (remembered) Glyph.BookmarkFilled else Glyph.Bookmark, translated("Merkliste"), remembered) {
+                        ActionButton(if (remembered) Glyph.BookmarkFilled else Glyph.Bookmark, translated("Merkliste"), remembered, translated(if (remembered) "Gemerkt" else "Merken")) {
                             toggle(!remembered, { remembered = it }, { app.kern.remember(target.id, it).await() }) { alt, an -> alt.copy(remembered = an) }
                         }
                     }
                     // The fifth field, only when the feature is on; next to the watchlist, as the "for later" pair.
                     if (app.settings.downloadButtonShow && t?.type != "Series") DownloadField(app, target.id, name)
-                    ActionButton(Glyph.Film, translated("Trailer"), false) {
+                    ActionButton(Glyph.PlayRectangle, translated("Trailer"), false, translated("Trailer")) {
                         section.launch { trailerStart(app, context, target.id)?.let { message = it } }
                     }
-                    ActionButton(if (watched) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle, translated("Gesehen"), watched) {
+                    ActionButton(if (watched) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle, translated("Gesehen"), watched, translated("Gesehen")) {
                         toggle(!watched, { watched = it }, { app.kern.watched(target.id, it).await() }) { alt, an -> alt.copy(watched = an) }
                     }
-                    ActionButton(Glyph.More, translated("Mehr"), false) {
+                    ActionButton(Glyph.More, translated("Mehr"), false, translated("Mehr")) {
                         // `TitleActions.forMovie`.
                         val entries = buildList {
                             if (t != null && t.planPresent && t.resumeFrom != null) {
@@ -385,6 +388,7 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                 // The same person can appear twice in the cast; `tilesWithKey` counts them through.
                 tilesWithKey(t.actors, { it.id }) { p -> CastTile(p) { open(Destination(p.id, p.name, "Person", p.role, name)) } }
             }
+            WatchedBy(watchers)
             if (extras.isNotEmpty()) Segment(translated("Extras"), 12.dp) {
                 tilesWithKey(extras, { it.id }) { e -> ExtraTile(e) { jerk(Jerk.Medium); app.play.value = PlayRequest(e.id, null) } }
             }
@@ -395,7 +399,7 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
             } else if (similarDisturbed) {
                 // Only this section did not answer; the server formula for it alone.
                 Column(Modifier.padding(top = Theme.railsSpacing), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(translated("Ähnliche Titel"), style = Theme.rail, color = Theme.font, modifier = Modifier.padding(horizontal = Theme.edgeSpacing))
+                    Text(translated("Ähnliche Titel"), style = Theme.section, color = Theme.font, modifier = Modifier.padding(horizontal = Theme.edgeSpacing))
                     DisturbHint(app.serverAddress(), spacingTop = 0.dp, retry = { fieldAttempt++ })
                 }
             }
@@ -477,7 +481,8 @@ internal fun ProofRow(loaded: Boolean, planPresent: Boolean, lossless: Boolean, 
         }
         sharing?.takeIf { it.isNotBlank() }?.let {
             // `Badge`: 13 medium `schriftLeise` on 15 % of the same colour, 10/4 inside, corner 8.
-            Text(it, style = Theme.tile, color = Theme.fontQuiet,
+            // A bare number is the minimum age: "ab 12" (`String(localized: "ab \(sharing)")`).
+            Text(if (it.all { c -> c.isDigit() }) translated("ab %@", it) else it, style = Theme.tile, color = Theme.fontQuiet,
                  modifier = Modifier.clip(RoundedCornerShape(Theme.cornerSmall)).background(Theme.fontQuiet.copy(alpha = 0.15f))
                      .padding(horizontal = 10.dp, vertical = 4.dp))
         }
@@ -518,7 +523,7 @@ internal fun PlayButton(symbol: Glyph, text: String, an: Boolean, main: Boolean,
     val press = remember { Animatable(0f) }
     LaunchedEffect(pressed) { if (pressed) press.snapTo(1f) else press.animateTo(0f, Motion.release()) }
     val jerk = rememberJerk()
-    val color = when { !an -> Theme.fontVeryQuiet; main -> Theme.reason; else -> Theme.font }
+    val color = when { !an -> Theme.fontVeryQuiet; main -> Theme.onAccent; else -> Theme.font }
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(Theme.corner))
             .drawBehind {
                 drawRect(when {
@@ -544,34 +549,45 @@ internal fun PlayButton(symbol: Glyph, text: String, an: Boolean, main: Boolean,
     }
 }
 
-/** Mirrors `Aktionsknopf`: 44 high, surface, corner 10, active in accent. */
+/**
+ * Mirrors `ActionButton` (1.1): no surface in the row, the icon (22, `actionSymbol`) with its word
+ * (`caption`, 12) underneath; icon field 36 high, so icon and word add up to about 52. Active takes the
+ * accent on both, never a surface.
+ */
 @Composable
-internal fun RowScope.ActionButton(symbol: Glyph, description: String, active: Boolean, perform: () -> Unit) {
-    // All fields of a row have the same size: 48 x 48. Transparent over an image colour; when active
-    // only the icon takes the accent, never the surface.
-    Box(Modifier.weight(1f).height(Theme.buttonHeight).clip(RoundedCornerShape(Theme.corner)).background(buttonArea(LocalImageColor.current)).tapOn(perform)
+internal fun RowScope.ActionButton(symbol: Glyph, description: String, active: Boolean, caption: String? = null, perform: () -> Unit) {
+    Column(Modifier.weight(1f).tapOn(perform)
             .semantics { this.selected = active; role = androidx.compose.ui.semantics.Role.Button },
-        contentAlignment = Alignment.Center) {
-        // `Theme.categoryLarge`: 17 semibold.
-        Symbol(symbol, 17.dp, color = if (active) Theme.accent else Theme.font, strength = Strength.Semibold, description = description)
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Box(Modifier.fillMaxWidth().height(if (caption != null) 36.dp else Theme.buttonHeight), contentAlignment = Alignment.Center) {
+            Symbol(symbol, Theme.actionSymbol, color = if (active) Theme.accent else Theme.font, description = description)
+        }
+        caption?.let {
+            Text(it, style = Theme.small, color = if (active) Theme.accent else Theme.fontQuiet, maxLines = 1,
+                 overflow = TextOverflow.Clip)
+        }
     }
 }
 
-/** Mirrors `CollapsibleText`: one line with an arrow, fully shown when expanded. The full text was too heavy for the page. */
+/**
+ * Mirrors `CollapsibleText` (1.1): three lines, and "Mehr" / "Weniger" in accent below, shown only where the
+ * text is actually cut. Before it was one line with a chevron on every text, however short.
+ */
 @Composable
 internal fun CollapsibleText(text: String) {
     var opened by remember { mutableStateOf(false) }
-    val rotation by animateFloatAsState(if (opened) 180f else 0f, Motion.leap(), label = "pfeil")
-    // `PressRow`, not a press button: a paragraph does not shrink. Text in full weight, 15 with 3 spacing.
-    // Over an image colour no surface (`Theme.PressText`): a light box showed behind the text on
-    // press; the press then shows only in the text's opacity.
+    var cut by remember(text) { mutableStateOf(false) }
+    // Over an image colour no surface (`Theme.PressText`): the press shows only in the text's opacity.
     val onImage = LocalImageColor.current
-    Row(Modifier.fillMaxWidth().animateContentSize(Motion.leap()).then(if (onImage) Modifier.pressText { opened = !opened } else Modifier.pressRow { opened = !opened }),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.fillMaxWidth().animateContentSize(Motion.leap()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(text, style = Theme.body.copy(lineHeight = 21.sp), color = Theme.font,
-             maxLines = if (opened) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        Symbol(Glyph.AngleDown, 12.dp, Modifier.padding(top = 4.dp).graphicsLayer { rotationZ = rotation },
-               color = Theme.fontVeryQuiet, strength = Strength.Semibold)
+             maxLines = if (opened) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(),
+             onTextLayout = { if (!opened) cut = it.hasVisualOverflow })
+        if (cut || opened) {
+            val toggle = { opened = !opened }
+            Text(translated(if (opened) "Weniger" else "Mehr"), style = Theme.tile, color = Theme.accent,
+                 modifier = Modifier.heightIn(min = 28.dp).then(if (onImage) Modifier.pressText(toggle) else Modifier.pressRow(toggle)))
+        }
     }
 }
 
@@ -580,7 +596,7 @@ internal fun CollapsibleText(text: String) {
 internal fun Segment(title: String, spacing: Dp, content: LazyListScope.() -> Unit) {
     // `Abschnitt`: `railsSpacing` (28) on top, row title in its level's letter-spacing, 12 to the row.
     Column(Modifier.padding(top = Theme.railsSpacing), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(title, style = Theme.rail, color = Theme.font,
+        Text(title, style = Theme.section, color = Theme.font,
              modifier = Modifier.padding(horizontal = Theme.edgeSpacing))
         LazyRow(contentPadding = PaddingValues(horizontal = Theme.edgeSpacing),
                 horizontalArrangement = Arrangement.spacedBy(spacing), content = content)
@@ -605,18 +621,20 @@ internal fun <T> LazyListScope.tilesWithKey(list: List<T>, identifier: (T) -> St
     items(list.size, key = { key[it] }) { content(list[it]) }
 }
 
-/** Mirrors `CastTile`: circle 76, name on two lines, role, 84 wide. */
+/** Mirrors `CastTile`: circle 88 (`castSize`), name on two lines, role, 88 wide. */
 @Composable
 internal fun CastTile(p: WithAct, perform: () -> Unit = {}) {
     // Without an image the circle stays empty; `Picture` draws no icon there.
-    Column(Modifier.width(84.dp).tapOn(perform), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Column(Modifier.width(Theme.castWidth).tapOn(perform), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         AsyncImage(model = p.image, contentDescription = null, contentScale = ContentScale.Crop,
-            modifier = Modifier.size(76.dp).clip(CircleShape).background(Theme.area))
-        // Name 12 medium, as in `CastTile`, not the 13 under a poster.
-        Text(p.name, style = Theme.tile.copy(fontSize = 12.sp, textAlign = TextAlign.Center),
-             color = Theme.font, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        p.role?.let {
-            Text(it, style = Theme.small.copy(textAlign = TextAlign.Center), color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            modifier = Modifier.size(Theme.castSize).clip(CircleShape).background(Theme.area))
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            // Name 12 medium, as in `CastTile`, not the 13 under a poster.
+            Text(p.name, style = Theme.tile.copy(fontSize = 12.sp, textAlign = TextAlign.Center),
+                 color = Theme.font, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            p.role?.let {
+                Text(it, style = Theme.small.copy(textAlign = TextAlign.Center), color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
@@ -637,24 +655,26 @@ internal fun ExtraTile(e: Extra, play: () -> Unit) {
 private fun FileExcerpt(d: FileInfo) {
     // Group title 22 on top, then a line above and below every row; values in full weight,
     // right-aligned with tabular digits (`FileRow`), 8 vertical.
-    Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 22.dp)) {
-        // `Gruppentitel` brings its own side margin: on iPhone it sits one step indented above the
-        // rows; the same here.
-        Text(translated("Datei"), style = Theme.rail,
-             color = Theme.fontQuiet, modifier = Modifier.padding(start = Theme.edgeSpacing, bottom = 10.dp))
+    Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = Theme.railsSpacing)) {
+        // iOS takes back the margin `GroupsTitle` brings (`padding(.horizontal, -edgeSpacing)`): "Datei" sits at
+        // the same edge as its rows and as "Besetzung" below.
+        Text(translated("Datei"), style = Theme.section,
+             color = Theme.font, modifier = Modifier.padding(bottom = 10.dp))
         val rows = buildList {
             d.container?.let { add(translated("Container") to it) }
             d.video?.let { add(translated("Video") to it) }
             // The second audio row does not repeat the label.
-            d.audio.forEachIndexed { i, audio -> add((if (i == 0) translated("Ton") else " ") to audio) }
+            d.audio.forEach { audio -> add(translated("Ton") to audio) }
             add(translated("Untertitel") to d.subtitle)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Theme.line))
         rows.forEach { (name, value) ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(name, style = Theme.small, color = Theme.fontQuiet)
+            Row(Modifier.fillMaxWidth().heightIn(min = 36.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                // 13, one above `small`: five columns of figures need the air; at least 36 high so rows stay even.
+                Text(name, style = Theme.small.copy(fontSize = 13.sp), color = Theme.fontQuiet)
                 Spacer(Modifier.weight(1f))
-                Text(value, style = Theme.small.copy(textAlign = TextAlign.End, fontFeatureSettings = "tnum"), color = Theme.font)
+                Text(value, style = Theme.small.copy(fontSize = 13.sp, textAlign = TextAlign.End, fontFeatureSettings = "tnum"), color = Theme.font)
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Theme.line))
         }

@@ -72,8 +72,8 @@ import kotlinx.coroutines.delay
 
 /** The ask, as a sheet from below (`app.sheet`): mark, intro, then what this build offers. */
 fun supportSheetShow(app: SwiftlyApplication, fromLooks: Boolean = false) {
-    // The Play build's sheet is iOS's "Hilf Swiftly zu wachsen": full height, in the look's glow, its own X.
-    val grow = de.paulherter.swiftly.BuildConfig.FLAVOR == "play" && !app.isTv
+    // Both builds' sheet is iOS's "Hilf Swiftly zu wachsen": full height, in the look's glow, its own X.
+    val grow = !app.isTv
     app.sheet.value = SheetRequest(translated("Swiftly unterstützen"), emptyList(), null, heading = !grow, full = grow,
         backdrop = if (grow) ({ GrowBackdrop(app) }) else null, content = { close ->
         if (fromLooks) {
@@ -184,17 +184,10 @@ private fun ThanksBody(app: SwiftlyApplication, close: () -> Unit, open: (Destin
     Spacer(Modifier.height(16.dp))
     Column(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).clip(RoundedCornerShape(Theme.cornerCard))
                .background(Theme.groupsArea)) {
-        GiftRow(Glyph.AppIcon, translated("Unterstützer-App-Icons"), translated("Neue Icons für die App")) {
-            Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
-                AppIcons.all.drop(1).take(3).forEach { IconThumb(it, 26.dp) }
-            }
-        }
-        SeparatorLine()
         GiftRow(Glyph.HeartFilled, translated("Ein Herz in „Über“"), translated("Neben deiner Versionsnummer")) {}
     }
     Column(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).padding(top = 20.dp, bottom = 12.dp),
            verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        PrimaryButton(translated("App-Icon wählen")) { close(); open(appIconTarget()) }
         SecondaryButton(translated("Fertig"), action = close)
     }
 }
@@ -244,7 +237,7 @@ fun SupportHeaderHeart(app: SwiftlyApplication) {
     }
     Box(Modifier.size(44.dp).tapOn { if (support.isSupporter) supportThanksShow(app, support.openPage) else supportSheetShow(app) },
         contentAlignment = Alignment.Center) {
-        Symbol(Glyph.HeartFilled, 20.dp, color = Theme.font, description = translated("Swiftly unterstützen"),
+        Symbol(Glyph.HeartFilled, Theme.actionSymbol, color = Theme.font, description = translated("Swiftly unterstützen"),
                modifier = Modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value })
     }
 }
@@ -289,7 +282,7 @@ fun SupportHomeCard(app: SwiftlyApplication) {
 
 // MARK: - Settings, About
 
-/** The "Swiftly" group in Settings: support, and the app icon on the phone. */
+/** The "Swiftly" group in Settings: support. App icons come with the looks only (like iPhone). */
 @Composable
 fun SupportSettingsGroup(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val support = app.support
@@ -298,14 +291,6 @@ fun SupportSettingsGroup(app: SwiftlyApplication, open: (Destination) -> Unit) {
         ValueRow(Glyph.Heart, translated("Swiftly unterstützen"), translated("Mit einem Kaffee Danke sagen"),
                  value = if (support.isSupporter) translated("Danke") else null) {
             if (support.isSupporter) supportThanksShow(app, open) else supportSheetShow(app)
-        }
-        if (!app.isTv) {
-            SeparatorLine()
-            val context = LocalContext.current
-            val current = remember(support.changed.intValue) { AppIcons.current(context) }
-            ValueRow(Glyph.AppIcon, translated("App-Icon"), value = if (current == "Standard") null else current) {
-                open(appIconTarget())
-            }
         }
     }
 }
@@ -333,68 +318,5 @@ fun BoxScope.SupporterAvatarHeart(app: SwiftlyApplication, avatar: Dp) {
             .semantics { contentDescription = translated("Unterstützer") },
         contentAlignment = Alignment.Center) {
         Symbol(Glyph.HeartFilled, size * 0.45f, color = Theme.accent)
-    }
-}
-
-// MARK: - App icon picker (phone)
-
-fun appIconTarget() = Destination("appicon", translated("App-Icon"), "AppIcon")
-
-/** One icon as the launcher draws it: background and foreground layer, rounded. */
-@Composable
-fun IconThumb(icon: AppIcons.Icon, size: Dp, modifier: Modifier = Modifier) {
-    Box(modifier.size(size).clip(RoundedCornerShape(size * 0.24f)).border(1.dp, Theme.reason, RoundedCornerShape(size * 0.24f))) {
-        Image(painterResource(icon.background), null, Modifier.fillMaxSize())
-        Image(painterResource(icon.foreground), null, Modifier.fillMaxSize())
-    }
-}
-
-/**
- * **Choose an app icon.** Supporters choose; everyone else sees the icons as a preview, with
- * "Support Swiftly" below. The standard icon is always there.
- */
-@Composable
-fun AppIconPage(app: SwiftlyApplication, back: () -> Unit) {
-    val context = LocalContext.current
-    val support = app.support
-    var current by remember { mutableStateOf(AppIcons.current(context)) }
-    SettingPage(translated("App-Icon"), back) {
-        IconGrid(AppIcons.all.take(1), current, enabled = true) { AppIcons.set(context, it); current = AppIcons.current(context) }
-        GroupsTitle(translated("Unterstützer-Icons"), Modifier.padding(top = 26.dp, bottom = 2.dp))
-        IconGrid(AppIcons.all.drop(1), current, enabled = support.isSupporter) {
-            AppIcons.set(context, it); current = AppIcons.current(context)
-        }
-        if (!support.isSupporter && support.available) {
-            Footer(translated("Als Dankeschön bekommst du ein Herz in „Über“ und zusätzliche App-Icons."))
-            PrimaryButton(translated("Swiftly unterstützen"), modifier = Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 20.dp)) {
-                supportSheetShow(app)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ColumnScope.IconGrid(icons: List<AppIcons.Icon>, current: String, enabled: Boolean, choose: (String) -> Unit) {
-    CardView {
-        icons.chunked(3).forEach { row ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp)) {
-                row.forEach { icon ->
-                    val on = icon.name == current
-                    Column(Modifier.weight(1f).then(if (enabled) Modifier.tapOn { choose(icon.name) } else Modifier)
-                            .semantics(mergeDescendants = true) { contentDescription = icon.name; selected = on }
-                            .padding(vertical = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(Modifier.size(70.dp).border(2.dp, if (on) Theme.accent else Color.Transparent, RoundedCornerShape(18.dp)),
-                            contentAlignment = Alignment.Center) {
-                            IconThumb(icon, 60.dp, Modifier.alpha(if (enabled) 1f else 0.45f))
-                        }
-                        Box(Modifier.height(18.dp), contentAlignment = Alignment.Center) {
-                            if (on) Symbol(Glyph.CheckmarkCircleFilled, 15.dp, color = Theme.accent)
-                        }
-                    }
-                }
-                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
-            }
-        }
     }
 }

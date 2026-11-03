@@ -206,8 +206,8 @@ struct TVPlexSignInView: View {
     /// On the portrait's upper right edge, as a mark on a picture: a small field, not a
     /// circle (round is only what is a picture).
     private var lockMark: some View {
-        Image(systemName: "lock.fill")
-            .font(.system(size: TVSpec.plexLockIcon, weight: .semibold))
+        Image(icon: "lock.fill")
+            .font(.app(size: TVSpec.plexLockIcon, weight: .semibold))
             .foregroundStyle(Theme.fontQuiet)
             .frame(width: TVSpec.plexLockBadge, height: TVSpec.plexLockBadge)
             .background(Theme.raised,
@@ -310,8 +310,8 @@ struct TVPlexSignInView: View {
         let failed = model.unreachable.contains(server.id)
         return Button { model.actions.pickServer(server) } label: {
             HStack(spacing: TVSpec.plexServerGap) {
-                Image(systemName: "externaldrive")
-                    .font(.system(size: TVSpec.valueIcon))
+                Image(icon: "externaldrive")
+                    .font(.app(size: TVSpec.valueIcon))
                     .foregroundStyle(Theme.fontQuiet)
                     .frame(width: TVSpec.plexServerIconBox)
                     .accessibilityHidden(true)
@@ -328,8 +328,8 @@ struct TVPlexSignInView: View {
                 if busy {
                     ProgressView().accessibilityHidden(true)
                 } else {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: TVSpec.valueIcon, weight: .semibold))
+                    Image(icon: "chevron.right")
+                        .font(.app(size: TVSpec.valueIcon, weight: .semibold))
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .accessibilityHidden(true)
                 }
@@ -398,8 +398,8 @@ struct TVPlexSignInView: View {
                         primary: (title: LocalizedStringKey, perform: () -> Void),
                         secondary: (title: LocalizedStringKey, perform: () -> Void)) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Image(systemName: symbol)
-                .font(.system(size: TVSpec.plexNoticeIcon))
+            Image(icon: symbol)
+                .font(.app(size: TVSpec.plexNoticeIcon))
                 .foregroundStyle(Theme.fontVeryQuiet)
                 .accessibilityHidden(true)
             Text(title)

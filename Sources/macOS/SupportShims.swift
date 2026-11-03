@@ -8,7 +8,7 @@ import SwiftUI
 extension View {
     /// The Mac has no Dynamic Type: a fixed size.
     func growing(_ size: CGFloat, _ weight: Font.Weight = .regular) -> some View {
-        font(.system(size: size, weight: weight))
+        font(.app(size: size, weight: weight))
     }
 }
 
@@ -27,7 +27,7 @@ struct PrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold))
+            .font(.app(size: 15, weight: .semibold))
             .foregroundStyle(released ? Theme.onAccent : Theme.fontVeryQuiet)
             .padding(.horizontal, stretches ? 0 : 28)
             .frame(maxWidth: stretches ? .infinity : nil, minHeight: 44)
@@ -45,7 +45,7 @@ struct SecondaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 14, weight: .medium))
+            .font(.app(size: 14, weight: .medium))
             .foregroundStyle(released ? (accent ? Theme.accent : Theme.font) : Theme.fontVeryQuiet)
             .padding(.horizontal, stretches ? 0 : 22)
             .frame(maxWidth: stretches ? .infinity : nil, minHeight: 44)

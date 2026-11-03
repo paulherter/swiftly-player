@@ -56,11 +56,11 @@ struct SeerrTile: View {
     private var badge: some View {
         if hit.state != .present {
             HStack(spacing: 3) {
-                Image(systemName: hit.state.symbol)
+                Image(icon: hit.state.symbol, size: 10)
                     // The symbol size stays a number, since a glyph is not on any type ladder.
                     // Only the weight changes: bold appears exactly once, on the page title,
                     // and the word next to it is semibold anyway.
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.app(size: 10, weight: .semibold))
                 if let word = hit.state.shortWord {
                     // Badge from the ladder, 10 semibold.
                     Text(verbatim: word).font(Theme.badge)

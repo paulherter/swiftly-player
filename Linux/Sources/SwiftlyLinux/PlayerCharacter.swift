@@ -258,6 +258,10 @@ final class PlayerCharacter: @unchecked Sendable {
     fileprivate var impulse = 0.0
     let display: Widget
 
+    /// Whether the glyph shows pause (playing); `onRunning` lets the key hint follow.
+    private(set) var running = true
+    var onRunning: ((Bool) -> Void)?
+
     init(_ name: String, size: Int32, figure: Int? = nil,
          color: (Double, Double, Double, Double) = (1, 1, 1, 1)) {
         self.name = name
@@ -297,6 +301,8 @@ final class PlayerCharacter: @unchecked Sendable {
     /// Like `PlayMarker.setzen`: while playing, the button shows pause.
     func setDown(_ running: Bool) {
         setName(running ? "pause" : "play")
+        self.running = running
+        onRunning?(running)
         // **The button is named for what it does**, as on the Mac (`PlayerScreen`,
         // `runsNow ? "Anhalten" : "Abspielen"`). The button is the glyph's
         // parent; the name is updated wherever the glyph changes, also on the

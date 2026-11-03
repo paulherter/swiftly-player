@@ -234,6 +234,29 @@ fun MainScreen(app: SwiftlyApplication) {
         }
     }
 
+    // Debug builds only: a page requested by launch extras (`DebugOpen`), taken once.
+    LaunchedEffect(Unit) {
+        // Kept for the first seconds: the screen may be rebuilt once after the session check.
+        val want = DebugOpen.pending?.takeIf { System.currentTimeMillis() - it.since < 25000 } ?: return@LaunchedEffect
+        val (region, pages) = want.target()
+        section = region
+        stack[region] = pages
+        when (want.page) {
+            "selection-sheet" -> { kotlinx.coroutines.delay(1500)
+                app.sheet.value = SheetRequest(translated("Sortieren"), Choices.sortings, "name") {} }
+            "player" -> { kotlinx.coroutines.delay(1500); app.play.value = PlayRequest(want.itemId, null) }
+        }
+    }
+
+    // **A row heading on the home page opens its library** (`StartRail.libraryJump`) in the row's
+    // order, at the top of the area. The order is set as if picked on the page, so it stays.
+    val libraryJump: (String, String) -> Unit = { art, sorting ->
+        app.libraries.getOrPut(art) { LibraryState(art, app.store) }.sortingSet(sorting)
+        val b = if (art == "tvshows") Region.Series else Region.Movies
+        stack[b] = emptyList()
+        if (b != section) select(b)
+    }
+
     // Disabled while standing in the section: back to Start.
     val downloadsAn = app.settings.downloadsAn
     LaunchedEffect(downloadsAn) { if (!downloadsAn && section == Region.Downloads) select(Region.Start) }
@@ -255,7 +278,7 @@ fun MainScreen(app: SwiftlyApplication) {
                         }
                         .background(Theme.reason)) {
                         stateHolder.SaveableStateProvider("${section.name}/$depth/${target?.id.orEmpty()}") {
-                            if (target == null) InitialPage(app, section, open, select)
+                            if (target == null) InitialPage(app, section, open, select, libraryJump)
                             else Subpage(app, target, open, back)
                         }
                         // The page below darkens while the top one covers it.
@@ -284,11 +307,12 @@ fun MainScreen(app: SwiftlyApplication) {
 }
 
 @Composable
-private fun InitialPage(app: SwiftlyApplication, section: Region, open: (Destination) -> Unit, select: (Region) -> Unit) {
+private fun InitialPage(app: SwiftlyApplication, section: Region, open: (Destination) -> Unit, select: (Region) -> Unit,
+                        libraryJump: (String, String) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
             when (section) {
-                Region.Start -> StartPage(app, open)
+                Region.Start -> StartPage(app, open, libraryJump)
                 Region.Movies -> LibraryPage(app, "movies", translated("Filme"),
                                                  offeredFilters(listOf("alle", "angefangen", "merkliste", "ungesehen"), app.settings.watchlist), open)
                 // For series "unwatched" helps little; the same list as on iOS.
@@ -332,7 +356,6 @@ private fun Subpage(app: SwiftlyApplication, target: Destination, open: (Destina
         "Lizenzen" -> LicensesPage(open, back, app)
         "Lizenz" -> LicenseScreen(target, back, app)
         "Lizenzangebot" -> LicenseOfferingPage(back)
-        "AppIcon" -> de.paulherter.swiftly.support.AppIconPage(app, back)
         "Seerrtitel" -> SeerrDetailPage(app, target, open, back)
         "Genrewahl" -> GenreSelectionPage(app, back)
         "Bibliothekswahl" -> LibrarySelectionPage(app, back)
@@ -343,13 +366,13 @@ private fun Subpage(app: SwiftlyApplication, target: Destination, open: (Destina
 
 /**
  * Mirrors `NavBar` + `SectionButton` in `Style.swift`: 54 high, opaque in `reason`, hairline
- * on top, 9 space above the icons, 4 between icon and label.
+ * on top, 8 space above the icons, 4 between icon and label.
  */
 @Composable
 private fun Bar(active: Region, downloads: Boolean, runningCount: Int, select: (Region) -> Unit) {
     Column(Modifier.fillMaxWidth().background(Theme.reason).navigationBarsPadding()) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Theme.line))
-        Row(Modifier.fillMaxWidth().height(Theme.stripHeight).padding(top = 9.dp)) {
+        Row(Modifier.fillMaxWidth().height(Theme.stripHeight).padding(top = 8.dp)) {
             // Downloads only when the feature is on; left of Search, which stays at the far right.
             Region.entries.filter { it != Region.Downloads || downloads }.forEach { b ->
                 val an = b == active
@@ -368,7 +391,7 @@ private fun Bar(active: Region, downloads: Boolean, runningCount: Int, select: (
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Box {
+                    Box(Modifier.height(26.dp), contentAlignment = Alignment.Center) {
                         // Icon 20 pt means a 24 dp box here. SF Symbols at size 20 are about 20 pt tall; a Material
                         // icon has 2 dp padding all round in its 24 grid, so in a 20 box the glyph kept barely 17.
                         // That is the "looks smaller" effect at pixel level. Cause: different symbol set, not a

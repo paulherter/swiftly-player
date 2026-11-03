@@ -34,7 +34,7 @@ extension ServerKind {
     var pitch: String {
         switch self {
         case .jellyfin: translated("Adresse rein und anmelden, oder per Quick Connect ganz ohne Passwort.")
-        case .plex: translated("Einmal bei Plex anmelden, deine Server sucht die App dann selbst raus.")
+        case .plex: translated("Einmal bei Plex anmelden, die App findet deine Server.")
         case .emby: translated("Adresse von deinem Server rein, dann Name und Passwort.")
         }
     }

@@ -32,6 +32,9 @@ struct TileMenu: ViewModifier {
     var inPlayer = false
 
     @Environment(PlayControls.self) private var controls
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.section) private var section
+    @Environment(\.watchlistShown) private var watchlistShown
 
     /// Movies, series and episodes, the same rule as on iPhone.
     static func carries(_ item: Item) -> Bool {
@@ -58,11 +61,27 @@ struct TileMenu: ViewModifier {
                     Label("Abspielen", systemImage: "play.fill")
                 }
             }
+            .keyboardShortcut(.return, modifiers: [])
+            // **From the start**, for what was begun; the detail page has it in its More list.
+            if !isSeries, item.resumeFrom != nil {
+                Button { controls.launch(item, since: 0) } label: {
+                    Label("Von vorn", systemImage: "backward.end.fill")
+                }
+            }
         }
         if continueWatching, let overview {
             Button(action: overview) {
                 Label("Zur Übersicht", systemImage: "info.circle")
             }
+        }
+        // The watchlist, as on the detail page; only when the watchlist is switched on.
+        if !inPlayer, watchlistShown {
+            let remembered = item.userData?.isFavorite ?? false
+            Button { remember(!remembered) } label: {
+                Label(remembered ? "Nicht mehr merken" : "Merken",
+                      systemImage: remembered ? "bookmark.fill" : "bookmark")
+            }
+            .keyboardShortcut("d", modifiers: .command)
         }
         // **Only the entry that has an effect**, except for series (partly watched) and
         // started titles: an episode that was only skipped through counts as started, and
@@ -74,6 +93,7 @@ struct TileMenu: ViewModifier {
             Button { watched(true) } label: {
                 Label("Als gesehen markieren", systemImage: "checkmark.circle")
             }
+            .keyboardShortcut("g", modifiers: [.command, .shift])
         }
         if isSeries || isWatched || begun {
             Button { watched(false) } label: {
@@ -90,7 +110,7 @@ struct TileMenu: ViewModifier {
                             let item = item, model = model
                             Task { await PlayOutputs.shared.play(item, to: target, model: model) }
                         } label: {
-                            Label { Text(verbatim: target.name) } icon: { Image(systemName: "tv") }
+                            Label { Text(verbatim: target.name) } icon: { Image(icon: "tv") }
                         }
                     }
                 } label: {
@@ -102,6 +122,18 @@ struct TileMenu: ViewModifier {
             Button { SharedModel.shared.createFor = item } label: {
                 Label("Gemeinsam schauen", systemImage: "person.2")
             }
+        }
+        // The pages: an episode's series, and the title's own page.
+        if !inPlayer {
+            if item.type == "Episode", let seriesID = item.seriesId {
+                Button { toSeries(seriesID) } label: {
+                    Label("Zur Serie", systemImage: "tv")
+                }
+            }
+            Button { navigator.openIt(.title(item), in: section) } label: {
+                Label("Info", systemImage: "info.circle")
+            }
+            .keyboardShortcut("i", modifiers: .command)
         }
         if continueWatching {
             Button { remove() } label: {
@@ -143,6 +175,28 @@ struct TileMenu: ViewModifier {
                 return
             }
             await afterwards?()
+        }
+    }
+
+    private func remember(_ an: Bool) {
+        let model = model, item = item, afterwards = afterwards
+        Task {
+            if let error = await model.setWatchlist(item, an: an) {
+                TileMessage.shared.text = error
+                return
+            }
+            await afterwards?()
+        }
+    }
+
+    private func toSeries(_ id: String) {
+        let model = model, navigator = navigator, section = section
+        Task {
+            guard let series = await model.item(id: id) else {
+                TileMessage.shared.text = String(localized: "Die Serie konnte nicht geladen werden.")
+                return
+            }
+            navigator.openIt(.title(series), in: section)
         }
     }
 

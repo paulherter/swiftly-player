@@ -154,7 +154,7 @@ final class GiftFlow {
                 let store = LookStore.shared
                 let next = store.saved.switching(to: look)
                 guard !store.mayWear(next) else { return }
-                withAnimation(Motion.change) {
+                Motion.recolor {
                     store.beginPreview()
                     store.tryOn(next)
                 }
@@ -194,7 +194,7 @@ final class GiftFlow {
     func use(_ selection: LookSelection) {
         let store = LookStore.shared
         if selection != store.saved {
-            withAnimation(Motion.change) { _ = store.choose(selection) }
+            Motion.recolor { _ = store.choose(selection) }
         }
         close()
     }
@@ -205,7 +205,7 @@ final class GiftFlow {
         switch stage {
         case .choosing, .claiming:
             if LookStore.shared.isPreviewing {
-                withAnimation(Motion.change) { LookStore.shared.endPreview() }
+                Motion.recolor { LookStore.shared.endPreview() }
             }
             let icon = LookStore.shared.palette.iconName
             Task { await LookIcon.apply(icon) }
@@ -356,10 +356,40 @@ private struct GiftSheetPresenter: ViewModifier {
                 if flow.stage != nil { lastTint = new }
             }
         #else
-        // flush-ok: macOS sheets do not float.
-        content.sheet(isPresented: Binding(get: { flow.presented },
-                                           set: { if !$0 { flow.close() } })) {
-            GiftSheet()
+        // **Our own panel, not the system sheet.** While a window sheet comes in or goes,
+        // macOS holds every frame of the window under it: the page stood still for 300 to
+        // 380 ms (probe "looks öffnen", "look nehmen"). The panel is a view like any other
+        // and moves on the same clock as the page. It hangs under the toolbar where the
+        // sheet hung, keeps the page from clicks, and Escape closes it as before.
+        content.overlay {
+            ZStack(alignment: .top) {
+                if flow.presented {
+                    // Dimmed for the gift and What's New; for the looks the page under it stays
+                    // in its colors (no scrim), but it still takes no clicks.
+                    Theme.reason.opacity(flow.looksOpen ? 0.001 : 0.35)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {}
+                        .transition(.opacity)
+                    GiftSheet()
+                        .background(Theme.area)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Theme.line, lineWidth: 1)
+                        }
+                        .shadow(color: Theme.reason.opacity(0.5), radius: 28, y: 12)
+                        .padding(.top, Theme.toolbarHeight)
+                        .background {
+                            Button("") { flow.close() }
+                                .keyboardShortcut(.cancelAction)
+                                .hidden()
+                        }
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .animation(Motion.sheet, value: flow.presented)
         }
         #endif
     }
@@ -400,7 +430,9 @@ private struct GiftSheet: View {
             .frame(width: 480, alignment: .top)
             .fixedSize(horizontal: false, vertical: true)
             .background(alignment: .top) { SheetLight() }
-            .presentationBackground(Theme.area)
+            // While the panel slides out, `stage` is already `nil`; the last step stays.
+            .onChange(of: flow.stage) { _, new in if let new { lastStage = new } }
+            .onAppear { if let current = flow.stage { lastStage = current } }
         #endif
     }
 
@@ -639,7 +671,7 @@ struct LooksPanel: View {
     /// everywhere. What may be worn is stored (the icon follows on "Use" or on closing, so
     /// the system's icon notice comes once); anything else is a preview.
     private func apply(_ next: LookSelection) {
-        withAnimation(Motion.change) {
+        Motion.recolor {
             if store.mayWear(next) {
                 store.endPreview()
                 _ = store.choose(next)
@@ -815,8 +847,8 @@ private struct LookChoice: View {
                     .opacity(locked ? 0.45 : 1)
                     .overlay(alignment: .bottomTrailing) {
                         if locked {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 10, weight: .bold))
+                            Image(icon: "lock.fill", size: 10)
+                                .font(.app(size: 10, weight: .bold))
                                 .foregroundStyle(Theme.font)
                                 .frame(width: 20, height: 20)
                                 .background(Theme.raised, in: Circle())
@@ -910,9 +942,9 @@ struct CloseButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "xmark")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Theme.fontQuiet)
+            Image(icon: "xmark", size: 13)
+                .font(.app(size: 13, weight: .bold))
+                .foregroundStyle(Theme.font)
                 .frame(width: 30, height: 30)
                 .background(Theme.raised, in: Circle())
                 .frame(width: 44, height: 44)
@@ -933,7 +965,7 @@ struct GiftButton: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 17, weight: .semibold))
+            .font(.app(size: 17, weight: .semibold))
             .foregroundStyle(primary ? Color.black : Theme.font)
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(primary ? Color.white.opacity(configuration.isPressed ? 0.75 : 1)
@@ -952,7 +984,7 @@ extension View {
         #if os(iOS)
         growing(size, weight)
         #else
-        font(.system(size: size, weight: weight))
+        font(.app(size: size, weight: weight))
         #endif
     }
 }

@@ -13,6 +13,8 @@ enum TVSpec {
     static let cornerArea: CGFloat = 24
     static let cornerBar: CGFloat = 5
     static let rowInset: CGFloat = 26
+    static let rowSymbol: CGFloat = 40
+    static let rowSymbolColumn: CGFloat = 52
     static let listCardInset: CGFloat = 10
     static let groupGap: CGFloat = 36
     static let sectionColumnWidth: CGFloat = 460
@@ -48,6 +50,7 @@ enum TVSpec {
     static let serverAdvancedTop: CGFloat = 24
     static let serverButtonTop: CGFloat = 36
     static let serverErrorTop: CGFloat = 32
+    static let serverFoundTop: CGFloat = 48
     static let loginServerNameTop: CGFloat = 44
     static let loginVersionTop: CGFloat = 6
     static let loginFieldsTop: CGFloat = 44
@@ -60,6 +63,7 @@ enum TVSpec {
     static let onboardingBlockTop: CGFloat = 44
     static let onboardingHintSpacing: CGFloat = 20
     static let onboardingErrorTop: CGFloat = 24
+    static let onboardingFoundTop: CGFloat = 24
     static let onboardingCancelTop: CGFloat = 44
     static let onboardingCodeTop: CGFloat = 24
     static let onboardingAlternativeTop: CGFloat = 32

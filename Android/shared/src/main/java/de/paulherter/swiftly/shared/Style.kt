@@ -85,6 +85,8 @@ object Motion {
     const val SectionMetric = 0.995f
     /** `Theme` press scale: 0.97 on **every** button. */
     const val PressMetric = 0.97f
+    /** `PressButton`: opacity 0.85 while pressed, together with the 0.97 scale. */
+    const val PressOpacity = 0.85f
 
     /**
      * **"Remove animations" / "Reduce motion".**
@@ -109,6 +111,15 @@ fun motionReduced(): Boolean {
     val context = LocalContext.current
     return remember(context) { Motion.reduced(context) }
 }
+
+/** The typeface: Inter Variable, bundled (`res/font/inter_variable.ttf`), as on every Apple platform. */
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+val Inter = androidx.compose.ui.text.font.FontFamily(
+    listOf(400, 500, 600, 700, 800).map { w ->
+        androidx.compose.ui.text.font.Font(R.font.inter_variable, androidx.compose.ui.text.font.FontWeight(w),
+            variationSettings = androidx.compose.ui.text.font.FontVariation.Settings(
+                androidx.compose.ui.text.font.FontVariation.weight(w)))
+    })
 
 object Theme {
     // MARK: Colors (verbatim from Colors.swift)
@@ -202,6 +213,18 @@ object Theme {
         Color(0xFF2E7A4C) to Color(0xFF0A4A27),
     )
 
+    /**
+     * The tone of a profile glyph, from the name (`ProfileCharacter.reason`): the same number as on Apple
+     * (31 times the sum so far plus the code point, modulo 1,000,003), so the same person has the same
+     * colour on every device.
+     */
+    fun profileBrush(name: String): androidx.compose.ui.graphics.Brush {
+        var digit = 0
+        name.codePoints().forEach { digit = (digit * 31 + it) % 1_000_003 }
+        val (top, bottom) = profileAudio[digit % profileAudio.size]
+        return androidx.compose.ui.graphics.Brush.linearGradient(listOf(top, bottom))
+    }
+
     // MARK: Corners (Style.swift)
     //
     // Nested: outer = inner + padding. **No shadows, no drawn borders**: a surface says "you can
@@ -215,11 +238,11 @@ object Theme {
     val corner = 10.dp
     val cornerTile = 10.dp
     /** Search and input field. */
-    val cornerField = 12.dp
+    val cornerField = 10.dp
     /** Under 34 dp height: season field, badges. */
     val cornerSmall = 8.dp
     /** Settings card, group. */
-    val cornerCard = 14.dp
+    val cornerCard = 16.dp
     /** Own surface, panel, info box. */
     val cornerArea = 16.dp
     /** Sheet from below: top corners only. */
@@ -233,13 +256,13 @@ object Theme {
     val edgePageWide = 28.dp
     val tileSpacing = 12.dp
     /** Row to row on the home page. */
-    val railsSpacing = 28.dp
+    val railsSpacing = 40.dp
     /** Row spacing in the grid: library, watchlist, genre, search. */
-    val gridRow = 20.dp
-    val headerTop = 26.dp
-    val tileWidth = 112.dp
-    val tileHeight = 168.dp
-    val heroHeightValue = 300.dp
+    val gridRow = 32.dp
+    val headerTop = 28.dp
+    val tileWidth = 116.dp
+    val tileHeight = 174.dp
+    val heroHeightValue = 350.dp
     val heroHeightWide = 420.dp
     val stripHeight = 54.dp
     val sidebarWidth = 88.dp
@@ -248,8 +271,47 @@ object Theme {
     val readWidth = 700.dp
     val formWidth = 420.dp
 
-    /** Height of every button and every input field. */
-    val buttonHeight = 48.dp
+    /** Height of every button and every input field (`controlHeight`). */
+    val buttonHeight = 56.dp
+    /** A list row (`rowHeight`). */
+    val rowHeight = 60.dp
+    /** One side margin per sheet (`sheetInset`). */
+    val sheetInset = 24.dp
+    /** Space above a settings group (`groupTop`) and between cards (`cardGap`). */
+    val groupTop = 48.dp
+    val cardGap = 32.dp
+    // Round 2 system sizes (`Theme` in Sources/Shared/Style.swift).
+    /** Icon column, title size, symbol size and vertical padding of a list row. */
+    val rowIconWidth = 26.dp
+    val rowTitleSize = 17.sp
+    val rowSymbolSize = 20.dp
+    val rowPadV = 10.dp
+    /** Pulls the first settings group up under the subpage title (`firstGroupTrim`). */
+    val firstGroupTrim = 20.dp
+    /** Back arrow inset (`backInset`). */
+    val backInset = 2.dp
+    /** Action symbol (heart, bookmark, profile mark) and the gaps in the detail header. */
+    val actionSymbol = 22.dp
+    val actionGap = 16.dp
+    val blockGap = 20.dp
+    /** Landscape row tile on Start. */
+    val heroRowWidth = 280.dp
+    val heroRowHeight = 158.dp
+    /** Cast circle. */
+    val castSize = 88.dp
+    val castWidth = 88.dp
+    /** Episode thumbnail, and while it is the ongoing one. */
+    val episodeWidth = 148.dp
+    val episodeWidthOngoing = 168.dp
+    val episodeHeight = 83.dp
+    /** Empty state: disc, symbol and text width. */
+    val emptyDisc = 120.dp
+    val emptySymbol = 52.dp
+    val emptyTextWidth = 300.dp
+    /** Highest a sheet's list grows before it scrolls. */
+    val sheetListMax = 420.dp
+    val tabIconHeight = 26.dp
+
     /** Height of value pill and choice chip (as minimum height). */
     val pillsHeight = 30.dp
     /** Hit area of a quiet button. */
@@ -276,32 +338,34 @@ object Theme {
     // **Only uppercase text is tracked**: the tile badge carries "3 offen", ordinary words, and does
     // not take its level's tracking.
 
-    /** 28 Bold: the title of a root page, also over a hero image. */
-    val titleLarge = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.6).sp)
+    /** 34 Bold: the title of a root page, also over a hero image. */
+    val titleLarge = TextStyle(fontFamily = Inter, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.7).sp)
     /** Same level. `title` and `titleLarge` are the same value on iPhone. */
     val title = titleLarge
-    /** 22 Semibold: a subpage, i.e. one with a way back. */
-    val subpageTitle = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.308).sp)
+    /** 28 Bold: a subpage, i.e. one with a way back. */
+    val subpageTitle = TextStyle(fontFamily = Inter, fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
+    /** 22 Bold: rail title on Start, group title. */
+    val section = TextStyle(fontFamily = Inter, fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.308).sp)
     /** 20 Semibold: row heading, group title, header of an empty state. */
-    val rail = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.24).sp)
+    val rail = TextStyle(fontFamily = Inter, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.24).sp)
     /** 17 Semibold: sheet heading, detail bar, main button. */
-    val categoryLarge = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.136).sp)
+    val categoryLarge = TextStyle(fontFamily = Inter, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.136).sp)
     /** 15 Semibold: the list row. */
-    val listTitle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+    val listTitle = TextStyle(fontFamily = Inter, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
     /** 15 Regular: body text. */
-    val body = TextStyle(fontSize = 15.sp)
+    val body = TextStyle(fontFamily = Inter, fontSize = 15.sp)
     /** 15 Medium: secondary and quiet button. */
-    val buttonText = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Medium)
+    val buttonText = TextStyle(fontFamily = Inter, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
     /** 13 Medium: title under a poster, value pill, count badge, choice chip. */
-    val tile = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    val tile = TextStyle(fontFamily = Inter, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     /** 13 Semibold: the chevron at the right of a row. */
-    val angle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+    val angle = TextStyle(fontFamily = Inter, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     /** 12 Regular: detail line: year, role, runtime, subtitle. */
-    val small = TextStyle(fontSize = 12.sp)
+    val small = TextStyle(fontFamily = Inter, fontSize = 12.sp)
     /** 11 Semibold, tracked: group title in uppercase. */
-    val group = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.54.sp)
+    val group = TextStyle(fontFamily = Inter, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.54.sp)
     /** 10 Semibold, tracked: badge and tile badge. */
-    val badge = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.0.sp)
+    val badge = TextStyle(fontFamily = Inter, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.0.sp)
 
     // MARK: Glyphs
     //

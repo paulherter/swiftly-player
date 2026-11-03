@@ -126,13 +126,13 @@ fun PlaylistPage(app: SwiftlyApplication, target: Destination, open: (Destinatio
                 LazyVerticalGrid(GridCells.Fixed(count), state = grid,
                     contentPadding = PaddingValues(start = Theme.edgeSpacing, end = Theme.edgeSpacing, top = headerDp + 8.dp, bottom = 40.dp),
                     horizontalArrangement = Arrangement.spacedBy(Theme.tileSpacing),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(Theme.gridRow),
                     modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
                     if (state.items.isEmpty() && state.loads) items(count * 3, key = { "platzhalter$it" }) { TilePlaceholder() }
                     items(state.items, key = { it.id }) { k -> GridTileView(k) { open(Destination(k.id, k.title, k.type)) } }
                 }
                 if (state.disrupted) {
-                    EmptyState(Glyph.ServerRoute, translated("Server ist abgetaucht"),
+                    EmptyState(Glyph.WlanDisruption, translated("Server ist abgetaucht"),
                         translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serverAddress()),
                         primaryButton = translated("Erneut versuchen") to { section.launch { state.load(app.kern) } })
                 } else if (state.items.isEmpty() && !state.loads) {

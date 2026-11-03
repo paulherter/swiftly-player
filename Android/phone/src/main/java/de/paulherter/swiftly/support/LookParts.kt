@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -382,7 +383,9 @@ private fun IconFan() {
             val size = (f[3] as Float).dp
             val up = bob(-3f, 1.6f, f[4] as Float)
             val picks = index == 2
-            Box(Modifier.zIndex(if (picks) 2f else 0f).offset(y = (f[2] as Float).dp)
+            // Fixed to the icon: the ring is an overlay (`.padding(-4)` on Apple) and must not widen the box, or the
+            // icon sits 4 off-centre inside it.
+            Box(Modifier.size(size).zIndex(if (picks) 2f else 0f).offset(y = (f[2] as Float).dp)
                     .graphicsLayer { translationY = up() * density; rotationZ = f[1] as Float }) {
                 LookTileView(AppIcons.forAlias(f[0] as String), size, corner = 14.dp,
                              modifier = Modifier.shadow(6.dp, RoundedCornerShape(14.dp), ambientColor = Color.Black.copy(alpha = 0.25f),
@@ -407,7 +410,7 @@ private fun BoxScope.PickRing(size: Dp) {
             0f at 4800
         }))
     }
-    Box(Modifier.align(Alignment.Center).size(size + 8.dp).graphicsLayer { alpha = value.value }
+    Box(Modifier.align(Alignment.Center).requiredSize(size + 8.dp).graphicsLayer { alpha = value.value }
             .border(2.dp, Theme.font, RoundedCornerShape(18.dp)))
 }
 

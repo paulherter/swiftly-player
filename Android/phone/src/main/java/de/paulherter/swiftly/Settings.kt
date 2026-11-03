@@ -23,10 +23,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -79,6 +81,16 @@ class Settings(store: Store) {
     var progress by RememberValue(a, "fortschritt", bool("fortschritt", true), yesNo)
     /** Whether the watchlist appears: page, filter and the button on detail pages (mirrors `watchlistShown`). */
     var watchlist by RememberValue(a, "merklisteAn", bool("merklisteAn", true), yesNo)
+    /** "Gesehen von" on title pages; off means no requests at all. Only offered where the plugin was found. */
+    var watchersShow by RememberValue(a, "gesehenVon", bool("gesehenVon", true), yesNo)
+    private val pluginState = mutableIntStateOf(0)
+    private fun pluginKey() = "gesehenVonPlugin|" + serverKey()
+    /** `"1"`: this server has the Jelly Twiggy plugin, `"0"`: it has none (never asked again), `""`: not known yet. */
+    val watchersPlugin: String get() { pluginState.intValue; return a.rememberValue(pluginKey()).orEmpty() }
+    fun watchersPluginSet(there: Boolean) {
+        if (watchersPlugin == (if (there) "1" else "0")) return
+        a.remember(pluginKey(), if (there) "1" else "0"); pluginState.intValue++
+    }
     /** The letter strip beside "By name" grids (mirrors `alphabetShown`). */
     var alphabet by RememberValue(a, "alphabetAn", bool("alphabetAn", true), yesNo)
     /** Empty means: as the file. */
@@ -197,7 +209,7 @@ class Settings(store: Store) {
         values["utAussehen"]?.let { subtitleLook = Kern.subtitleLookNormalise(it) }
         bool("naechsteAuto")?.let { nextAutomatic = it }
         bool("introAbspannAuto")?.let { introOutroAutomatic = it }
-        bool("restzeitAlsEnde")?.let { a.remember("restzeitAlsEnde", if (it) "1" else "0") }
+        bool("endzeitImPlayer")?.let { endTimeInPlayer = it }
         values["vorSek"]?.toIntOrNull()?.let { forwardSeconds = it }
         values["zurueckSek"]?.toIntOrNull()?.let { backSeconds = it }
         bool("titelAlsLogo")?.let { titleAsLogo = it }
@@ -243,6 +255,8 @@ class Settings(store: Store) {
     var forwardSeconds by RememberValue(a, "vorSek", figure("vorSek", 30)) { it.toString() }
     /** Off until someone looks for it: it changes nothing about playback, it only shows what it does. */
     var techBadge by RememberValue(a, "technikschild", bool("technikschild", false), yesNo)
+    /** "Endzeit im Player": "Endet um HH:MM" instead of the remaining time. Off by default, shared key with iOS. */
+    var endTimeInPlayer by RememberValue(a, "endzeitImPlayer", bool("endzeitImPlayer", false), yesNo)
     /**
          * The measuring mode of the tech badge: all rows, no maximum height. Not a switch: a debugging
          * tool, not for viewers (mirrors `techBadgeMeasure`, a launch argument there). Set via the
@@ -274,7 +288,7 @@ fun offeredFilters(filters: List<String>, watchlist: Boolean): List<String> =
 fun SubpageHeader(title: String, back: () -> Unit, bottom: Dp = 18.dp, top: Boolean = true,
                     right: @Composable RowScope.() -> Unit = {}) {
     Row(Modifier.fillMaxWidth().then(if (top) Modifier.statusBarsPadding() else Modifier)
-            .padding(start = 8.dp, end = 12.dp, bottom = bottom),
+            .padding(start = Theme.backInset, end = 12.dp, bottom = bottom),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Box(Modifier.size(44.dp).tapOn(back), contentAlignment = Alignment.Center) {
             Symbol(Glyph.AngleLeft, 20.dp, color = Theme.font, strength = Strength.Semibold, description = translated("Zurück"))
@@ -287,11 +301,34 @@ fun SubpageHeader(title: String, back: () -> Unit, bottom: Dp = 18.dp, top: Bool
 
 /** A subpage: header, scrolling content below it down to the gesture bar. */
 @Composable
-fun SettingPage(title: String, back: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxSize().background(Theme.reason)) {
-        SubpageHeader(title, back)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 40.dp),
-               content = content)
+fun SettingPage(title: String, back: () -> Unit, trimFirstGroup: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    // Mirrors `fadingUnderSubpageHeader`: the content runs under the header and fades there, 118 high
+    // from the top edge (35 % up to 62 % of it, then to full), instead of ending in a hard edge below the title.
+    var headerHeight by remember { mutableStateOf(0) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    Box(Modifier.fillMaxSize().background(Theme.reason)) {
+        // `firstGroupTrim`: a group title brings `groupTop` above it, which right under the page title is too much.
+        val trim = if (trimFirstGroup) Theme.firstGroupTrim else 0.dp
+        Column(Modifier.fillMaxSize()
+                   .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                   .drawWithContent {
+                       drawContent()
+                       val fade = 118.dp.toPx()
+                       drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(
+                           0f to Color.Black.copy(alpha = 0.35f), 0.62f to Color.Black.copy(alpha = 0.35f), 1f to Color.Black,
+                           startY = 0f, endY = fade), size = androidx.compose.ui.geometry.Size(size.width, fade),
+                           blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+                   }
+                   .verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 40.dp)
+                   .layout { m, c ->
+                       val pl = m.measure(c)
+                       val cut = trim.roundToPx()
+                       layout(pl.width, (pl.height - cut).coerceAtLeast(0)) { pl.place(0, -cut) }
+                   }) {
+            Spacer(Modifier.height(with(density) { headerHeight.toDp() }))
+            content()
+        }
+        Box(Modifier.onSizeChanged { headerHeight = it.height }) { SubpageHeader(title, back) }
     }
 }
 
@@ -318,16 +355,17 @@ fun CardView(content: @Composable ColumnScope.() -> Unit) {
  */
 @Composable
 fun GroupsTitle(text: String, modifier: Modifier = Modifier) {
-    Text(text, style = Theme.rail,
-         color = Theme.fontQuiet, modifier = modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).padding(bottom = 10.dp))
+    // Same size and color as a section title on every other page (`section`, white): same role, same look.
+    Text(text, style = Theme.section,
+         color = Theme.font, modifier = modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).padding(bottom = 10.dp))
 }
 
 /** Mirrors `Einstellungsgruppe`: group title, the card below it. */
 @Composable
 fun SettingGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column {
-        // 26 above, 10 + 2 below.
-        GroupsTitle(title, Modifier.padding(top = 26.dp, bottom = 2.dp))
+        // `groupTop` above, 10 + 2 below.
+        GroupsTitle(title, Modifier.padding(top = Theme.groupTop, bottom = 2.dp))
         CardView(content)
     }
 }
@@ -351,18 +389,17 @@ fun Footer(text: String) {
 
 /**
  * Mirrors `Schalter`: custom instead of `Switch`, since the platform one brings its own
- * dimensions and motion and looks foreign next to flat surfaces. 46 x 28, the knob punches a
- * hole in the ground in the accent.
+ * dimensions and motion and looks foreign next to flat surfaces. 46 x 28, white knob 22.
  */
 @Composable
 fun ToggleSwitch(an: Boolean, change: (Boolean) -> Unit) {
-    val status by animateFloatAsState(if (an) 1f else 0f, tween(150, easing = EaseInOut), label = "schalter")
-    // Off: surface `rand` (white 12 %), on: `accent`, knob `reason`.
+    val status by animateFloatAsState(if (an) 1f else 0f, tween(100, easing = androidx.compose.animation.core.EaseOut), label = "schalter")
+    // Off: surface `rand` (white 12 %), on: `accent`; the knob is white in both states (`ToggleSwitch`, Style.swift).
     Box(Modifier.size(46.dp, 28.dp).clip(CircleShape).background(lerp(Theme.margin, Theme.accent, status))
             // For TalkBack a switch with state, not a nameless surface.
             .toggleable(an, remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null,
                 role = androidx.compose.ui.semantics.Role.Switch) { change(it) }.padding(3.dp)) {
-        Box(Modifier.offset(x = 18.dp * status).size(22.dp).clip(CircleShape).background(lerp(Color.White, Theme.reason, status)))
+        Box(Modifier.offset(x = 18.dp * status).size(22.dp).clip(CircleShape).background(Color.White))
     }
 }
 
@@ -376,13 +413,13 @@ fun ToggleSwitch(an: Boolean, change: (Boolean) -> Unit) {
  */
 @Composable
 fun RowsLayout(symbol: Glyph, title: String, under: String?, color: Color, modifier: Modifier,
-                         verticalRight: Int = 14, drawColor: Color = Theme.font, right: @Composable RowScope.() -> Unit) {
-    Row(modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing, vertical = verticalRight.dp),
+                         verticalRight: Int = 10, drawColor: Color = Theme.font, right: @Composable RowScope.() -> Unit) {
+    Row(modifier.fillMaxWidth().heightIn(min = Theme.rowHeight).padding(horizontal = Theme.edgeSpacing, vertical = verticalRight.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         // The icon stays white even when the title is dimmed, like `RowsLayout` on iPhone.
-        Box(Modifier.width(Theme.characterColumn), contentAlignment = Alignment.Center) { Symbol(symbol, 17.dp, color = drawColor) }
+        Box(Modifier.width(Theme.rowIconWidth), contentAlignment = Alignment.Center) { Symbol(symbol, Theme.rowSymbolSize, color = drawColor) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = Theme.listTitle, color = color)
+            Text(title, style = Theme.listTitle.copy(fontSize = Theme.rowTitleSize, fontWeight = FontWeight.Medium), color = color)
             under?.let { Text(it, style = Theme.small, color = Theme.fontVeryQuiet) }
         }
         right()
@@ -397,8 +434,8 @@ fun RowsLayout(symbol: Glyph, title: String, under: String?, color: Color, modif
  * padding and at 20 dp draws a mark of the same height.
  */
 @Composable
-private fun Arrow() {
-    Symbol(Glyph.AngleRight, 13.dp, color = Theme.fontVeryQuiet, strength = Strength.Semibold)
+private fun Arrow(external: Boolean = false) {
+    Symbol(if (external) Glyph.External else Glyph.AngleRight, 13.dp, color = Theme.font, strength = Strength.Semibold)
 }
 
 /**
@@ -410,24 +447,30 @@ fun ChoiceRow(symbol: Glyph, title: String, under: String? = null, an: Boolean, 
     // Locked means dimmed text, not transparent: white at 40 % over our ground gives a strong gray,
         // which looks like a button that does not respond rather than one that is still waiting.
     val color = if (locked) Theme.fontVeryQuiet else Theme.font
-    RowsLayout(symbol, title, under, color, if (locked) Modifier else Modifier.pressRow { change(!an) }) {
+    RowsLayout(symbol, title, under, color, if (locked) Modifier else Modifier.pressRow { change(!an) }, drawColor = color) {
         ToggleSwitch(an, if (locked) { _: Boolean -> } else change)
     }
 }
 
 /** Mirrors `ValueRow`: shows a value and, if tappable, leads to its picker. Dimmed when it does not apply. */
 @Composable
-fun ValueRow(symbol: Glyph, title: String, under: String? = null, value: String? = null, dimmedDown: Boolean = false, perform: (() -> Unit)? = null) {
+fun ValueRow(symbol: Glyph, title: String, under: String? = null, value: String? = null, dimmedDown: Boolean = false,
+             inPlace: Boolean = false, chevron: Boolean = false, perform: (() -> Unit)? = null) {
     val color = if (dimmedDown) Theme.fontVeryQuiet else Theme.font
     // A button gives way (`Theme.PressButton`); dimmed it is none and carries no chevron.
     val active = perform != null && !dimmedDown
-    RowsLayout(symbol, title, under, color, if (active) Modifier.tapOn(perform!!) else Modifier) {
+    RowsLayout(symbol, title, under, color, if (active) Modifier.pressRow(perform!!) else Modifier, drawColor = color) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            value?.let { Text(it, style = Theme.body, color = Theme.fontQuiet, maxLines = 1) }
-            if (active) Arrow()
+            value?.let { Text(it, style = Theme.body, color = if (dimmedDown) Theme.fontVeryQuiet else Theme.font, maxLines = 1) }
+            // A row that acts in place shows the reload mark instead of a chevron (`inPlace`).
+            if ((active && !inPlace) || chevron) Arrow()
+            if (inPlace && active) Symbol(Glyph.Reload, 13.dp, color = Theme.font, strength = Strength.Semibold)
         }
     }
 }
+
+/** What a profile row shows at its right end (`ProfileTrailing`): a chevron leads on, an arrow leaves the app, nothing runs in place. */
+enum class Trailing { Chevron, None, External }
 
 /**
  * Mirrors `ProfileRow`: leads elsewhere, 14 vertical like every list row. `characterAccent`: only
@@ -435,9 +478,13 @@ fun ValueRow(symbol: Glyph, title: String, under: String? = null, value: String?
  * dot reads lifeless.
  */
 @Composable
-fun ProfileRow(symbol: Glyph, title: String, under: String? = null, characterAccent: Boolean = false, perform: () -> Unit) {
-    RowsLayout(symbol, title, under, Theme.font, Modifier.tapOn(perform),
-                 drawColor = if (characterAccent) Theme.accent else Theme.font) { Arrow() }
+fun ProfileRow(symbol: Glyph, title: String, under: String? = null, characterAccent: Boolean = false,
+                 trailing: Trailing = Trailing.Chevron, perform: () -> Unit) {
+    // `PressRow`: the row is edge to edge, so it colors the surface instead of shrinking.
+    RowsLayout(symbol, title, under, Theme.font, Modifier.pressRow(perform),
+                 drawColor = if (characterAccent) Theme.accent else Theme.font) {
+        if (trailing != Trailing.None) Arrow(external = trailing == Trailing.External)
+    }
 }
 
 /**

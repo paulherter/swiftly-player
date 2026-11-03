@@ -254,8 +254,8 @@ private struct TVWhatsNew: View {
 
     private func row(_ item: WhatsNewEntry.Item) -> some View {
         HStack(alignment: .center, spacing: 24) {
-            Image(systemName: item.symbol)
-                .font(.system(size: 34))
+            Image(icon: item.symbol)
+                .font(.app(size: 34))
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(Theme.fontQuiet)
                 .frame(width: 52, height: 52)
@@ -422,8 +422,8 @@ private struct TVLooksPage: View {
                     .opacity(locked ? 0.45 : 1)
                     .overlay(alignment: .bottomTrailing) {
                         if locked {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 20, weight: .bold))
+                            Image(icon: "lock.fill")
+                                .font(.app(size: 20, weight: .bold))
                                 .foregroundStyle(Theme.font)
                                 .frame(width: 40, height: 40)
                                 .background(Theme.raised, in: Circle())
@@ -512,7 +512,7 @@ private struct TVLooksPage: View {
         if SupportModel.shared.isSupporter {
             HStack(spacing: 24) {
                 Text("Akzentfarbe")
-                    .font(.system(size: 30, weight: .medium))
+                    .font(.app(size: 30, weight: .medium))
                     .foregroundStyle(Theme.font)
                 Spacer(minLength: 40)
                 HStack(spacing: 18) {
@@ -614,16 +614,16 @@ struct TVLookEntryRow: View {
                             .lineLimit(1)
                     }
                     Spacer(minLength: 40)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 24, weight: .semibold))
+                    Image(icon: "chevron.right")
+                        .font(.app(size: 24, weight: .semibold))
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .accessibilityHidden(true)
                 case .none:
                     LookTile(look: saved, size: 52)
                     Text("Looks")
                     Spacer(minLength: 40)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 24, weight: .semibold))
+                    Image(icon: "chevron.right")
+                        .font(.app(size: 24, weight: .semibold))
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .accessibilityHidden(true)
                 }

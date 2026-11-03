@@ -242,6 +242,58 @@ func symbolPaint(_ kind: SymbolKind, size: Int, box: Int? = nil, style: String) 
         case .heart:
             LookArt.heart(cr, cx: w / 2, cy: h / 2, size: s * 0.88)
             cairo_fill(cr)
+        case .heartLine:
+            // Outline heart for rows (Mac `heart` in a settings row), same shape as the filled one.
+            LookArt.heart(cr, cx: w / 2, cy: h / 2, size: s * 0.88)
+            cairo_set_line_width(cr, s * 0.09)
+            cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND)
+            cairo_stroke(cr)
+        case .clock:
+            // Ring with two hands (Mac `clock`), no Adwaita name for it on Windows.
+            cairo_set_line_width(cr, s * 0.09)
+            cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND)
+            cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND)
+            cairo_arc(cr, w / 2, h / 2, s * 0.42, 0, 2 * .pi)
+            cairo_stroke(cr)
+            cairo_move_to(cr, w / 2, h / 2 - s * 0.24)
+            cairo_line_to(cr, w / 2, h / 2)
+            cairo_line_to(cr, w / 2 + s * 0.17, h / 2 + s * 0.1)
+            cairo_stroke(cr)
+        case .tag:
+            // Price tag (Mac `tag`): a pentagon pointing up-right with a hole, drawn as an outline.
+            cairo_set_line_width(cr, s * 0.09)
+            cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND)
+            let ox = w / 2 - s * 0.42, oy = h / 2 - s * 0.42
+            cairo_move_to(cr, ox + s * 0.10, oy + s * 0.50)
+            cairo_line_to(cr, ox + s * 0.50, oy + s * 0.10)
+            cairo_line_to(cr, ox + s * 0.84, oy + s * 0.10)
+            cairo_line_to(cr, ox + s * 0.84, oy + s * 0.44)
+            cairo_line_to(cr, ox + s * 0.44, oy + s * 0.84)
+            cairo_close_path(cr)
+            cairo_stroke(cr)
+            cairo_arc(cr, ox + s * 0.66, oy + s * 0.28, s * 0.04, 0, 2 * .pi)
+            cairo_fill(cr)
+        case .tray:
+            // Inbox tray (Mac `tray`): open box with a lowered middle, outline.
+            cairo_set_line_width(cr, s * 0.09)
+            cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND)
+            cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND)
+            let ox = w / 2 - s * 0.45, oy = h / 2 - s * 0.38
+            cairo_move_to(cr, ox + s * 0.02, oy + s * 0.52)
+            cairo_line_to(cr, ox + s * 0.18, oy + s * 0.08)
+            cairo_line_to(cr, ox + s * 0.72, oy + s * 0.08)
+            cairo_line_to(cr, ox + s * 0.88, oy + s * 0.52)
+            cairo_line_to(cr, ox + s * 0.88, oy + s * 0.70)
+            cairo_line_to(cr, ox + s * 0.02, oy + s * 0.70)
+            cairo_close_path(cr)
+            cairo_stroke(cr)
+            cairo_move_to(cr, ox + s * 0.02, oy + s * 0.52)
+            cairo_line_to(cr, ox + s * 0.28, oy + s * 0.52)
+            cairo_line_to(cr, ox + s * 0.34, oy + s * 0.60)
+            cairo_line_to(cr, ox + s * 0.56, oy + s * 0.60)
+            cairo_line_to(cr, ox + s * 0.62, oy + s * 0.52)
+            cairo_line_to(cr, ox + s * 0.88, oy + s * 0.52)
+            cairo_stroke(cr)
         case .lock: LookArt.lock(cr, cx: w / 2, cy: h / 2, size: s)
         case .cross: LookArt.cross(cr, cx: w / 2, cy: h / 2, size: s)
         case .check: LookArt.check(cr, cx: w / 2, cy: h / 2, size: s)
@@ -254,7 +306,7 @@ func symbolPaint(_ kind: SymbolKind, size: Int, box: Int? = nil, style: String) 
     return area
 }
 
-enum SymbolKind { case heart, lock, cross, check, chevron }
+enum SymbolKind { case heart, heartLine, clock, tag, tray, lock, cross, check, chevron }
 
 // MARK: - The mini phones of the purchase page
 
@@ -406,62 +458,4 @@ func looksHeroPaint(width: Int) -> Widget! {
         cairo_pattern_destroy(fade)
         cairo_pattern_destroy(content)
     }
-}
-
-/// **The fan of the teaser card**: five icons, the middle one larger with a white ring that
-/// comes and goes, each bobbing 3 up and down. 104 high.
-func iconFanPaint() -> Widget! {
-    let icons: [(name: String, turn: Double, drop: Double, size: Double, delay: Double)] = [
-        ("fan-sunset", -10, 12, 60, 0),
-        ("look-neonnight", -4, 4, 60, 0.3),
-        ("look-original", 0, 0, 70, 0.6),
-        ("fan-aurora", 4, 4, 60, 0.9),
-        ("fan-gold", 10, 12, 60, 1.2),
-    ]
-    let width = Int(icons.reduce(0) { $0 + $1.size } - 10 * Double(icons.count - 1)) + 40
-    let area = paint(width: width, height: 104, animated: true) { _, cr, w, _ in
-        let moving = LookArt.moves
-        let total = icons.reduce(0) { $0 + $1.size } - 10 * Double(icons.count - 1)
-        var x = (w - total) / 2
-        var placed = [(Int, Double)]()
-        for (index, icon) in icons.enumerated() {
-            placed.append((index, x))
-            x += icon.size - 10
-        }
-        // The middle one on top.
-        for (index, left) in placed.sorted(by: { ($0.0 == 2 ? 1 : 0) < ($1.0 == 2 ? 1 : 0) }) {
-            let icon = icons[index]
-            let t = moving ? (LookArt.now - icon.delay) / 1.6 : 0
-            let phase = t - floor(t / 2) * 2
-            let half = phase < 1 ? phase : 2 - phase
-            let lift = -3 * (0.5 - cos(half * .pi) / 2)
-            let s = icon.size
-            let top = 22 + icon.drop + lift
-            cairo_save(cr)
-            cairo_translate(cr, left + s / 2, top + s / 2)
-            cairo_rotate(cr, icon.turn * .pi / 180)
-            LookArt.shadow(cr, x: -s / 2, y: -s / 2, w: s, h: s, corner: 14, opacity: 0.25, radius: 6, drop: 4)
-            LookArt.tile(cr, icon.name, x: -s / 2, y: -s / 2, size: s, corner: 14, edge: false)
-            if index == 2, moving {
-                // pick: off, on from 70 to 92 percent of a 4.8 s cycle (with 0.38 s fades).
-                let cycle = (LookArt.now - icon.delay).truncatingRemainder(dividingBy: 4.8)
-                let ring: Double
-                switch cycle {
-                case ..<2.98: ring = 0
-                case ..<3.36: ring = (cycle - 2.98) / 0.38
-                case ..<4.42: ring = 1
-                default: ring = max(0, 1 - (cycle - 4.42) / 0.38)
-                }
-                if ring > 0 {
-                    LookArt.rounded(cr, -s / 2 - 3, -s / 2 - 3, s + 6, s + 6, 18 - 1)
-                    cairo_set_source_rgba(cr, 1, 1, 1, ring)
-                    cairo_set_line_width(cr, 2)
-                    cairo_stroke(cr)
-                }
-            }
-            cairo_restore(cr)
-        }
-    }
-    gtk_widget_set_halign(area, GTK_ALIGN_CENTER)
-    return area
 }

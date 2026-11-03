@@ -119,8 +119,8 @@ struct DownloadRing: View {
     }
 
     private func image(_ name: String, _ size: CGFloat, _ color: Color) -> some View {
-        Image(systemName: name)
-            .font(.system(size: size, weight: .semibold))
+        Image(icon: name, size: size)
+            .font(.app(size: size, weight: .semibold))
             .foregroundStyle(color)
     }
 
@@ -172,10 +172,12 @@ struct DownloadField: View {
     @Environment(\.onImageTint) private var onImage
     let entries: DownloadItem?
     var stretches = true
+    var caption: LocalizedStringKey? = nil
     let onTap: () -> Void
 
     var body: some View {
         Button(action: onTap) {
+            VStack(spacing: 2) {
             Group {
                 if let p = entries, p.state != .done {
                     DownloadRing(entries: p, mass: 22) {}
@@ -184,8 +186,8 @@ struct DownloadField: View {
                     // The same distinction as at the ring: filled means loaded, and it stays an
                     // arrow. The check mark beside it in the same row means "seen".
                     // 19 medium is in no scale; 17 semibold is the level below and the one that exists.
-                    Image(systemName: entries == nil ? "arrow.down" : "arrow.down.circle.fill")
-                        .font(.system(size: 17, weight: .semibold))
+                    Image(icon: entries == nil ? "arrow.down" : "arrow.down.circle.fill", size: Theme.actionSymbol)
+                        .font(.app(size: Theme.actionSymbol))
                         .foregroundStyle(entries == nil ? Theme.font : Theme.accent)
                 }
             }
@@ -197,9 +199,19 @@ struct DownloadField: View {
             // should do the same. The note here even named the coupling - "until it catches
             // up you see the difference" - but the neighbour caught up long ago and this
             // field stayed.
-            .frame(width: stretches ? nil : 48, height: 48)
-            .background(Theme.buttonArea(onImage: onImage),
+            .frame(width: stretches ? nil : 48, height: caption != nil && stretches ? 36 : 48)
+            .background(stretches ? Color.clear : Theme.buttonArea(onImage: onImage),
                         in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+            .contentShape(Rectangle())
+            if let caption {
+                Text(caption)
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.fontQuiet)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            }
+            .frame(maxWidth: stretches ? .infinity : nil)
             .contentShape(Rectangle())
         }
         .buttonStyle(Theme.PressButton())
@@ -278,8 +290,8 @@ struct DownloadRow: View {
             if edit {
                 // 21 was a one-off between the levels; 20 semibold is the row heading and
                 // thus the next real one.
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20, weight: .semibold))
+                Image(icon: selected ? "checkmark.circle.fill" : "circle", size: 20)
+                    .font(.app(size: 20, weight: .semibold))
                     .foregroundStyle(selected ? Theme.accent : Theme.fontVeryQuiet)
                     // **The circle comes in from the left and pushes the row ahead of it.** With
                     // `.opacity` it stood at full width at once, and the row only moved by what
@@ -292,7 +304,7 @@ struct DownloadRow: View {
             NetworkImage(url: imageAddressValue, symbolText: landscape ? "tv" : "film")
                 // 116 x 65 instead of 104 x 59: the same still as in the series page's
                 // episode list. Two measures for the same role were the bug.
-                .frame(width: landscape ? 116 : 64, height: landscape ? 65 : 96)
+                .frame(width: landscape ? Theme.episodeWidth : 64, height: landscape ? Theme.episodeHeight : 96)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.cornerTile, style: .continuous))
                 // **Watched as in the episode list** - also offline: the state is in the
                 // entry. Only on the individual row; a series row stands for many episodes.
@@ -322,9 +334,9 @@ struct DownloadRow: View {
 
             if group != nil {
                 // 14 is in no scale - a chevron is 13 semibold.
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.fontVeryQuiet)
+                Image(icon: "chevron.right", size: 13)
+                    .font(.app(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.font)
             } else if !edit {
                 DownloadRing(entries: now, shareNow: share(loaded)) {
                     ringTap(entries, management) {}
@@ -374,7 +386,7 @@ struct DownloadRow: View {
         // Translated: German "F" for Folge, English "E" for Episode - it was fixed
         // as "F" here, also in English.
         if let s = entries.season, let f = entries.episode {
-            parts.append(String(localized: "S\(s) F\(f)"))
+            parts.append(String(localized: "S\(s) · F\(f)"))
         } else if let ticks = entries.runtimeTicks, ticks > 0 {
             parts.append(runtime(Double(ticks) / 10_000_000))
         }
@@ -751,8 +763,8 @@ struct EditButton: View {
         } label: {
             // 18 medium was the third size for the same glyph on this page; 17 semibold
             // is the scale's level.
-            Image(systemName: edit ? "xmark" : "pencil")
-                .font(.system(size: 17, weight: .semibold))
+            Image(icon: edit ? "xmark" : "pencil", size: 17)
+                .font(.app(size: 17, weight: .semibold))
                 .foregroundStyle(edit ? Theme.accent : Theme.font)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
@@ -974,7 +986,7 @@ struct DownloadSeriesView: View {
         }
         .contextMenu {
             Button(role: .destructive) { Theme.jerk(.medium); remove([p.id]) } label: {
-                Label("Download entfernen", systemImage: "trash")
+                Label("Download entfernen", icon: "trash")
             }
         }
     }
@@ -1036,7 +1048,7 @@ struct DownloadSeriesView: View {
             if let next { playItem(next) }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "play.fill").font(.system(size: 15))
+                Image(icon: "play.fill", size: 15).font(.app(size: 15))
                     .accessibilityHidden(true)
                 Text(verbatim: Item.seriesButton(episode: next?.asItem, loads: false))
             }

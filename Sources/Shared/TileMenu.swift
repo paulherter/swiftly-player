@@ -133,15 +133,15 @@ struct TileMenu: ViewModifier {
         if !inPlayer {
             Button { play() } label: {
                 if !isSeries, item.resumeFrom != nil {
-                    Label("Fortsetzen", systemImage: "play.fill")
+                    Label("Fortsetzen", icon: "play.fill")
                 } else {
-                    Label("Abspielen", systemImage: "play.fill")
+                    Label("Abspielen", icon: "play.fill")
                 }
             }
         }
         if continueWatching {
             NavigationLink(value: item) {
-                Label("Zur Übersicht", systemImage: "info.circle")
+                Label("Zur Übersicht", icon: "info.circle")
             }
         }
         // **Only the entry that has an effect**, except for series (partly watched) and
@@ -152,19 +152,19 @@ struct TileMenu: ViewModifier {
         let begun = item.resumeFrom != nil
         if isSeries || !isWatched {
             Button { watched(true) } label: {
-                Label("Als gesehen markieren", systemImage: "checkmark.circle")
+                Label("Als gesehen markieren", icon: "checkmark.circle")
             }
         }
         if isSeries || isWatched || begun {
             Button { watched(false) } label: {
-                Label("Als ungesehen markieren", systemImage: "eye.slash")
+                Label("Als ungesehen markieren", icon: "eye.slash")
             }
         }
         // The TV downloads nothing; there are no downloads there.
         #if !os(tvOS)
         if !isSeries, !inPlayer, model.downloadButtonShow, model.downloads.entries(for: item.id) == nil {
             Button { load() } label: {
-                Label("Laden", systemImage: "arrow.down.circle")
+                Label("Laden", icon: "arrow.down.circle")
             }
         }
         #endif
@@ -178,22 +178,22 @@ struct TileMenu: ViewModifier {
                             let item = item, model = model
                             Task { await PlayOutputs.shared.play(item, to: target, model: model) }
                         } label: {
-                            Label { Text(verbatim: target.name) } icon: { Image(systemName: "tv") }
+                            Label { Text(verbatim: target.name) } icon: { Image(icon: "tv") }
                         }
                     }
                 } label: {
-                    Label("Abspielen auf …", systemImage: "tv")
+                    Label("Abspielen auf …", icon: "tv")
                 }
             }
         }
         if !isSeries, !inPlayer, SharedModel.shared.mayCreate {
             Button { SharedModel.shared.createFor = item } label: {
-                Label("Gemeinsam schauen", systemImage: "person.2")
+                Label("Gemeinsam schauen", icon: "person.2")
             }
         }
         if continueWatching {
             Button { remove() } label: {
-                Label("Aus Weiterschauen entfernen", systemImage: "minus.circle")
+                Label("Aus Weiterschauen entfernen", icon: "minus.circle")
             }
         }
     }

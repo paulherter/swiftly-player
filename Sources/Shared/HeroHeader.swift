@@ -55,7 +55,7 @@ struct HeroHeader<ContentBody: View>: View {
                  width: Theme.heroPosterWidth, height: Theme.heroPosterHeight,
                  corner: Theme.cornerTile, progress: progress) {
                 Theme.area.overlay {
-                    Image(systemName: "film").foregroundStyle(Theme.fontVeryQuiet)
+                    Image(icon: "film").foregroundStyle(Theme.font)
                 }
             }
             // **The poster says nothing that is not stated beside it.**
@@ -302,8 +302,8 @@ struct ActionPanel: View {
                     pair.element.perform()
                 } label: {
                     HStack(spacing: 14) {
-                        Image(systemName: pair.element.symbol)
-                            .font(.system(size: 17))
+                        Image(icon: pair.element.symbol, size: 17)
+                            .font(.app(size: 17))
                             .frame(width: 20)
                             .accessibilityHidden(true)
                         pair.element.label

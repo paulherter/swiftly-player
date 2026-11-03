@@ -86,6 +86,11 @@ struct Choices: Codable {
     /// **The watchlist can be switched off**: sidebar row, filter and the button on detail
     /// pages. Same as `AppModel.watchlistShown`, default on.
     var watchlistShown = true
+    /// **"Gesehen von"** on movie and series pages (Jelly Twiggy plugin). Default on; the setting
+    /// itself only shows for a server in ``watchedByServers``. Off means no request at all.
+    var watchedByShown = true
+    /// Servers (their address) that once answered the watchers request, i.e. have the plugin.
+    var watchedByServers: [String] = []
     /// **The letter strip beside "By name" grids**. Same as `AppModel.alphabetShown`,
     /// default on.
     var alphabetShown = true
@@ -100,8 +105,8 @@ struct Choices: Codable {
     /// as the other choices.
     var fillFrame = false
     /// **Remaining time or end time** in the player: "-12:34" or "Endet um 22:41". A click
-    /// toggles, the choice persists (iOS `@AppStorage("restzeitAlsEnde")`).
-    var remainingTimeAsEnd = false
+    /// toggles, the choice persists (iOS `@AppStorage("endzeitImPlayer")`).
+    var endTimeInPlayer = false
     /// **Player volume**, 0 to 1, applies across titles (Mac: `@AppStorage("playerLautstaerke")`).
     /// `volumePrior` remembers the value for "sound on" after muting.
     var volume = 1.0
@@ -270,10 +275,12 @@ struct Choices: Codable {
         forwardSeconds            = w(.forwardSeconds, 30)
         progressOnTiles  = w(.progressOnTiles, true)
         watchlistShown   = w(.watchlistShown, true)
+        watchedByShown   = w(.watchedByShown, true)
+        watchedByServers = w(.watchedByServers, [String]())
         alphabetShown    = w(.alphabetShown, true)
         titleAsLogo           = w(.titleAsLogo, false)
         fillFrame           = w(.fillFrame, false)
-        remainingTimeAsEnd        = w(.remainingTimeAsEnd, false)
+        endTimeInPlayer        = w(.endTimeInPlayer, false)
         volume            = min(max(w(.volume, 1.0), 0), 1)
         volumePrior       = min(max(w(.volumePrior, 1.0), 0), 1)
         techBadge          = w(.techBadge, false)
@@ -321,8 +328,8 @@ struct Choices: Codable {
         case playbackPerServer = "wiedergabeJeServer"
         case audioLanguage = "tonSprache", subtitleLanguage = "untertitelSprache", subtitleAutomatic = "untertitelAutomatisch", subtitleLook = "utAussehen", newArrivalsDisconnected = "neuzugaengeGetrennt",
              nextAutomaticSelected = "naechsteAutomatischGewaehlt", backSeconds = "zurueckSekunden",
-             forwardSeconds = "vorSekunden", progressOnTiles = "fortschrittAufKacheln", watchlistShown = "merklisteAn", alphabetShown = "alphabetAn", titleAsLogo = "titelAlsLogo",
-             fillFrame = "bildfuellend", remainingTimeAsEnd = "restzeitAlsEnde", volume = "lautstaerke",
+             forwardSeconds = "vorSekunden", progressOnTiles = "fortschrittAufKacheln", watchlistShown = "merklisteAn", watchedByShown = "gesehenVonAn", watchedByServers = "gesehenVonServer", alphabetShown = "alphabetAn", titleAsLogo = "titelAlsLogo",
+             fillFrame = "bildfuellend", endTimeInPlayer = "endzeitImPlayer", volume = "lautstaerke",
              volumePrior = "lautstaerkeDavor", techBadge = "technikschild", skipAutomatic = "introAbspannAuto", downloadsAn, onlyOverWLAN = "nurUeberWLAN", nextLoad = "naechsteFolgeLaden",
              syncOn = "einstellungenSync", syncTime = "einstellungenSyncZeit", syncRemote = "einstellungenSyncServer", syncAccount = "einstellungenSyncKonto",
              bufferLevel = "pufferstufe", discordShow = "discordAnzeigen", searchHistory = "suchverlauf",
@@ -349,10 +356,12 @@ struct Choices: Codable {
         try c.encode(forwardSeconds, forKey: .forwardSeconds)
         try c.encode(progressOnTiles, forKey: .progressOnTiles)
         try c.encode(watchlistShown, forKey: .watchlistShown)
+        try c.encode(watchedByShown, forKey: .watchedByShown)
+        try c.encode(watchedByServers, forKey: .watchedByServers)
         try c.encode(alphabetShown, forKey: .alphabetShown)
         try c.encode(titleAsLogo, forKey: .titleAsLogo)
         try c.encode(fillFrame, forKey: .fillFrame)
-        try c.encode(remainingTimeAsEnd, forKey: .remainingTimeAsEnd)
+        try c.encode(endTimeInPlayer, forKey: .endTimeInPlayer)
         try c.encode(volume, forKey: .volume)
         try c.encode(volumePrior, forKey: .volumePrior)
         try c.encode(techBadge, forKey: .techBadge)

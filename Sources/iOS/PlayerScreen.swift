@@ -352,6 +352,8 @@ struct PlayerScreen: View {
                                     mass: mass) { close() }
                     }
                     .padding(.horizontal, mass.page)
+                    // The glyph, not the 44 button, ends where the time label ends.
+                    .padding(.trailing, -(mass.button - mass.symbol) / 2)
                     .padding(.top, mass.top)
                     Spacer(minLength: 0)
                 }
@@ -383,12 +385,12 @@ struct PlayerScreen: View {
     /// What shows in the large picture while the small window plays next to it.
     private var smallerHint: some View {
         VStack(spacing: 12) {
-            Image(systemName: "pip.fill")
+            Image(icon: "pip.fill", size: 30)
                 // Before: `.light`. That weight is gone; only Regular, Medium and Semibold
                 // exist. Medium like the other symbols in the player. The size 30
                 // stays: it is a symbol, not text.
-                .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(Theme.fontVeryQuiet)
+                .font(.app(size: 30, weight: .medium))
+                .foregroundStyle(Theme.font)
             Text("Läuft im kleinen Fenster")
                 // Same step as before (15 Regular), now as a token.
                 .font(Theme.body)
@@ -1104,7 +1106,7 @@ struct PlayerScreen: View {
     private var metaText: String? {
         if item.type == "Episode" {
             if let season = item.parentIndexNumber, let episode = item.indexNumber {
-                return String(localized: "Staffel \(season) · Folge \(episode)")
+                return String(localized: "S\(season) · F\(episode)")
             }
             return item.contextLine
         }
@@ -1136,6 +1138,8 @@ struct PlayerScreen: View {
             IconButton(symbol: "xmark", label: "Player schließen",
                         mass: mass) { close() }
         }
+        // The glyph, not the 44 button, ends where the time label ends.
+        .padding(.trailing, -(mass.button - mass.symbol) / 2)
     }
 
     /// **"Übergeben an …"**: the TVs a film can be sent to, see ``PlayOutputs``.
@@ -1148,15 +1152,15 @@ struct PlayerScreen: View {
                 Section {
                     ForEach(targets, id: \.deviceID) { target in
                         Button { handOver(to: target) } label: {
-                            Label { Text(verbatim: target.name) } icon: { Image(systemName: "tv") }
+                            Label { Text(verbatim: target.name) } icon: { Image(icon: "tv") }
                         }
                     }
                 } header: {
                     Text("Übergeben an …")
                 }
             } label: {
-                Image(systemName: "tv")
-                    .font(.system(size: mass.symbol, weight: .medium))
+                Image(icon: "tv", size: mass.symbol)
+                    .font(.app(size: mass.symbol, weight: .medium))
                     .foregroundStyle(.white)
                     .frame(width: mass.button, height: mass.button)
                     .contentShape(Rectangle())
@@ -1197,7 +1201,7 @@ struct PlayerScreen: View {
                 // 20 Semibold, the row heading from the ladder. Before: 19 (iPhone) and 22 (iPad)
                 // in Bold, a size on no ladder, and Bold appears exactly once, at the page title.
                 // Rationale is at `Playermass`.
-                .font(.system(size: mass.title, weight: .semibold))
+                .font(.app(size: mass.title, weight: .semibold))
                 // Before: raw `.white`; `font` is read.
                 .foregroundStyle(Theme.font)
                 .lineLimit(1)
@@ -1220,7 +1224,7 @@ struct PlayerScreen: View {
             VStack(alignment: .leading, spacing: 3) {
                 // Placeholder only: what shows is the title from `stateTitle`, which stays while the episode layer is open.
                 Text(verbatim: titleLine)
-                    .font(.system(size: mass.title, weight: .semibold))
+                    .font(.app(size: mass.title, weight: .semibold))
                     .lineLimit(1)
                     .opacity(0)
                     .accessibilityHidden(true)
@@ -1232,11 +1236,11 @@ struct PlayerScreen: View {
                                      size: mass.meta)
                     } else if let metaText { Text(verbatim: metaText) }
                     if !plan.isLossless {
-                        Label(plan.method.rawValue, systemImage: "exclamationmark.triangle.fill")
+                        Label(plan.method.rawValue, icon: "exclamationmark.triangle.fill")
                             .foregroundStyle(Theme.warning)
                     }
                 }
-                .font(.system(size: mass.meta))
+                .font(.app(size: mass.meta))
                 .foregroundStyle(Theme.fontQuiet)
                 .lineLimit(1)
             }
@@ -1355,12 +1359,24 @@ struct PlayerScreen: View {
         .padding(.bottom, mass.bottom)
     }
 
+    /// "gobackward.10" -> ("gobackward", "10"), when our icons replace SF's.
+    private static func skipParts(_ symbol: String) -> (base: String, seconds: String)? {
+        let parts = symbol.split(separator: ".", maxSplits: 1).map(String.init)
+        guard parts.count == 2, ["gobackward", "goforward"].contains(parts[0]),
+              Int(parts[1]) != nil, AppIcon.asset(for: parts[0]) != nil else { return nil }
+        return (parts[0], parts[1])
+    }
+
     private func button(_ symbol: String, large: Bool = false, huge: Bool = false,
                        dimmedDown: Bool = false, tick: Int = 0, snappy: Bool = false,
                        label: LocalizedStringKey? = nil,
                        action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            // Skip buttons carry their seconds: our arrow plus the number, set in the
+            // app's typeface (SF had the number baked into the symbol).
+            let skip = Self.skipParts(symbol)
+            Image(icon: skip?.base ?? symbol, size: huge ? (narrow ? 36 : 48)
+                                          : (large ? (narrow ? 24 : 30) : 17))
                 // Without this SwiftUI crossfades the two symbols, which looked like a bug, not
                 // intent.
                 //
@@ -1375,9 +1391,18 @@ struct PlayerScreen: View {
                                    ? .identity
                                    : .symbolEffect(snappy ? .replace.offUp
                                                          : .replace.downUp))
-                .font(.system(size: huge ? (narrow ? 36 : 48)
+                .font(.app(size: huge ? (narrow ? 36 : 48)
                                           : (large ? (narrow ? 24 : 30) : 17),
                               weight: .medium))
+                .overlay {
+                    if let seconds = skip?.seconds {
+                        Text(seconds)
+                            .font(.app(size: (huge ? (narrow ? 36 : 48)
+                                                   : (large ? (narrow ? 24 : 30) : 17)) * 0.28,
+                                       weight: .semibold))
+                            .monospacedDigit()
+                    }
+                }
                 // **Disabled means muted text, not translucent**. Before:
                 // `.white.opacity(0.35)`. Over a bright scene the symbol was gone entirely, over a
                 // dark one almost normal: the opacity depended on the picture instead of the
@@ -2248,8 +2273,8 @@ private struct JumpMark: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: bearing < 0 ? "gobackward" : "goforward")
-                .font(.system(size: 32, weight: .medium))
+            Image(icon: bearing < 0 ? "gobackward" : "goforward", size: 32)
+                .font(.app(size: 32, weight: .medium))
                 // See the button above: with reduced motion the value stays and the effect does not play.
                 .symbolEffect(.bounce, options: .speed(1.7),
                               value: Theme.motionReduced ? false : rotated)
@@ -2405,7 +2430,7 @@ private struct TimeRow: View {
                 }
             remainingTime
         }
-        .font(.system(size: font).monospacedDigit())
+        .font(.app(size: font).monospacedDigit())
         // **`schriftLeise` cannot be saved here.** At 13 point the row sits on the player
         // scrim over the running picture: over a white scene `schriftLeise` gave 1.34:1,
         // threshold 4.5. Under the gradient band at the foot (0.791 combined) `font`
@@ -2414,31 +2439,19 @@ private struct TimeRow: View {
         .foregroundStyle(Theme.font)
     }
 
-    /// **Remaining time or end: a tap toggles** (1.0.5, to try out). "-12:34" or
-    /// "Ends at 22:41"; the choice persists. No separate button, no second row: same
-    /// place, same font.
-    @AppStorage("restzeitAlsEnde") private var asEnd = false
+    /// **Remaining time, or the end time** when Settings → Playback → "Endzeit im Player"
+    /// is on (``PlayerEndTime``, off by default). "-12:34" or "Ends at 22:41"; same
+    /// place, same font, plain text.
+    @AppStorage(PlayerEndTime.key) private var asEnd = PlayerEndTime.standard
 
     private var remainingTime: some View {
         let rest = max(duration - position, 0)
-        return Button {
-            asEnd.toggle()
-        } label: {
-            Group {
-                if asEnd {
-                    Text("Endet um \(Date().addingTimeInterval(rest).formatted(date: .omitted, time: .shortened))")
-                } else {
-                    Text(verbatim: "−" + PlayTime.text(rest))
-                }
-            }
-            .lineLimit(1)
-            .contentShape(Rectangle().inset(by: -10))
+        let end = Text("Endet um \(Date().addingTimeInterval(rest).formatted(date: .omitted, time: .shortened))")
+        return Group {
+            if asEnd { end } else { Text(verbatim: "−" + PlayTime.text(rest)) }
         }
-        .buttonStyle(.plain)
-        // For VoiceOver a toggle with state; the slider already reads the time itself.
-        .accessibilityLabel(asEnd ? Text("Endet um \(Date().addingTimeInterval(rest).formatted(date: .omitted, time: .shortened))")
-                                    : Text("Restzeit"))
-        .accessibilityHint(Text("Wechselt zwischen Restzeit und Ende"))
+        .lineLimit(1)
+        .accessibilityLabel(asEnd ? end : Text("Restzeit"))
     }
 
     /// **Above the handle: preview image, below it the time.** Without trickplay on
@@ -2471,13 +2484,13 @@ private struct TimeRow: View {
                 HStack(spacing: 6) {
                     if !name.isEmpty {
                         Text(verbatim: name)
-                            .font(.system(size: font))
+                            .font(.app(size: font))
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
                     Text(PlayTime.text(position))
                         // Only the page title carries Bold, so Semibold here. The size stays `mass.zeit`, which scales with the window size.
-                        .font(.system(size: font, weight: .semibold).monospacedDigit())
+                        .font(.app(size: font, weight: .semibold).monospacedDigit())
                         .layoutPriority(1)
                 }
                 .foregroundStyle(Theme.font)
@@ -2536,7 +2549,7 @@ private struct OfferingButton: View {
                 // **White pill with the skip symbol** (triangle and bar), for both offers, as in
                 // the draft.
                 HStack(spacing: 8) {
-                    Image(systemName: "forward.end.fill")
+                    Image(icon: "forward.end.fill")
                     Text(verbatim: offering.label)
                 }
                 // Before: 15 Bold. Bold appears exactly once, at the page title. The step below is 15 Semibold.

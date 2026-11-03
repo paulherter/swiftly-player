@@ -148,6 +148,7 @@ struct FilmView: View {
                     VStack(alignment: .leading, spacing: 26) {
                         // The description is in the header, as on Apple TV; showing it here would
                         // duplicate it.
+                        WatchersRow(model: model, item: film)
                         CastRail(model: model, folks: film.actors,
                                         origin: film.name)
                         // Extras and similar titles. Order as on iOS.
@@ -163,8 +164,8 @@ struct FilmView: View {
                             FileRow(source: source)
                         }
                     }
-                    .padding(.horizontal, Theme.edgeSpacing)
-                    .padding(.top, 26)
+                    .padding(.horizontal, DetailPageMetric.left)
+                    .padding(.top, 36)
                     .transition(.opacity)
                 }
             }
@@ -175,7 +176,7 @@ struct FilmView: View {
             // not the page: it scrolls with the header, otherwise an edge would show while
             // scrolling.
             .background(alignment: .top) {
-                MoodReason(url: model.headerImageURL(for: film), since: Theme.heroHeightValue)
+                MoodReason(url: model.headerImageURL(for: film), since: DetailPageMetric.heroImage)
             }
             // Translucent instead of solid surfaces on top; see `Theme.flaecheDurchsichtig`.
             .environment(\.onImageTint, true)
@@ -330,6 +331,10 @@ struct DetailHero: View {
     @State private var moreOpen = false
     @State private var loadPanelOpen = false
     @State private var message: String?
+    @State private var overviewOpen = false
+    /// A series page leaves the description out, as in the design: its head ends at the buttons
+    /// and the tabs follow at once.
+    var showsOverview: Bool = true
     @Environment(PlayControls.self) private var controls
 
     // MARK: Downloads
@@ -368,34 +373,33 @@ struct DetailHero: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            // On the right, not full width, as on Apple TV. The image extends below the header
-            // zone and its own mask ends it, so it is not clipped.
-            //
-            // Always some image, never none: `headerImageURL` falls back to the next episode's
-            // still for a series without a backdrop, and to the poster for everything else.
-            // Cropped to the wrong aspect is better than an empty header.
-            Backdrop(url: model.landscapeImageURL(for: title, width: 1600)
-                         ?? model.headerImageURL(for: title),
-                    height: Theme.heroHeightValue * 1.62)
-                // Anchor at the bottom edge, not the top.
-                //
-                // The content moves down when overscrolling. If the image grew top to bottom, its
-                // top edge would move with it and the gap above would stay as a hard edge.
-                //
-                // Anchored at the bottom it grows upward by exactly the amount the content moved
-                // down: the top edge stays where it was and no gap appears.
-                //
-                // The scale factor is therefore computed against the full image height, not the
-                // height of the header zone; otherwise it would grow by a multiple of what is
-                // needed and look too strong.
-                .scaleEffect(1 + pull / (Theme.heroHeightValue * 1.62), anchor: .bottom)
-
-            block
-                .padding(.leading, Theme.edgeSpacing)
-                .padding(.top, Theme.titleHeight + 98)
-        }
-        .frame(height: Theme.heroHeightValue, alignment: .topLeading)
+        // **A normal flow, no fixed positions.** The block used to sit in a 640 x 230 box with
+        // every row at a computed offset; a long title or a late description then overlapped the
+        // row below. Rows now stack with the gaps from the design, and the one thing that must
+        // not move (the chips row, which fills in late) keeps a fixed height instead.
+        block
+            .padding(.leading, DetailPageMetric.left)
+            .padding(.top, DetailPageMetric.top)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            // **The image is a background, so it takes no room.** It is 402 high plus the 52
+            // of the title bar and fades out on its own mask (bottom and left); the content
+            // flows over it and sets the header's height.
+            .background(alignment: .top) {
+                // On the right, not full width, as on Apple TV. Always some image, never none:
+                // `headerImageURL` falls back to the next episode's still for a series without
+                // a backdrop, and to the poster for everything else.
+                Backdrop(url: model.landscapeImageURL(for: title, width: 1600)
+                             ?? model.headerImageURL(for: title),
+                         height: DetailPageMetric.heroImage)
+                    // Anchor at the bottom edge, not the top.
+                    //
+                    // The content moves down when overscrolling. If the image grew top to
+                    // bottom, its top edge would move with it and the gap above would stay as a
+                    // hard edge. Anchored at the bottom it grows upward by exactly the amount the
+                    // content moved down. The scale factor is computed against the full image
+                    // height so it does not grow by a multiple of what is needed.
+                    .scaleEffect(1 + pull / DetailPageMetric.heroImage, anchor: .bottom)
+            }
         // Also kept current: after the player closes, the same title comes back fresh.
         .task(id: "\(title.id)|\(title.isWatched)|\(model.pagesRefresh)") {
             watchlist = title.userData?.isFavorite ?? false
@@ -435,202 +439,188 @@ struct DetailHero: View {
         }
     }
 
-    /// No poster. On Apple TV it was dropped because it only carried the progress bar,
-    /// which now sits where it does on every other tile.
-    ///
-    /// Every row has a fixed height. Title, details, description and button row thus
-    /// stand in the same place on every movie page, however long the title is or how
-    /// much description the server returns. Without that, buttons and rows shift when
-    /// paging from movie to movie and the page looks built differently each time.
-    ///
-    /// Same idea as `Theme.infoHeight` on tvOS: the height is fixed there, and a long
-    /// title shrinks instead of moving the page.
+    /// Title, details, chips, buttons, progress, description. No logo image: the title
+    /// is text in the design font, 44 heavy, so every page has the same head.
     private var block: some View {
-        // Fixed positions instead of fixed heights.
-        //
-        // A stack with fixed row heights should be enough, but it was not: the buttons
-        // kept moving depending on what the server returned. Instead of guessing which
-        // row still grows, each row now sits at a computed position. Anything too big in
-        // it is clipped and moves nothing.
-        //
-        // 0    title        42
-        // 54   details      26
-        // 92   description  66   (three lines)
-        // 182  button row   48
-        // 230  end
-        ZStack(alignment: .topLeading) {
-            // The title above a hero image is the page title: 28 bold, tracking from the
-            // type step. 34 was a separate step for the same role. A long title shrinks
-            // instead of moving the page; a logo stays in the 42 pt slot.
-            TitleMark(title: title.name, logo: model.logoURL(for: title), slot: .compartment(height: 42))
-                .frame(width: 640, height: 42, alignment: .leading)
-                .offset(y: 0)
+        VStack(alignment: .leading, spacing: 0) {
+            Text(verbatim: title.name)
+                .font(.app(size: 44, weight: .heavy))
+                .tracking(-1.2)
+                .foregroundStyle(Theme.font)
+                // A long title shrinks instead of wrapping into the meta line.
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .frame(height: 44, alignment: .leading)
 
-            // 26, not 20, or the clip cuts off the evidence.
-            //
-            // This row holds the certification badge and the Direct Play evidence. Both are
-            // 13 pt text with 4 pt padding above and below, so about 24 tall. Capped at 20 and
-            // clipped, a strip was missing top and bottom: the badge looked different from the
-            // same badge on iPhone, and the evidence looked cut off.
-            //
-            // 26 is the reference value: `ProofRow` in `Sources/Shared/Style.swift` keeps the
-            // same row exactly that tall on iPhone, for the same reason (as tall as a badge,
-            // always).
-            //
-            // The clip stays: it keeps the computed position of the description below, no
-            // matter what the server returns. At 26 it no longer cuts anything. Same trap as
-            // with episode names, where a frame that was too tight ate the descenders.
-            detailsRail
-                .frame(width: 640, height: 26, alignment: .leading)
-                .clipped()
-                .offset(y: 54)
-
-            // The cleaned text, not the raw one. Jellyfin returns descriptions as they came
-            // from the provider, with `<br>`, `<p>` and `&amp;`. The header showed them
-            // literally.
-            Text(verbatim: title.description ?? "")
-                .font(Theme.body)
-                .lineSpacing(3)
-                // `schriftLeise` is a full value. Opacity changes its effect once something lies
-                // beneath it, and here the hero image does.
+            Text(verbatim: detailsRow)
+                .font(.app(size: 14))
+                // A full value: opacity would change its effect over the hero image.
                 .foregroundStyle(Theme.fontQuiet)
-                .lineLimit(3)
-                .multilineTextAlignment(.leading)
-                .frame(width: 640, height: 66, alignment: .topLeading)
-                .clipped()
-                .offset(y: 92)
+                .lineLimit(1)
+                .padding(.top, 12)
+
+            chipRail
+                .padding(.top, 14)
 
             buttonRail
-                .frame(height: Theme.primaryButtonHeight, alignment: .leading)
-                .offset(y: 182)
+                .padding(.top, 20)
+
+            if let share = progressShare, let rest = (playBarTitle ?? title).remainingTimeText {
+                VStack(alignment: .leading, spacing: 6) {
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.18))
+                        Capsule().fill(Theme.accent)
+                            .frame(width: DetailPageMetric.primaryWidth * min(max(share, 0), 1))
+                    }
+                    .frame(width: DetailPageMetric.primaryWidth, height: 4)
+                    Text(verbatim: rest)
+                        .font(.app(size: 12))
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                }
+                .padding(.top, 16)
+            }
+
+            if showsOverview { overview.padding(.top, 36) }
         }
-        .frame(width: 640, height: 230, alignment: .topLeading)
+        .frame(width: 700, alignment: .topLeading)
     }
 
-    /// Year, runtime, genres, and after them the evidence line: Direct Play, rating,
-    /// certification. One line, not three.
-    ///
-    /// The order is the TV's: rating, certification, evidence (`ProofMarks(proofLast:
-    /// true)` in the detail header). The evidence arrives last, and when it came first
-    /// its appearance pushed stars and certification aside.
-    ///
-    /// Year, runtime and genre come first because the Mac does not put them under the
-    /// title in the hero image as iPhone does (there `secondaryLine` is part of
-    /// `HeroHeader`); here the title block has fixed positions and no second line for it.
-    private var detailsRail: some View {
-        // 8 between the badges, 14 after the text, as `ProofRow` on iPhone. 14 dates
-        // from when only Direct Play had a badge; between three small badges it is a hole.
-        // The 6 after the text replaces a nested stack: an empty inner stack would keep
-        // its spacing even without a badge (tvOS `ProofMarks`).
+    /// How far into the film: the server's percentage, else computed from the resume point.
+    /// Not for a series: the bar would describe the next episode, not the series.
+    private var progressShare: Double? {
+        guard title.type != "Series", (playBarTitle ?? title).resumeFrom != nil else { return nil }
+        if let share = title.watchedShare { return share }
+        guard let total = title.runtimeSeconds, total > 0, let since = title.resumeFrom else { return nil }
+        return since / total
+    }
+
+    /// The description at 620 wide, 14 quiet, two lines with an accent "Mehr" inline; one tap
+    /// opens it in full. The cut is by characters because a button cannot sit inside running
+    /// text, and a 620 pt line holds about 85 characters at this size.
+    private var overview: some View {
+        let text = title.description ?? ""
+        let cut = 150
+        let long = text.count > cut + 20
+        return VStack(alignment: .leading, spacing: 8) {
+            if !text.isEmpty {
+                Group {
+                    if long && !overviewOpen {
+                        let head = String(text.prefix(cut))
+                        let clean = head.lastIndex(of: " ").map { String(head[..<$0]) } ?? head
+                        Text(verbatim: clean + "… ")
+                            .foregroundStyle(Theme.fontQuiet)
+                        + Text("Mehr").foregroundStyle(Theme.accent).fontWeight(.semibold)
+                    } else {
+                        Text(verbatim: text).foregroundStyle(Theme.fontQuiet)
+                    }
+                }
+                .font(.app(size: 14))
+                // 1.55 line height: Inter's own is about 1.21 at this size.
+                .lineSpacing(4.5)
+                .multilineTextAlignment(.leading)
+                .frame(width: 620, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { if long { withAnimation(Theme.leap) { overviewOpen.toggle() } } }
+                .accessibilityAddTraits(long ? .isButton : [])
+            }
+            if !title.direction.isEmpty {
+                HStack(spacing: 8) {
+                    Text("Regie").foregroundStyle(Theme.fontVeryQuiet)
+                    Text(verbatim: title.direction.joined(separator: ", ")).foregroundStyle(Theme.font)
+                }
+                .font(.app(size: 13))
+                .lineLimit(1)
+            }
+        }
+    }
+
+    /// Meta line: year, runtime, genres. A series has no runtime but a season count, so
+    /// that takes the runtime's place (`secondaryLine` knows nothing of it).
+    private var detailsRow: String {
+        guard title.type == "Series" else { return title.secondaryLine }
+        var parts: [String] = []
+        if let year = title.productionYear { parts.append(String(year)) }
+        if let count = title.childCount, count > 0 { parts.append(String(localized: "\(count) Staffeln")) }
+        if let genres = title.genres, !genres.isEmpty { parts.append(genres.prefix(2).joined(separator: ", ")) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Direct Play, rating, age: 26 high chips. **Fixed height even when empty**: the evidence
+    /// arrives last, and without the height the buttons would jump when it does.
+    private var chipRail: some View {
         HStack(spacing: 8) {
-            // Details (year, runtime, genre): 12, as in `HeroHeader` on iPhone. 14 and 10 are
-            // not part of any step scale.
-            Text(verbatim: detailsRow)
-                .font(Theme.small)
-                .foregroundStyle(Theme.fontQuiet)
-                .padding(.trailing, 6)
-            // In the same badge as Direct Play, as in `ProofRow`; the rating used to be the
-            // only bare item in the line.
-            if let rating = title.communityRating {
-                mark("star.fill",
-                      String(format: "%.1f", rating).replacingOccurrences(of: ".", with: ","),
-                      color: Theme.fontQuiet, weight: .semibold)
-            }
-            // Corner 8, not the default 3. Same reasoning as on iPhone: the scale uses
-            // 10/12/16, and a badge with 3 next to elements with 10 was the squarest thing on
-            // the page.
-            //
-            // All other measures come from the component itself and match iPhone: 13 medium,
-            // padding 10/4, fill at 15 percent.
-            if let sharing = title.ageRating {
-                Badge(text: sharing, rounding: Theme.cornerSmall)
-            }
-            // The evidence goes last: year, runtime, stars, certification, Direct Play, as on
-            // tvOS (`ProofMarks(proofLast:)`). It arrives last and so pushes nothing; it
-            // only fades in (0.2 s opacity).
+            // The evidence is the one chip in accent: quiet surface, accent text. The warning
+            // keeps its own color when the server transcodes.
             if let plan {
-                proof(plan).transition(.opacity)
+                if plan.isLossless {
+                    chip(symbol: "checkmark", text: String(localized: "Direct Play"),
+                         color: Theme.accent, fill: Theme.accentQuiet)
+                        .transition(.opacity)
+                } else {
+                    chip(symbol: "exclamationmark.triangle.fill", text: plan.method.rawValue,
+                         color: Theme.warning, fill: Theme.warning.opacity(0.15))
+                        .transition(.opacity)
+                }
             }
-            Spacer(minLength: 0)
+            if let rating = title.communityRating {
+                chip(symbol: "star.fill",
+                     text: String(format: "%.1f", rating).replacingOccurrences(of: ".", with: ","),
+                     color: Theme.font, fill: Color.white.opacity(0.08))
+            }
+            if let age = title.ageRating {
+                chip(symbol: nil, text: ageText(age), color: Theme.font, fill: Color.white.opacity(0.08))
+            }
         }
         .animation(.easeOut(duration: 0.2), value: plan != nil)
-        .lineLimit(1)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(height: 26, alignment: .leading)
     }
 
-    /// The Direct Play evidence as a badge, character for character the same as
-    /// `ProofRow.mark` in `Sources/Shared/Style.swift`.
-    ///
-    /// It is a badge, not loose text. As bare symbol and word next to the outlined
-    /// certification badge it gave two different shapes to two items of equal weight.
-    /// Now both share the same corner and read as a pair; the color says which kind of
-    /// information it is.
-    ///
-    /// Fifteen percent tint, not a fill: the white play button stays the only filled
-    /// object on the page. At around a third it would turn into a second button.
-    ///
-    /// Why copied instead of shared: `ProofRow` lives in `Sources/Shared/Style.swift`,
-    /// which is not part of the Mac target (`Sources/macOS/Style.swift` applies there).
-    /// Until the component moves to a file both targets include (such as
-    /// `Sources/Shared/Components.swift`, where `Badge` already is), this is a second
-    /// copy. It is marked as such so the two do not drift apart unnoticed.
-    @ViewBuilder
-    private func proof(_ plan: PlaybackPlan) -> some View {
-        // Semibold only on the checkmark. The warning is regular: what makes it loud is
-        // the color, not the weight. iPhone splits it the same way.
-        mark(plan.isLossless ? "checkmark" : "exclamationmark.triangle.fill",
-              plan.isLossless ? String(localized: "Direct Play") : plan.method.rawValue,
-              color: plan.isLossless ? Theme.accent : Theme.warning,
-              weight: plan.isLossless ? .semibold : .regular)
+    /// "12", "12+" and "FSK 12" all read "ab 12"; names of other systems ("PG-13") stay.
+    private func ageText(_ raw: String) -> String {
+        let bare = raw.replacingOccurrences(of: "FSK ", with: "").replacingOccurrences(of: "+", with: "")
+        return !bare.isEmpty && bare.allSatisfy(\.isNumber) ? String(localized: "ab \(bare)") : raw
     }
 
-    /// The badge shell for evidence and rating, as `ProofRow.mark` on iPhone.
-    private func mark(_ symbol: String, _ word: String,
-                       color: Color, weight: Font.Weight) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 11, weight: weight))
-                .accessibilityHidden(true)
-            Text(verbatim: word).font(Theme.tile)
+    private func chip(symbol: String?, text: String, color: Color, fill: Color) -> some View {
+        HStack(spacing: 5) {
+            if let symbol {
+                Image(icon: symbol, size: 12).font(.app(size: 12, weight: .semibold))
+                    .accessibilityHidden(true)
+            }
+            Text(verbatim: text).font(.app(size: 12, weight: .semibold))
         }
         .foregroundStyle(color)
-        // Narrower on the left than on the right: the symbol is narrower than its glyph
-        // cell, and otherwise the word sits visibly off-center.
-        .padding(.leading, 8)
-        .padding(.trailing, 10)
-        .padding(.vertical, 4)
-        .background(color.opacity(0.15),
-                    in: RoundedRectangle(cornerRadius: Theme.cornerSmall,
-                                         style: .continuous))
+        .padding(.horizontal, 9)
+        .frame(height: 26)
+        .background(fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    /// Four targets as on Apple TV: resume, from the beginning, watchlist, More.
-    /// "Gesehen" (watched) and "Trailer" moved into the More list: five labeled buttons
-    /// were too many for one row.
-    private var buttonRail: some View {
-        HStack(spacing: 12) {
-            // Fixed width for the main button, but no placeholder.
-            //
-            // The fixed width stays: otherwise the button would grow with its label ("Fortsetzen"
-            // is longer than "Abspielen") and push everything behind it. "Von vorn" (from the
-            // beginning) only exists for titles already started; where it does not, the rest
-            // moves up. Leaving an empty gap would be worse than the small shift.
-            if let since = (playBarTitle ?? title).resumeFrom {
-                PrimaryButton(label: "Fortsetzen") { start(since) }
-                    .frame(width: Theme.primaryButtonWidth)
-                    // Right click: the title's tile menu, as on its tile.
-                    .tileMenu(title, model: model, afterwards: { await refresh() })
-                ActionButton(mass: Theme.primaryButtonHeight, symbol: "arrow.counterclockwise", title: "Von vorn") {
-                    start(0)
-                }
-            } else {
-                PrimaryButton(label: "Abspielen") { start(0) }
-                    .frame(width: Theme.primaryButtonWidth)
-                    .tileMenu(title, model: model, afterwards: { await refresh() })
+    /// The label of the main button. A series continues with the episode the server names
+    /// ("Weiter mit S1 · F3"); a title that was never started plays from the top.
+    private var playLabel: String {
+        if title.type == "Series" {
+            if let episode = playBarTitle, let code = episode.episodeCode,
+               episode.resumeFrom != nil || (episode.parentIndexNumber ?? 1) > 1 || (episode.indexNumber ?? 1) > 1 {
+                return String(localized: "Weiter mit \(code)")
             }
+            return String(localized: "Abspielen")
+        }
+        return (playBarTitle ?? title).resumeFrom != nil ? String(localized: "Fortsetzen") : String(localized: "Abspielen")
+    }
+
+    /// Main button 280 x 56, then four icon buttons without a field. "Von vorn" and the
+    /// download live in the More list (`moreActions`) so no function is lost; the right-click
+    /// menu on the main button has them too.
+    private var buttonRail: some View {
+        HStack(spacing: 4) {
+            DetailPlayButton(label: playLabel) { start((playBarTitle ?? title).resumeFrom ?? 0) }
+                // Right click: the title's tile menu, as on its tile.
+                .tileMenu(title, model: model, afterwards: { await refresh() })
+            Color.clear.frame(width: 8, height: 1)
 
             if watchlistShown {
-                ActionButton(mass: Theme.primaryButtonHeight, symbol: watchlist ? "bookmark.fill" : "bookmark",
-                           title: "Merkliste", active: watchlist) {
+                DetailIconButton(symbol: watchlist ? "bookmark.fill" : "bookmark",
+                                 title: "Merkliste", active: watchlist) {
                     watchlist.toggle()
                     Task {
                         if let reason = await model.setWatchlist(title, an: watchlist) {
@@ -641,85 +631,63 @@ struct DetailHero: View {
                 }
             }
 
-            // The download button, only when the feature is on.
-            //
-            // On iPhone it is the fifth field of a row; here the secondary buttons sit side by
-            // side, so it is one more. It comes after the watchlist: the two are the "for
-            // later" pair and belong together.
-            //
-            // For a series it opens the choice, for a movie the download sheet. Same split as
-            // on iPhone: the series page calls `Ladeauswahl` and the movie page `LoadSheet`.
-            // For a series it must first be decided what to download; for a movie it is the
-            // one file.
-            if model.downloadButtonShow, title.type == "Series",
-               let loadSelection {
-                ActionButton(mass: Theme.primaryButtonHeight, symbol: "arrow.down",
-                             title: "Laden", active: selectionOpen, pick: loadSelection)
+            // A series has no trailer field (its row is watchlist and watched); its trailer
+            // stays in More.
+            if title.type != "Series" {
+                DetailIconButton(symbol: "play.rectangle", title: "Trailer") { trailerStart() }
             }
-            if model.downloadButtonShow, title.type != "Series" {
-                ActionButton(mass: Theme.primaryButtonHeight, symbol: loadCharacter, title: "Laden",
-                           active: loaded != nil) {
-                    ringClick(loaded, model.downloads) {
-                        withAnimation(Theme.leap) { loadPanelOpen.toggle() }
-                    }
-                }
-                .overlay(alignment: .topLeading) {
-                    if loadPanelOpen, let p = asEntry {
-                        LoadPanel(model: model, entries: [p], title: title.name,
-                                  images: loadImages, opened: $loadPanelOpen,
-                                  qualitySelect: true,
-                                  audioStreams: (plan?.source ?? title.mediaSources?.first)?.mediaStreams ?? [],
-                                  failed: { notify($0) })
-                            .offset(y: Theme.primaryButtonHeight + 8)
-                            .transition(.expand(from: .topLeading))
-                            .zIndex(30)
-                    }
-                }
-                // A click outside closes it, same expectation as the More menu. The catcher sits
-                // below the panel, not above it.
-                .background {
-                    if loadPanelOpen {
-                        Color.black.opacity(0.001)
-                            .contentShape(Rectangle())
-                            .frame(width: 4000, height: 4000)
-                            .onTapGesture {
-                                withAnimation(Theme.leap) { loadPanelOpen = false }
-                            }
-                    }
-                }
+            DetailIconButton(symbol: watched ? "checkmark.circle.fill" : "checkmark.circle",
+                             title: watched ? "Als ungesehen markieren" : "Als gesehen markieren",
+                             active: watched) {
+                watchState.perform()
             }
 
-            ActionButton(mass: Theme.primaryButtonHeight, symbol: "ellipsis", title: "Mehr", active: moreOpen) {
+            DetailIconButton(symbol: "ellipsis", title: "Mehr", active: moreOpen) {
                 withAnimation(Theme.leap) { moreOpen.toggle() }
             }
-            // Right-aligned over the anchor, offset only vertically; same construction as
-            // `Wahlknopf`, mirrored. This used `.offset(x: -206, ...)` on a left-aligned
-            // overlay: the list's frame then lay 212 pt to the right of the visible part, and
-            // `.scale(anchor: .topTrailing)` scaled from there, so the list flew in from the
-            // right instead of unfolding briefly from the corner.
+            // Right-aligned over the anchor, offset only vertically, so the list unfolds from
+            // the corner under the button.
             .overlay(alignment: .topTrailing) {
                 if moreOpen {
                     ActionList(actions: moreActions, opened: $moreOpen)
-                        .offset(y: Theme.primaryButtonHeight + 8)
+                        .offset(y: DetailPageMetric.buttonHeight + 4)
                         .transition(.expand(from: .topTrailing))
                         .zIndex(40)
                 }
             }
-            // As with the picker button: the catcher sits below the panel, and a click outside
-            // closes it.
+            // The movie's download sheet hangs off the same button now that the download is an
+            // entry of its list.
+            .overlay(alignment: .topTrailing) {
+                if loadPanelOpen, let p = asEntry {
+                    LoadPanel(model: model, entries: [p], title: title.name,
+                              images: loadImages, opened: $loadPanelOpen,
+                              qualitySelect: true,
+                              audioStreams: (plan?.source ?? title.mediaSources?.first)?.mediaStreams ?? [],
+                              failed: { notify($0) })
+                        .offset(y: DetailPageMetric.buttonHeight + 4)
+                        .transition(.expand(from: .topTrailing))
+                        .zIndex(30)
+                }
+            }
+            // A click outside closes either panel; the catcher sits below the panel, not above.
             .background {
-                if moreOpen {
+                if moreOpen || loadPanelOpen {
                     Color.black.opacity(0.001)
                         .contentShape(Rectangle())
                         .frame(width: 4000, height: 4000)
-                        .onTapGesture { withAnimation(Theme.leap) { moreOpen = false } }
+                        .onTapGesture {
+                            withAnimation(Theme.leap) { moreOpen = false; loadPanelOpen = false }
+                        }
                 }
             }
-            .panelEscape(moreOpen) { withAnimation(Theme.leap) { moreOpen = false } }
+            .panelEscape(moreOpen || loadPanelOpen) {
+                withAnimation(Theme.leap) { moreOpen = false; loadPanelOpen = false }
+            }
 
-            if let message { HintStrip(text: message) }
+            if let message { HintStrip(text: message).padding(.leading, 12) }
             Spacer(minLength: 0)
         }
+        .frame(height: DetailPageMetric.buttonHeight, alignment: .leading)
     }
 
     /// Year, runtime and genre, from `Item.secondaryLine` in
@@ -729,8 +697,6 @@ struct DetailHero: View {
     /// from the `title.` prefix. It contains the `seconds > 0` check, which was once
     /// missing on tvOS: series showed "0 Min." because the server returns 0 for them. A
     /// second copy means it gets missed again next time.
-    private var detailsRow: String { title.secondaryLine }
-
     /// **Play asks which version on press** when a title has several, as on iPhone; the
     /// decision and the dialog live in ``PlayControls`` so every play button on the Mac
     /// behaves the same. One version, or a copy on the device, starts at once.
@@ -738,16 +704,12 @@ struct DetailHero: View {
         controls.launch(playBarTitle ?? title, since: since)
     }
 
-    /// The same actions as on the other platforms, from `TitleActions`, plus
-    /// "Gesehen" (watched) and "Trailer", which are also here on Apple TV instead of in
-    /// the button row.
+    /// The same actions as on the other platforms, from `TitleActions`.
     private var moreActions: [TitleAction] {
-        var list: [TitleAction] = [
-            // From the shared component next to the tile menu, not as a separate entry; see
-            // `TitleAction.watchState`.
-            .watchState(title, model: model, watched: $watched, report: { notify($0) }),
-            .init(symbol: "film", text: "Trailer") { trailerStart() },
-        ]
+        // Watched (and, for a movie, the trailer) sit in the button row now.
+        var list: [TitleAction] = title.type == "Series"
+            ? [.init(symbol: "film", text: "Trailer") { trailerStart() }]
+            : []
         if title.type == "Series" {
             list += TitleActions.forSeries(
                 title, state: playBarTitle, season: season, model: model,
@@ -764,9 +726,24 @@ struct DetailHero: View {
                 gemeinsam: SharedModel.shared.mayCreate
                     ? { [title] in SharedModel.shared.createFor = title } : nil)
         }
+        // The download left the button row for this list. A series asks what to download first
+        // (season, episode); a movie opens its sheet under the More button.
+        if title.type == "Series", let loadSelection {
+            list.append(.init(symbol: "arrow.down.circle", text: "Laden") { loadSelection() })
+        } else if title.type != "Series", model.downloadButtonShow {
+            list.append(.init(symbol: loadCharacter, text: "Laden") {
+                ringClick(loaded, model.downloads) { withAnimation(Theme.leap) { loadPanelOpen.toggle() } }
+            })
+        }
         list.insert(contentsOf: TitleActions.playOn(title.type == "Series" ? playBarTitle : title, model: model),
                     at: 0)
         return list
+    }
+
+    /// The shared watched toggle, so the row field and every menu do the same; see
+    /// `TitleAction.watchState`.
+    private var watchState: TitleAction {
+        .watchState(title, model: model, watched: $watched, report: { notify($0) })
     }
 
     private func trailerStart() {
@@ -815,7 +792,7 @@ struct CastRail: View {
         if !folks.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 RailTitle(text: "Besetzung")
-                PagingRail(margin: 0, widthJePiece: 84 + 18, imageHeight: 84) {
+                PagingRail(margin: 0, widthJePiece: 84 + 22, imageHeight: 84) {
                     ForEach(folks, id: \.id) { person in
                         // A header is now a link: tapping the cast used to lead nowhere.
                         Button {
@@ -823,6 +800,8 @@ struct CastRail: View {
                         } label: {
                             HeaderImage(name: person.name, role: person.role,
                                      image: model.personImage(person))
+                                // 12 from the rail plus 10 here is the 22 between circles.
+                                .padding(.trailing, 10)
                         }
                         .buttonStyle(Theme.PressButton())
                     }
@@ -845,20 +824,20 @@ struct HeaderImage: View {
                 Theme.area
                 // With a symbol, like every other missing image on the Mac. Without it, the cast
                 // row was the only place left with a blank gray circle.
-                NetworkImage(url: image, symbolText: "person", displayEdge: 76)
+                NetworkImage(url: image, symbolText: "person", displayEdge: 84)
             }
-            .frame(width: 76, height: 76)
+            .frame(width: 84, height: 84)
             .clipShape(Circle())
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(verbatim: name)
-                    .font(Theme.secondLine.weight(.medium))
+                    .font(.app(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.font)
                     .lineLimit(2)
                 if let role {
                     Text(verbatim: role)
-                        .font(Theme.secondLine)
-                        .foregroundStyle(Theme.fontQuiet)
+                        .font(.app(size: 12))
+                        .foregroundStyle(Theme.fontVeryQuiet)
                         .lineLimit(1)
                 }
             }
@@ -903,5 +882,71 @@ struct FileRow: View {
         let ut = FileDetails.subtitle(FileDetails.subtitleTracks(source))
         if !ut.isEmpty { rows.append(ut) }
         return rows.filter { !$0.isEmpty }
+    }
+}
+
+
+// MARK: - Head of the detail pages (film and series)
+
+/// Measures of the new head, in one place so `SeriesView` lines up with the film page.
+/// Declared here, not in Style.swift, which other work is editing at the same time.
+enum DetailPageMetric {
+    /// Left edge of everything on the page.
+    static let left: CGFloat = 36
+    /// Top of the title below the page top (hero 402 high, title bar included).
+    static let top: CGFloat = 172
+    /// Backdrop height: the 402 of the design plus the 52 of the title bar above it.
+    static let heroImage: CGFloat = 454
+    static let primaryWidth: CGFloat = 280
+    static let buttonHeight: CGFloat = 56
+    /// Bottom edge of the button row: 172 + title 44 + 12 + meta 17 + 14 + chips 26 + 20 + 56.
+    static let railBottom: CGFloat = 361
+}
+
+/// The white main button: 280 x 56, radius 10, 17 semibold, play icon 18.
+fileprivate struct DetailPlayButton: View {
+    let label: String
+    let action: () -> Void
+    @State private var hovers = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(icon: "play.fill", size: 18).font(.app(size: 18))
+                    .accessibilityHidden(true)
+                Text(verbatim: label).font(.app(size: 17, weight: .semibold))
+            }
+            .foregroundStyle(Theme.reason)
+            .frame(width: DetailPageMetric.primaryWidth, height: DetailPageMetric.buttonHeight)
+            .background(hovers ? Theme.primaryButtonHovers : Color.white,
+                        in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Theme.PressButton())
+        .onHover { hovers = $0 }
+        .accessibilityLabel(label)
+    }
+}
+
+/// Icon button 48 x 56 without a field: only the glyph, brighter on hover, accent when on.
+fileprivate struct DetailIconButton: View {
+    let symbol: String
+    let title: LocalizedStringKey
+    var active = false
+    let action: () -> Void
+    @State private var hovers = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(icon: symbol, size: 22).font(.app(size: 22))
+                .foregroundStyle(active ? Theme.accent : Theme.font)
+                .opacity(hovers || active ? 1 : 0.85)
+                .frame(width: 48, height: DetailPageMetric.buttonHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(Theme.PressButton())
+        .onHover { hovers = $0 }
+        .help(Text(title))
+        .accessibilityLabel(Text(title))
     }
 }

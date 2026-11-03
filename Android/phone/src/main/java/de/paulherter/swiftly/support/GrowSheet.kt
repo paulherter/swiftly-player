@@ -67,10 +67,10 @@ import android.os.Looper
 // MARK: - "Hilf Swiftly zu wachsen"
 
 private const val TERMS_URL = "https://play.google.com/about/play-terms/"
-private const val PRIVACY_URL = "https://swiftlyplayer.com/privacy.html"
+internal const val PRIVACY_URL = "https://swiftlyplayer.com/privacy.html"
 
 /** Android's sheet handle takes 13 dp; iOS lays its grabber over the content. */
-private val Handle = 13.dp
+internal val Handle = 13.dp
 
 /**
  * **"Help Swiftly grow"**, the sheet of the Play build (`SupportGrowSheet` on iPhone): a full
@@ -190,7 +190,7 @@ private fun PricesUnavailableCard(onRetry: () -> Unit) {
 }
 
 @Composable
-private fun LegalLink(text: String, action: () -> Unit) {
+internal fun LegalLink(text: String, action: () -> Unit) {
     Box(Modifier.heightIn(min = 32.dp).pressText(action), contentAlignment = Alignment.Center) {
         Text(text, style = giftFont(11f, FontWeight.Medium).copy(textDecoration = TextDecoration.Underline), color = Theme.fontQuiet,
              maxLines = 1)

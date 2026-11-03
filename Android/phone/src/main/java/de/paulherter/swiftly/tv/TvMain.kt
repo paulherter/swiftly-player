@@ -213,6 +213,30 @@ fun TvMain(app: SwiftlyApplication) {
         }
     }
 
+    // DEBUG only, for render shoots: launch extra `page` = movies | series | search | watchlist | profile | settings |
+    // look | movie | series-detail | player (the last three with `pageId`). Release builds ignore it.
+    LaunchedEffect(Unit) {
+        if (!de.paulherter.swiftly.BuildConfig.DEBUG) return@LaunchedEffect
+        val intent = (context as? android.app.Activity)?.intent ?: return@LaunchedEffect
+        val page = intent.getStringExtra("page") ?: return@LaunchedEffect
+        val id = intent.getStringExtra("pageId").orEmpty()
+        delay(2500)
+        when (page) {
+            "movies" -> section = TvSection.Movies
+            "series" -> section = TvSection.Series
+            "search" -> section = TvSection.Search
+            "watchlist" -> section = TvSection.Watchlist
+            "profile" -> open(Destination("profil", translated("Profil"), "Profil"))
+            "settings" -> open(Destination("einstellungen", translated("Einstellungen"), "Einstellungen"))
+            "look" -> open(Destination("untertitelaussehen", translated("Untertitelaussehen"), "Untertitelaussehen"))
+            "support" -> app.support.tvPanel.value = de.paulherter.swiftly.support.TvSupportPanel.Ask
+            "movie" -> open(Destination(id, "", "Movie"))
+            "series-detail" -> open(Destination(id, "", "Series"))
+            "player" -> runCatching { titleRead(withContext(Dispatchers.IO) { app.kern.title(id).await() }) }.getOrNull()
+                ?.let { t -> de.paulherter.swiftly.playOrChoose(app, t, id, 0.0) }
+        }
+    }
+
     BackHandler(enabled = top.isEmpty() && section != TvSection.Start) { section = TvSection.Start }
     BackHandler(enabled = top.isNotEmpty(), onBack = back)
 
@@ -265,9 +289,14 @@ fun TvMain(app: SwiftlyApplication) {
                             // Mirrors `HeaderHistory` in `MainView`. Not on Start, where nothing scrolls under the bar
                             // any more (fixed hero zone); on the other root pages it does (the chip/filter row
                             // carries its own top spacing as part of the scrolling content, not as `contentPadding`).
-                            // Soft and at 30 %, as on Apple TV: it must not swallow the look's glow.
-                            if (b != TvSection.Start) TvHeaderHistory(Modifier.align(Alignment.TopStart).graphicsLayer { alpha = bar.value },
-                                                                       soft = true, strength = 0.3f)
+                            // tvOS 1.1: only Filme and Serien, where the grid scrolls under the tabs, and only once it has
+                            // moved (`LibraryScroll`); elsewhere a shade read as a bar of its own. Soft, 300 pt high.
+                            if (b == TvSection.Movies || b == TvSection.Series) {
+                                val shade by animateFloatAsState(if (TvLibraryScroll.scrolled) 1f else 0f,
+                                    tvTween(200, TvSpec.easeInOutCurve), label = "kopfschatten")
+                                TvHeaderHistory(Modifier.align(Alignment.TopStart).graphicsLayer { alpha = bar.value * shade },
+                                                soft = true)
+                            }
                         }
                     } else {
                         TvSubpage(app, target, open, back)
@@ -422,7 +451,7 @@ private fun TvTakeoverStatus(app: SwiftlyApplication) {
  * The old image stays until the new one is loaded (tvOS `switchImage`): `steht` changes only
  * when Coil has the new image in memory at the same size. Then `Backdrop` hits the cache, Coil
  * does not fade again (memory hits have no Coil cross-fade), and only the 300 ms fade of
- * `Backdrop` runs.
+ * `Backdrop` runs (400 ms ease in out, as `withAnimation(.easeInOut(duration: 0.4))` in tvOS `Backdrop`).
  */
 @Composable
 private fun TvBackdropsLayer(image: String?, shadow: Boolean) {
@@ -503,8 +532,9 @@ private fun HeaderBar(app: SwiftlyApplication, active: TvSection, select: (TvSec
                        offerings: List<Offering>, profile: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = TvTheme.edgePage).padding(top = TvTheme.edgeTop).height(TvTheme.stripHeight).focusGroup(),
         verticalAlignment = Alignment.CenterVertically) {
-        Wordmark(height = 18.dp)
-        Spacer(Modifier.width(26.dp))
+        // tvOS 1.1: wordmark 48 > 56 pt, 56 > 48 pt to the tabs (the Android wordmark's 18 dp stood for 48 pt).
+        Wordmark(height = 21.dp)
+        Spacer(Modifier.width(24.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             // Switched off in Appearance, the watchlist has no tab.
             TvSection.entries.filter { it != TvSection.Watchlist || app.settings.watchlist }
@@ -515,11 +545,11 @@ private fun HeaderBar(app: SwiftlyApplication, active: TvSection, select: (TvSec
         val groups = app.gemeinsam.value.openGroups
         if (offerings.isNotEmpty() || groups.isNotEmpty()) {
             TvTakeoverBadge(app, offerings, groups)
-            Spacer(Modifier.width(9.dp))
+            Spacer(Modifier.width(12.dp))
         }
         // "Support Swiftly", left of the profile, as on the phone's home page.
         TvSupportHeart(app)
-        Spacer(Modifier.width(9.dp))
+        Spacer(Modifier.width(12.dp))
         // A 30 dp profile circle (tvOS 60 pt), the small step of the focus ladder. The ring is the accent,
         // drawn outside the image (`ProfileStyle` on tvOS: 4 pt, 8 pt out). The account switch flies here;
         // while the new image is on its way, none is shown.
@@ -537,9 +567,7 @@ private fun HeaderBar(app: SwiftlyApplication, active: TvSection, select: (TvSec
                     .graphicsLayer { alpha = if (transition != null && !transition.replaced) 0f else 1f }) {
                 SubcomposeAsyncImage(model = app.kern.userImage(160).orElse(null), contentDescription = translated("Profil"),
                     contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape).background(Theme.raised),
-                    error = { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Symbol(Glyph.PersonFilled, 13.dp, color = Theme.fontQuiet)
-                    } })
+                    error = { AccountCircle(app.username(), null, TvSpec.headerProfileImage) })
             }
         }
     }
@@ -619,17 +647,25 @@ private fun TvTakeoverBadge(app: SwiftlyApplication, offerings: List<Offering>, 
     }
 }
 
-/** Mirrors `TabStyle`: magnifier 1.06, calm surface on focus, selected with accent underline. */
+/**
+ * Mirrors `TabStyle` (tvOS 1.1): **focus is the white pill with dark text**, the same jump as every other control; the click
+ * switches, so the open tab keeps its own mark, the accent line. Height 34,
+ * padding 14 (tvOS 68 / 28), line 2 dp high 1 dp from the bottom, hidden while the pill is white; unselected
+ * fontQuiet, selected font.
+ */
 @Composable
 private fun PageTab(text: String, selected: Boolean, perform: () -> Unit) {
     FocusArea(magnifier = TvTheme.focusMagnifier, perform = perform) { focus ->
-        // The calm focus surface, same as everywhere, not a separate white value.
-        Column(Modifier.clip(RoundedCornerShape(TvTheme.corner)).background(if (focus) TvTheme.focusArea else Color.Transparent)
-                .padding(horizontal = 12.dp, vertical = 5.dp),
-            horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text, style = TvTheme.button,
-                 color = if (focus || selected) Theme.font else Theme.fontQuiet)
-            Box(Modifier.padding(top = 3.dp).size(18.dp, 2.dp).clip(CircleShape).background(if (selected) Theme.accent else Color.Transparent))
+        Box(Modifier.height(TvTheme.tabHeight).clip(CircleShape).background(if (focus) Color.White else Color.Transparent),
+            contentAlignment = Alignment.Center) {
+            Text(text, style = TvTheme.button, maxLines = 1, modifier = Modifier.padding(horizontal = TvTheme.tabPadding),
+                 color = if (focus) Theme.reason else if (selected) Theme.font else Theme.fontQuiet)
+            // `matchParentSize`: a `fillMaxWidth` line inside a wrapping Box took the whole rest of the bar, so the open
+            // tab stretched over the others and pushed them and the profile off the screen. Left and right 14 (tvOS 28).
+            if (selected && !focus) Box(Modifier.matchParentSize().padding(horizontal = TvTheme.tabPadding)) {
+                Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 1.dp).fillMaxWidth()
+                    .height(2.dp).clip(CircleShape).background(Theme.accent))
+            }
         }
     }
 }

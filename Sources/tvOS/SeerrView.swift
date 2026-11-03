@@ -153,8 +153,8 @@ struct SeerrTile: View {
             // The measures of `Shared/SeerrTile.swift`, doubled. There: icon 10 semibold, text
             // `Theme.badge`, spacing 3, padding 5/7 by 3. Here it was 15 bold and 17 semibold, neither iPhone nor TV steps.
             HStack(spacing: 6) {
-                Image(systemName: hit.state.symbol)
-                    .font(.system(size: 20, weight: .semibold))
+                Image(icon: hit.state.symbol)
+                    .font(.app(size: 20, weight: .semibold))
                 if let word = hit.state.shortWord {
                     Text(verbatim: word).font(Theme.badge)
                 }
@@ -462,7 +462,7 @@ struct SeerrDetailView: View {
                 Task { await askFor() }
             } label: {
                 HStack(spacing: 22) {
-                    Image(systemName: "plus").frame(width: 38)
+                    Image(icon: "plus").frame(width: 38)
                     Text(selected.isEmpty ? "Staffel wählen"
                                           : "\(selected.count) anfragen")
                     Spacer(minLength: 0)
@@ -489,7 +489,7 @@ struct SeerrDetailView: View {
         let an = selected.contains(st.number)
         let free = st.state.requestable
         return HStack(spacing: 22) {
-            Image(systemName: symbolText(for: st))
+            Image(icon: symbolText(for: st))
                 .frame(width: 38)
                 .foregroundStyle(an ? Theme.accent : Theme.fontQuiet)
                 // The icon is only an image; "selected" is carried by the button's trait, "already there" stands as a suffix on the row.

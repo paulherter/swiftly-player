@@ -78,7 +78,7 @@ struct TVSubtitleLookView: View {
     private var left: some View {
         VStack(alignment: .leading, spacing: 24) {
             Text("Untertitel")
-                .font(.system(size: 44, weight: .bold))
+                .font(.app(size: 44, weight: .bold))
                 .foregroundStyle(Theme.font)
             SubtitlePreview(look: trial ?? look, cornerRadius: 24)
             VStack(alignment: .leading, spacing: 8) {
@@ -87,7 +87,7 @@ struct TVSubtitleLookView: View {
                 }
                 Text("Gilt für Untertitel aus Text. Die von Blu-rays sind Bilder und bleiben, wie sie sind.")
             }
-            .font(.system(size: 24))
+            .font(.app(size: 24))
             .foregroundStyle(Theme.fontVeryQuiet)
         }
     }
@@ -133,7 +133,7 @@ struct TVSubtitleLookView: View {
 
     private func groupTitle(_ text: LocalizedStringKey) -> some View {
         Text(text)
-            .font(.system(size: 30, weight: .semibold))
+            .font(.app(size: 30, weight: .semibold))
             .foregroundStyle(Theme.fontVeryQuiet)
             .padding(.leading, TVSpec.rowInset)
             .padding(.bottom, 16)
@@ -153,7 +153,7 @@ struct TVSubtitleLookView: View {
                 if adjustable { Text(look.fileStyleLine) }
                 else { Text("Bei Plex-Servern kommt die Gestaltung immer aus der Datei.") }
             }
-            .font(.system(size: 24))
+            .font(.app(size: 24))
             .foregroundStyle(Theme.fontQuiet)
             .padding(.horizontal, TVSpec.rowInset)
             .padding(.top, 4)
@@ -183,8 +183,8 @@ struct TVSubtitleLookView: View {
                         } label: {
                             HStack(spacing: 24) {
                                 // The checkmark is in the type colour, not the accent (spec).
-                                Image(systemName: current ? "checkmark" : "")
-                                    .font(.system(size: TVSpec.valueIcon, weight: .semibold))
+                                Image(icon: current ? "checkmark" : "")
+                                    .font(.app(size: TVSpec.valueIcon, weight: .semibold))
                                     .foregroundStyle(Theme.font)
                                     .frame(width: TVSpec.choiceCheckWidth)
                                 if let swatch = step.swatch {

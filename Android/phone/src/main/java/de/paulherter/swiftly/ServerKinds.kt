@@ -163,7 +163,7 @@ fun ServerKindPicker(purpose: PickerPurpose, pick: (ServerKind) -> Unit, back: (
         Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = Theme.formWidth).fillMaxWidth()
                        .then(if (purpose == PickerPurpose.FirstStart) Modifier.statusBarsPadding() else Modifier)
-                       .padding(horizontal = Theme.edgePageWide).padding(bottom = 40.dp).navigationBarsPadding()) {
+                       .padding(horizontal = Theme.edgeSpacing).padding(bottom = 40.dp).navigationBarsPadding()) {
                 when (purpose) {
                     PickerPurpose.FirstStart -> {
                         Box(Modifier.padding(top = 96.dp)) { Wordmark(height = 32.dp) }
@@ -193,9 +193,9 @@ private fun KindCard(kind: ServerKind, perform: () -> Unit) {
         Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { ServerKindMark(kind, 34.dp) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(kind.shownName, style = Theme.categoryLarge, color = Theme.font)
-            Text(kind.pitch, style = Theme.body.copy(lineHeight = 19.sp), color = Theme.fontQuiet)
+            Text(kind.pitch, style = Theme.body.copy(fontSize = 14.sp, lineHeight = 19.sp), color = Theme.fontQuiet)
         }
-        Symbol(Glyph.AngleRight, 13.dp, color = Theme.fontVeryQuiet, strength = Strength.Semibold)
+        Symbol(Glyph.AngleRight, 13.dp, color = Theme.font, strength = Strength.Semibold)
     }
 }
 

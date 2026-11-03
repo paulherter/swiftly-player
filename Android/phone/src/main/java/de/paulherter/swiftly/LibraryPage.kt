@@ -69,7 +69,7 @@ import java.text.NumberFormat
 
 data class GridTile(val id: String, val title: String, val type: String, val subline: String?, val poster: String?,
                         val progress: Double?, val mark: String?, val markCount: Int,
-                        /** The tile's letter in the strip of a "By name" grid (`AlphabetIndex`). */
+                        /** The tile's key in the index strip (`AlphabetIndex.key(of:sorting:)`). */
                         val letter: String? = null)
 
 /** Like `AppModel.pagesSize`. */
@@ -123,7 +123,7 @@ class LibraryState(val art: String, private val store: Store) {
     /** The video playlists with entries in this scope (`PlaylistDirectory`); in memory like the collections. */
     var playlistList by mutableStateOf<List<CollectionTile>>(emptyList()); private set
     var sorting by mutableStateOf(store.rememberValue("sortierung.$art") ?: "name"); private set
-    /** The letter strip of a "By name" list (`LibraryModel.alphabet`); empty otherwise. */
+    /** The index strip of the list (`LibraryModel.alphabet`); empty while there is none. */
     var letters by mutableStateOf<List<LetterEntry>>(emptyList()); private set
     var filter by mutableStateOf(store.rememberValue("filter.$art") ?: "alle"); private set
     private var loadsPost = false
@@ -274,7 +274,7 @@ class LibraryState(val art: String, private val store: Store) {
         })
         filterMore = if (o.optBoolean("gesiebt")) o.optBoolean("nochMehr") else null
         // The strip comes with the first page of a "By name" list.
-        if (since == 0) letters = if (sorting == "name") lettersRead(o.optJSONArray("buchstaben")) else emptyList()
+        if (since == 0) letters = lettersRead(o.optJSONArray("buchstaben"))
         val a = o.getJSONArray("titel")
         return (0 until a.length()).map { i ->
             gridTileRead(a.getJSONObject(i))
@@ -303,8 +303,8 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
     BoxWithConstraints(Modifier.fillMaxSize().background(Theme.reason)) {
         // The strip where it means something (switched on, "By name", a grid of titles), and the right
         // margin making room for it so the gaps to the edge and to the posters match (`trailingLane`).
-        val shownLetters = if (app.settings.alphabet && state.sorting == "name" && !state.listSelected
-                               && state.letters.size > 1) state.letters else emptyList()
+        val shownLetters = if (app.settings.alphabet && !state.listSelected
+                               && state.total >= AlphabetRailMinimumTitles && state.letters.size > 1) state.letters else emptyList()
         val lane = if (shownLetters.isEmpty()) Theme.edgeSpacing else maxOf(Theme.edgeSpacing, AlphabetRailWidth)
         // `Theme.columns(usableNow:)`: three on every phone.
         val count = Theme.columns((maxWidth - Theme.edgeSpacing - lane).value)
@@ -321,7 +321,7 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
             columns = GridCells.Fixed(count), state = grid,
             contentPadding = PaddingValues(start = Theme.edgeSpacing, end = lane, top = headerDp + 8.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(Theme.tileSpacing),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+            verticalArrangement = Arrangement.spacedBy(Theme.gridRow),
             modifier = Modifier.fillMaxSize().areaContent()
         ) {
             if (state.playlistsSelected) {
@@ -373,7 +373,7 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
                         // The icon is `CloudOff`, not Apple's `externaldrive.badge.xmark`: Android has no symbol
                         // for an external drive, and a hand-drawn one would be a custom vector for a side issue.
                         // Same meaning, the platform's icon.
-            EmptyState(Glyph.ServerRoute, translated("Server ist abgetaucht"),
+            EmptyState(Glyph.WlanDisruption, translated("Server ist abgetaucht"),
                 translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serverAddress()),
                 primaryButton = translated("Erneut versuchen") to { section.launch { state.load(app.kern) } })
         } else if (state.items.isEmpty() && !state.loads) {
@@ -474,12 +474,12 @@ fun GridTileView(k: GridTile, modifier: Modifier = Modifier, perform: () -> Unit
     // Long press: the tile menu with preview (`TileMenu`), the same image in the same shape.
     Column(modifier.reveal().tilePress({ TileMenuRequest(k.id, k.title, k.type, k.poster, false, k.subline) }, perform)
             .semantics(mergeDescendants = true) { contentDescription = description },
-        verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
             // No `SubcomposeAsyncImage` in the grid; see `TileView` on the home page.
             var missing by remember(k.poster) { mutableStateOf(k.poster == null) }
             if (missing) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Symbol(Glyph.Film, 22.dp, color = Theme.fontVeryQuiet)
+                Symbol(Glyph.Film, 22.dp, color = Theme.font)
             }
             // Decorative: the tile already speaks its description as a whole.
             coil3.compose.AsyncImage(model = k.poster, contentDescription = null, contentScale = ContentScale.Crop,

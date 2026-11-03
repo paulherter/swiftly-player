@@ -41,7 +41,7 @@ extension ServerKind {
     var pitch: LocalizedStringKey {
         switch self {
         case .jellyfin: "Adresse rein und anmelden, oder per Quick Connect ganz ohne Passwort."
-        case .plex: "Einmal bei Plex anmelden, deine Server sucht die App dann selbst raus."
+        case .plex: "Einmal bei Plex anmelden, die App findet deine Server."
         case .emby: "Adresse von deinem Server rein, dann Name und Passwort."
         }
     }

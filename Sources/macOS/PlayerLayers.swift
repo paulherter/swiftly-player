@@ -9,28 +9,26 @@ import VLCKit
 /// with fixed values instead of `pad`/`inWindow`: a window has no diagonal and no
 /// notch the margin would need to align with, so it is the same everywhere.
 struct PlayerMetric {
-    /// Left and right margin.
-    let page: CGFloat = 40
-    /// Top inset. Reaches past the zone where the window controls sit
-    /// (`Theme.signalZone`), so title and controls do not collide.
-    let top: CGFloat = 28
-    let bottom: CGFloat = 24
-    /// Hit area of the icon buttons.
-    let button: CGFloat = 38
-    let symbol: CGFloat = 18
-    /// The app's type scale, not a separate one.
-    ///
-    /// The player used to have title 22 and detail 14, making it the only place on the
-    /// Mac with a second type scale, and 14 is in neither. Now the same numbers as on
-    /// iPhone: title = row heading (20), detail = detail (12), time 13 like the tile
-    /// title, the smallest step that is still safely legible over video.
-    let title: CGFloat = 20
-    let meta: CGFloat = 12
+    /// Right margin of the icon row and of the bar; the skip pill and the next-episode
+    /// card share it (design: 28).
+    let page: CGFloat = 28
+    /// Left edge of the title: past the window's traffic lights (design: 80).
+    let titleLeft: CGFloat = 80
+    /// Top inset of title row and icon row (design: 14); the traffic lights sit left of
+    /// the title, so nothing collides.
+    let top: CGFloat = 14
+    let bottom: CGFloat = 20
+    /// Hit area of the icon buttons (design: 44 with a 22 pt glyph).
+    let button: CGFloat = 44
+    let symbol: CGFloat = 22
+    /// Design: title 22/700, subtitle 13, time 13.
+    let title: CGFloat = 22
+    let meta: CGFloat = 13
     let time: CGFloat = 13
-    /// Distance of the skip pill above the bar.
-    let overBar: CGFloat = 20
-    /// Hit area of the seek bar.
-    let bar: CGFloat = 32
+    /// Distance of the skip pill above the bar (bar 44 + 12 = pill bottom at 76).
+    let overBar: CGFloat = 12
+    /// Hit area of the seek bar; the track itself is 4 pt.
+    let bar: CGFloat = 44
     /// Indent of the rows on the layers, so column title, selection row and delay
     /// share one text edge.
     static let inset: CGFloat = 10
@@ -41,22 +39,25 @@ enum PlayerLayer: Equatable {
     case tracks, episodes, settings
 }
 
-/// One of the round icon buttons at the top right, in the player as on the layers.
+/// One of the plain icon buttons at the top right, in the player as on the layers.
 ///
-/// Unlike iOS it shows a faint circular fill on hover: a mouse needs the feedback,
-/// while a finger hits what it sees anyway.
+/// Unlike iOS it shows a faint fill on hover and, when `key` is given, a tooltip in
+/// the design's style ("Ton und Untertitel  T" on #303030) instead of the system one.
 struct IconButton: View {
     let symbol: String
     let label: LocalizedStringKey
     let mass: PlayerMetric
+    /// The keyboard shortcut shown in the tooltip, or `nil` for the system tooltip.
+    var key: String?
     let action: () -> Void
 
     @State private var hovers = false
+    @State private var tipShown = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: mass.symbol, weight: .medium))
+            Image(icon: symbol)
+                .font(.app(size: mass.symbol, weight: .medium))
                 .foregroundStyle(.white)
                 .frame(width: mass.button, height: mass.button)
                 .background(hovers ? Theme.hoverArea : .clear,
@@ -65,11 +66,42 @@ struct IconButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(Theme.PressButton())
-        .help(label)
+        .help(key == nil ? Text(label) : Text(verbatim: ""))
         .accessibilityLabel(Text(label))
         .onHover { hovers = $0 }
         .animation(Theme.timeFloat, value: hovers)
+        .overlay(alignment: .topTrailing) {
+            if let key, tipShown {
+                HStack(spacing: 8) {
+                    Text(label)
+                    Text(verbatim: key).foregroundStyle(Self.keyColor)
+                }
+                .font(.app(size: 12, weight: .medium))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(Theme.raised, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .shadow(color: .black.opacity(0.5), radius: 9, y: 6)
+                .offset(x: 4, y: mass.button + 2)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .transition(.opacity)
+            }
+        }
+        .zIndex(tipShown ? 1 : 0)
+        .task(id: hovers) {
+            guard key != nil else { return }
+            guard hovers else { tipShown = false; return }
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            tipShown = true
+        }
     }
+
+    /// The shortcut in the tooltip, #989898 in the design.
+    private static let keyColor = Color(white: 0.596)
 }
 
 /// Base of every layer: blur plus a darkening of rgba(11,11,13,.72). It accepts
@@ -101,7 +133,8 @@ private struct LayersHeader<Left: View>: View {
             Spacer(minLength: 0)
             IconButton(symbol: "xmark", label: "Schließen", mass: mass, action: close)
         }
-        .padding(.horizontal, mass.page)
+        .padding(.leading, mass.titleLeft)
+        .padding(.trailing, mass.page)
         .padding(.top, mass.top)
     }
 }
@@ -151,7 +184,7 @@ private struct LayersRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 9) {
-                Image(systemName: "checkmark")
+                Image(icon: "checkmark")
                     .font(Theme.listTitle)
                     .opacity(selected ? 1 : 0)
                     .frame(width: 17)
@@ -263,8 +296,8 @@ private struct LagKey: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: mass.symbol - 3, weight: .semibold))
+            Image(icon: symbol)
+                .font(.app(size: mass.symbol - 3, weight: .semibold))
                 .foregroundStyle(locked ? Theme.fontVeryQuiet : Theme.font)
                 .frame(width: mass.button, height: mass.button)
                 .background(hovers && !locked ? Theme.hoverArea : .clear,
@@ -286,7 +319,7 @@ private struct ParticipantRow: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            Image(systemName: "person.fill")
+            Image(icon: "person.fill")
                 .font(Theme.small)
                 .foregroundStyle(Theme.fontVeryQuiet)
                 .frame(width: 17)
@@ -404,7 +437,7 @@ struct SettingLayer: View {
                         }
                         Button(action: groupLeave) {
                             HStack(spacing: 9) {
-                                Image(systemName: "rectangle.portrait.and.arrow.right")
+                                Image(icon: "rectangle.portrait.and.arrow.right")
                                     .font(Theme.listTitle)
                                     .frame(width: 17)
                                 Text("Gruppe verlassen")
@@ -524,7 +557,7 @@ struct EpisodesLayer: View {
                         // Placeholder: the title itself is shown by the player (`stateTitle`) and does
                         // not fade with this.
                         Text(verbatim: title)
-                            .font(.system(size: mass.title, weight: .bold))
+                            .font(.app(size: mass.title, weight: .bold))
                             .lineLimit(1)
                             .hidden()
                         if !seasons.isEmpty {

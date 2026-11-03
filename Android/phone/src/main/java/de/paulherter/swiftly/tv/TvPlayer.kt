@@ -315,7 +315,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
     val hasEpisodes = plan?.episode == true && plan.seriesIdentifier != null
     val title = plan?.headerLine?.takeIf { it.isNotEmpty() } ?: plan?.title.orEmpty()
     val meta = plan?.let {
-        if (it.episode && it.seasonNr != null && it.episodeNr != null) translated("Staffel %lld · Folge %lld", it.seasonNr, it.episodeNr)
+        if (it.episode && it.seasonNr != null && it.episodeNr != null) "S${it.seasonNr} · F${it.episodeNr} · ${it.subtitle}" // 1.1: "S1 · F3 · Name", not in the catalog on tvOS either
         else if (it.episode) it.subtitle.takeIf { u -> u.isNotEmpty() }
         else it.secondaryLine?.takeIf { n -> n.isNotEmpty() }
     }
@@ -493,7 +493,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
         // **With the card up, the scrim dims the picture** as with open controls, and the card sits in front.
         val cardScrim by animateFloatAsState(if (episodesCardPresent && mediaWork.cardsSwitch == null) 1f else 0f,
             if (episodesCardPresent) tween(180, easing = Motion.soft) else tween(340, easing = Motion.soft), label = "kartenschleier")
-        if (cardScrim > 0.01f && !itemWitnessPresent) Box(Modifier.fillMaxSize().graphicsLayer { alpha = cardScrim }.background(Color.Black.copy(alpha = 0.42f)))
+        if (cardScrim > 0.01f && !itemWitnessPresent) Box(Modifier.fillMaxSize().graphicsLayer { alpha = cardScrim }.background(PlayerScrim))
         if (!mediaWork.inGroup && (mediaWork.plan?.nextEpisode != null || mediaWork.cardsSwitch != null)) {
             val m = mediaWork.cardsMetrics
             Box(Modifier.fillMaxSize().onPreviewKeyEvent { e ->
@@ -514,10 +514,11 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
         }
 
         if (itemWitnessPresent) {
-            // **Pure black, 42 %**, no gradients (mirrors `scrim`).
-            Box(Modifier.fillMaxSize().graphicsLayer { alpha = coverage }.background(Color.Black.copy(alpha = 0.42f)))
+            // The design's one gradient over the whole picture (mirrors `scrim`): .65 black at the top, clear from
+            // 32 % to 62 %, .8 black at the bottom.
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = coverage }.background(PlayerScrim))
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = coverage }
-                    .padding(horizontal = TvTheme.edgePage, vertical = TvTheme.edgeTop)) {
+                    .padding(start = TvTheme.edgePage, end = TvTheme.edgePage, top = TvTheme.edgeTop, bottom = TvPlayerMetric.bottom)) {
                 val seeks = seekTarget != null
                 // Room on the left for the title (drawn by `stehender Title`) and the meta line below.
                 Row(Modifier.fillMaxWidth().align(Alignment.TopStart), verticalAlignment = Alignment.Top) {
@@ -574,7 +575,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
         AnimatedVisibility(visible = offeringPresent && mediaWork.overlay != "karte" && mediaWork.cardsSwitch == null, modifier = Modifier.align(Alignment.BottomEnd),
             enter = fadeIn(tween(180, easing = Motion.soft)),
             exit = fadeOut(tween(340, easing = Motion.soft))) {
-            Box(Modifier.padding(end = TvTheme.edgePage, bottom = TvTheme.edgeTop + TvPlayerMetric.bar + TvPlayerMetric.overBar)
+            Box(Modifier.padding(end = TvTheme.edgePage, bottom = TvPlayerMetric.bottom + TvPlayerMetric.bar + TvPlayerMetric.overBar)
                     .onFocusChanged { pillHasFocus = it.hasFocus }
                     .onPreviewKeyEvent { e ->
                         val bearing = e.key == Key.DirectionUp || e.key == Key.DirectionDown || e.key == Key.DirectionLeft || e.key == Key.DirectionRight
@@ -684,21 +685,31 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
  * (tvOS works in 1920 pt width, Android TV in 960 dp).
  */
 private object TvPlayerMetric {
-    val title = TvTheme.rail
+    val title = TvTheme.titleLarge
     val meta = TvTheme.small
     val time = 13.sp
     val previewTime = 15.sp
-    val barReason = Color.White.copy(alpha = 0.28f)
-    val titleSpacing = 3.dp
+    val barReason = Color.White.copy(alpha = 0.25f)
+    val titleSpacing = 5.dp
     val button = 44.dp
-    val buttonSpacing = 10.dp
-    val overBar = 20.dp
-    val bar = 20.dp
+    val buttonSpacing = 4.dp
+    val overBar = 14.dp
+    val bar = 16.dp
+    /** Bottom edge of the player: 90 pt. */
+    val bottom = 45.dp
     val column = 250.dp
     val columnSpacing = 57.dp
     /** For when the columns would not otherwise fit (settings with quality or group). */
     val columnsSpacingNarrow = 20.dp
-    val columnsTop = 76.dp
+    val columnsTop = 106.dp
+    /** Layers column (tvOS 1.1): heading 36/700 (18 sp), gap 16 pt, rows 72 pt, delay block 28 pt below the last row. */
+    val heading = 18.sp
+    val headingGap = 8.dp
+    val rowHeight = 36.dp
+    val delayTop = 14.dp
+    /** Row inset 20 pt, so heading, row and delay share one text edge; 40 pt bleed keeps the lifted focus row unclipped. */
+    val inset = 10.dp
+    val bleed = 20.dp
     fun iconRail(count: Int) = button * count + buttonSpacing * (count - 1)
 }
 
@@ -715,8 +726,8 @@ private fun TvIconButton(symbol: Glyph, description: String, active: Boolean, fo
             .semantics { contentDescription = description }, magnifier = TvTheme.focusMagnifierSmall, perform = perform) { has ->
         Box(Modifier.size(TvPlayerMetric.button).clip(RoundedCornerShape(TvTheme.corner))
                 .background(if (has) Color.White else Color.Transparent), contentAlignment = Alignment.Center) {
-            // tvOS 38 pt Medium, halved.
-            Symbol(symbol, 19.dp, color = if (has) Theme.reason else Theme.font, strength = Strength.Medium)
+            // tvOS 44 pt Medium (1.1), halved.
+            Symbol(symbol, 22.dp, color = if (has) Theme.reason else Theme.font, strength = Strength.Medium)
         }
     }
 }
@@ -768,7 +779,7 @@ private fun TvTimeBar(app: SwiftlyApplication, position: () -> Double, duration:
     val digits = TextStyle(fontSize = TvPlayerMetric.time, fontFeatureSettings = "tnum")
 
     Row(Modifier.fillMaxWidth().height(TvPlayerMetric.bar), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AnimatedVisibility(visible = !running, enter = fadeIn(tween(180)) + expandHorizontally(tween(180)),
                                exit = fadeOut(tween(180)) + shrinkHorizontally(tween(180))) {
@@ -791,7 +802,7 @@ private fun TvTimeBar(app: SwiftlyApplication, position: () -> Double, duration:
             val fromState = width * minOf(state, target)
             bar.pieces.forEachIndexed { i, piece ->
                 key(i) {
-                    val stripe by animateDpAsState(if (i == elevated) 6.dp else 4.dp, tween(180), label = "balken")
+                    val stripe by animateDpAsState(if (i == elevated) 7.dp else 5.dp, tween(180), label = "balken")
                     Box(Modifier.offset(x = piece.x.dp).width(piece.width.dp).height(stripe)
                         .clip(CircleShape).background(TvPlayerMetric.barReason)) {
                         // Up to the actual position: that part has been seen.
@@ -872,7 +883,8 @@ private fun ColumnsRail(count: Int, content: @Composable RowScope.() -> Unit) {
         val spacing = if (broad <= maxWidth) TvPlayerMetric.columnSpacing else TvPlayerMetric.columnsSpacingNarrow
         val width = minOf(TvPlayerMetric.column, (maxWidth - spacing * (n - 1)) / n)
         CompositionLocalProvider(LocalColumnsWidth provides width) {
-            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally), content = content)
+            // Left-aligned from the page margin (tvOS 1.1), no longer centred.
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.Start), content = content)
         }
     }
 }
@@ -881,29 +893,44 @@ private fun ColumnsRail(count: Int, content: @Composable RowScope.() -> Unit) {
 @Composable
 private fun SelectionColumn(title: String, list: LazyListState, content: LazyListScope.() -> Unit) {
     Column(Modifier.width(LocalColumnsWidth.current).fillMaxHeight()) {
-        Text(title, style = TvTheme.subpageTitle, color = Theme.font, maxLines = 1,
-             modifier = Modifier.padding(start = 13.dp, bottom = 11.dp).semantics { heading() })
-        LazyColumn(Modifier.weight(1f).focusGroup(), state = list, verticalArrangement = Arrangement.spacedBy(2.dp),
-                   contentPadding = PaddingValues(bottom = TvTheme.edgeTop), content = content)
+        // 36 / 700 / -0.6 pt (18 sp, -0.3 sp) in a 1.15 line box, 16 pt above the rows.
+        Text(title, style = TvTheme.subpageTitle.copy(fontSize = TvPlayerMetric.heading, fontWeight = FontWeight.Bold,
+                                                       letterSpacing = (-0.3).sp),
+             color = Theme.font, maxLines = 1,
+             modifier = Modifier.height(TvPlayerMetric.heading.value.dp * 1.15f).semantics { heading() })
+        Spacer(Modifier.height(TvPlayerMetric.headingGap))
+        // The list is widened by the bleed on both sides and its content pushed back in.
+        val bleed = with(LocalDensity.current) { TvPlayerMetric.bleed.roundToPx() }
+        LazyColumn(Modifier.weight(1f).focusGroup().layout { measurable, c ->
+                       val w = c.maxWidth + 2 * bleed
+                       val p = measurable.measure(c.copy(minWidth = w, maxWidth = w))
+                       layout(c.maxWidth, p.height) { p.place(-bleed, 0) }
+                   }, state = list, verticalArrangement = Arrangement.spacedBy(0.dp),
+                   contentPadding = PaddingValues(start = TvPlayerMetric.bleed, end = TvPlayerMetric.bleed,
+                                                  bottom = TvTheme.edgeTop + 30.dp), content = content)
     }
 }
 
-/** Checkmark and name. Selected is white and semibold, otherwise quiet; focus is the calm surface of `EpisodesStyle`. */
+/**
+ * Checkmark and name (`LayersRowStyle`). Focus is a white row with dark semibold text, wide magnifier and
+ * lift; otherwise selected is white semibold, the rest quiet medium. Row 72 pt, check 30 in a 32 slot, gap 20.
+ */
 @Composable
 private fun LayersRow(text: String, selected: Boolean, modifier: Modifier = Modifier, perform: () -> Unit) {
-    FocusArea(modifier.fillMaxWidth().semantics { this.selected = selected }, magnifier = 1f, perform = perform) { focus ->
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(TvTheme.cornerTile))
-                .background(if (focus) TvTheme.focusArea else Color.Transparent)
-                .padding(horizontal = 13.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            val color = if (selected || focus) Theme.font else Theme.fontQuiet
-            Box(Modifier.width(21.dp), contentAlignment = Alignment.Center) {
+    FocusArea(modifier.fillMaxWidth().semantics { this.selected = selected }, magnifier = TvTheme.focusMagnifierWide,
+              lift = true, liftCorner = TvTheme.corner, perform = perform) { focus ->
+        Row(Modifier.fillMaxWidth().height(TvPlayerMetric.rowHeight)
+                .background(if (focus) Color.White else Color.Transparent, RoundedCornerShape(TvTheme.corner))
+                .padding(horizontal = TvPlayerMetric.inset),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val color = if (focus) Theme.reason else if (selected) Theme.font else Theme.fontQuiet
+            Box(Modifier.width(16.dp), contentAlignment = Alignment.Center) {
                 if (selected) Symbol(Glyph.Checkmark, 15.dp, color = color, strength = Strength.Semibold)
             }
             // Track names come from the file, verbatim.
             // A name that does not fit runs through while focused (tvOS `Marquee`), otherwise it truncates.
             @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-            Text(text, style = if (selected) TvTheme.button else TvTheme.body,
+            Text(text, style = TvTheme.body.copy(fontWeight = if (selected || focus) FontWeight.SemiBold else FontWeight.Medium),
                  color = color, maxLines = 1, softWrap = false,
                  overflow = if (focus && !motionReduced()) TextOverflow.Clip else TextOverflow.Ellipsis,
                  modifier = if (focus && !motionReduced()) Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1200, repeatDelayMillis = 1500, velocity = 55.dp) else Modifier)
@@ -922,13 +949,20 @@ private fun LayersRow(text: String, selected: Boolean, modifier: Modifier = Modi
 private fun TvDelayRow(milliseconds: Int, shove: (Int) -> Unit, reset: () -> Unit) {
     val a = remember(milliseconds) { de.paulherter.swiftly.delayDisplay(milliseconds) }
     val plus = remember { FocusRequester() }
-    Column(Modifier.fillMaxWidth().padding(top = 11.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(translated("Verzögerung"), style = TvTheme.small, color = Theme.fontVeryQuiet, modifier = Modifier.padding(horizontal = 13.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    // The design shows one decimal ("0,0 s", "+0,5 s"); the step logic stays 50 ms (tvOS `delayLabel`).
+    val label = remember(milliseconds) {
+        val tenths = Math.round(Math.abs(milliseconds) / 100.0) * (if (milliseconds < 0) -1 else 1)
+        val sign = if (tenths > 0) "+" else if (tenths < 0) "−" else ""
+        "$sign${Math.abs(tenths) / 10},${Math.abs(tenths) % 10} s"
+    }
+    Column(Modifier.fillMaxWidth().padding(top = TvPlayerMetric.delayTop), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(translated("Verzögerung"), style = TvTheme.small, color = Theme.fontVeryQuiet, modifier = Modifier.padding(horizontal = TvPlayerMetric.inset))
+        // Four items, equal gaps (design: space-between); the hidden reset keeps its place.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             TvDelayKey(Glyph.Minus, translated("Früher"), a.atStart, true) { shove(-1) }
-            Text(a.text, style = TvTheme.button.copy(fontFeatureSettings = "tnum"), textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1,
+            Text(label, style = TvTheme.body.copy(fontSize = 13.sp, fontFeatureSettings = "tnum"), maxLines = 1,
                  color = if (a.isNull) Theme.fontQuiet else Theme.font,
-                 modifier = Modifier.weight(1f).semantics { stateDescription = a.text })
+                 modifier = Modifier.semantics { stateDescription = label })
             TvDelayKey(Glyph.Plus, translated("Später"), a.atEnd, true, Modifier.focusRequester(plus)) { shove(1) }
             TvDelayKey(Glyph.Ruecksetzen, translated("Zurücksetzen"), false, false,
                                  Modifier.focusProperties { canFocus = !a.isNull }.alpha(if (a.isNull) 0f else 1f)) {
@@ -1030,25 +1064,26 @@ private fun TvSettingLayer(mediaWork: PlayItem, app: SwiftlyApplication,
         if (group != null) SelectionColumn(translated("Gemeinsam · %@", group.name), rememberLazyListState()) {
             group.participant.forEachIndexed { i, name ->
                 item(key = "t$i") {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-                        Box(Modifier.width(21.dp), contentAlignment = Alignment.Center) {
-                            Symbol(Glyph.PersonFilled, 15.dp, color = Theme.fontVeryQuiet)
+                    Row(Modifier.fillMaxWidth().height(TvPlayerMetric.rowHeight).padding(horizontal = TvPlayerMetric.inset),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.width(16.dp), contentAlignment = Alignment.Center) {
+                            Symbol(Glyph.PersonFilled, 13.dp, color = Theme.fontVeryQuiet)
                         }
                         Text(name, style = TvTheme.body, color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
             item(key = "verlassen") {
-                FocusArea(Modifier.fillMaxWidth(), magnifier = 1f, perform = groupLeave) { focus ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(TvTheme.cornerTile))
-                            .background(if (focus) TvTheme.focusArea else Color.Transparent)
-                            .padding(horizontal = 13.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-                        Box(Modifier.width(21.dp), contentAlignment = Alignment.Center) {
+                FocusArea(Modifier.fillMaxWidth(), magnifier = TvTheme.focusMagnifierWide, lift = true, liftCorner = TvTheme.corner,
+                          perform = groupLeave) { focus ->
+                    Row(Modifier.fillMaxWidth().height(TvPlayerMetric.rowHeight)
+                            .background(if (focus) Color.White else Color.Transparent, RoundedCornerShape(TvTheme.corner))
+                            .padding(horizontal = TvPlayerMetric.inset),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.width(16.dp), contentAlignment = Alignment.Center) {
                             Symbol(Glyph.SignOut, 15.dp, color = Theme.accent, strength = Strength.Semibold)
                         }
-                        Text(translated("Gruppe verlassen"), style = TvTheme.button, color = Theme.accent, maxLines = 1)
+                        Text(translated("Gruppe verlassen"), style = TvTheme.body.copy(fontWeight = FontWeight.SemiBold), color = Theme.accent, maxLines = 1)
                     }
                 }
             }
@@ -1264,3 +1299,7 @@ private object TvRailWithoutMotion : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
         TvRailsBringIntoView.calculateScrollDistance(offset, size, containerSize)
 }
+
+/** `scrim` on tvOS 1.1: one gradient, .65 > 0 at .32 > 0 at .62 > .8. */
+private val PlayerScrim = androidx.compose.ui.graphics.Brush.verticalGradient(
+    0.00f to Color.Black.copy(alpha = 0.65f), 0.32f to Color.Transparent, 0.62f to Color.Transparent, 1.00f to Color.Black.copy(alpha = 0.8f))

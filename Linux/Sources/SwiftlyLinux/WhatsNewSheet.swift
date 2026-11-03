@@ -136,8 +136,7 @@ extension App {
     /// One entry: the icon in a fixed 28 box, centred on the text beside it.
     private func whatsNewRow(_ item: WhatsNewEntry.Item, language: String) -> Widget! {
         let row = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 14)
-        let icon: Widget! = gtk_image_new_from_icon_name(whatsNewIconName(item.symbol))
-        gtk_image_set_pixel_size(OpaquePointer(icon), 19)
+        let icon: Widget! = iconWidget(whatsNewIconName(item.symbol), size: 19, style: "swiftly-leise")
         gtk_widget_add_css_class(icon, "swiftly-leise")
         gtk_widget_set_size_request(icon, 28, 28)
         gtk_widget_set_valign(icon, GTK_ALIGN_CENTER)
@@ -160,7 +159,7 @@ extension App {
         case symbol.hasPrefix("paintpalette"): "applications-graphics-symbolic"
         case symbol.hasPrefix("app"): "computer-symbolic"
         case symbol.hasPrefix("arrow.uturn"): "edit-undo-symbolic"
-        case symbol.hasPrefix("heart"): "emblem-favorite-symbolic"
+        case symbol.hasPrefix("heart"): "paint:heartline"
         case symbol.hasPrefix("sparkle"): "starred-symbolic"
         default: "object-select-symbolic"
         }

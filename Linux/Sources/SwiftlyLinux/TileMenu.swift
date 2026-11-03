@@ -101,7 +101,7 @@ extension App {
 
         func entryRecord(_ symbol: String, _ word: String, _ perform: @escaping () -> Void) {
             append(list, actionRow(symbol, word) {
-                gtk_popover_popdown(asPanel(panel))
+                panelDown(panel)
                 perform()
             })
         }

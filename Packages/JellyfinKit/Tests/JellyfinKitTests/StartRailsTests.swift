@@ -12,6 +12,16 @@ struct StartRailsTests {
 
     private let all = StartRail.allCases.map(\.rawValue)
 
+    @Test("Neue Filme und neue Serien führen in ihre Bibliothek, nach Zuletzt sortiert")
+    func libraryJump() {
+        #expect(StartRail.newMovies.libraryJump == LibraryJump(art: "movies", sorting: .latest))
+        #expect(StartRail.newSeries.libraryJump == LibraryJump(art: "tvshows", sorting: .latest))
+        // Mixed movies and episodes, or a state rather than a library: no page to open.
+        #expect(StartRail.newArrivals.libraryJump == nil)
+        #expect(StartRail.continueWatching.libraryJump == nil)
+        #expect(StartRail.nextEpisode.libraryJump == nil)
+    }
+
     @Test("Eine leere Ablage ergibt alle Reihen in ihrer Grundfolge")
     func emptyStore() {
         #expect(StartRailsEpisode.applicable(stored: []) == StartRail.allCases)

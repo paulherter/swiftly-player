@@ -229,8 +229,8 @@ struct MacPlexSignIn: View {
     /// On the portrait's upper right edge, as a mark on a picture: a small field, not a
     /// circle (round is only what is a picture).
     private var lockMark: some View {
-        Image(systemName: "lock.fill")
-            .font(.system(size: 10, weight: .semibold))
+        Image(icon: "lock.fill")
+            .font(.app(size: 10, weight: .semibold))
             .foregroundStyle(Theme.fontQuiet)
             .frame(width: 22, height: 22)
             .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
@@ -323,8 +323,8 @@ struct MacPlexSignIn: View {
         let waiting = model.connecting != nil && !busy
         return Button(action: pick) {
             HStack(spacing: 14) {
-                Image(systemName: "externaldrive")
-                    .font(.system(size: 17))
+                Image(icon: "externaldrive")
+                    .font(.app(size: 17))
                     .foregroundStyle(Theme.fontQuiet)
                     .frame(width: 20)
                     .breathing(busy)
@@ -344,8 +344,8 @@ struct MacPlexSignIn: View {
                     ProgressView().controlSize(.small)
                         .accessibilityHidden(true)
                 } else {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
+                    Image(icon: "chevron.right")
+                        .font(.app(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .accessibilityHidden(true)
                 }

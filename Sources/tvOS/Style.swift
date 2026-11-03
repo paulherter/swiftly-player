@@ -27,7 +27,7 @@ extension Theme {
     /// Short cross-fade used when Reduce Motion is on. Same value as on the iPhone,
     /// for the shared transitions (`AccountSwitchTransition`).
     static let fadeReduced: Animation = .linear(duration: 0.14)
-    static let listTitle = Font.system(size: 30, weight: .semibold)
+    static let listTitle = Font.app(size: 30, weight: .semibold)
 
     // The corner ladder is further down under "MARK: Ecken", all four levels in one
     // place with the math.
@@ -203,15 +203,16 @@ extension Theme {
     /// height about 1.21 × size) gives about 36.2 at 30. Rounded up to 37 so the
     /// third line is not cut off at the decimal again.
     static let descriptionRow: CGFloat = 37
-    static let descriptionPadding: CGFloat = 11
+    static let descriptionPadding: CGFloat = 7
 
     /// How high `rows` lines of description stand: 3 → 133, 2 → 85.
+    /// Design body: 30 pt at line-height 1.45 = 43.5 per line.
     static func descriptionHeight(_ rows: Int) -> CGFloat {
-        CGFloat(rows) * descriptionRow + CGFloat(rows - 1) * descriptionPadding
+        CGFloat(rows) * 43.5
     }
 
     /// The episode title above the info row: 44 high, 10 spacing.
-    static let secondRowHeight: CGFloat = 54
+    static let secondRowHeight: CGFloat = 44
 
     /// **Fixed height of the head block: title, info row, description.**
     ///
@@ -236,7 +237,7 @@ extension Theme {
     /// posters will stand.
     static var gridTop: CGFloat { contentTop - edgeTop + chipHeight + capsuleRailPadding }
     /// Between the chip row and the grid below.
-    static let capsuleRailPadding: CGFloat = 30
+    static let capsuleRailPadding: CGFloat = 48
 
     // MARK: Info row
 
@@ -252,25 +253,32 @@ extension Theme {
     /// Now one height, set rather than derived from type and padding, so a symbol
     /// next to the word cannot shift it. 40 is double the iPhone badge (13 medium in
     /// 4 vertical, about 24), rounded down to the step that suits the info type.
-    static let markHeight: CGFloat = 40
+    static let markHeight: CGFloat = 44
     /// Type in the badge: the info level (24), medium, so year, runtime and the words
     /// in the badges share **one** size on one baseline.
-    static let markFont = Font.system(size: 24, weight: .medium)
+    static let markFont = Font.app(size: 24, weight: .medium)
     /// The symbol before the word, one step below the type.
-    static let markCharacter: CGFloat = 18
+    static let markCharacter: CGFloat = 20
     /// Horizontal padding. Before a symbol, two less on the left: the symbol is
     /// narrower than its cell, otherwise the word sits visibly off-center.
-    static let markInner: CGFloat = 14
+    static let markInner: CGFloat = 16
     /// Between symbol and word.
     static let markCharacterSpacing: CGFloat = 8
     /// **One gap across the whole row**: between "2019 · 1 h 52 min" and the first
     /// badge just as between badges. A 24 gap between everything let the badges fall
     /// apart; 16 is double the iPhone's 8.
-    static let detailsSpacing: CGFloat = 16
+    static let detailsSpacing: CGFloat = 12
     /// Between title and info row. 8 instead of 14 because the row is 6 higher (40
     /// instead of 34): the block stays as high as before and the button row stays in
     /// place.
-    static let detailsPadding: CGFloat = 8
+    static let detailsPadding: CGFloat = 20
+
+    /// Design title line: 56 pt at line-height 1.1 = 62.
+    static let titleSlot: CGFloat = 62
+    /// Design detail block: left 80, top 180, width 1040; buttons 44 below the text.
+    static let detailTop: CGFloat = 180
+    static let detailWidth: CGFloat = 1040
+    static let spacingAboveButtons: CGFloat = 44
 
     static var infoHeight: CGFloat { infoHeight(secondLine: false) }
 
@@ -285,8 +293,8 @@ extension Theme {
     /// The block grows by only eight instead of 54: the episode title takes its space
     /// mostly from the description, not from the page.
     static func infoHeight(secondLine: Bool) -> CGFloat {
-        68 + (secondLine ? secondRowHeight : 0) + detailsPadding + markHeight + 22
-        + descriptionHeight(secondLine ? 2 : 3)
+        titleSlot + (secondLine ? secondRowHeight : 0) + detailsPadding + markHeight + 22
+        + descriptionHeight(2)
     }
 
     /// Head zone of a detail page, **calculated, not set.**
@@ -300,8 +308,8 @@ extension Theme {
     /// block sits 56 lower. Home does not need the room, its block ends at 454 and
     /// the rows still begin at 534.
     static var heroHeightDetail: CGFloat {
-        edgeTop + headerOffsetDetail + 80 + infoHeight
-        + 36 + buttonHeight + spacingUnderButtonRail - railsHeaderPadding
+        detailTop + infoHeight
+        + spacingAboveButtons + buttonHeight + spacingUnderButtonRail - railsHeaderPadding
     }
 
     /// The spacing below the button row: 64.
@@ -311,7 +319,8 @@ extension Theme {
     /// width as scale, the row ends with its caption at about 1005, leaving 75 pt.
     /// The shorter figure rested on two overestimated values (row title 46, caption
     /// 122). Focus behavior does not depend on this height.
-    static let spacingUnderButtonRail: CGFloat = 64
+    /// Movie page: hero 616 plus railsHeaderPadding 24 puts the rail heading at 640.
+    static let spacingUnderButtonRail: CGFloat = 105
 
     /// Vertical room in the horizontal strip.
     ///
@@ -333,7 +342,7 @@ extension Theme {
 
     /// Between row title and the tiles below. The strip's focus room counts; the head
     /// carries only the rest.
-    static let titleSpacing: CGFloat = 36
+    static let titleSpacing: CGFloat = 28
 
     /// Below the last row, **in addition**.
     ///
@@ -357,11 +366,24 @@ extension Theme {
     /// narrower than the same 208 on Home, and the row looks cramped for no visible
     /// reason. With 50 the posters stay what they are and the four points left over
     /// spread out.
-    static let gridColumn: CGFloat = 50
-    static let latticeRow: CGFloat = 72
+    ///
+    /// **Design "Neu": gap 40, posters fixed 208 × 312**, so the 7 columns are 1696 wide and
+    /// the grid is left-aligned at 80 (the alphabet rail sits in the free right strip).
+    static let gridColumn: CGFloat = 40
+    /// Row 1 top 300, row 2 top 722: 722 − 300 − (312 + captionTop 18 + captionLine 34) = 58.
+    static let latticeRow: CGFloat = 58
+
+    /// Design caption: mt 18, one 34 high line; focused it drops 14.
+    static let captionTop: CGFloat = 18
+    static let captionLine: CGFloat = 34
+    static let captionDrop: CGFloat = 14
+    /// Design tab: 68 high, 28 padding.
+    static let tabHeight: CGFloat = 68
+    static let tabPadding: CGFloat = 28
 
     static let buttonHeight: CGFloat = 76
-    static let chipHeight: CGFloat = 48
+    /// Library rail pills (design: 56). Other controls that read this stay in step.
+    static let chipHeight: CGFloat = 56
     static let rowsHeight: CGFloat = TVSpec.rowsHeight
 
     // MARK: Focus
@@ -465,16 +487,20 @@ extension Theme {
     /// of those values was double, and `tile` still carried the old 14 as its
     /// template. Changing a level on the iPhone changes the TV with it; that is the
     /// point of the rule.
-    static let titleLarge = Font.system(size: 56, weight: .bold)       // iOS 28
-    static let subpageTitle = Font.system(size: 44, weight: .semibold) // iOS 22
-    static let rail      = Font.system(size: 40, weight: .semibold)   // iOS 20
-    static let categoryLarge = Font.system(size: 34, weight: .semibold)  // iOS 17
-    static let button      = Font.system(size: 30, weight: .semibold)   // iOS 15
-    static let body    = Font.system(size: 30)                      // iOS 15
-    static let tile     = Font.system(size: 26, weight: .medium)     // iOS 13
-    static let small      = Font.system(size: 24)                      // iOS 12
-    static let group     = Font.system(size: 22, weight: .semibold)   // iOS 11
-    static let badge   = Font.system(size: 20, weight: .semibold)   // iOS 10
+    static let titleLarge = Font.app(size: 56, weight: .bold)       // iOS 28
+    static let subpageTitle = Font.app(size: 44, weight: .semibold) // iOS 22
+    /// Row and group headings: 44 bold, the step the new design gave them so a heading
+    /// reads as one above the tiles from three meters.
+    static let rail      = Font.app(size: 44, weight: .bold)   // iOS 22
+    static let section = Font.app(size: 44, weight: .bold)
+    static let categoryLarge = Font.app(size: 34, weight: .semibold)  // iOS 17
+    static let button      = Font.app(size: 30, weight: .semibold)   // iOS 15
+    static let body    = Font.app(size: 30)                      // iOS 15
+    static let tile     = Font.app(size: 26, weight: .medium)     // iOS 13
+    static let tileFocused = Font.app(size: 26, weight: .semibold)
+    static let small      = Font.app(size: 24)                      // iOS 12
+    static let group     = Font.app(size: 22, weight: .semibold)   // iOS 11
+    static let badge   = Font.app(size: 20, weight: .semibold)   // iOS 10
 
     // MARK: Tracking — the em value from the type scale times the point size
     /// 56 · −0.021 em
@@ -488,8 +514,9 @@ extension Theme {
     /// 20 · +0.10 em
     static let badgeLock   = 2.0
 
-    /// **Tracking of the row heading.** −0.012 em at 40 pt.
-    static let lockRail = -0.48
+    /// **Tracking of the row heading.** −0.012 em at 44 pt.
+    static let lockRail = -0.528
+    static let lockSection = -0.528
 }
 
 // MARK: - Image
@@ -535,7 +562,7 @@ struct Picture: View {
                     }
             }
             .overlay(alignment: .bottom) {
-                if let progress, barShow {
+                if let progress, progress > 0, barShow {
                     ProgressBar(share: progress)
                 }
             }
@@ -568,12 +595,12 @@ struct ProgressBar: View {
             ZStack(alignment: .leading) {
                 // Light track as on the iPhone: the track is the length of the whole, not the
                 // missing rest.
-                Rectangle().fill(Color.white.opacity(0.30))
+                Rectangle().fill(Color.white.opacity(0.22))
                 Rectangle().fill(Theme.accent)
                     .frame(width: frameRect.size.width * min(max(share, 0), 1))
             }
         }
-        .frame(height: 6)
+        .frame(height: 8)
     }
 }
 
@@ -693,22 +720,29 @@ struct ProofMark: View {
     let color: Color
     var weight: Font.Weight = .semibold
 
+    /// Design chips: neutral ones are white text on white .12, Direct Play accent text on
+    /// the quiet accent surface; other tones keep their 15 percent tint.
+    private var neutral: Bool { color == Theme.fontQuiet }
+    private var fill: Color {
+        if neutral { return Color.white.opacity(0.12) }
+        if color == Theme.accent { return Theme.accentQuiet }
+        return color.opacity(0.15)
+    }
+
     var body: some View {
         HStack(spacing: Theme.markCharacterSpacing) {
             if let symbol {
-                Image(systemName: symbol)
-                    .font(.system(size: Theme.markCharacter, weight: weight))
+                Image(icon: symbol)
+                    .font(.app(size: Theme.markCharacter, weight: weight))
                     .accessibilityHidden(true)
             }
             word.font(Theme.markFont)
         }
         .lineLimit(1)
-        .foregroundStyle(color)
-        .padding(.leading, symbol == nil ? Theme.markInner : Theme.markInner - 2)
-        .padding(.trailing, Theme.markInner)
+        .foregroundStyle(neutral ? Theme.font : color)
+        .padding(.horizontal, Theme.markInner)
         .frame(height: Theme.markHeight)
-        .background(color.opacity(0.15),
-                    in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
+        .background(fill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -734,10 +768,10 @@ struct EmptyState: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 // 88 regular: on the iPhone the symbol is 44 and carries no weight of its own;
                 // regular is the lightest of three weights.
-                .font(.system(size: 88))
+                .font(.app(size: 88))
                 .foregroundStyle(Theme.fontVeryQuiet)
             Text(title)
                 .font(Theme.rail)
@@ -842,17 +876,17 @@ struct HeaderHistory: View {
     /// while the fade-out still runs over 220, just inaudibly quiet instead of
     /// visibly ending.
     private var anchorPoints: [Gradient.Stop] {
-        let total = headerHeight + outro
+        let total = soft ? 300 : headerHeight + outro
         func point(_ y: CGFloat, _ coverage: Double) -> Gradient.Stop {
             Gradient.Stop(color: Theme.reason.opacity(coverage * strength),
                           location: min(max(y / total, 0), 1))
         }
         if soft {
+            // Design: 300 high, .92 at the top, .6 at 55 %, 0 at the end.
             return [
-                point(0,                    0.72),
-                point(headerHeight,            0.44),
-                point(headerHeight + outro * 0.45, 0.14),
-                point(total,               0.00),
+                .init(color: Theme.reason.opacity(0.92 * strength), location: 0),
+                .init(color: Theme.reason.opacity(0.6 * strength), location: 0.55),
+                .init(color: Theme.reason.opacity(0), location: 1),
             ]
         }
         return [
@@ -871,11 +905,18 @@ struct HeaderHistory: View {
 
     var body: some View {
         LinearGradient(stops: anchorPoints, startPoint: .top, endPoint: .bottom)
-        .frame(height: headerHeight + outro)
+        .frame(height: soft ? 300 : headerHeight + outro)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .allowsHitTesting(false)
         .ignoresSafeArea()
     }
+}
+
+/// Whether the Filme/Serien grid is scrolled under the tabs; the soft shade shows only then.
+@MainActor @Observable
+final class LibraryScroll {
+    static let shared = LibraryScroll()
+    var scrolled = false
 }
 
 
@@ -890,8 +931,8 @@ struct HintStrip: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 26))
+            Image(icon: "exclamationmark.triangle.fill")
+                .font(.app(size: 26))
                 .accessibilityHidden(true)
             Text(text)
                 .font(Theme.tile)
@@ -932,7 +973,7 @@ struct GroupsTitle: View {
         Text(text)
             .font(Theme.rail)
             .tracking(Theme.lockRail)
-            .foregroundStyle(Theme.fontQuiet)
+            .foregroundStyle(Theme.font)
             .padding(.leading, 26)
             .padding(.bottom, 16)
     }

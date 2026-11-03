@@ -63,8 +63,10 @@ fun ProfilePage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -
     SettingPage(translated("Profil"), back) {
         // **Looks at the top, by state** (`LookProfileEntry`), as on iPhone: the current look for who
         // has one to choose, the teaser for everyone else, and the supporter's status below.
+        // The account card first, the looks below it (iPhone 1.1: the account is the subject of the page).
+        AccountCards(app, server, open)
         if (!app.isTv && (lookEntry != "none" || app.support.isSupporter)) {
-            Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 6.dp, bottom = 16.dp),
+            Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = Theme.cardGap),
                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 when (lookEntry) {
                     "current" -> de.paulherter.swiftly.support.CurrentLookCard(app)
@@ -73,19 +75,9 @@ fun ProfilePage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -
                 de.paulherter.swiftly.support.SupportStatusCard(app)
             }
         }
-        AccountCards(app, server, open)
-        Spacer(Modifier.height(18.dp))
-        // Quick Connect is Jellyfin's; the other kinds have no counterpart.
-        if (app.can("quickConnect")) {
-            CardView {
-                ProfileRow(Glyph.TextSearch, translated("Quick Connect"), translated("Code vom Fernseher eingeben"), characterAccent = true) {
-                    open(Destination("quickconnect", "Quick Connect", "QuickConnect"))
-                }
-            }
-            Spacer(Modifier.height(18.dp))
-        }
+        Spacer(Modifier.height(Theme.cardGap))
         CardView {
-            ProfileRow(Glyph.Play, translated("Wiedergabe"), translated("Sprache, Untertitel, Tempo")) {
+            ProfileRow(Glyph.Play, translated("Wiedergabe"), translated("Qualität, Sprache, Player")) {
                 open(Destination("wiedergabe", translated("Wiedergabe"), "Wiedergabeeinstellungen"))
             }
             SeparatorLine()
@@ -100,55 +92,62 @@ fun ProfilePage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -
                 }
                 SeparatorLine()
             }
-            ProfileRow(Glyph.Gear, translated("Einstellungen")) {
-                open(Destination("einstellungen", translated("Einstellungen"), "Einstellungen"))
+            ProfileRow(Glyph.Gear, translated("Allgemein"), translated("Downloads, Server, Sync")) {
+                open(Destination("einstellungen", translated("Allgemein"), "Einstellungen"))
             }
         }
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(Theme.cardGap))
         CardView {
             ProfileRow(Glyph.Server, translated("Server hinzufügen"), translated("Jellyfin, Emby oder Plex, auch gemischt")) {
                 open(Destination("serveraufnahme", translated("Server hinzufügen"), "ServerAufnahme"))
             }
             SeparatorLine()
+            // Quick Connect is Jellyfin's; the other kinds have no counterpart. Inside this group since 1.1.
+            if (app.can("quickConnect")) {
+                ProfileRow(Glyph.TextSearch, translated("Quick Connect"), translated("Code vom Fernseher eingeben"), characterAccent = true) {
+                    open(Destination("quickconnect", "Quick Connect", "QuickConnect"))
+                }
+                SeparatorLine()
+            }
             // Affects only the current account; if others remain, the next one becomes current.
-            ProfileRow(Glyph.SignOut, translated("Abmelden")) {
-                // Asks first, as the iPhone's action sheet does ("Abmelden von <Name>").
-                app.sheet.value = SheetRequest(translated("Abmelden von %@", app.username().takeIf { it != "?" }.orEmpty()),
+            ProfileRow(Glyph.SignOut, translated("Abmelden"), trailing = Trailing.None) {
+                // Asks first, as the iPhone's action sheet does ("Von <Name> abmelden?" + a note).
+                app.sheet.value = SheetRequest(translated("Von %@ abmelden?", app.username().takeIf { it != "?" }.orEmpty()),
                     listOf(Choice("aus", translated("Abmelden"))), null, mapOf("aus" to Glyph.SignOut),
-                    cautionary = setOf("aus")) { app.signOff() }
+                    cautionary = setOf("aus"), note = translated("Du kannst dich jederzeit wieder anmelden.")) { app.signOff() }
             }
         }
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(Theme.cardGap))
         // Rate, Discord, report a bug: at the very bottom (they were in settings and hardly seen). The
         // URLs come from the package. A Play listing entry instead of the in-app prompt: that one
         // appears by itself after the third title, and a row that triggers it often showed nothing in
         // closed testing, because Google throttles the prompt and does not report whether it appeared.
         val context = androidx.compose.ui.platform.LocalContext.current
         CardView {
-            ProfileRow(Glyph.Star, translated("Swiftly bewerten"), translated("Im Play Store")) {
+            ProfileRow(Glyph.Star, translated("Swiftly bewerten"), translated("Im Play Store"), trailing = Trailing.External) {
                 app.addressOpen(context, app.communityAddress("play"))
             }
             SeparatorLine()
-            ProfileRow(Glyph.Conversation, translated("Discord beitreten"), translated("Fragen stellen und sagen, was fehlt")) {
+            ProfileRow(Glyph.Conversation, translated("Discord beitreten"), translated("Fragen stellen und sagen, was fehlt"), trailing = Trailing.External) {
                 app.addressOpen(context, app.communityAddress("discord"))
             }
             SeparatorLine()
-            ProfileRow(Glyph.Beetle, translated("Fehler melden"), translated("Auf GitHub, deine App-Version ist schon eingetragen")) {
+            ProfileRow(Glyph.Beetle, translated("Fehler melden"), translated("Auf GitHub, mit deiner App-Version"), trailing = Trailing.External) {
                 app.addressOpen(context, app.communityAddress("fehler"))
             }
             SeparatorLine()
             // Next to "Report a bug" because it belongs there: whoever reports a bug in Discord attaches this.
-            ProfileRow(Glyph.Document, translated("Protokoll teilen"), translated("Die letzte Stunde, ohne Zugangsdaten")) {
+            ProfileRow(Glyph.Document, translated("Protokoll teilen"), translated("Die letzte Stunde, ohne Zugangsdaten"), trailing = Trailing.None) {
                 LogFile.distribute(context)
             }
             SeparatorLine()
-            ProfileRow(Glyph.Document, translated("Open-Source-Lizenzen")) {
+            ProfileRow(Glyph.Document, translated("Open-Source-Lizenzen"), translated("Und der Quelltext von VLCKit")) {
                 open(Destination("lizenzen", translated("Open-Source-Lizenzen"), "Lizenzen"))
             }
         }
         // White at 30 percent is 2.67:1 and not allowed for text. Supporters see the heart next to it.
         de.paulherter.swiftly.support.VersionLine(app, SwiftlyApplication.VersionRow,
-             Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 26.dp))
+             Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 28.dp))
     }
 }
 
@@ -216,18 +215,19 @@ fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit, open: (Desti
     }
     fun secondsSelection(): List<Choice> = seconds.map { Choice(it.toString(), translated("%lld s", it)) }
 
-    SettingPage(translated("Wiedergabe"), back) {
+    SettingPage(translated("Wiedergabe"), back, trimFirstGroup = true) {
         // If the server does not transcode, there is nothing to choose: Direct Play is fixed on and
         // the bitrate is locked.
         val free = e.convertAllowed
         val directPlay = e.alwaysDirectPlay || !free
 
         SettingGroup(translated("Qualität")) {
-            ChoiceRow(Glyph.Play, translated("Immer Direct Play"), translated("Der Server wandelt nie um, es läuft immer die Originaldatei"),
+            ChoiceRow(Glyph.Play, translated("Immer Direct Play"), translated("Der Server wandelt nie um"),
                       directPlay, locked = !free) { e.alwaysDirectPlay = it; app.qualityReport() }
             SeparatorLine()
             // Dimmed while Direct Play is forced, since it would not apply.
-            ValueRow(Glyph.Bar, translated("Höchste Bitrate"),
+            ValueRow(Glyph.Gauge, translated("Höchste Bitrate"),
+                      under = if (directPlay) translated("Nicht nötig bei Direct Play") else null,
                       value = bitrates.firstOrNull { it.value == e.bitratesLimit.toString() }?.text, dimmedDown = directPlay) {
                 sheet(translated("Höchste Bitrate"), bitrates, e.bitratesLimit.toString()) { e.bitratesLimit = it.toInt(); app.qualityReport() }
             }
@@ -242,21 +242,22 @@ fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit, open: (Desti
                 sheet(translated("Untertitel"), subtitleSelection, e.subtitleLanguage) { e.subtitleLanguage = it; if (it.isNotEmpty()) e.subtitleAutomatic = true }
             }
             SeparatorLine()
-            ChoiceRow(Glyph.TextBlock, translated("Untertitel automatisch"), translated("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
+            ChoiceRow(Glyph.TextBlock, translated("Untertitel automatisch"), translated("Wenn der Ton nicht deine Sprache ist"),
                       e.subtitleAutomatic) { e.subtitleAutomatic = it }
             SeparatorLine()
-            ValueRow(Glyph.Palette, translated("Aussehen der Untertitel"), value = SubtitleFacts.of(e.subtitleLook, app.isTv).entryValue()) {
-                open(Destination("untertitelaussehen", translated("Aussehen der Untertitel"), "Untertitelaussehen"))
+            ValueRow(Glyph.Palette, translated("Untertitel-Stil"), value = SubtitleFacts.of(e.subtitleLook, app.isTv).entryValue()) {
+                open(Destination("untertitelaussehen", translated("Untertitel-Stil"), "Untertitelaussehen"))
             }
         }
 
-        SettingGroup(translated("Verhalten")) {
+        // 1.1: two groups instead of one. "Ablauf" is what happens by itself, "Im Player" what the player does.
+        SettingGroup(translated("Ablauf")) {
             ChoiceRow(Glyph.Skip, translated("Nächste Folge automatisch"), an = e.nextAutomatic) { e.nextAutomatic = it }
             SeparatorLine()
-            ChoiceRow(Glyph.Skip, translated("Intro und Abspann automatisch überspringen"), an = e.introOutroAutomatic) { e.introOutroAutomatic = it }
-            SeparatorLine()
-            ChoiceRow(Glyph.WaveSearch, translated("Technische Daten im Player"), an = e.techBadge) { e.techBadge = it }
-            SeparatorLine()
+            ChoiceRow(Glyph.Skip, translated("Intro und Abspann"), translated("Werden automatisch übersprungen"), an = e.introOutroAutomatic) { e.introOutroAutomatic = it }
+        }
+
+        SettingGroup(translated("Im Player")) {
             ValueRow(Glyph.Rewind, translated("Zurückspulen"), value = translated("%lld s", e.backSeconds)) {
                 sheet(translated("Zurückspulen"), secondsSelection(), e.backSeconds.toString()) { e.backSeconds = it.toInt() }
             }
@@ -274,6 +275,14 @@ fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit, open: (Desti
                 sheet(translated("Player"), engines, e.playerEngine) { e.playerEngine = it }
             }
             SeparatorLine()
+            // Moved here from Darstellung, as on iOS (`PlaybackSettingsView`).
+            ChoiceRow(Glyph.Rectangles, translated("Querformat sperren"), an = e.landscapeFixed) { e.landscapeFixed = it }
+            SeparatorLine()
+            ChoiceRow(Glyph.WaveSearch, translated("Technische Daten"), translated("Zeigt Format und Bitrate im Player"), an = e.techBadge) { e.techBadge = it }
+            SeparatorLine()
+            ChoiceRow(Glyph.Clock, translated("Endzeit im Player"), translated("Zeigt, wann der Titel endet"), an = e.endTimeInPlayer) { e.endTimeInPlayer = it }
+            // Android only: the 5.1 pass-through has no counterpart on the iPhone.
+            SeparatorLine()
             ChoiceRow(Glyph.Speaker, translated("Mehrkanal-Ton (5.1)"),
                       translated("Schickt 5.1 und 7.1 so raus, wie sie in der Datei stehen. Kommt kein Ton, schalt es wieder aus."),
                       e.multiChannelAudio) { e.multiChannelAudio = it }
@@ -289,20 +298,7 @@ fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit, open: (Desti
 fun PresentationPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -> Unit) {
     val e = app.settings
     SettingPage(translated("Darstellung"), back) {
-        SettingGroup(translated("Allgemein")) {
-            ChoiceRow(Glyph.Rectangles, translated("Querformat im Player sperren"), an = e.landscapeFixed) { e.landscapeFixed = it }
-            SeparatorLine()
-            ChoiceRow(Glyph.BarFilled, translated("Fortschritt auf Kacheln"), an = e.progress) { e.progress = it }
-            SeparatorLine()
-            ChoiceRow(Glyph.Bookmark, translated("Merkliste"), translated("Seite, Filter und Knopf auf Film- und Serienseiten"),
-                      e.watchlist) { e.watchlist = it }
-            ChoiceRow(Glyph.TextBlock, translated("Alphabetische Suche in Listen"), an = e.alphabet) { e.alphabet = it }
-            SeparatorLine()
-            ChoiceRow(Glyph.TextBlock, translated("Titel als Logo"), translated("Auf Film- und Serienseiten, wenn dein Server eins hat"),
-                      e.titleAsLogo) { e.titleAsLogo = it }
-        }
-        if (!app.isTv) LooksGroup(app)
-
+        // Order of `PresentationView` (narrow): Startseite, Bibliotheken, Genres, Filme und Serien, Looks.
         SettingGroup(translated("Startseite")) {
             val rails = remember(e.startRails, e.newAccessDisconnected) {
                 selectionRead(Kern.startRails(e.startRails.toTypedArray(), e.newAccessDisconnected))
@@ -324,7 +320,7 @@ fun PresentationPage(app: SwiftlyApplication, open: (Destination) -> Unit, back:
                 }
             }
             SeparatorLine()
-            ChoiceRow(Glyph.Shared, translated("Neuzugänge getrennt"), translated("Neue Filme und neue Serien als eigene Reihen"),
+            ChoiceRow(Glyph.Shared, translated("Neuzugänge getrennt"), translated("Als eigene Reihen"),
                       e.newAccessDisconnected) { e.newAccessDisconnected = it }
         }
         Footer(translated("Zum Umsortieren an den Griffen rechts ziehen."))
@@ -383,6 +379,25 @@ fun PresentationPage(app: SwiftlyApplication, open: (Destination) -> Unit, back:
                 Text(translated("Genre hinzufügen"), style = Theme.listTitle, color = Theme.accent)
             }
         }
+
+        SettingGroup(translated("Filme und Serien")) {
+            ChoiceRow(Glyph.BarFilled, translated("Fortschritt auf Kacheln"), an = e.progress) { e.progress = it }
+            SeparatorLine()
+            ChoiceRow(Glyph.Bookmark, translated("Merkliste"), translated("Auf Film- und Serienseiten"),
+                      e.watchlist) { e.watchlist = it }
+            SeparatorLine()
+            ChoiceRow(Glyph.TextBlock, translated("Alphabet in Listen"), an = e.alphabet) { e.alphabet = it }
+            SeparatorLine()
+            ChoiceRow(Glyph.TextOutline, translated("Titel als Logo"), translated("Wenn dein Server eins hat"),
+                      e.titleAsLogo) { e.titleAsLogo = it }
+            // Only where the plugin was found on this server.
+            if (e.watchersPlugin == "1") {
+                SeparatorLine()
+                ChoiceRow(Glyph.Person, translated("Gesehen von"), translated("Zeigt auf Titelseiten, wer einen Titel gesehen hat"),
+                          e.watchersShow) { e.watchersShow = it }
+            }
+        }
+        if (!app.isTv) LooksGroup(app)
     }
 }
 
@@ -403,22 +418,16 @@ fun SettingsPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () 
     var checks by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
     val run = rememberCoroutineScope()
-    SettingPage(translated("Einstellungen"), back) {
+    SettingPage(translated("Allgemein"), back, trimFirstGroup = true) {
         // No downloads on TV: there is no storage to fill (tvOS).
         if (!app.isTv) OfflineGroup(app)
-        // Integration before server: a second service, not a second server.
-        if (app.can("seerr")) SettingGroup(translated("Integration")) {
-            ValueRow(Glyph.SparkleSearch, "Seerr", translated("Anfragen, was noch nicht da ist"),
-                      value = if (app.seerrConnected.value) translated("Verbunden") else null) {
-                open(Destination("seerr", "Seerr", "Seerr"))
-            }
-        }
-        SettingGroup(translated("Server")) {
+        // 1.1: Seerr moved into the server group, "Server und Dienste" (it is a service next to the server).
+        SettingGroup(translated("Server und Dienste")) {
             ValueRow(Glyph.Server, server?.first?.takeIf { it.isNotEmpty() } ?: app.serverName.value.orEmpty().ifEmpty { "Jellyfin" },
                       value = server?.second ?: "?")
             SeparatorLine()
             ValueRow(Glyph.Wlan, translated("Verbindung prüfen"), under = result,
-                      value = if (checks) translated("Moment…") else null,
+                      value = if (checks) translated("Moment…") else null, inPlace = true,
                       perform = if (checks) null else { {
                           checks = true
                           run.launch {
@@ -434,14 +443,21 @@ fun SettingsPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () 
             // else never enters here.
             val count = remember(app.accountSwitch.intValue) { org.json.JSONArray(app.ownHeaders(app.activeServer())).length() }
             ValueRow(Glyph.Keys, translated("Eigene Header"), translated("Für einen Dienst vor dem Server"),
-                      value = if (count == 0) null else count.toString()) {
+                      value = if (count == 0) null else count.toString(), chevron = true) {
                 open(Destination("eigenkoepfe", translated("Eigene Header"), "EigeneKoepfe"))
+            }
+            if (app.can("seerr")) {
+                SeparatorLine()
+                ValueRow(Glyph.SparkleSearch, "Seerr", translated("Anfragen, was noch nicht da ist"),
+                          value = if (app.seerrConnected.value) translated("Verbunden") else null, chevron = true) {
+                    open(Destination("seerr", "Seerr", "Seerr"))
+                }
             }
         }
         // Settings follow the account to every device (`SettingsSyncRun`). On by default.
-        if (app.can("settingsSync")) SettingGroup(translated("Konto")) {
-            ChoiceRow(Glyph.Rotate, translated("Einstellungen auf allen Geräten gleich halten"),
-                      translated("Sprachen, Überspringen und Startseite liegen auf deinem Server"), app.settingsSync.on.value) {
+        if (app.can("settingsSync")) SettingGroup(translated("Synchronisierung")) {
+            ChoiceRow(Glyph.Rotate, translated("Auf allen Geräten gleich"),
+                      translated("Liegt auf deinem Server"), app.settingsSync.on.value) {
                 app.settingsSync.onSet(it)
             }
         }

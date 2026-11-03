@@ -110,13 +110,13 @@ struct SubtitleLookView: View {
             segmentRow(symbol: "textformat.size", title: String(localized: "Größe"),
                        options: SubtitleLook.Size.allCases, value: look.size, name: \.name,
                        choose: { value in set { $0.size = value } }) { size in
-                Text("A").font(.system(size: size.glyphSize, weight: .semibold))
+                Text("A").font(.app(size: size.glyphSize, weight: .semibold))
             }
             SheetLine()
             segmentRow(symbol: "paintpalette", title: String(localized: "Farbe"),
                        options: SubtitleLook.Colour.allCases, value: look.colour, name: \.name,
                        choose: { value in set { $0.colour = value } }) { colour in
-                Text("A").font(.system(size: 17, weight: .semibold)).foregroundStyle(colour.color)
+                Text("A").font(.app(size: 17, weight: .semibold)).foregroundStyle(colour.color)
             }
             SheetLine()
             segmentRow(symbol: "character.textbox", title: String(localized: "Rand"),
@@ -267,7 +267,7 @@ private struct GlyphSegments<Value: Hashable, Label: View>: View {
                     choose(option)
                 } label: {
                     label(option)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.app(size: 13, weight: .semibold))
                         .foregroundStyle(value == option ? Theme.font : Theme.fontQuiet)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)

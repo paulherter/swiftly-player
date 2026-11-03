@@ -31,6 +31,8 @@ struct SwiftlyApp: App {
         // A measured scroll run when the environment requests it, see `ScrollProbe`.
         // Without the variable nothing happens.
         ScrollProbe.start()
+        // The same for the transitions, see `MotionProbe`.
+        MotionProbe.start()
         #endif
     }
 
@@ -70,12 +72,26 @@ extension FocusedValues {
     @Entry var playerOpen: Bool?
     @Entry var downloadsAn: Bool?
     @Entry var watchlistShown: Bool?
+    /// The player is open and no layer (tracks, episodes, settings) is up: only then do
+    /// the plain-key items of "Wiedergabe" (Space, arrows, T) apply, so a layer keeps
+    /// its keys.
+    @Entry var playerKeysFree: Bool?
+    /// Whether the section has a page to go back to / forward to; `nil` counts as yes,
+    /// so the items work before the window publishes these.
+    @Entry var canBack: Bool?
+    @Entry var canForward: Bool?
 }
 
 struct MenuBar: Commands {
     @FocusedValue(\.playerOpen) private var playerOpen
     @FocusedValue(\.downloadsAn) private var downloadsAn
     @FocusedValue(\.watchlistShown) private var watchlistShown
+    @FocusedValue(\.playerKeysFree) private var playerKeysFree
+    @FocusedValue(\.canBack) private var canBack
+    @FocusedValue(\.canForward) private var canForward
+    /// The skip lengths from Settings, for the item names ("10 s zurück").
+    @AppStorage("zurueckSek") private var backSeconds = 10
+    @AppStorage("vorSek") private var forwardSeconds = 30
 
     var body: some Commands {
         // Apple's defaults that are not needed: no filler items such as "Print" or "New".
@@ -101,6 +117,8 @@ struct MenuBar: Commands {
         // the item, so it appears where everyone looks.
         CommandGroup(replacing: .appSettings) {
             CommandButton("Einstellungen…", .settings, ",")
+            Button("Profil wechseln") { CommandPost.dispatch(.switchProfile) }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
         }
 
         // **All sections, not three of six.** The sidebar has six; the menu offered Home,
@@ -110,30 +128,44 @@ struct MenuBar: Commands {
             CommandButton("Start",     .start,     "1")
             CommandButton("Filme",     .movies,     "2")
             CommandButton("Serien",    .seriesList,    "3")
+            CommandButton("Suche",     .search,  "f")
             CommandButton("Merkliste", .watchlist, "4")
                 .disabled(watchlistShown == false)
             CommandButton("Downloads", .downloads, "5")
                 .disabled(downloadsAn == false)
             Divider()
-            CommandButton("Suchen", .search,  "f")
-            Divider()
             CommandButton("Zurück", .back, "[")
+                .disabled(canBack == false)
+            Button("Vorwärts") { CommandPost.dispatch(.forward) }
+                .keyboardShortcut("]", modifiers: .command)
+                .disabled(canForward == false)
         }
 
-        // **What already has keys in the player**, also available in the menu bar. No
-        // shortcuts here: Space, arrows and F belong to the player itself (`PlayerScreen`),
-        // and a second shortcut on the same key would only reach one of the two.
+        // **The player's keys, shown in the menu.** Space, arrows and T are plain keys, so
+        // they only apply while the player is open and no layer is up (`playerKeysFree`);
+        // otherwise they would swallow the keys of a focused list or button. Each item sends
+        // the same message the key press does, so nothing runs twice.
         CommandMenu(Text("Wiedergabe")) {
-            Button("Abspielen") { CommandPost.dispatch(.playToggle) }.disabled(playerOpen != true)
-            Button("Zurückspulen") { CommandPost.dispatch(.playBack) }.disabled(playerOpen != true)
-            Button("Vorspulen") { CommandPost.dispatch(.playForward) }.disabled(playerOpen != true)
-            Button("Pause") { CommandPost.dispatch(.playPause) }.disabled(playerOpen != true)
+            Button("Abspielen/Pause") { CommandPost.dispatch(.playToggle) }
+                .keyboardShortcut(.space, modifiers: [])
+                .disabled(playerOpen != true || playerKeysFree == false)
+            Button("\(backSeconds) s zurück") { CommandPost.dispatch(.playBack) }
+                .keyboardShortcut(.leftArrow, modifiers: [])
+                .disabled(playerOpen != true || playerKeysFree == false)
+            Button("\(forwardSeconds) s vor") { CommandPost.dispatch(.playForward) }
+                .keyboardShortcut(.rightArrow, modifiers: [])
+                .disabled(playerOpen != true || playerKeysFree == false)
+            Divider()
+            Button("Ton und Untertitel") { CommandPost.dispatch(.playTracks) }
+                .keyboardShortcut("t", modifiers: [])
+                .disabled(playerOpen != true || playerKeysFree == false)
+            Button("Vollbild") { CommandPost.dispatch(.playFullscreen) }
+                .keyboardShortcut("f", modifiers: [.control, .command])
+                .disabled(playerOpen != true)
             Divider()
             Button("Lauter") { CommandPost.dispatch(.louder) }.disabled(playerOpen != true)
             Button("Leiser") { CommandPost.dispatch(.quieter) }.disabled(playerOpen != true)
             Button("Ton aus") { CommandPost.dispatch(.muted) }.disabled(playerOpen != true)
-            Divider()
-            Button("Vollbild") { CommandPost.dispatch(.playFullscreen) }.disabled(playerOpen != true)
         }
     }
 }
@@ -144,6 +176,17 @@ enum AppCommand: String {
     case start, movies = "filme", seriesList = "serien", watchlist = "merkliste", downloads, search = "suche", back = "zurueck", settings = "einstellungen"
     /// Player only (the "Playback" menu).
     case playToggle = "spielUmschalten", playPause = "spielPause", playBack = "spielZurueck", playForward = "spielVor", playFullscreen = "spielVollbild", louder = "lauter", quieter = "leiser", muted = "stumm"
+}
+
+/// Menu commands added later; a separate enum so the exhaustive `switch` over
+/// ``AppCommand`` in `MainView` stays as it is.
+///
+/// - `forward`, `switchProfile`: the window (`MainView`) listens, see
+///   ``CommandPost/moreName``.
+/// - `playTracks`: the player listens.
+enum MenuCommand: String {
+    case forward = "vor", switchProfile = "profilWechseln"
+    case playTracks = "spielTon"
 }
 
 /// A menu item that sends its command as a message.
@@ -175,6 +218,19 @@ enum CommandPost {
     static func dispatch(_ command: AppCommand) {
         NotificationCenter.default.post(name: name, object: nil,
                                         userInfo: ["k": command.rawValue])
+    }
+
+    /// The second wire, for ``MenuCommand``.
+    static let moreName = Notification.Name("de.paulherter.swiftly.kommando.mehr")
+
+    static func dispatch(_ command: MenuCommand) {
+        NotificationCenter.default.post(name: moreName, object: nil,
+                                        userInfo: ["k": command.rawValue])
+    }
+
+    static func receiveMore(_ post: Notification) -> MenuCommand? {
+        guard let raw = post.userInfo?["k"] as? String else { return nil }
+        return MenuCommand(rawValue: raw)
     }
 
     static func receive(_ postDirection: Notification) -> AppCommand? {

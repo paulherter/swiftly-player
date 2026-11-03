@@ -147,6 +147,9 @@ public actor JellyfinClient {
     /// otherwise another device cannot tell it is a phone (`RemoteSession.devicesKind`).
     private let program: String
     private var session: Session?
+    /// The server answered that it has no Jelly Twiggy plugin (``watchers(itemID:)``).
+    private var watchersAbsent = false
+    private var watchersNotFound = Set<String>()
     /// Jellyfin, or Emby, which this client also speaks with a few different paths and
     /// spellings (``EmbyPaths``). Plex has its own client; a `.plex` here counts as Jellyfin.
     public nonisolated let serverKind: ServerKind
@@ -491,7 +494,9 @@ public actor JellyfinClient {
             // `item(id:)` anyway, and both are in there.
             // `ProviderIds` because ``TitleFilter`` uses them to recognize two entries as the
             // same movie; small, a handful of numbers.
-            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,SortName"),
+            // `DateCreated` for the index beside a "Zuletzt" grid (``AlphabetIndex``): the
+            // loaded titles must say which year they belong to.
+            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated"),
             .init(name: "Recursive", value: recursive ? "true" : "false"),
         ]
         if let parentID { query.append(.init(name: "ParentId", value: parentID)) }
@@ -518,7 +523,8 @@ public actor JellyfinClient {
         }
         if slim {
             query.removeAll { ["Limit", "StartIndex", "Fields"].contains($0.name) }
-            query += [.init(name: "Fields", value: "SortName"),
+            // Premiere date, year and rating come without asking; the date added does not.
+            query += [.init(name: "Fields", value: "SortName,DateCreated"),
                       .init(name: "EnableImages", value: "false"),
                       .init(name: "EnableUserData", value: "false")]
         }
@@ -772,7 +778,9 @@ public actor JellyfinClient {
             .init(name: "Recursive", value: "true"),
             .init(name: "IncludeItemTypes", value: "Movie,Series"),
             .init(name: "Limit", value: String(limit)),
-            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,SortName"),
+            // `DateCreated` for the index beside a "Zuletzt" grid (``AlphabetIndex``): the
+            // loaded titles must say which year they belong to.
+            .init(name: "Fields", value: "Overview,PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated"),
         ])
         // Across all libraries: one hit per work (``Items``).
         let hits = await jeItemInTimes(try await send(req, as: ItemsResponse.self).items)
@@ -862,6 +870,29 @@ public actor JellyfinClient {
                               query: [.init(name: "userId", value: s.userID)])
         try await sendIgnoringBody(req)
     }
+
+    /// Jelly Twiggy: who watched a title. `nil` when the server has no such plugin; once the
+    /// plugin has answered "not here" the client does not ask again.
+    public func watchers(itemID: String) async -> [Watcher]? {
+        guard serverKind == .jellyfin, session != nil, !watchersAbsent else { return nil }
+        guard let req = try? request("JellyTwiggy/Items/\(itemID)/Watchers") else { return nil }
+        do {
+            let list = try await send(req, as: [Watcher].self)
+            return list
+        } catch JellyfinError.http(let status, _) where status == 404 || status == 405 {
+            // The route itself is missing on a server without the plugin; one unknown title
+            // alone (404) does not prove that, two different ones do.
+            watchersNotFound.insert(itemID)
+            if status == 405 || watchersNotFound.count >= 2 { watchersAbsent = true }
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    /// `true` once the server has answered that it has no Jelly Twiggy plugin; lets a caller tell
+    /// that apart from a failed request (both give `nil` from ``watchers(itemID:)``).
+    public var watchersPluginMissing: Bool { watchersAbsent }
 
     /// A series' seasons.
     public func seasons(seriesID: String) async throws -> [Item] {

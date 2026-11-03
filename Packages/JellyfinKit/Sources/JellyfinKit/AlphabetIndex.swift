@@ -16,17 +16,33 @@ import Foundation
 public struct AlphabetIndex: Sendable, Equatable {
 
     public struct Entry: Sendable, Equatable, Hashable, Identifiable {
-        /// What the strip shows: "#", "A", "Ё", "流".
+        /// **The key**: what a title is matched against and what a jump asks for. For
+        /// "By name" the letter itself ("#", "A", "Ё", "流"); for the other orders see
+        /// ``AlphabetIndex/key(of:sorting:)``.
         public let letter: String
-        /// Position of the first title with this letter in the server's list.
+        /// Position of the first title with this key in the server's list.
         public let first: Int
+        /// **What the strip shows.** The letter, or "26" for a year, "7" for a rating.
+        public let label: String
+        /// **A dot before this entry**: the next step among years and ratings. It marks the
+        /// step, it is not a target of its own.
+        public let gap: Bool
         public var id: String { letter }
+
+        public init(letter: String, first: Int, label: String? = nil, gap: Bool = false) {
+            self.letter = letter
+            self.first = first
+            self.label = label ?? letter
+            self.gap = gap
+        }
     }
 
-    /// In alphabetical order. A letter appears once, with its first title.
+    /// In the strip's order. A key appears once, with its first title.
     public let entries: [Entry]
     /// How many titles the list holds.
     public let count: Int
+    /// The order the list is sorted in; it decides what a key is.
+    public let sorting: Sorting
 
     /// - Parameter titles: Name and the server's sort name of every title, in list order.
     public init(titles: [(name: String, sortName: String?)]) {
@@ -38,6 +54,88 @@ public struct AlphabetIndex: Sendable, Equatable {
         entries = firstAt.map { Entry(letter: $0.key, first: $0.value) }
             .sorted { Self.order($0.letter) < Self.order($1.letter) }
         count = titles.count
+        sorting = .name
+    }
+
+    /// **The strip for any order**, from the whole list in the server's order.
+    ///
+    /// "By name" gives the letters as above. The others keep the list's own order (newest
+    /// year, highest rating first), because there the strip is a scale and not an alphabet:
+    /// - "Jahr": the premiere year in two digits, "26 25 24".
+    /// - "Bewertung": the whole part of the community rating, "9 8 7".
+    /// - "Zuletzt": the year the title was added, in two digits. Years, not quarters: a
+    ///   quarter rarely adds enough titles to be worth a jump of its own.
+    ///
+    /// Titles without the value share "—".
+    public init(items: [Item], sorting: Sorting) {
+        guard sorting != .name else {
+            self.init(titles: items.map { ($0.name, $0.sortName) })
+            return
+        }
+        var keys: [String] = []
+        var firstAt: [String: Int] = [:]
+        for (i, item) in items.enumerated() {
+            let key = Self.key(of: item, sorting: sorting)
+            if firstAt[key] == nil { firstAt[key] = i; keys.append(key) }
+        }
+        var built: [Entry] = []
+        for key in keys {
+            // Years and ratings are a scale: a dot between every two steps.
+            built.append(Entry(letter: key, first: firstAt[key]!,
+                               label: Self.label(for: key, sorting: sorting), gap: !built.isEmpty))
+        }
+        self.init(entries: built, count: items.count, sorting: sorting)
+    }
+
+    private init(entries: [Entry], count: Int, sorting: Sorting) {
+        self.entries = entries
+        self.count = count
+        self.sorting = sorting
+    }
+
+    // MARK: Keys of the other orders
+
+    /// What a title is matched by in this index.
+    public func key(of item: Item) -> String {
+        Self.key(of: item, sorting: sorting)
+    }
+
+    /// **The key of a title for an order**: the letter, the year ("2025"), the rating
+    /// ("r7") or the year added ("2025"); "—" when the title lacks the value.
+    public static func key(of item: Item, sorting: Sorting) -> String {
+        switch sorting {
+        case .name:
+            return letter(name: item.name, sortName: item.sortName)
+        case .erscheinung:
+            guard let year = year(of: item.premiereDate) ?? item.productionYear else { return "—" }
+            return String(year)
+        case .rating:
+            guard let rating = item.communityRating, rating.isFinite else { return "—" }
+            return "r\(min(10, max(0, Int(rating))))"
+        case .latest:
+            guard let year = year(of: item.dateCreated) else { return "—" }
+            return String(year)
+        }
+    }
+
+    /// The year of an ISO 8601 date ("2009-12-31T00:00:00.0000000Z").
+    private static func year(of date: String?) -> Int? {
+        guard let date, date.count >= 4, let year = Int(date.prefix(4)), year > 0 else { return nil }
+        return year
+    }
+
+    private static func twoDigits(_ year: Int) -> String {
+        let rest = year % 100
+        return rest < 10 ? "0\(rest)" : String(rest)
+    }
+
+    private static func label(for key: String, sorting: Sorting) -> String {
+        guard key != "—" else { return key }
+        switch sorting {
+        case .name:        return key
+        case .erscheinung, .latest: return Int(key).map(twoDigits) ?? key
+        case .rating:      return String(key.dropFirst())
+        }
     }
 
     /// Fewer than two letters is no index: nothing to jump between.
@@ -104,11 +202,48 @@ public struct AlphabetIndex: Sendable, Equatable {
         loaded.firstIndex { Self.letter(name: $0.name, sortName: $0.sortName) == letter }
     }
 
+    /// The same for any order, by the loaded titles' keys.
+    public func target(for key: String, in loaded: [Item]) -> Int? {
+        loaded.firstIndex { self.key(of: $0) == key }
+    }
+
+    /// What the strip shows for a key ("25" for "2025"), for VoiceOver and the like.
+    public func label(of key: String?) -> String? {
+        guard let key else { return nil }
+        return entries.first { $0.letter == key }?.label ?? key
+    }
+
+    /// **How long a tapped entry is held** at most, should the grid never get there.
+    public static let holdSeconds = 5
+
+    /// **How much height a dot takes**, as a share of an entry's row.
+    public static let gapShare = 0.5
+
+    /// The strip's height in rows: one per entry, half a row per dot.
+    public static func rows(_ shown: [Entry]) -> Double {
+        Double(shown.count) + Double(shown.filter(\.gap).count) * gapShare
+    }
+
+    /// **The entry under a point of the strip**, `y` from 0 to `height`. A dot belongs to
+    /// the entry after it, the group it opens.
+    public static func entry(at y: Double, height: Double, in shown: [Entry]) -> Entry? {
+        guard !shown.isEmpty, height > 0 else { return nil }
+        let row = height / rows(shown)
+        var bottom = 0.0
+        for entry in shown {
+            bottom += (entry.gap ? gapShare * row : 0) + row
+            if y < bottom { return entry }
+        }
+        return shown.last
+    }
+
     /// **The strip when it does not fit.** Keeps the first and the last letter and spreads
     /// the rest evenly, as the section index on iOS does. Every kept letter still jumps to
     /// itself.
     public func condensed(fitting slots: Int) -> [Entry] {
-        guard slots >= 2, entries.count > slots else { return entries }
+        // Dots take height too (``rows(_:)``).
+        guard slots >= 2, Self.rows(entries) > Double(slots) else { return entries }
+        if sorting != .name { return thinned(fitting: slots) }
         let last = entries.count - 1
         var picked: [Entry] = []
         var taken = Set<Int>()
@@ -117,5 +252,31 @@ public struct AlphabetIndex: Sendable, Equatable {
             if taken.insert(i).inserted { picked.append(entries[i]) }
         }
         return picked
+    }
+
+    /// **A scale thinned from the top down**: the newest years (or highest ratings)
+    /// one after another, further down ever sparser, the last one always. That is
+    /// where people look: last year's films are sought far more often than 1987's. Each kept
+    /// entry still jumps to itself; the dots between them count for height.
+    private func thinned(fitting slots: Int) -> [Entry] {
+        // An entry and the dot before it take 1 + `gapShare` rows; the first has no dot.
+        let fits = max(2, Int((Double(slots) + Self.gapShare) / (1 + Self.gapShare)))
+        guard entries.count > fits else { return entries }
+        let last = entries.count - 1
+        var picked: [Int] = []
+        for k in 0..<fits {
+            // Squared, so the steps grow towards the end of the list.
+            let share = Double(k) / Double(fits - 1)
+            var i = Int((share * share * Double(last)).rounded())
+            if let before = picked.last { i = max(i, before + 1) }
+            // Leave room for the ones still to come, the last entry above all.
+            i = min(i, last - (fits - 1 - k))
+            picked.append(i)
+        }
+        return picked.enumerated().map { k, i in
+            let e = entries[i]
+            // The first shown entry stands at the top: no dot above it.
+            return k == 0 ? Entry(letter: e.letter, first: e.first, label: e.label) : e
+        }
     }
 }

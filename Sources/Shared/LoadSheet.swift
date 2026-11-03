@@ -171,9 +171,9 @@ struct LoadSheet: View {
     private func detail(_ symbol: String, _ was: LocalizedStringKey,
                         _ value: String, cautionary: Bool = false) -> some View {
         HStack(spacing: 14) {
-            Image(systemName: symbol)
-                .font(.system(size: 17))
-                .foregroundStyle(cautionary ? Theme.warning : Theme.fontQuiet)
+            Image(icon: symbol, size: 17)
+                .font(.app(size: 17))
+                .foregroundStyle(cautionary ? Theme.warning : Theme.font)
                 .frame(width: 20)
             Text(was)
                 // **Scales, not fixed**. The value on the right stays
@@ -182,7 +182,7 @@ struct LoadSheet: View {
                 .foregroundStyle(cautionary ? Theme.warning : Theme.font)
             Spacer(minLength: 12)
             Text(verbatim: value)
-                .font(.system(size: 15))
+                .font(.app(size: 15))
                 .monospacedDigit()
                 .foregroundStyle(Theme.font)
         }
@@ -203,9 +203,9 @@ struct LoadSheet: View {
     /// download selection, so movie and series have the same place.
     private var qualityRow: some View {
         HStack(spacing: 14) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 17))
-                .foregroundStyle(Theme.fontQuiet)
+            Image(icon: "sparkles", size: 17)
+                .font(.app(size: 17))
+                .foregroundStyle(Theme.font)
                 .frame(width: 20)
                 .accessibilityHidden(true)
             Text("Qualität")
@@ -226,9 +226,9 @@ struct LoadSheet: View {
     /// **Audio as a row with the choice on the right**, built like the quality row.
     private var audioRow: some View {
         HStack(spacing: 14) {
-            Image(systemName: "speaker.wave.2")
-                .font(.system(size: 17))
-                .foregroundStyle(Theme.fontQuiet)
+            Image(icon: "speaker.wave.2", size: 17)
+                .font(.app(size: 17))
+                .foregroundStyle(Theme.font)
                 .frame(width: 20)
                 .accessibilityHidden(true)
             Text("Ton")

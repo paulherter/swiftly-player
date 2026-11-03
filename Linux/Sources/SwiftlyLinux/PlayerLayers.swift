@@ -25,14 +25,17 @@ enum PlayerLayer: Equatable, Hashable {
 
 /// Player measurements, copied verbatim from `Playermass` on the Mac.
 enum PlayerMetric {
-    static let page: Int32 = 40
-    static let top: Int32 = 28
-    static let bottom: Int32 = 24
-    static let button: Int32 = 38
-    static let symbol: Int32 = 22   // Box for an 18-point SF symbol
-    static let overBar: Int32 = 20
-    static let bar: Int32 = 32
-    static let railsSpacing: Int32 = 4
+    /// Right margin of icon row and bar (Mac 1.1: `page` 28).
+    static let page: Int32 = 28
+    /// Left edge of the title, past where the window controls sit on the Mac (80).
+    static let titleLeft: Int32 = 80
+    static let top: Int32 = 14
+    static let bottom: Int32 = 20
+    static let button: Int32 = 44
+    static let symbol: Int32 = 27   // Box for a 22-point SF symbol
+    static let overBar: Int32 = 12
+    static let bar: Int32 = 44
+    static let railsSpacing: Int32 = 2
 }
 
 /// The checkmarks of a column. A choice only repaints the checkmarks instead
@@ -61,7 +64,7 @@ extension App {
 
     /// One of the icon buttons at the top right: 38 × 38, transparent, a subtle
     /// fill on hover (Mac: `IconButton`).
-    func iconButton(_ name: String, label text: String,
+    func iconButton(_ name: String, label text: String, key: String? = nil,
                      action: @escaping () -> Void) -> (button: Widget?, symbolText: PlayerCharacter) {
         let button: Widget! = gtk_button_new()
         gtk_widget_add_css_class(button, "swiftly-symbolknopf")
@@ -69,7 +72,9 @@ extension App {
         gtk_widget_set_valign(button, GTK_ALIGN_START)
         let symbolText = PlayerCharacter(name, size: PlayerMetric.symbol)
         gtk_button_set_child(asButton(button), symbolText.display)
-        gtk_widget_set_tooltip_text(button, text)
+        // The Mac draws its own tip ("Ton und Untertitel  T"); the system tooltip carries
+        // the same words, since a custom popup would need its own hover timer.
+        gtk_widget_set_tooltip_text(button, key.map { "\(text)  \($0)" } ?? text)
         caption(button, text)
         signal(button, "clicked", action)
         return (button, symbolText)
@@ -103,7 +108,7 @@ extension App {
         let header = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
         gtk_widget_set_valign(header, GTK_ALIGN_START)
         gtk_widget_set_margin_top(header, PlayerMetric.top)
-        gtk_widget_set_margin_start(header, PlayerMetric.page)
+        gtk_widget_set_margin_start(header, PlayerMetric.titleLeft)
         gtk_widget_set_margin_end(header, PlayerMetric.page)
         let left = left ?? stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
         gtk_widget_set_hexpand(left, 1)

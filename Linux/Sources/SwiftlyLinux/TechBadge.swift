@@ -63,7 +63,7 @@ extension App {
             gtk_widget_set_valign(inputField, GTK_ALIGN_START)
             // Mac: `.padding(.leading, mass.page)`,
             // `.padding(.top, mass.top + mass.button + Theme.tileSpacing)`.
-            gtk_widget_set_margin_start(inputField, PlayerMetric.page)
+            gtk_widget_set_margin_start(inputField, PlayerMetric.titleLeft)
             // **Intercept nothing.** The badge lies over the picture and must not
             // swallow a click meant for the controls.
             gtk_widget_set_can_target(inputField, 0)

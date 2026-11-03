@@ -81,9 +81,19 @@ struct LibraryView: View {
         Double(min(max(headerState.offset / Theme.valueRailsDistance, 0), 1))
     }
 
+    /// **Fixed tiles, spread to both edges** (design: six of 150 with the rest shared
+    /// out between them). At least 16 between two tiles; one column fewer before less.
+    private var columnCount: Int {
+        let usable = viewportWidth - 2 * Theme.edgeSpacing
+        return max(1, Int((usable + 16) / (Theme.tileWidth + 16)))
+    }
+
     private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: Theme.tileWidth, maximum: Theme.tileWidth),
-                  spacing: Theme.tileSpacing, alignment: .topLeading)]
+        let usable = viewportWidth - 2 * Theme.edgeSpacing
+        let n = columnCount
+        let gap = n > 1 ? max(16, (usable - CGFloat(n) * Theme.tileWidth) / CGFloat(n - 1)) : 0
+        return Array(repeating: GridItem(.fixed(Theme.tileWidth), spacing: gap, alignment: .topLeading),
+                     count: n)
     }
 
     /// Where the scroll position of this page is stored (bar, collection, sorting).
@@ -95,26 +105,10 @@ struct LibraryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
 
-                HStack(alignment: .firstTextBaseline) {
-                    // The back arrow is in the `Bestandsleiste`, not here in the content: here it
-                    // scrolled away, and anyone far down the page could only get back with the ⌘[
-                    // shortcut.
-                    VStack(alignment: .leading, spacing: 3) {
-                        titleLine
-                        // Where am I? The server name was not shown on any page; with several accounts
-                        // that have identically named libraries it is the only difference.
-                        if let server = model.serverName, !server.isEmpty {
-                            Text(verbatim: server)
-                                .font(Theme.small)
-                                .foregroundStyle(Theme.fontVeryQuiet)
-                                .lineLimit(1)
-                        }
-                    }
-                    Spacer()
-                    // The shared component instead of a second version; it used to be rebuilt here
-                    // character for character.
-                    if shown > 0 { CountMark(count: shown) }
-                }
+                // **The large title is the menu** ("Filme ⌄"), at the top of the content as on
+                // Merkliste and Start. It scrolls away and the small one fades into the bar.
+                titleLine(compact: false)
+                    .zIndex(30)
 
                 // Two buttons instead of eight chips.
                 //
@@ -133,13 +127,12 @@ struct LibraryView: View {
                 // its height on every switch; on iPhone `ShelfControls` keeps its height for the
                 // same reason.
                 HStack(spacing: 8) {
-                    SelectionButton(symbol: "line.3.horizontal.decrease",
-                              value: shelf.filter.label,
+                    SelectionButton(value: shelf.filter.label,
                               entries: offeredFilter,
                               label: { $0.label },
                               isSelected: { $0 == shelf.filter },
                               select: { shelf.filter = $0 })
-                    SelectionButton(symbol: shelf.sorting.symbol,
+                    SelectionButton(symbol: "arrow.up.arrow.down",
                               value: shelf.sorting.label,
                               entries: Sorting.allCases,
                               label: { $0.label },
@@ -233,7 +226,7 @@ struct LibraryView: View {
                         Task { await shelf.loadMore(model, from: source) }
                     }
                     .buttonStyle(Theme.PressButton())
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.app(size: 15, weight: .medium))
                     .foregroundStyle(Theme.accent)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .contentShape(Rectangle())
@@ -302,8 +295,7 @@ struct LibraryView: View {
         .onChange(of: jump) { _, new in
             guard let new, let index = shelf.items.firstIndex(where: { $0.id == new.id }),
                   tileHeight > 0 else { return }
-            let usable = viewportWidth - 2 * Theme.edgeSpacing
-            let columns = max(1, Int((usable + Theme.tileSpacing) / (Theme.tileWidth + Theme.tileSpacing)))
+            let columns = columnCount
             let y = gridTop + CGFloat(index / columns) * (tileHeight + Self.rowSpacing)
                 - Theme.headerBarHeight - 8
             withAnimation(Motion.select) { position.scrollTo(y: max(0, y)) }
@@ -383,13 +375,13 @@ struct LibraryView: View {
     /// The scroll content's coordinate space, for ``gridTop``.
     private static let contentSpace = "libraryContent"
     /// Between two rows of the grid (`LazyVGrid(spacing:)`).
-    private static let rowSpacing: CGFloat = 20
+    private static let rowSpacing: CGFloat = 24
 
-    /// Only where it means something: switched on, sorted by name, a grid of titles, and
-    /// more than one letter.
+    /// Only where it means something: switched on, a grid of titles, and more than one
+    /// entry for the order on screen (letters, years or ratings).
     private var shownAlphabet: AlphabetIndex? {
-        guard model.alphabetShown, shelf.sorting == .name, !showsCollections,
-              let alphabet = shelf.alphabet, alphabet.isUseful else { return nil }
+        guard model.alphabetShown, !showsCollections,
+              let alphabet = shelf.currentAlphabet else { return nil }
         return alphabet
     }
 
@@ -407,9 +399,9 @@ struct LibraryView: View {
     /// The letter of the first loaded title on screen. **Written only when it changes**:
     /// tiles come and go on every scroll.
     private func updateTopLetter() {
-        guard shownAlphabet != nil,
+        guard let alphabet = shownAlphabet,
               let item = shelf.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
-        let letter = AlphabetIndex.letter(name: item.name, sortName: item.sortName)
+        let letter = alphabet.key(of: item)
         if letter != topLetter { topLetter = letter }
     }
 
@@ -510,19 +502,21 @@ struct LibraryView: View {
     /// "Alle" simply means "Filme". The title says where you are; "Alle Filme" only
     /// appears in the menu.
     @ViewBuilder
-    private var titleLine: some View {
+    private func titleLine(compact: Bool) -> some View {
         if let collection {
             // The name comes from the server and is not translated.
             Text(verbatim: collection.item.name)
-                .font(Theme.titleLarge)
-                .tracking(Theme.lockTitle)
+                .font(compact ? .app(size: 14, weight: .semibold) : Theme.titleLarge)
+                .tracking(compact ? 0 : Theme.lockTitle)
                 .foregroundStyle(Theme.font)
+                .lineLimit(1)
         } else if offering.isMenu {
             TitleSelection(title: choice == .all ? Text(title) : Text(verbatim: label(choice)),
                       entries: offering.entries,
                       label: { label($0) },
                       isSelected: { $0 == choice },
                       category: { $0 == offering.firstLibrary ? "Bibliotheken" : nil },
+                      compact: compact,
                       select: { new in
                           guard new != choice else { return }
                           model.sectionSelect(new, art: art)
@@ -531,11 +525,12 @@ struct LibraryView: View {
                       })
         } else {
             Text(title)
-                .font(Theme.titleLarge)
-                .tracking(Theme.lockTitle)
+                .font(compact ? .app(size: 14, weight: .semibold) : Theme.titleLarge)
+                .tracking(compact ? 0 : Theme.lockTitle)
                 .foregroundStyle(Theme.font)
         }
     }
+
 
     /// Collections in the same grid, with the same tile. Under the name, instead of the
     /// year, it shows how many movies or series it holds. Without its own image it

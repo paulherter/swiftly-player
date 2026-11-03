@@ -339,7 +339,7 @@ struct EpisodesStrip: View {
         // The rule from the package, not a separate check next to it.
         if DisplayRules.runtimeShow(seconds: episode.runtimeSeconds),
            let seconds = episode.runtimeSeconds {
-            parts.append(String(localized: "\(Int(seconds / 60)) Min"))
+            parts.append(String(localized: "\(Int(seconds / 60)) Min."))
         }
         // "Watched" shows as a check mark in the image, not as a word.
         if let rest = episode.remainingTimeText { parts.append(rest) }

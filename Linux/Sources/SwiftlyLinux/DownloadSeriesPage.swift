@@ -459,7 +459,7 @@ extension App {
         gtk_popover_set_child(asPanel(panel), Scaling.wrapped(list))
         append(list, actionRow("user-trash-symbolic",
                                         translated("Download entfernen")) { [weak self] in
-            gtk_popover_popdown(asPanel(panel))
+            panelDown(panel)
             self?.downloadsRemove([p.id])
         })
         rightClick(row) { gtk_popover_popup(asPanel(panel)) }

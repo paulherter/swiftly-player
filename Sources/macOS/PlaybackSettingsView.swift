@@ -112,6 +112,7 @@ struct PlaybackSettingsView: View {
     }
 
     @AppStorage("technikschild") private var techBadge = false
+    @AppStorage(PlayerEndTime.key) private var showsEnd = PlayerEndTime.standard
     @AppStorage("introAbspannAuto") private var skipAutomatic = false
 
     private var behavior: some View {
@@ -133,6 +134,11 @@ struct PlaybackSettingsView: View {
             ToggleRow(symbol: "waveform.badge.magnifyingglass",
                           title: Text("Technische Daten im Player"),
                           an: $techBadge)
+            SheetLine().padding(.leading, Theme.separatorInsetCard)
+            // "Endet um 18:38" instead of the remaining time; off by default (`PlayerEndTime`).
+            ToggleRow(symbol: "clock",
+                          title: Text("Endzeit im Player"),
+                          an: $showsEnd)
             SheetLine().padding(.leading, Theme.separatorInsetCard)
             ValuesRow(symbol: "gobackward", title: Text("Zurückspulen"),
                        value: "\(model.backSeconds) s", arrow: true,

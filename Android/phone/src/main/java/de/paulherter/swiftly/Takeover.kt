@@ -125,7 +125,7 @@ fun TakeoverCharacter(app: SwiftlyApplication) {
                 }
             }.semantics { contentDescription = label; stateDescription = (offerings.map { it.titleLine } + groups.map { it.name }).joinToString(", ") },
             contentAlignment = Alignment.Center) {
-            Symbol(firstOne?.let { symbolText(it.art) } ?: Glyph.ClusterFilled, 20.dp, color = Theme.accent)
+            Symbol(firstOne?.let { symbolText(it.art) } ?: Glyph.ClusterFilled, Theme.actionSymbol, color = Theme.accent)
             if (count > 1) Box(Modifier.align(Alignment.TopEnd).offset(x = (-2).dp, y = 4.dp).defaultMinSize(16.dp, 16.dp)
                     .background(Theme.accent, CircleShape).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
                 Text("$count", style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),

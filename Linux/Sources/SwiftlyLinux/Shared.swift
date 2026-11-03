@@ -454,7 +454,7 @@ extension App {
                 symbol: devicesCharacter(s.devicesKind),
                 title: s.deviceName ?? translated("Gerät"), under: s.titleLine,
                 action: translated("Hier weiterschauen")) { [weak self] in
-                gtk_popover_popdown(asPanel(panel))
+                panelDown(panel)
                 self?.adopt(s)
             })
         }
@@ -511,7 +511,7 @@ extension App {
 
     /// Close the panel because the server said yes, but only if it is still ours.
     private func sharedPanelClosed() {
-        if let t = gemeinsam.panel, t == openPanel { gtk_popover_popdown(asPanel(t)) }
+        if let t = gemeinsam.panel, t == openPanel { panelDown(t) }
         gemeinsam.panel = nil
         gemeinsam.panelButton = nil
     }

@@ -149,7 +149,7 @@ class CollectionState(val id: String, val art: String?) {
     var disrupted by mutableStateOf(false); private set
     var sorting by mutableStateOf("erscheinung")
     var filter by mutableStateOf("alle")
-    /** The letter strip of a "By name" list; empty otherwise. */
+    /** The index strip of the list; empty while there is none. */
     var letters by mutableStateOf<List<LetterEntry>>(emptyList()); private set
     private var loadsPost = false
     private var loadedFor: String? = null
@@ -198,7 +198,7 @@ class CollectionState(val id: String, val art: String?) {
         val o = JSONObject(withContext(Dispatchers.IO) {
             kern.collectionPage(id, art.orEmpty(), sorting, filter, since.toLong(), count).await()
         })
-        if (since == 0) letters = if (sorting == "name") lettersRead(o.optJSONArray("buchstaben")) else emptyList()
+        if (since == 0) letters = lettersRead(o.optJSONArray("buchstaben"))
         val a = o.getJSONArray("titel")
         return (0 until a.length()).map { gridTileRead(a.getJSONObject(it)) } to o.getInt("gesamt")
     }
@@ -245,7 +245,7 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
     }) { headerDp ->
         BoxWithConstraints(Modifier.fillMaxSize().background(Theme.reason)) {
             // The strip and its margin, as on the library page.
-            val shownLetters = if (app.settings.alphabet && state.sorting == "name" && state.letters.size > 1)
+            val shownLetters = if (app.settings.alphabet && state.letters.size > 1)
                 state.letters else emptyList()
             val lane = if (shownLetters.isEmpty()) Theme.edgeSpacing else maxOf(Theme.edgeSpacing, AlphabetRailWidth)
             val count = Theme.columns((maxWidth - Theme.edgeSpacing - lane).value)
@@ -258,7 +258,7 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
             LazyVerticalGrid(GridCells.Fixed(count), state = grid,
                 contentPadding = PaddingValues(start = Theme.edgeSpacing, end = lane, top = headerDp + 8.dp, bottom = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(Theme.tileSpacing),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                verticalArrangement = Arrangement.spacedBy(Theme.gridRow),
                 modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
                 if (state.items.isEmpty() && state.loads) items(count * 3, key = { "platzhalter$it" }, contentType = { "platzhalter" }) { TilePlaceholder() }
                 items(state.items, key = { it.id }, contentType = { "kachel" }) { k -> GridTileView(k) { open(Destination(k.id, k.title, k.type)) } }
@@ -275,7 +275,7 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
                 }
             }
             if (state.disrupted) {
-                EmptyState(Glyph.ServerRoute, translated("Server ist abgetaucht"),
+                EmptyState(Glyph.WlanDisruption, translated("Server ist abgetaucht"),
                     translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serverAddress()),
                     primaryButton = translated("Erneut versuchen") to { section.launch { state.load(app.kern) } })
             } else if (state.items.isEmpty() && !state.loads) {
@@ -321,7 +321,7 @@ fun CollectionRail(rails: List<CollectionRailsData>, open: (Destination) -> Unit
             Column(Modifier.padding(horizontal = Theme.edgeSpacing).tapOn { open(collectionTarget(rail.id, rail.name, rail.art)) },
                    verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(translated("Teil der Sammlung"), style = Theme.rail, color = Theme.font)
+                    Text(translated("Teil der Sammlung"), style = Theme.section, color = Theme.font)
                     Symbol(Glyph.AngleRight, 13.dp, color = Theme.fontVeryQuiet, strength = Strength.Semibold)
                 }
                 Text(rail.name, style = Theme.body, color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)

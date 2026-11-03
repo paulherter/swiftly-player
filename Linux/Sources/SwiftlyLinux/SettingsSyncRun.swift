@@ -91,7 +91,7 @@ final class SettingsSyncRun: @unchecked Sendable {
             "utSprache": .text(s.subtitleLanguage),
             "utAuto": .bool(s.subtitleAutomatic),
             "introAbspannAuto": .bool(s.skipAutomatic),
-            "restzeitAlsEnde": .bool(s.remainingTimeAsEnd),
+            "endzeitImPlayer": .bool(s.endTimeInPlayer),
             "vorSek": .int(s.forwardSeconds),
             "zurueckSek": .int(s.backSeconds),
             "titelAlsLogo": .bool(s.titleAsLogo),
@@ -235,7 +235,7 @@ final class SettingsSyncRun: @unchecked Sendable {
             case ("utAussehen", .json(let d)): s.subtitleLook = SubtitleLook.read(d)
             case ("naechsteAuto", .bool(let b)): s.nextAutomaticSelected = b
             case ("introAbspannAuto", .bool(let b)): s.skipAutomatic = b
-            case ("restzeitAlsEnde", .bool(let b)): s.remainingTimeAsEnd = b
+            case ("endzeitImPlayer", .bool(let b)): s.endTimeInPlayer = b
             case ("vorSek", .int(let i)): s.forwardSeconds = i
             case ("zurueckSek", .int(let i)): s.backSeconds = i
             case ("titelAlsLogo", .bool(let b)): s.titleAsLogo = b

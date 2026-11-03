@@ -118,11 +118,14 @@ extension App {
             guard let client, !versionsLoading else { return }
             versionsLoading = true
             let box = anchor.map { held($0) }
+            // Gray while the versions are on their way (Apple: `.disabled(!versionsKnown)`).
+            if let anchor { gtk_widget_set_sensitive(anchor, 0) }
             Task.detached { [self] in
                 let full = try? await client.item(id: title.id)
                 onMainThread {
                     self.versionsLoading = false
                     defer { if let box { letGo(box) } }
+                    if let box, gtk_widget_get_root(box.widget) != nil { gtk_widget_set_sensitive(box.widget, 1) }
                     guard let full else {
                         self.report(translated("Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal."))
                         return
@@ -166,7 +169,7 @@ extension App {
         for version in choices {
             append(list, actionRow("media-playback-start-symbolic", versionLabel(version)) {
                 [weak self] in
-                gtk_popover_popdown(asPanel(panel))
+                panelDown(panel)
                 self?.launch(title, since: since, sourceID: version.id)
             })
         }
@@ -580,6 +583,7 @@ extension App {
     private func baseBuild(_ title: Item, in bottom: Widget!, proof: Widget!) {
         if title.type == "Series" {
             seriesBase(title, in: bottom)
+            watchedByPlace(title, in: bottom)
         } else {
             // **One block for everything below the header**: cast, extras, part of the
             // collection, similar titles, and at the very bottom the file summary, in this order
@@ -589,6 +593,7 @@ extension App {
             gtk_widget_set_visible(block, 0)
             append(bottom, block)
             bottomLoadMore(title, in: block, proof: proof)
+            watchedByPlace(title, in: bottom)
         }
     }
 
@@ -619,18 +624,10 @@ extension App {
 
         let bar = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 4)
         gtk_widget_set_valign(bar, GTK_ALIGN_START)
-        // Flush with the content: 24 minus the button's 8 inner padding.
-        gtk_widget_set_margin_start(bar, Int32(Theme.edgeSpacing - 8))
+        gtk_widget_set_margin_start(bar, Int32(Theme.edgeSpacing))
         gtk_widget_set_margin_end(bar, Int32(Theme.edgeSpacing))
         // 24 puts the arrow at the same height where the sidebar carries its wordmark.
         gtk_widget_set_margin_top(bar, 24)
-
-        let arrow: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(arrow, "swiftly-zurueck")
-        caption(arrow, translated("Zurück"))
-        gtk_button_set_child(asButton(arrow), gtk_image_new_from_icon_name("go-previous-symbolic"))
-        signal(arrow, "clicked") { [weak self] in self?.back() }
-        append(bar, arrow)
 
         detailHeaderTitle = label(item.seriesName ?? item.name, style: "swiftly-leistentitel")
         gtk_label_set_ellipsize(OpaquePointer(detailHeaderTitle), PANGO_ELLIPSIZE_END)
@@ -661,7 +658,12 @@ extension App {
         // by 236 points. The mask ends the image softly anyway; the missing stretch behind it
         // is the smaller error. A faithful port needs a layer **under** the scroller, not in
         // the header.
-        let image = Backdrop()
+        // **A series head ends at the buttons** (Mac `showsOverview: false`) and the tabs follow
+        // 34 below: buttons end at 172 + 192 = 364, tabs at 398, minus the header row.
+        // A film keeps the 520 zone because its description and "Regie" sit in the head.
+        let image = title.type == "Series"
+            ? Backdrop(height: 172 + 192 + 34 - Theme.headerRowHeight)
+            : Backdrop()
         image.withRemembered(title.id)
         gtk_overlay_set_child(OpaquePointer(header), image.display)
         gtk_overlay_add_overlay(OpaquePointer(header), heroBlock(title))
@@ -705,61 +707,138 @@ extension App {
         }
     }
 
-    /// **Fixed positions instead of fixed heights.**
+    /// **Fixed positions instead of fixed heights** (Mac 1.1 `DetailView.block`).
     ///
     /// A stack with fixed row heights should have been enough, but on the Mac it was not:
     /// buttons moved depending on the server's answer. So each row sits at a computed
     /// position; anything that grows too large is clipped and moves nothing.
     ///
-    ///     0    Title        42
-    ///     54   Details      20
-    ///     92   Description  66   (three lines)
-    ///     182  Button row   48
-    ///     230  End
+    ///     0    Title        44   heavy, -1.2
+    ///     56   Meta         20   14 quiet (year, runtime or seasons, genres)
+    ///     90   Chips        26
+    ///     136  Buttons      56   Abspielen 280, icon buttons 48
+    ///     208  Progress     4 (+ "Noch n Min." 16), only for a started film
+    ///     228  Description  620 wide (266 with progress), "Mehr", "Regie"
     private func heroBlock(_ title: Item) -> Widget! {
         let inputField: Widget! = gtk_fixed_new()
         gtk_widget_set_halign(inputField, GTK_ALIGN_START)
         gtk_widget_set_valign(inputField, GTK_ALIGN_START)
-        gtk_widget_set_size_request(inputField, 640, 230)
+        gtk_widget_set_size_request(inputField, 700, 340)
         gtk_widget_set_margin_start(inputField, Int32(Theme.edgeSpacing))
-        // titleHeight (52) + 98, minus the header bar. On the Mac the distance is measured
-        // from the window's top edge; there is no title bar there, here there is, and its
-        // height is added.
-        gtk_widget_set_margin_top(inputField, Int32(Theme.titleHeight + 98 - Theme.headerRowHeight))
+        // Mac: title top 172 from the window's top edge; here the header row is added on top.
+        gtk_widget_set_margin_top(inputField, Int32(172 - Theme.headerRowHeight))
 
-        // **Each row in its own slot.** The four positions and heights match the Mac;
-        // without a fixed slot every label would grow past its height (Inter sets taller than
-        // SF Pro) and the gaps between would grow with it. Anything too large is clipped and
-        // moves nothing.
-        let name = label(title.name, style: "swiftly-heldtitel")
+        let name = label(title.name, style: "swiftly-detailtitel")
         gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
         gtk_label_set_xalign(OpaquePointer(name), 0)
-        // A logo fades over the text and stays in the slot of 42.
-        let titleCompartment = compartment(name, width: 640, height: 42)
+        // A logo fades over the text and stays in the slot of 44.
+        let titleCompartment = compartment(name, width: 700, height: 52)
         attachTitleMark(titleCompartment, text: name, title: title)
         gtk_fixed_put(asField2(inputField), titleCompartment, 0, 0)
 
-        // **26, not 20**: badge and evidence are 13 point type with 4 points of air above and
-        // below; at 20 they were clipped top and bottom.
-        gtk_fixed_put(asField2(inputField), compartment(detailsRail(title), width: 640, height: 26),
-                      0, 54)
+        let meta = label(detailMeta(title), style: "swiftly-angaben")
+        gtk_label_set_xalign(OpaquePointer(meta), 0)
+        gtk_label_set_ellipsize(OpaquePointer(meta), PANGO_ELLIPSIZE_END)
+        gtk_fixed_put(asField2(inputField), compartment(meta, width: 700, height: 22), 0, 56)
 
-        // **`description`, not `overview`.** Jellyfin returns HTML, and `<br>` and `&amp;`
-        // appeared literally on the page. `Description.lesbar` in the package cleans that
-        // up and was simply never called here.
-        let text = label(title.description ?? "", style: "swiftly-koerper", wrap: true)
-        gtk_label_set_xalign(OpaquePointer(text), 0)
-        gtk_label_set_yalign(OpaquePointer(text), 0)
-        gtk_label_set_lines(OpaquePointer(text), 3)
-        gtk_label_set_ellipsize(OpaquePointer(text), PANGO_ELLIPSIZE_END)
-        gtk_label_set_justify(OpaquePointer(text), GTK_JUSTIFY_LEFT)
-        gtk_widget_add_css_class(text, "swiftly-beschreibung")
-        gtk_fixed_put(asField2(inputField), compartment(text, width: 640, height: 66,
-                                           verticalRight: GTK_ALIGN_START), 0, 92)
+        gtk_fixed_put(asField2(inputField), compartment(detailsRail(title), width: 700, height: 26),
+                      0, 90)
 
-        gtk_fixed_put(asField2(inputField), compartment(buttonRail(title), width: 640,
-                                           height: Theme.primaryButtonHeight), 0, 182)
+        gtk_fixed_put(asField2(inputField), compartment(buttonRail(title), width: 700, height: 56),
+                      0, 136)
+
+        var next = 208
+        if title.type != "Series", let since = title.resumeFrom,
+           let total = title.runtimeSeconds, total > 0 {
+            let share = title.watchedShare ?? min(max(since / total, 0), 1)
+            let minutes = max(Int(((total - since) / 60).rounded(.up)), 1)
+            let column = stack(GTK_ORIENTATION_VERTICAL, spacing: 6)
+            let track: Widget! = gtk_fixed_new()
+            gtk_widget_set_size_request(track, 280, 4)
+            gtk_widget_set_halign(track, GTK_ALIGN_START)
+            gtk_widget_add_css_class(track, "swiftly-detailbalken")
+            let fill: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
+            gtk_widget_set_size_request(fill, max(Int32(280 * min(max(share, 0), 1)), 1), 4)
+            gtk_widget_add_css_class(fill, "swiftly-detailbalkenfuell")
+            gtk_fixed_put(asField2(track), fill, 0, 0)
+            append(column, track)
+            let rest = label(String(format: translated("Noch %lld Min."), minutes),
+                             style: "swiftly-detailrest")
+            gtk_label_set_xalign(OpaquePointer(rest), 0)
+            append(column, rest)
+            gtk_fixed_put(asField2(inputField), compartment(column, width: 700, height: 26,
+                                               verticalRight: GTK_ALIGN_START), 0, 208)
+            next = 208 + 26 + 28
+        } else {
+            next = 228
+        }
+
+        // Mac 1.1 `SeriesView`: `showsOverview: false`, the series head ends at the buttons.
+        if title.type != "Series", let description = descriptionBlock(title) {
+            gtk_fixed_put(asField2(inputField), description, 0, Double(next))
+        }
         return inputField
+    }
+
+    /// Year, runtime and genres; a series has seasons in place of the runtime.
+    private func detailMeta(_ title: Item) -> String {
+        guard title.type == "Series" else { return title.secondaryLine }
+        var parts: [String] = []
+        if let year = title.productionYear { parts.append(String(year)) }
+        if let count = title.childCount, count > 0 {
+            parts.append(count == 1 ? translated("1 Staffel")
+                                    : String(format: translated("%lld Staffeln"), count))
+        }
+        if let genres = title.genres, !genres.isEmpty { parts.append(genres.prefix(2).joined(separator: ", ")) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// **620 wide, 14 quiet; cut at 150 characters with an accent "Mehr", one click opens it
+    /// in full** (Mac `overview`), then "Regie" and the director.
+    private func descriptionBlock(_ title: Item) -> Widget! {
+        let full = title.description ?? ""
+        let directors = title.direction
+        guard !full.isEmpty || !directors.isEmpty else { return nil }
+        let column = stack(GTK_ORIENTATION_VERTICAL, spacing: 8)
+        gtk_widget_set_halign(column, GTK_ALIGN_START)
+        gtk_widget_set_valign(column, GTK_ALIGN_START)
+        if !full.isEmpty {
+            let cut = 150
+            let long = full.count > cut + 20
+            let text = label("", style: "swiftly-beschreibung", wrap: true)
+            gtk_label_set_xalign(OpaquePointer(text), 0)
+            gtk_label_set_yalign(OpaquePointer(text), 0)
+            gtk_label_set_justify(OpaquePointer(text), GTK_JUSTIFY_LEFT)
+            gtk_label_set_use_markup(OpaquePointer(text), 1)
+            gtk_widget_set_size_request(text, 620, -1)
+            func escaped(_ value: String) -> String {
+                value.replacingOccurrences(of: "&", with: "&amp;")
+                     .replacingOccurrences(of: "<", with: "&lt;")
+                     .replacingOccurrences(of: ">", with: "&gt;")
+            }
+            let head = String(full.prefix(cut))
+            let clean = head.lastIndex(of: " ").map { String(head[..<$0]) } ?? head
+            let cutMarkup = escaped(clean) + "… <span foreground=\"\(Theme.accent)\" weight=\"600\">"
+                + escaped(translated("Mehr")) + "</span>"
+            gtk_label_set_markup(OpaquePointer(text), long ? cutMarkup : escaped(full))
+            if long {
+                let opened = RememberState(false)
+                onClick(text) {
+                    opened.an.toggle()
+                    gtk_label_set_markup(OpaquePointer(text), opened.an ? escaped(full) : cutMarkup)
+                }
+            }
+            append(column, text)
+        }
+        if !directors.isEmpty {
+            let line = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
+            append(line, label(translated("Regie"), style: "swiftly-regiekopf"))
+            let value = label(directors.joined(separator: ", "), style: "swiftly-regiewert")
+            gtk_label_set_ellipsize(OpaquePointer(value), PANGO_ELLIPSIZE_END)
+            append(line, value)
+            append(column, line)
+        }
+        return compartment(column, width: 700, height: 150, verticalRight: GTK_ALIGN_START)
     }
 
     /// Year, runtime, genres, rating, certification and the badge: **one line**, not three.
@@ -769,11 +848,22 @@ extension App {
         let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
         gtk_widget_set_halign(rail, GTK_ALIGN_START)
 
-        let row = label(title.secondaryLine, style: "swiftly-angaben")
-        gtk_widget_add_css_class(row, "dim-label")
-        gtk_widget_set_margin_end(row, 6)
-        append(rail, row)
-
+        // **The badge comes first** (Mac 1.1 `chipRail`: Direct Play, star, age). It is hidden
+        // until the plan arrives and the row has a fixed position, so nothing moves.
+        // **The plan no longer arrives with everything below the header.** It used to wait for
+        // extras, similar titles and the collection and then popped in. Now it is fetched on
+        // open, or already when hovering the tile (``planPrefetchBald(_:)``); if available, it
+        // is in the first frame.
+        let proof = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 6)
+        gtk_widget_set_visible(proof, 0)
+        gtk_widget_add_css_class(proof, "swiftly-belegmarke")
+        gtk_widget_set_valign(proof, GTK_ALIGN_CENTER)
+        append(rail, proof)
+        if let done = planReady[planKey(title)] {
+            proofShow(done, in: proof, immediate: true)
+        } else {
+            planLoadMore(title, in: proof)
+        }
         // **In the same shell as Direct Play** (Mac `DetailView.swift` `mark`): star and
         // number in `schriftLeise`, surface at 15 percent of the same color. Before, the
         // rating was the only item in the row that stood bare.
@@ -790,27 +880,18 @@ extension App {
             append(rail, pair)
         }
 
-        if let sharing = title.ageRating { append(rail, badge(sharing)) }
-
-        // **The badge goes last**: year · runtime · stars · certification · Direct Play, as on
-        // TV (`ProofMarks(proofLast:)`). It comes last, so its appearance moves nothing:
-        // everything before it is already placed and nothing follows. If everything is lossless,
-        // "Direct Play" shows in the accent color, otherwise the deviation in warning orange.
-        //
-        // **The plan no longer arrives with everything below the header.** It used to wait for
-        // extras, similar titles and the collection and then popped in. Now it is fetched on
-        // open, or already when hovering the tile (``planPrefetchBald(_:)``); if available, it
-        // is in the first frame.
-        let proof = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 6)
-        gtk_widget_set_visible(proof, 0)
-        gtk_widget_add_css_class(proof, "swiftly-belegmarke")
-        gtk_widget_set_valign(proof, GTK_ALIGN_CENTER)
-        append(rail, proof)
-        if let done = planReady[planKey(title)] {
-            proofShow(done, in: proof, immediate: true)
-        } else {
-            planLoadMore(title, in: proof)
+        // Mac 1.1 `chipRail`: Direct Play first, then star, then "ab N" in the same 26 pt chip.
+        if let sharing = title.ageRating {
+            let bare = sharing.replacingOccurrences(of: "FSK ", with: "").replacingOccurrences(of: "+", with: "")
+            let text = !bare.isEmpty && bare.allSatisfy(\.isNumber)
+                ? String(format: translated("ab %@"), bare) : sharing
+            let chip = label(text, style: "swiftly-kacheltitel")
+            gtk_widget_add_css_class(chip, "swiftly-belegmarke")
+            gtk_widget_add_css_class(chip, "swiftly-bewertung")
+            gtk_widget_set_valign(chip, GTK_ALIGN_CENTER)
+            append(rail, chip)
         }
+
         return rail
     }
 
@@ -900,7 +981,7 @@ extension App {
     /// its label ("Fortsetzen" is longer than "Abspielen") and push everything behind it.
     /// "Von vorn" exists only for started titles; an empty gap would be worse than the small shift.
     private func buttonRail(_ title: Item) -> Widget! {
-        let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
+        let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 4)
 
         // **The main button starts where the server says**: a started episode at its position,
         // else the next unwatched, else episode 1. For a series this is not in the entry;
@@ -915,8 +996,9 @@ extension App {
         let begun = title.resumeFrom
         let main = primaryButton(begun != nil ? translated("Fortsetzen") : translated("Abspielen"),
                                symbol: "media-playback-start-symbolic")
-        gtk_widget_set_size_request(main, Int32(Theme.primaryButtonWidth),
-                                    Int32(Theme.primaryButtonHeight))
+        gtk_widget_set_size_request(main, 280, 56)
+        gtk_widget_add_css_class(main, "swiftly-detailhaupt")
+        gtk_widget_set_margin_end(main, 8)
         signal(main, "clicked") { [weak self] in
             guard let self, let was = target.title else { return }
             self.launchAsking(was, since: was.resumeFrom ?? 0, at: main)
@@ -934,7 +1016,7 @@ extension App {
 
         // **"Von vorn" only for started titles.** Where it does not exist, the rest moves up;
         // leaving an empty gap would be worse than the small shift.
-        let front = secondaryButton("view-refresh-symbolic", name: translated("Von vorn abspielen"))
+        let front = secondaryButton("view-refresh-symbolic", name: translated("Von vorn abspielen"), detail: true)
         gtk_widget_set_visible(front, begun != nil ? 1 : 0)
         signal(front, "clicked") { [weak self] in
             guard let self, let was = target.title else { return }
@@ -988,17 +1070,16 @@ extension App {
         // error comes back from a detached task, and a `var` must not cross the thread
         // boundary: same reasoning as with ``Spielziel``.
         let state = RememberState(title.userData?.isFavorite ?? false)
-        let rememberCharacter = RememberCharacter(filled: state.an)
-        rememberCharacter.onLightBackground(state.an)
+        // **A themed icon of the kit like the other buttons in the row**, 22 px, so the bookmark
+        // is as large and as thick as its neighbours (it was drawn at 17 px before).
         let memo = secondaryButton("", name: translated("Merkliste"), active: state.an,
-                              drawing: rememberCharacter.display)
+                              drawing: memoIcon(state.an), detail: true)
         signal(memo, "clicked") { [weak self] in
             guard let self, let client = self.client else { return }
             state.an.toggle()
             if state.an { gtk_widget_add_css_class(memo, "swiftly-aktiv") }
             else        { gtk_widget_remove_css_class(memo, "swiftly-aktiv") }
-            rememberCharacter.setDown(state.an)
-            rememberCharacter.onLightBackground(state.an)
+            gtk_button_set_child(asButton(memo), memoIcon(state.an))
             let new = state.an
             // **A failure turns the button back** (the button's state **is** the answer, so it
             // must be correct). Here there was `try?`: the button stayed toggled, the server knew
@@ -1018,17 +1099,54 @@ extension App {
                         let button = container.widget
                         if back { gtk_widget_add_css_class(button, "swiftly-aktiv") }
                         else       { gtk_widget_remove_css_class(button, "swiftly-aktiv") }
-                        rememberCharacter.setDown(back)
-                        rememberCharacter.onLightBackground(back)
+                        gtk_button_set_child(asButton(button), memoIcon(back))
                         self.report(readableError(error))
                     }
                 }
             }
         }
-        // The drawing area holds its icon; without this access it dies when the call returns.
-        signal(rememberCharacter.display, "destroy") { _ = rememberCharacter }
         // Switched off in Appearance, the bookmark is gone; the favourite stays on the server.
         if selection.watchlistShown { append(rail, memo) }
+
+        // **Trailer and watched sit in the row, as on the Mac** (`DetailView.swift` button row):
+        // bookmark, trailer (not for a series, its trailer stays in More), watched, More.
+        if title.type != "Series" {
+            let trailer = secondaryButton("swiftly-trailer-symbolic", name: translated("Trailer"), detail: true)
+            signal(trailer, "clicked") { [weak self] in self?.trailerStart(title) }
+            append(rail, trailer)
+        }
+        let seen = RememberState(title.isWatched)
+        let seenButton = secondaryButton("swiftly-gesehen-symbolic",
+                                         name: translated(seen.an ? "Als ungesehen markieren" : "Als gesehen markieren"),
+                                         active: seen.an, detail: true)
+        gtk_button_set_child(asButton(seenButton), detailSeenIcon(seen.an))
+        signal(seenButton, "clicked") { [weak self] in
+            guard let self, let client = self.client else { return }
+            seen.an.toggle()
+            let new = seen.an
+            if new { gtk_widget_add_css_class(seenButton, "swiftly-aktiv") }
+            else   { gtk_widget_remove_css_class(seenButton, "swiftly-aktiv") }
+            gtk_button_set_child(asButton(seenButton), detailSeenIcon(new))
+            // The button's state is the answer; a refusal turns it back and says why.
+            let container = held(seenButton)
+            Task.detached { [self] in
+                do {
+                    try await client.setWatched(itemID: title.id, an: new)
+                    onMainThread { letGo(container); self.watchStateForget(title) }
+                } catch {
+                    onMainThread {
+                        defer { letGo(container) }
+                        seen.an = !new
+                        let button = container.widget
+                        if !new { gtk_widget_add_css_class(button, "swiftly-aktiv") }
+                        else    { gtk_widget_remove_css_class(button, "swiftly-aktiv") }
+                        gtk_button_set_child(asButton(button), detailSeenIcon(!new))
+                        self.report(readableError(error))
+                    }
+                }
+            }
+        }
+        append(rail, seenButton)
 
         // **The download button only exists with the switch on**, and only if the account may
         // download (`DownloadPermission`). Anyone who has not enabled downloads sees nothing of it,
@@ -1036,7 +1154,7 @@ extension App {
         // **Also on the series page**: download sits in the row, not in a hidden chip. For a
         // series it opens the choice: whole series, season, single episode.
         if downloadButtonShow, title.type == "Series" {
-            let load = secondaryButton("folder-download-symbolic", name: translated("Laden"))
+            let load = secondaryButton("folder-download-symbolic", name: translated("Laden"), detail: true)
             signal(load, "clicked") { [weak self] in
                 self?.loadSelectionShow(title, an: load)
             }
@@ -1046,7 +1164,7 @@ extension App {
             let state = downloads.entries(for: title.id)
             let symbol = loadButtonIcon(state)
             let load = secondaryButton(symbol, name: translated("Laden"),
-                                   active: state?.state == .done)
+                                   active: state?.state == .done, detail: true)
             signal(load, "clicked") { [weak self] in
                 self?.loadPanelShow(title, an: load)
             }
@@ -1055,7 +1173,7 @@ extension App {
 
         // **Four targets, not five.** "Gesehen" and "Trailer" moved into the More list; five
         // labeled buttons were too many for one row. This matches Apple TV and the Mac.
-        let more = secondaryButton("view-more-horizontal-symbolic", name: translated("Mehr"))
+        let more = secondaryButton("view-more-horizontal-symbolic", name: translated("Mehr"), detail: true)
         signal(more, "clicked") { [weak self] in self?.moreShow(title, an: more) }
         append(rail, more)
         return rail
@@ -1071,32 +1189,11 @@ extension App {
         // 260, like `Handlungsliste` on the Mac (`MacComponents.swift:591`).
         gtk_widget_set_size_request(list, 260, -1)
 
-        var watched = title.isWatched
-        let firstRow = watched ? translated("Als ungesehen markieren") : translated("Als gesehen markieren")
-
         // Right-aligned under the button, growing from the top-right corner, like
         // `.expand(from: .topTrailing)` on the Mac.
         let panel = panelOpen(an: button, flush: GTK_ALIGN_END)
         gtk_popover_set_child(asPanel(panel), Scaling.wrapped(list))
 
-        append(list, actionRow("object-select-symbolic", firstRow) {
-            [weak self] in
-            guard let self, let client = self.client else { return }
-            watched.toggle()
-            let new = watched
-            gtk_popover_popdown(asPanel(panel))
-            // **The button's state is the answer**, but if the server refuses, the answer is wrong.
-            // Then it takes itself back and says why; the Mac does the same. Here there is nothing
-            // to take back: the list is rebuilt from `title.isWatched` on every open. It must be
-            // said anyway, or it looks as if it worked.
-            Task.detached { [self] in
-                do {
-                    try await client.setWatched(itemID: title.id, an: new)
-                    onMainThread { self.watchStateForget(title) }
-                }
-                catch { onMainThread { self.report(readableError(error)) } }
-            }
-        })
         // **"Von vorn" only if there is something to reset**: for a movie at zero it would be
         // a line without effect. Wording and condition from `TitleActions.forMovie`.
         //
@@ -1104,17 +1201,17 @@ extension App {
         // type-specific entries (`DetailView.swift:597-618`); here Trailer came after. The
         // entries themselves were already the same, only the order differed, and a hand-synced
         // list drifts apart exactly like that.
-        append(list, actionRow("video-x-generic-symbolic", translated("Trailer")) {
-            [weak self] in
-            gtk_popover_popdown(asPanel(panel))
-            self?.trailerStart(title)
-        })
         if title.type == "Series" {
+            append(list, actionRow("swiftly-trailer-symbolic", translated("Trailer")) {
+                [weak self] in
+                panelDown(panel)
+                self?.trailerStart(title)
+            })
             if let state = openTarget?.title {
                 append(list, actionRow("media-playback-start-symbolic",
                                                 translated("Folge von vorn abspielen")) {
                     [weak self] in
-                    gtk_popover_popdown(asPanel(panel))
+                    panelDown(panel)
                     self?.launchAsking(state, since: 0)
                 })
                 // **"Nächste Folge" yields to "Gemeinsam schauen"** (as `TitleActions.forSeries`
@@ -1124,7 +1221,7 @@ extension App {
                     append(list, actionRow("system-users-symbolic",
                                                     translated("Gemeinsam schauen")) {
                         [weak self] in
-                        gtk_popover_popdown(asPanel(panel))
+                        panelDown(panel)
                         guard let self else { return }
                         // After the signal: the new panel replaces this one.
                         let anchor = PointerBox(button), lives = LifeCharacter(button)
@@ -1134,7 +1231,7 @@ extension App {
                 append(list, actionRow("media-skip-forward-symbolic",
                                                 translated("Nächste Folge abspielen")) {
                     [weak self] in
-                    gtk_popover_popdown(asPanel(panel))
+                    panelDown(panel)
                     guard let self, let client = self.client,
                           let series = state.seriesId else { return }
                     // Without a server, the next downloaded episode (`DownloadRules`).
@@ -1156,7 +1253,7 @@ extension App {
             // first (``ShuffleRun``); "Next episode" in the player then follows that order.
             append(list, actionRow("media-playlist-shuffle-symbolic", translated("Zufällig abspielen")) {
                 [weak self] in
-                gtk_popover_popdown(asPanel(panel))
+                panelDown(panel)
                 guard let self, let client = self.client else { return }
                 Task.detached { [self] in
                     let all = try? await client.episodes(seriesID: title.id)
@@ -1175,7 +1272,7 @@ extension App {
                 append(list, actionRow("object-select-symbolic",
                                                 String(format: translated("%@ als gesehen"), season.name)) {
                     [weak self] in
-                    gtk_popover_popdown(asPanel(panel))
+                    panelDown(panel)
                     guard let self, let client = self.client else { return }
                     // `[self]` as at the nine other places in this file. A second `[weak self]` **inside**
                     // a closure that already did `guard let self` does not compile under Swift 6:
@@ -1191,13 +1288,13 @@ extension App {
             append(list, actionRow("media-playback-start-symbolic",
                                             translated("Von vorn abspielen")) {
                 [weak self] in
-                gtk_popover_popdown(asPanel(panel))
+                panelDown(panel)
                 self?.launchAsking(title, since: 0)
             })
             append(list, actionRow("view-refresh-symbolic",
                                             translated("Fortschritt zurücksetzen")) {
                 [weak self] in
-                gtk_popover_popdown(asPanel(panel))
+                panelDown(panel)
                 guard let self, let client = self.client else { return }
                 Task.detached { [self] in
                     try? await client.setWatched(itemID: title.id, an: false)
@@ -1210,7 +1307,7 @@ extension App {
         if title.type != "Series", gemeinsam.status.mayCreate {
             append(list, actionRow("system-users-symbolic", translated("Gemeinsam schauen")) {
                 [weak self] in
-                gtk_popover_popdown(asPanel(panel))
+                panelDown(panel)
                 guard let self else { return }
                 let anchor = PointerBox(button), lives = LifeCharacter(button)
                 onMainThread(during: lives) { [self] in self.sharedCreateShow(title, an: anchor.widget) }
@@ -1220,7 +1317,7 @@ extension App {
             [weak self] in
             guard let client = self?.client else { return }
             Task.detached { try? await client.metadataRefresh(title.id) }
-            gtk_popover_popdown(asPanel(panel))
+            panelDown(panel)
         })
         gtk_popover_popup(asPanel(panel))
     }
@@ -1229,9 +1326,10 @@ extension App {
                                 _ pick: @escaping () -> Void) -> Widget! {
         let button: Widget! = gtk_button_new()
         gtk_widget_add_css_class(button, "swiftly-handlung")
+        gtk_widget_add_css_class(button, "swiftly-aktionszeile")
         let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
         let image: Widget! = gtk_image_new_from_icon_name(symbol)
-        gtk_image_set_pixel_size(OpaquePointer(image), 14)
+        gtk_image_set_pixel_size(OpaquePointer(image), 20)
         append(rail, image)
         let l = label(text, style: "swiftly-koerper")
         gtk_label_set_xalign(OpaquePointer(l), 0)
@@ -1287,6 +1385,19 @@ extension App {
 /// cannot see that, only we can.
 /// Whether a title is on the watchlist: a class, so the fallback after a server error
 /// sees the same value as the click.
+/// The watched button's icon on the detail page: the ring with a check, filled when watched.
+func memoIcon(_ on: Bool) -> Widget! {
+    let image: Widget! = gtk_image_new_from_icon_name(on ? "swiftly-merken-an-symbolic" : "swiftly-merken-symbolic")
+    gtk_image_set_pixel_size(OpaquePointer(image), 22)
+    return image
+}
+
+func detailSeenIcon(_ on: Bool) -> Widget! {
+    let image: Widget! = gtk_image_new_from_icon_name(on ? "swiftly-gesehen-an-symbolic" : "swiftly-gesehen-symbolic")
+    gtk_image_set_pixel_size(OpaquePointer(image), 22)
+    return image
+}
+
 final class RememberState: @unchecked Sendable {
     var an: Bool
     init(_ an: Bool) { self.an = an }
@@ -1332,26 +1443,26 @@ extension App {
             case .loads, .waits:
                 append(list, actionRow("media-playback-pause-symbolic",
                                                 translated("Anhalten")) { [weak self] in
-                    gtk_popover_popdown(asPanel(panel))
+                    panelDown(panel)
                     self?.downloads.halt(title.id)
                 })
             case .halted, .error:
                 append(list, actionRow("media-playback-start-symbolic",
                                                 translated("Fortsetzen")) { [weak self] in
-                    gtk_popover_popdown(asPanel(panel))
+                    panelDown(panel)
                     self?.downloads.resume(title.id)
                 })
             case .done:
                 append(list, actionRow("media-playback-start-symbolic",
                                                 translated("Ohne Netz abspielen")) { [weak self] in
-                    gtk_popover_popdown(asPanel(panel))
+                    panelDown(panel)
                     guard let self, let p = self.downloads.entries(for: title.id) else { return }
                     self.downloadPlay(p)
                 })
             }
             append(list, actionRow("user-trash-symbolic",
                                             translated("Vom Rechner entfernen")) { [weak self] in
-                gtk_popover_popdown(asPanel(panel))
+                panelDown(panel)
                 self?.downloads.remove(title.id)
             })
             gtk_popover_popup(asPanel(panel))
@@ -1443,7 +1554,7 @@ extension App {
                 let ids = inquiry.dispensable.map(\.id)
                 append(list, actionRow("user-trash-symbolic",
                                                 translated("Gesehene entfernen und laden")) { [weak self] in
-                    gtk_popover_popdown(asPanel(panel))
+                    panelDown(panel)
                     guard let self else { return }
                     self.downloads.remove(ids)
                     self.loadTrigger(title, source: source, bytes: original, quality: choice,
@@ -1465,7 +1576,7 @@ extension App {
                                         translated("Mobilfunk"), cautionary: true))
             append(list, actionRow("folder-download-symbolic",
                                             translated("In die Warteschlange")) { [weak self] in
-                gtk_popover_popdown(asPanel(panel))
+                panelDown(panel)
                 self?.loadTrigger(title, source: source, bytes: original, quality: choice,
                                   audio: audioSelect ? audio : .all)
             })
@@ -1489,7 +1600,7 @@ extension App {
 
         append(list, actionRow("folder-download-symbolic",
                                         translated("Laden")) { [weak self] in
-            gtk_popover_popdown(asPanel(panel))
+            panelDown(panel)
             self?.loadTrigger(title, source: source, bytes: original, quality: choice,
                               audio: audioSelect ? audio : .all)
         })

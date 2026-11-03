@@ -81,8 +81,8 @@ import org.json.JSONObject
  * calls with `DstIn` instead of SwiftUI's two `.mask` calls. Same anchors as on iOS.
  */
 @Composable
-fun Backdrop(image: String?, modifier: Modifier = Modifier, duration: Int = 300) {
-    Crossfade(image, animationSpec = tween(duration), label = "kulisse", modifier = modifier.size(590.dp, 350.dp)) { url ->
+fun Backdrop(image: String?, modifier: Modifier = Modifier, duration: Int = 400) {
+    Crossfade(image, animationSpec = tween(duration, easing = TvSpec.easeInOutCurve), label = "kulisse", modifier = modifier.size(590.dp, 350.dp)) { url ->
         Box(Modifier.fillMaxSize()
                 .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                 .drawWithContent {
@@ -264,31 +264,29 @@ fun Modifier.tvSection(sections: TvSections, key: String, art: TvSectionKind = T
 fun HeaderInfo(title: String, secondLine: String?, detailsRow: String?, rating: Double?,
                  sharing: String?, description: String?, modifier: Modifier = Modifier,
                  logo: String? = null, closing: @Composable () -> Unit = {}) {
-    Column(modifier.width(500.dp)) {
-        // With 'title as logo' (Settings, Appearance) the logo goes here. The row keeps its 34 dp;
+    Column(modifier.width(TvTheme.detailWidth)) {
+        // With 'title as logo' (Settings, Appearance) the logo goes here. The slot keeps its 31 dp (62 pt);
         // a taller logo grows upwards into the free space and pushes nothing below.
-        Box(Modifier.height(34.dp).wrapContentHeight(Alignment.Bottom, unbounded = true)) {
+        Box(Modifier.height(TvTheme.titleSlot).wrapContentHeight(Alignment.Bottom, unbounded = true)) {
             TitleMark(title, logo, row = 28.dp) {
                 Text(title, style = TvTheme.infoTitle, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                     modifier = Modifier.height(34.dp))
+                     modifier = Modifier.height(TvTheme.titleSlot))
             }
         }
         secondLine?.let {
+            // Design: 30/600 fontQuiet, mt 8, 36 high.
             Text(it, style = TvTheme.infoSecondRow, color = Theme.fontQuiet, maxLines = 1,
-                 overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp).height(22.dp))
+                 overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp).height(18.dp))
         }
-        // Fixed 17 dp, content may overflow. tvOS: `.frame(height: 34)`; the direct-play badge is
-        // centred and overhangs the row without shifting anything. With `heightIn(min = 17)` the row grew
-        // with the badge (~26 dp) or certification badge on the detail page, putting description and
-        // button row lower than on home. `wrapContentHeight(unbounded = true)` measures the row without
-        // a height limit but reports only 17 dp and centres it; Box and Row do not clip, so nothing is cut off.
-        Box(Modifier.padding(top = 7.dp).height(17.dp)) {
+        // Fixed 22 dp, content may overflow. tvOS: `.frame(height: markHeight)`; with `heightIn(min = ...)` the row
+        // grew with a taller badge and pushed description and button row lower than on home.
+        // `wrapContentHeight(unbounded = true)` measures the row without a height limit but reports only 22 dp.
+        Box(Modifier.padding(top = TvTheme.detailsPadding).height(TvTheme.markHeight)) {
         Row(Modifier.wrapContentHeight(Alignment.CenterVertically, unbounded = true), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            detailsRow?.takeIf { it.isNotEmpty() }?.let {
-                // Full value instead of opacity: a hero image lies underneath, and opacity reads differently
-                // over an image than over the plain background. White at 62 percent equals `schriftSehrLeise` (#989898).
-                Text(it, style = TvTheme.small, color = Theme.fontVeryQuiet, maxLines = 1)
+            horizontalArrangement = Arrangement.spacedBy(TvTheme.detailsSpacing)) {
+            // Year and runtime are chips like rating and age rating (`DetailsRail`): split at the separator.
+            detailsRow?.takeIf { it.isNotEmpty() }?.split(" · ")?.filter { it.isNotBlank() }?.forEach {
+                TvMark(null, it, Theme.fontQuiet, Strength.Medium, digits = true)
             }
             // Rating and certification appear on every page, home and detail; only the direct-play
             // evidence is detail-only and comes via `closing`.
@@ -296,9 +294,10 @@ fun HeaderInfo(title: String, secondLine: String?, detailsRow: String?, rating: 
             closing()
         }
         }
-        Text(description.orEmpty(), style = TvTheme.body, color = Theme.fontVeryQuiet,
-             maxLines = if (secondLine != null) 2 else 3, overflow = TextOverflow.Ellipsis,
-             modifier = Modifier.padding(top = 11.dp).height(TvTheme.descriptionHeight(if (secondLine != null) 2 else 3)))
+        // Two lines always (design body 30/400, line height 1.45), fontQuiet; mt 22 without, 20 with an episode title.
+        Text(description.orEmpty(), style = TvTheme.body, color = Theme.fontQuiet,
+             maxLines = 2, overflow = TextOverflow.Ellipsis,
+             modifier = Modifier.padding(top = if (secondLine == null) 11.dp else 10.dp).height(TvTheme.descriptionHeight(2)))
     }
 }
 
@@ -313,9 +312,10 @@ fun TvRemainingTimeMark(remainingTime: String?, watched: Boolean) {
         watched -> Glyph.Checkmark to translated("Gesehen")
         else -> return
     }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Symbol(symbol, 13.dp, color = Theme.accent, strength = Strength.Medium)
-        Text(text, style = TvTheme.body, color = Theme.accent, maxLines = 1)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Design: 24/600 accent, symbol 24, gap 8.
+        Symbol(symbol, 12.dp, color = Theme.accent, strength = Strength.Semibold)
+        Text(text, style = TvTheme.mark.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Theme.accent, maxLines = 1)
     }
 }
 

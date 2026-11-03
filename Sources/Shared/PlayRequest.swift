@@ -224,3 +224,16 @@ extension PlayRequest {
         return true
     }
 }
+
+/// **"Endet um 18:38" in the player, off by default on every platform.**
+///
+/// The player shows the remaining time ("−12:34"); with this setting on it shows the
+/// clock time the title ends instead. It used to be toggled by a tap on the time
+/// (`restzeitAlsEnde`), which turned it on by accident and never showed where it came
+/// from; now it is a setting under Settings → Playback → Player, and the time is plain
+/// text. A new key, so nobody keeps the accidentally tapped state.
+enum PlayerEndTime {
+    /// `@AppStorage(PlayerEndTime.key) var showsEnd = PlayerEndTime.standard`
+    static let key = "endzeitImPlayer"
+    static let standard = false
+}

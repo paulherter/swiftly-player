@@ -133,11 +133,12 @@ final class PlexSignInModel {
     var lastProfiles: [PlexProfileChoice]?
 
     /// The page title: the account's name once signed in, like the server's name on the
-    /// Jellyfin page. Before that the kind: "Mit Plex anmelden" would stand twice, here
-    /// and on the button.
+    /// Jellyfin page. On the first page it is the action; the button under the guide says
+    /// "Plex öffnen", so the words do not stand twice. After that the kind.
     var pageTitle: String {
         switch step {
-        case .start, .opening, .waiting, .failed: ServerKind.plex.shownName
+        case .start, .opening: String(localized: "Mit Plex anmelden")
+        case .waiting, .failed: ServerKind.plex.shownName
         default: account ?? ServerKind.plex.displayName
         }
     }

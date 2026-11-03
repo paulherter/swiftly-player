@@ -509,7 +509,7 @@ struct TechBadge: View {
     @ViewBuilder private func measureRow(_ text: String, conspicuous: Bool) -> some View {
         if conspicuous {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Image(systemName: "exclamationmark.triangle.fill")
+                Image(icon: "exclamationmark.triangle.fill")
                     .font(Theme.badge)
                 Text(verbatim: text)
             }

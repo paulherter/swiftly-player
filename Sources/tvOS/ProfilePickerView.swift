@@ -215,7 +215,7 @@ struct ProfilePicker: View {
 
             VStack(spacing: 6) {
                 Text(account.userName)
-                    .font(.system(size: 30, weight: focused ? .semibold : .medium))
+                    .font(.app(size: 30, weight: focused ? .semibold : .medium))
                     .foregroundStyle(!enabled ? Theme.fontVeryQuiet : (focused ? Theme.font : Theme.fontQuiet))
                     .lineLimit(1)
                     .truncationMode(.tail)

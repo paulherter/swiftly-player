@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -75,7 +76,7 @@ import java.util.Locale
 @Composable
 fun TvDetailHeader(title: String, yearRuntime: String, rating: Double?, sharing: String?, description: String?,
                  directPlayFlag: Boolean, hint: String?, buttonAlpha: () -> Float = { 1f }, modifier: Modifier = Modifier,
-                 logo: String? = null, buttons: @Composable () -> Unit) {
+                 logo: String? = null, heroTrim: Dp = 0.dp, buttons: @Composable () -> Unit) {
     // 306.5 dp is the whole zone, padding included (halved `Theme.heroHeightDetail`). On tvOS the
     // padding sits inside the fixed height, so a `Box` carries the total height and the `Column`
     // inside carries the padding. Putting both on one `Column` would add them up (404.5 dp) and
@@ -84,12 +85,12 @@ fun TvDetailHeader(title: String, yearRuntime: String, rating: Double?, sharing:
     //
     // `secondLine = null`: detail pages never show it, because an episode has no page of its own
     // and every route to it leads to the series page. See `HeaderInfo`.
-    Box(modifier.fillMaxWidth().height(306.5.dp)) {
+    Box(modifier.fillMaxWidth().height(TvTheme.heroHeightDetail - heroTrim)) {
         Column(Modifier.padding(start = TvTheme.edgePage, top = 98.dp)) {
             HeaderInfo(title, null, yearRuntime, rating, sharing, description, logo = logo) {
                 TvProofRow(directPlayFlag, hint, rating = null, sharing = null)
             }
-            Row(Modifier.padding(top = 18.dp).tvInFade(buttonAlpha), horizontalArrangement = Arrangement.spacedBy(12.dp), content = { buttons() })
+            Row(Modifier.padding(top = TvTheme.spacingAboveButtons).tvInFade(buttonAlpha), horizontalArrangement = Arrangement.spacedBy(12.dp), content = { buttons() })
         }
     }
 }
@@ -104,12 +105,12 @@ fun TvDetailHeader(title: String, yearRuntime: String, rating: Double?, sharing:
 @Composable
 fun TvProofRow(directPlayFlag: Boolean, hint: String?, rating: Double?, sharing: String?,
                  own: Triple<Glyph, String, Color>? = null) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvTheme.detailsSpacing)) {
         if (own != null) TvMark(own.first, own.second, own.third, Strength.Semibold)
         rating?.let {
             TvMark(Glyph.StarFilled, String.format(Locale.ROOT, "%.1f", it).replace('.', ','), Theme.fontQuiet, Strength.Semibold)
         }
-        sharing?.takeIf { it.isNotBlank() }?.let { TvBadge(it) }
+        sharing?.takeIf { it.isNotBlank() }?.let { TvMark(null, it, Theme.fontQuiet, Strength.Medium) }
         if (own == null && (directPlayFlag || hint != null)) {
             TvMark(if (directPlayFlag) Glyph.Checkmark else Glyph.Warning, if (directPlayFlag) "Direct Play" else hint.orEmpty(),
                     if (directPlayFlag) Theme.accent else Theme.warning, if (directPlayFlag) Strength.Semibold else Strength.Normal)
@@ -118,28 +119,26 @@ fun TvProofRow(directPlayFlag: Boolean, hint: String?, rating: Double?, sharing:
 }
 
 /**
- * The single shell for all badges: 15 % color fill, `cornerSmall` corners, icon and text in the
- * same color.
+ * Mirrors `ProofMark` (`Sources/tvOS/Style.swift`): one shell for every chip of the info row. Neutral
+ * chips (year, runtime, rating, age rating) are white text on white 12 %, Direct Play is accent text on
+ * the quiet accent surface, other tones keep their 15 % tint. 44 pt high, 16 pad, symbol 20, gap 8,
+ * corner 12 (tvOS pt / 2).
  */
 @Composable
-private fun TvMark(symbolText: Glyph, word: String, color: Color, strength: Strength) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp),
-        modifier = Modifier.clip(RoundedCornerShape(TvTheme.cornerSmall)).background(color.copy(alpha = 0.15f))
-            .padding(start = 8.dp, end = 10.dp, top = 4.dp, bottom = 4.dp)) {
-        Symbol(symbolText, 11.dp, color = color, strength = strength)
-        Text(word, style = TvTheme.tile, color = color, maxLines = 1)
+fun TvMark(symbolText: Glyph?, word: String, color: Color, strength: Strength = Strength.Semibold, digits: Boolean = false) {
+    val neutral = color == Theme.fontQuiet
+    val fill = when {
+        neutral -> Color.White.copy(alpha = 0.12f)
+        color == Theme.accent -> Theme.accentQuiet
+        else -> color.copy(alpha = 0.15f)
     }
-}
-
-/**
- * Mirrors tvOS `Badge.far`: fill instead of border. Fill = color at 15 %, text = full color;
- * certification and rating are neutral white at 7 %. Corners `cornerSmall`.
- */
-@Composable
-private fun TvBadge(text: String) {
-    Text(text, style = TvTheme.badge.copy(letterSpacing = 0.sp), color = Theme.fontQuiet,
-         modifier = Modifier.clip(RoundedCornerShape(TvTheme.cornerSmall)).background(Theme.line)
-             .padding(horizontal = 6.dp, vertical = 2.dp))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvTheme.markCharacterSpacing),
+        modifier = Modifier.height(TvTheme.markHeight).clip(RoundedCornerShape(6.dp)).background(fill)
+            .padding(horizontal = TvTheme.markInner)) {
+        symbolText?.let { Symbol(it, TvTheme.markCharacter, color = if (neutral) Theme.font else color, strength = strength) }
+        Text(word, style = TvTheme.mark.let { if (digits) it.copy(fontFeatureSettings = "tnum") else it },
+             color = if (neutral) Theme.font else color, maxLines = 1)
+    }
 }
 
 /**
@@ -251,6 +250,7 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
     var t by remember(target.id) { mutableStateOf(app.titleCache[target.id]) }
     var similar by remember(target.id) { mutableStateOf<List<GridTile>>(emptyList()) }
     var extras by remember(target.id) { mutableStateOf<List<Extra>>(emptyList()) }
+    var watchers by remember(target.id) { mutableStateOf<List<de.paulherter.swiftly.Watcher>>(emptyList()) }
     var collections by remember(target.id) { mutableStateOf<List<CollectionRailsData>>(emptyList()) }
     /** Everything below the header has been answered, see `load`. */
     var bottomPresent by remember(target.id) { mutableStateOf(false) }
@@ -276,7 +276,8 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
             val b = async { try { JSONObject(withContext(Dispatchers.IO) { app.kern.titleField(target.id).await() }) }
                             catch (e: CancellationException) { throw e } catch (_: Exception) { null } }
             val d = async { collectionRailsLoad(app.kern, target.id) }
-            val new = a.await(); val surroundings = b.await(); val rails = d.await()
+            val e = async { watchersLoad(app, target.id) }
+            val new = a.await(); val surroundings = b.await(); val rails = d.await(); val seen = e.await()
             // The trailer lives in the extras, not as a sixth pill; see the doc comment above.
             val newExtras = surroundings?.let { trailerShelf(app, target.id, it.fieldList("extras") { x -> Extra(x.getString("id"), x.getString("name"), x.fieldText("bild"), x.fieldText("laufzeit")) }) }
             // No suspension point from here on: everything lands in the same frame.
@@ -287,6 +288,7 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                 newExtras?.let { extras = it }
             }
             collections = rails
+            watchers = seen
             bottomPresent = true
         }
     }
@@ -425,6 +427,7 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                     if (folks.isNotEmpty()) TvStrip(translated("Besetzung"), Modifier.tvInFade(bottomAlpha).tvSection(a, "besetzung")) {
                         items(folks, key = { it.id }) { p -> TvCast(p) { open(Destination(p.id, p.name, "Person", p.role, name)) } }
                     }
+                    TvWatchedBy(watchers, Modifier.tvInFade(bottomAlpha).tvSection(a, "gesehenvon"))
                 }
                 Spacer(Modifier.height(40.dp))
         }

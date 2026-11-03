@@ -73,8 +73,8 @@ extension App {
         // **Profile and Seerr belong here too.** `readWidth` is the width for running
         // text.
         let formSheet: Set<Subpage> = [.serverOnboarding, .kindPicker, .plexSignIn, .accountAdd, .quickConnect,
-                                          .profile, .seerr]
-        if twoColumned.contains(was) {
+                                          .seerr]
+        if twoColumned.contains(was) || was == .profile {
             gtk_widget_set_halign(block, GTK_ALIGN_FILL)
             gtk_widget_set_hexpand(block, 1)
             gtk_widget_set_margin_start(block, Int32(Theme.edgeSpacing))
@@ -118,8 +118,10 @@ extension App {
         gtk_scrolled_window_set_child(OpaquePointer(scroller), lookGlowWrapped(block))
         // Settings: **each column ends at `formWidth`** (`SettingsView.swift`),
         // i.e. two columns plus 48 spacing.
-        if was == .settings {
-            cap(block, in: scroller, on: Theme.formWidth * 2 + Theme.edgeSpacing * 2)
+        // 1.1: profile and "Allgemein" are two columns of 470 with a 24 gap, 964 together
+        // (Mac `ProfileView`, `SettingsView`: `frame(maxWidth: 964)`).
+        if was == .settings || was == .profile {
+            cap(block, in: scroller, on: 964)
         } else if twoColumned.contains(was) {
             cap(block, in: scroller, on: Theme.settingWidth)
         }
@@ -174,42 +176,50 @@ extension App {
     private func profileBuild(_ block: Widget!) {
         // **With title.** It carries the header like every other subpage
         // (`ProfileView.swift`), flush with the cards.
-        append(block, subpageHeader(translated("Profil")))
+        let title = subpageHeader(translated("Profil"))
+        gtk_widget_set_margin_bottom(title, 18)
+        append(block, title)
 
-        // **Looks at the top, by state**, then the accounts (`Sources/macOS/ProfileView.swift`):
-        // 10 under the header, the looks block 6 more above and 16 below, 20 under the accounts.
-        let looksBlock = looksProfileBlock()
-        if let looksBlock {
-            gtk_widget_set_margin_top(looksBlock, 16)
-            gtk_widget_set_margin_bottom(looksBlock, 16)
-            append(block, looksBlock)
+        // **1.1, two columns like the Mac** (`ProfileView`): the title, then two columns with
+        // a 24 gap. Left: account cards, look line, support line, the three categories.
+        // Right: server group, then the links. Cap 964 in `subpageOpen`.
+        let (left, right) = twoColumn(in: block, gap: 24)
+
+        append(left, accountsCards())
+
+        // **The look line replaces the "Wähl deinen Look" banner** (Mac `LookLineCard`):
+        // palette, the current look's name, "Dein aktueller Look", a chevron.
+        let lookLine = lineCard(symbol: "applications-graphics-symbolic",
+                                title: looks.saved.look.shownName,
+                                under: translated("Dein aktueller Look"),
+                                caption: String(format: translated("Dein Look: %@"), looks.saved.look.shownName)) { [weak self] in
+            self?.lookOpenOnHome()
         }
-        let imageBlock = stack(GTK_ORIENTATION_VERTICAL, spacing: 14)
-        gtk_widget_set_margin_top(imageBlock, looksBlock == nil ? 10 : 0)
-        gtk_widget_set_margin_bottom(imageBlock, 20)
-        append(imageBlock, accountsCards())
-        append(block, imageBlock)
+        gtk_widget_set_margin_top(lookLine, 18)
+        append(left, lookLine)
 
-        let g1 = rowsGroup()
-        append(g1.space, valuesRow(symbol: "dialog-password-symbolic", title: translated("Quick Connect"),
-                                      under: translated("Code vom Fernseher eingeben"),
-                                      accent: true, arrow: true) { [weak self] in
-            self?.subpageOpen(.quickConnect)
-        })
-        append(block, g1.outer)
+        // Support: the thank-you card for supporters, else the line "Swiftly unterstützen".
+        let supportLine: Widget!
+        if isSupporter {
+            supportLine = supportStatusCard()
+        } else {
+            supportLine = lineCard(symbol: nil, title: translated(SupportCopy.supportSwiftly.key),
+                                   under: translated(SupportCopy.sayThanks.key)) { [weak self] in
+                self?.supportOpen()
+            }
+        }
+        gtk_widget_set_margin_top(supportLine, 16)
+        append(left, supportLine)
 
-        // 18 between the groups (`Sources/macOS/ProfileView.swift`).
-        append(block, paddingHigh(18))
-
+        // The categories live here, as on iPhone, iPad and Mac.
         let g2 = rowsGroup()
         append(g2.space, valuesRow(symbol: "media-playback-start-symbolic",
                                       title: translated("Wiedergabe"),
-                                      under: translated("Sprache, Untertitel, Tempo"),
+                                      under: translated("Qualität, Sprache, Player"),
                                       arrow: true) { [weak self] in
             self?.subpageOpen(.playback)
         })
         append(g2.space, rowsLine())
-        // Between playback and settings, the Mac's order.
         append(g2.space, valuesRow(symbol: "view-app-grid-symbolic",
                                       title: translated("Darstellung"),
                                       under: translated("Startseite, Reihen, Genres"),
@@ -218,12 +228,13 @@ extension App {
         })
         append(g2.space, rowsLine())
         append(g2.space, valuesRow(symbol: "emblem-system-symbolic",
-                                      title: translated("Einstellungen"), arrow: true) { [weak self] in
+                                      title: translated("Allgemein"),
+                                      under: translated("Downloads, Server, Sync"),
+                                      arrow: true) { [weak self] in
             self?.subpageOpen(.settings)
         })
-        append(block, g2.outer)
-
-        append(block, paddingHigh(18))
+        gtk_widget_set_margin_top(g2.outer, 18)
+        append(left, g2.outer)
 
         let g3 = rowsGroup()
         // **"Add another account" is not here.** The plus in the account card does the
@@ -233,35 +244,39 @@ extension App {
         // accounts, not a second account on the same one.
         append(g3.space, valuesRow(symbol: "network-server-symbolic",
                                       title: translated("Server hinzufügen"),
-                                      under: translated("Jellyfin, Plex oder Emby, eigene Konten"),
+                                      under: translated("Jellyfin, Emby oder Plex, auch gemischt"),
                                       arrow: true) { [weak self] in
             self?.subpageOpen(.kindPicker)
         })
+        // Quick Connect is Jellyfin's; the other kinds have no counterpart (Mac `can(.quickConnect)`).
+        if bundle?.activeOne.kind == .jellyfin {
+            append(g3.space, rowsLine())
+            append(g3.space, valuesRow(symbol: "dialog-password-symbolic", title: translated("Quick Connect"),
+                                          under: translated("Code vom Fernseher eingeben"),
+                                          accent: true, arrow: true) { [weak self] in
+                self?.subpageOpen(.quickConnect)
+            })
+        }
         append(g3.space, rowsLine())
         append(g3.space, valuesRow(symbol: "application-exit-symbolic",
                                       title: translated("Abmelden")) { [weak self] in
             self?.signOff()
         })
-        append(block, g3.outer)
+        append(right, g3.outer)
 
-        append(block, paddingHigh(18))
-
-        // **Rate, Discord, report a bug: at the very bottom**, below server and sign out.
-        // (In settings they were hardly noticed.)
-        // **No "rate":** there is no store where a rating could land. The URLs live in
-        // the package.
+        // **Discord, report a bug, log, licenses** under the server group. **No "rate":**
+        // there is no store where a rating could land (Mac: App Store link), left out on
+        // purpose. The URLs live in the package.
         let g4 = rowsGroup()
-        append(g4.space, supportRow())
-        append(g4.space, rowsLine())
         append(g4.space, valuesRow(symbol: "user-available-symbolic",
                                       title: translated("Discord beitreten"),
-                                      under: translated("Fragen stellen und sagen, was fehlt")) {
+                                      external: true) {
             browser(Community.discord)
         })
         append(g4.space, rowsLine())
         append(g4.space, valuesRow(symbol: "dialog-warning-symbolic",
                                       title: translated("Fehler melden"),
-                                      under: translated("Auf GitHub, deine App-Version ist schon eingetragen")) {
+                                      external: true) {
             #if os(Windows)
             let system = "Windows"
             #else
@@ -274,8 +289,7 @@ extension App {
         // Next to "Report a bug" because it belongs with it: someone reporting a bug in
         // Discord attaches this.
         append(g4.space, valuesRow(symbol: "text-x-generic-symbolic",
-                                      title: translated("Protokoll teilen"),
-                                      under: translated("Die letzte Stunde, ohne Zugangsdaten")) {
+                                      title: translated("Protokoll teilen")) {
             guard let file = LogFile.write() else { return }
             fileManagerShow(file)
         })
@@ -284,7 +298,6 @@ extension App {
         append(g4.space, rowsLine())
         append(g4.space, valuesRow(symbol: "text-x-generic-symbolic",
                                       title: translated("Open-Source-Lizenzen"),
-                                      under: translated("Was in Swiftly steckt und woher der Quelltext kommt"),
                                       arrow: true) { [weak self] in
             self?.subpageOpen(.licenses)
         })
@@ -297,9 +310,47 @@ extension App {
         updateRowFill()
         append(g4.space, updateSpace)
         #endif
-        append(block, g4.outer)
+        gtk_widget_set_margin_top(g4.outer, 18)
+        append(right, g4.outer)
 
         append(block, versionLine(Version.full))
+    }
+
+    /// **The line card of the profile** (Mac `LookLineCard`, `SupportLineCard`): the icon in a
+    /// 26 column, title 17 semibold over a 13 line, a chevron; groupsArea, radius 16,
+    /// padding 12 x 14. `symbol` nil draws the heart.
+    private func lineCard(symbol: String?, title: String, under: String, caption: String? = nil,
+                          action: @escaping () -> Void) -> Widget! {
+        let row = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
+        let icon: Widget!
+        if let symbol {
+            icon = gtk_image_new_from_icon_name(symbol)
+            gtk_image_set_pixel_size(OpaquePointer(icon), 22)
+            gtk_widget_add_css_class(icon, "swiftly-zeilensymbol")
+        } else {
+            icon = symbolPaint(.heart, size: 22, box: 26, style: "swiftly-s17-fett")
+        }
+        gtk_widget_set_size_request(icon, 26, -1)
+        gtk_widget_set_valign(icon, GTK_ALIGN_CENTER)
+        append(row, icon)
+        let column = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
+        gtk_widget_set_valign(column, GTK_ALIGN_CENTER)
+        gtk_widget_set_hexpand(column, 1)
+        append(column, supportText(title, "swiftly-s17-fett"))
+        append(column, supportText(under, "swiftly-s13-sehrleise"))
+        append(row, column)
+        let chevron: Widget! = gtk_image_new_from_icon_name("go-next-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(chevron), 13)
+        gtk_widget_add_css_class(chevron, "swiftly-pfeilzeichen")
+        gtk_widget_set_valign(chevron, GTK_ALIGN_CENTER)
+        append(row, chevron)
+
+        let button: Widget! = gtk_button_new()
+        gtk_widget_add_css_class(button, "swiftly-zeilenkarte")
+        gtk_button_set_child(asButton(button), row)
+        caption.map { help(button, name: $0) }
+        signal(button, "clicked", action)
+        return button
     }
 
     // MARK: Quick Connect
@@ -384,7 +435,7 @@ extension App {
         // on and the bitrate is locked.
         let free = convertAllowed
         let directPlay = selection.alwaysDirectPlay || !free
-        let q = settingGroup(translated("Qualität"))
+        let q = settingGroup(translated("Qualität"), topGap: 22)
         let toggle = toggleRow(symbol: "media-playback-start-symbolic",
                                      title: translated("Immer Direct Play"),
                                      under: translated("Der Server wandelt nie um, es läuft immer die Originaldatei"),
@@ -458,7 +509,7 @@ extension App {
         append(left, sp.outer)
 
         // MARK: Behavior
-        let v = settingGroup(translated("Verhalten"))
+        let v = settingGroup(translated("Verhalten"), topGap: 22)
         append(v.space, toggleRow(symbol: "media-skip-forward-symbolic",
                                         title: translated("Nächste Folge automatisch"),
                                         an: nextAutomatic) { [weak self] an in
@@ -482,6 +533,13 @@ extension App {
             self?.selection.techBadge = an
             self?.selection.secure()
             self?.techBadgeSet(an)
+        })
+        append(v.space, rowsLine())
+        append(v.space, toggleRow(symbol: "paint:clock",
+                                        title: translated("Endzeit im Player"),
+                                        an: selection.endTimeInPlayer) { [weak self] an in
+            self?.selection.endTimeInPlayer = an
+            self?.selection.secure()
         })
         append(v.space, rowsLine())
         append(v.space, valuesRow(symbol: "media-seek-backward-symbolic", title: translated("Zurückspulen"),
@@ -539,7 +597,8 @@ extension App {
     // MARK: Settings
 
     private func settingsBuild(_ block: Widget!) {
-        append(block, subpageHeader(translated("Einstellungen")))
+        // 1.1: the page is called "Allgemein" (Mac `SettingsView`), title with no gap below.
+        append(block, subpageHeader(translated("Allgemein")))
 
         // "Lock landscape in the player" does **not** exist here: a window has no
         // orientation to lock. A setting without a counterpart, not an omission.
@@ -550,12 +609,12 @@ extension App {
         // **Two columns, like the Mac** (`SettingsView.swift`): left, offline and
         // integration; right, server. One narrow 560 pt column would look like a phone view
         // in the middle of a wide window.
-        let (left, right) = twoColumn(in: block)
+        let (left, right) = twoColumn(in: block, gap: 24)
 
-        let o = settingGroup(translated("Offline"))
+        let o = settingGroup(translated("Offline"), topGap: 22)
         append(o.space, toggleRow(symbol: "folder-download-symbolic",
                                         title: translated("Downloads"),
-                                        under: translated("Titel auf diesen Rechner laden und offline schauen"),
+                                        under: translated("Titel offline schauen"),
                                         an: selection.downloadsAn) { [weak self] an in
             guard let self else { return }
             if an || self.downloads.entries.isEmpty {
@@ -611,44 +670,22 @@ extension App {
         }
         append(left, o.outer)
 
-        // **Sits between offline and server, on purpose.** It is a second service, not a
-        // second server, and an extra: whoever connects nothing sees nothing of it besides
-        // this one row. Same reasoning as on the Mac (`SettingsView.integration`).
-        // **Same place and words as on Apple ("Konto" group).** On by default.
-        let acc = settingGroup(translated("Konto"))
-        append(acc.space, toggleRow(symbol: "view-refresh-symbolic",
-                                          title: translated("Einstellungen auf allen Geräten gleich halten"),
-                                          under: translated("Sprachen, Überspringen und Startseite liegen auf deinem Server"),
-                                          an: settingsSync.on) { [weak self] an in
-            self?.settingsSync.on = an
+        // **"Swiftly" group under offline** (Mac `MacSupportSettingsGroup`): the support row,
+        // "Danke" for supporters. The app-icon picker below it does not exist here (a desktop
+        // window takes its icon from the package), left out on purpose.
+        let sw = settingGroup("Swiftly")
+        append(sw.space, valuesRow(symbol: "paint:heart",
+                                   title: translated(SupportCopy.supportSwiftly.key),
+                                   under: translated(SupportCopy.sayThanks.key),
+                                   value: isSupporter ? translated(SupportCopy.thankYou.key) : nil) { [weak self] in
+            self?.supportOpen()
         })
-        append(left, acc.outer)
+        gtk_widget_set_margin_top(sw.outer, 6)
+        append(left, sw.outer)
 
-        let i = settingGroup(translated("Integration"))
-        append(i.space, valuesRow(symbol: "edit-find-symbolic",
-                                     title: translated("Seerr"),
-                                     under: translated("Anfragen, was noch nicht da ist"),
-                                     value: seerrPresent ? translated("Verbunden") : nil,
-                                     // Value **or** arrow, not both, as on the Mac.
-                                     arrow: !seerrPresent) { [weak self] in
-            self?.subpageOpen(.seerr)
-        })
-        // **Here and not under "Playback".** The rows there say *how* something runs;
-        // this one is the only one that gives something to the outside. It belongs next to
-        // the other external service.
-        append(i.space, rowsLine())
-        append(i.space, toggleRow(symbol: "user-available-symbolic",
-                                        title: translated("Discord"),
-                                        under: translated("Zeigt im Profil, was gerade läuft"),
-                                        an: selection.discordShow) { [weak self] an in
-            guard let self else { return }
-            self.selection.discordShow = an
-            self.selection.secure()
-            if !an { DiscordState.tidyAway() }
-        })
-        append(left, i.outer)
-
-        let s = settingGroup(translated("Server"))
+        // **Server and services in one card** (Mac `server` + `serviceRows`): server, check,
+        // then Seerr and Discord; the own-headers editor sits under it.
+        let s = settingGroup(translated("Server und Dienste"), topGap: 22)
         append(s.space, valuesRow(symbol: "network-server-symbolic",
                                      title: serverName.isEmpty ? translated("Server") : serverName,
                                      value: serverVersion))
@@ -660,20 +697,46 @@ extension App {
         let running = checkResult == translated("Moment…")
         let checkRow = valuesRow(symbol: "network-wireless-symbolic",
                                     title: translated("Verbindung prüfen"),
-                                    under: running ? nil : checkResult,
+                                    under: running || checkResult.isEmpty ? nil : checkResult,
                                     value: running ? checkResult : nil,
                                     pick: running ? nil : { [weak self] in
                                         self?.connectionCheck()
                                     })
         append(s.space, checkRow)
+        append(s.space, rowsLine())
+        append(s.space, valuesRow(symbol: "edit-find-symbolic",
+                                     title: translated("Seerr"),
+                                     under: translated("Anfragen, was noch nicht da ist"),
+                                     value: seerrPresent ? translated("Verbunden") : nil,
+                                     // Value **or** arrow, not both, as on the Mac.
+                                     arrow: !seerrPresent) { [weak self] in
+            self?.subpageOpen(.seerr)
+        })
+        // **Here and not under "Playback".** The rows there say *how* something runs;
+        // this one is the only one that gives something to the outside. It belongs next to
+        // the other external service.
+        append(s.space, rowsLine())
+        append(s.space, toggleRow(symbol: "user-available-symbolic",
+                                        title: translated("Discord"),
+                                        under: translated("Zeigt im Profil, was gerade läuft"),
+                                        an: selection.discordShow) { [weak self] an in
+            guard let self else { return }
+            self.selection.discordShow = an
+            self.selection.secure()
+            if !an { DiscordState.tidyAway() }
+        })
         append(right, s.outer)
         append(right, ownHeadersBuild())
 
-        // "Support Swiftly" under the server group, in its own card.
-        let support = rowsGroup()
-        append(support.space, supportRow())
-        gtk_widget_set_margin_top(support.outer, 26)
-        append(right, support.outer)
+        // **Settings follow the account to every device** (Mac "Synchronisierung", gap 28).
+        let sync = settingGroup(translated("Synchronisierung"))
+        append(sync.space, toggleRow(symbol: "view-refresh-symbolic",
+                                     title: translated("Auf allen Geräten gleich"),
+                                     under: translated("Liegt auf deinem Server"),
+                                     an: settingsSync.on) { [weak self] an in
+            self?.settingsSync.on = an
+        })
+        append(right, sync.outer)
 
         append(block, versionLine("\(Version.full) · libVLC \(VLCVersion.text)"))
     }
@@ -688,20 +751,6 @@ extension App {
     private func listClose(_ page: Subpage) {
         openList = nil
         subpageOpen(page)
-    }
-
-    private func subpageArrow() -> Widget! {
-        let arrow: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(arrow, "swiftly-zurueck")
-        caption(arrow, translated("Zurück"))
-        gtk_button_set_child(asButton(arrow),
-                             gtk_image_new_from_icon_name("go-previous-symbolic"))
-        gtk_widget_set_halign(arrow, GTK_ALIGN_START)
-        // No negative margin: GTK does not allow it. The arrow already sits within the
-        // block's 24 margin.
-        gtk_widget_set_margin_start(arrow, 0)
-        signal(arrow, "clicked") { [weak self] in self?.subpageBack() }
-        return arrow
     }
 
     /// **A maximum width GTK does not know.**
@@ -741,7 +790,6 @@ extension App {
     /// subpage (`SeerrSettingsView.swift`).
     func subpageHeader(_ title: String) -> Widget! {
         let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 14)
-        append(rail, subpageArrow())
         let t = label(title, style: "swiftly-titel-gross")
         gtk_widget_set_valign(t, GTK_ALIGN_CENTER)
         append(rail, t)
@@ -1022,6 +1070,17 @@ extension App {
             // The sidebar row comes and goes at once; filters and detail pages follow when opened.
             self?.mineFill()
         })
+        // Only when this server has shown it has the plugin; otherwise the switch would
+        // promise something that cannot happen.
+        if watchedByAvailable {
+            append(ga.space, toggleRow(symbol: "avatar-default-symbolic",
+                                             title: translated("Gesehen von"),
+                                             under: translated("Zeigt auf Titelseiten, wer einen Titel gesehen hat"),
+                                             an: selection.watchedByShown) { [weak self] an in
+                self?.selection.watchedByShown = an
+                self?.selection.secure()
+            })
+        }
         append(ga.space, toggleRow(symbol: "format-text-bold-symbolic",
                                          title: translated("Alphabetische Suche in Listen"),
                                          an: selection.alphabetShown) { [weak self] an in
@@ -1369,7 +1428,7 @@ extension App {
                 }
                 for (spot, name) in free.enumerated() {
                     if spot > 0 { append(container.widget, rowsLine()) }
-                    append(container.widget, valuesRow(symbol: "tag-symbolic", title: name) {
+                    append(container.widget, valuesRow(symbol: "paint:tag", title: name) {
                         [weak self] in
                         guard let self else { return }
                         self.selection.startGenres.append(name)
@@ -1428,13 +1487,17 @@ extension App {
     /// server one is signing in to.
     private func serverOnboardingBuild(_ block: Widget!) {
         let newServer = !serverOnboardingPreGiven
-        append(block, subpageHeader(newServer ? translated("Server hinzufügen")
-                                                     : translated("Weiteres Konto")))
-
         let kind = serverOnboardingKind
+        // Mac `ServerOnboardingView` at HEAD: a page reached from the picker has the kind's own
+        // title; the explaining sentence stays (no kind mark, no question, no extra hint).
+        let pickedJellyfin = newServer && serverOnboardingFromPicker && kind == .jellyfin
+            && serverOnboardingChecked == nil
+        append(block, subpageHeader(pickedJellyfin ? translated("Mit Jellyfin anmelden")
+                                    : newServer ? translated("Server hinzufügen")
+                                                : translated("Weiteres Konto")))
+
         let sentence = label(newServer
-            ? String(format: translated("Ein weiterer %@-Server mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen."),
-                     kind.displayName)
+            ? translated("Ein zweiter Jellyfin mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen.")
             : translated("Ein weiteres Konto auf diesem Server. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen."),
             style: "swiftly-koerper", wrap: true)
         gtk_widget_add_css_class(sentence, "dim-label")
@@ -1459,14 +1522,13 @@ extension App {
             return
         }
 
-        let inputField = inputRow(symbol: "network-server-symbolic",
+        let inputField = inputRow(symbol: "network-server-symbolic",   // Mac: server.rack
                                 placeholder: kind == .emby ? translated("emby.beispiel.de")
                                                           : translated("jellyfin.beispiel.de"),
                                 stretches: true)
         gtk_widget_set_margin_top(inputField, 26)
         gtk_editable_set_text(OpaquePointer(inputField), serverOnboardingAddress)
         append(block, inputField)
-
         // "Advanced": custom headers for a service in front of the server.
         let (advanced, reader) = advancedBuild(available: [])
         append(block, advanced)
@@ -1491,6 +1553,8 @@ extension App {
         serverOnboardingButton = primaryButton(translated("Weiter"))
         let button: Widget! = serverOnboardingButton
         gtk_widget_set_margin_top(button, 22)
+        // Mac `PrimaryButton`: `maxWidth: .infinity`, as wide as the field above it.
+        gtk_widget_set_halign(button, GTK_ALIGN_FILL)
         gtk_widget_set_sensitive(button, serverOnboardingAddress.isEmpty ? 0 : 1)
         append(block, button)
         signal(asJellyfin, "clicked") { [weak self] in
@@ -1512,6 +1576,20 @@ extension App {
         signal(inputField, "changed") { [weak self] in
             guard let self else { return }
             gtk_widget_set_sensitive(button, self.text(inputField).isEmpty ? 0 : 1)
+        }
+
+        // Without the servers already in the bundle: another account there is
+        // "Weiteres Konto", not a new server.
+        if newServer {
+            let found = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+            append(block, found)
+            foundOnOnboarding = found
+            // The page is rebuilt on every step and dropped on leaving; the search must not
+            // ask a destroyed widget whether it is on screen.
+            signal(found, "destroy") { [weak self] in
+                if self?.foundOnOnboarding == found { self?.foundOnOnboarding = nil }
+            }
+            foundServersFill()
         }
 
         // If the address was passed in there is nothing to type, so check right away.

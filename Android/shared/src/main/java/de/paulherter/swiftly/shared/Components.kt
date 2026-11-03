@@ -56,7 +56,7 @@ fun PrimaryButton(text: String, released: Boolean = true, stretches: Boolean = t
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     val area = if (!released) lockedArea else Color.White.copy(alpha = if (pressed) 0.75f else 1f)
-    val mass by animateFloatAsState(if (pressed) Motion.PressMetric else 1f, Motion.release(), label = "druck")
+    val mass = pressMass(pressed)
     Box(
         modifier
             .then(if (stretches) Modifier.fillMaxWidth() else Modifier)
@@ -86,7 +86,7 @@ fun SecondaryButton(text: String, released: Boolean = true, stretches: Boolean =
                modifier: Modifier = Modifier, action: () -> Unit) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
-    val mass by animateFloatAsState(if (pressed) Motion.PressMetric else 1f, Motion.release(), label = "druck")
+    val mass = pressMass(pressed)
     Box(
         modifier
             .then(if (stretches) Modifier.fillMaxWidth() else Modifier)
@@ -110,10 +110,10 @@ fun SecondaryButton(text: String, released: Boolean = true, stretches: Boolean =
 fun QuietButton(text: String, modifier: Modifier = Modifier, action: () -> Unit) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
-    val mass by animateFloatAsState(if (pressed) Motion.PressMetric else 1f, Motion.release(), label = "druck")
+    val mass = pressMass(pressed)
     Box(
         modifier.heightIn(min = Theme.stillHeight)
-            .graphicsLayer { scaleX = mass; scaleY = mass }
+            .graphicsLayer { scaleX = mass; scaleY = mass; alpha = 1f - (1f - Motion.PressOpacity) * (1f - mass) / (1f - Motion.PressMetric) }
             .clickable(interactionSource = source, indication = null, onClick = action)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
@@ -165,4 +165,17 @@ fun InputField(
             )
         }
     }
+}
+
+/**
+ * The press scale of a button: **at once** on touch down, 0.12 s `easeOut` on release (`Theme.pressCurve`).
+ * A fade-in on the finger reads as delay.
+ */
+@Composable
+fun pressMass(pressed: Boolean): Float {
+    val mass = remember { androidx.compose.animation.core.Animatable(1f) }
+    androidx.compose.runtime.LaunchedEffect(pressed) {
+        if (pressed) mass.snapTo(Motion.PressMetric) else mass.animateTo(1f, Motion.release())
+    }
+    return mass.value
 }

@@ -26,8 +26,8 @@ struct GroupsRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "person.2.fill")
-                .font(.system(size: size + 1))
+            Image(icon: "person.2.fill")
+                .font(.app(size: size + 1))
                 .foregroundStyle(Theme.accent)
             // Name and participants come from the server, verbatim.
             Text(verbatim: name)
@@ -35,7 +35,7 @@ struct GroupsRow: View {
                 .foregroundStyle(Theme.accent)
             Text(verbatim: "· \(withWhom)")
         }
-        .font(.system(size: size))
+        .font(.app(size: size))
         .accessibilityElement(children: .combine)
     }
 }
@@ -51,7 +51,7 @@ struct GroupsEvent: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(Theme.listTitle)
                 .foregroundStyle(Theme.accent)
             Text(verbatim: text)
@@ -94,7 +94,7 @@ struct OfferingRow: View {
         HStack(spacing: 10) {
             // **The accent, and the icon makes the difference**: no separate blue for
             // "playing elsewhere".
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(Theme.tile)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 1) {
@@ -399,7 +399,7 @@ private struct SelectionRow: View {
     var body: some View {
         Button(action: perform) {
             HStack(spacing: 14) {
-                Image(systemName: symbol)
+                Image(icon: symbol)
                     .font(Theme.categoryLarge)
                     .foregroundStyle(Theme.accent)
                     .frame(width: 26)

@@ -128,7 +128,6 @@ class Support(private val app: SwiftlyApplication) {
         app.store.remember(PLAN, "")
         source.value = ""
         changed.intValue += 1
-        AppIcons.reset(app)
     }
 
     /** A key-based status ended (expired or refunded; direct build). Only that status is withdrawn, never a store's. */
@@ -138,7 +137,6 @@ class Support(private val app: SwiftlyApplication) {
         app.store.remember(PLAN, "")
         source.value = ""
         changed.intValue += 1
-        AppIcons.reset(app)
     }
 
     /** Title of a tip in the current language (the package gives the German key, the catalog the rest). */

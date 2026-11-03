@@ -80,10 +80,10 @@ struct WhatsNewSheet: View {
     /// put the symbol's baseline on the title's and so the symbol above the middle.
     private func row(_ item: WhatsNewEntry.Item) -> some View {
         HStack(alignment: .center, spacing: 14) {
-            Image(systemName: item.symbol)
-                .font(.system(size: 19, weight: .regular))
+            Image(icon: item.symbol, size: 19)
+                .font(.app(size: 19, weight: .regular))
                 .symbolRenderingMode(.monochrome)
-                .foregroundStyle(Theme.fontQuiet)
+                .foregroundStyle(Theme.font)
                 .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {

@@ -82,7 +82,7 @@ struct WatchlistView: View {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(),
                                                              spacing: Theme.tileSpacing),
                                          count: columns),
-                          alignment: .leading, spacing: 20) {
+                          alignment: .leading, spacing: Theme.gridRowGap) {
                     ForEach(state.items) { item in
                         NavigationLink(value: item) {
                             PosterTile(model: model, item: item, width: nil)
@@ -226,7 +226,7 @@ struct WatchlistView: View {
                             }
                         }
                     } else {
-                        ValuePill(symbol: "square.grid.2x2",
+                        ValuePill(symbol: "line.3.horizontal.decrease",
                                   text: genre.label) { genreListOpen = true }
                         ValuePill(symbol: "arrow.up.arrow.down",
                                   text: state.sorting.label) { sortListOpen = true }

@@ -28,6 +28,8 @@ struct DetailHeader<Buttons: View>: View {
     /// press there, finds nothing and drops it. The cast row got stuck on exactly
     /// that once.
     var focusable = true
+    /// Pulls the first rail up; the series page's rail starts 40 above the movie page's.
+    var heroTrim: CGFloat = 0
     @ViewBuilder var buttons: () -> Buttons
 
     @ViewBuilder
@@ -55,13 +57,13 @@ struct DetailHeader<Buttons: View>: View {
                 // 140 from the layout, plus the offset that clears the undrawn header bar;
                 // see `Theme.headerOffsetDetail`. Together 196, the same line as the home
                 // page's title.
-                .padding(.top, 140 + Theme.headerOffsetDetail)
+                .padding(.top, Theme.contentTop)
         }
         // Not clipped: the backdrop is 700 high and may overhang downward, its own
         // gradient ends it. The first row draws over it as the next sibling.
         // 566 instead of 510: the zone grows by the same offset as the text inside,
         // else the gap to the first row would be 56 smaller than in the layout.
-        .frame(height: Theme.heroHeightDetail, alignment: .topLeading)
+        .frame(height: Theme.heroHeightDetail - heroTrim, alignment: .topLeading)
     }
 
     // **The whole header is one focus section, not just the button row.**
@@ -101,7 +103,7 @@ struct DetailHeader<Buttons: View>: View {
             // was cut off. 36 from the layout. Since `infoHeight` is fixed, the row
             // sits at 490 on **every** detail page.
             buttons()
-                .padding(.top, 36)
+                .padding(.top, Theme.spacingAboveButtons)
         }
     }
 
@@ -141,7 +143,7 @@ struct StateButtons: View {
                         }
                     }
                 } label: {
-                    Image(systemName: remembered ? "bookmark.fill" : "bookmark")
+                    Image(icon: remembered ? "bookmark.fill" : "bookmark")
                         .font(Theme.button)
                 }
                 .buttonStyle(ThemedButtonStyle(onlySymbol: true, active: remembered))
@@ -230,6 +232,8 @@ struct DetailView: View {
                 // last. Now the page waits for all and fades them in together.
                 if bottomPresent {
                     VStack(alignment: .leading, spacing: 0) {
+                        WatchersStrip(model: model, item: item)
+
                         // Above "Ähnliche Filme": the collection is the closer relation. Only for
                         // titles that belong to one.
                         CollectionRail(model: model, title: item, rails: collectionRails)
@@ -398,7 +402,7 @@ struct DetailView: View {
             HStack(spacing: 24) {
                 if let since = current.resumeFrom {
                     Button { start(since: since) } label: {
-                        Label("Fortsetzen", systemImage: "play.fill")
+                        Label("Fortsetzen", icon: "play.fill")
                     }
                     .buttonStyle(ThemedButtonStyle())
                     .disabled(prepares)
@@ -408,14 +412,14 @@ struct DetailView: View {
                     // Explicit in the layout: otherwise someone who has started could only get
                     // back to the beginning through the panel.
                     Button { start(since: 0) } label: {
-                        Image(systemName: "arrow.counterclockwise").font(Theme.button)
+                        Image(icon: "arrow.counterclockwise").font(Theme.button)
                     }
                     .buttonStyle(ThemedButtonStyle(onlySymbol: true))
                     .accessibilityLabel(Text("Von vorn"))
                     .disabled(prepares)
                 } else {
                     Button { start(since: 0) } label: {
-                        Label("Abspielen", systemImage: "play.fill")
+                        Label("Abspielen", icon: "play.fill")
                     }
                     .buttonStyle(ThemedButtonStyle())
                     .disabled(prepares)

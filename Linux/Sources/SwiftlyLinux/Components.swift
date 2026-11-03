@@ -52,7 +52,8 @@ func primaryButton(_ text: String, symbol: String = "go-next-symbolic") -> Widge
     gtk_widget_add_css_class(button, "swiftly-haupt")
     let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 9)
     gtk_widget_set_halign(rail, GTK_ALIGN_CENTER)
-    append(rail, gtk_image_new_from_icon_name(symbol))
+    // Drawn names ("paint:heart") take the button's text colour; the others come from the theme.
+    append(rail, symbol.hasPrefix("paint:") ? iconWidget(symbol, size: 16, box: 16) : gtk_image_new_from_icon_name(symbol))
     append(rail, label(text))
     gtk_button_set_child(asButton(button), rail)
     gtk_widget_set_size_request(button, Int32(Theme.loginWidth), Int32(Theme.primaryButtonHeight))
@@ -82,19 +83,22 @@ func primaryButtonLabel(_ button: Widget!, _ text: String, symbol: String? = nil
 
 // MARK: - Sidebar
 
-/// A sidebar row: icon (17 wide), 10 gap, label. 32 high, corner 6. When active
-/// it uses the accent at 10% fill.
-func sidebarRow(symbol: String, text: String, active: Bool) -> Widget! {
+/// A sidebar row (Mac 1.1 `SidebarRow`): icon 18, 10 gap, label 14 (semibold when active),
+/// optional shortcut text 11 medium very quiet at the line end. 32 high, corner 8, active
+/// fill accent at 12%.
+func sidebarRow(symbol: String, text: String, active: Bool, shortcut: String? = nil) -> Widget! {
     let button: Widget! = gtk_button_new()
     gtk_widget_add_css_class(button, "swiftly-zeile")
     if active { gtk_widget_add_css_class(button, "swiftly-aktiv") }
     let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 10)
     let image: Widget! = gtk_image_new_from_icon_name(symbol)
+    gtk_image_set_pixel_size(OpaquePointer(image), 18)
     append(rail, image)
     let font = label(text)
     gtk_widget_set_hexpand(font, 1)
     gtk_label_set_xalign(OpaquePointer(font), 0)
     append(rail, font)
+    if let shortcut { append(rail, label(shortcut, style: "swiftly-zeilenkurz")) }
     gtk_button_set_child(asButton(button), rail)
     return button
 }
@@ -305,7 +309,7 @@ func compartment(_ kind: Widget!, width: Int, height: Int,
 ///   set, for cases where Adwaita has nothing suitable (see ``Reglerzeichen``).
 ///   Takes precedence over `symbol`.
 func chip(_ text: String, symbol: String? = nil, active: Bool = false,
-          onlySymbol: Bool = false, drawing: Widget? = nil) -> Widget! {
+          onlySymbol: Bool = false, drawing: Widget? = nil, trailing: Widget? = nil) -> Widget! {
     let button: Widget! = gtk_button_new()
     gtk_widget_add_css_class(button, "swiftly-chip")
     if active { gtk_widget_add_css_class(button, "swiftly-aktiv") }
@@ -340,6 +344,7 @@ func chip(_ text: String, symbol: String? = nil, active: Bool = false,
         caption(button, text)
     } else {
         append(rail, label(text))
+        if let trailing { append(rail, trailing) }
     }
     gtk_button_set_child(asButton(button), rail)
     return button
@@ -353,22 +358,23 @@ func chip(_ text: String, symbol: String? = nil, active: Bool = false,
 /// to convey the watchlist. Active it is white with dark text, otherwise white
 /// 14% (hovered 22%).
 func secondaryButton(_ symbol: String, name: String? = nil, active: Bool = false,
-                drawing: Widget? = nil) -> Widget! {
+                drawing: Widget? = nil, detail: Bool = false) -> Widget! {
     let button: Widget! = gtk_button_new()
     // Without a name, a button without a label is just "button" to a screen reader.
     // On the Mac this is `accessibilityLabel`.
     if let name { caption(button, name) }
-    gtk_widget_add_css_class(button, "swiftly-neben")
+    // **Detail page (Mac 1.1 `DetailIconButton`): 48 × 56, symbol 22, no fill.**
+    gtk_widget_add_css_class(button, detail ? "swiftly-detailsymbol" : "swiftly-neben")
     if active { gtk_widget_add_css_class(button, "swiftly-aktiv") }
     if let drawing {
         gtk_button_set_child(asButton(button), drawing)
     } else {
         let image: Widget! = gtk_image_new_from_icon_name(symbol)
-        gtk_image_set_pixel_size(OpaquePointer(image), 17)
+        gtk_image_set_pixel_size(OpaquePointer(image), detail ? 22 : 17)
         gtk_button_set_child(asButton(button), image)
     }
-    gtk_widget_set_size_request(button, Int32(Theme.primaryButtonHeight),
-                                Int32(Theme.primaryButtonHeight))
+    gtk_widget_set_size_request(button, detail ? 48 : Int32(Theme.primaryButtonHeight),
+                                detail ? 56 : Int32(Theme.primaryButtonHeight))
     return button
 }
 
@@ -423,7 +429,7 @@ func rowsGroup() -> (outer: Widget, space: Widget) {
 }
 
 /// A group with a heading above it: "QUALITÄT", "SPRACHE", "VERHALTEN".
-func settingGroup(_ title: String) -> (outer: Widget, space: Widget) {
+func settingGroup(_ title: String, topGap: Int32 = 28) -> (outer: Widget, space: Widget) {
     let outer = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
     let header = category(title)
     // **Not the same heading style as in the sidebar**; see `swiftly-gruppenrubrik`
@@ -431,7 +437,8 @@ func settingGroup(_ title: String) -> (outer: Widget, space: Widget) {
     gtk_widget_remove_css_class(header, "swiftly-leise")
     gtk_widget_add_css_class(header, "swiftly-gruppenrubrik")
     gtk_widget_set_margin_start(header, 0)
-    gtk_widget_set_margin_top(header, 26)
+    // 1.1 (Mac `SettingGroup.topGap`): 22 for the first group of a column, 28 between.
+    gtk_widget_set_margin_top(header, topGap)
     gtk_widget_set_margin_bottom(header, 10)
     append(outer, header)
     let group = rowsGroup()
@@ -442,10 +449,9 @@ func settingGroup(_ title: String) -> (outer: Widget, space: Widget) {
 /// The divider **inside** a group, indented by 48 so it starts under the icon and
 /// not before it.
 func rowsLine() -> Widget! {
-    // **46, computed from the icon column** (`Theme.separatorInsetCard`): 12 margin +
-    // 20 icon + 14 gap.
+    // **54 (1.1, Mac `GroupLine`)**: row padding 16 + icon column 26 + gap 12.
     let l = divider()
-    gtk_widget_set_margin_start(l, 46)
+    gtk_widget_set_margin_start(l, 54)
     return l
 }
 
@@ -456,10 +462,19 @@ func rowBody(symbol: String, title: String, under: String?,
     // **"14 + content + 14" as padding, not a fixed height**: a minimum height does
     // not include the content, and a row with a subtitle would have no room. The
     // measure is in the stylesheet (`padding: 14px 12px`); icon column 20 rather than 22.
-    let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 14)
-    let image: Widget! = gtk_image_new_from_icon_name(symbol)
-    gtk_image_set_pixel_size(OpaquePointer(image), 15)
-    gtk_widget_set_size_request(image, 20, -1)
+    //
+    // **1.1 (Mac `RowsBody`):** icon 20 in a 26 column, white (accent only on accent rows),
+    // 12 gap, padding 8 x 16, at least 52 high and 60 with a subtitle, subtitle 13.
+    let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
+    gtk_widget_add_css_class(rail, "swiftly-zeilenkoerper")
+    if under != nil { gtk_widget_add_css_class(rail, "swiftly-zeilenkoerper-unter") }
+    // "paint:heart" and "paint:clock" are drawn: Adwaita has no heart or clock of this shape.
+    // "paint:heart" in a row is the outline heart (Mac `heart`); the rest goes through `iconWidget`.
+    let image: Widget! = iconWidget(symbol == "paint:heart" ? "paint:heartline" : symbol, size: 20, box: 26,
+                                    style: accent ? "swiftly-akzentsymbol" : "swiftly-zeilensymbol")
+    if !symbol.hasPrefix("paint:") {
+        gtk_widget_add_css_class(image, accent ? "swiftly-akzentsymbol" : "swiftly-zeilensymbol")
+    }
     append(rail, image)
 
     let text = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
@@ -491,14 +506,14 @@ func rowBody(symbol: String, title: String, under: String?,
     }
     append(rail, text)
     if let right { append(rail, right) }
-    if accent { gtk_widget_add_css_class(rail, "swiftly-akzentzeile") }
     return rail
 }
 
 /// A row with a value on the right and an optional arrow.
 func valuesRow(symbol: String, title: String, under: String? = nil,
                 value: String? = nil, accent: Bool = false, arrow: Bool = false,
-                checkmark: Bool = false, pick: (() -> Void)? = nil) -> Widget! {
+                checkmark: Bool = false, external: Bool = false,
+                pick: (() -> Void)? = nil) -> Widget! {
     let right = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
     gtk_widget_set_valign(right, GTK_ALIGN_CENTER)
     if let value, !value.isEmpty {
@@ -515,11 +530,16 @@ func valuesRow(symbol: String, title: String, under: String? = nil,
         gtk_widget_add_css_class(h, "swiftly-akzentzeile")
         append(right, h)
     }
+    // **Arrow out of the app** for links that leave it (Mac `external`): 14 in `fontQuiet`.
+    // Drawn as the arrow character; no symbolic icon of that shape exists in Adwaita.
+    if external {
+        append(right, label("↗", style: "swiftly-pfeilaussen"))
+    }
     if arrow {
-        // Chevron 13 in `schriftSehrLeise`.
+        // Chevron 13 in `fontQuiet` (Mac 1.1).
         let p: Widget! = gtk_image_new_from_icon_name("go-next-symbolic")
         gtk_image_set_pixel_size(OpaquePointer(p), 13)
-        gtk_widget_add_css_class(p, "swiftly-leise")
+        gtk_widget_add_css_class(p, "swiftly-pfeilzeichen")
         append(right, p)
     }
     let shell = rowBody(symbol: symbol, title: title, under: under,
@@ -913,9 +933,8 @@ func smallerToggle(an: Bool, name: String,
 ///
 /// Without this only the settings page was two-column, and Playback and Appearance
 /// sat in a single narrow column, giving three pages three different looks.
-func twoColumn(in block: Widget!) -> (left: Widget, right: Widget) {
-    let columns = stack(GTK_ORIENTATION_HORIZONTAL,
-                         spacing: Int32(Theme.edgeSpacing * 2))
+func twoColumn(in block: Widget!, gap: Int = Theme.edgeSpacing * 2) -> (left: Widget, right: Widget) {
+    let columns = stack(GTK_ORIENTATION_HORIZONTAL, spacing: Int32(gap))
     gtk_widget_set_valign(columns, GTK_ALIGN_START)
     let left = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
     let right = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
@@ -989,6 +1008,35 @@ func characterImage(_ names: [String]) -> Widget! {
     }
     let image: Widget! = gtk_image_new_from_gicon(icon)
     g_object_unref(UnsafeMutableRawPointer(icon))
+    return image
+}
+
+/// **One door for icon names that Adwaita (Windows) lacks.** `paint:*` names are drawn
+/// (`symbolPaint`), the others go through a fallback list so the broken-image placeholder
+/// never shows. Painted: heart, heart outline, clock, tag, tray. Mapped: the globe to the
+/// network icon, the calendar and sort-by-name to their sibling names.
+func iconWidget(_ name: String, size: Int, box: Int? = nil, style: String = "swiftly-zeichenerbe") -> Widget! {
+    // The former hand-drawn shapes are the design kit's icons now, like every other symbol.
+    let kit: [String: String] = ["paint:heart": "swiftly-heart-symbolic", "paint:heartline": "swiftly-heartline-symbolic",
+                                 "paint:clock": "swiftly-clock-symbolic", "paint:tag": "swiftly-tag-symbolic",
+                                 "paint:tray": "swiftly-tray-symbolic"]
+    if let themed = kit[name] {
+        let image: Widget! = gtk_image_new_from_icon_name(themed)
+        gtk_image_set_pixel_size(OpaquePointer(image), Int32(size))
+        if let box { gtk_widget_set_size_request(image, Int32(box), -1) }
+        gtk_widget_add_css_class(image, style)
+        return image
+    }
+    let lists: [String: [String]] = [
+        "applications-internet-symbolic": ["applications-internet-symbolic", "network-workgroup-symbolic"],
+        "emblem-favorite-symbolic": ["emblem-favorite-symbolic", "starred-symbolic"],
+        "tag-symbolic": ["tag-symbolic", "bookmark-new-symbolic", "view-list-symbolic"],
+        "mail-inbox-symbolic": ["mail-inbox-symbolic", "mail-unread-symbolic"],
+        "clock-symbolic": ["clock-symbolic", "document-open-recent-symbolic"],
+    ]
+    let image: Widget! = characterImage(lists[name] ?? [name])
+    gtk_image_set_pixel_size(OpaquePointer(image), Int32(size))
+    if let box { gtk_widget_set_size_request(image, Int32(box), -1) }
     return image
 }
 

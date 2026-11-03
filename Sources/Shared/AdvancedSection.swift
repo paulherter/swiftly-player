@@ -30,8 +30,8 @@ struct AdvancedSection: View {
                 } label: {
                     HStack(spacing: 6) {
                         Text("Erweitert")
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .semibold))
+                        Image(icon: "chevron.right", size: 11)
+                            .font(.app(size: 11, weight: .semibold))
                             .rotationEffect(.degrees(opened ? 90 : 0))
                             .accessibilityHidden(true)
                     }
@@ -66,9 +66,9 @@ struct AdvancedSection: View {
                         Button {
                             withAnimation(Theme.reveal) { rows.removeAll { $0.id == row.id } }
                         } label: {
-                            Image(systemName: "minus.circle")
-                                .font(.system(size: 17))
-                                .foregroundStyle(Theme.fontVeryQuiet)
+                            Image(icon: "minus.circle", size: 17)
+                                .font(.app(size: 17))
+                                .foregroundStyle(Theme.font)
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
@@ -91,7 +91,7 @@ struct AdvancedSection: View {
                 withAnimation(Theme.reveal) { rows.append(HeaderRow()) }
             } label: {
                 HStack(spacing: 9) {
-                    Image(systemName: "plus")
+                    Image(icon: "plus")
                         .accessibilityHidden(true)
                     Text("Header hinzufügen")
                 }
@@ -120,7 +120,6 @@ struct OwnHeadersPage: View {
         ZStack(alignment: .top) {
             Theme.reason.ignoresSafeArea()
             VStack(spacing: 0) {
-                SubpageHeader(title: String(localized: "Eigene Header")) { back() }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         AdvancedSection(rows: $rows, expanded: true)
@@ -143,6 +142,7 @@ struct OwnHeadersPage: View {
                 .scrollIndicators(.hidden)
                 .scrollDismissesKeyboard(.interactively)
             }
+            .fadingUnderSubpageHeader(title: String(localized: "Eigene Header")) { back() }
         }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)

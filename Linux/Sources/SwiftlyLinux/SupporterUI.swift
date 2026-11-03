@@ -49,7 +49,7 @@ extension App {
         gtk_widget_set_size_request(circle, 30, 30)
         gtk_widget_set_halign(circle, GTK_ALIGN_CENTER)
         gtk_widget_set_valign(circle, GTK_ALIGN_CENTER)
-        let cross = symbolPaint(.cross, size: dark ? 10 : 11, box: 30, style: dark ? "swiftly-schrift" : "swiftly-leisefarbe")
+        let cross = symbolPaint(.cross, size: dark ? 10 : 13, box: 30, style: "swiftly-schrift")   // Mac 1.1 `CloseButton`: 13 bold, full white instead of quiet
         append(circle, cross)
         gtk_button_set_child(asButton(button), circle)
         gtk_widget_set_size_request(button, 44, 44)
@@ -86,74 +86,6 @@ extension App {
 // MARK: - The profile
 
 extension App {
-
-    /// **Looks at the top of the profile, by state** (`LookProfileEntry`): the current look
-    /// for whoever has one to choose, else the teaser; supporters also get the status card.
-    func looksProfileBlock() -> Widget? {
-        let entry = LookProfileEntry.at(supporterFeatures: true, isSupporter: isSupporter,
-                                        ownsLook: looks.tryOn.ownsLook)
-        guard entry != .none || isSupporter else { return nil }
-        let block = stack(GTK_ORIENTATION_VERTICAL, spacing: 16)
-        switch entry {
-        case .current: append(block, currentLookCard())
-        case .teaser: append(block, supportLooksCard())
-        case .none: break
-        }
-        if isSupporter { append(block, supportStatusCard()) }
-        return block
-    }
-
-    /// **`CurrentLookCard`**: the icon, "Dein Look" over the name, "Ändern" in the accent.
-    func currentLookCard() -> Widget! {
-        let look = looks.saved.look
-        let row = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 14)
-        append(row, lookTile(look, size: 44))
-        let column = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
-        gtk_widget_set_valign(column, GTK_ALIGN_CENTER)
-        gtk_widget_set_hexpand(column, 1)
-        append(column, supportText(translated("Dein Look"), "swiftly-s13-leise"))
-        append(column, supportText(look.shownName, "swiftly-s17-fett"))
-        append(row, column)
-        let change = label(translated("Ändern"), style: "swiftly-s15-fett")
-        gtk_widget_add_css_class(change, "swiftly-akzentschrift")
-        gtk_widget_set_valign(change, GTK_ALIGN_CENTER)
-        append(row, change)
-
-        let button: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(button, "swiftly-lookkarte")
-        gtk_button_set_child(asButton(button), row)
-        caption(button, String(format: translated("Dein Look: %@"), look.shownName))
-        signal(button, "clicked") { [weak self] in self?.lookOpenOnHome() }
-        return button
-    }
-
-    /// **`SupportLooksCard`**: the fan of icons, the line, the pill. The whole card opens
-    /// the looks.
-    func supportLooksCard() -> Widget! {
-        let column = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
-        let fan = iconFanPaint()
-        gtk_widget_set_margin_top(fan, 0)
-        append(column, fan)
-        let text = stack(GTK_ORIENTATION_VERTICAL, spacing: 4)
-        gtk_widget_set_margin_start(text, 18)
-        gtk_widget_set_margin_end(text, 18)
-        gtk_widget_set_margin_top(text, 10)
-        gtk_widget_set_margin_bottom(text, 18)
-        append(text, supportText(translated("Wähl deinen Look"), "swiftly-s20-fett", centred: true))
-        append(text, supportText(translated("Looks für alle, die Swiftly am Laufen halten."),
-                                 "swiftly-s13-leise", wrap: true, centred: true))
-        let pill = glassPill(translated("Look ausprobieren"))
-        gtk_widget_set_margin_top(pill, 10)
-        append(text, pill)
-        append(column, text)
-
-        let button: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(button, "swiftly-lookteaser")
-        gtk_button_set_child(asButton(button), column)
-        caption(button, translated("Wähl deinen Look"))
-        signal(button, "clicked") { [weak self] in self?.lookOpenOnHome() }
-        return button
-    }
 
     /// **`SupportStatusCard`**: the heart in its glow, "Unterstützer für immer" and since
     /// when. Keys: monthly ones show their end day, lifetime ones never run out.
@@ -195,12 +127,11 @@ extension App {
 
 extension App {
 
-    /// **The heart in the bar**: `heart.fill` 17, quiet, bright on hover; in the accent for
-    /// supporters. 44 to hit.
+    /// **The heart in the bar**: `heart.fill` 17, white like the bookmark next to it. 44 to hit.
     func supportHeartButton() -> Widget! {
         let button: Widget! = gtk_button_new()
         gtk_widget_add_css_class(button, "swiftly-herz")
-        let heart = symbolPaint(.heart, size: 17, box: 24, style: isSupporter ? "swiftly-akzentfarbe" : "swiftly-herzfarbe")
+        let heart = symbolPaint(.heart, size: 17, box: 24, style: "swiftly-herzfarbe")
         gtk_button_set_child(asButton(button), heart)
         gtk_widget_set_size_request(button, 44, 44)
         caption(button, translated(SupportCopy.supportSwiftly.key))

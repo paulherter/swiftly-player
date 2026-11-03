@@ -31,10 +31,10 @@ struct SettingsView: View {
                 // of information, and the arrow belonged to nothing. `SubpageHeader` puts
                 // both in one line, the same one that the watchlist and downloaded series
                 // already use.
-                SubpageHeader(title: String(localized: "Einstellungen")) { back() }
-                ScrollView { content }
+                ScrollView { content.padding(.top, -Theme.firstGroupTrim) }
                     .scrollIndicators(.hidden)
             }
+            .fadingUnderSubpageHeader(title: String(localized: "Allgemein")) { back() }
         }
         .overlay(alignment: .topTrailing) {
             // **turning it off deletes nothing unasked.** Silently deleting forty
@@ -78,14 +78,13 @@ struct SettingsView: View {
                 // cards, which is too narrow for them. The cards carry the spacing themselves
                 // now.
                 HStack(alignment: .top, spacing: 0) {
-                    VStack(alignment: .leading, spacing: 0) { offline; integration }
+                    VStack(alignment: .leading, spacing: 0) { offline }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     VStack(alignment: .leading, spacing: 0) { server; sync }
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
                 offline
-                integration
                 server
                 sync
             }
@@ -102,7 +101,7 @@ struct SettingsView: View {
                 SupporterMark()
             }
                 .padding(.horizontal, Theme.margin(wide: wide))
-                .padding(.top, 26)
+                .padding(.top, 28)
         }
         .padding(.bottom, 40)
     }
@@ -124,7 +123,7 @@ struct SettingsView: View {
         SettingGroup(title: "Offline") {
             ChoiceRow(symbol: "arrow.down.circle",
                       title: Text("Downloads"),
-                      under: Text("Titel aufs Gerät laden und offline schauen"),
+                      under: Text("Titel offline schauen"),
                       an: Binding(get: { model.downloadsAn },
                                   set: { an in
                                       if an { model.downloadsAn = true }
@@ -137,12 +136,12 @@ struct SettingsView: View {
                 SheetLine()
                 ChoiceRow(symbol: "wifi",
                           title: Text("Nur über WLAN"),
-                          under: Text("Downloads warten, bis du im WLAN bist"),
+                          under: Text("Downloads warten auf WLAN"),
                           an: Binding(get: { model.onlyOverWLAN },
                                       set: { model.onlyOverWLAN = $0 }))
                 SheetLine()
                 ChoiceRow(symbol: "play.square.stack",
-                          title: Text("Nächste Folge laden"),
+                          title: Text("Nächste Folge vorab laden"),
                           under: Text("Lädt die nächste, löscht die gesehene"),
                           an: Binding(get: { model.downloads.nextAuto },
                                       set: { model.downloads.nextAuto = $0 }))
@@ -159,34 +158,10 @@ struct SettingsView: View {
         }
     }
 
-    /// **Sits between Offline and Server, on purpose.** It is a second service,
-    /// not a second server, and it is an extra: whoever connects nothing sees
-    /// nothing of it except this one row.
-    @ViewBuilder private var integration: some View {
-        // Seerr signs in with the media server's user name and password; not every kind
-        // has that (`ServerCapability.seerr`). Without Seerr the group
-        // would be empty.
-        if model.can(.seerr) {
-            SettingGroup(title: "Integration") {
-                if model.can(.seerr) {
-                    NavigationLink(value: SeerrRoute()) {
-                        ValueRow(symbol: "sparkle.magnifyingglass", title: Text("Seerr"),
-                                  under: Text("Anfragen, was noch nicht da ist"),
-                                  value: model.seerr.connected ? String(localized: "Verbunden") : nil)
-                    }
-                    // **`PressRow`, not `PressButton`.** The row is edge to edge and as wide as
-                    // the card; shrinking it by 0.97 visibly detaches it from the rows above. A
-                    // row acknowledges with area, a compact control with scale.
-                    .buttonStyle(Theme.PressRow())
-                }
-            }
-        }
-    }
-
     private var server: some View {
         let trigger: (() -> Void)? = examine ? nil : { check() }
 
-        return SettingGroup(title: "Server") {
+        return SettingGroup(title: "Server und Dienste") {
             ValueRow(symbol: "externaldrive.connected.to.line.below",
                       title: Text(verbatim: model.serverName ?? "Server"),
                       value: model.serverVersion ?? "?")
@@ -194,7 +169,7 @@ struct SettingsView: View {
             ValueRow(symbol: "wifi", title: Text("Verbindung prüfen"),
                       under: verification.map { Text(verbatim: $0) },
                       value: examine ? String(localized: "Moment…") : nil,
-                      action: trigger)
+                      action: trigger, inPlace: true)
             SheetLine()
             // **Custom headers, issue #4.** Only for servers behind a service like
             // Cloudflare Access; everyone else never enters.
@@ -204,9 +179,22 @@ struct SettingsView: View {
                 ValueRow(symbol: "key", title: Text("Eigene Header"),
                           under: Text("Für einen Dienst vor dem Server"),
                           value: model.ownHeaders(for: model.session?.serverURL).isEmpty
-                              ? nil : String(model.ownHeaders(for: model.session?.serverURL).count))
+                              ? nil : String(model.ownHeaders(for: model.session?.serverURL).count),
+                          chevron: true)
             }
             .buttonStyle(Theme.PressRow())
+            // Seerr signs in with the media server's user name and password; not every kind
+            // has that (`ServerCapability.seerr`).
+            if model.can(.seerr) {
+                SheetLine()
+                NavigationLink(value: SeerrRoute()) {
+                    ValueRow(symbol: "sparkle.magnifyingglass", title: Text("Seerr"),
+                              under: Text("Anfragen, was noch nicht da ist"),
+                              value: model.seerr.connected ? String(localized: "Verbunden") : nil,
+                              chevron: true)
+                }
+                .buttonStyle(Theme.PressRow())
+            }
         }
     }
 
@@ -219,10 +207,10 @@ struct SettingsView: View {
     }
 
     private var syncGroup: some View {
-        SettingGroup(title: "Konto") {
+        SettingGroup(title: "Synchronisierung") {
             ChoiceRow(symbol: "arrow.triangle.2.circlepath",
-                      title: Text("Einstellungen auf allen Geräten gleich halten"),
-                      under: Text("Sprachen, Überspringen und Startseite liegen auf deinem Server"),
+                      title: Text("Auf allen Geräten gleich"),
+                      under: Text("Liegt auf deinem Server"),
                       an: Binding(get: { model.settingsSync.on },
                                   set: { model.settingsSync.on = $0 }))
         }

@@ -169,21 +169,18 @@ extension Theme {
 
     static let signalHeight: CGFloat = 40
 
-    /// Top margin in the **content area**, the same as the side margin.
-    ///
-    /// Nothing needs to be kept clear here: content starts to the right of the
-    /// sidebar, and the traffic lights are not above it. A larger top margin looked
-    /// like a huge gap above the first heading, so it uses the same value as the
-    /// side margin, as **the same** value rather than a second 24: changing the side
-    /// margin changes the top one with it.
-    static let contentTop: CGFloat = edgeSpacing
+    /// Top margin in the **content area**: the page title starts 58 down, just under
+    /// the 52 pt toolbar (design `mac-design.mjs`).
+    static let contentTop: CGFloat = 58
 
     /// **The bar that appears when scrolling** (`Bestandsleiste`).
     ///
     /// 40, not `contentTop`: it has to hold a 17 pt line and the 40 pt tall back
     /// arrow, and it is deliberately shorter than the top margin of resting content.
     /// It should be a bar, not a second header.
-    static let headerBarHeight: CGFloat = 40
+    static let headerBarHeight: CGFloat = toolbarHeight
+    /// **The toolbar of the design:** ‹ › and the title, 52 high on every page.
+    static let toolbarHeight: CGFloat = 52
 
 
     /// Height of a detail page's header bar (arrow and fading-in title).
@@ -211,15 +208,19 @@ extension Theme {
     static let cornerSheet: CGFloat = 28
     /// One side margin per sheet (same value as on iPhone).
     static let sheetInset: CGFloat = 24
-    static let edgeSpacing: CGFloat = 24
+    /// 36: the content edge of the design, left and right.
+    static let edgeSpacing: CGFloat = 36
 
     /// **Where the hairline starts in a settings card.**
     ///
-    /// It aligns with the text, not with the card edge: 12 inner padding plus 20
+    /// It aligns with the text, not with the card edge: 12 inner padding plus 26
     /// icon column plus 14 gap to the text.
-    static let separatorInsetCard: CGFloat = 46
-    static let tileSpacing: CGFloat = 12
-    static let railsSpacing: CGFloat = 28
+    static let separatorInsetCard: CGFloat = 52
+    /// Settings row symbol and its column, the same as on iPhone.
+    static let rowSymbolSize: CGFloat = 20
+    static let rowIconWidth: CGFloat = 26
+    static let tileSpacing: CGFloat = 16
+    static let railsSpacing: CGFloat = 40
 
     /// **Scroll distance over which the value row fades out**: 44, as on iPhone.
     /// The distance drives opacity only, never a height: as soon as a header height
@@ -243,7 +244,7 @@ extension Theme {
     /// button row to the first heading should match the gap between all other
     /// sections (26). Any slack in this zone would add to it, and the "Cast" row
     /// would sit further from the row above than "Similar" does.
-    static let heroHeightValue: CGFloat = 380
+    static let heroHeightValue: CGFloat = 350
 
     // MARK: Hit targets - smaller than on iPhone
 
@@ -272,32 +273,37 @@ extension Theme {
 
     // MARK: Type - same scale as on iPhone
 
-    static let titleLarge = Font.system(size: 28, weight: .bold)
+    /// 30 bold: the page title of the design.
+    static let titleLarge = Font.app(size: 30, weight: .bold)
     /// **The title over a hero image *is* the page title.** It used to be 34 on the
     /// Mac, a separate step for the same role, which the shared scale does not have.
     /// This name previously carried the 22 of the subpage title, which now has its
     /// own name.
     static let title      = titleLarge
-    /// **Subpage title**, 22 semibold, same name as on iPhone.
-    static let subpageTitle = Font.system(size: 22, weight: .semibold)
-    static let rail      = Font.system(size: 20, weight: .semibold)
+    /// **Subpage title**, 28 bold, same name and value as on iPhone.
+    static let subpageTitle = Font.app(size: 28, weight: .bold)
+    static let rail      = Font.app(size: 20, weight: .semibold)
+    /// Group title over a rail or a settings group: 22 bold, white, as on iPhone.
+    static let section = Font.app(size: 22, weight: .bold)
     /// Sheet heading and detail bar.
-    static let categoryLarge = Font.system(size: 17, weight: .semibold)
+    static let categoryLarge = Font.app(size: 17, weight: .semibold)
     /// Old name of the same step. Kept while call sites still use it.
     static let bar     = categoryLarge
-    static let listTitle = Font.system(size: 15, weight: .semibold)
-    static let body    = Font.system(size: 15)
+    static let listTitle = Font.app(size: 15, weight: .semibold)
+    static let body    = Font.app(size: 15)
     /// Title under a poster: 13, not 14, because 14 is not on the scale.
-    static let tile      = Font.system(size: 13, weight: .medium)
+    static let tile      = Font.app(size: 13, weight: .medium)
     /// Old name of the same step.
     static let tileTitleText = tile
+    /// **The name under a tile:** 14/600 in the design, the year below in the quietest ink.
+    static let tileCaption = Font.app(size: 14, weight: .semibold)
     /// Meta line: year, role, runtime.
-    static let small      = Font.system(size: 12)
+    static let small      = Font.app(size: 12)
     /// Old name of the same step.
     static let secondLine = small
-    static let badge   = Font.system(size: 10, weight: .semibold)
+    static let badge   = Font.app(size: 10, weight: .semibold)
     /// Group title, 11 semibold.
-    static let group     = Font.system(size: 11, weight: .semibold)
+    static let group     = Font.app(size: 11, weight: .semibold)
     /// Old name of the same step.
     static let category     = group
 
@@ -307,12 +313,13 @@ extension Theme {
     // value of the scale times the point size, the same numbers as on iPhone, since
     // Mac and iPhone share the same scale.
 
+    /// 30 pt, -0.5 as in the design.
+    static let lockTitle      = -0.5
     /// 28 · -0.021 em
-    static let lockTitle      = -0.6
-    /// 22 · -0.014 em
-    static let lockSubpage = -0.308
+    static let lockSubpage = -0.6
     /// 20 · -0.012 em
     static let lockRail      = -0.24
+    static let lockSection = -0.308
     /// 17 · -0.008 em
     static let lockCategory     = -0.136
     /// 11 · +0.14 em

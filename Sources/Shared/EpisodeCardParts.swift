@@ -93,8 +93,8 @@ struct CountdownRing: View {
                     .trim(from: 0, to: share)
                     .stroke(Theme.accent, style: StrokeStyle(lineWidth: stroke, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                Image(systemName: "play.fill")
-                    .font(.system(size: d * 0.3))
+                Image(icon: "play.fill", size: d * 0.3)
+                    .font(.app(size: d * 0.3))
                     .foregroundStyle(Theme.font)
                     .offset(x: d * 0.03)
             }

@@ -73,13 +73,13 @@ struct SubtitleLookView: View {
             segmentRow(symbol: "textformat.size", title: String(localized: "Größe"),
                        options: SubtitleLook.Size.allCases, value: look.size, name: \.name,
                        choose: { value in set { $0.size = value } }) { size in
-                Text("A").font(.system(size: size.glyphSize, weight: .semibold))
+                Text("A").font(.app(size: size.glyphSize, weight: .semibold))
             }
             SheetLine().padding(.leading, Theme.separatorInsetCard)
             segmentRow(symbol: "paintpalette", title: String(localized: "Farbe"),
                        options: SubtitleLook.Colour.allCases, value: look.colour, name: \.name,
                        choose: { value in set { $0.colour = value } }) { colour in
-                Text("A").font(.system(size: 17, weight: .semibold)).foregroundStyle(colour.color)
+                Text("A").font(.app(size: 17, weight: .semibold)).foregroundStyle(colour.color)
             }
             SheetLine().padding(.leading, Theme.separatorInsetCard)
             segmentRow(symbol: "character.textbox", title: String(localized: "Rand"),
@@ -121,7 +121,7 @@ struct SubtitleLookView: View {
         return CardView {
             Button(action: reset) {
                 HStack(spacing: 14) {
-                    Image(systemName: "arrow.counterclockwise")
+                    Image(icon: "arrow.counterclockwise")
                         .font(Theme.body)
                         .frame(width: 20)
                         .accessibilityHidden(true)
@@ -150,7 +150,7 @@ struct SubtitleLookView: View {
         let strip = MacSegments(group: title, options: options, value: value, name: name,
                                 choose: choose, each: each, label: label)
         let head = HStack(spacing: 14) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(Theme.body)
                 .foregroundStyle(Theme.fontQuiet)
                 .frame(width: 20)
@@ -237,7 +237,7 @@ private struct MacSegments<Value: Hashable, Label: View>: View {
                     choose(option)
                 } label: {
                     label(option)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.app(size: 13, weight: .semibold))
                         .foregroundStyle(value == option ? Theme.font : Theme.fontQuiet)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)

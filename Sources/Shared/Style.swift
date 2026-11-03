@@ -196,7 +196,7 @@ static var progressTravel: Animation? {
     /// Posters and tiles: the same corner as a button.
     static let cornerTile: CGFloat = 10
     /// Search and input fields.
-    static let cornerField: CGFloat = 12
+    static let cornerField: CGFloat = 10
     /// **Width of the audio and subtitle columns in the player.** "Russian · AC-3 · 5.1"
     /// and "English · Forced · SRT · File" fit; 210 cut them after the codec. Two
     /// columns of 300 stand side by side in a landscape iPhone. The Mac has its own
@@ -218,7 +218,7 @@ static var progressTravel: Animation? {
     /// **The card: 14.** It used to carry `eckeFlaeche` (16) and was therefore as
     /// round as a sheet: two kinds of object with one corner. 14 stands in the
     /// ladder for cards and groups.
-    static let cornerCard: CGFloat = 14
+    static let cornerCard: CGFloat = 16
 
     /// **The sheet from below: 28.** It carried 16 and so looked more angular than
     /// every system sheet next to it.
@@ -228,18 +228,45 @@ static var progressTravel: Animation? {
     static let sheetInset: CGFloat = 24
     static let edgeSpacing: CGFloat = 18
     static let tileSpacing: CGFloat = 12
-    static let railsSpacing: CGFloat = 28
+    static let railsSpacing: CGFloat = 40
 
     /// Posters are portrait everywhere, 2:3. Reduced from 132 × 198: the tiles were
     /// too bulky, and more fit side by side.
-    static let tileWidth: CGFloat = 112
-    static let tileHeight: CGFloat = 168
+    static let tileWidth: CGFloat = 116
+    static let tileHeight: CGFloat = 174
 
     /// Hero image on the detail pages, the **same** for movies and series.
-    static let heroHeightValue: CGFloat = 300
+    static let heroHeightValue: CGFloat = 350
 
     /// Height of the navigation bar without the home-indicator area.
     static let stripHeight: CGFloat = 54
+    // Round 2 system sizes.
+    static let controlHeight: CGFloat = 56
+    static let rowHeight: CGFloat = 60
+    static let rowIconWidth: CGFloat = 26
+    static let rowTitleSize: CGFloat = 17
+    static let rowSymbolSize: CGFloat = 20
+    static let rowPadV: CGFloat = 10
+    static let gridRowGap: CGFloat = 32
+    static let groupTop: CGFloat = 48
+    static let firstGroupTrim: CGFloat = 20
+    static let cardGap: CGFloat = 32
+    static let backInset: CGFloat = 2
+    static let actionSymbol: CGFloat = 22
+    static let actionGap: CGFloat = 16
+    static let blockGap: CGFloat = 20
+    static let heroRowWidth: CGFloat = 280
+    static let heroRowHeight: CGFloat = 158
+    static let castSize: CGFloat = 88
+    static let castWidth: CGFloat = 88
+    static let episodeWidth: CGFloat = 148
+    static let episodeWidthOngoing: CGFloat = 168
+    static let episodeHeight: CGFloat = 83
+    static let emptyDisc: CGFloat = 120
+    static let emptySymbol: CGFloat = 52
+    static let emptyTextWidth: CGFloat = 300
+    static let sheetListMax: CGFloat = 420
+    static let tabIconHeight: CGFloat = 26
 
     /// **The path along which the value row closes and releases.**
     ///
@@ -327,7 +354,7 @@ static var progressTravel: Animation? {
     /// The same value the wordmark in the sidebar uses; otherwise heading and
     /// wordmark sit at different heights, which is immediately visible: the page
     /// starts at the top, the sidebar next to it a bit lower.
-    static let headerTop: CGFloat = 26
+    static let headerTop: CGFloat = 28
 
     /// Tile dimensions of the rows on the home page.
     ///
@@ -344,8 +371,8 @@ static var progressTravel: Animation? {
 
     /// Horizontal 16:9 for "Continue Watching", about twice as wide as a poster:
     /// the same ratio as on iPhone (236 to 112) and on the TV (448 to 208).
-    static func railsLandscapeWidth(wide: Bool) -> CGFloat { wide ? 280 : 236 }
-    static func railsLandscapeHeight(wide: Bool) -> CGFloat { wide ? 158 : 133 }
+    static func railsLandscapeWidth(wide: Bool) -> CGFloat { wide ? 280 : heroRowWidth }
+    static func railsLandscapeHeight(wide: Bool) -> CGFloat { wide ? 158 : heroRowHeight }
 
     /// From this window width on, the play button and the action row sit side by
     /// side. Poster 168 + 32 spacing + about 620 button row + twice the margin make
@@ -410,19 +437,20 @@ static var progressTravel: Animation? {
     // Scale taken from Plex, the exact values are in the canvas under "Maßstab".
     // Ten steps, no more. The ladder is defined in the brand document, section 2;
     // Mac and iPad carry the same one, the TV double.
-    static let titleLarge  = Font.system(size: 28, weight: .bold)
+    static let titleLarge  = Font.app(size: 34, weight: .bold)
     /// **The same size as `titleLarge`.** The title above a hero image *is* the page
     /// title; a second step for the same role only means the wrong one will apply
     /// somewhere eventually. It used to be 27.
-    static let title       = Font.system(size: 28, weight: .bold)
+    static let title       = Font.app(size: 34, weight: .bold)
     /// **Subpage title.** It was in the ladder but had no token; the
     /// `SubpageHeader` set 22 Semibold as a literal.
-    static let subpageTitle = Font.system(size: 22, weight: .semibold)
-    static let rail       = Font.system(size: 20, weight: .semibold)
+    static let subpageTitle = Font.app(size: 28, weight: .bold)
+    static let section = Font.app(size: 22, weight: .bold)
+    static let rail       = Font.app(size: 20, weight: .semibold)
     /// Sheet heading and detail bar.
-    static let categoryLarge = Font.system(size: 17, weight: .semibold)
-    static let listTitle = Font.system(size: 15, weight: .semibold)
-    static let body     = Font.system(size: 15)
+    static let categoryLarge = Font.app(size: 17, weight: .semibold)
+    static let listTitle = Font.app(size: 15, weight: .semibold)
+    static let body     = Font.app(size: 15)
     // **Scaling versions of the same steps.**
     //
     // The spec says: "Body text, lists, settings and empty states follow the system
@@ -436,16 +464,16 @@ static var progressTravel: Animation? {
     // `Font` constant cannot.
     /// Title under a poster. It used to be 14; 14 is on no ladder, and the tile
     /// should be quieter than a list row.
-    static let tile      = Font.system(size: 13, weight: .medium)
-    static let small       = Font.system(size: 12)
+    static let tile      = Font.app(size: 13, weight: .medium)
+    static let small       = Font.app(size: 12)
     /// **Uppercase, +0.14 em tracking, and currently unused.**
     ///
     /// It was the heading above a group. `Gruppentitel` has carried 20 Semibold in
     /// normal case since the rework, and with the search heading the last place that
     /// still set 11 in uppercase is gone. The step stays in the ladder because the type scale
     /// lists it; whoever uses it again should know it is **not** the group heading.
-    static let group      = Font.system(size: 11, weight: .semibold)
-    static let badge    = Font.system(size: 10, weight: .semibold)
+    static let group      = Font.app(size: 11, weight: .semibold)
+    static let badge    = Font.app(size: 10, weight: .semibold)
 
     // MARK: Tracking
     //
@@ -459,11 +487,12 @@ static var progressTravel: Animation? {
     //
     // Every value is the em value from the type scale times the point size.
     /// 28 · −0,021 em
-    static let lockTitle      = -0.6
+    static let lockTitle      = -0.7
     /// 22 · −0,014 em
-    static let lockSubpage = -0.308
+    static let lockSubpage = -0.4
     /// 20 · −0,012 em
     static let lockRail      = -0.24
+    static let lockSection = -0.308
     /// 17 · −0,008 em
     static let lockCategory     = -0.136
     /// 11 · +0,14 em
@@ -547,12 +576,12 @@ struct Growing: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        content.font(.system(size: size, weight: weight))
+        content.font(.app(size: size, weight: weight))
     }
 }
 
 extension View {
-    /// Like `.font(.system(size:weight:))`, except the size follows the system
+    /// Like `.font(.app(size:weight:))`, except the size follows the system
     /// setting.
     func growing(_ size: CGFloat, _ weight: Font.Weight = .regular) -> some View {
         modifier(Growing(size: size, weight: weight))
@@ -588,10 +617,10 @@ struct PrimaryButtonStyle: ButtonStyle {
         configuration.label
             // Primary button: 17 semibold. 16 is on no ladder; 17 is the sheet heading's
             // step, and a primary button is at least as loud.
-            .font(.system(size: 17, weight: .semibold))
+            .font(.app(size: 17, weight: .semibold))
             .foregroundStyle(released ? Theme.onAccent : Theme.fontVeryQuiet)
             .padding(.horizontal, stretches ? 0 : 28)
-            .frame(maxWidth: stretches ? .infinity : nil, minHeight: 48)
+            .frame(maxWidth: stretches ? .infinity : nil, minHeight: Theme.controlHeight)
             .background(area(pressed: configuration.isPressed),
                         in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
             // **The primary button shrinks too.** It used to signal the press only through
@@ -650,10 +679,10 @@ struct SecondaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .medium))
+            .font(.app(size: 15, weight: .semibold))
             .foregroundStyle(fontColor)
-            .padding(.horizontal, stretches ? 0 : 22)
-            .frame(maxWidth: stretches ? .infinity : nil, minHeight: 48)
+            .padding(.horizontal, stretches ? 0 : 24)
+            .frame(maxWidth: stretches ? .infinity : nil, minHeight: Theme.controlHeight)
             // **The press was invisible.** This used `Theme.erhoeht.opacity(1.6)`; opacity
             // above 1 clamps to 1.0, and `erhoeht` is opaque, so pressed looked pixel for
             // pixel like resting. Now a separate, lighter surface.
@@ -880,6 +909,9 @@ struct Picture<Placeholder: View>: View {
             }
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            // A fill image can be far wider than the frame; clipping only hides it, taps would
+            // still land on the overflow and open the neighbouring title.
+            .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
     }
 
     /// The surface everything is measured against.
@@ -990,13 +1022,13 @@ struct SelectionSheet<Record: Identifiable>: View {
                                 // every system menu uses here; 52 gives the row a good 17 pt of air above and
                                 // below.
                                 HStack(spacing: 14) {
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 17, weight: .semibold))
+                                    Image(icon: "checkmark", size: 17)
+                                        .font(.app(size: 17, weight: .semibold))
                                         .foregroundStyle(isSelected(entryRecord) ? Theme.font : .clear)
                                         .frame(width: 18)
                                         .accessibilityHidden(true)
                                     Text(label(entryRecord))
-                                        .font(.system(size: 17,
+                                        .font(.app(size: 17,
                                                       weight: isSelected(entryRecord) ? .semibold : .regular))
                                         .foregroundStyle(isSelected(entryRecord) ? Theme.font
                                                                               : Theme.fontQuiet)
@@ -1005,7 +1037,7 @@ struct SelectionSheet<Record: Identifiable>: View {
                                 .padding(.horizontal, Theme.edgeSpacing)
                                 // `minHeight`: with a larger font the row must be allowed to grow, otherwise it
                                 // clips.
-                                .frame(minHeight: 52)
+                                .frame(minHeight: Theme.rowHeight)
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(Theme.PressRow())
@@ -1022,9 +1054,10 @@ struct SelectionSheet<Record: Identifiable>: View {
                 // `.frame(maxHeight:)` alone is not enough: a `ScrollView` is vertically greedy
                 // and takes the 340 even when four rows need only 204. What remained was an empty
                 // space below the last row that does nothing.
-                .frame(height: min(contentHeight, 340))
+                .frame(height: min(contentHeight, Theme.sheetListMax))
                 .scrollIndicators(.hidden)
 
+                SheetLine()
                 SheetCancel { opened = false }
             }
     }
@@ -1070,7 +1103,7 @@ struct ToggleSwitch: View {
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
                 Circle()
-                    .fill(operable ? (an ? Theme.reason : Color.white)
+                    .fill(operable ? Color.white
                                     : Theme.fontVeryQuiet)
                     .frame(width: 22, height: 22)
                     .padding(.horizontal, 3)
@@ -1139,10 +1172,11 @@ struct CardView<ContentBody: View>: View {
 struct GroupsTitle: View {
     let text: LocalizedStringKey
     var body: some View {
+        // Same size and color as a section title on every other page: same role, same look.
         Text(text)
-            .font(Theme.rail)
-            .tracking(Theme.lockRail)
-            .foregroundStyle(Theme.fontQuiet)
+            .font(Theme.section)
+            .tracking(Theme.lockSection)
+            .foregroundStyle(Theme.font)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Theme.edgeSpacing)
             // 10 instead of 8: the size grew from 11 to 20, and a spacing that suited an
@@ -1176,7 +1210,7 @@ struct SettingGroup<ContentBody: View>: View {
             // along.
             GroupsTitle(text: title)
                 .padding(.horizontal, Theme.margin(wide: wide) - Theme.edgeSpacing)
-                .padding(.top, 26)
+                .padding(.top, Theme.groupTop)
                 .padding(.bottom, 2)
             CardView { content() }
         }
@@ -1241,8 +1275,8 @@ struct BackButton: View {
 
     var body: some View {
         Button(action: perform) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 20, weight: .semibold))
+            Image(icon: "chevron.left", size: 20)
+                .font(.app(size: 20, weight: .semibold))
                 .foregroundStyle(Theme.font)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
@@ -1292,6 +1326,7 @@ struct SubpageHeader<Right: View>: View {
                 .tracking(Theme.lockSubpage)
                 .foregroundStyle(Theme.font)
                 .lineLimit(1)
+                .minimumScaleFactor(0.75)
 
             Spacer(minLength: 0)
             right()
@@ -1304,7 +1339,7 @@ struct SubpageHeader<Right: View>: View {
         // instead of 30, and when switching between two pages the arrow visibly jumps.
         // It doesn't need that wrapper: it stands above the scroll area, not inside it,
         // so nothing runs underneath it.
-        .padding(.leading, 8)
+        .padding(.leading, Theme.backInset)
         .padding(.trailing, 12)
         .padding(.top, duoColumn ? Theme.duoTop : 0)
         .padding(.bottom, bottom)
@@ -1314,6 +1349,28 @@ struct SubpageHeader<Right: View>: View {
 extension SubpageHeader where Right == EmptyView {
     init(title: String, back: @escaping () -> Void) {
         self.init(title: title, back: back) { EmptyView() }
+    }
+}
+
+extension View {
+    /// **Content runs under the subpage title and fades there**, like on Profile, Home and
+    /// the libraries. With the header stacked above the scroll area the page ended in a
+    /// hard edge right below the title.
+    func fadingUnderSubpageHeader(title: String, back: @escaping () -> Void) -> some View {
+        mask {
+            VStack(spacing: 0) {
+                LinearGradient(stops: [.init(color: .black.opacity(0.35), location: 0),
+                                       .init(color: .black.opacity(0.35), location: 0.62),
+                                       .init(color: .black, location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 118)
+                Color.black
+            }
+            .ignoresSafeArea()
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            SubpageHeader(title: title, back: back)
+        }
     }
 }
 
@@ -1344,6 +1401,8 @@ struct ActionButton: View {
     /// Narrow, four fields share the row. Wide, the row stands next to the play
     /// button and must not squeeze it out.
     var stretches = true
+    /// The word under the icon; the title stays for speech output.
+    var caption: LocalizedStringKey? = nil
     let action: () -> Void
 
     var body: some View {
@@ -1353,20 +1412,32 @@ struct ActionButton: View {
             Theme.jerk(.lightweight)
             action()
         } label: {
-            Image(systemName: symbol)
+            VStack(spacing: 2) {
+            Image(icon: symbol, size: Theme.actionSymbol)
                 // Icon button in the header: 17. 19 is on no scale.
-                .font(Theme.categoryLarge)
+                .font(.app(size: Theme.actionSymbol))
                 .foregroundStyle(active ? Theme.accent : Theme.font)
                 .frame(maxWidth: stretches ? .infinity : nil)
                 // 48, not 44: 44 is the hit area, 48 the dimension. And square when it stands
-                // alone: a button without a label is square, the spec says.
-                .frame(width: stretches ? nil : 48, height: 48)
+                // alone: a button without a label is square, the spec says. With a caption
+                // the icon field is shorter so row and caption add up to about 52.
+                .frame(width: stretches ? nil : 48, height: caption != nil && stretches ? 36 : 48)
                 // **Surface without border.** With a border every field had an edge, and four
                 // fields side by side formed a grid. Feedback: "better without". The surface
                 // alone is enough: it says "you can press here" without drawing.
-                .background(Theme.buttonArea(onImage: onImage),
+                .background(stretches ? Color.clear : Theme.buttonArea(onImage: onImage),
                             in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                 .contentShape(Rectangle())
+            if let caption {
+                Text(caption)
+                    .font(Theme.small)
+                    .foregroundStyle(active ? Theme.accent : Theme.fontQuiet)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            }
+            .frame(maxWidth: stretches ? .infinity : nil)
+            .contentShape(Rectangle())
         }
         .buttonStyle(Theme.PressButton())
         .accessibilityLabel(Text(title))
@@ -1380,7 +1451,7 @@ struct PageTab: View {
     @Binding var selected: Int
 
     var body: some View {
-        HStack(spacing: 26) {
+        HStack(spacing: 28) {
             ForEach(Array(title.enumerated()), id: \.offset) { pair in
                 let active = pair.offset == selected
                 Button {
@@ -1401,7 +1472,9 @@ struct PageTab: View {
                                 .fill(active ? Theme.font : .clear)
                                 .frame(height: 2)
                         }
+                        .padding(.top, 15)
                         .contentShape(Rectangle())
+                        .padding(.top, -15)
                 }
                 .buttonStyle(Theme.PressButton())
                 // Which tab was open depended solely on the accent line and on the bold weight;
@@ -1441,10 +1514,10 @@ struct FileRow: View {
         }
         // **Tabular.** The values stand right-aligned in five rows one below the other
         // and are resolutions, frame rates and bitrates, exactly the kind of column
-        // The tabular rule is for. The size is `small` from the ladder, previously a literal.
-        .font(Theme.small.monospacedDigit())
-        // 8, at 12 pt font: 9 sat next to the ladder for no reason.
-            .padding(.vertical, 8)
+        // The tabular rule is for. The size is 13, one above `small`: five columns of figures need the air.
+        .font(.app(size: 13).monospacedDigit())
+        // At least 36 tall instead of padding, so rows stay even with a one-line value.
+            .frame(minHeight: 36)
     }
 }
 
@@ -1455,22 +1528,24 @@ struct CastTile: View {
     let role: String?
 
     var body: some View {
-        VStack(spacing: 7) {
-            Picture(url: image, width: 76, height: 76, corner: 38)
-            Text(name)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.font)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-            if let role, !role.isEmpty {
-                Text(role)
-                    .font(Theme.small)
-                    .foregroundStyle(Theme.fontQuiet)
+        VStack(spacing: 8) {
+            Picture(url: image, width: Theme.castSize, height: Theme.castSize, corner: Theme.castSize / 2)
+            VStack(spacing: 1) {
+                Text(name)
+                    .font(.app(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.font)
                     .multilineTextAlignment(.center)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                if let role, !role.isEmpty {
+                    Text(role)
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.fontQuiet)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(1)
+                }
             }
         }
-        .frame(width: 84)
+        .frame(width: Theme.castWidth)
         // One element: name and role; the image adds nothing.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: [name, role ?? ""].filter { !$0.isEmpty }
@@ -1515,25 +1590,25 @@ struct ExpandList<Record: Identifiable>: View {
             //
             // Now the quiet step in a surface: you can see it can be pressed, and it doesn't
             // shout. The same build on all devices; on the TV 26 / 60 and corner 14: the
-            // corner there is `cornerSmall`, which keeps the iPhone ratio 8 to 34 at 60 pt
-            // height instead of doubling with the font.
+            // corner there is `cornerSmall`. On the iPhone it is a capsule 30 high, like the
+            // other chips, and the hit area is widened back to 44.
             HStack(spacing: 7) {
                 Text(label)
                     .font(font)
                     .foregroundStyle(Theme.font)
                 if entries.count > 1 {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.fontVeryQuiet)
+                    Image(icon: "chevron.down", size: 11)
+                        .font(.app(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.font)
                         .rotationEffect(.degrees(opened ? 180 : 0))
                 }
             }
-            .padding(.horizontal, asField ? 11 : 0)
+            .padding(.horizontal, asField ? 12 : 0)
             // The hit area stays, even without a surface beneath it.
-            .frame(height: height)
-            .background(asField ? Theme.buttonArea(onImage: onImage) : .clear,
-                        in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
-            .contentShape(Rectangle())
+            .frame(height: asField ? 30 : height)
+            .background(asField ? Theme.buttonArea(onImage: onImage) : .clear, in: Capsule())
+            // A 30 high chip, but still a 44 high hit area.
+            .contentShape(Rectangle().inset(by: asField ? -7 : 0))
         }
         .accessibilityLabel(label)
         .accessibilityHint(entries.count > 1 ? "Öffnet die Auswahl" : "")
@@ -1558,8 +1633,8 @@ struct ExpandList<Record: Identifiable>: View {
                                 //
                                 // The column is 18 wide as in the selection sheet; 14 was the third checkmark
                                 // width in the app.
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 15, weight: .semibold))
+                                Image(icon: "checkmark", size: 15)
+                                    .font(.app(size: 15, weight: .semibold))
                                     .foregroundStyle(isSelected(entryRecord) ? Theme.font : .clear)
                                     .frame(width: 18)
                                     .accessibilityHidden(true)
@@ -1796,12 +1871,12 @@ struct TimeSlider: View {
     /// gaps and how thick each piece is are given only by the mask.
     private var track: some View {
         ZStack(alignment: .leading) {
-            // **White 18 %.** The player controls sit on pure black, so the track
+            // **White 30 %.** The player controls sit on pure black, so the track
             // carries a light tone and the bar above it the full white. The note about a
             // *dark* track that stood here belonged to the sheet handle and has been moved
             // back there; the track stays dark only where it lies over a poster, on the tile
             // bar.
-            Rectangle().fill(Color.white.opacity(0.18))
+            Rectangle().fill(Color.white.opacity(0.3))
             // At the thickness of the slider, not of the mask: otherwise the end of the bar
             // at rest would be a flat arc instead of a round one.
             Capsule().fill(.white)
@@ -2050,13 +2125,14 @@ private struct SectionButton: View {
 
     @ViewBuilder private var content: some View {
         let kern = VStack(spacing: 4) {
-            Image(systemName: section.symbol)
-                .font(.system(size: iconOnly ? 25 : 20, weight: active ? .semibold : .regular))
+            Image(icon: section.symbol, size: iconOnly ? 25 : 20)
+                .font(.app(size: iconOnly ? 25 : 20, weight: active ? .semibold : .regular))
+                .frame(height: iconOnly ? nil : Theme.tabIconHeight)
                 .overlay(alignment: .topTrailing) {
                     if runningCount > 0 {
                         Text(verbatim: runningCount.formatted())
                             // Badge: 10 semibold. 9 is on no scale.
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.app(size: 10, weight: .semibold))
                             .monospacedDigit()
                             .foregroundStyle(Theme.reason)
                             .padding(.horizontal, 4)
@@ -2070,7 +2146,7 @@ private struct SectionButton: View {
                 }
             if !iconOnly {
                 Text(section.name)
-                    .font(.system(size: 10, weight: active ? .semibold : .medium))
+                    .font(.app(size: 10, weight: active ? .semibold : .medium))
             }
         }
         // **The one exception: here the accent carries the selection.**
@@ -2128,7 +2204,7 @@ struct NavBar: View {
                 }
             }
         }
-        .padding(.top, 9)
+        .padding(.top, 8)
         .frame(height: Theme.stripHeight, alignment: .top)
         // The background must run to the bottom edge, not only to the safe area;
         // otherwise content keeps showing through below the bar, in the home-indicator
@@ -2206,11 +2282,10 @@ struct HeaderTargets<Front: View>: View {
 
             if watchlistShown {
                 NavigationLink(value: WatchlistRoute()) {
-                    // **Filled, not outlined.** A hollow bookmark at 20 pt is almost only contour. In
-                    // the button row on detail pages, filled means "saved"; here it is not a state
-                    // but a destination, and it stands alone there.
-                    Image(systemName: "bookmark.fill")
-                        .font(.system(size: 20))
+                    // **Filled, not outlined.** A hollow bookmark at this size is almost only
+                    // contour. Same size as the heart and the profile mark.
+                    Image(icon: "bookmark.fill", size: Theme.actionSymbol)
+                        .font(.app(size: Theme.actionSymbol))
                         .foregroundStyle(Theme.font)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
@@ -2903,14 +2978,14 @@ struct SearchField: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 17))
-                .foregroundStyle(Theme.fontVeryQuiet)
+            Image(icon: "magnifyingglass", size: 17)
+                .font(.app(size: 17))
+                .foregroundStyle(Theme.font)
 
             TextField("", text: $text, prompt: Text(placeholder)
                 .foregroundColor(Theme.fontVeryQuiet))
                 // Search field: body text, so 15.
-                .font(.system(size: 15))
+                .font(.app(size: 15))
                 .foregroundStyle(Theme.font)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -2927,8 +3002,8 @@ struct SearchField: View {
                     // screen to the TV app, and that is not fashion: in a field currently holding
                     // text, a clear icon must be recognizable as a button and not as another
                     // character in the text.
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 17))
+                    Image(icon: "xmark.circle.fill", size: 17)
+                        .font(.app(size: 17))
                         // Two tones: cross in `area`, disc in `schriftSehrLeise`, so the cross reads
                         // as a cut-out and not as a stroke on top.
                         .symbolRenderingMode(.palette)
@@ -2953,7 +3028,7 @@ struct SearchField: View {
         // and next to a 48 Cancel button it sat four points too flat.
         // `minHeight`, so the field may grow with a larger system font instead of
         // clipping the row.
-        .frame(minHeight: 48)
+        .frame(minHeight: Theme.controlHeight)
         // A search field is a filled capsule, not a drawn border: that is how it is on
         // the home screen, in the TV app and everywhere else. The border was the last
         // drawn edge in the app.
@@ -2968,45 +3043,55 @@ struct CollapsibleText: View {
     @Environment(\.onImageTint) private var onImage
     let text: String
     @State private var opened = false
+    /// Height of the whole text and of the three-line cut, measured; "Mehr" only where they differ.
+    @State private var full: CGFloat = 0
+    @State private var cut: CGFloat = 0
+
+    private var truncated: Bool { full > cut + 1 }
 
     var body: some View {
-        Button {
-            withAnimation(Theme.leap) { opened.toggle() }
-        } label: {
-            HStack(alignment: .top, spacing: 6) {
-                Text(text)
-                    .growing(15)
-                    .lineSpacing(3)
-                    .foregroundStyle(Theme.font)
-                    .lineLimit(opened ? nil : 1)
-                    .multilineTextAlignment(.leading)
-                    // Without this, the one-line text reports the width of the *whole* sentence as
-                    // its ideal size. The stack around it adapted to that, and on expanding the whole
-                    // page jumped by a point or two in width.
-                    .fixedSize(horizontal: false, vertical: true)
-                    // **`minWidth: 0`: never wider than the space.** Without a lower bound a frame
-                    // takes the width of its content if that is wider; a long paragraph that couldn't
-                    // be wrapped pulled the whole page along when expanding.
-                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.fontVeryQuiet)
-                    .rotationEffect(.degrees(opened ? 180 : 0))
-                    .padding(.top, 4)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(text)
+                .growing(15)
+                .lineSpacing(3)
+                .foregroundStyle(Theme.font)
+                .lineLimit(opened ? nil : 3)
+                .multilineTextAlignment(.leading)
+                // Without this, a truncated text reports the width of the *whole* sentence as its
+                // ideal size and the page jumps in width on expanding.
+                .fixedSize(horizontal: false, vertical: true)
+                // **`minWidth: 0`: never wider than the space.**
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { if !opened { cut = $0 } }
+                .background {
+                    // An unlimited copy, only to know how tall the full text would be.
+                    Text(text)
+                        .growing(15)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                        .hidden()
+                        .accessibilityHidden(true)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { full = $0 }
+                }
+            if truncated || opened {
+                Button {
+                    withAnimation(Theme.leap) { opened.toggle() }
+                } label: {
+                    Text(opened ? "Weniger" : "Mehr")
+                        .font(Theme.tile)
+                        .foregroundStyle(Theme.accent)
+                        .frame(minHeight: 28, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                // No surface over artwork color (experiment `experiment-glas`): the press shows
+                // only in the text's opacity.
+                .buttonStyle(Theme.PressText(active: onImage))
+                .accessibilityHint(opened ? "Zuklappen" : "Aufklappen")
             }
-            .contentShape(Rectangle())
         }
-        // A row, not a button: `PressRow` colors the surface instead of shrinking the
-        // paragraph. Before it was `.plain`, i.e. nothing at all.
-        // **No surface over artwork color** (experiment `experiment-glas`): there a light
-        // box appeared behind the text on press. The press then shows only in the text's
-        // opacity.
-        .buttonStyle(Theme.PressText(active: onImage))
-        // VoiceOver reads the whole text anyway; the truncation is purely visual. So
-        // only a hint of what the tap does is given here.
-        .accessibilityLabel(text)
-        .accessibilityHint(opened ? "Zuklappen" : "Aufklappen")
+        // VoiceOver reads the whole text anyway; the truncation is purely visual.
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -3030,7 +3115,7 @@ struct HeroRunOut: View {
     /// Height of the header image, so the crop is right.
     var since: CGFloat = Theme.heroHeightValue
 
-    private static let height: CGFloat = 190
+    private static let height: CGFloat = 240
     private static let coverage: [(Double, Double)] = [
         (0, 0), (0.28, 0.32), (0.58, 0.56), (0.85, 0.78), (1, 1),
     ]
@@ -3113,7 +3198,7 @@ struct ProofRow: View {
             // mark with 3 sits right next to things with 10; it was the most angular element
             // on the page. Here and not at the building block: `Badge` is also used in the
             // Mac and TV targets, and those have their own scale.
-            if let sharing { Badge(text: sharing, rounding: 8) }
+            if let sharing { Badge(text: sharing.allSatisfy(\.isNumber) ? String(localized: "ab \(sharing)") : sharing, rounding: 8) }
 
             Spacer(minLength: 0)
         }
@@ -3136,8 +3221,8 @@ struct ProofRow: View {
     private func mark(_ symbol: String, _ word: Text,
                        color: Color, weight: Font.Weight) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 11, weight: weight))
-            word.font(.system(size: 13, weight: .medium))
+            Image(icon: symbol, size: 11).font(.app(size: 11, weight: weight))
+            word.font(.app(size: 13, weight: .medium))
         }
         .foregroundStyle(color)
         // Narrower on the left than on the right: the icon is narrower than its glyph
@@ -3208,7 +3293,7 @@ struct DetailHeader: View {
         }
         // 8 as in the subpage header: with 6 the arrow sat 28 from the edge on detail
         // pages and 30 on subpages, a jump of two points when navigating.
-        .padding(.leading, 8)
+        .padding(.leading, Theme.backInset)
         .padding(.trailing, Theme.edgeSpacing)
         .padding(.top, (windowButtons ? WindowButtons.height : 0) + (duoColumn ? Theme.duoTop : 0))
         .padding(.bottom, 6)
@@ -3322,8 +3407,8 @@ struct SwipeRow<ContentBody: View>: View {
                 Button { fire() } label: {
                     VStack(spacing: 4) {
                         // Icon of a page arrow: 17, the next step on the ladder. Before 18.
-                        Image(systemName: symbol).font(.system(size: 17, weight: .semibold))
-                        Text(label).font(.system(size: 11, weight: .medium))
+                        Image(icon: symbol, size: 17).font(.app(size: 17, weight: .semibold))
+                        Text(label).font(.app(size: 11, weight: .medium))
                     }
                     .foregroundStyle(Theme.reason)
                     .frame(width: width)
@@ -3370,7 +3455,7 @@ struct PagesArrow: View {
                 BackButton(perform: back)
                 Spacer(minLength: 0)
             }
-            .padding(.leading, 8)
+            .padding(.leading, Theme.backInset)
             .padding(.top, 6 + (windowButtons ? WindowButtons.height : 0))
             // The gradient hangs here because all subpages get it through the arrow;
             // otherwise content there would scroll hard under the status bar while fading
@@ -3385,6 +3470,10 @@ struct PagesArrow: View {
 ///
 /// The line starts only after the icon, so the group reads as belonging together
 /// instead of falling apart into equally wide strips.
+/// What a profile row shows at its right end: a chevron leads on, an arrow leaves the app,
+/// nothing runs in place.
+enum ProfileTrailing { case chevron, none, external }
+
 struct ProfileRow<Destination: Hashable>: View {
     @Environment(\.wide) private var wide
     let symbol: String
@@ -3399,6 +3488,7 @@ struct ProfileRow<Destination: Hashable>: View {
     /// without claiming a ranking among siblings.
     var characterAccent = false
     var last = false
+    var trailing: ProfileTrailing = .chevron
     /// If the row leads on, it carries a destination; otherwise an action on the spot.
     var target: Destination?
     var action: () -> Void = {}
@@ -3411,20 +3501,20 @@ struct ProfileRow<Destination: Hashable>: View {
                 Button(action: action) { shell }
             }
         }
-        .buttonStyle(Theme.PressButton())
+        .buttonStyle(Theme.PressRow())
     }
 
     private var shell: some View {
         VStack(spacing: 0) {
                 HStack(spacing: 14) {
-                    Image(systemName: symbol)
-                        .font(.system(size: 17))
-                        .foregroundStyle(characterAccent ? Theme.accent
-                                                       : (accent ? Theme.accent : Theme.font))
-                        .frame(width: 20)
+                    Image(icon: symbol, size: Theme.rowSymbolSize)
+                        .font(.app(size: Theme.rowSymbolSize))
+                        .foregroundStyle(characterAccent || accent ? Theme.accent
+                                                       : Theme.font)
+                        .frame(width: Theme.rowIconWidth)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(title).font(Theme.listTitle)
+                        Text(title).font(.app(size: Theme.rowTitleSize, weight: .medium))
                         if let under {
                             Text(under)
                                 .font(Theme.small)
@@ -3432,16 +3522,19 @@ struct ProfileRow<Destination: Hashable>: View {
                         }
                     }
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.fontVeryQuiet)
-                        .accessibilityHidden(true)
+                    if trailing != .none {
+                        Image(icon: trailing == .external ? "arrow.up.right" : "chevron.right", size: 13)
+                            .font(.app(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.font)
+                            .accessibilityHidden(true)
+                    }
                 }
                 .foregroundStyle(accent ? Theme.accent : Theme.font)
                 .padding(.horizontal, Theme.margin(wide: wide))
                 // 14, not 15: the same number as in every other list row, and 15 sits next to the
                 // grid.
-                .padding(.vertical, 14)
+                .padding(.vertical, Theme.rowPadV)
+                .frame(minHeight: Theme.rowHeight)
 
             if !last {
                 SheetLine()
@@ -3453,10 +3546,10 @@ struct ProfileRow<Destination: Hashable>: View {
 
 extension ProfileRow where Destination == Never {
     init(symbol: String, title: LocalizedStringKey, under: LocalizedStringKey? = nil,
-         accent: Bool = false, last: Bool = false,
+         accent: Bool = false, last: Bool = false, trailing: ProfileTrailing = .chevron,
          action: @escaping () -> Void) {
         self.init(symbol: symbol, title: title, under: under, accent: accent,
-                  last: last, target: nil, action: action)
+                  last: last, trailing: trailing, target: nil, action: action)
     }
 }
 
@@ -3506,15 +3599,15 @@ struct ValuePill: View {
     var body: some View {
         Button(action: perform) {
             HStack(spacing: 6) {
-                Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.fontQuiet)
+                Image(icon: symbol, size: 11)
+                    .font(.app(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.font)
                     .accessibilityHidden(true)
                 Text(verbatim: text)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.app(size: 13, weight: .medium))
                     .foregroundStyle(Theme.font)
             }
-            .padding(.horizontal, 11)
+            .padding(.horizontal, 12)
             // `minHeight`: the pill carries text, and a fixed height clips it as soon as the
             // system font grows.
             .frame(minHeight: 30)
@@ -3524,6 +3617,9 @@ struct ValuePill: View {
             // alone says "you can press here"; the border says the same a second time and
             // draws an edge no other button has.
             .background(Theme.area, in: Capsule())
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
+                .padding(.vertical, -7)
         }
         .buttonStyle(Theme.PressButton())
     }
@@ -3539,7 +3635,7 @@ struct CountMark: View {
 
     var body: some View {
         Text(verbatim: count.formatted())
-            .font(.system(size: 13, weight: .medium))
+            .font(.app(size: 13, weight: .medium))
             .monospacedDigit()
             .foregroundStyle(Theme.fontVeryQuiet)
             .accessibilityLabel(Text("\(count) Titel"))
@@ -3568,7 +3664,7 @@ struct SelectionChip: View {
             // was changed for the same reason.
             HStack(spacing: 6) {
                 if let symbol {
-                    Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+                    Image(icon: symbol, size: 11).font(.app(size: 11, weight: .semibold))
                         .accessibilityHidden(true)
                 }
                 Text(text)
@@ -3578,10 +3674,10 @@ struct SelectionChip: View {
                     // chips stand **side by side horizontally**: when switching, every neighbor to
                     // its right shifted. With the accent that didn't happen, since color changes no
                     // width. 13 Medium is the step in between, and it applies in both states.
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.app(size: 13, weight: .medium))
             }
                 .foregroundStyle(an ? Theme.font : Theme.fontQuiet)
-                .padding(.horizontal, 13)
+                .padding(.horizontal, 12)
                 // `minHeight`: a fixed height plus text is the trap that already struck at
                 // `Schalter`.
                 .frame(minHeight: 30)
@@ -3604,6 +3700,9 @@ struct SelectionChip: View {
                 // Now one step up the ladder and full text: two signs that both go in the right
                 // direction, and none changes a dimension.
                 .background(an ? Theme.raised : Theme.area, in: Capsule())
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
+                .padding(.vertical, -7)
         }
         .buttonStyle(Theme.PressButton())
         .accessibilityLabel(text)
@@ -3875,16 +3974,15 @@ struct SheetCategory: View {
     var body: some View {
         VStack(spacing: 0) {
             text
-                .font(Theme.categoryLarge)
-                // -0.008 em on 17 pt is -0.136; -0.2 was estimated.
-                .tracking(Theme.lockCategory)
+                .font(Theme.section)
+                .tracking(Theme.lockSection)
                 .foregroundStyle(Theme.font)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Theme.edgeSpacing)
                 // 8 for the handle, 5 for its height, 5 here: together the same 18 as before,
                 // when nothing stood above the title.
-                .padding(.top, 5)
+                .padding(.top, 4)
                 .padding(.bottom, 14)
             // **No line below the heading.** It used to be here and separated the title from
             // what it announces: two means for the same statement, and the spacing already
@@ -3908,7 +4006,7 @@ struct TileBadge: View {
         HStack(spacing: 3) {
             if mark == .watched {
                 // Checkmark of the tile badge: 10, like its text. Before 9.
-                Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold))
+                Image(icon: "checkmark", size: 10).font(.app(size: 10, weight: .semibold))
             }
             if let text = wording {
                 // **Without tracking.**
@@ -3931,7 +4029,7 @@ struct TileBadge: View {
         .background {
             // 9, not 6: the tile beneath has 10, and a mark more angular than its ground
             // stands out.
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
                 .fill(Theme.reason.opacity(0.78))
 
         }
@@ -3980,9 +4078,9 @@ struct SheetCancel: View {
         Button(action: perform) {
             Text("Abbrechen")
                 // Cancel is a secondary button: 15 semibold. Before 16.
-                .font(.system(size: 15, weight: .medium))
+                .font(.app(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.fontQuiet)
-                .frame(maxWidth: .infinity, minHeight: 54)
+                .frame(maxWidth: .infinity, minHeight: Theme.rowHeight)
         }
         .buttonStyle(Theme.PressRow())
     }
@@ -4004,12 +4102,22 @@ struct ActionSheet: View {
     /// the other platforms couldn't build the same lists although the actions are the
     /// same everywhere.
     let actions: [TitleAction]
+    /// One quiet line under the title, for a question that needs a word of reassurance.
+    var note: LocalizedStringKey? = nil
 
     var body: some View {
         Color.clear
             .allowsHitTesting(false)
             .sheet(opened: $opened) {
                 SheetCategory(text: Text(verbatim: title))
+                if let note {
+                    Text(note)
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.fontQuiet)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Theme.edgeSpacing)
+                        .padding(.bottom, 14)
+                }
 
                 // **By position, not by `TitleAction.id`.** That id is a fresh UUID every time the
                 // list is built, and the page builds it on every redraw (the play-on poll redraws it
@@ -4023,20 +4131,20 @@ struct ActionSheet: View {
                         pair.element.perform()
                     } label: {
                         HStack(spacing: 14) {
-                            Image(systemName: pair.element.symbol)
-                                .font(.system(size: 17))
+                            Image(icon: pair.element.symbol, size: 17)
+                                .font(.app(size: 17))
                                 .frame(width: 20)
                                 .accessibilityHidden(true)
                             Text(pair.element.text)
                                 // 17 like the selection row next to it; the reasoning is there.
-                                .font(.system(size: 17))
+                                .font(.app(size: 17))
                             Spacer(minLength: 0)
                         }
                         .foregroundStyle(pair.element.cautionary ? Theme.warning : Theme.font)
                         .padding(.horizontal, Theme.edgeSpacing)
                         // `minHeight`, not `height`: with a larger font a fixed height would clip the
                         // text. 52 like every other row in a sheet.
-                        .frame(minHeight: 52)
+                        .frame(minHeight: Theme.rowHeight)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(Theme.PressRow())
@@ -4062,7 +4170,7 @@ struct HintStrip: View {
             Text(text)
                 // Empty-state text in a panel: 13, not 14; 14 is on
                                 // no ladder. It used to be 14.
-                .font(.system(size: 13))
+                .font(.app(size: 13, weight: .medium))
                 .foregroundStyle(Theme.font)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 18)
@@ -4122,15 +4230,15 @@ struct EmptyState: View {
             ZStack {
                 Circle()
                     .fill(Theme.area)
-                    .frame(width: 78, height: 78)
+                    .frame(width: Theme.emptyDisc, height: Theme.emptyDisc)
                 // No ring, not here either: the icon itself breathes while it runs. A ring would
                 // have said "wait"; the icon keeps saying what it is about.
                 // `.light` no longer exists: three weights, and Regular is the lightest.
                 // 44, not 30: "icon **or** emoji (44)", one size for both, otherwise they are two
                 // empty states.
-                Image(systemName: symbol)
-                    .font(.system(size: 44))
-                    .foregroundStyle(Theme.fontQuiet)
+                Image(icon: symbol, size: Theme.emptySymbol)
+                    .font(.app(size: Theme.emptySymbol))
+                    .foregroundStyle(Theme.font)
                     // Limited to the opacity, the same trap as in `Ladefeld`: an endless loop via
                     // `value:` captures everything that changes on the view in the same pass.
                     // The breathing is dropped under Reduce Motion.
@@ -4140,20 +4248,21 @@ struct EmptyState: View {
                         $0.opacity(loads ? 0.45 : 1)
                     }
             }
-            .padding(.bottom, 22)
+            .padding(.bottom, 24)
 
             Text(headerLine)
-                .padding(.bottom, 7)
-                .growing(20, .semibold)
-                .tracking(Theme.lockRail)
+                .padding(.bottom, 8)
+                .growing(28, .bold)
+                .tracking(Theme.lockSubpage)
                 .foregroundStyle(Theme.font)
+                .multilineTextAlignment(.center)
 
             Text(text)
                 .growing(15)
                 .foregroundStyle(Theme.fontQuiet)
                 .lineSpacing(3)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 262)
+                .frame(maxWidth: Theme.emptyTextWidth)
                 .padding(.bottom, 24)
 
             // The primary button is otherwise as wide as the page. Here it stands centered
@@ -4172,7 +4281,7 @@ struct EmptyState: View {
             if let quietButton {
                 Button(quietButton.title, action: quietButton.perform)
                     .buttonStyle(Theme.PressButton())
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.app(size: 15, weight: .semibold))
                     // The quiet button carries the accent: it is the second action, and the accent
                     // marks it as one.
                     .foregroundStyle(Theme.accent)
@@ -4212,7 +4321,7 @@ extension EmptyState {
                                  retry: (() -> Void)?,
                                  switchTo: (() -> Void)? = nil) -> EmptyState {
         EmptyState(
-            symbol: "externaldrive.badge.xmark",
+            symbol: "wifi.exclamationmark",
             // A harmless error: nothing is lost, so the title may still say what's going on;
             // the joke is in the second sentence. That is the tone for harmless errors.
             headerLine: "Server ist abgetaucht",
@@ -4252,32 +4361,29 @@ struct DisturbHint: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Image(systemName: "externaldrive.badge.xmark")
-                .font(.system(size: 30))
-                .foregroundStyle(Theme.fontQuiet)
+            Image(icon: "wifi.exclamationmark", size: Theme.emptySymbol)
+                .font(.app(size: Theme.emptySymbol))
+                .foregroundStyle(Theme.font)
                 .padding(.bottom, 14)
 
             Text("Server ist abgetaucht")
-                .growing(17, .semibold)
+                .growing(28, .bold)
+                .tracking(Theme.lockSubpage)
+                .multilineTextAlignment(.center)
                 .foregroundStyle(Theme.font)
                 .padding(.bottom, 6)
 
             Text("\(address ?? model?.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?")
-                .growing(14)
-                .foregroundStyle(Theme.fontVeryQuiet)
-                .lineSpacing(2)
+                .growing(15)
+                .foregroundStyle(Theme.fontQuiet)
+                .lineSpacing(3)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 262)
+                .frame(maxWidth: Theme.emptyTextWidth)
 
             if let retry {
                 Button("Erneut versuchen", action: retry)
-                    .buttonStyle(Theme.PressButton())
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Theme.accent)
-                    // 44 high, width follows the text.
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                    .padding(.top, 10)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .padding(.top, 22)
             }
         }
         .frame(maxWidth: .infinity)
@@ -4314,9 +4420,9 @@ struct InputField: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 17))
-                .foregroundStyle(Theme.fontVeryQuiet)
+            Image(icon: symbol, size: 17)
+                .font(.app(size: 17))
+                .foregroundStyle(Theme.font)
                 .frame(width: 20)
                 .accessibilityHidden(true)
 
@@ -4328,7 +4434,7 @@ struct InputField: View {
                 }
             }
             // Input field: body text, so 15.
-            .font(.system(size: 15))
+            .font(.app(size: 15))
             .foregroundStyle(operable ? Theme.font : Theme.fontVeryQuiet)
             .focused($atTap)
             .onSubmit(completion)
@@ -4341,9 +4447,9 @@ struct InputField: View {
 
             if secret, !text.isEmpty {
                 Button { shows.toggle() } label: {
-                    Image(systemName: shows ? "eye.slash" : "eye")
-                        .font(.system(size: 15))
-                        .foregroundStyle(Theme.fontVeryQuiet)
+                    Image(icon: shows ? "eye.slash" : "eye", size: 15)
+                        .font(.app(size: 15))
+                        .foregroundStyle(Theme.font)
                         // The icon stays 15, the target becomes 44.
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
@@ -4358,7 +4464,7 @@ struct InputField: View {
         .padding(.horizontal, 14)
         // `minHeight`: with a larger system font the field must be allowed to grow,
         // otherwise it clips the row.
-        .frame(minHeight: 48)
+        .frame(minHeight: Theme.controlHeight)
         .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous)
@@ -4366,7 +4472,7 @@ struct InputField: View {
                 // and the focus would have depended on color alone. Now the stroke width says
                 // where you are typing: 2 instead of 1, the same color. Disabled has no focus, so
                 // not the stronger edge either.
-                .strokeBorder(Theme.margin, lineWidth: atTap && operable ? 2 : 1)
+                .strokeBorder(Theme.margin, lineWidth: atTap && operable ? 2 : 0)
         }
         .animation(Theme.toggle, value: atTap)
         #if os(iOS)
@@ -4486,12 +4592,12 @@ struct LoadField: View {
 /// A poster with two text lines below it, all as placeholders.
 struct TilePlaceholder: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 8) {
             LoadField()
                 .aspectRatio(2.0 / 3.0, contentMode: .fit)
-            VStack(alignment: .leading, spacing: 5) {
-                LoadField(corner: 3).frame(height: 11)
-                LoadField(corner: 3).frame(width: 42, height: 9)
+            VStack(alignment: .leading, spacing: 1) {
+                LoadField(corner: 3).frame(height: 16)
+                LoadField(corner: 3).frame(width: 42, height: 14)
             }
         }
     }
@@ -4507,7 +4613,7 @@ struct GridPlaceholder: View {
     var body: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.tileSpacing),
                                  count: columns),
-                  alignment: .leading, spacing: 20) {
+                  alignment: .leading, spacing: Theme.gridRowGap) {
             ForEach(0 ..< (columns * rails), id: \.self) { _ in
                 TilePlaceholder()
             }

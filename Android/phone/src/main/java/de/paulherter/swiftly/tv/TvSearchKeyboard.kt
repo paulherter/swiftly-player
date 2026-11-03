@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.core.Kern
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Strength
@@ -103,12 +104,11 @@ internal class SearchFocus(private val st: de.paulherter.swiftly.SearchState) {
 internal fun TvSearchKeyboard(term: String, change: (String) -> Unit, focus: SearchFocus,
                               speaking: Boolean, speak: (() -> Unit)?, modifier: Modifier = Modifier) {
     val rows = remember(speak != null) { searchKeyRows(speech = speak != null) }
-    val columns = rows.first().sumOf { it.span }
     Column(modifier
-            .width(SearchLayout.keyboardWidth(columns))
+            .width(SearchLayout.keyboardWidth)
             .clip(RoundedCornerShape(TvTheme.cornerArea))
-            .background(Theme.area)
-            .padding(TvSpec.listCardInset)
+            .background(Theme.groupsArea)
+            .padding(SearchLayout.keyboardInset)
             // A hardware keyboard on the TV (or a Bluetooth one) types into the field as well. Read after
             // the focused key had its turn, so Enter and the D-pad still press the key.
             .onPreviewKeyEvent { e ->
@@ -125,9 +125,11 @@ internal fun TvSearchKeyboard(term: String, change: (String) -> Unit, focus: Sea
         verticalArrangement = Arrangement.spacedBy(TvSpec.searchFieldGap)) {
         Field(term)
         Column(verticalArrangement = Arrangement.spacedBy(TvSpec.searchKeyGap)) {
-            rows.forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(TvSpec.searchKeyGap)) {
-                    row.forEach { key -> KeyButton(key, term, change, focus, speaking, speak) }
+            // Letter rows: six keys spread over the card's width ("space-between"); the last row (delete and
+            // microphone, 72 pt high) sits at both edges.
+            rows.forEachIndexed { i, row ->
+                Row(Modifier.width(SearchLayout.keysWidth), horizontalArrangement = Arrangement.SpaceBetween) {
+                    row.forEach { key -> KeyButton(key, term, change, focus, speaking, speak, tall = i == rows.lastIndex) }
                 }
             }
         }
@@ -137,8 +139,16 @@ internal fun TvSearchKeyboard(term: String, change: (String) -> Unit, focus: Sea
 /** The measures of the search page, computed from the spec and never typed. */
 internal object SearchLayout {
     /** `columns` keys, the gaps between them, the card's inset on both sides: 222 dp for 6. */
-    fun keyboardWidth(columns: Int): Dp =
-        TvSpec.searchKey * columns + TvSpec.searchKeyGap * (columns - 1) + TvSpec.listCardInset * 2
+    /** The design's card: 460 pt wide with 16 pt inside on every side. */
+    val keyboardWidth = 230.dp  // tv-spec: unrelated
+    val keyboardInset = 8.dp
+    /** What is left for the keys: 214 dp. Six 32 dp keys sit "space-between" in it. */
+    val keysWidth = keyboardWidth - keyboardInset * 2
+    /** The field and the bottom row are 72 pt high. */
+    val fieldHeight = 36.dp  // tv-spec: unrelated
+    /** Left edge of the right column ("Zuletzt gesucht") and its width: 620 / 760 pt. */
+    val historyLeft = 310.dp
+    val historyWidth = 380.dp  // tv-spec: unrelated
 
     /** 5 posters, 4 gaps: 620 dp. */
     val resultsWidth: Dp = TvTheme.posterWidth * TvSpec.searchColumns + TvTheme.gridColumn * (TvSpec.searchColumns - 1)
@@ -149,13 +159,13 @@ internal object SearchLayout {
 @Composable
 private fun Field(term: String) {
     val label = translated("Titel, Serie, Person")
-    Row(Modifier.fillMaxWidth().height(TvTheme.buttonHeight)
+    Row(Modifier.fillMaxWidth().height(SearchLayout.fieldHeight)
             .clip(RoundedCornerShape(TvTheme.cornerSmall))
-            .background(Theme.raised)
-            .padding(horizontal = 11.dp)
+            .background(Theme.area)
+            .padding(horizontal = 8.dp)
             .semantics(mergeDescendants = true) { contentDescription = if (term.isEmpty()) label else "$label, $term" },
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        Symbol(Glyph.Magnifier, TvSpec.valueIcon, color = Theme.fontVeryQuiet, strength = Strength.Medium)
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Symbol(Glyph.Magnifier, 14.dp, color = Theme.fontQuiet, strength = Strength.Medium)  // tv-spec: unrelated
         // The typed text and the caret as one piece that is pushed to the left when it gets too wide:
         // the head is cut, never the caret.
         Box(Modifier.weight(1f).clipToBounds()) {
@@ -168,12 +178,12 @@ private fun Field(term: String) {
             }, verticalAlignment = Alignment.CenterVertically) {
                 if (term.isEmpty()) {
                     Caret()
-                    Text(label, style = TvTheme.body, color = Theme.fontVeryQuiet, maxLines = 1, softWrap = false,
-                         modifier = Modifier.padding(start = 3.dp))
+                    Text(label, style = TvTheme.body.copy(fontSize = 14.sp), color = Theme.fontVeryQuiet, maxLines = 1, softWrap = false,
+                         modifier = Modifier.padding(start = 2.dp))
                 } else {
                     // A trailing space is not always measured; a no-break space is, so the caret moves when the
                     // space key is pressed.
-                    Text(term.replace(' ', ' '), style = TvTheme.body, color = Theme.font, maxLines = 1, softWrap = false)
+                    Text(term.replace(' ', ' '), style = TvTheme.body.copy(fontSize = 14.sp), color = Theme.font, maxLines = 1, softWrap = false)
                     Caret()
                 }
             }
@@ -183,15 +193,15 @@ private fun Field(term: String) {
 
 @Composable
 private fun Caret() {
-    Spacer(Modifier.size(TvSpec.searchCaretWidth, TvSpec.searchCaretHeight).background(Theme.accent))
+    Spacer(Modifier.size(1.5.dp, 17.dp).background(Theme.accent))  // tv-spec: unrelated
 }
 
 @Composable
 private fun KeyButton(key: SearchKey, term: String, change: (String) -> Unit, focus: SearchFocus,
-                      speaking: Boolean, speak: (() -> Unit)?) {
+                      speaking: Boolean, speak: (() -> Unit)?, tall: Boolean = false) {
     val muted = when (key.kind) {
         "space" -> !Kern.searchKeySpaceFits(term)
-        "delete" -> term.isEmpty()
+        "delete" -> false
         else -> false
     }
     val description = when (key.kind) {
@@ -200,10 +210,10 @@ private fun KeyButton(key: SearchKey, term: String, change: (String) -> Unit, fo
         "speak" -> translated("Sprechen")
         else -> key.character
     }
-    FocusArea(Modifier.size(SearchLayout.keyWidth(key.span), TvSpec.searchKey)
+    FocusArea(Modifier.size(SearchLayout.keyWidth(key.span), if (tall) SearchLayout.fieldHeight else TvSpec.searchKey)
                     .focusRequester(focus.key(key.id))
                     .semantics(mergeDescendants = true) { contentDescription = description },
-        magnifier = TvTheme.focusMagnifierSmall,
+        magnifier = TvTheme.focusMagnifierSmall, lift = true, liftCorner = TvTheme.cornerSmall,
         focusChanged = { if (it) focus.lastKey = key.id },
         // Hold OK on "delete" for half a second: everything goes. No fourth key "clear all".
         lengthy = if (key.kind == "delete") ({ if (term.isNotEmpty()) change("") }) else null,
@@ -222,10 +232,10 @@ private fun KeyButton(key: SearchKey, term: String, change: (String) -> Unit, fo
         Box(Modifier.fillMaxSize().clip(RoundedCornerShape(TvTheme.cornerSmall)).background(surface),
             contentAlignment = Alignment.Center) {
             when (key.kind) {
-                "letter" -> Text(key.character, style = TvTheme.button, color = character, maxLines = 1)
-                "space" -> Symbol(Glyph.SpaceBar, TvSpec.valueIcon, color = character, strength = Strength.Medium)
-                "delete" -> Symbol(Glyph.Backspace, TvSpec.valueIcon, color = character, strength = Strength.Medium)
-                else -> Symbol(if (speaking) Glyph.MicFilled else Glyph.Mic, TvSpec.valueIcon, color = character, strength = Strength.Medium)
+                "letter" -> Text(key.character, style = TvTheme.button.copy(fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = character, maxLines = 1)
+                "space" -> Symbol(Glyph.SpaceBar, 15.dp, color = character, strength = Strength.Medium)
+                "delete" -> Symbol(Glyph.Backspace, 18.dp, color = character, strength = Strength.Medium)  // tv-spec: unrelated
+                else -> Symbol(if (speaking) Glyph.MicFilled else Glyph.Mic, 18.dp, color = character, strength = Strength.Medium)  // tv-spec: unrelated
             }
         }
     }

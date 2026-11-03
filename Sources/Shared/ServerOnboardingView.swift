@@ -42,6 +42,7 @@ struct ServerOnboardingView: View {
     @State private var quickConnect = false
     /// "Advanced": custom headers for a service in front of the server.
     @State private var headers: [HeaderRow] = []
+    @State private var found: [FoundServer] = []
 
     /// What sits next to the back button - it changes with the state.
     private var pagesTitle: String {
@@ -72,7 +73,7 @@ struct ServerOnboardingView: View {
                             .padding(.top, 12)
                     }
                 }
-                .padding(.horizontal, 28)
+                .padding(.horizontal, Theme.edgeSpacing)
                 .padding(.bottom, 40)
                 .frame(maxWidth: Theme.formWidth)
                 .frame(maxWidth: .infinity)
@@ -131,10 +132,11 @@ struct ServerOnboardingView: View {
                     .growing(15)
                     .foregroundStyle(Theme.fontQuiet)
             } else {
-                Text("Die Adresse eines weiteren Jellyfin-Servers. Du bleibst bei beiden angemeldet und wechselst auf der Profilseite zwischen ihnen.")
+                ServerKindMark(kind: .jellyfin, size: 44)
+                Text("Wo steht dein Jellyfin-Server?")
                     .growing(15)
-                    .lineSpacing(3)
                     .foregroundStyle(Theme.fontQuiet)
+                    .padding(.top, 14)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -143,16 +145,34 @@ struct ServerOnboardingView: View {
 
     private var addressPart: some View {
         VStack(spacing: 10) {
-            InputField(text: $address, symbol: "externaldrive.connected.to.line.below",
-                        placeholder: "tv.example.de", completion: check)
+            InputField(text: $address, symbol: "globe",
+                        placeholder: "jellyfin.beispiel.de", keyboard: .address, completion: check)
+            if preset == nil && server == nil {
+                Text("https:// kannst du weglassen. Du bleibst auch beim anderen Server angemeldet.")
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.fontVeryQuiet)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 2)
+            }
             AdvancedSection(rows: $headers)
             Button(examine ? "Verbinden…" : "Verbinden", action: check)
                 .buttonStyle(PrimaryButtonStyle())
                 .padding(.top, 10)
                 .disabled(examine || address.isEmpty)
                 .opacity(address.isEmpty ? 0.4 : 1)
+
+            // Without the servers already in the bundle: those are added from the
+            // profile as "Weiteres Konto", not as a new server.
+            FoundServersSection(
+                found: ServerDiscovery.shown(found, except: model.server.map(\.absoluteString))
+            ) { server in
+                address = server.address
+                check()
+            }
+            .padding(.top, 26)
         }
-        .padding(.top, 28)
+        .padding(.top, preset == nil && server == nil ? 14 : 28)
+        .serverSearch($found)
     }
 
     private var loginPart: some View {
@@ -164,7 +184,6 @@ struct ServerOnboardingView: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .padding(.top, 10)
                 .disabled(model.isWorking || user.isEmpty)
-                .opacity(user.isEmpty ? 0.4 : 1)
 
             // As in the first sign-in: Quick Connect as a second path - no password
             // on the phone, approved on a device already signed in to the new server.
@@ -181,7 +200,7 @@ struct ServerOnboardingView: View {
                 quickConnect = true
             } label: {
                 HStack(spacing: 9) {
-                    Image(systemName: "tv")
+                    Image(icon: "tv")
                     Text("Mit Quick Connect anmelden")
                 }
             }

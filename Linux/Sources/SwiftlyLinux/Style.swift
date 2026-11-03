@@ -145,9 +145,9 @@ enum Theme {
     /// step in the render tree instead of another surface.
     static let pushScrim = 0.28
 
-    static let edgeSpacing = 24
-    static let tileSpacing = 12
-    static let railsSpacing = 28
+    static let edgeSpacing = 36
+    static let tileSpacing = 16
+    static let railsSpacing = 40
 
     /// Smallest window size at which the grid still works: sidebar plus two tile columns
     /// plus margins. From the Mac.
@@ -155,6 +155,8 @@ enum Theme {
     static let windowMinHeight = 560
 
     static let sidebarWidth = 220
+    /// The header bar's height: as thin as a Windows title bar (the Mac's band is 52).
+    static let toolbarHeight = 32
     /// A pointer is more precise than a finger: sidebar rows are 32 high, not 44 as on a phone.
     static let rowHeight = 32
     static let primaryButtonHeight = 48
@@ -162,8 +164,9 @@ enum Theme {
     /// label length, and Watchlist and More sit in a different place on every page.
     /// 200 fits "Fortsetzen" as well as "Abspielen".
     static let primaryButtonWidth = 200
-    /// The detail page's header zone: 150 on top plus a 230 block, no slack.
-    static let heroHeightValue = 380
+    /// The detail page's header zone (Mac 1.1): 172 on top plus a block of up to 340
+    /// (title, meta, chips, buttons, progress, description with "Mehr" and "Regie"), no slack.
+    static let heroHeightValue = 520
     /// **The person page's header zone**, the same calculation as on the Mac
     /// (`Sources/macOS/PersonView.swift`): the same lead-in on top as on a detail page,
     /// then the 88-point block and its bottom gap of 22. It is shorter than a detail page's
@@ -174,7 +177,7 @@ enum Theme {
     static let personBlockHeight = 88
     /// Height of a detail page's header bar (arrow and fading-in title).
     static let titleHeight = 52
-    static let fieldHeight = 38
+    static let fieldHeight = 40
     /// Width of the sign-in block. On the Mac `.frame(width: 360)` sits on each of the two fields.
     static let loginWidth = 360
     /// **How wide a subpage gets.** Profile, playback and Quick Connect read like text:
@@ -215,7 +218,7 @@ enum Theme {
     static var contentTop: Int { edgeSpacing }
     /// The bar that appears on scrolling (`headerBarHeight` on the Mac): it holds a 17-point
     /// row and the 40-high back arrow.
-    static let headerBarHeight = 40
+    static let headerBarHeight = 52
     /// Over how much scroll distance the value row fades out (`valueRailsDistance`).
     static let valueRailsDistance = 44.0
 
@@ -229,7 +232,9 @@ enum Theme {
 
     // MARK: Type sizes, same scale as iPhone and Mac
 
-    static let titleLarge = 28
+    static let titleLarge = 30
+    /// Film and series title (`DetailView.swift:446`): 44 heavy, tracking -1.2.
+    static let detailTitle = 44
     /// **22, not 27.**
     ///
     /// 27 is the **iPhone** size from `Sources/Shared/Style.swift`. There are two constants
@@ -273,7 +278,7 @@ enum Theme {
            kennt Segoe nicht und faellt auf Noto zurueck. Eine Zeile, kein
            `#if`, und auf jedem System die Schrift, die dort richtig ist. */
         window, .background, scrolledwindow, viewport, stack, entry, button, label {
-            font-family: Inter, "Segoe UI Variable Text", "Segoe UI",
+            font-family: Inter, "Inter Variable", "Segoe UI Variable Text", "Segoe UI",
                          "Noto Sans", "DejaVu Sans", sans-serif;
         }
 
@@ -315,7 +320,7 @@ enum Theme {
         .swiftly-warnung { color: \(warning); }
 
         /* Die Schriftstufen des Macs, eins zu eins. */
-        .swiftly-titel-gross { font-size: \(titleLarge)px; font-weight: 700; letter-spacing: -0.6px; }
+        .swiftly-titel-gross { font-size: \(titleLarge)px; font-weight: 700; letter-spacing: -0.5px; }
         /* Fett wie `Theme.title` auf Apple (`.bold`, also 700), mit derselben
            leichten Sperrung von -0,6. */
         .swiftly-titel       { font-size: \(title)px; font-weight: \(titleWeight); letter-spacing: -0.31px; }
@@ -331,12 +336,21 @@ enum Theme {
         }
         .swiftly-koerper     { font-size: \(body)px; }
         .swiftly-kacheltitel { font-size: \(tileTitleText)px; font-weight: 500; }
+        /* Mac 1.1 `Theme.tileCaption`: the name under a tile is 14/600, the line below it in the quietest ink. */
+        button.swiftly-suchzeile { min-height: 44px; padding: 0; background: none; border: none; box-shadow: none; }
+        button.swiftly-suchzeile:hover { background-color: \(hover); }
+        button.swiftly-suchzeile image { color: \(font); }
+        .swiftly-kachelname  { font-size: 14px; font-weight: 600; }
+        .swiftly-kachelzeile { color: \(fontVeryQuiet); }
+        /* "Alle" at the end of a rail's heading (Mac 1.1 `Rail`): 13 semibold, quietest ink. */
+        .swiftly-alle        { font-size: 13px; font-weight: 600; color: \(fontVeryQuiet); }
         /* Ziffern gleich breit (iOS `Tile`: `.monospacedDigit()`), damit „noch
            12 Min." beim Nachladen nicht springt. */
         .swiftly-zweitzeile  { font-size: \(secondLine)px; font-feature-settings: "tnum"; }
         /* Seitenleistenrubrik (Mac 984514f2): 11 Semifett in `schriftSehrLeise`,
            **keine Versalien und keine Sperrung** — gesperrt wird nur, was in
            Versalien steht, und die fallen weg. */
+        .swiftly-rubrik.swiftly-seitenrubrik { font-size: 12px; }
         .swiftly-rubrik {
             font-size: \(category)px;
             font-weight: 600;
@@ -353,11 +367,12 @@ enum Theme {
            Normalschreibung, `schriftLeise`. Vorher 11 Punkt Versalien in
            weiss 40 % — die Ueberschrift war leiser als das, was sie
            ueberschreibt. */
+        /* 1.1 (Mac `GroupsTitle`): `Theme.section` 22 fett, Laufweite -0,2, `font`. */
         .swiftly-gruppenrubrik {
-            font-size: \(rail)px;
-            font-weight: 600;
-            letter-spacing: -0.24px;
-            color: \(fontQuiet);
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.2px;
+            color: \(font);
         }
 
         /* MARK: Eingabefeld
@@ -390,6 +405,13 @@ enum Theme {
             outline: none;
             box-shadow: none;
         }
+        /* Mac 1.1 search `field`: 520 x 40, radius 12, surface `area`; in focus a 1 pt accent edge and a 3 pt ring of the accent at 35 %. */
+        entry.swiftly-suchfeld { border: 1px solid \(margin); padding: 0 12px; font-size: 15px; }
+        entry.swiftly-suchfeld:focus, entry.swiftly-suchfeld:focus-within {
+            border: 1px solid \(accent);
+            padding: 0 12px;
+            box-shadow: 0 0 0 3px alpha(\(accent), 0.35);
+        }
         entry placeholder, entry text placeholder { color: \(fontVeryQuiet); }
         /* Das Symbol im Feld: 17 breit, dahinter 9 Luft — die Zahlen der
            `Eingabezeile` auf dem Mac. */
@@ -408,7 +430,7 @@ enum Theme {
            Zurückpfeil, der gar kein Kasten sein soll. */
         button.swiftly-haupt, button.swiftly-flach, button.swiftly-zeile,
         button.swiftly-chip, button.swiftly-profil, button.swiftly-kachel,
-        button.swiftly-pfeil, button.swiftly-zurueck, button.swiftly-neben,
+        button.swiftly-pfeil, button.swiftly-neben,
         button.swiftly-reiter, button.swiftly-reihenkopf,
         button.swiftly-einstellzeile, button.swiftly-wertzeile,
         button.swiftly-handlung, button.swiftly-spielrund,
@@ -434,6 +456,7 @@ enum Theme {
         }
         button.swiftly-reihenkopf:hover label { color: \(fontQuiet); }
         button.swiftly-haupt:hover { background-color: rgba(255,255,255,0.88); }
+        button.swiftly-haupt.swiftly-detailhaupt { min-height: 56px; }
         /* Der Mac legt `.opacity(0.4)` über den ganzen Knopf. Dieselbe
            Wirkung, nur ausgerechnet: Weiß zu 40 % über dem Grund. */
         button.swiftly-haupt:disabled {
@@ -478,22 +501,27 @@ enum Theme {
         button.swiftly-zeile {
             min-height: \(rowHeight)px;
             padding: 0 10px;
-            border-radius: \(corner)px;
-            font-size: \(body)px;
+            border-radius: 8px; /* Mac 1.1 SidebarRow: 8 */
+            font-size: 14px;
             font-weight: 500;
         }
+        button.swiftly-zeile.swiftly-aktiv label { font-weight: 600; }
+        button.swiftly-zeile label.swiftly-zeilenkurz { font-size: 11px; font-weight: 500; }
         button.swiftly-zeile label, button.swiftly-zeile image {
             color: \(fontQuiet);
         }
-        button.swiftly-zeile image { min-width: 17px; }
+        button.swiftly-zeile label.swiftly-zeilenkurz { color: \(fontVeryQuiet); }
+        button.swiftly-zeile image { min-width: 18px; }
         button.swiftly-zeile:hover { background-color: rgba(255,255,255,0.06); }
         button.swiftly-zeile:hover label,
         button.swiftly-zeile:hover image { color: \(font); }
         button.swiftly-zeile.swiftly-aktiv {
-            background-color: \(accentAlpha(0.10));
+            background-color: \(accentAlpha(0.12));
         }
         button.swiftly-zeile.swiftly-aktiv label,
         button.swiftly-zeile.swiftly-aktiv image { color: \(accent); }
+        button.swiftly-zeile.swiftly-aktiv label.swiftly-zeilenkurz { color: \(fontVeryQuiet); }
+        button.swiftly-zeile:hover label.swiftly-zeilenkurz { color: \(fontVeryQuiet); }
 
         /* MARK: Chip — 28 hoch, 12 seitlich, vollrund.
            Aktiv weiss mit dunkler Schrift, sonst leise mit Haarlinie. */
@@ -537,7 +565,7 @@ enum Theme {
         button.swiftly-chip.swiftly-angebot {
             padding: 0;
             min-height: 40px;
-            border-radius: \(cornerField)px;
+            border-radius: 999px;
         }
         button.swiftly-chip.swiftly-angebot label { font-size: 15px; font-weight: 700; }
         /* Der Countdown als dunkle Füllung, 16 % — wie am Mac
@@ -569,7 +597,7 @@ enum Theme {
             border-radius: 12px;
             background-color: #000000;
             background-image: none;
-            box-shadow: 0 14px 34px rgba(0,0,0,0.6);
+            box-shadow: none;
             transition: transform 150ms ease-out;
         }
         button.swiftly-kartenbild:hover { transform: scale(1.02); }
@@ -661,6 +689,7 @@ enum Theme {
         .swiftly-kontokarte.swiftly-aktiv {
             border: 1.5px solid \(accentAlpha(0.55));
         }
+        image.swiftly-fusszahnrad { color: \(fontVeryQuiet); }
         .swiftly-kontoname { font-size: \(rail)px; font-weight: 600; letter-spacing: -0.24px; }
         /* Ein Feld, kein gestrichelter Kreis (Mac 62b5d194). */
         /* `button.` und `background-image: none`: ohne beides malt das Grundblatt des
@@ -720,9 +749,11 @@ enum Theme {
            (`SettingRows.swift:30`). Die erste und die letzte Zeile
            bekommen die Ecke mit, sonst stiesse ein rechteckiger Knopf ueber
            die runde Kante. */
+        /* 1.1: Karte 16, Innenabstand 4 (Mac `CardView`). */
         .swiftly-karte {
             background-color: \(groupsArea);
-            border-radius: \(cornerCard)px;
+            border-radius: 16px;
+            padding: 4px;
         }
         .swiftly-trennlinie { background-color: \(line); min-height: 1px; }
         /* Der Kreis eines Leerzustands: 78 auf `area` (`Leerzustand`). */
@@ -739,8 +770,7 @@ enum Theme {
            und Haarlinie erscheinen erst mit dem Scrollweg; ein Dauerverlauf
            steht dort nicht (Mac c584bd70). */
         .swiftly-bestandsgrund {
-            background-color: \(reason);
-            border-bottom: 1px solid \(line);
+            background-image: linear-gradient(to bottom, rgba(16,16,16,0.78), rgba(16,16,16,0));
         }
 
         /* Auf dem Mac schwebt die Titelzeile über dem Grund, ohne Kante.
@@ -757,9 +787,12 @@ enum Theme {
             background-image: none;
             border: none;
             box-shadow: none;
-            min-height: 0;
+            min-height: \(Theme.toolbarHeight)px;
             padding: 0 4px;
         }
+        \(windowCorners)
+        headerbar > windowhandle > box { min-height: 0; padding: 0; margin: 0; }
+        headerbar.titlebar, window.csd > headerbar { min-height: \(Theme.toolbarHeight)px; }
         headerbar windowcontrols { margin: 0; min-height: 0; }
         headerbar windowcontrols button {
             min-height: 20px;
@@ -873,6 +906,12 @@ enum Theme {
             background-image: \(profileHistory);
         }
 
+        /* "Gesehen von": 44 rund; der Ring darum wird gezeichnet (WatchedBy.swift). */
+        .swiftly-gesehenbild {
+            border-radius: 22px;
+            background-image: \(profileHistory);
+        }
+
         /* Bei mehreren Konten stehen unten zwei Kreise. Der zweite traegt
            einen Rand in der Farbe der Leiste — er stanzt die Ueberlappung
            aus, sonst kleben die beiden Kreise zu einer Form zusammen. */
@@ -899,15 +938,19 @@ enum Theme {
            der Seitentitel. Angaben 12 in `schriftLeise`, Beschreibung
            `schriftLeise` statt weiss 62 % — ueber einem Bild aendert Deckkraft
            ihre Wirkung. */
-        .swiftly-heldtitel { font-size: \(titleLarge)px; font-weight: 700; letter-spacing: -0.6px; }
+        .swiftly-heldtitel { font-size: \(titleLarge)px; font-weight: 700; letter-spacing: -0.5px; }
+        /* Mac 1.1 detail title: 44 heavy, -1.2 (`DetailView.swift:446`), text only. */
+        .swiftly-detailtitel { font-size: \(detailTitle)px; font-weight: 800; letter-spacing: -1.2px; }
         .swiftly-angaben { font-size: \(secondLine)px; color: \(fontQuiet); }
         .swiftly-beschreibung { color: \(fontQuiet); font-size: \(body)px; }
         .swiftly-leistentitel { font-size: \(categoryLarge)px; font-weight: 600; letter-spacing: -0.14px; }
         .swiftly-beleg label, .swiftly-beleg image { color: \(accent); }
-        /* The letter strip beside a "By name" grid (`AlphabetStrip`): quiet letters, the
-           current one in the accent. */
+        /* The index strip beside a grid (`AlphabetStrip`): quiet entries, the current one
+           in the accent. */
         .swiftly-buchstabe { font-size: 11px; font-weight: 600; color: \(fontQuiet); }
         .swiftly-buchstabe-aktiv { color: \(accent); }
+        /* Between the steps of a scale in the strip (`AlphabetStrip`). */
+        .swiftly-buchstabe-punkt { font-size: 8px; color: \(fontVeryQuiet); }
         .swiftly-warnung label, .swiftly-warnung image { color: \(warning); }
 
         /* **Der Beleg ist eine Marke, kein loser Text.**
@@ -924,15 +967,16 @@ enum Theme {
 
            Links enger als rechts: das Zeichen ist schmaler als seine
            Zeichenzelle, sonst sitzt das Wort sichtbar aus der Mitte. */
-        .swiftly-belegmarke { border-radius: \(cornerMark)px; padding: 4px 10px 4px 8px; }
+        .swiftly-belegmarke { border-radius: \(cornerMark)px; padding: 0 9px; min-height: 26px; }
         .swiftly-belegmarke.swiftly-beleg   { background-color: alpha(\(accent), 0.15); }
         .swiftly-belegmarke.swiftly-warnung { background-color: alpha(\(warning), 0.15); }
-        .swiftly-belegmarke label { font-size: 13px; font-weight: 500; }
+        /* Mac 1.1 `chip`: 12 semibold, 26 high, 9 inside. */
+        .swiftly-belegmarke label { font-size: 12px; font-weight: 600; }
 
         /* Die Bewertung in derselben Marke wie der Beleg (Mac ec0383c8,
            `DetailView.swift` `mark`): `schriftLeise`, Flaeche 15 Prozent. */
-        .swiftly-bewertung label, .swiftly-bewertung image { color: \(fontQuiet); }
-        .swiftly-belegmarke.swiftly-bewertung { background-color: alpha(\(fontQuiet), 0.15); }
+        .swiftly-bewertung label, .swiftly-bewertung image { color: #FFFFFF; }
+        .swiftly-belegmarke.swiftly-bewertung { background-color: rgba(255,255,255,0.08); }
 
         /* **Die Staffelliste klappt im Seitenfluss auf**, nicht als Blatt —
            `Sources/macOS/SeriesView.swift:554-566`. Deshalb `eckeFeld` (12)
@@ -991,21 +1035,18 @@ enum Theme {
 
         /* Die Kopfleiste schwebt über der Seite und malt nichts. */
         .swiftly-detailkopf { background-color: transparent; }
-        button.swiftly-zurueck {
-            min-width: 40px;
-            min-height: 40px;
-            padding: 0;
-            border-radius: \(corner)px;
-            background-color: transparent;
-            border: none;
+        /* Die festen Pfeile oben links (`NavArrows` auf dem Mac): 30 x 24 (Leiste dünner), Winkel
+           16 mittelstark, Schwebe weiß 6 %, ohne Ziel 35 %, kein Ring. */
+        button.swiftly-navpfeil {
+            min-width: 30px; min-height: 24px; padding: 0;
+            border-radius: 6px; border: none; box-shadow: none;
+            background-color: transparent; background-image: none;
+            outline: none;
         }
-        button.swiftly-zurueck image { color: \(fontQuiet); -gtk-icon-size: 20px; }
-        /* **Kein Grund, auch nicht beim Schweben.** Auf dem Mac ist es ein
-           blanker Winkel mit `.buttonStyle(.plain)` — kein Rahmen, keine
-           Fläche. Ein Kasten, der nur unter dem Zeiger erscheint, ist eine
-           Zutat, die dort nicht steht. */
-        button.swiftly-zurueck:hover { background-color: transparent; }
-        button.swiftly-zurueck:hover image { color: \(font); }
+        button.swiftly-navpfeil image { color: \(font); -gtk-icon-size: 16px; }
+        button.swiftly-navpfeil:hover { background-color: \(hover); }
+        button.swiftly-navpfeil:disabled { opacity: 0.35; }
+        button.swiftly-navpfeil:disabled:hover { background-color: transparent; }
 
         /* MARK: Kopfzone der Detailseite
            Der Ton kommt aus ``Tonblatt`` und wechselt mit dem Titel; hier
@@ -1089,6 +1130,27 @@ enum Theme {
         button.swiftly-neben.swiftly-aktiv:hover { background-color: #333333; }
         button.swiftly-neben.swiftly-aktiv image { color: \(accent); }
 
+        /* **Symbolknopf der Detailseite** (Mac 1.1 `DetailIconButton`): 48 x 56,
+           nur das Zeichen, keine Fläche; normal 85 %, Hover und aktiv 100 %,
+           aktiv in Akzent. */
+        button.swiftly-detailsymbol {
+            border-radius: \(corner)px;
+            background: none;
+            padding: 0;
+            border: none;
+            min-width: 0;
+            min-height: 0;
+        }
+        button.swiftly-detailsymbol image { color: rgba(255,255,255,0.85); }
+        button.swiftly-detailsymbol:hover image { color: \(font); }
+        button.swiftly-detailsymbol:hover { background: none; }
+        button.swiftly-detailsymbol.swiftly-aktiv image { color: \(accent); }
+        .swiftly-detailbalken { border-radius: 2px; background-color: rgba(255,255,255,0.18); }
+        .swiftly-detailbalkenfuell { border-radius: 2px; background-color: \(accent); }
+        .swiftly-detailrest { font-size: 12px; color: \(fontVeryQuiet); }
+        .swiftly-regiekopf { font-size: 13px; color: \(fontVeryQuiet); }
+        .swiftly-regiewert { font-size: 13px; color: \(font); }
+
         /* Reiter: aktiv halbfett mit Akzentstrich. */
         button.swiftly-reiter {
             background-color: transparent;
@@ -1114,16 +1176,29 @@ enum Theme {
            und das Vorschaubild steht trotzdem in der Flucht der
            Reiterbeschriftung darueber. Keine Rundung: eine Zeile, die von
            Kante zu Kante geht, hat keine Ecken. */
+        /* **Mac 1.1 `EpisodesRow`:** Innenabstand 10, Rundung 12, unter dem Zeiger
+           die Flaeche `groupsArea` (kein Bildzoom, kein Abspielkreis mehr). */
         .swiftly-folgenzeile {
             background-color: transparent;
-            padding: 12px \(edgeSpacing)px;
+            border-radius: 12px;
+            padding: 10px;
         }
-        /* **Unter dem Zeiger waechst das Standbild, die Zeile leuchtet
-           nicht** — wie jede Kachel (`scale(1.04)`, 120 ms, `zeitSchweben`).
-           Der volle helle Streifen war fuer eine Liste zu laut; am Mac
-           genauso geaendert. */
-        .swiftly-folgenzeile .swiftly-plakat { transition: transform \(float); }
-        .swiftly-folgenzeile.swiftly-schwebt .swiftly-plakat { transform: scale(1.04); }
+        .swiftly-folgenzeile.swiftly-schwebt { background-color: \(groupsArea); }
+        .swiftly-folgendauer { font-size: 12px; }
+        .swiftly-folgentext { font-size: 13px; }
+        button.swiftly-staffelpille {
+            min-height: 34px;
+            padding: 0 11px;
+            border-radius: \(cornerSmall)px;
+            background-color: \(area);
+            background-image: none;
+            box-shadow: none;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+        }
+        button.swiftly-staffelpille:hover, button.swiftly-staffelpille.swiftly-aktiv { background-color: \(raised); }
+        button.swiftly-staffelpille label, button.swiftly-staffelpille image { color: \(font); }
         /* **Die laufende Folge in der Player-Folgenebene** — Weiss zu acht
            Prozent, wörtlich `.background(Color.white.opacity(0.08))` vom Mac
            (`PlayerLayers.swift:356`). */
@@ -1147,35 +1222,38 @@ enum Theme {
            3,84 : 1 und steht in BRAND 1 unter den verbotenen Werten. Unter
            dem Zeiger eine Stufe heller (Mac 77af1111). */
         .swiftly-fuss { color: \(fontVeryQuiet); }
-        button.swiftly-einstellzeile:hover .swiftly-fuss { color: \(fontQuiet); }
         .swiftly-akzentzeile label { color: \(accent); }
         /* **Die Rolle, ueber die man kam** — im Akzent, halbfett, wie auf
            Apple (`PersonView.swift:190`). `swiftly-akzentzeile` trifft nur
            Kind-Labels; hier ist das Widget selbst das Label. */
-        .swiftly-rolle { color: \(accent); font-size: 14px; font-weight: 500; }
+        /* Mac 1.1 (`PersonView.roleRow`): quiet instead of accent, 13 medium (`Theme.tile`). */
+        .swiftly-rolle { color: \(accent); font-size: 13px; font-weight: 500; } /* Mac PersonView.roleRow: accent */
+        /* "Mehr" under the biography: a plain word in the accent, 13 medium. */
+        button.swiftly-mehrwort {
+            background: none; border: none; box-shadow: none;
+            padding: 0; min-height: 0; min-width: 0;
+            color: \(accent); font-size: 13px; font-weight: 500;
+        }
+        button.swiftly-mehrwort label { color: \(accent); }
         .swiftly-akzentzeile image { color: \(accent); }
-        /* **14 + Inhalt + 14** (Mac 8eb1ca13): einzeilig rund 48, mit
-           Unterzeile rund 65 — als Innenabstand, damit beide atmen. */
+        /* **Zeilen 1.1** (Mac `RowsBody`): Innenabstand 8 x 16, mindestens 52 hoch,
+           mit Unterzeile 60; die Hover-Flaeche rundet mit 12 innerhalb der Karte
+           (die selbst 4 Innenabstand hat), also keine Eckenregel mehr. */
         .swiftly-zeilenrumpf, button.swiftly-einstellzeile {
             min-height: 0;
-            padding: 14px 12px;
-            border-radius: 0;
+            padding: 8px 16px;
+            border-radius: 12px;
             background-color: transparent;
             border: none;
         }
-        /* Erste und letzte Zeile runden mit der Karte ab — sonst stiesse ein
-           rechteckiges Schweben ueber die runde Kante. */
-        .swiftly-karte > box > :first-child {
-            border-top-left-radius: \(cornerCard)px;
-            border-top-right-radius: \(cornerCard)px;
-        }
-        .swiftly-karte > box > :last-child {
-            border-bottom-left-radius: \(cornerCard)px;
-            border-bottom-right-radius: \(cornerCard)px;
-        }
+        .swiftly-zeilenkoerper { min-height: 36px; }
+        .swiftly-zeilenkoerper-unter { min-height: 44px; }
+        .swiftly-zeilenkoerper .swiftly-zweitzeile { font-size: 13px; }
+        .swiftly-zeilensymbol { color: \(font); }
+        .swiftly-akzentsymbol { color: \(accent); }
+        .swiftly-pfeilzeichen { color: \(fontQuiet); }
+        .swiftly-pfeilaussen { color: \(fontQuiet); font-size: 14px; }
         button.swiftly-einstellzeile:hover { background-color: \(hover); }
-        button.swiftly-einstellzeile image { color: \(fontQuiet); }
-        button.swiftly-einstellzeile.swiftly-akzentzeile image { color: \(accent); }
 
         /* Der Schalter — Kapsel, Akzent wenn an. Kein GtkSwitch: der bringt
            Form, Farbe und Maße des Systems mit (E4). */
@@ -1291,6 +1369,7 @@ enum Theme {
         .swiftly-zeichen96 { font-size: 36px; font-weight: 600; color: \(font); }
         .swiftly-zeichen84 { font-size: 32px; font-weight: 600; color: \(font); }
         .swiftly-zeichen72 { font-size: 27px; font-weight: 600; color: \(font); }
+        .swiftly-zeichen44 { font-size: 17px; font-weight: 600; color: \(font); }
         .swiftly-zeichen26 { font-size: 10px; font-weight: 600; color: \(font); }
 
         /* MARK: Weiteres Konto
@@ -1529,7 +1608,17 @@ enum Theme {
            Bild, wie `Playerschleier` auf iOS und der Mac-Player. Keine
            CSS-Transition: die Blende läuft im Code (`blenden`), mit den
            Mac-Zeiten 0,18 s ein und 0,34 s aus. */
-        .swiftly-steuerung { background-color: rgba(0,0,0,0.42); }
+        .swiftly-steuerung {
+            /* Mac 1.1 (`PlayerLook.shade`): two gradients, black 0.72 fading out,
+               200 high at the top and 260 at the bottom, not the flat 0.42. */
+            background-color: transparent;
+            background-image:
+                linear-gradient(to bottom, rgba(0,0,0,0.72), rgba(0,0,0,0)),
+                linear-gradient(to top, rgba(0,0,0,0.72), rgba(0,0,0,0));
+            background-repeat: no-repeat;
+            background-size: 100% 200px, 100% 260px;
+            background-position: top, bottom;
+        }
         /* **Die Knöpfe der Mitte tragen keine Fläche.** Auf dem Mac steht
            dort nur das Zeichen (`buttonStyle(.plain)`), darunter das
            Tastenkürzel. Die runden Flächen, die hier standen, waren meine
@@ -1579,13 +1668,27 @@ enum Theme {
            Semifett, Angabe 12, Zeit 13. 22 und 14 waren eine zweite
            Schriftleiter nur fuer den Player; Bold steht genau einmal, am
            Seitentitel. */
-        .swiftly-spielertitel { font-size: \(rail)px; font-weight: 600; color: \(font); }
-        .swiftly-spielerzeile { font-size: \(secondLine)px; color: \(fontQuiet); }
+        /* Mac 1.1 (`PlayerMetric`): title 22 bold, subtitle 13, time 13 medium
+           with the elapsed time white. */
+        .swiftly-spielertitel { font-size: 22px; font-weight: 700; color: \(font); }
+        .swiftly-spielerzeile { font-size: 13px; color: \(fontQuiet); }
         .swiftly-spielerzeit {
             font-size: 13px;
+            font-weight: 500;
             font-feature-settings: "tnum";
             color: \(fontQuiet);
         }
+        .swiftly-spielerzeit.swiftly-spielerzeit-jetzt { color: \(font); }
+        /* The key hints under the middle buttons (`KeyHint`): keycap white 12 %,
+           radius 5, 12 pt quiet. */
+        .swiftly-tastenkappe {
+            font-size: 12px;
+            color: \(fontQuiet);
+            background-color: rgba(255,255,255,0.12);
+            border-radius: 5px;
+            padding: 1px 6px;
+        }
+        .swiftly-tastenhinweis { font-size: 12px; color: \(fontQuiet); }
         .swiftly-warnung label, .swiftly-warnung image { color: \(warning); }
 
         /* **Der Zeitregler — und Breeze wieder mit seinen Rändern.**
@@ -1663,7 +1766,7 @@ enum Theme {
             min-height: 18px;
             margin: -6px 0;
             border-radius: 9px;
-            background-color: \(accent);
+            background-color: transparent;
         }
 
         /* **Das Technikschild.** Feste Zeichenbreite, damit die Zahlen
@@ -1764,16 +1867,16 @@ enum Theme {
         /* Trickplay-Vorschau über dem Griff — Bild gerundet mit heller Kante,
            wörtlich `vorschauKasten` vom Mac (`PlayerScreen.swift:1292`). */
         .swiftly-vorschaubild {
-            border-radius: \(corner)px;
-            border: 1px solid rgba(255,255,255,0.35);
+            border-radius: 8px;
+            border: 2px solid #ffffff;
         }
         .swiftly-vorschauname {
-            font-size: 13px;
+            font-size: 12px;
             color: \(font);
         }
         .swiftly-vorschauzeit {
-            font-size: 13px;
-            font-weight: 700;
+            font-size: 12px;
+            font-weight: 600;
             font-feature-settings: "tnum";
             color: \(font);
         }
@@ -1815,10 +1918,11 @@ enum Theme {
             font-feature-settings: "tnum";
             color: \(fontQuiet);
         }
+        /* Mac 1.1 `ActionList`/`SelectionPanel`: surface `area`, corner 12 (was raised, 16). */
         popover.swiftly-mehr > contents {
-            background-color: \(raised);
+            background-color: \(area);
             border: 1px solid \(margin);
-            border-radius: \(cornerArea)px;
+            border-radius: \(cornerField)px;
             padding: 4px 0;
             box-shadow: none;
             animation: swiftly-aufklappen 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.0);
@@ -1833,6 +1937,11 @@ enum Theme {
             from { opacity: 0; transform: scale(0.94); }
             to   { opacity: 1; transform: none; }
         }
+        @keyframes swiftly-zuklappen {
+            from { opacity: 1; transform: none; }
+            to   { opacity: 0; transform: scale(0.94); }
+        }
+        popover.swiftly-zu > contents { animation: swiftly-zuklappen 0.16s ease-in forwards; }
         /* Handlungszeile: 32 hoch (`zeileHoehe`), 12 seitlich, Schweben auf
            `schwebeflaeche` (weiß 6 %), keine eigene Ecke — die Zeile füllt
            die Tafel wie auf dem Mac. */
@@ -1848,7 +1957,12 @@ enum Theme {
         button.swiftly-handlung image { color: \(font); }
         /* Eine Zeile in der Tafel eines Wahlknopfs (`Wahltafelzeile`):
            gewaehlt heisst Weiss mit Haken, sonst `schriftLeise`. */
-        button.swiftly-wahlzeile label { color: \(fontQuiet); }
+        button.swiftly-wahlzeile label { color: \(font); }
+        /* Mac 1.1: Zeile 36 hoch, 14 seitlich, 15 halbfett (`SelectionPanelRow`). */
+        button.swiftly-handlung.swiftly-wahlzeile { min-height: 36px; padding: 0 14px; }
+        button.swiftly-wahlzeile label { font-size: 15px; font-weight: 600; }
+        /* Mehr-Liste (`ActionList`): Zeile 36, 14 seitlich, Symbol 20. */
+        button.swiftly-handlung.swiftly-aktionszeile { min-height: 36px; padding: 0 14px; }
         button.swiftly-wahlzeile.swiftly-aktiv label,
         button.swiftly-wahlzeile.swiftly-aktiv image { color: \(font); }
         /* Gemalte Zeichen im Chip nehmen die Farbe des Stilblatts. */
@@ -2005,6 +2119,27 @@ enum Theme {
         """
     }
 
+    /// Our own icons (the Phosphor set, as on the other platforms) answer the GTK symbolic
+    /// names; the theme inherits Adwaita for everything it does not draw.
+    /// Built by `Werkzeuge/gtk-icons.py`.
+    private static func bringIcons() {
+        guard let folder = Platform.bundled("icons"), let display = gdk_display_get_default() else { return }
+        let theme = gtk_icon_theme_get_for_display(display)
+        gtk_icon_theme_add_search_path(theme, folder)
+        // The settings property, not only the theme object: GTK resets the latter to the
+        // setting whenever the setting is read again.
+        if let settings = gtk_settings_get_default() {
+            var value = GValue()
+            g_value_init(&value, g_type_from_name("gchararray"))
+            g_value_set_string(&value, "Swiftly")
+            g_object_set_property(unsafeBitCast(settings, to: UnsafeMutablePointer<GObject>.self),
+                                  "gtk-icon-theme-name", &value)
+            g_value_unset(&value)
+        }
+        gtk_icon_theme_set_theme_name(theme, "Swiftly")
+        AppLog.writeOut("[Symbole] \(folder) Swiftly-Symbol bekannt=\(gtk_icon_theme_has_icon(theme, "swiftly-trailer-symbolic") != 0)")
+    }
+
     /// **The font ships with the app; it is not expected to exist.**
     ///
     /// On the Mac the UI is set in SF Pro, which exists only there. Inter is its closest
@@ -2015,8 +2150,16 @@ enum Theme {
     ///
     /// Silent on failure: if the folder is not found, the system font stays.
     private static func bringFont() {
-        guard let folder = Platform.bundled("Fonts") else { return }
-        _ = folder.withCString { fonts_load($0) }
+        guard let folder = Platform.bundled("Fonts") else {
+            AppLog.writeOut("[Schrift] Ordner Fonts nicht gefunden")
+            return
+        }
+        let loaded = folder.withCString { fonts_load($0) }
+        let map = pango_cairo_font_map_get_default()
+        let told = fonts_announce(UnsafeMutableRawPointer(map))
+        let found = pango_font_map_get_family(map, "Inter") != nil || pango_font_map_get_family(map, "Inter Variable") != nil
+        let kind = String(cString: g_type_name_from_instance(UnsafeMutableRawPointer(map!).assumingMemoryBound(to: GTypeInstance.self)))
+        AppLog.writeOut("[Schrift] \(folder) geladen=\(loaded) Inter bekannt=\(found) Karte=\(kind) gemeldet=\(told) Anwendungsschriften=\(fonts_count())")
     }
 
     /// **What sits next to the enlarged shell grows here too.**
@@ -2041,9 +2184,25 @@ enum Theme {
         """
     }
 
+    /// **All four corners of the window round, as in Windows 11.** The default theme rounds
+    /// the top two by 8 and leaves the bottom two square; next to every other window on
+    /// the desktop that looked unfinished.
+    private static var windowCorners: String {
+        #if os(Windows)
+        return """
+        window.csd { border-radius: 0; margin: 0; box-shadow: none; }
+        window.csd decoration, window decoration { border-radius: 0; margin: 0; box-shadow: none; border: none; }
+        window.csd headerbar { border-radius: 0; }
+        """
+        #else
+        return ""
+        #endif
+    }
+
     /// Loads the stylesheet into the display.
     static func apply() {
         bringFont()
+        bringIcons()
         let provider = gtk_css_provider_new()
         logCssErrors(provider)
         gtk_css_provider_load_from_string(provider, sheet + lookSheet)
@@ -2196,8 +2355,7 @@ enum Theme {
         .swiftly-schrift { color: \(font); }
         .swiftly-leisefarbe { color: \(fontQuiet); }
         .swiftly-akzentfarbe { color: \(accent); }
-        .swiftly-herzfarbe { color: \(fontQuiet); }
-        button.swiftly-herz:hover .swiftly-herzfarbe { color: \(font); }
+        .swiftly-herzfarbe { color: \(font); }
 
         .swiftly-glaspille {
             background-color: rgba(255,255,255,0.147);
@@ -2211,20 +2369,13 @@ enum Theme {
         .swiftly-glaspille-klein .swiftly-glaspille-text { font-size: 13px; }
         button.swiftly-pillenknopf:hover .swiftly-glaspille { background-color: rgba(255,255,255,0.22); }
 
-        button.swiftly-lookkarte {
+        /* 1.1: die Zeilenkarte des Profils (Mac `LookLineCard`): groupsArea, 16, 12 x 14. */
+        button.swiftly-zeilenkarte {
             background-image: none; background-color: \(groupsArea); border: none; box-shadow: none;
-            border-radius: \(cornerArea)px; padding: 14px 16px; min-height: 48px;
+            border-radius: 16px; padding: 12px 14px; min-height: 0;
         }
-        button.swiftly-lookkarte:hover { background-color: #242424; }
-        button.swiftly-lookteaser {
-            background-color: transparent;
-            background-image: linear-gradient(to bottom, rgba(255,255,255,0.062), rgba(255,255,255,0.063));
-            border: 1px solid rgba(255,255,255,0.09);
-            box-shadow: none;
-            border-radius: \(cornerArea)px;
-            padding: 0;
-        }
-        button.swiftly-lookteaser:hover { background-image: linear-gradient(to bottom, rgba(255,255,255,0.085), rgba(255,255,255,0.08)); }
+        button.swiftly-zeilenkarte:hover { background-color: #242424; }
+        button.swiftly-zeilenkarte:active { opacity: 0.85; transform: scale(0.97); }
         .swiftly-statuskarte {
             background-color: \(groupsArea);
             background-image: radial-gradient(circle 220px at 0% 0%, \(a(0.16)) 0%, transparent 100%);

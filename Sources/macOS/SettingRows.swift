@@ -25,12 +25,11 @@ struct CardView<ContentBody: View>: View {
     @ViewBuilder let content: ContentBody
 
     var body: some View {
+        // Design: group surface #1E1E1E, radius 16, padding 4 (rows inside have their own 16).
         VStack(spacing: 0) { content }
-            // Card radius is 14, not 16: 16 belongs to standalone surfaces and popovers,
-            // 14 to cards and groups. And `groupsArea` instead of `area`: a large
-            // block carries the same tone lighter than a button (see the token).
+            .padding(4)
             .background(Theme.groupsArea,
-                        in: RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
@@ -47,22 +46,32 @@ struct GroupsTitle: View {
     let text: LocalizedStringKey
     var body: some View {
         Text(text)
-            .font(Theme.rail)
-            .tracking(Theme.lockRail)
-            .foregroundStyle(Theme.fontQuiet)
+            .font(Theme.section)
+            .tracking(-0.2)
+            .foregroundStyle(Theme.font)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The hairline between rows of a group: inset by row padding 16 + icon column 26 + gap 12.
+struct GroupLine: View {
+    var body: some View {
+        Rectangle().fill(Color.white.opacity(0.07)).frame(height: 1)
+            .padding(.leading, 16 + 26 + 12)
     }
 }
 
 /// A group with a title, the card below it.
 struct SettingGroup<ContentBody: View>: View {
     let title: LocalizedStringKey
+    /// Space above the title (22 for the first group of a column, 28 between groups).
+    var topGap: CGFloat = 22
     @ViewBuilder let content: ContentBody
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             GroupsTitle(text: title)
-                .padding(.top, 26)
+                .padding(.top, topGap)
                 .padding(.bottom, 10)
             CardView { content }
         }
@@ -86,14 +95,13 @@ private struct RowsBody<Right: View>: View {
     @ViewBuilder let right: Right
 
     var body: some View {
-        // Icon 15 in a 20-wide column, 14 spacing to the text, title 15 semibold,
-        // subtitle 12 in `schriftSehrLeise`. The subtitle used to be "white 45%", a
-        // fourth text level next to the three that exist.
-        HStack(spacing: 14) {
-            Image(systemName: symbol)
-                .font(Theme.body)
-                .foregroundStyle(accent ? Theme.accent : Theme.fontQuiet)
-                .frame(width: 20)
+        // Icon 20 in a 26-wide column (as on iPhone), white, 14 spacing to the text,
+        // title 15 semibold, subtitle 12 in `schriftSehrLeise`.
+        HStack(spacing: 12) {
+            Image(icon: symbol, size: Theme.rowSymbolSize)
+                .font(.app(size: Theme.rowSymbolSize))
+                .foregroundStyle(accent ? Theme.accent : Theme.font)
+                .frame(width: Theme.rowIconWidth)
                 // Image only, next to the title; otherwise VoiceOver reads the symbol name
                 // before every row.
                 .accessibilityHidden(true)
@@ -101,21 +109,20 @@ private struct RowsBody<Right: View>: View {
             VStack(alignment: .leading, spacing: 2) {
                 title
                     .font(Theme.listTitle)
-                    .foregroundStyle(accent ? Theme.accent : Theme.font)
+                    .foregroundStyle(Theme.font)
                 if let under {
                     under
-                        .font(Theme.small)
+                        .font(.app(size: 13))
                         // **One step lighter under the pointer.** The hover surface raises the
                         // background, and `schriftSehrLeise` on it drops below 4.5:1 by calculation.
                         // If you raise a surface, raise the quiet text colors with it.
-                        .foregroundStyle(hovers ? Theme.fontQuiet
-                                                 : Theme.fontVeryQuiet)
+                        .foregroundStyle(Theme.fontVeryQuiet)
                 }
             }
             Spacer(minLength: 12)
             right
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 16)
         // **"14 + content + 14" as padding, not as a fixed height.**
         //
         // This used to be `minHeight: 46` with exactly that reasoning, but a minimum
@@ -127,9 +134,11 @@ private struct RowsBody<Right: View>: View {
         // As padding the rule holds for both: 48 single-line, 65 two-line. The
         // minimum height remains as a lower bound for the hit area, but now applies
         // only if a row happens to contain less.
-        .padding(.vertical, 14)
-        .frame(minHeight: 46)
-        .background(hovers ? Theme.hoverArea : .clear)
+        // Design: rows 52 tall, 60 with a subtitle, padding 8 x 16.
+        .padding(.vertical, 8)
+        .frame(minHeight: under == nil ? 52 : 60)
+        .background(hovers ? Theme.hoverArea : .clear,
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contentShape(Rectangle())
     }
 }
@@ -190,6 +199,10 @@ struct ValuesRow: View {
     var value: String?
     var accent = false
     var arrow = false
+    /// Arrow pointing out of the app, for links that leave it.
+    var external = false
+    /// A small icon on the right (e.g. the sync mark on "Verbindung prüfen").
+    var trailingSymbol: String?
     var action: (() -> Void)?
     /// Checkmark instead of arrow or value, for a choice among several; see the
     /// genre form in `PresentationView`.
@@ -239,10 +252,22 @@ struct ValuesRow: View {
                             .font(Theme.body)
                             .foregroundStyle(Theme.fontQuiet)
                     }
+                    if let trailingSymbol {
+                        Image(icon: trailingSymbol, size: 16)
+                            .font(.app(size: 16))
+                            .foregroundStyle(Theme.fontQuiet)
+                            .accessibilityHidden(true)
+                    }
+                    if external {
+                        Image(icon: "arrow.up.right", size: 14)
+                            .font(.app(size: 14))
+                            .foregroundStyle(Theme.fontQuiet)
+                            .accessibilityHidden(true)
+                    }
                     if arrow {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Theme.fontVeryQuiet)
+                        Image(icon: "chevron.right")
+                            .font(.app(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.fontQuiet)
                             // Only says "there is more here"; the row title already says where.
                             .accessibilityHidden(true)
                     }
@@ -250,7 +275,7 @@ struct ValuesRow: View {
                     // the thing itself there, and carries the accent color (the second exception
                     // to the accent rule).
                     if checkmark {
-                        Image(systemName: "checkmark")
+                        Image(icon: "checkmark")
                             .font(Theme.listTitle)
                             .foregroundStyle(Theme.accent)
                             .accessibilityHidden(true)
@@ -302,7 +327,7 @@ private struct ValueSelectionRow: View {
                     .foregroundStyle(selected ? Theme.font : Theme.fontQuiet)
                 Spacer(minLength: 0)
                 if selected {
-                    Image(systemName: "checkmark")
+                    Image(icon: "checkmark")
                         .font(Theme.listTitle)
                         .foregroundStyle(Theme.font)
                         .frame(width: 14)
@@ -337,9 +362,8 @@ struct SubpageHeader: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            // **The way back is a bare arrow.** It used to be an `Aktionsknopf` with the
-            // ring turned off, a button posing as something else.
-            BackArrow(back: back)
+            // **No arrow of its own:** ‹ › stand fixed above every page (`NavArrows` in
+            // `MainView`). `back` stays for Escape and the pages that close themselves.
             Group {
                 if let name { Text(verbatim: name) } else { Text(title) }
             }
@@ -354,5 +378,20 @@ struct SubpageHeader: View {
                 .minimumScaleFactor(0.62)
             Spacer(minLength: 0)
         }
+    }
+}
+
+/// The page title of the Mac pages: 30 bold, tracking -0.5, with the gap to the content below.
+struct MacPageTitle: View {
+    let text: LocalizedStringKey
+    var bottom: CGFloat = 18
+
+    var body: some View {
+        Text(text)
+            .font(.app(size: 30, weight: .bold))
+            .tracking(-0.5)
+            .foregroundStyle(Theme.font)
+            .padding(.bottom, bottom)
+            .accessibilityAddTraits(.isHeader)
     }
 }

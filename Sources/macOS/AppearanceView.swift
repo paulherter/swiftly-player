@@ -67,6 +67,13 @@ struct PresentationView: View {
                           under: Text("Seite, Filter und Knopf auf Film- und Serienseiten"),
                           an: Binding(get: { model.watchlistShown },
                                       set: { model.watchlistShown = $0 }))
+            if model.watchersPluginHere {
+                ToggleRow(symbol: "eye",
+                              title: Text("Gesehen von"),
+                              under: Text("Zeigt auf Titelseiten, wer einen Titel gesehen hat"),
+                              an: Binding(get: { model.watchersShown },
+                                          set: { model.watchersShown = $0 }))
+            }
             ToggleRow(symbol: "textformat.abc",
                           title: Text("Alphabetische Suche in Listen"),
                           an: Binding(get: { model.alphabetShown },
@@ -269,7 +276,7 @@ private struct GenreRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(Theme.body)
                 .foregroundStyle(Theme.fontQuiet)
                 .frame(width: 20)
@@ -283,7 +290,7 @@ private struct GenreRow: View {
                 .lineLimit(1)
             Spacer(minLength: 12)
             Button(action: remove) {
-                Image(systemName: "xmark")
+                Image(icon: "xmark")
                     .font(Theme.small.weight(.semibold))
                     .foregroundStyle(Theme.fontQuiet)
                     .frame(width: 22, height: 22)
@@ -317,7 +324,7 @@ private struct ChoiceRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(Theme.body)
                 .foregroundStyle(Theme.fontQuiet)
                 .frame(width: 20)
@@ -344,7 +351,7 @@ private struct ChoiceRow: View {
 /// The three bars that say: this can be moved.
 private struct Handle: View {
     var body: some View {
-        Image(systemName: "line.3.horizontal")
+        Image(icon: "line.3.horizontal")
             .font(Theme.tile)
             .foregroundStyle(Theme.fontVeryQuiet)
             .frame(width: 22, height: 28)

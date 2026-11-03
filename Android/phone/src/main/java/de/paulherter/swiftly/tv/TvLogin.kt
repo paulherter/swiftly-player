@@ -66,6 +66,7 @@ fun TvServerPage(app: SwiftlyApplication, presetAddress: String? = null, back: (
     val focus = firstFocus()
     /** "Advanced": custom headers for a service in front of the server. */
     val headers = de.paulherter.swiftly.rememberHeaderRow()
+    val found = de.paulherter.swiftly.rememberFoundServers(app)
 
     fun linkUp() {
         if (address.isBlank() || running) return
@@ -120,7 +121,23 @@ fun TvServerPage(app: SwiftlyApplication, presetAddress: String? = null, back: (
                 Text(it, style = TvTheme.body, color = Theme.error, textAlign = TextAlign.Center,
                      modifier = Modifier.width(TvSpec.messageWidth).padding(top = TvSpec.serverErrorTop))
             }
+            TvFoundServers(found, Modifier.width(TvSpec.formWidth).padding(top = TvSpec.serverFoundTop)) { addressChange(it.address); linkUp() }
         }
+    }
+}
+
+/**
+ * Mirrors `TVFoundServers`: the servers that answered on the local network, as rows with the
+ * address on the right. Nothing while none has answered.
+ */
+@Composable
+fun TvFoundServers(found: List<de.paulherter.swiftly.FoundServer>, modifier: Modifier = Modifier,
+                   pick: (de.paulherter.swiftly.FoundServer) -> Unit) {
+    if (found.isEmpty()) return
+    Column(modifier.fillMaxWidth()) {
+        Text(translated("Im Netzwerk gefunden"), style = TvTheme.small, color = Theme.fontQuiet,
+             modifier = Modifier.padding(start = TvSpec.rowInset, bottom = 8.dp))
+        found.forEach { server -> TvRow(server.name, right = server.short) { pick(server) } }
     }
 }
 
@@ -285,7 +302,7 @@ fun TvQuickConnectPage(app: SwiftlyApplication, newServer: Boolean = false, clos
 
             Row(Modifier.padding(top = 32.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 TvButton(translated("Neuer Code")) { run++ }
-                TvButton(translated("Zurück"), perform = close)
+                TvButton(translated(if (newServer) "Lieber Name und Passwort" else "Zurück"), perform = close)
             }
         }
     }

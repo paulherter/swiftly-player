@@ -43,4 +43,28 @@ enum Motion {
     /// slides away (the system's own pop, about 0.35 s) and the sheet comes up while it
     /// settles, never at the same moment as a second movement.
     static let pageBeforeSheet = 0.18
+
+    /// **A look's colors change with one cross-fade** (`change`'s 0.28 s). On the Mac the
+    /// window itself fades from the old picture to the new one, done by the render server:
+    /// animating every color through SwiftUI redrew the whole page on each frame and the
+    /// fade stuttered (probe "look anprobiert": 10 of 142 frames dropped). The change
+    /// itself then lands at once, in the same transaction the fade covers.
+    @MainActor @discardableResult
+    static func recolor<Result>(_ change: () -> Result) -> Result {
+        #if os(macOS)
+        for window in NSApp.windows where window.isVisible {
+            guard let layer = window.contentView?.layer else { continue }
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = Theme.motionReduced ? 0.14 : 0.28
+            fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            layer.add(fade, forKey: "recolor")
+        }
+        var still = Transaction()
+        still.disablesAnimations = true
+        return withTransaction(still, change)
+        #else
+        return withAnimation(Self.change, change)
+        #endif
+    }
 }

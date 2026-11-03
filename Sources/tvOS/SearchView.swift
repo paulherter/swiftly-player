@@ -43,10 +43,22 @@ struct SearchView: View {
     @FocusState private var focused: SearchTarget?
     /// The key pressed last. Coming back from the hits, from the bar or from the speech input, focus
     /// lands here and not on whatever key happens to lie beside the tile.
-    @State private var lastKey = "A"
+    @State private var lastKey = SearchView.startKey
     @State private var lastHit: String?
 
     private let top = "top"
+
+    /// The key focus starts on. `-bereich suche` (debug builds only) starts on "N", the state of the
+    /// design picture.
+    private static var startKey: String {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-bereich"), args.indices.contains(i + 1), args[i + 1] == "suche" {
+            return "N"
+        }
+        #endif
+        return "A"
+    }
 
     private var screen: SearchScreen {
         SearchScreen.state(term: term, historyCount: last.count,
@@ -57,7 +69,8 @@ struct SearchView: View {
     private var hitIds: [String] { hit.map { "\($0.id)" } + seerrHit.map { "\($0.id)" } }
 
     var body: some View {
-        HStack(alignment: .top, spacing: TVSpec.columnGap) {
+        // Design: keyboard card 80..540, hits and history from 620.
+        HStack(alignment: .top, spacing: SearchLayout.historyLeft - Theme.edgePage - SearchLayout.keyboardWidth - SearchLayout.columnTrim) {
             TVSearchKeyboard(term: $term, focus: $focused)
                 .focusSection()
                 .defaultFocus($focused, .key(lastKey), priority: .userInitiated)
@@ -265,8 +278,8 @@ struct SearchView: View {
     /// A centred symbol with one quiet sentence, in the column of the hits.
     private func note(symbol: String, sentence: LocalizedStringKey) -> some View {
         VStack(spacing: 20) {
-            Image(systemName: symbol)
-                .font(.system(size: 88))
+            Image(icon: symbol)
+                .font(.app(size: 88))
                 .foregroundStyle(Theme.fontVeryQuiet)
                 .accessibilityHidden(true)
             Text(sentence)
@@ -379,7 +392,12 @@ struct SearchView: View {
     /// would have emptied the list.
     private var recent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            GroupsTitle(text: "Zuletzt gesucht")
+            // Design: 44/700 on the bare background, 24 above the group.
+            Text("Zuletzt gesucht")
+                .font(Theme.rail)
+                .tracking(Theme.lockRail)
+                .foregroundStyle(Theme.font)
+                .padding(.bottom, 24)
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(last, id: \.self) { word in
                     Button {
@@ -388,18 +406,14 @@ struct SearchView: View {
                         term = word
                         focused = .key(lastKey)
                     } label: {
-                        HStack(spacing: 22) {
-                            Image(systemName: "clock.arrow.circlepath")
-                                .font(.system(size: TVSpec.valueIcon, weight: .medium))
-                                .foregroundStyle(Theme.fontVeryQuiet)
-                                .frame(width: TVSpec.choiceCheckWidth)
-                                .accessibilityHidden(true)
+                        HStack(spacing: SettingsLook.rowGap) {
+                            historySymbol("clock.arrow.circlepath")
                             // Typed, so not a catalog text.
                             Text(verbatim: word)
                                 .lineLimit(1)
                         }
                     }
-                    .buttonStyle(RowsStyle())
+                    .buttonStyle(SettingsRowsStyle())
                     .focused($focused, equals: .recent(word))
                     SeparatorLine()
                 }
@@ -407,25 +421,40 @@ struct SearchView: View {
                     historySet("")
                     focused = .key(lastKey)
                 } label: {
-                    HStack(spacing: 22) {
-                        Image(systemName: "trash")
-                            .font(.system(size: TVSpec.valueIcon, weight: .medium))
-                            .frame(width: TVSpec.choiceCheckWidth)
-                            .accessibilityHidden(true)
+                    HStack(spacing: SettingsLook.rowGap) {
+                        historySymbol("trash")
                         Text("Verlauf löschen")
                     }
                 }
-                // Quiet through the style, not from inside: `RowsStyle(quiet:)` keeps it quiet at rest and
-                // raises it as soon as one stands on it.
-                .buttonStyle(RowsStyle(quiet: true))
+                .buttonStyle(SettingsRowsStyle())
             }
-            .padding(TVSpec.listCardInset)
-            .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
+            .padding(.horizontal, SettingsLook.groupInset)
+            .background(Theme.groupsArea, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
+            // The rows are the settings rows of the design: 84, white surface over the group in focus.
+            .environment(\.settingsLook, true)
         }
-        .frame(width: TVSpec.formWidth, alignment: .leading)
+        .frame(width: SearchLayout.historyWidth, alignment: .leading)
+        // Measured on the simulator: the heading's cap top sat 27 lower than the design's 236.
+        .padding(.top, -SearchLayout.historyTrim)
+    }
+
+    /// The 40 symbol in its 52 column, as in a settings row.
+    private func historySymbol(_ name: String) -> some View {
+        Image(icon: name, size: TVSpec.rowSymbol)
+            .font(.app(size: TVSpec.rowSymbol))
+            .frame(width: TVSpec.rowSymbolColumn)
+            .accessibilityHidden(true)
     }
 
     private func historyLoad() {
+        #if DEBUG
+        // `-suchverlauf winnie,olivia` seeds the history, so the design's right column can be shown.
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-suchverlauf"), args.indices.contains(i + 1) {
+            lastRaw = args[i + 1].split(separator: ",").map { String($0) }.joined(separator: "\n")
+            return
+        }
+        #endif
         lastRaw = SearchHistoryStore.load(account: model.session?.accountKey)
     }
 

@@ -70,9 +70,14 @@ final class LibraryModel {
 
     private func secure() {
         guard let rememberName else { return }
-        let store = UserDefaults.standard
-        store.set(sorting.rawValue, forKey: "sortierung.\(rememberName)")
-        store.set(filter.rawValue, forKey: "filter.\(rememberName)")
+        Self.remember(sorting, for: rememberName)
+        UserDefaults.standard.set(filter.rawValue, forKey: "filter.\(rememberName)")
+    }
+
+    /// Stores the order of a place without a page in memory (``AppModel/openLibrary(_:)``).
+    /// The key is the one ``init(rememberName:)`` reads.
+    static func remember(_ sorting: Sorting, for rememberName: String) {
+        UserDefaults.standard.set(sorting.rawValue, forKey: "sortierung.\(rememberName)")
     }
 
     /// If either changes, reload.
@@ -80,20 +85,29 @@ final class LibraryModel {
 
     // MARK: Letter strip
 
-    /// The letters of this list (``AlphabetIndex``); `nil` unless sorted A–Z and loaded.
+    /// The index of this list (``AlphabetIndex``): letters, years or ratings,
+    /// whatever the order is; `nil` until loaded.
     private(set) var alphabet: AlphabetIndex?
     private var alphabetFor: String?
 
-    /// Fetches the sort names once per list (source, filter, account). Only for A–Z: any
-    /// other order has no letters to jump between.
+    /// Fetches the whole list once per list (source, order, filter, account), slim, and
+    /// builds the index for its order.
     func loadAlphabet(_ model: AppModel, from source: ShelfSource?) async {
-        guard let source, sorting == .name else { alphabet = nil; alphabetFor = nil; return }
+        guard let source else { alphabet = nil; alphabetFor = nil; return }
         let key = "\(source.key)|\(identifier)|\(model.accountSwitch)"
         guard alphabetFor != key else { return }
-        guard let titles = await model.sortNames(from: source, filter: filter) else { return }
-        guard sorting == .name else { return }
-        alphabet = AlphabetIndex(titles: titles)
+        let asked = sorting
+        guard let list = await model.indexList(from: source, sorting: asked, filter: filter) else { return }
+        // Another order was picked meanwhile: its own load builds its index.
+        guard sorting == asked else { return }
+        alphabet = AlphabetIndex(items: list, sorting: asked)
         alphabetFor = key
+    }
+
+    /// The index if it belongs to the order on screen. Right after switching the order the
+    /// old one would point at the wrong titles.
+    var currentAlphabet: AlphabetIndex? {
+        alphabet.flatMap { $0.sorting == sorting && $0.isUseful ? $0 : nil }
     }
 
     /// The same for a library page that knows its kind, not its source.
@@ -115,7 +129,7 @@ final class LibraryModel {
         let asked = jumpAsked
         let start = alphabet.entries.first { $0.letter == letter }?.first ?? 0
         for _ in 0..<20 {
-            if let i = alphabet.target(for: letter, inLoaded: items.map { ($0.name, $0.sortName) }) {
+            if let i = alphabet.target(for: letter, in: items) {
                 return asked == jumpAsked ? items[i].id : nil
             }
             guard stillMorePresent else { break }

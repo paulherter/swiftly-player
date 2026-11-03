@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.future.await
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -59,9 +60,25 @@ class TvActivity : ComponentActivity() {
         setContent {
             var phase by remember { mutableStateOf<Phase>(if (app.sessionAgainFromSet()) Phase.Start else Phase.Server) }
             LaunchedEffect(app.signedOut.intValue) { if (app.signedOut.intValue > 0) phase = Phase.Server }
+            // Debug builds only: sign in to a test Emby by launch extras (`testServer`, `testUser`, `testPassword`), as in `MainActivity`.
+            LaunchedEffect(Unit) {
+                val address = intent?.getStringExtra("testServer")
+                if (!de.paulherter.swiftly.BuildConfig.DEBUG || address == null || app.sessionAgainFromSet()) return@LaunchedEffect
+                runCatching {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        app.kern.embyCheck(address, "[]").await()
+                        val session = app.kern.embySignIn(intent.getStringExtra("testUser").orEmpty(), intent.getStringExtra("testPassword").orEmpty()).await()
+                        app.kern.onboardingCancel()
+                        app.sessionRecord(session)
+                    }
+                    phase = Phase.Start
+                }.onFailure { android.util.Log.w("Swiftly", "testServer sign-in failed: $it") }
+            }
             var started by rememberSaveable { mutableStateOf(false) }
             // The screen as a recorded layer, source of the still frame for the account switch (`AccountSwitchTransition`).
-            var pickerOpen by remember { mutableStateOf(ProfilePickerRule.opensAtLaunch(app, phase == Phase.Start)) }
+            // DEBUG render shoots (`page` extra, see `TvMain`) go straight to the page, without the picker.
+            val shootPage = de.paulherter.swiftly.BuildConfig.DEBUG && intent?.hasExtra("page") == true
+            var pickerOpen by remember { mutableStateOf(!shootPage && ProfilePickerRule.opensAtLaunch(app, phase == Phase.Start)) }
             var pickerNotice by remember { mutableStateOf<String?>(null) }
             LaunchedEffect(pickerNotice) { if (pickerNotice != null) { delay(4000); pickerNotice = null } }
             // Server names for the picker, kept per address (`Session` has none).

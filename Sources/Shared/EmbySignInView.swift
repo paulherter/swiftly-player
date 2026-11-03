@@ -32,7 +32,7 @@ struct EmbySignInView: View {
                         signInStep(serverName: serverName, version: version)
                     }
                 }
-                .padding(.horizontal, Theme.edgePageWide)
+                .padding(.horizontal, Theme.edgeSpacing)
                 .padding(.bottom, 40)
                 .frame(maxWidth: Theme.formWidth)
                 .frame(maxWidth: .infinity)
@@ -92,7 +92,6 @@ struct EmbySignInView: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .padding(.top, 22)
                 .disabled(empty || model.checking)
-                .opacity(empty ? 0.4 : 1)
 
             if let problem = model.problem { problemView(problem) }
         }
@@ -171,7 +170,6 @@ struct EmbySignInView: View {
                     .buttonStyle(PrimaryButtonStyle())
                     .padding(.top, 10)
                     .disabled(user.isEmpty || model.signingIn)
-                    .opacity(user.isEmpty ? 0.4 : 1)
                 if let error = model.signInError {
                     Text(verbatim: error)
                         .font(Theme.small)

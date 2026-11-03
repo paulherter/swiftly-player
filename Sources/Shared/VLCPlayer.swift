@@ -1760,6 +1760,7 @@ final class VLCPlayerView: BaseView {
         refreshPiPState()
 
         startJump = pausedStart ? offSeconds : nil
+        startJumpLanded = false
         startJumpSince = pausedStart ? Date() : nil
         targetWatched = nil
         lastStartJumpCommand = .distantPast
@@ -1845,7 +1846,22 @@ final class VLCPlayerView: BaseView {
             return
         }
 
+        // **Once the clock has been at the target, the jump is done; it is never sent again.**
+        // Measured on a device (Direct Play): right after landing, the clock briefly reads 0
+        // while VLC is "reading while paused". A second absolute `time` jump then, in that
+        // state, rebases the timeline to zero: ten seconds later the clock and the progress
+        // report count up from 0 although the picture is at the resume point. A user seek
+        // uses the relative jump and does not have this.
+        if spot >= target - 10 { startJumpLanded = true }
+
         if spot < target - 10 {
+            if startJumpLanded {
+                // Wait for the pause at the target; the deadline above still ends the wait.
+                if condition == .paused {
+                    startJumpComplete(resume: true)
+                }
+                return
+            }
             if Date().timeIntervalSince(lastStartJumpCommand) > 0.25,
                condition != .stopped, condition != .error {
                 lastStartJumpCommand = Date()
@@ -1884,12 +1900,16 @@ final class VLCPlayerView: BaseView {
     /// First time reported at the target while Playing; see above.
     private var targetWatched: Double?
 
+    /// The clock has been at the target once; see `startJumpCheck`.
+    private var startJumpLanded = false
+
     private func startJumpComplete(resume: Bool) {
         startGuards?.invalidate()
         startGuards = nil
         startJump = nil
         startJumpSince = nil
         targetWatched = nil
+        startJumpLanded = false
         startPosition = nil
         firstPoint = nil
         StartMeasurement.shared.mark("Startsprung abgeschlossen, fortsetzen: \(resume)")

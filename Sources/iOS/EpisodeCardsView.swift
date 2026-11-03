@@ -173,8 +173,8 @@ struct EpisodeCardsView: View {
             AppLog.writeOut("[Karte] × gedrückt")
             cancel()
         } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 13, weight: .semibold))
+            Image(icon: "xmark", size: 13)
+                .font(.app(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.font)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
@@ -213,11 +213,11 @@ struct EpisodeCardsView: View {
                 Text("in \(rest) s")
                     .monospacedDigit()
             }
-            .font(.system(size: CGFloat(metrics.small), weight: .semibold))
+            .font(.app(size: CGFloat(metrics.small), weight: .semibold))
             .foregroundStyle(Theme.fontVeryQuiet)
             .lineLimit(1)
             Text(verbatim: episode.name)
-                .font(.system(size: CGFloat(metrics.title), weight: .semibold))
+                .font(.app(size: CGFloat(metrics.title), weight: .semibold))
                 .foregroundStyle(Theme.font)
                 .lineLimit(1)
         }

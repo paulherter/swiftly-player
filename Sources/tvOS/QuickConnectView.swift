@@ -7,6 +7,10 @@ struct QuickConnectView: View {
     let close: () -> Void
 
     @State private var state = QuickConnectModel()
+    /// Name and password instead of a code (issue #27): the same choice the first sign-in offers.
+    @State private var withPassword = false
+    @State private var user = ""
+    @State private var passphrase = ""
 
     var body: some View {
         ZStack {
@@ -49,15 +53,28 @@ struct QuickConnectView: View {
                 HStack(spacing: 24) {
                     Button("Neuer Code") { Task { await state.newStart(model) } }
                         .buttonStyle(ThemedButtonStyle())
+                    Button("Lieber Name und Passwort") {
+                        state.halt()
+                        withPassword = true
+                    }
+                    .buttonStyle(ThemedButtonStyle())
                     Button("Zurück", action: close)
                         .buttonStyle(ThemedButtonStyle())
                 }
                 .padding(.top, 52)
             }
         }
+        .overlay { if withPassword { passwordForm } }
         .task { await state.newStart(model) }
         .onDisappear { state.halt() }
-        .onExitCommand(perform: close)
+        .onExitCommand {
+            if withPassword {
+                withPassword = false
+                Task { await state.newStart(model) }
+            } else {
+                close()
+            }
+        }
         .onChange(of: state.released) { _, new in
             guard let new else { return }
             Task {
@@ -65,6 +82,52 @@ struct QuickConnectView: View {
                 // The sheet closes itself. On first sign-in it vanished incidentally because `RootView` swaps the whole screen at `phase == .ready`. Over an already signed-in app that does not happen: the code was approved, the account added, and the page stayed anyway.
                 if model.errorMessage == nil { close() }
             }
+        }
+    }
+
+    /// The sign-in form of the first sign-in page; `login` adds the session to the account as `sessionAdopt` does for the code.
+    private var passwordForm: some View {
+        ZStack {
+            Theme.reason.ignoresSafeArea()
+            VStack(spacing: 0) {
+                Text("Anmelden")
+                    .font(Theme.titleLarge)
+                    .foregroundStyle(Theme.font)
+                VStack(spacing: TVSpec.loginFieldSpacing) {
+                    InputField(placeholder: "Benutzername", text: $user, content: .username)
+                    InputField(placeholder: "Kennwort", text: $passphrase,
+                               safe: true, content: .password, completion: signIn)
+                }
+                .frame(width: TVSpec.formWidth)
+                .padding(.top, 56)
+                if let error = model.errorMessage, !model.isWorking {
+                    Text(error)
+                        .font(Theme.body)
+                        .foregroundStyle(Theme.error)
+                        .multilineTextAlignment(.center)
+                        .frame(width: 1100)
+                        .padding(.top, 28)
+                }
+                HStack(spacing: 24) {
+                    Button(model.isWorking ? "Anmelden…" : "Anmelden", action: signIn)
+                        .buttonStyle(ThemedButtonStyle())
+                        .disabled(user.isEmpty || model.isWorking)
+                    Button("Lieber Quick Connect") {
+                        withPassword = false
+                        Task { await state.newStart(model) }
+                    }
+                    .buttonStyle(ThemedButtonStyle())
+                }
+                .padding(.top, 52)
+            }
+        }
+    }
+
+    private func signIn() {
+        guard !user.isEmpty else { return }
+        Task {
+            await model.login(username: user, password: passphrase)
+            if model.errorMessage == nil { close() }
         }
     }
 

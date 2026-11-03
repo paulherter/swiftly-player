@@ -23,10 +23,13 @@ import SwiftUI
 struct ImageReason: ViewModifier {
     let url: URL?
     @State private var tones: [Double]
+    /// The colour appears only together with the backdrop image, never before it.
+    @State private var imageThere: Bool
 
     @MainActor init(url: URL?) {
         self.url = url
         _tones = State(initialValue: url.flatMap { ImageTone.shared.remembered(for: $0) } ?? [])
+        _imageThere = State(initialValue: url.map { BackdropImage.shared.image($0) != nil } ?? false)
     }
 
     func body(content: Content) -> some View {
@@ -34,6 +37,7 @@ struct ImageReason: ViewModifier {
             .background {
                 ZStack {
                     ImageTone.network(tones).ignoresSafeArea()
+                        .opacity(imageThere ? 1 : 0)
 
                     // The last bit against banding; see `ImageTone.noise`.
                     if !tones.isEmpty {
@@ -46,6 +50,14 @@ struct ImageReason: ViewModifier {
                 .allowsHitTesting(false)
             }
             .animation(Theme.motion(.easeInOut(duration: 0.4)), value: tones)
+            .animation(Theme.motion(.easeInOut(duration: 0.4)), value: imageThere)
+            .task(id: url) {
+                guard let url, !imageThere else { return }
+                while !Task.isCancelled, BackdropImage.shared.image(url) == nil {
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
+                if !Task.isCancelled { imageThere = true }
+            }
             .task(id: url) {
                 guard let url else { tones = []; return }
 

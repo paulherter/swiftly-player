@@ -36,8 +36,8 @@ struct SupportHeart: View {
             SupportModel.shared.open()
         } label: {
             symbol
-                .font(.system(size: 20))
-                .foregroundStyle(Theme.font)
+                .font(.app(size: Theme.actionSymbol))
+                .foregroundStyle(Theme.fontQuiet)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
@@ -48,21 +48,21 @@ struct SupportHeart: View {
     @ViewBuilder private var symbol: some View {
         // White and filled, as drawn. Two soft beats after launch say it is
         // there, then it keeps still.
-        Image(systemName: "heart.fill")
+        Image(icon: "heart.fill")
             .keyframeAnimator(initialValue: 1.0, trigger: beats) { content, scale in
                 content.scaleEffect(scale)
             } keyframes: { _ in
                 // The design's `beat`: 2.6 s, up at 12 and 36 percent, still for the rest; twice.
                 KeyframeTrack {
-                    CubicKeyframe(1.18, duration: 0.31)
-                    CubicKeyframe(1.0, duration: 0.31)
-                    CubicKeyframe(1.12, duration: 0.31)
-                    CubicKeyframe(1.0, duration: 0.31)
+                    CubicKeyframe(1.18, duration: 0.28)
+                    CubicKeyframe(1.0, duration: 0.28)
+                    CubicKeyframe(1.12, duration: 0.28)
+                    CubicKeyframe(1.0, duration: 0.28)
                     LinearKeyframe(1.0, duration: 1.36)
-                    CubicKeyframe(1.18, duration: 0.31)
-                    CubicKeyframe(1.0, duration: 0.31)
-                    CubicKeyframe(1.12, duration: 0.31)
-                    CubicKeyframe(1.0, duration: 0.31)
+                    CubicKeyframe(1.18, duration: 0.28)
+                    CubicKeyframe(1.0, duration: 0.28)
+                    CubicKeyframe(1.12, duration: 0.28)
+                    CubicKeyframe(1.0, duration: 0.28)
                 }
             }
             .task {
@@ -84,11 +84,11 @@ struct SupporterMark: View {
     var body: some View {
         if SupportModel.shared.isSupporter {
             HStack(spacing: 4) {
-                Image(systemName: "heart.fill")
+                Image(icon: "heart.fill")
                     .foregroundStyle(Theme.accent)
                     .accessibilityHidden(true)
                 Text(SupportCopy.supporterBadge.localized)
-                    .foregroundStyle(Theme.fontQuiet)
+                    .foregroundStyle(Theme.font)
             }
             .growing(12)
         }
@@ -105,8 +105,8 @@ struct SupporterAvatarBadge: ViewModifier {
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottomTrailing) {
             if shown, SupportModel.shared.isSupporter {
-                Image(systemName: "heart.fill")
-                    .font(.system(size: size * 0.2, weight: .semibold))
+                Image(icon: "heart.fill", size: size * 0.2)
+                    .font(.app(size: size * 0.2, weight: .semibold))
                     .foregroundStyle(Theme.accent)
                     .padding(size * 0.06)
                     .background(Theme.groupsArea, in: Circle())
@@ -123,14 +123,11 @@ struct SupportSettingsGroup: View {
     var body: some View {
         let support = SupportModel.shared
         SettingGroup(title: "Swiftly") {
-            ValueRow(symbol: "heart.fill",
+            ValueRow(symbol: "heart",
                      title: Text(SupportCopy.supportSwiftly.localized),
                      under: Text(SupportCopy.sayThanks.localized),
                      value: support.isSupporter ? SupportCopy.thankYou.localized : nil,
                      action: { support.open() })
-            #if DEBUG
-            SupportDebugRows()
-            #endif
         }
     }
 }

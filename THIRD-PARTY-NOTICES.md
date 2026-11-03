@@ -64,7 +64,8 @@ Notes:
 | Component | Version | License (SPDX) | Copyright | Source | Platforms |
 |---|---|---|---|---|---|
 | Lottie (lottie-ios) | 4.6.1 | Apache-2.0 | Airbnb, Inc. | https://github.com/airbnb/lottie-ios | Apple (iPhone, iPad, Mac, Apple TV) |
-| Inter (typeface) | Inter-SemiBold.ttf (18pt SemiBold); on Linux and Windows also InterVariable.ttf | OFL-1.1 | The Inter Project Authors | https://github.com/rsms/inter | Apple (iPhone, iPad, Mac, Apple TV), Linux, Windows |
+| Inter (typeface) | Inter-SemiBold.ttf (18pt SemiBold); on Linux, Windows and Android also InterVariable.ttf | OFL-1.1 | The Inter Project Authors | https://github.com/rsms/inter | Apple (iPhone, iPad, Mac, Apple TV), Linux, Windows, Android |
+| Phosphor Icons (icon set) | 2.1.1 (bold and fill weights) | MIT | Phosphor Icons | https://github.com/phosphor-icons/core | Android |
 | Figtree (typeface of the website) | Webfont, see Website/schrift/ | OFL-1.1 | The Figtree Project Authors | https://github.com/erikdkennedy/figtree | Website |
 | Coil | 3.0.4 | Apache-2.0 | Coil Contributors | https://github.com/coil-kt/coil | Android, Android TV |
 | ZXing core | 3.5.3 | Apache-2.0 | ZXing authors | https://github.com/zxing/zxing | Android TV |

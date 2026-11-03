@@ -89,7 +89,11 @@ extension App {
         let closed = panelWindowClosed
         panelWindow = nil
         panelWindowClosed = nil
-        gtk_overlay_remove_overlay(OpaquePointer(cover), root)
+        // Fades out as long as it faded in; not clickable meanwhile.
+        gtk_widget_set_can_target(root, 0)
+        crossfade(root, on: 0, duration: Theme.timeFadeFromIn, curve: .easeIn) {
+            gtk_overlay_remove_overlay(OpaquePointer(cover), root)
+        }
         closed?()
     }
 

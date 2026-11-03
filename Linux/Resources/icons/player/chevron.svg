@@ -1,3 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.3">
-  <path d="M6.5 9.5 L12 15 L17.5 9.5"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor">
+  <path d="M 107.34 36.66 L 187.34 116.66 C 190.35 119.67 192.03 123.75 192.03 128 C 192.02 132.25 190.33 136.33 187.31 139.33 L 187.32 139.32 L 107.32 219.32 C 101.06 225.57 90.92 225.57 84.66 219.32 C 78.41 213.06 78.41 202.92 84.66 196.66 L 153.34 128 L 84.68 59.32 C 78.43 53.06 78.43 42.92 84.68 36.66 C 90.94 30.41 101.08 30.41 107.34 36.66 Z"/>
 </svg>

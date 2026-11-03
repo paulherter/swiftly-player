@@ -130,7 +130,7 @@ fun WatchlistPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: ()
         RootHeader({ offset }, margin = false) {
             SubpageHeader(translated("Merkliste"), back, bottom = 0.dp, top = false)
             ValueRail({ offset }, Modifier.padding(horizontal = Theme.edgeSpacing)) {
-                ValuePill(Glyph.Grid, Choices.text(genres, state.genre)) {
+                ValuePill(Glyph.Filter, Choices.text(genres, state.genre)) {
                     app.sheet.value = SheetRequest(translated("Merkliste"), genres, state.genre) { state.genreSet(it) }
                 }
                 ValuePill(Glyph.Sort, Choices.text(Choices.sortings, state.sorting)) {
@@ -150,7 +150,7 @@ fun WatchlistPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: ()
             LazyVerticalGrid(GridCells.Fixed(count), state = grid,
                 contentPadding = PaddingValues(start = Theme.edgeSpacing, end = Theme.edgeSpacing, top = headerDp + 8.dp, bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(Theme.tileSpacing),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                verticalArrangement = Arrangement.spacedBy(Theme.gridRow),
                 modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
                 if (state.items.isEmpty() && state.loads) items(count * 3, key = { "platzhalter$it" }) {
                     Box(Modifier.animateItem(fadeInSpec = null, placementSpec = null, fadeOutSpec = Motion.reveal())) { TilePlaceholder() }
@@ -162,7 +162,7 @@ fun WatchlistPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: ()
             if (AccountSwitchTransition.waits) {
                 // On account switch neither failure nor empty state.
             } else if (state.disrupted && state.items.isEmpty() && !state.loads) {
-                EmptyState(Glyph.ServerRoute, translated("Server ist abgetaucht"),
+                EmptyState(Glyph.WlanDisruption, translated("Server ist abgetaucht"),
                     translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serverAddress()),
                     primaryButton = translated("Erneut versuchen") to { section.launch { state.load(app.kern) } })
             } else if (state.items.isEmpty() && !state.loads) {

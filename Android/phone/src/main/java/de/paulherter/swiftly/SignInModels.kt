@@ -82,7 +82,8 @@ class PlexSignInModel(private val app: SwiftlyApplication, private val scope: Co
 
     /** The page title: the account's name once signed in, like the server's name on the Jellyfin page. */
     val title: String get() = when (step) {
-        PlexStep.Start, PlexStep.Opening, is PlexStep.Waiting, PlexStep.PlexUnreachable, PlexStep.Expired, is PlexStep.Failed ->
+        PlexStep.Start, PlexStep.Opening -> translated("Mit Plex anmelden")
+        is PlexStep.Waiting, PlexStep.PlexUnreachable, PlexStep.Expired, is PlexStep.Failed ->
             ServerKind.Plex.shownName
         else -> account ?: ServerKind.Plex.displayName
     }

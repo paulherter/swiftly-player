@@ -180,6 +180,9 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     /// project" for "The Adam Project"). The alphabet index reads its letters from it so
     /// they match the order of an A–Z list (``AlphabetIndex``).
     public let sortName: String?
+    /// **When the title came onto the server** (ISO 8601). What "Zuletzt" sorts by; the
+    /// index beside such a grid groups by its year (``AlphabetIndex``).
+    public let dateCreated: String?
 
     enum CodingKeys: String, CodingKey {
         case id = "Id"
@@ -221,6 +224,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         case extraType = "ExtraType"
         case mediaType = "MediaType"
         case sortName = "SortName"
+        case dateCreated = "DateCreated"
     }
 
     /// Names of the directors, for the line under the description.
@@ -246,7 +250,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
     /// play button showed "E7": the same value, two languages in one place.
     public var episodeCode: String? {
         guard let season = parentIndexNumber, let episode = indexNumber else { return nil }
-        return translated("S\(season) • F\(episode)")
+        return translated("S\(season) · F\(episode)")
     }
 
     /// Fraction already watched, 0 to 1, for the progress bars.
@@ -362,7 +366,8 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
                 originalLanguage: String? = nil,
                 extraType: String? = nil,
                 mediaType: String? = nil,
-                sortName: String? = nil) {
+                sortName: String? = nil,
+                dateCreated: String? = nil) {
         self.id = id; self.name = name; self.type = type
         self.collectionType = collectionType; self.productionYear = productionYear
         self.overview = overview; self.runTimeTicks = runTimeTicks
@@ -389,6 +394,7 @@ public struct Item: Codable, Sendable, Identifiable, Equatable {
         self.extraType = extraType
         self.mediaType = mediaType
         self.sortName = sortName
+        self.dateCreated = dateCreated
     }
 
 }

@@ -59,10 +59,11 @@ fun TvSupportHeart(app: SwiftlyApplication) {
     val support = app.support
     if (!support.available && !support.isSupporter) return
     FocusArea(magnifier = TvTheme.focusMagnifierSmall, perform = { tvSupportOpen(app) }) { focus ->
-        Box(Modifier.size(32.dp).border(2.dp, if (focus) Theme.font else Color.Transparent, CircleShape),
+        // `SymbolStyle` (tvOS 1.1): no surface and no ring at rest, a white circle with the dark symbol on focus.
+        Box(Modifier.size(30.dp).background(if (focus) Color.White else Color.Transparent, CircleShape),
             contentAlignment = Alignment.Center) {
-            // Always filled and white, as on Apple TV (`heart.fill`); being a supporter shows in the settings row.
-            Symbol(Glyph.HeartFilled, 15.dp, color = Theme.font, strength = Strength.Medium,
+            // Always filled; white at rest, as on Apple TV (`heart.fill`); being a supporter shows in the settings row.
+            Symbol(Glyph.HeartFilled, 15.dp, color = if (focus) Theme.reason else Theme.font, strength = Strength.Medium,
                    description = translated("Swiftly unterstützen"))
         }
     }
@@ -75,21 +76,18 @@ fun TvSupportHeart(app: SwiftlyApplication) {
 @Composable
 fun TvSupportEntryRow(app: SwiftlyApplication, modifier: Modifier = Modifier) {
     val supporter = app.support.isSupporter
-    FocusArea(modifier.fillMaxWidth().semantics(mergeDescendants = true) { role = Role.Button },
-              magnifier = 1f, perform = { tvSupportOpen(app) }) { focus ->
-        Row(Modifier.fillMaxWidth().heightIn(min = TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
-                .background(if (focus) TvTheme.focusArea else Color.Transparent).padding(horizontal = 13.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
-                Symbol(Glyph.HeartFilled, 15.dp, color = if (supporter) Theme.accent else Theme.font, strength = Strength.Semibold)
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text(translated("Swiftly unterstützen"), style = TvTheme.body, color = Theme.font, maxLines = 1)
-                Text(translated("Mit einem Kaffee Danke sagen. Alles bleibt für alle kostenlos."), style = TvTheme.small,
-                     color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            if (supporter) Text(translated("Danke"), style = TvTheme.body, color = Theme.fontQuiet, maxLines = 1)
+    // The settings look (`TvSettingsRow`): white focus surface over the group, dark type in focus.
+    TvSettingsRow(modifier.semantics(mergeDescendants = true) { role = Role.Button },
+                  spacing = SettingsLook.rowGap, perform = { tvSupportOpen(app) }) { focus ->
+        Box(Modifier.width(TvSpec.rowSymbolColumn), contentAlignment = Alignment.Center) {
+            Symbol(Glyph.HeartFilled, 15.dp, color = if (focus) Theme.reason else if (supporter) Theme.accent else Theme.font, strength = Strength.Semibold)
         }
+        Column(Modifier.weight(1f).padding(vertical = 5.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(translated("Swiftly unterstützen"), style = SettingsLook.rowText, color = if (focus) Theme.reason else Theme.font, maxLines = 1)
+            Text(translated("Mit einem Kaffee Danke sagen. Alles bleibt für alle kostenlos."), style = TvTheme.small,
+                 color = if (focus) Theme.reason else Theme.fontVeryQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (supporter) Text(translated("Danke"), style = SettingsLook.rowText, color = if (focus) Theme.reason else Theme.fontVeryQuiet, maxLines = 1)
     }
 }
 
@@ -134,7 +132,7 @@ fun TvSupportLayer(app: SwiftlyApplication) {
         TvGlow(app, Modifier.align(Alignment.TopStart), strength = tvSoftGlow(app))
         CompositionLocalProvider(LocalWithinPanel provides true) {
         Column(Modifier.widthIn(max = 820.dp).verticalScroll(rememberScrollState())
-                   .padding(horizontal = TvTheme.edgePage, vertical = TvTheme.edgeTop),
+                   .padding(horizontal = TvTheme.edgePage, vertical = if (thanks) TvTheme.edgeTop else TvTheme.edgeTop - 12.dp),
                horizontalAlignment = Alignment.CenterHorizontally) {
             when (panel) {
                 TvSupportPanel.Thanks -> TvThanksBody(app, first, close = {

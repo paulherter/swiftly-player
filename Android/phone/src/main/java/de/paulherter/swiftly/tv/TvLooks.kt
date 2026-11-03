@@ -23,6 +23,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.sp
+import de.paulherter.swiftly.shared.Wordmark
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -148,30 +159,29 @@ fun TvLookRow(app: SwiftlyApplication, modifier: Modifier = Modifier) {
     val looks = app.looks
     val entry = looks.profileEntry().first
     val saved = looks.info(JSONObject(looks.saved.value).optString("look", looks.palette.value.look))
-    FocusArea(modifier.fillMaxWidth().semantics(mergeDescendants = true) { role = Role.Button },
-              magnifier = 1f, perform = { tvLooksOpen(app) }) { focus ->
-        Row(Modifier.fillMaxWidth().heightIn(min = TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
-                .background(tvFocusSurface(focus)).padding(horizontal = TvSpec.rowInset, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            LookTileView(looks.tileIcon(saved), 26.dp)
-            when (entry) {
-                "current" -> {
-                    Text(saved.name, style = TvTheme.body, color = Theme.font, maxLines = 1,
-                         overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    Text(translated("Ändern"), style = TvTheme.body, color = Theme.accent, maxLines = 1)
+    // The settings look (`TvSettingsRow`): white focus surface over the group, dark type in focus, gaps 24 pt.
+    TvSettingsRow(modifier.semantics(mergeDescendants = true) { role = Role.Button },
+                  spacing = 12.dp, perform = { tvLooksOpen(app) }) { focus ->
+        val ink = if (focus) Theme.reason else Theme.font
+        val quiet = if (focus) Theme.reason else Theme.fontVeryQuiet
+        Box(Modifier.padding(vertical = 5.dp)) { LookTileView(looks.tileIcon(saved), 26.dp) }
+        when (entry) {
+            "current" -> {
+                Text(saved.name, style = TvTheme.body, color = ink, maxLines = 1,
+                     overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(translated("Ändern"), style = TvTheme.body, color = if (focus) Theme.reason else Theme.accent, maxLines = 1)
+            }
+            "teaser" -> {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text(translated("Wähl deinen Look"), style = TvTheme.body, color = ink, maxLines = 1)
+                    Text(translated("Looks und Icons für alle, die Swiftly am Laufen halten."), style = TvTheme.small,
+                         color = quiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                "teaser" -> {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                        Text(translated("Wähl deinen Look"), style = TvTheme.body, color = Theme.font, maxLines = 1)
-                        Text(translated("Looks und Icons für alle, die Swiftly am Laufen halten."), style = TvTheme.small,
-                             color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    Symbol(Glyph.AngleRight, 12.dp, color = Theme.fontVeryQuiet, strength = Strength.Semibold)
-                }
-                else -> {
-                    Text(translated("Looks"), style = TvTheme.body, color = Theme.font, maxLines = 1, modifier = Modifier.weight(1f))
-                    Symbol(Glyph.AngleRight, 12.dp, color = Theme.fontVeryQuiet, strength = Strength.Semibold)
-                }
+                Symbol(Glyph.AngleRight, 12.dp, color = quiet, strength = Strength.Semibold)
+            }
+            else -> {
+                Text(translated("Looks"), style = TvTheme.body, color = ink, maxLines = 1, modifier = Modifier.weight(1f))
+                Symbol(Glyph.AngleRight, 12.dp, color = quiet, strength = Strength.Semibold)
             }
         }
     }
@@ -369,12 +379,16 @@ private fun TvLookChoice(app: SwiftlyApplication, look: Looks.LookInfo, chosen: 
 private const val TERMS_ADDRESS = "play.google.com/about/play-terms"
 private const val PRIVACY_ADDRESS = "swiftlyplayer.com/privacy.html"
 
+/** `column` of `TVSupportGrowView` (1040 pt), halved. */
+internal val GrowColumn = 520.dp
+
 /**
- * **"Hilf Swiftly zu wachsen" on the television** (`TVSupportGrowView`): one column, top to bottom
- * the title, "Look ausprobieren", the two plans side by side, the tips as capsules, nothing
- * preselected, the buy button, the terms, "Wiederherstellen". Back closes. The store's dialog (or,
- * in Debug, the simulated purchase) does the rest; the thanks replaces this page. A television has
- * no browser, so the legal addresses stand as text. Every tvOS point halved.
+ * **"Hilf Swiftly zu wachsen" on the television** (`TVSupportGrowView`): one left-aligned column of
+ * 520 dp. Top to bottom the three mini screens with "Look ausprobieren", the title, the two plans
+ * side by side (badge on the edge, empty ring or accent check), the tips in one row with their
+ * label, nothing preselected, the white buy button, the terms, "Wiederherstellen". Back closes. The
+ * store's dialog (or, in Debug, the simulated purchase) does the rest; the thanks replaces this page.
+ * A television has no browser, so the legal addresses stand as text. Every tvOS point halved.
  */
 @Composable
 fun TvGrowBody(app: SwiftlyApplication, close: () -> Unit, first: FocusRequester) {
@@ -387,97 +401,221 @@ fun TvGrowBody(app: SwiftlyApplication, close: () -> Unit, first: FocusRequester
     val monthly = plans.firstOrNull { it.plan == "monthly" }
     val lifetime = plans.firstOrNull { it.plan == "lifetime" }
 
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        Text(translated("Hilf Swiftly zu wachsen"), style = TvTheme.titleLarge, color = Theme.font)
-        Text("🌱", style = TvTheme.titleLarge)
-    }
-    Text(translated("Dein Beitrag hält Swiftly am Laufen."), style = TvTheme.body.copy(textAlign = TextAlign.Center),
-         color = Theme.fontQuiet, modifier = Modifier.padding(top = 5.dp))
-    Text(translated("Open Source, keine Werbung, alles zum Schauen bleibt kostenlos."),
-         style = TvTheme.small.copy(textAlign = TextAlign.Center), color = Theme.fontVeryQuiet, modifier = Modifier.padding(top = 2.dp))
-
-    TvButton(translated("Look ausprobieren"), Glyph.AngleRight, symbolToText = true, modifier = Modifier.padding(top = 18.dp)) {
-        close()
-        tvLooksOpen(app)
-    }
-
-    if (support.channel.pricesUnavailable.value) {
-        Text(translated("Preise sind gerade nicht verfügbar"), style = TvTheme.body, color = Theme.font, modifier = Modifier.padding(top = 18.dp))
-        Text(translated("Google Play hat nicht geantwortet. Das passiert ohne Internet oder wenn Käufe auf deinem Konto eingeschränkt sind. Nichts geht verloren, und Swiftly läuft wie immer."),
-             style = TvTheme.small.copy(textAlign = TextAlign.Center), color = Theme.fontQuiet,
-             modifier = Modifier.padding(top = 4.dp).widthIn(max = 550.dp))
-        TvButton(translated("Google Play erneut fragen"), modifier = Modifier.padding(top = 8.dp).focusRequester(first)) {
-            support.channel.connect(); support.channel.refresh()
-        }
-    }
-    if (monthly != null || lifetime != null) {
-        Row(Modifier.padding(top = 18.dp).focusGroup(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            monthly?.let {
-                TvPlanTile(translated("Beliebt"), translated("Monatlich"), it.price, translated("im Monat · jederzeit kündbar"),
-                           chosen == it.productId, Modifier.focusRequester(first)) { chosen = it.productId }
+    Column(Modifier.width(GrowColumn)) {
+        TvLooksHero(app, Modifier.fillMaxWidth().padding(top = 18.dp)) { close(); tvLooksOpen(app) }
+        Column(Modifier.padding(top = 12.dp, start = 10.dp, end = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(translated("Hilf Swiftly zu wachsen"), style = TvTheme.titleLarge, color = Theme.font)
+                Text("🌱", fontSize = 17.sp)
             }
-            lifetime?.let {
-                TvPlanTile(translated("Guter Deal"), translated("Für immer"), it.price, translated("einmal zahlen · wie 10 Monate"),
-                           chosen == it.productId, if (monthly == null) Modifier.focusRequester(first) else Modifier) { chosen = it.productId }
+            Text(translated("Dein Beitrag hält Swiftly am Laufen."), fontSize = 16.sp, color = Theme.font.copy(alpha = 0.9f))
+            Text(translated("Open Source, keine Werbung, alles zum Schauen bleibt kostenlos."), fontSize = 13.sp, color = Theme.fontVeryQuiet)
+        }
+
+        if (support.channel.pricesUnavailable.value) {
+            Column(Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(TvTheme.cornerTile))
+                       .background(Theme.groupsArea).padding(15.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(translated("Preise sind gerade nicht verfügbar"), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.font)
+                Text(translated("Google Play hat nicht geantwortet. Das passiert ohne Internet oder wenn Käufe auf deinem Konto eingeschränkt sind. Nichts geht verloren, und Swiftly läuft wie immer."),
+                     fontSize = 13.sp, color = Theme.fontQuiet)
+                TvButton(translated("Google Play erneut fragen"), modifier = Modifier.padding(top = 4.dp).focusRequester(first)) {
+                    support.channel.connect(); support.channel.refresh()
+                }
+            }
+        } else {
+            if (monthly != null || lifetime != null) {
+                Row(Modifier.padding(top = 13.dp).focusGroup().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    monthly?.let {
+                        TvPlanTile(translated("Beliebt"), true, translated("Monatlich"), it.price, translated("im Monat · jederzeit kündbar"),
+                                   chosen == it.productId, Modifier.weight(1f).fillMaxHeight().focusRequester(first)) { chosen = it.productId }
+                    }
+                    lifetime?.let {
+                        TvPlanTile(translated("Guter Deal"), false, translated("Für immer"), it.price, translated("einmal zahlen · wie 10 Monate"),
+                                   chosen == it.productId, Modifier.weight(1f).fillMaxHeight().then(if (monthly == null) Modifier.focusRequester(first) else Modifier)) { chosen = it.productId }
+                    }
+                }
+            }
+            if (offers.isNotEmpty()) {
+                Row(Modifier.padding(top = 8.dp).focusGroup(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text(translated("Einfach Danke ☕"), fontSize = 12.sp, color = Theme.fontVeryQuiet, maxLines = 1,
+                         modifier = Modifier.padding(end = 3.dp))
+                    support.tips.forEach { tip ->
+                        val offer = offers.firstOrNull { it.productId == tip.productId } ?: return@forEach
+                        TvTipCapsule(if (offer.owned) translated("Danke") else offer.price, chosen == tip.productId,
+                                     released = !offer.owned, Modifier.weight(1f)) { chosen = tip.productId }
+                    }
+                }
             }
         }
-    }
-    if (offers.isNotEmpty()) {
-        Column(Modifier.padding(top = 14.dp), horizontalAlignment = Alignment.CenterHorizontally,
+
+        val label = when (chosen) {
+            null -> translated("Wähl eine Option")
+            monthly?.productId -> translated("Für %@ im Monat unterstützen", price[chosen].orEmpty())
+            lifetime?.productId -> translated("Mit %@ unterstützen", price[chosen].orEmpty())
+            else -> translated("Mit %@ Danke sagen", price[chosen].orEmpty())
+        }
+        Column(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
                verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text(translated("Einfach Danke ☕"), style = TvTheme.small, color = Theme.fontVeryQuiet)
-            Row(Modifier.focusGroup(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                support.tips.forEach { tip ->
-                    val offer = offers.firstOrNull { it.productId == tip.productId } ?: return@forEach
-                    TvTipCapsule(if (offer.owned) translated("Danke") else offer.price, chosen == tip.productId,
-                                 released = !offer.owned) { chosen = tip.productId }
+            TvBuyButton(label, chosen != null && activity != null) {
+                val id = chosen ?: return@TvBuyButton
+                activity?.let { support.channel.buy(it, id) }
+            }
+            Text("${translated("Nutzungsbedingungen")}: $TERMS_ADDRESS  ·  ${translated("Datenschutz")}: $PRIVACY_ADDRESS",
+                 fontSize = 11.sp, textAlign = TextAlign.Center, color = Theme.fontVeryQuiet, modifier = Modifier.padding(top = 2.dp))
+            TvLinkButton(translated("Wiederherstellen")) { support.channel.refresh() }
+        }
+    }
+}
+
+/** The pill under the mini screens (`TVPillStyle`): dark with a thin edge, white when focused. */
+@Composable
+private fun TvPill(text: String, perform: () -> Unit) {
+    FocusArea(Modifier.semantics { role = Role.Button }, magnifier = TvTheme.focusMagnifier, lift = true, liftCorner = 100.dp,
+              perform = perform) { focus ->
+        Row(Modifier.height(36.dp).clip(CircleShape)
+                .background(if (focus) Color.White else Color(0xFF292929).copy(alpha = 0.92f))
+                .border(1.dp, Theme.font.copy(alpha = if (focus) 0f else 0.14f), CircleShape).padding(horizontal = 17.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (focus) Theme.reason else Theme.font, maxLines = 1)
+            Symbol(Glyph.AngleRight, 11.dp, color = if (focus) Theme.reason else Theme.font, strength = Strength.Bold)
+        }
+    }
+}
+
+/** `TVLooksHero`: three small 16:9 Start pages in three looks, the pill in its own row below. */
+@Composable
+internal fun TvLooksHero(app: SwiftlyApplication, modifier: Modifier, tryLooks: () -> Unit) {
+    val looks = app.looks
+    val palettes = remember {
+        listOf(looks.paletteFor("""{"look":"original","glow":"soft"}"""),
+               looks.paletteFor("""{"look":"neonNight"}"""),
+               looks.paletteFor("""{"look":"neonNight","accent":"coral"}"""))
+    }
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            palettes.forEach { p ->
+                // Drawn at 128 x 72 and shown at 104 x 58.5 (208 / 256).
+                Box(Modifier.size(104.dp, 58.5.dp)) {
+                    Box(Modifier.requiredSize(128.dp, 72.dp).graphicsLayer { scaleX = 208f / 256f; scaleY = 208f / 256f }) {
+                        TvMiniScreen(p)
+                    }
+                }
+            }
+        }
+        TvPill(translated("Look ausprobieren"), tryLooks)
+    }
+}
+
+/** `TVMiniScreen`: a 256 x 144 pt Start page in a look, here 128 x 72 dp (points halved). */
+@Composable
+private fun TvMiniScreen(palette: Looks.Palette) {
+    val accent = palette.accent.main
+    val shape = RoundedCornerShape(5.dp)
+    Box(Modifier.size(128.dp, 72.dp).clip(shape).background(Theme.reason).border(0.5.dp, Theme.font.copy(alpha = 0.12f), shape)
+            .drawBehind {
+                ellipseGradient(Offset(size.width * 0.62f, size.height * 0.3f), size.width * 0.6f, size.height * 0.6f,
+                                0f to accent.copy(alpha = 0.32f), 1f to accent.copy(alpha = 0f))
+            }) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 5.5.dp).offset(y = 5.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.5.dp)) {
+            Box(Modifier.padding(end = 1.5.dp)) {
+                Wordmark(height = 3.5.dp, accent = palette.logoGradient.firstOrNull() ?: accent,
+                         gradient = palette.logoGradient.takeIf { it.size > 1 })
+            }
+            repeat(4) { i ->
+                Box(Modifier.size(if (i == 0) 7.dp else 8.dp, 1.25.dp).clip(CircleShape)
+                        .background(Theme.font.copy(alpha = if (i == 0) 1f else 0.35f)))
+            }
+            Spacer(Modifier.weight(1f))
+            Box(Modifier.size(3.5.dp).clip(CircleShape).background(accent))
+        }
+        Column(Modifier.offset(5.5.dp, 16.dp), verticalArrangement = Arrangement.spacedBy(1.5.dp)) {
+            Box(Modifier.size(26.dp, 3.dp).clip(CircleShape).background(Theme.font))
+            Box(Modifier.size(18.dp, 1.25.dp).clip(CircleShape).background(Theme.font.copy(alpha = 0.45f)))
+            Box(Modifier.padding(top = 1.dp).size(45.dp, 1.25.dp).clip(CircleShape).background(Theme.font.copy(alpha = 0.3f)))
+        }
+        Column(Modifier.offset(5.5.dp, 39.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Box(Modifier.size(15.dp, 1.5.dp).clip(CircleShape).background(Theme.font.copy(alpha = 0.8f)))
+            Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
+                repeat(4) { i ->
+                    val tile = RoundedCornerShape(1.5.dp)
+                    Box(Modifier.size(27.dp, 15.5.dp).clip(tile).background(Brush.verticalGradient(listOf(Theme.raised, Theme.area)))
+                            .then(if (i == 0) Modifier.border(0.5.dp, Theme.font.copy(alpha = 0.7f), tile) else Modifier)) {
+                        if (i == 0) Box(Modifier.align(Alignment.BottomStart).size(11.dp, 1.dp).background(accent))
+                    }
                 }
             }
         }
     }
-    val label = when (chosen) {
-        null -> translated("Wähl eine Option")
-        monthly?.productId -> translated("Für %@ im Monat unterstützen", price[chosen].orEmpty())
-        lifetime?.productId -> translated("Mit %@ unterstützen", price[chosen].orEmpty())
-        else -> translated("Mit %@ Danke sagen", price[chosen].orEmpty())
-    }
-    TvButton(label, released = chosen != null && activity != null, modifier = Modifier.padding(top = 14.dp)) {
-        val id = chosen ?: return@TvButton
-        activity?.let { support.channel.buy(it, id) }
-    }
-    Text("${translated("Nutzungsbedingungen")}: $TERMS_ADDRESS  ·  ${translated("Datenschutz")}: $PRIVACY_ADDRESS",
-         style = TvTheme.small.copy(textAlign = TextAlign.Center), color = Theme.fontVeryQuiet,
-         modifier = Modifier.padding(top = 12.dp).widthIn(max = 550.dp))
-    TvButton(translated("Wiederherstellen"), modifier = Modifier.padding(top = 10.dp)) { support.channel.refresh() }
 }
 
-/** One plan (`planTile`): badge, title, price, terms, centered; chosen is the accent ring. 440 pt wide, halved. */
+/** One plan (`planTile`): title, price, terms, left-aligned; badge on the top edge; ring or check at the top right. */
 @Composable
-private fun TvPlanTile(badge: String, title: String, price: String, detail: String, chosen: Boolean,
+private fun TvPlanTile(badge: String, loud: Boolean, title: String, price: String, detail: String, chosen: Boolean,
                        modifier: Modifier, choose: () -> Unit) {
     val shape = RoundedCornerShape(TvTheme.cornerTile)
-    FocusArea(modifier.width(220.dp).semantics(mergeDescendants = true) { role = Role.Button; selected = chosen },
+    FocusArea(modifier.semantics(mergeDescendants = true) { role = Role.Button; selected = chosen },
               magnifier = TvTheme.focusMagnifier, perform = choose) { _ ->
-        Column(Modifier.fillMaxWidth().clip(shape).background(Theme.area)
-                .border(2.dp, if (chosen) Theme.accent else Color.Transparent, shape).padding(12.dp),
-               horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(badge, style = TvTheme.small, color = Theme.fontQuiet, maxLines = 1)
-            Text(title, style = TvTheme.button, color = Theme.font, maxLines = 1)
-            Text(price, style = TvTheme.categoryLarge.copy(fontFeatureSettings = "tnum"), color = Theme.font, maxLines = 1)
-            Text(detail, style = TvTheme.small, color = Theme.fontQuiet, maxLines = 1)
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().clip(shape).background(Theme.area)
+                    .then(if (chosen) Modifier.border(2.dp, Theme.accent, shape) else Modifier).padding(14.dp).heightIn(min = 56.dp),
+                   verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, fontSize = 14.sp, color = Theme.fontQuiet, maxLines = 1, modifier = Modifier.padding(top = 7.dp))
+                Text(price, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Theme.font, maxLines = 1,
+                     style = TextStyle(fontFeatureSettings = "tnum"), modifier = Modifier.padding(top = 3.dp))
+                Text(detail, fontSize = 12.sp, color = Theme.fontVeryQuiet, maxLines = 1)
+            }
+            // Empty ring, or the accent check.
+            Box(Modifier.align(Alignment.TopEnd).padding(13.dp).size(20.dp), contentAlignment = Alignment.Center) {
+                if (chosen) Box(Modifier.fillMaxSize().clip(CircleShape).background(Theme.accent), contentAlignment = Alignment.Center) {
+                    Symbol(Glyph.Checkmark, 10.dp, color = Theme.onAccent, strength = Strength.Bold)
+                } else Box(Modifier.fillMaxSize().border(1.5.dp, Theme.font.copy(alpha = 0.25f), CircleShape))
+            }
+            Box(Modifier.offset(14.dp, (-9).dp).height(19.dp).clip(CircleShape)
+                    .background(if (loud) Theme.font else Theme.pressedArea).padding(horizontal = 8.dp),
+                contentAlignment = Alignment.Center) {
+                Text(badge.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp, maxLines = 1,
+                     color = if (loud) Color(0xFF0A0A0A) else Theme.font)
+            }
         }
     }
 }
 
-/** A tip (`tips`): a 200 by 84 pt capsule with the price, the accent ring when chosen. Halved. */
+/** A tip (`tips`): a capsule of at least 40 dp with the price, the accent ring when chosen. */
 @Composable
-private fun TvTipCapsule(text: String, chosen: Boolean, released: Boolean, choose: () -> Unit) {
-    FocusArea(Modifier.semantics(mergeDescendants = true) { role = Role.Button; selected = chosen },
+private fun TvTipCapsule(text: String, chosen: Boolean, released: Boolean, modifier: Modifier, choose: () -> Unit) {
+    FocusArea(modifier.semantics(mergeDescendants = true) { role = Role.Button; selected = chosen },
               magnifier = TvTheme.focusMagnifier, perform = { if (released) choose() }) { _ ->
-        Box(Modifier.size(100.dp, 42.dp).clip(CircleShape).background(Theme.area)
-                .border(2.dp, if (chosen) Theme.accent else Color.Transparent, CircleShape),
+        Box(Modifier.fillMaxWidth().heightIn(min = 40.dp).clip(CircleShape).background(Theme.area)
+                .then(if (chosen) Modifier.border(2.dp, Theme.accent, CircleShape) else Modifier),
             contentAlignment = Alignment.Center) {
-            Text(text, style = TvTheme.button, color = if (released) Theme.font else Theme.fontQuiet, maxLines = 1)
+            Text(text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (released) Theme.font else Theme.fontQuiet,
+                 maxLines = 1, style = TextStyle(fontFeatureSettings = "tnum"))
+        }
+    }
+}
+
+/** `TVBuyStyle`: the big white purchase button, muted when it cannot be used; focus lifts it. */
+@Composable
+private fun TvBuyButton(text: String, released: Boolean, perform: () -> Unit) {
+    FocusArea(Modifier.fillMaxWidth().semantics { role = Role.Button }, magnifier = TvTheme.focusMagnifier, lift = true,
+              liftCorner = TvTheme.corner, perform = { if (released) perform() }) { _ ->
+        Box(Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(TvTheme.corner))
+                .background(if (released) Color.White else Theme.area), contentAlignment = Alignment.Center) {
+            Text(text, style = TvTheme.button, maxLines = 1, color = if (released) Color(0xFF0A0A0A) else Theme.fontVeryQuiet)
+        }
+    }
+}
+
+/** `TVLinkStyle`: a quiet underlined text link; focus puts a white capsule behind it. */
+@Composable
+private fun TvLinkButton(text: String, perform: () -> Unit) {
+    FocusArea(Modifier.semantics { role = Role.Button }, magnifier = TvTheme.focusMagnifier, perform = perform) { focus ->
+        Box(Modifier.height(30.dp).clip(CircleShape).background(if (focus) Color.White else Color.Transparent)
+                .padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+            Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, textDecoration = TextDecoration.Underline,
+                 color = if (focus) Theme.reason else Theme.fontQuiet, maxLines = 1)
         }
     }
 }

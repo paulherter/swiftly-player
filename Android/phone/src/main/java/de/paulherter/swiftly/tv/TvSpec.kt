@@ -16,6 +16,8 @@ object TvSpec {
     val cornerArea = 12.dp
     val cornerBar = 2.5.dp
     val rowInset = 13.dp
+    val rowSymbol = 20.dp
+    val rowSymbolColumn = 26.dp
     val listCardInset = 5.dp
     val groupGap = 18.dp
     val sectionColumnWidth = 230.dp
@@ -51,6 +53,7 @@ object TvSpec {
     val serverAdvancedTop = 12.dp
     val serverButtonTop = 18.dp
     val serverErrorTop = 16.dp
+    val serverFoundTop = 24.dp
     val loginServerNameTop = 22.dp
     val loginVersionTop = 3.dp
     val loginFieldsTop = 22.dp
@@ -63,6 +66,7 @@ object TvSpec {
     val onboardingBlockTop = 22.dp
     val onboardingHintSpacing = 10.dp
     val onboardingErrorTop = 12.dp
+    val onboardingFoundTop = 12.dp
     val onboardingCancelTop = 22.dp
     val onboardingCodeTop = 12.dp
     val onboardingAlternativeTop = 16.dp

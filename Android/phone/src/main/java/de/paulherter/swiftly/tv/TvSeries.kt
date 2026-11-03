@@ -58,6 +58,7 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
     /** The series did not arrive on first load; before, "Loading…" never ended. */
     var disrupted by remember(target.id) { mutableStateOf(false) }
     var similar by remember(target.id) { mutableStateOf<List<GridTile>>(emptyList()) }
+    var watchers by remember(target.id) { mutableStateOf<List<de.paulherter.swiftly.Watcher>>(emptyList()) }
     var extras by remember(target.id) { mutableStateOf<List<Extra>>(emptyList()) }
 
     // **The plan arrives later, as on the phone** (`SeriesPage.planLoad`): `Kern.series` does not
@@ -90,6 +91,7 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
      * stays.
      */
     suspend fun load() {
+        run.launch { watchers = de.paulherter.swiftly.watchersLoad(app, target.id) }
         try {
             val (hasRead, surroundings) = coroutineScope {
                 val a = async(Dispatchers.IO) { app.kern.series(target.id).await() }
@@ -172,7 +174,8 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                              directPlayFlag = series?.planPresent == true && series.lossless,
                              hint = if (series?.planPresent == true && !series.lossless) series.method else null,
                              buttonAlpha = fadeInAlpha, modifier = Modifier.tvSection(a, "kopf", TvSectionKind.Header),
-                             logo = if (app.settings.titleAsLogo) series?.logo else null) {
+                             logo = if (app.settings.titleAsLogo) series?.logo else null,
+                             heroTrim = 20.dp /* 40 pt: the series rail starts higher than the film one */) {
                     // Never locked while loading: the button must stay a focus target.
                     // Mirrors `SeriesView.starte`: without a plan it reports instead of silently doing nothing.
                     val menu = de.paulherter.swiftly.LocalTileMenu.current
@@ -277,11 +280,12 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                 }
 
                 Column(Modifier.tvSection(a, "folgen").padding(top = TvTheme.railsSpacing - TvTheme.railsPadding).tvInFade(fadeInAlpha)) {
-                    Row(Modifier.padding(start = TvTheme.edgePage), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(Modifier.padding(start = TvTheme.edgePage), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(translated("Folgen"), style = TvTheme.rail, color = Theme.font)
                         val list = series?.seasons.orEmpty()
-                        if (list.size > 1) {
-                            TvButton(list.firstOrNull { it.id == season }?.name ?: translated("Staffel"), Glyph.AngleDown, height = 30.dp) {
+                        // Always shown, also for one season ("Staffel 1" as fallback), as the capsule of the library rail.
+                        if (list.isNotEmpty()) {
+                            TvCapsule(list.firstOrNull { it.id == season }?.name ?: list.firstOrNull()?.name ?: translated("Staffel 1")) {
                                 app.sheet.value = SheetRequest(translated("Staffel"), list.map { Choice(it.id, it.name) }, season) { w ->
                                     season = w; selfSelected = true
                                     app.episodesCache[w]?.let { episodes = it }
@@ -322,6 +326,7 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                 if (folks.isNotEmpty()) TvStrip(translated("Besetzung"), Modifier.tvInFade(fadeInAlpha).tvSection(a, "besetzung")) {
                     items(folks, key = { it.id }) { p -> TvCast(p) { open(Destination(p.id, p.name, "Person", p.role, name)) } }
                 }
+                TvWatchedBy(watchers, Modifier.tvInFade(fadeInAlpha).tvSection(a, "gesehenvon"))
                 if (similar.isNotEmpty()) TvStrip(translated("Ähnliches"), Modifier.tvInFade(fadeInAlpha).tvSection(a, "aehnliche")) {
                     items(similar, key = { it.id }) { k -> TvTile(k.poster, k.title, k.subline) { open(Destination(k.id, k.title, k.type)) } }
                 }

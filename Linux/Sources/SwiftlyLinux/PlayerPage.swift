@@ -600,7 +600,7 @@ extension App {
     private func playerHeader(_ item: Item) -> Widget! {
         let header = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
         gtk_widget_set_margin_top(header, PlayerMetric.top)
-        gtk_widget_set_margin_start(header, PlayerMetric.page)
+        gtk_widget_set_margin_start(header, PlayerMetric.titleLeft)
         gtk_widget_set_margin_end(header, PlayerMetric.page)
 
         let left = stack(GTK_ORIENTATION_VERTICAL, spacing: 3)
@@ -625,7 +625,7 @@ extension App {
         // Volume is the first button in the row (Mac: `VolumeSlider`).
         append(rail, volumeBuild())
 
-        let (tracks, _) = iconButton("subtitles", label: translated("Audio & Untertitel")) {
+        let (tracks, _) = iconButton("subtitles", label: translated("Ton und Untertitel"), key: "T") {
             [weak self] in self?.unfoldLayer(.tracks)
         }
         playerLayersButtons[.tracks] = tracks
@@ -648,7 +648,7 @@ extension App {
         let fullActive = gtk_window_is_fullscreen(asWindow(window)) != 0
         let (fullscreen, fullscreenGlyph) = iconButton(
             fullActive ? "fullscreen-exit" : "fullscreen",
-            label: fullActive ? translated("Vollbild verlassen") : translated("Vollbild")) {
+            label: fullActive ? translated("Vollbild verlassen") : translated("Vollbild"), key: "F") {
             [weak self] in self?.fullscreenToggle()
         }
         playerFullButton = fullscreen
@@ -665,7 +665,7 @@ extension App {
         gtk_widget_set_visible(handOver, playHandOverShown ? 1 : 0)
         append(rail, handOver)
 
-        let (close, _) = iconButton("close", label: translated("Player schließen")) {
+        let (close, _) = iconButton("close", label: translated("Player schließen"), key: "esc") {
             [weak self] in self?.playerClose()
         }
         append(rail, close)
@@ -680,7 +680,7 @@ extension App {
         let state = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
         gtk_widget_set_valign(state, GTK_ALIGN_START)
         gtk_widget_set_margin_top(state, PlayerMetric.top)
-        gtk_widget_set_margin_start(state, PlayerMetric.page)
+        gtk_widget_set_margin_start(state, PlayerMetric.titleLeft)
         gtk_widget_set_margin_end(state, PlayerMetric.page)
         gtk_widget_set_can_target(state, 0)
         gtk_widget_set_opacity(state, 0)
@@ -854,16 +854,22 @@ extension App {
         return slider.display
     }
 
-    /// Centered in the picture: back, play, forward. Spacing 80, icons 30 and 40 in
-    /// boxes of 54 and 72 (Mac: `centerControls`, `JumpButton`).
+    /// Centered in the picture: back, play, forward. Spacing 66, icons 44 and 52 in
+    /// boxes of 48 and 60, key hints under the row (Mac 1.1: `centerControls`,
+    /// `JumpButton`, `KeyHint`).
     private func playerMiddle() -> Widget! {
-        let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 80)
+        let column = stack(GTK_ORIENTATION_VERTICAL, spacing: 31)
+        gtk_widget_set_halign(column, GTK_ALIGN_CENTER)
+        gtk_widget_set_valign(column, GTK_ALIGN_CENTER)
+        // The Mac lifts the row 20 above the middle and sets the hints at +50.
+        gtk_widget_set_margin_top(column, 9)
+        let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 66)
         gtk_widget_set_halign(rail, GTK_ALIGN_CENTER)
-        gtk_widget_set_valign(rail, GTK_ALIGN_CENTER)
+        append(column, rail)
 
-        let back = PlayerCharacter("back", size: 36, figure: selection.backSeconds)
+        let back = PlayerCharacter("back", size: 44, figure: selection.backSeconds)
         playerBackCharacter = back
-        append(rail, playKey(back.display, container: 54,
+        append(rail, playKey(back.display, container: 48,
                                     name: String(format: translated("%lld Sekunden zurück"), selection.backSeconds)) {
             [weak self] in
             guard let self else { return }
@@ -872,16 +878,16 @@ extension App {
             self.controlsShow()
         })
 
-        let center = PlayerCharacter("pause", size: 46)
+        let center = PlayerCharacter("pause", size: 52)
         playerPlayMarker = center
-        append(rail, playKey(center.display, container: 72,
+        append(rail, playKey(center.display, container: 60,
                                     name: translated("Anhalten")) {
             [weak self] in self?.playToggle()
         })
 
-        let forward = PlayerCharacter("forward", size: 36, figure: selection.forwardSeconds)
+        let forward = PlayerCharacter("forward", size: 44, figure: selection.forwardSeconds)
         playerPreCharacter = forward
-        append(rail, playKey(forward.display, container: 54,
+        append(rail, playKey(forward.display, container: 48,
                                     name: String(format: translated("%lld Sekunden vor"), selection.forwardSeconds)) {
             [weak self] in
             guard let self else { return }
@@ -889,7 +895,30 @@ extension App {
             self.playerPreCharacter?.nudge()
             self.controlsShow()
         })
-        return rail
+
+        // The keys that work, quiet under the buttons; no clicks (Mac: `keyHints`).
+        let hints = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 16)
+        gtk_widget_set_halign(hints, GTK_ALIGN_CENTER)
+        gtk_widget_set_can_target(hints, 0)
+        append(hints, keyHint("←", text: "\(selection.backSeconds) s").box)
+        let space = keyHint(translated("Leertaste"), text: translated(center.running ? "Pause" : "Abspielen"))
+        center.onRunning = { running in
+            gtk_label_set_text(OpaquePointer(space.text), translated(running ? "Pause" : "Abspielen"))
+        }
+        append(hints, space.box)
+        append(hints, keyHint("→", text: "\(selection.forwardSeconds) s").box)
+        append(column, hints)
+        return column
+    }
+
+    /// One hint: keycap (white 12 %) plus what it does (Mac: `KeyHint`).
+    private func keyHint(_ key: String, text: String) -> (box: Widget, text: Widget) {
+        let box = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 6)
+        let cap = label(key, style: "swiftly-tastenkappe")
+        append(box, cap)
+        let words = label(text, style: "swiftly-tastenhinweis")
+        append(box, words)
+        return (box!, words!)
     }
 
     private func playKey(_ symbolText: Widget!, container: Int32, name: String,
@@ -921,8 +950,9 @@ extension App {
         append(spaceRail, proceed.button)
         append(bottom, spaceRail)
 
-        let bar = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 14)
+        let bar = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
         playerTime = label("0:00", style: "swiftly-spielerzeit")
+        gtk_widget_add_css_class(playerTime, "swiftly-spielerzeit-jetzt")
         gtk_widget_set_size_request(playerTime, 52, -1)
         gtk_label_set_xalign(OpaquePointer(playerTime), 0)
         append(bar, playerTime)
@@ -993,7 +1023,7 @@ extension App {
         }
         // With chapters the overlay also draws the bar: redraw on every new value.
         signal(playerSlider, "value-changed") { [weak self] in
-            if let k = self?.playerNotches, self?.playerChapter.isEmpty == false {
+            if let k = self?.playerNotches, self?.playerChapter.isEmpty == false || self?.atSlider == true {
                 gtk_widget_queue_draw(k)
             }
         }
@@ -1001,33 +1031,22 @@ extension App {
         playerRemaining = label("−0:00", style: "swiftly-spielerzeit")
         gtk_widget_set_size_request(playerRemaining, 58, -1)
         gtk_label_set_xalign(OpaquePointer(playerRemaining), 1)
-        // **Remaining time or end time: one click toggles** ("−12:34" or "Endet um 22:41"),
-        // and the choice persists. No extra button or second line: same spot, same font.
-        // Keyboard-accessible like a button.
-        onClick(playerRemaining, keyboard: true) { [weak self] in
-            guard let self else { return }
-            self.selection.remainingTimeAsEnd.toggle()
-            self.selection.secure()
-            self.timesShow()
-            self.controlsShow()
-        }
-        gtk_widget_set_cursor_from_name(playerRemaining, "pointer")
-        gtk_widget_set_tooltip_text(playerRemaining, translated("Wechselt zwischen Restzeit und Ende"))
+        // Remaining time or end time follows Settings -> Playback -> "Endzeit im Player"; plain text.
         append(bar, playerRemaining)
         append(bottom, bar)
         return bottom
     }
 
-    /// Trickplay preview above the handle: 170-wide image at 16:9, time in bold below
-    /// (Mac: `vorschauKasten`). Without trickplay, only the time.
+    /// Trickplay preview above the handle: 160 x 90 image with a 2 pt white ring, time
+    /// below (Mac 1.1: `vorschauKasten`). Without trickplay, only the time.
     private func playerPreviewBuild() -> Widget! {
-        let wrapper = stack(GTK_ORIENTATION_VERTICAL, spacing: 6)
+        let wrapper = stack(GTK_ORIENTATION_VERTICAL, spacing: 5)
         gtk_widget_set_halign(wrapper, GTK_ALIGN_START)
         gtk_widget_set_valign(wrapper, GTK_ALIGN_END)
         gtk_widget_set_can_target(wrapper, 0)
         gtk_widget_set_opacity(wrapper, 0)
 
-        let (frameRect, image) = framedImage(width: 170, height: 96, style: "swiftly-vorschaubild")
+        let (frameRect, image) = framedImage(width: 160, height: 90, style: "swiftly-vorschaubild")
         playerPreviewImage = image
         playerPreviewWrapper = frameRect
         append(wrapper, frameRect)
@@ -1073,7 +1092,7 @@ extension App {
 
         // Centered over the position, clamped to the edge; 2 above the bar's hit area.
         // Without an image, the width depends on the name.
-        var half = hasImage ? 85.0 : 40.0
+        var half = hasImage ? 80.0 : 40.0
         if !hasImage, !chapterName.isEmpty {
             gtk_widget_set_size_request(wrapper, -1, -1)
             var small: Int32 = 0, natural: Int32 = 0
@@ -1085,8 +1104,9 @@ extension App {
         let target = min(max(centerX, half), max(frameWidth - half, half))
         gtk_widget_set_margin_start(wrapper, Int32((target - half).rounded()))
         if !hasImage { gtk_widget_set_size_request(wrapper, chapterName.isEmpty ? 80 : -1, -1) }
-        else { gtk_widget_set_size_request(wrapper, 170, -1) }
-        let bottomOff = Double(gtk_widget_get_height(frameRect)) - Double(r.origin.y) + 2
+        else { gtk_widget_set_size_request(wrapper, 160, -1) }
+        // The time label reaches 8 pt into the 44 pt bar row, as in the Mac design.
+        let bottomOff = Double(gtk_widget_get_height(frameRect)) - Double(r.origin.y) - 8
         gtk_widget_set_margin_bottom(wrapper, Int32(bottomOff.rounded()))
         gtk_widget_set_opacity(wrapper, 1)
     }
@@ -1535,7 +1555,7 @@ extension App {
         gtk_label_set_text(OpaquePointer(playerTime), PlayTime.text(playState.position))
         if playState.duration > 0 {
             let rest = max(0, playState.duration - playState.position)
-            if selection.remainingTimeAsEnd {
+            if selection.endTimeInPlayer {
                 let end = String(format: translated("Endet um %@"),
                                   Self.timeOfDay.string(from: Date().addingTimeInterval(rest)))
                 gtk_label_set_text(OpaquePointer(playerRemaining), end)
@@ -2134,6 +2154,31 @@ extension App {
         offeringUpdate()
     }
 
+    /// **Leaving the program hides the controls at once** (Mac: `controlsImmediateDistance`).
+    /// Windows does not always report that the pointer left, so while the controls are
+    /// open this asks the system five times a second where the pointer is.
+    func pointerWatchStart() {
+        guard !pointerWatching else { return }
+        pointerWatching = true
+        Task.detached { [self] in
+            while true {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                let stop: Bool = await withCheckedContinuation { c in
+                    onMainThread {
+                        guard self.runningTitle != nil, self.playerControls != nil, self.controlsOpen else {
+                            pointerWatching = false
+                            c.resume(returning: true)
+                            return
+                        }
+                        if WindowFrame.pointerOutside() { self.controlsHide() }
+                        c.resume(returning: false)
+                    }
+                }
+                if stop { return }
+            }
+        }
+    }
+
     func showPointer(_ an: Bool) {
         guard let window else { return }
         if an {
@@ -2159,6 +2204,7 @@ extension App {
         offeringUpdate()
         controlsTick += 1
         let mine = controlsTick
+        pointerWatchStart()
         Task.detached { [self] in
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             onMainThread {
@@ -2216,6 +2262,17 @@ nonisolated(unsafe) let notchesDraw: @convention(c) (
     let duration = app.playState.duration
     let w = Double(width), h = Double(height)
     let withChapters = !app.playerChapter.isEmpty && duration > 0
+    // **The handle, drawn here**: an accent circle of 18 while dragging (Mac `Circle().fill(accent)`).
+    // The slider's own handle did not show reliably on Windows, so this does not depend on it.
+    defer {
+        if app.atSlider, let slider = app.playerSlider {
+            let share = min(max(gtk_range_get_value(asSection(slider)), 0), 1)
+            cairo_new_path(cr)
+            cairo_arc(cr, w * share, h / 2, 9, 0, 2 * Double.pi)
+            cairo_set_source_rgba(cr, Theme.accentRGB.0, Theme.accentRGB.1, Theme.accentRGB.2, 1)
+            cairo_fill(cr)
+        }
+    }
     guard duration > 0, withChapters || !app.sections.isEmpty else { return }
 
     // **With chapters: one piece per chapter** (Mac `ChapterMask`). The overlay draws track
@@ -2320,3 +2377,6 @@ enum ReportProbe {
     nonisolated(unsafe) static var hanging = false
 }
 #endif
+
+/// A poll for the pointer position is already running (see `pointerWatchStart`).
+nonisolated(unsafe) var pointerWatching = false

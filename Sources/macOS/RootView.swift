@@ -112,7 +112,7 @@ struct DiscordHint: View {
                     .foregroundStyle(Theme.font)
                 Spacer(minLength: 8)
                 Button(action: close) {
-                    Image(systemName: "xmark")
+                    Image(icon: "xmark")
                         .font(Theme.small.weight(.semibold))
                         .foregroundStyle(Theme.fontQuiet)
                         .frame(width: 24, height: 24)
@@ -157,6 +157,7 @@ struct ServerView: View {
     @State private var address = ""
     /// "Advanced": custom headers for a service in front of the server.
     @State private var headers: [HeaderRow] = []
+    @State private var found: [FoundServer] = []
     @FocusState private var inField: Bool
 
     var body: some View {
@@ -197,6 +198,13 @@ struct ServerView: View {
                 .padding(.top, 24)
                 .disabled(address.isEmpty || model.isWorking || model.phase == .connecting)
                 .opacity(address.isEmpty ? 0.4 : 1)
+
+            FoundServersSection(found: found) { server in
+                address = server.address
+                linkUp()
+            }
+            .frame(width: Theme.formWidth)
+            .padding(.top, 32)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .top) {
@@ -217,6 +225,7 @@ struct ServerView: View {
         }
         // Changing the address during the check cancels it.
         .onChange(of: address) { _, new in model.addressChanged(new) }
+        .serverSearch($found)
     }
 
     /// The button and the keyboard's submit key meet here; a second submit during the
@@ -236,6 +245,12 @@ struct SignInView: View {
 
     @State private var user = ""
     @State private var passphrase = ""
+    /// Shown only when the server has Quick Connect switched on.
+    @State private var quickConnectOffered = false
+    /// Switched to the code. The flow starts only then; otherwise every visit to this
+    /// page would fetch a code from the server that nobody needs.
+    @State private var perCode = false
+    @State private var state = QuickConnectModel()
     @FocusState private var inputField: Field?
 
     private enum Field { case user, passphrase }
@@ -253,37 +268,95 @@ struct SignInView: View {
                 .foregroundStyle(Theme.fontVeryQuiet)
                 .padding(.top, 4)
 
-            InputRow(text: $user, symbol: "person",
-                         placeholder: String(localized: "Benutzername")) { inputField = .passphrase }
-                .frame(width: Theme.formWidth)
-                .padding(.top, 28)
-                .focused($inputField, equals: .user)
-
-            InputRow(text: $passphrase, symbol: "lock", secret: true,
-                         placeholder: String(localized: "Passwort"), completion: signIn)
-                .frame(width: Theme.formWidth)
-                .padding(.top, 10)
-                .focused($inputField, equals: .passphrase)
-
-            if let error = model.errorMessage {
-                Text(error)
-                    .font(Theme.secondLine)
-                    .foregroundStyle(Theme.warning)
-                    .multilineTextAlignment(.center)
-                    .frame(width: Theme.formWidth)
-                    .padding(.top, 12)
-            }
-
-            // As wide as the fields, like "Verbinden" on the page before.
-            PrimaryButton(label: "Anmelden", symbol: "arrow.right",
-                       pick: signIn)
-                .frame(width: Theme.formWidth)
-                .padding(.top, 24)
-                .disabled(user.isEmpty || model.isWorking)
-                .opacity(user.isEmpty ? 0.4 : 1)
+            if perCode { codePart } else { formSheet }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { inputField = .user }
+        .task { quickConnectOffered = await model.quickConnectOffered() }
+        // The code is fetched only when someone switches to it.
+        .task(id: perCode) { if perCode { await state.newStart(model) } }
+        .onDisappear { state.halt() }
+        .onChange(of: state.released) { _, new in
+            guard let new else { return }
+            Task { await model.signInWithQuickConnect(new) }
+        }
+    }
+
+    @ViewBuilder
+    private var formSheet: some View {
+        InputRow(text: $user, symbol: "person",
+                     placeholder: String(localized: "Benutzername")) { inputField = .passphrase }
+            .frame(width: Theme.formWidth)
+            .padding(.top, 28)
+            .focused($inputField, equals: .user)
+
+        InputRow(text: $passphrase, symbol: "lock", secret: true,
+                     placeholder: String(localized: "Passwort"), completion: signIn)
+            .frame(width: Theme.formWidth)
+            .padding(.top, 10)
+            .focused($inputField, equals: .passphrase)
+
+        if let error = model.errorMessage {
+            Text(error)
+                .font(Theme.secondLine)
+                .foregroundStyle(Theme.warning)
+                .multilineTextAlignment(.center)
+                .frame(width: Theme.formWidth)
+                .padding(.top, 12)
+        }
+
+        // As wide as the fields, like "Verbinden" on the page before.
+        PrimaryButton(label: "Anmelden", symbol: "arrow.right",
+                   pick: signIn)
+            .frame(width: Theme.formWidth)
+            .padding(.top, 24)
+            .disabled(user.isEmpty || model.isWorking)
+            .opacity(user.isEmpty ? 0.4 : 1)
+
+        // **A second path of equal rank, as on iPhone and in "Server hinzufügen".**
+        // Whoever is signed in on the TV approves the code there and types no
+        // password here.
+        if quickConnectOffered {
+            HStack(spacing: 12) {
+                Rectangle().fill(Theme.line).frame(height: 1)
+                Text("oder")
+                    .font(Theme.small)
+                    .foregroundStyle(Theme.fontVeryQuiet)
+                Rectangle().fill(Theme.line).frame(height: 1)
+            }
+            .frame(width: Theme.formWidth)
+            .padding(.top, 18)
+
+            OutlineButton(label: "Mit Quick Connect anmelden",
+                          symbol: "rectangle.and.text.magnifyingglass") { perCode = true }
+                .frame(width: Theme.formWidth)
+                .padding(.top, 18)
+        }
+    }
+
+    /// **In the window, not as a sheet**, as in "Server hinzufügen": the server name
+    /// above stays visible, and it says where the code signs in.
+    @ViewBuilder
+    private var codePart: some View {
+        QuickConnectCode(state: state,
+                         hint: "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.")
+            .frame(width: Theme.formWidth)
+
+        if let error = model.errorMessage {
+            Text(error)
+                .font(Theme.secondLine)
+                .foregroundStyle(Theme.warning)
+                .multilineTextAlignment(.center)
+                .frame(width: Theme.formWidth)
+                .padding(.top, 12)
+        }
+
+        OutlineButton(label: "Lieber Name und Passwort", symbol: "person") {
+            state.halt()
+            perCode = false
+        }
+        .frame(width: Theme.formWidth)
+        .padding(.top, 22)
     }
 
     private func signIn() {
@@ -309,7 +382,7 @@ struct InputRow: View {
     var body: some View {
         HStack(spacing: 9) {
             // Character 17 in a 20-wide column.
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(Theme.categoryLarge.weight(.regular))
                 .foregroundStyle(Theme.fontVeryQuiet)
                 .frame(width: 20)

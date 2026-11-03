@@ -168,7 +168,7 @@ fun LoginPage(app: SwiftlyApplication, serverName: String, version: String,
 @Composable
 internal fun AccountCharacter(name: String, image: String?, selected: Boolean, perform: () -> Unit) {
     Column(Modifier.width(72.dp).tapOn(perform), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.size(60.dp).clip(CircleShape).background(Theme.raised)
+        Box(Modifier.size(60.dp).clip(CircleShape).background(Theme.profileBrush(name))
                 // Ring: selected `font` 2, highlighted `accent` 1.5, otherwise `rand` 1 (`ProfileCharacter`).
                 // Selected used to be the accent, but the accent carries state, and "I am meant" is a
                 // selection, which white and weight express.
@@ -176,7 +176,7 @@ internal fun AccountCharacter(name: String, image: String?, selected: Boolean, p
             contentAlignment = Alignment.Center) {
             // Letter = circle x 0.38 (60 x 0.38 = 22.8), not a number of its own.
             Text(name.take(1).uppercase(), style = TextStyle(fontSize = 22.8.sp, fontWeight = FontWeight.SemiBold),
-                 color = if (selected) Theme.font else Theme.fontQuiet)
+                 color = Theme.font)
             if (image != null) AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape))
         }
         Text(name, style = Theme.tile, color = if (selected) Theme.font else Theme.fontQuiet,

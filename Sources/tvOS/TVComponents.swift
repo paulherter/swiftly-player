@@ -57,6 +57,7 @@ struct ThemedButtonStyle: ButtonStyle {
                 // Focus lifts the pill, the same step as the tile. Layout is unaffected:
                 // `scaleEffect` applies after layout and moves no neighbor, so a smaller
                 // step would just make the button react less than everything around it.
+                .lift(focus)
                 .scaleEffect(configuration.isPressed ? 0.97 : (focus ? Theme.focusMagnifier : 1))
                 .animation(Theme.focusAnimation, value: focus)
         }
@@ -66,12 +67,19 @@ struct ThemedButtonStyle: ButtonStyle {
         private var foreground: Color {
             guard released else { return Theme.fontVeryQuiet }
             if focus { return Theme.reason }
-            return active ? Theme.accent : Theme.font
+            // The watchlist button stays white when active: its filled symbol says it, and
+            // Direct Play remains the only colored mark on the page.
+            return Theme.font
         }
 
         private var background: Color {
             guard released else { return Theme.area }
-            return focus ? .white : Color.white.opacity(0.10)
+            if focus { return .white }
+            // **A symbol alone has no surface at rest**, like the heart in the bar: a gray
+            // square around every icon read as a ring. Focus brings the white one.
+            // Design: icon buttons in the 76 button row carry the same .10 fill as the
+            // labelled ones; the smaller bar icons (below 76) stay bare.
+            return onlySymbol && height < Theme.buttonHeight ? .clear : Color.white.opacity(0.10)
         }
     }
 }
@@ -99,6 +107,8 @@ struct TileStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
+                // A soft shadow under the focused tile only: it stands closer, it adds no edge.
+                .lift(focus)
                 .scaleEffect(focus ? Theme.focusMagnifier : 1)
                 .animation(Theme.focusAnimation, value: focus)
                 // **Fetch the series state before the click**, debounced: swiping through a
@@ -112,6 +122,15 @@ struct TileStyle: ButtonStyle {
                     await preload()
                 }
         }
+    }
+}
+
+extension View {
+    /// **The one shadow of tvOS**, only while focused, and barely there: focus is shown by
+    /// the white surface and the magnification, not by depth. Round 3 on the device: even
+    /// `.2 / 16 / 6` read as heavy under the white player buttons, so this is all that is left.
+    func lift(_ on: Bool) -> some View {
+        self.shadow(color: .black.opacity(on ? 0.12 : 0), radius: 6, y: 2)
     }
 }
 
@@ -141,37 +160,36 @@ struct TabStyle: ButtonStyle {
                 // selected, and VoiceOver does not see color. Without this, the open tab
                 // sounds like any other.
                 .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-                .font(.system(size: 30, weight: focus || selected ? .semibold : .medium))
+                .font(.app(size: 30, weight: .semibold))
                 .foregroundStyle(foreground)
-                .padding(.horizontal, 26)
-                .padding(.top, 10)
-                .padding(.bottom, 18)
-                // Quiet, not loud: since focus switches tabs here, "focused" and "open" are
-                // the same thing. A full white surface would be too much for a single
-                // statement.
+                .padding(.horizontal, Theme.tabPadding)
+                .frame(height: Theme.tabHeight)
+                // **Focus is the white pill with dark text**, the same jump as every other
+                // control. The click switches, not the focus, so the open tab keeps its own
+                // mark: the accent line below.
                 .background {
                     if focus {
-                        RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
-                            .fill(Color.white.opacity(0.08))
+                        Capsule().fill(.white)
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    // Design: left/right 28, bottom 2, 4 high; dark on the white focus pill so
+                    // the open tab keeps its mark while focused.
+                    if selected && !focus {
+                        Capsule().fill(Theme.accent)
+                            .frame(height: 4)
+                            .padding(.horizontal, Theme.tabPadding)
+                            .padding(.bottom, 2)
                     }
                 }
                 .scaleEffect(focus ? Theme.focusMagnifier : 1)
-                .overlay(alignment: .bottom) {
-                    // The accent line comes unchanged from `Reiter` in Style.swift: 2 pt
-                    // there, 4 here.
-                    if selected {
-                        Capsule().fill(Theme.accent)
-                            .frame(height: 4)
-                            .padding(.horizontal, 26)
-                            .padding(.bottom, 6)
-                    }
-                }
                 .animation(Theme.focusAnimation, value: focus)
         }
 
         private var foreground: Color {
-            if focus || selected { return Theme.font }
-            return Theme.fontVeryQuiet
+            if focus { return Theme.reason }
+            if selected { return Theme.font }
+            return Theme.fontQuiet
         }
     }
 }
@@ -246,7 +264,7 @@ struct CapsuleSeparator: View {
     var body: some View {
         Rectangle()
             .fill(Theme.margin)
-            .frame(width: 2, height: Theme.chipHeight * 0.6)
+            .frame(width: 2, height: 32)
             .accessibilityHidden(true)
     }
 }
@@ -267,44 +285,49 @@ struct CapsuleStyle: ButtonStyle {
     /// The trailing arrow: down because the capsule opens something, right where it leads
     /// to a page (for example "Teil der Sammlung").
     var arrow = "chevron.down"
+    /// Painted like focus while its panel is open (design: the opening pill stays white).
+    var active = false
 
     func makeBody(configuration: Configuration) -> some View {
-        ContentBody(configuration: configuration, symbol: symbol, arrow: arrow)
+        ContentBody(configuration: configuration, symbol: symbol, arrow: arrow, active: active)
     }
 
     private struct ContentBody: View {
         let configuration: ButtonStyleConfiguration
         let symbol: String?
         let arrow: String
-        @Environment(\.isFocused) private var focus
+        let active: Bool
+        @Environment(\.isFocused) private var isFocused
+        private var focus: Bool { isFocused || active }
 
         var body: some View {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 if let symbol {
                     // Quieter than the value, as on iPhone (`schriftLeise` against
                     // `font`). Via opacity so it also follows the text on the focus
                     // surface.
-                    Image(systemName: symbol)
-                        .font(.system(size: 22, weight: .medium))
+                    Image(icon: symbol)
+                        .font(.app(size: 22, weight: .medium))
                         .opacity(0.6)
                         .accessibilityHidden(true)
                 }
                 configuration.label
                     .lineLimit(1)
                 if symbol == nil {
-                    Image(systemName: arrow)
+                    Image(icon: arrow)
                         // Semibold, not bold: bold appears exactly once, on the page title.
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.app(size: 22, weight: .semibold))
                         .opacity(0.6)
                         .accessibilityHidden(true)
                 }
             }
             // Same step as the neighboring `ChipStyle`; it is the same chip.
-            .font(Theme.tile)
-            .foregroundStyle(Theme.font)
-            .padding(.horizontal, 22)
+            .font(.app(size: 26, weight: .semibold))
+            .foregroundStyle(focus ? Theme.reason : Theme.font)
+            .padding(.horizontal, 24)
             .frame(height: Theme.chipHeight)
-            .background(focus ? Theme.focusArea : Theme.raised, in: Capsule())
+            .background(focus ? Color.white : Color.white.opacity(0.10), in: Capsule())
+            .lift(focus)
             .scaleEffect(configuration.isPressed ? 0.97 : (focus ? Theme.focusMagnifier : 1))
             .animation(Theme.focusAnimation, value: focus)
         }
@@ -351,6 +374,34 @@ struct BarsStyle: ButtonStyle {
     }
 }
 
+/// A row of the action panel (design "menu"): 72 high, 20 padding, r16, 30/500 #CCC; the
+/// selected one white 600, focus a white surface with dark text.
+struct MenuRowStyle: ButtonStyle {
+    var selected = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        ContentBody(configuration: configuration, selected: selected)
+    }
+
+    private struct ContentBody: View {
+        let configuration: ButtonStyleConfiguration
+        let selected: Bool
+        @Environment(\.isFocused) private var focus
+
+        var body: some View {
+            configuration.label
+                .font(.app(size: 30, weight: focus || selected ? .semibold : .medium))
+                .foregroundStyle(focus ? Theme.reason : (selected ? Theme.font : Theme.fontQuiet))
+                .padding(.horizontal, 20)
+                .frame(height: 72)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(focus ? Color.white : Color.clear,
+                            in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+                .animation(Theme.focusAnimation, value: focus)
+        }
+    }
+}
+
 /// Row in a picker list: track choice, settings.
 struct RowsStyle: ButtonStyle {
     /// **A secondary action: quieter, but only while resting.**
@@ -377,7 +428,7 @@ struct RowsStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.system(size: 30, weight: focus ? .semibold : .medium))
+                .font(.app(size: 30, weight: focus ? .semibold : .medium))
                 .foregroundStyle(foreground)
                 .padding(.horizontal, 26)
                 .frame(height: Theme.rowsHeight)
@@ -476,6 +527,8 @@ struct TileContent: View {
     var substitute: CollectionMosaic? = nil
     /// The symbol shown when there is no image: `Item.tileCharacter`.
     var symbolText: String? = nil
+    /// The tile's button: focus is set on it, and the label below reads it.
+    @Environment(\.isFocused) private var focus
 
     private var width: CGFloat { landscape ? Theme.landscapeWidth : Theme.posterWidth }
     private var height: CGFloat { landscape ? Theme.landscapeHeight : Theme.posterHeight }
@@ -498,20 +551,27 @@ struct TileContent: View {
                     if let mark { TileBadge(mark: mark) }
                 }
 
-            Text(title)
-                .font(Theme.tile)
-                .foregroundStyle(watched ? Theme.fontQuiet : Theme.font)
-                .lineLimit(1)
-                .padding(.top, 14)
-
-            if withUnderRow, let subline {
-                Text(subline)
-                    .font(Theme.small)
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.fontQuiet)
+            // **Only the focused tile's title is white and semibold**; the others step back to
+            // light gray, so the row reads as images with one named.
+            // Design: caption mt 18, 26/500 #CCC; focused it drops 14, white 600.
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                    .font(focus ? Theme.tileFocused : Theme.tile)
+                    .foregroundStyle(focus ? Theme.font : Theme.fontQuiet)
                     .lineLimit(1)
-                    .padding(.top, 2)
+                    .frame(height: Theme.captionLine, alignment: .topLeading)
+
+                if withUnderRow, let subline {
+                    Text(subline)
+                        .font(Theme.small)
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                        .lineLimit(1)
+                }
             }
+            .padding(.top, Theme.captionTop)
+            .offset(y: focus ? Theme.captionDrop : 0)
+            .animation(Theme.focusAnimation, value: focus)
         }
         .frame(width: width, alignment: .leading)
         // **A tile is one statement, not three.** Without this, VoiceOver reads title and
@@ -596,8 +656,8 @@ struct HeaderBar: View {
     @Environment(\.isEnabled) private var released
 
     var body: some View {
-        HStack(spacing: 56) {
-            Wordmark(height: 48)
+        HStack(spacing: 48) {
+            Wordmark(height: 56)
 
             HStack(spacing: 8) {
                 // **The watchlist is a tab again.** It was briefly a round button next to
@@ -632,7 +692,7 @@ struct HeaderBar: View {
             // right between wordmark and tabs but too much between badge and profile
             // picture. The two belong together; apart, it looked as if the badge had not
             // found room.
-            HStack(spacing: 18) {
+            HStack(spacing: 24) {
                 if !takeover.isEmpty || !groups.isEmpty {
                     OfferingBadge(continueWatching: takeover, groups: groups,
                                       action: badgePressed)
@@ -650,13 +710,12 @@ struct HeaderBar: View {
                 Button {
                     SupportModel.shared.open()
                 } label: {
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 30))
-                        .foregroundStyle(Theme.font)
+                    Image(icon: "heart.fill", size: 30)
+                        .font(.app(size: 30))
                         .frame(width: 60, height: 60)
                         .contentShape(Circle())
                 }
-                .buttonStyle(ProfileStyle())
+                .buttonStyle(SymbolStyle())
                 .accessibilityLabel(Text(SupportCopy.supportSwiftly.localized))
                 .focusSection()
 
@@ -693,6 +752,16 @@ struct HeaderBar: View {
         .animation(Theme.motion(.easeInOut(duration: 0.25)), value: takeover.map(\.id))
         .animation(Theme.motion(.easeInOut(duration: 0.25)), value: groups.map(\.id))
         .onChange(of: badgeFocus) { _, _ in atBadge = true }
+        #if DEBUG
+        // `-fokus reiter`: focus on the "Filme" tab (design: start-reiter).
+        .task {
+            guard DebugLaunch.has("-fokus", "reiter") else { return }
+            for wait in [300, 700, 1500] {
+                try? await Task.sleep(for: .milliseconds(wait))
+                atTab = .movies
+            }
+        }
+        #endif
         // **And a second attempt.** The bar only becomes focusable again in the same pass
         // (`barPresent`), and SwiftUI discards an assignment made in that pass, the same
         // lesson as in the player.
@@ -856,6 +925,30 @@ struct ProfileStyle: ButtonStyle {
     }
 }
 
+/// A lone symbol in the bar or over the picture: **no surface and no ring at rest**,
+/// a white circle with the dark symbol when focused, the same jump as a button.
+///
+/// The heart used to borrow `ProfileStyle`, and its accent ring around a bare symbol
+/// looked like a badge rather than a key.
+struct SymbolStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        ContentBody(configuration: configuration)
+    }
+
+    private struct ContentBody: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isFocused) private var focus
+
+        var body: some View {
+            configuration.label
+                .foregroundStyle(focus ? Theme.reason : Theme.font)
+                .background { Circle().fill(.white).opacity(focus ? 1 : 0) }
+                .scaleEffect(configuration.isPressed ? 0.97 : (focus ? Theme.focusMagnifierSmall : 1))
+                .animation(Theme.focusAnimation, value: focus)
+        }
+    }
+}
+
 // MARK: - Action panel
 
 /// The entries behind the More button.
@@ -902,31 +995,35 @@ struct ActionPanel: View {
         // **Scrolls only when it has to.** A short list is laid out as before; once it is
         // taller than the room under the trigger, the same rows go into a scroll view that
         // ends at the title-safe edge. Focus then pulls the off-screen rows in by itself.
-        ViewThatFits(in: .vertical) {
-            rows
-            ScrollViewReader { reader in
-                ScrollView(showsIndicators: false) { rows }
-                    .task { reader.scrollTo(start, anchor: .center) }
+        Group {
+            if contentHeight <= max(0, (room ?? .infinity) - 2 * Self.inset) {
+                rows
+            } else {
+                ScrollViewReader { reader in
+                    ScrollView(showsIndicators: false) { rows }
+                        .task { reader.scrollTo(start, anchor: .center) }
+                }
+                .frame(height: max(0, (room ?? 0) - 2 * Self.inset))
             }
         }
-        .frame(maxHeight: room)
-        // **No padding at all.** First 14, then 6, and both times the panel background
-        // showed through at the top and bottom. The rows bring their own rounding, so no
-        // distance to the panel's rounding is needed; it was only a border around the
-        // border.
-        //
-        // Clipped so the top and bottom rows end inside the panel's rounding instead of
-        // sticking out.
-        .frame(width: Self.width)
+        .frame(width: panelWidth)
+        .padding(Self.inset)
         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
         // **No border, no shadow.** Depth comes from surface brightness: `erhoeht` is
         // already one step above the background. With radius 40 the shadow was the largest
         // in the app, contradicts the brand rule "no shadows, anywhere", and turns to mud
         // at three meters anyway.
         .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
+        // Design menu: #303030, r24, pad 10, lift shadow.
+        .lift(true)
         .focusSection()
         .task { focus = start }
         .onExitCommand { opened = false }
+    }
+
+    /// Rows are 72 high; a heading adds about 80.
+    private var contentHeight: CGFloat {
+        CGFloat(actions.count) * 72 + CGFloat(actions.indices.filter { category($0) != nil }.count) * 80
     }
 
     private var rows: some View {
@@ -957,24 +1054,39 @@ struct ActionPanel: View {
                     opened = false
                     pair.element.perform()
                 } label: {
-                    HStack(spacing: 22) {
-                        Image(systemName: pair.element.symbol)
-                            .foregroundStyle(pair.offset == selected ? Theme.accent
-                                             : pair.element.cautionary ? Theme.warning : Theme.font)
-                            .frame(width: 38)
+                    let row = HStack(spacing: selected != nil ? 20 : 22) {
+                        if selected != nil {
+                            // Design: a 30 check in a 32 slot for the selected row, empty otherwise.
+                            Image(icon: "checkmark", size: 30)
+                                .opacity(pair.offset == selected ? 1 : 0)
+                                .frame(width: 32)
+                        } else {
+                            Image(icon: pair.element.symbol)
+                                .frame(width: 38)
+                        }
                         pair.element.label
                         Spacer(minLength: 0)
                     }
-                    .foregroundStyle(pair.element.cautionary ? Theme.warning : Theme.font)
+                    if pair.element.cautionary {
+                        row.foregroundStyle(Theme.warning)
+                    } else {
+                        row
+                    }
                 }
-                .buttonStyle(RowsStyle())
+                .buttonStyle(MenuRowStyle(selected: pair.offset == selected))
                 .accessibilityAddTraits(pair.offset == selected ? .isSelected : [])
                 .focused($focus, equals: pair.offset)
                 .id(pair.offset)
             }
         }
-        .frame(width: Self.width)
+        .frame(width: panelWidth)
     }
+
+    /// Selection menus (sort, filter, library) are 420 wide in the design; action lists with
+    /// longer labels keep the wide panel.
+    private var panelWidth: CGFloat { (selected != nil ? Self.menuWidth : Self.width) - 2 * Self.inset }
+    static let menuWidth: CGFloat = 420
+    static let inset: CGFloat = 10
 
     /// **The width is fixed, the position is not.**
     ///
@@ -1081,7 +1193,7 @@ struct MoreButton: View {
 
     var body: some View {
         Button { opened.toggle() } label: {
-            Image(systemName: "ellipsis").font(Theme.button)
+            Image(icon: "ellipsis").font(Theme.button)
         }
         .buttonStyle(ThemedButtonStyle(onlySymbol: true))
         // Without a label the button would be unnamed for VoiceOver.
@@ -1134,19 +1246,19 @@ struct HeaderInfo<End: View>: View {
             // the series logo is shown.
             TitleMark(title: item.type == "Episode" ? (item.seriesName ?? item.name) : item.name,
                        logo: logoModel.flatMap { $0.logoURL(for: detailsFrom ?? item) },
-                       row: 56, slot: .compartment(height: 68))
+                       row: 56, slot: .compartment(height: Theme.titleSlot))
 
             if let secondLine {
                 Text(secondLine)
                     // Sheet heading from the ladder, with the tone as a token: 78 percent
                     // opacity changes its effect once something lies below, and here a hero
                     // image does.
-                    .font(Theme.categoryLarge)
-                    .tracking(Theme.lockCategory)
+                    // Design: 30/600 #CCC, mt 8, 36 high.
+                    .font(.app(size: 30, weight: .semibold))
                     .foregroundStyle(Theme.fontQuiet)
                     .lineLimit(1)
-                    .frame(height: 44, alignment: .leading)
-                    .padding(.top, 10)
+                    .frame(height: 36, alignment: .leading)
+                    .padding(.top, 8)
             }
 
             // Year, runtime, stars, rating, proof: one component; see `DetailsRail`.
@@ -1160,11 +1272,11 @@ struct HeaderInfo<End: View>: View {
             Text(item.description ?? "")
                 .font(Theme.body)
                 .lineSpacing(Theme.descriptionPadding)
-                .foregroundStyle(Theme.font.opacity(0.62))
-                // Three lines, two when an episode title sits above, so the block keeps its
+                .foregroundStyle(Theme.fontQuiet)
+                // Two lines (design body 30/400, line-height 1.45), so the block keeps its
                 // fixed height.
-                .lineLimit(secondLine == nil ? 3 : 2)
-                .padding(.top, 22)
+                .lineLimit(2)
+                .padding(.top, secondLine == nil ? 22 : 20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         // **Fixed, but taller by the second line when there is one.**
@@ -1176,7 +1288,7 @@ struct HeaderInfo<End: View>: View {
         // The detail pages never see the second line: an episode gets no page of its own,
         // every path to it leads to the series page. There it stays at 258, and the button
         // row remains in the same place on every page.
-        .frame(width: 1000,
+        .frame(width: Theme.detailWidth,
                height: Theme.infoHeight(secondLine: secondLine != nil),
                alignment: .topLeading)
     }
@@ -1245,13 +1357,20 @@ struct RemainingTimeMark: View {
     @ViewBuilder
     var body: some View {
         if let rest = item.remainingTimeText {
-            Label(rest, systemImage: "clock")
-                .font(Theme.tile)
+            // Design: 24/600 accent, clock 24, gap 8.
+            HStack(spacing: 8) {
+                Image(icon: "clock", size: 24)
+                Text(verbatim: rest)
+            }
+                .font(.app(size: 24, weight: .semibold))
                 .foregroundStyle(Theme.accent)
                 .lineLimit(1)
         } else if item.isWatched {
-            Label("Gesehen", systemImage: "checkmark")
-                .font(Theme.tile)
+            HStack(spacing: 8) {
+                Image(icon: "checkmark", size: 24)
+                Text("Gesehen")
+            }
+                .font(.app(size: 24, weight: .semibold))
                 .foregroundStyle(Theme.accent)
                 .lineLimit(1)
         }
@@ -1346,7 +1465,7 @@ struct Backdrop: View {
             guard let loaded = await ImageCache.shared.load(url, preRank: true) else { return }
             guard !Task.isCancelled else { return }
             BackdropImage.shared.remember(loaded, for: url)
-            image = loaded
+            withAnimation(Theme.motion(.easeInOut(duration: 0.4))) { image = loaded }
         }
         // A new URL while the view stays: do not keep showing the old image, take what is
         // known for the new one.
@@ -1508,22 +1627,9 @@ struct SeasonPill: View {
     @Binding var opened: Bool
 
     var body: some View {
-        Button { opened.toggle() } label: {
-            HStack(spacing: 14) {
-                Text(name)
-                    .font(Theme.button)
-                // Opacity instead of a fixed color: the arrow inherits the button's text.
-                // Fixed half-white, it vanished on the white focus surface.
-                Image(systemName: "chevron.down")
-                    .font(Theme.group)
-                    .opacity(0.6)
-                    .accessibilityHidden(true)
-            }
-        }
-        // **The same style as the buttons in the header.** It used to carry its own:
-        // different surface, border and rounding. But it **is** the same thing: a button
-        // that opens something, like the More button next to it.
-        .buttonStyle(ThemedButtonStyle(height: 60))
+        // Design: the same pill as the library rail (h56, pad 24, 26/600, .10, white on focus).
+        Button { opened.toggle() } label: { Text(name) }
+            .buttonStyle(CapsuleStyle())
         .accessibilityLabel(Text("Staffel wählen, \(name)"))
     }
 }
@@ -1570,8 +1676,8 @@ struct TVTakeoverSelection: View {
                     ForEach(sessions) { s in
                         Button { select(s) } label: {
                             HStack(spacing: 20) {
-                                Image(systemName: s.devicesCharacter)
-                                    .font(.system(size: 28, weight: .medium))
+                                Image(icon: s.devicesCharacter)
+                                    .font(.app(size: 28, weight: .medium))
                                     .frame(width: 40)
                                 VStack(alignment: .leading, spacing: 2) {
                                     // The fallback is our word, the name is not: without
@@ -1724,32 +1830,29 @@ struct TileBadge: View {
         // 3, outer padding 6. This used to be a half-adopted version: 15 bold and 17
         // semibold are neither iPhone steps nor TV steps, and the padding was only enlarged
         // by eye.
-        HStack(spacing: 6) {
+        // Design: "N offen" is 36 high, padding 12, radius 10, 20/600 with .5 spacing, 14 from
+        // the corner. The seen badge is a 44 square, radius 12, check 26, 16 from the corner.
+        Group {
             if mark == .watched {
-                Image(systemName: "checkmark").font(Theme.badge)
-            }
-            if let text = wording {
-                // No letter spacing, as on iPhone: "3 offen" and "2 Staffeln" are ordinary
-                // words, not capitals.
-                Text(verbatim: text).font(Theme.badge)
+                Image(icon: "checkmark", size: 26)
+                    .font(.app(size: 26, weight: .semibold))
+                    .foregroundStyle(Theme.font)
+                    .frame(width: 44, height: 44)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(red: 16 / 255, green: 16 / 255, blue: 16 / 255).opacity(0.7)))
+                    .padding(16)
+            } else if let text = wording {
+                Text(verbatim: text)
+                    .font(.app(size: 20, weight: .semibold))
+                    .tracking(0.5)
+                    .foregroundStyle(Theme.font)
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color(red: 16 / 255, green: 16 / 255, blue: 16 / 255).opacity(0.72)))
+                    .padding(14)
             }
         }
-        .foregroundStyle(Theme.font)
-        .padding(.horizontal, wording == nil ? 10 : 12)
-        .padding(.vertical, 6)
-        .background {
-            // `cornerSmall` (14), not `cornerTile`: the badge is about 36 pt high, the tile
-            // below 208 wide, so the same value would be a completely different rounding on
-            // it. The 14 used to be a plain number and has become exactly the small step;
-            // on iPhone the same place uses 9 against the tile's 10.
-            RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
-                .fill(Theme.reason.opacity(0.78))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
-                        .strokeBorder(Theme.margin)
-                }
-        }
-        .padding(12)
     }
 
     private var wording: String? {
@@ -1782,7 +1885,7 @@ struct CodeFields: View {
         HStack(spacing: 20) {
             ForEach(Array(code.enumerated()), id: \.offset) { pair in
                 Text(String(pair.element))
-                    .font(.system(size: 92, weight: .bold).monospacedDigit())
+                    .font(.app(size: 92, weight: .bold).monospacedDigit())
                     .foregroundStyle(Theme.font)
                     .frame(width: 120, height: 160)
                     .background(Theme.raised,
@@ -1796,3 +1899,17 @@ struct CodeFields: View {
         .accessibilityValue(Text(verbatim: code.map(String.init).joined(separator: " ")))
     }
 }
+
+
+#if DEBUG
+/// Launch flags for screenshots; see `MainView.debugJump`.
+enum DebugLaunch {
+    static let arguments = ProcessInfo.processInfo.arguments
+    static func has(_ flag: String) -> Bool { arguments.contains(flag) }
+    /// `flag value` pair, e.g. `-fokus reiter`.
+    static func has(_ flag: String, _ value: String) -> Bool {
+        guard let i = arguments.firstIndex(of: flag), i + 1 < arguments.count else { return false }
+        return arguments[i + 1] == value
+    }
+}
+#endif

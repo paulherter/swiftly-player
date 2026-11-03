@@ -37,9 +37,10 @@ struct RailTitle: View {
         Group {
             if let name { Text(verbatim: name) } else { Text(text) }
         }
-            .font(Theme.rail)
-            // −0.012 em at 20 pt is −0.24; −0.3 was an estimate.
-            .tracking(Theme.lockRail)
+            .font(Theme.section)
+            .tracking(Theme.lockSection)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
             .foregroundStyle(Theme.font)
     }
 }
@@ -73,7 +74,7 @@ struct Badge: View {
         // `farbe.opacity(0.15)`. Two badges with the same meaning in two shapes were the
         // bug, not the numbers.
         Text(text)
-            .font(.system(size: size, weight: .medium))
+            .font(.app(size: size, weight: .medium))
             .foregroundStyle(color)
             .padding(.horizontal, innerLevelRight)
             .padding(.vertical, innerVerticalRight)
@@ -259,7 +260,7 @@ struct ProfileCharacter: View {
 
     private var letter: some View {
         Text(String(name.prefix(1)).uppercased())
-            .font(.system(size: size * 0.38, weight: .semibold))
+            .font(.app(size: size * 0.38, weight: .semibold))
             .foregroundStyle(Theme.font)
     }
 }
@@ -330,8 +331,8 @@ struct TakeoverCard: View {
                 SheetLine()
                 Button { select(s) } label: {
                     HStack(spacing: 14) {
-                        Image(systemName: s.devicesCharacter)
-                            .font(.system(size: 17, weight: .medium))
+                        Image(icon: s.devicesCharacter, size: 17)
+                            .font(.app(size: 17, weight: .medium))
                             .foregroundStyle(Theme.accent)
                             .frame(width: 26)
                             .accessibilityHidden(true)
@@ -369,7 +370,7 @@ struct TakeoverCard: View {
             // does not.
             Divider().overlay(Theme.margin)
             Button("Abbrechen", action: cancel)
-                .font(.system(size: 15, weight: .medium))
+                .font(.app(size: 15, weight: .semibold))
                 .frame(maxWidth: .infinity)
                 // The same height as the entries above. They stood at 58 and 52 on top of each
                 // other, a six-point offset within one sheet, visible because they touch.
@@ -458,7 +459,7 @@ private struct Copyable: ViewModifier {
                     // belong there. A raised surface with a border says the same
                     // without using up the tone.
                     Text("Kopiert")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.app(size: 12, weight: .medium))
                         .foregroundStyle(Theme.font)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -523,10 +524,10 @@ struct WatchedCheckmark: ViewModifier {
             // through: on a page in the color of its header image, every watched still got
             // that tint. This way it only becomes darker and the corners stay what they
             // were.
-            .colorMultiply(Color(white: an ? 0.45 : 1))
+            .colorMultiply(Color(white: an ? 0.6 : 1))
             .overlay(alignment: .topTrailing) {
                 if an {
-                    Image(systemName: "checkmark")
+                    Image(icon: "checkmark")
                         .font(Theme.badge)
                         .foregroundStyle(Theme.font)
                         .frame(width: border, height: border)
@@ -543,3 +544,79 @@ extension View {
         modifier(WatchedCheckmark(an: an, border: border, spacing: spacing))
     }
 }
+
+// MARK: - Servers on the network
+
+extension View {
+    /// **The Jellyfin servers on the local network, while the page is open.**
+    ///
+    /// The search itself is in the package (``ServerDiscovery``); the page only says
+    /// how long it runs. `.task` ends it when the page goes away.
+    func serverSearch(_ found: Binding<[FoundServer]>) -> some View {
+        task {
+            for await list in ServerDiscovery.watch() { found.wrappedValue = list }
+        }
+    }
+}
+
+// The rows are for pointer and touch. On tvOS a row needs the focus style of
+// `RowsStyle`, so the TV has its own `TVFoundServers`.
+#if !os(tvOS)
+/// **The servers that answered on the local network**, under the address field.
+/// Nothing while none has answered: no spinner, no "searching", because on a
+/// network without a server the page should look as it always did.
+struct FoundServersSection: View {
+    let found: [FoundServer]
+    let pick: (FoundServer) -> Void
+
+    var body: some View {
+        if !found.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                GroupsTitle(text: "Im Netzwerk gefunden")
+                SeparatorLine()
+                ForEach(found) { server in
+                    ServerRow(name: server.name, detail: server.shortAddress) { pick(server) }
+                    SeparatorLine()
+                }
+            }
+        }
+    }
+}
+
+/// One server as a row: dot, name, address below, chevron. "Zuletzt verbunden" and
+/// "Im Netzwerk gefunden" look the same, because both do the same thing on a tap.
+struct ServerRow: View {
+    let name: String
+    let detail: String
+    let pick: () -> Void
+
+    var body: some View {
+        Button(action: pick) {
+            HStack(spacing: 12) {
+                Circle().fill(Theme.accent).frame(width: 7, height: 7)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: name)
+                        // List row from the scale; before it was a literal 15.
+                        .font(Theme.listTitle)
+                        .foregroundStyle(Theme.font)
+                    Text(verbatim: detail)
+                        // The scale's info grade, 12 Regular. Before it was a literal 12 at the
+                        // call site.
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                }
+                Spacer(minLength: 0)
+                Image(icon: "chevron.right", size: 13)
+                    // 13 semibold: the chevron on the right of a row, as in `ValueRow` and
+                    // `ProfileRow`. 12 was the second number for the same symbol.
+                    .font(.app(size: 13, weight: .semibold))
+                    // White at 28 percent is 2.50:1; for a control symbol the limit is 3:1.
+                    .foregroundStyle(Theme.font)
+            }
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Theme.PressRow())
+    }
+}
+#endif

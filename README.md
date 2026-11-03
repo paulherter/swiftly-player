@@ -408,6 +408,7 @@ Thank you to everyone who sends code, not only reports.
 
 - **[Jens de Rond](https://github.com/Jensderond)** built chapters on the player timeline: the bar is split per chapter, the scrub preview shows the chapter name, and scrubbing snaps to chapter cuts ([#11](https://github.com/paulherter/swiftly-player/pull/11)).
 - **[dzsayow](https://github.com/dzsayow)** made Dolby Vision files play in Dolby Vision on Android: they now go through the device's own Dolby Vision decoder instead of showing only the base layer ([#14](https://github.com/paulherter/swiftly-player/pull/14)).
+- **[Andrey Lysikov](https://github.com/andrey-lysikov)** brought the Russian translation up to date, added finding Jellyfin servers on the local network, the alphabetical strip beside sorted lists, and a heading on Home that opens the library ([#35](https://github.com/paulherter/swiftly-player/pull/35), [#36](https://github.com/paulherter/swiftly-player/pull/36), [#37](https://github.com/paulherter/swiftly-player/pull/37), [#41](https://github.com/paulherter/swiftly-player/pull/41)).
 
 <br>
 

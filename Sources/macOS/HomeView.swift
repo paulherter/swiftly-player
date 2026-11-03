@@ -27,6 +27,10 @@ struct HomeView: View {
     /// again under Next Up), and clearing the whole row on a single failed request is
     /// exactly what the comment in the shared model warns against.
     let state: HomeModel
+    /// **Whether Start is the section on screen.** `MainView` keeps the home page alive
+    /// while another section is shown, so `onAppear` and `onDisappear` no longer mark a
+    /// return; this does.
+    var shown = true
 
     private var proceed: [Item] { state.continueWatching }
     private var next: [Item] { state.nextEpisode }
@@ -108,11 +112,13 @@ struct HomeView: View {
                 // starts with a 28 pt title, not with "Weiterschauen" at 20 pt. That also makes
                 // `reihenkopfAusgleich` unnecessary: it existed so that a 20 pt line would sit as
                 // high as a 28 pt title.
-                Text("Startseite")
+                Text("Start")
                     .font(Theme.titleLarge)
                     .tracking(Theme.lockTitle)
                     .foregroundStyle(Theme.font)
                     .padding(.horizontal, Theme.edgeSpacing)
+                    // 22 to the first rail, not the 40 between rails.
+                    .padding(.bottom, 22 - Theme.railsSpacing)
 
                 // **Genres as chips at the very top**, when enabled. An entry point, not
                 // content: a click opens the genre.
@@ -187,14 +193,9 @@ struct HomeView: View {
         .scrollIndicators(.never)
         // The same fixed title as on Movies, Series and Watchlist.
         .overlay(alignment: .top) {
-            StateBar(title: "Startseite", state: headerState)
+            StateBar(title: "Start", state: headerState)
         }
-        // The heart sits level with the bar, at rest and while scrolling.
-        .overlay(alignment: .topTrailing) {
-            MacSupportHeart()
-                .frame(height: Theme.headerBarHeight)
-                .padding(.trailing, Theme.edgeSpacing - 12)
-        }
+        // No heart in the bar any more: supporting lives in the profile.
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
             headerState.offset = new
         }
@@ -206,7 +207,7 @@ struct HomeView: View {
         // ourselves.
         .pagesScroll()
         // A bat across the page now and then, in a seasonal look's window.
-        .overlay { MacBatLayer(playing: model.playerOpen).ignoresSafeArea() }
+        .overlay { MacBatLayer(playing: model.playerOpen || !shown).ignoresSafeArea() }
         // Two rows in their own shape instead of a ring.
         .overlay(alignment: .topLeading) {
             if !loaded {
@@ -223,14 +224,10 @@ struct HomeView: View {
         }
         .animation(Theme.reveal, value: loaded)
         .task { await load() }
-        .onAppear {
-            if outdated {
-                change = true
-                Task {
-                    await allRefresh()
-                    if change, released { reveal() }
-                }
-            }
+        .onAppear { returned() }
+        .onChange(of: shown) { _, now in
+            if now { returned() }
+            GiftFlow.shared.homeVisible(now && state.loaded)
         }
         // **The setting takes effect immediately, not on next open.**
         //
@@ -275,7 +272,7 @@ struct HomeView: View {
         }
         // The gift sheet and "What's new" wait for a loaded home page (`GiftFlow`).
         .onChange(of: state.loaded, initial: true) { _, loaded in
-            GiftFlow.shared.homeVisible(loaded)
+            GiftFlow.shared.homeVisible(loaded && shown)
         }
         .onDisappear { GiftFlow.shared.homeVisible(false) }
         // **Also when coming back to the window.**
@@ -310,6 +307,16 @@ struct HomeView: View {
         // **After the end report, not on close.** On close it is still in flight, and the
         // query would get the state of the last tick. See `AppModel.playbackEnded`.
         .onChange(of: model.pagesRefresh) { _, _ in newRefresh() }
+    }
+
+    /// Coming back to Start: rows that went stale meanwhile are fetched again.
+    private func returned() {
+        guard outdated else { return }
+        change = true
+        Task {
+            await allRefresh()
+            if change, released { reveal() }
+        }
     }
 
     /// A fixed row: the same layout as before, but retrievable individually so
@@ -372,18 +379,20 @@ struct HomeView: View {
         // independently: someone who wants series on top and movies below can have that.
         // Whether they exist is decided by "Neuzugänge getrennt" (new additions split).
         case .newMovies:
-            newAccessRail(title: "Zuletzt hinzugefügte Filme", state.newMovies)
+            newAccessRail(title: "Zuletzt hinzugefügte Filme", state.newMovies, jump: rail.libraryJump)
         case .newSeries:
-            newAccessRail(title: "Zuletzt hinzugefügte Serien", state.newSeries)
+            newAccessRail(title: "Zuletzt hinzugefügte Serien", state.newSeries, jump: rail.libraryJump)
         case .newArrivals:
             newAccessRail(title: "Zuletzt hinzugefügt", new)
         }
     }
 
     @ViewBuilder
-    private func newAccessRail(title: LocalizedStringKey, _ items: [Item]) -> some View {
+    private func newAccessRail(title: LocalizedStringKey, _ items: [Item],
+                               jump: LibraryJump? = nil) -> some View {
         if !items.isEmpty {
-            Rail(title: title) {
+            // The heading of new movies and new series opens their library in this order.
+            Rail(title: title, header: jump.map { jump in { model.openLibrary(jump) } }) {
                 ForEach(items, id: \.id) { entryRecord in
                     Button { navigator.openIt(.title(entryRecord), in: section) } label: {
                         // **The series name, not the episode name**, as in `Tile` on iPhone.
@@ -523,7 +532,7 @@ struct Rail<ContentBody: View>: View {
     /// between, about 32) · 4.
     private var railsHeightValue: CGFloat {
         let image = landscape ? Theme.landscapeHeight : Theme.tileHeight
-        return 24 + 12 + 4 + image + 8 + 32 + 4
+        return 28 + 12 + 4 + image + 8 + 34 + 4
     }
 
     var body: some View {
@@ -534,8 +543,18 @@ struct Rail<ContentBody: View>: View {
             // without it the title slides to the center.
             Group {
                 if let header {
-                    Button(action: header) { RailTitle(text: title, name: name) }
+                    // **"Alle" at the end of the line** (design): the rail's way to its full page.
+                    HStack(alignment: .firstTextBaseline) {
+                        Button(action: header) { RailTitle(text: title, name: name) }
+                            .buttonStyle(Theme.PressButton())
+                        Spacer(minLength: 12)
+                        Button(action: header) {
+                            Text("Alle")
+                                .font(.app(size: 13, weight: .semibold))
+                                .foregroundStyle(Theme.fontVeryQuiet)
+                        }
                         .buttonStyle(Theme.PressButton())
+                    }
                 } else {
                     RailTitle(text: title, name: name)
                 }

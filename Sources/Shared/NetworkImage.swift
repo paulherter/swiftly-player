@@ -483,9 +483,9 @@ struct NetworkImage: View {
                 image.resizable().aspectRatio(contentMode: art)
                     .opacity(visible ? 1 : 0)
             } else if withoutImage, let symbolText {
-                Image(systemName: symbolText)
-                    .font(.system(size: characterSize))
-                    .foregroundStyle(Theme.fontVeryQuiet)
+                Image(icon: symbolText, size: characterSize)
+                    .font(.app(size: characterSize))
+                    .foregroundStyle(Theme.font)
             }
         }
         .task(id: url) {

@@ -39,7 +39,18 @@ struct ProfileView: View {
 
             ScrollView {
                 VStack(spacing: 0) {
-                    // **Looks at the top, by state** (`LookProfileEntry`): who has a look to
+                    AccountCard(model: model,
+                               insertOn: { serverTarget = ServerRoute(preset: $0, kind: model.accounts(on: $0).first?.kind) }) {
+                        // Another account on the connected server, by its kind: Jellyfin and
+                        // Emby sign in on this page's list of users, Plex through plex.tv.
+                        if model.session?.kind == .plex {
+                            serverTarget = ServerRoute(preset: model.session?.serverURL, kind: .plex)
+                        } else {
+                            accountRecord = true
+                        }
+                    }
+
+                    // **Looks below the account, by state** (`LookProfileEntry`): who has a look to
                     // choose sees a quiet line with it; the teaser for the supporter looks;
                     // everyone else sees nothing here.
                     if lookEntry != .none || supporterStatusShown {
@@ -56,53 +67,17 @@ struct ProfileView: View {
                         }
                         // The same margin as the cards below.
                         .padding(.horizontal, Theme.margin(wide: wide))
-                        .padding(.top, 6)
-                        .padding(.bottom, 16)
+                        .padding(.top, Theme.cardGap)
                         .animation(Theme.reveal, value: SupportModel.shared.isSupporter)
                         .animation(Theme.reveal, value: lookEntry)
                     }
 
-                    AccountCard(model: model,
-                               insertOn: { serverTarget = ServerRoute(preset: $0, kind: model.accounts(on: $0).first?.kind) }) {
-                        // Another account on the connected server, by its kind: Jellyfin and
-                        // Emby sign in on this page's list of users, Plex through plex.tv.
-                        if model.session?.kind == .plex {
-                            serverTarget = ServerRoute(preset: model.session?.serverURL, kind: .plex)
-                        } else {
-                            accountRecord = true
-                        }
-                    }
-
                     // 18 as between all other cards on this page; the only gap here used to be 20.
-                    Color.clear.frame(height: 18)
-
-                    // Quick Connect is Jellyfin's; the other kinds have no counterpart.
-                    if model.can(.quickConnect) {
-                        group {
-                            // **The symbol carries the accent, the title does not.**
-                            //
-                            // It was once fully accent, then not at all, on the grounds that accent means
-                            // state and not rank. That is right, but the conclusion went too far: a profile
-                            // page without a single colored spot reads lifeless, and Quick Connect is the
-                            // one path on this page that **does** something; everything else leads on or
-                            // displays.
-                            //
-                            // The symbol carries the color, the title stays white: the row stands out
-                            // without claiming a rank among siblings. Feedback: it makes the page look much
-                            // less colorless.
-                            ProfileRow(symbol: "rectangle.and.text.magnifyingglass",
-                                        title: "Quick Connect",
-                                        under: "Code vom Fernseher eingeben",
-                                        characterAccent: true,
-                                        last: true, target: QuickConnectRoute())
-                        }
-
-                        Color.clear.frame(height: 18)
-                    }
+                    Color.clear.frame(height: Theme.cardGap)
 
                     group {
-                        ProfileRow(symbol: "play.fill", title: "Wiedergabe",
-                                    under: "Sprache, Untertitel, Tempo",
+                        ProfileRow(symbol: "play", title: "Wiedergabe",
+                                    under: "Qualität, Sprache, Player",
                                     target: PlaybackRoute())
                         ProfileRow(symbol: "square.grid.2x2", title: "Darstellung",
                                     under: "Startseite, Reihen, Genres",
@@ -114,11 +89,12 @@ struct ProfileView: View {
                             ProfileRow(symbol: "paintpalette", title: "Looks",
                                        under: "Original und Halloween") { openLooks() }
                         }
-                        ProfileRow(symbol: "gearshape", title: "Einstellungen",
+                        ProfileRow(symbol: "gearshape", title: "Allgemein",
+                                    under: "Downloads, Server, Sync",
                                     last: true, target: SettingsRoute())
                     }
 
-                    Color.clear.frame(height: 18)
+                    Color.clear.frame(height: Theme.cardGap)
 
 
                     group {
@@ -134,41 +110,49 @@ struct ProfileView: View {
                                     under: "Jellyfin, Emby oder Plex, auch gemischt") {
                             serverTarget = ServerRoute()
                         }
+                        // Quick Connect is Jellyfin's; the other kinds have no counterpart.
+                        if model.can(.quickConnect) {
+                            ProfileRow(symbol: "rectangle.and.text.magnifyingglass",
+                                        title: "Quick Connect",
+                                        under: "Code vom Fernseher eingeben",
+                                        characterAccent: true,
+                                        target: QuickConnectRoute())
+                        }
                         // **Affects only the active account.** If others exist, the app switches to
                         // the next; only the last one returns to sign-in. That logic is in the state
                         // holder, not here.
                         ProfileRow(symbol: "rectangle.portrait.and.arrow.right",
-                                    title: "Abmelden", last: true) { signOutSheet = true }
+                                    title: "Abmelden", last: true, trailing: .none) { signOutSheet = true }
                     }
 
 
-                    Color.clear.frame(height: 18)
+                    Color.clear.frame(height: Theme.cardGap)
 
                     // **Rate, Discord, report a bug: at the very bottom.** In settings these were
                     // at the bottom and hardly seen.
                     group {
                         ProfileRow(symbol: "star", title: "Swiftly bewerten",
-                                    under: "Im App Store") {
+                                    under: "Im App Store", trailing: .external) {
                             open(Community.appStoreRating)
                         }
                         ProfileRow(symbol: "bubble.left.and.bubble.right", title: "Discord beitreten",
-                                    under: "Fragen stellen und sagen, was fehlt") {
+                                    under: "Fragen stellen und sagen, was fehlt", trailing: .external) {
                             open(Community.discord)
                         }
                         ProfileRow(symbol: "ladybug", title: "Fehler melden",
-                                    under: "Auf GitHub, deine App-Version ist schon eingetragen") {
+                                    under: "Auf GitHub, mit deiner App-Version", trailing: .external) {
                             open(Version.errorReport)
                         }
                         // Next to "Report a bug" because it belongs: whoever reports a bug on Discord
                         // attaches this.
                         ProfileRow(symbol: "doc.text", title: "Protokoll teilen",
-                                    under: "Die letzte Stunde, ohne Zugangsdaten") {
+                                    under: "Die letzte Stunde, ohne Zugangsdaten", trailing: .none) {
                             log = LogFile.write()
                         }
                         // Last, because it sets nothing: it shows what is in the app and where the
                         // VLCKit source is (LGPL).
                         ProfileRow(symbol: "text.book.closed", title: "Open-Source-Lizenzen",
-                                    under: "Was in Swiftly steckt, und der Quelltext von VLCKit",
+                                    under: "Und der Quelltext von VLCKit",
                                     last: true, target: LicensesRoute())
                     }
 
@@ -183,7 +167,7 @@ struct ProfileView: View {
                     }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, Theme.margin(wide: wide))
-                        .padding(.top, 26)
+                        .padding(.top, 28)
                 }
                 .padding(.bottom, 40)
                 // Limited width: across the full iPad width the arrow would sit half a meter
@@ -245,11 +229,11 @@ struct ProfileView: View {
         #endif
         .overlay(alignment: .topTrailing) {
             ActionSheet(opened: $signOutSheet,
-                           title: String(localized: "Abmelden von \(model.session?.userName ?? "")"),
+                           title: String(localized: "Von \(model.session?.userName ?? "") abmelden?"),
                            actions: [
                 TitleAction(symbol: "rectangle.portrait.and.arrow.right",
                               text: "Abmelden", cautionary: true) { model.signOut() },
-            ])
+            ], note: "Du kannst dich jederzeit wieder anmelden.")
         }
         // flush-ok: the system's own share sheet, not ours to make flush.
         .sheet(item: $log) { file in
@@ -708,7 +692,11 @@ private struct AccountCard: View {
             // `.padding(.leading, 0)` stood here and did nothing: `SeparatorLine` brings its
             // own inset, and a zero before it does not remove it.
             SeparatorLine()
-            rail(other, active: active, server: server)
+            if other.isEmpty {
+                addRow(active: active, server: server)
+            } else {
+                rail(other, active: active, server: server)
+            }
         }
     }
 
@@ -777,6 +765,32 @@ private struct AccountCard: View {
         }
     }
 
+    /// Alone on its server: the plus says what it does, as a row like the ones below.
+    private func addRow(active: Bool, server: URL?) -> some View {
+        Button {
+            if active { insert() } else if let server { insertOn(server) }
+        } label: {
+            HStack(spacing: 14) {
+                Image(icon: "plus", size: Theme.rowSymbolSize)
+                    .font(.app(size: Theme.rowSymbolSize))
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: Theme.rowIconWidth)
+                Text("Konto hinzufügen")
+                    .font(.app(size: Theme.rowTitleSize, weight: .medium))
+                    .foregroundStyle(Theme.font)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, Theme.rowPadV)
+            .frame(minHeight: Theme.rowHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Theme.PressRow())
+        .accessibilityLabel(Text("Weiteres Konto hinzufügen"))
+        .opacity(switches ? 0 : 1)
+        .animation(AccountSwitchTransition.lift, value: switches)
+    }
+
     private func rail(_ other: [Session], active: Bool, server: URL?) -> some View {
         ScrollView(.horizontal) {
             HStack(spacing: 14) {
@@ -815,9 +829,9 @@ private struct AccountCard: View {
                         // **A field on `area`, not a dashed circle**, as on the Mac (a
                         // button without a label is square). From the token, not a custom number: the
                         // same level as a list row title.
-                        Image(systemName: "plus")
+                        Image(icon: "plus", size: 15)
                             .font(Theme.listTitle)
-                            .foregroundStyle(Theme.fontQuiet)
+                            .foregroundStyle(Theme.font)
                             // **The field stays 40, the target becomes 44**, Apple's minimum size for a
                             // hit area.
                             .frame(width: 40, height: 40)

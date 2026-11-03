@@ -147,8 +147,8 @@ struct CollectionRail: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 5) {
                         RailTitle(text: "Teil der Sammlung")
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
+                        Image(icon: "chevron.right")
+                            .font(.app(size: 13, weight: .semibold))
                             .foregroundStyle(hovers ? Theme.font : Theme.fontVeryQuiet)
                             .accessibilityHidden(true)
                     }

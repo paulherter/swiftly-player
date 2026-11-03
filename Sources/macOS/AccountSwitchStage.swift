@@ -87,45 +87,53 @@ final class AccountSwitchEntrance {
 /// iPhone. Takes no clicks.
 struct AccountSwitchImage: View {
     @State private var stage = AccountSwitchEntrance.shared
+    /// Global origin of the very view the image is positioned in. This used to be the
+    /// origin of a `GeometryReader` with `.ignoresSafeArea()`: its content was still
+    /// inset below the toolbar, so the image landed that much too low and jumped up at
+    /// the swap.
+    @State private var origin: CGPoint = .zero
 
     var body: some View {
-        GeometryReader { g in
-            if let a = stage.entrance {
-                let o = g.frame(in: .global).origin
-                TimelineView(.animation) { _ in
-                    let t = CACurrentMediaTime() - a.start
-                    let base = a.curve.size * 1.06
-                    ZStack(alignment: .topLeading) {
-                        // Until the swap; after that the real image sits there.
-                        if t < a.curve.swap {
-                            let b = a.curve.status(max(0, t))
-                            a.image
-                                .frame(width: base, height: base)
-                                .scaleEffect(b.s / base)
-                                .position(x: b.x - o.x, y: b.y - o.y)
-                        }
-                        // The ring, only hinted at: from the landing, spring 0.35/0.75, fully visible for
-                        // 0.45 s, then fading out over 0.35 s, 55 % at most. On the Mac it is scaled to
-                        // the smaller target.
-                        let r = t - a.curve.landing
-                        if r >= 0, r < 0.8 {
-                            let mass = AccountSwitchTransition.Curve.spring(0.6, 1, 0, 0.35, 0.75, r)
-                            let d = r < 0.45 ? min(1, r / 0.05) : 1 - min(1, (r - 0.45) / 0.35)
-                            let border = 52 * a.curve.targetSize / AccountSwitchTransition.Curve.targetSize
-                            Circle()
-                                .stroke(Theme.accent, lineWidth: 2)
-                                .frame(width: border - 2, height: border - 2)
-                                .scaleEffect(mass)
-                                .opacity(d * 0.55)
-                                .position(x: a.curve.to.x - o.x, y: a.curve.to.y - o.y)
-                        }
-                    }
-                    .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)
+        Color.clear
+            .overlay(alignment: .topLeading) {
+                if let a = stage.entrance {
+                    TimelineView(.animation) { _ in flight(a, at: CACurrentMediaTime() - a.start) }
                 }
             }
+            .onGeometryChange(for: CGPoint.self) { $0.frame(in: .global).origin } action: { origin = $0 }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private func flight(_ a: AccountSwitchEntrance.Entrance, at t: Double) -> some View {
+        let o = origin
+        let base = a.curve.size * 1.06
+        return ZStack(alignment: .topLeading) {
+            // Until the swap; after that the real image sits there.
+            if t < a.curve.swap {
+                let b = a.curve.status(max(0, t))
+                a.image
+                    .frame(width: base, height: base)
+                    .scaleEffect(b.s / base)
+                    .position(x: b.x - o.x, y: b.y - o.y)
+            }
+            // The ring, only hinted at: from the landing, spring 0.35/0.75, fully visible for
+            // 0.45 s, then fading out over 0.35 s, 55 % at most. On the Mac it is scaled to
+            // the smaller target.
+            let r = t - a.curve.landing
+            if r >= 0, r < 0.8 {
+                let mass = AccountSwitchTransition.Curve.spring(0.6, 1, 0, 0.35, 0.75, r)
+                let d = r < 0.45 ? min(1, r / 0.05) : 1 - min(1, (r - 0.45) / 0.35)
+                let border = 52 * a.curve.targetSize / AccountSwitchTransition.Curve.targetSize
+                Circle()
+                    .stroke(Theme.accent, lineWidth: 2)
+                    .frame(width: border - 2, height: border - 2)
+                    .scaleEffect(mass)
+                    .opacity(d * 0.55)
+                    .position(x: a.curve.to.x - o.x, y: a.curve.to.y - o.y)
+            }
         }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

@@ -15,25 +15,40 @@ enum PlayerMetric {
     /// Target time under the preview image while scrubbing.
     static let previewTime: CGFloat = 30
     /// Bar background, as in the design and the iPhone `Zeitregler`.
-    static let barReason = Color.white.opacity(0.28)
+    static let barReason = Color.white.opacity(0.25)
+    /// Buffered stretch of the bar (design: white at 40 %).
+    static let barBuffered = Color.white.opacity(0.4)
     /// Between title and meta line or season pill.
-    static let titleSpacing: CGFloat = 6
-    /// The icon buttons at top right.
+    static let titleSpacing: CGFloat = 10
+    /// Line boxes of the head: 56 x 1.1 and 24 x 1.3 as in the design CSS, so title and meta line sit on the same y.
+    static let titleLine: CGFloat = 61.6
+    static let metaLine: CGFloat = 31.2
+    /// Title tracking (design: -1.2 px).
+    static let titleTracking: CGFloat = -1.2
+    /// The icon buttons at top right: 88 x 88, glyph 44, gap 8.
     static let button: CGFloat = 88
-    static let symbol: CGFloat = 38
-    static let buttonSpacing: CGFloat = 20
+    static let symbol: CGFloat = 44
+    static let buttonSpacing: CGFloat = 8
     /// Gap of the skip pill above the bar.
-    static let overBar: CGFloat = 40
-    /// Height of the time row.
-    static let bar: CGFloat = 40
+    static let overBar: CGFloat = 28
+    /// Height of the time row (one 26 pt line).
+    static let bar: CGFloat = 32
+    /// Distance of the time row from the bottom edge.
+    static let bottom: CGFloat = 90
+    /// Column heading (36 / 700) and the gap below it.
+    static let heading: CGFloat = 36
+    static let headingGap: CGFloat = 16
+    static let rowHeight: CGFloat = 72
+    /// Space between the last row and the "Verzögerung" block.
+    static let delayTop: CGFloat = 28
     /// Columns of the audio & subtitles and settings layers.
     static let column: CGFloat = 500
     static let columnSpacing: CGFloat = 114
-    static let columnsTop: CGFloat = 152
+    static let columnsTop: CGFloat = 212
     /// Row inset on the layers, so column title, choice row and delay share one text edge.
-    static let inset: CGFloat = 26
-    /// Width between the safe margins (90 pt) at 1920 pt.
-    static let safeWidth: CGFloat = 1740
+    static let inset: CGFloat = 20
+    /// Width between the margins (80 pt) at 1920 pt.
+    static let safeWidth: CGFloat = 1760
 
     /// Column width for `count` columns side by side. Up to three keep the design
     /// size; four or five (quality, group) move closer instead of running off screen.
@@ -55,67 +70,109 @@ enum PlayerLayer: Equatable {
     case tracks, episodes, settings
 }
 
+/// Shoot path for screenshots without a working stream. DEBUG only; in release every flag is `false`.
+///
+///     -zeige player -ohneBild [-ebene]
+///
+/// `-ohneBild` shows the control layer as if playing (see `PlayerScreen`); `-ebene` opens the audio and subtitle layer with focus on the subtitle "Deutsch".
+enum PlayerShoot {
+    #if DEBUG
+    static let withoutImage = ProcessInfo.processInfo.arguments.contains("-ohneBild")
+    static let layer = withoutImage && ProcessInfo.processInfo.arguments.contains("-ebene")
+    #else
+    static let withoutImage = false
+    static let layer = false
+    #endif
+    static let position: Double = 1781
+    static let duration: Double = 2880
+    /// Buffered up to here (seconds): about nine percent of the film ahead of the position.
+    static let buffered: Double = 2045
+    /// Share of the "Nächste Folge" underline.
+    static let countdown: Double = 0.7
+
+    /// Mock tracks for the layer when no player exists. `id` doubles as the focus id.
+    struct Track: Identifiable {
+        let id: String
+        let text: String
+    }
+    static let audio = [Track(id: "a1", text: "Deutsch · AC3 5.1"), Track(id: "a2", text: "English · E-AC3 5.1"),
+                        Track(id: "a3", text: "Audiodeskription")]
+    static let subtitles = [Track(id: "s1", text: "Deutsch"), Track(id: "s2", text: "Deutsch (erzwungen)"),
+                            Track(id: "s3", text: "English · SDH")]
+    static let subtitleDelay = Delay(milliseconds: 500)
+}
+
+/// Glyph box of the icon buttons. The same view draws the real button and the decorative copy over a layer.
+struct IconGlyph: View {
+    let symbol: String
+    /// Lit like focus: white surface, dark glyph, magnified, lifted.
+    let lit: Bool
+
+    var body: some View {
+        Image(icon: symbol, size: PlayerMetric.symbol)
+            .font(.app(size: PlayerMetric.symbol, weight: .medium))
+            .foregroundStyle(lit ? Theme.reason : Theme.font)
+            .frame(width: PlayerMetric.button, height: PlayerMetric.button)
+            .background {
+                RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
+                    .fill(lit ? Color.white : .clear)
+                    .lift(lit)
+            }
+            .scaleEffect(lit ? Theme.focusMagnifierSmall : 1)
+            .animation(Theme.focusAnimation, value: lit)
+    }
+}
+
 /// One of the icon buttons at top right. At rest only the glyph, focused the
-/// white fill of `ThemedButtonStyle`.
+/// white fill of `ThemedButtonStyle`. `active` lights it like focus while its layer is open.
 struct IconButton: View {
     let symbol: String
     let label: LocalizedStringKey
+    var active = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: PlayerMetric.symbol, weight: .medium))
+            Color.clear
         }
-        .buttonStyle(IconButtonStyle())
+        .buttonStyle(IconButtonStyle(symbol: symbol, active: active))
         .accessibilityLabel(Text(label))
     }
 }
 
-/// Like `ThemedButtonStyle(nurSymbol:)`, but without a fill at rest: the glyphs float over the picture.
+/// No fill at rest: the glyph floats over the picture. Focus = white rounded square, x1.1, lifted (design `iconBtn`).
 private struct IconButtonStyle: ButtonStyle {
+    let symbol: String
+    var active = false
+
     func makeBody(configuration: Configuration) -> some View {
-        ContentBody(configuration: configuration)
+        ContentBody(configuration: configuration, symbol: symbol, active: active)
     }
 
     private struct ContentBody: View {
         let configuration: ButtonStyleConfiguration
+        let symbol: String
+        let active: Bool
         @Environment(\.isFocused) private var focus
 
         var body: some View {
-            configuration.label
-                .foregroundStyle(focus ? Theme.reason : Theme.font)
-                .frame(width: PlayerMetric.button, height: PlayerMetric.button)
-                .background(focus ? Color.white : .clear,
-                            in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
-                // 88 x 88, the small step: 1.04 would have been three points, and the glyph floats over the picture.
-                .scaleEffect(configuration.isPressed ? 0.97 : (focus ? Theme.focusMagnifierSmall : 1))
-                .animation(Theme.focusAnimation, value: focus)
+            IconGlyph(symbol: symbol, lit: focus || active)
+                .scaleEffect(configuration.isPressed ? 0.97 : 1)
         }
     }
 }
 
-/// Base of every layer: blur with little extra dimming. The controls already
-/// darkened the picture, so a second strong dim felt heavy. Uses the dark UIKit
-/// style because `.ultraThinMaterial` follows the system's light appearance on
-/// TV. Pure black on top, never `Theme.reason`, which lifts black to grey in HDR.
+/// Base of every layer: dark blur plus rgba(16,16,16,.6), as in the design.
 private struct LayersReason: View {
     var body: some View {
         ZStack {
-            DarkBlur()
-            Color.black.opacity(0.15)
+            // Forced dark scheme: the thin material would otherwise follow the system's light appearance on TV.
+            Rectangle().fill(.ultraThinMaterial).environment(\.colorScheme, .dark)
+            Theme.reason.opacity(0.6)
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
     }
-}
-
-private struct DarkBlur: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIVisualEffectView {
-        UIVisualEffectView(effect: UIBlurEffect(style: .dark))
-    }
-
-    func updateUIView(_ viewRef: UIVisualEffectView, context: Context) {}
 }
 
 // MARK: - Columns
@@ -126,23 +183,27 @@ private struct SelectionColumn<ContentBody: View>: View {
     @Environment(\.columnsWidth) private var width
     let title: LocalizedStringKey
     @ViewBuilder let content: ContentBody
+    /// Room around the rows so a magnified, lifted focus row is not clipped by the scroll view.
+    private let bleed: CGFloat = 40
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                // Sub-page title from the ladder: the size was right, the weight was not. Bold appears once, on the page title.
-                .font(Theme.subpageTitle)
-                .tracking(Theme.lockSubpage)
+                // 36 / 700 / -0.6 at the heading step of the layers (design `.t-group` at 36).
+                .font(.app(size: PlayerMetric.heading, weight: .bold))
+                .tracking(-0.6)
                 .foregroundStyle(Theme.font)
                 .lineLimit(1)
-                .padding(.horizontal, PlayerMetric.inset)
-                .padding(.bottom, 22)
+                .frame(height: PlayerMetric.heading * 1.15)
+                .padding(.bottom, PlayerMetric.headingGap)
                 .accessibilityAddTraits(.isHeader)
             ScrollView {
-                VStack(alignment: .leading, spacing: 4) { content }
-                    .padding(.bottom, Theme.edgeTop)
+                VStack(alignment: .leading, spacing: 0) { content }
+                    .padding(.horizontal, bleed)
+                    .padding(.bottom, Theme.edgeTop + 60)
             }
             .scrollIndicators(.hidden)
+            .padding(.horizontal, -bleed)
         }
         .frame(width: width, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -151,7 +212,30 @@ private struct SelectionColumn<ContentBody: View>: View {
     }
 }
 
-/// Check mark and name. Selected is white and semibold, otherwise 62 % white; focus is the calm fill of `EpisodesStyle`.
+/// White surface, dark text, x1.03 and lift when focused (design `.r.focus` in the layers).
+private struct LayersRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        ContentBody(configuration: configuration)
+    }
+
+    private struct ContentBody: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.isFocused) private var focus
+
+        var body: some View {
+            configuration.label
+                .background {
+                    RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
+                        .fill(focus ? Color.white : .clear)
+                        .lift(focus)
+                }
+                .scaleEffect(configuration.isPressed ? 0.98 : (focus ? TVSpec.focusMagnifierWide : 1))
+                .animation(Theme.focusAnimation, value: focus)
+        }
+    }
+}
+
+/// Check mark and name. Selected is white and semibold, otherwise #CCC medium; focus is a white row with dark semibold text.
 private struct LayersRow: View {
     let text: String
     let selected: Bool
@@ -161,7 +245,7 @@ private struct LayersRow: View {
         Button(action: action) {
             RowsText(text: text, selected: selected)
         }
-        .buttonStyle(EpisodesStyle())
+        .buttonStyle(LayersRowStyle())
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -172,20 +256,20 @@ private struct LayersRow: View {
         @Environment(\.isFocused) private var focus
 
         var body: some View {
-            HStack(spacing: 22) {
-                Image(systemName: "checkmark")
-                    .font(Theme.listTitle)
+            HStack(spacing: 20) {
+                Image(icon: "checkmark", size: 30)
+                    .font(.app(size: 30, weight: .semibold))
                     .opacity(selected ? 1 : 0)
-                    .frame(width: 42)
+                    .frame(width: 32)
                     // The check mark is only an image; VoiceOver reads the selection from the button (`.isSelected`).
                     .accessibilityHidden(true)
                 // Track names come from the file; use them verbatim.
                 Marquee(text: text, running: focus)
             }
-            .font(.system(size: 30, weight: selected ? .semibold : .regular))
-            .foregroundStyle(selected || focus ? Theme.font : Theme.fontQuiet)
+            .font(.app(size: 30, weight: selected || focus ? .semibold : .medium))
+            .foregroundStyle(focus ? Theme.reason : (selected ? Theme.font : Theme.fontQuiet))
             .padding(.horizontal, PlayerMetric.inset)
-            .padding(.vertical, 18)
+            .frame(height: PlayerMetric.rowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -250,8 +334,8 @@ private struct ParticipantRow: View {
 
     var body: some View {
         HStack(spacing: 22) {
-            Image(systemName: "person.fill")
-                .font(.system(size: 26))
+            Image(icon: "person.fill")
+                .font(.app(size: 26))
                 .foregroundStyle(Theme.fontVeryQuiet)
                 .frame(width: 42)
             // A server user name, verbatim.
@@ -263,7 +347,7 @@ private struct ParticipantRow: View {
         .font(Theme.body)
         .foregroundStyle(Theme.fontQuiet)
         .padding(.horizontal, PlayerMetric.inset)
-        .padding(.vertical, 18)
+        .frame(height: PlayerMetric.rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
@@ -279,7 +363,7 @@ private extension EnvironmentValues {
     }
 }
 
-/// Columns side by side, centred. They end at the bottom edge; overflow scrolls inside its column.
+/// Columns side by side from the left margin (80 pt) at 212 pt from the top. They end at the bottom edge; overflow scrolls inside its column.
 private struct ColumnsRail<ContentBody: View>: View {
     var count = 2
     @ViewBuilder let content: ContentBody
@@ -287,7 +371,8 @@ private struct ColumnsRail<ContentBody: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: PlayerMetric.columnGap(count: count)) { content }
             .environment(\.columnsWidth, PlayerMetric.columnsWidth(count: count))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.leading, Theme.edgePage)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.top, PlayerMetric.columnsTop)
     }
 }
@@ -296,6 +381,13 @@ private struct ColumnsRail<ContentBody: View>: View {
 /// On TV it has three focus targets (-, +, reset) instead of one row catching
 /// left/right, because left/right switch the column here. Holding repeats,
 /// faster via `Delay.Haltezaehler`.
+/// Design shows one decimal ("0,0 s", "+0,5 s"); the step logic stays 50 ms.
+private func delayLabel(_ delay: Delay) -> String {
+    let tenths = (Double(delay.milliseconds) / 100).rounded(.toNearestOrAwayFromZero)
+    let sign = tenths > 0 ? "+" : (tenths < 0 ? "\u{2212}" : "")
+    return "\(sign)\(String(format: "%.1f", abs(tenths) / 10).replacingOccurrences(of: ".", with: ",")) s"
+}
+
 struct DelayRow: View {
     let value: Delay
     /// Focus id of the row, `"v" + column`; the keys append `-`, `+` and `0`.
@@ -310,21 +402,24 @@ struct DelayRow: View {
                 .font(Theme.small)
                 .foregroundStyle(Theme.fontVeryQuiet)
                 .padding(.horizontal, PlayerMetric.inset)
+            // Four items, equal gaps (design: space-between): minus, value, plus, reset. The hidden reset keeps its place.
             HStack(spacing: 0) {
                 keyButton("minus", "-", locked: value.atStart) {
                     setDown(value.shifted(-1, steps: hold.press()))
                 }
                 .accessibilityLabel(Text("Früher"))
-                Text(verbatim: value.text())
-                    .font(Theme.listTitle.monospacedDigit())
+                Spacer(minLength: 0)
+                Text(verbatim: delayLabel(value))
+                    .font(Font.app(size: 26, weight: .medium).monospacedDigit())
                     .foregroundStyle(value.isNull ? Theme.fontQuiet : Theme.font)
                     .lineLimit(1)
-                    .frame(maxWidth: .infinity)
                     .accessibilityHidden(true)
+                Spacer(minLength: 0)
                 keyButton("plus", "+", locked: value.atEnd) {
                     setDown(value.shifted(1, steps: hold.press()))
                 }
                 .accessibilityLabel(Text("Später"))
+                Spacer(minLength: 0)
                 // The reset button disappears afterwards; focus goes to + instead of jumping elsewhere.
                 keyButton("arrow.counterclockwise", "0", locked: false, redo: false) {
                     setDown(.null)
@@ -334,18 +429,17 @@ struct DelayRow: View {
                 .opacity(value.isNull ? 0 : 1)
                 .disabled(value.isNull)
             }
-            .accessibilityValue(Text(verbatim: value.text()))
+            .accessibilityValue(Text(verbatim: delayLabel(value)))
         }
     }
 
     private func keyButton(_ symbol: String, _ suffix: String, locked: Bool, redo: Bool = true,
                        action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: PlayerMetric.symbol - 6, weight: .semibold))
-                .opacity(locked ? 0.4 : 1)
+            Color.clear
         }
-        .buttonStyle(IconButtonStyle())
+        .buttonStyle(IconButtonStyle(symbol: symbol))
+        .opacity(locked ? 0.4 : 1)
         .buttonRepeatBehavior(redo ? .enabled : .disabled)
         // At the limit the key stays focusable; if focus vanished mid-hold it would jump to another column.
         .focused(focus, equals: identifier + suffix)
@@ -365,24 +459,36 @@ struct TracksLayer: View {
     @State private var audioLag: Delay?
     @State private var subtitleLag: Delay?
 
+    /// Without a player the shoot path (`-ohneBild`) shows mock tracks; otherwise this is always `false`.
+    private var mock: Bool { area == nil && PlayerShoot.withoutImage }
+
     var body: some View {
         ZStack(alignment: .top) {
             LayersReason()
             ColumnsRail {
                 SelectionColumn(title: "Audio") {
-                    ForEach(area?.audioTracks ?? [], id: \.trackId) { track in
-                        LayersRow(text: area?.audioLabel(track) ?? track.prettyName, selected: audioNow == track.trackId) {
-                            audioSelection = track.trackId
-                            area?.selectAudioTrack(track)
+                    if mock {
+                        ForEach(PlayerShoot.audio) { track in
+                            LayersRow(text: track.text, selected: audioNow == track.id) {
+                                audioSelection = track.id
+                            }
+                            .focused($focus, equals: "t" + track.id)
                         }
-                        .focused($focus, equals: "t" + track.trackId)
+                    } else {
+                        ForEach(area?.audioTracks ?? [], id: \.trackId) { track in
+                            LayersRow(text: area?.audioLabel(track) ?? track.prettyName, selected: audioNow == track.trackId) {
+                                audioSelection = track.trackId
+                                area?.selectAudioTrack(track)
+                            }
+                            .focused($focus, equals: "t" + track.trackId)
+                        }
                     }
                     DelayRow(value: audioLag ?? area?.audioDelay ?? .null,
                                        identifier: "vt", focus: $focus) { new in
                         audioLag = new
                         area?.audioDelay = new
                     }
-                    .padding(.top, Theme.railsPadding)
+                    .padding(.top, PlayerMetric.delayTop)
                 }
                 SelectionColumn(title: "Untertitel") {
                     LayersRow(text: String(localized: "Aus"), selected: subtitleNow == nil) {
@@ -390,30 +496,40 @@ struct TracksLayer: View {
                         area?.selectSubtitle(nil)
                     }
                     .focused($focus, equals: "u")
-                    let names = area?.subtitleNames() ?? [:]
-                    ForEach(area?.subtitleTracks ?? [], id: \.trackId) { track in
-                        LayersRow(text: names[track.trackId] ?? track.trackName,
-                                    selected: subtitleNow == track.trackId) {
-                            subtitleSelection = .some(track.trackId)
-                            area?.selectSubtitle(track)
+                    if mock {
+                        ForEach(PlayerShoot.subtitles) { track in
+                            LayersRow(text: track.text, selected: subtitleNow == track.id) {
+                                subtitleSelection = .some(track.id)
+                            }
+                            .focused($focus, equals: "u" + track.id)
                         }
-                        .focused($focus, equals: "u" + track.trackId)
+                    } else {
+                        let names = area?.subtitleNames() ?? [:]
+                        ForEach(area?.subtitleTracks ?? [], id: \.trackId) { track in
+                            LayersRow(text: names[track.trackId] ?? track.trackName,
+                                        selected: subtitleNow == track.trackId) {
+                                subtitleSelection = .some(track.trackId)
+                                area?.selectSubtitle(track)
+                            }
+                            .focused($focus, equals: "u" + track.trackId)
+                        }
                     }
-                    DelayRow(value: subtitleLag ?? area?.subtitleDelay ?? .null,
+                    DelayRow(value: subtitleLag ?? area?.subtitleDelay ?? (mock ? PlayerShoot.subtitleDelay : .null),
                                        identifier: "vu", focus: $focus) { new in
                         subtitleLag = new
                         area?.subtitleDelay = new
                     }
-                    .padding(.top, Theme.railsPadding)
+                    .padding(.top, PlayerMetric.delayTop)
                 }
             }
         }
         .focusSection()
-        // Starts on the selected audio track.
+        // Starts on the selected audio track; the shoot path `-ebene` starts on the subtitle "Deutsch".
         .task { await LayersFocus.put { focus = focus ?? startTarget } }
     }
 
     private var startTarget: String {
+        if PlayerShoot.layer { return "us1" }
         if let audio = audioNow { return "t" + audio }
         return "u" + (subtitleNow ?? "")
     }
@@ -421,11 +537,11 @@ struct TracksLayer: View {
     /// By `trackId`, not name: two tracks called "Deutsch" would both show the check mark.
     private var subtitleNow: String? {
         if let subtitleSelection { return subtitleSelection }
-        return area?.selectedSubtitle?.trackId
+        return mock ? nil : area?.selectedSubtitle?.trackId
     }
 
     private var audioNow: String? {
-        audioSelection ?? area?.selectedAudioTrack?.trackId
+        audioSelection ?? (mock ? "a1" : area?.selectedAudioTrack?.trackId)
     }
 }
 
@@ -456,8 +572,8 @@ struct SettingLayer: View {
                         }
                         Button(action: groupLeave) {
                             HStack(spacing: 22) {
-                                Image(systemName: "rectangle.portrait.and.arrow.right")
-                                    .font(.system(size: 28, weight: .semibold))
+                                Image(icon: "rectangle.portrait.and.arrow.right")
+                                    .font(.app(size: 28, weight: .semibold))
                                     .frame(width: 42)
                                 Text("Gruppe verlassen")
                                 Spacer(minLength: 0)
@@ -465,10 +581,10 @@ struct SettingLayer: View {
                             .font(Theme.listTitle)
                             .foregroundStyle(Theme.accent)
                             .padding(.horizontal, PlayerMetric.inset)
-                            .padding(.vertical, 18)
+                            .frame(height: PlayerMetric.rowHeight)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .buttonStyle(EpisodesStyle())
+                        .buttonStyle(LayersRowStyle())
                     }
                 }
                 // Two picture formats as on iPhone: the whole picture and fill. There is no stretched picture.
@@ -622,8 +738,9 @@ struct EpisodesLayer: View {
                     // Placeholder: the title itself is in the player and does not fade with this.
                     Text(verbatim: title)
                         .font(PlayerMetric.title)
-                        .tracking(Theme.lockTitle)
+                        .tracking(PlayerMetric.titleTracking)
                         .lineLimit(1)
+                        .frame(height: PlayerMetric.titleLine)
                         .hidden()
                         .accessibilityHidden(true)
                     if !seasons.isEmpty {

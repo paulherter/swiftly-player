@@ -71,7 +71,7 @@ func advancedBuild(available: [OwnHeader], expanded: Bool = false,
 
     func rowCreate(_ k: OwnHeader?) {
         let rail = stack(GTK_ORIENTATION_VERTICAL, spacing: 4)
-        let name = inputRow(symbol: "tag-symbolic", placeholder: translated("Header-Name"), stretches: true)
+        let name = inputRow(symbol: "document-edit-symbolic", placeholder: translated("Header-Name"), stretches: true)
         let value = inputRow(symbol: "dialog-password-symbolic", placeholder: translated("Wert"),
                                 secret: true, stretches: true)
         if let k {

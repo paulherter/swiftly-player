@@ -75,8 +75,8 @@ struct IconButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: mass.symbol, weight: .medium))
+            Image(icon: symbol, size: mass.symbol)
+                .font(.app(size: mass.symbol, weight: .medium))
                 .foregroundStyle(.white)
                 .frame(width: mass.button, height: mass.button)
                 .contentShape(Rectangle())
@@ -154,7 +154,7 @@ private struct SelectionColumn<ContentBody: View>: View {
                 // two sources eventually drifts apart.
                 // Semibold, not bold: 20 is the row heading, and bold appears exactly once,
                 // at the page title.
-                .font(.system(size: mass.title, weight: .semibold))
+                .font(.app(size: mass.title, weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 // Used to be raw `.white`; `font` is what is read.
@@ -187,8 +187,8 @@ private struct LayersRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: mass.pad ? 15 : 14, weight: .semibold))
+                Image(icon: "checkmark", size: mass.pad ? 15 : 14)
+                    .font(.app(size: mass.pad ? 15 : 14, weight: .semibold))
                     .opacity(selected ? 1 : 0)
                     .frame(width: 18)
                     .accessibilityHidden(true)
@@ -226,9 +226,9 @@ private struct ParticipantRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "person.fill")
-                .font(.system(size: mass.pad ? 15 : 14))
-                .foregroundStyle(Theme.fontVeryQuiet)
+            Image(icon: "person.fill", size: mass.pad ? 15 : 14)
+                .font(.app(size: mass.pad ? 15 : 14))
+                .foregroundStyle(Theme.font)
                 .frame(width: 18)
             // A username from the server, verbatim.
             Text(verbatim: name)
@@ -290,9 +290,9 @@ struct DelayRow: View {
                     .frame(maxWidth: .infinity)
                 keyButton("plus", bearing: 1, locked: value.atEnd)
                 Button { setDown(.null) } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: mass.symbol - 3, weight: .medium))
-                        .foregroundStyle(Theme.fontQuiet)
+                    Image(icon: "arrow.counterclockwise", size: mass.symbol - 3)
+                        .font(.app(size: mass.symbol - 3, weight: .medium))
+                        .foregroundStyle(Theme.font)
                         .frame(width: mass.button, height: mass.button)
                         .contentShape(Rectangle())
                 }
@@ -320,8 +320,8 @@ struct DelayRow: View {
         Button {
             setDown(value.shifted(bearing, steps: hold.press()))
         } label: {
-            Image(systemName: symbol)
-                .font(.system(size: mass.symbol - 2, weight: .semibold))
+            Image(icon: symbol, size: mass.symbol - 2)
+                .font(.app(size: mass.symbol - 2, weight: .semibold))
                 .foregroundStyle(locked ? Theme.fontVeryQuiet : Theme.font)
                 .frame(width: mass.button, height: mass.button)
                 .contentShape(Rectangle())
@@ -445,8 +445,8 @@ struct SettingLayer: View {
                         }
                         Button(action: groupLeave) {
                             HStack(spacing: 8) {
-                                Image(systemName: "rectangle.portrait.and.arrow.right")
-                                    .font(.system(size: 14, weight: .semibold))
+                                Image(icon: "rectangle.portrait.and.arrow.right", size: 14)
+                                    .font(.app(size: 14, weight: .semibold))
                                     .frame(width: 18)
                                 Text("Gruppe verlassen")
                             }
@@ -586,7 +586,7 @@ struct EpisodesLayer: View {
                         // Placeholder: the title itself is in the player (`stateTitle`) and
                         // does not fade along.
                         Text(verbatim: title)
-                            .font(.system(size: mass.title, weight: .semibold))
+                            .font(.app(size: mass.title, weight: .semibold))
                             .lineLimit(1)
                             .hidden()
                         if !seasons.isEmpty {
@@ -600,7 +600,7 @@ struct EpisodesLayer: View {
                                               Task { await episodesLoad(seasonSwitched: true) }
                                           },
                                           opened: $seasonListOpen,
-                                          font: .system(size: mass.meta + 1, weight: .semibold),
+                                          font: .app(size: mass.meta + 1, weight: .semibold),
                                           height: 28,
                                           // No surface in the player: it sits there in place of the meta line, and
                                           // that carries none.

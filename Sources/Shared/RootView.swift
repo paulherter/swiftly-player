@@ -157,6 +157,7 @@ struct ConnectView: View {
     @State private var address = ""
     /// "Advanced": custom headers for a service in front of the server.
     @State private var headers: [HeaderRow] = []
+    @State private var found: [FoundServer] = []
 
     var body: some View {
         ScrollView {
@@ -166,15 +167,24 @@ struct ConnectView: View {
                         .padding(.top, 172)
                 }
 
+                // Pushed from the server choice: the same build as the Emby page.
+                if back != nil {
+                    ServerKindMark(kind: .jellyfin, size: 44)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 8)
+                }
+
                 Text("Wo steht dein Jellyfin-Server?")
                     .font(Theme.body)
                     .foregroundStyle(Theme.fontQuiet)
-                    .padding(.top, back == nil ? 44 : 24)
+                    .frame(maxWidth: .infinity, alignment: back == nil ? .center : .leading)
+                    .padding(.top, back == nil ? 44 : 20)
 
                 InputField(text: $address, symbol: "globe",
-                            placeholder: "tv.beispiel.de", keyboard: .address,
+                            placeholder: "jellyfin.beispiel.de",
+                            keyboard: .address,
                             completion: linkUp)
-                    .padding(.top, 18)
+                    .padding(.top, back == nil ? 18 : 14)
 
                 Text("https:// kannst du weglassen.")
                     .font(Theme.small)
@@ -194,7 +204,6 @@ struct ConnectView: View {
                         .buttonStyle(PrimaryButtonStyle())
                         .padding(.top, 22)
                         .disabled(address.isEmpty || model.phase == .connecting)
-                        .opacity(address.isEmpty ? 0.4 : 1)
                 }
 
                 if let error = model.errorMessage {
@@ -209,11 +218,22 @@ struct ConnectView: View {
                         .padding(.top, 14)
                 }
 
-                if let last = model.lastServer, last.address != address {
+                // Without the server under "Zuletzt verbunden", but only while that row is
+                // there: with its address already in the field the row is gone, and the
+                // server would vanish from both places.
+                FoundServersSection(
+                    found: ServerDiscovery.shown(found, except: [recentShown?.address])
+                ) { server in
+                    address = server.address
+                    linkUp()
+                }
+                .padding(.top, 36)
+
+                if let last = recentShown {
                     recent(last)
                 }
             }
-            .padding(.horizontal, 28)
+            .padding(.horizontal, Theme.edgeSpacing)
             .padding(.bottom, 40)
             // Otherwise the field stretches across the whole iPad width.
             .frame(maxWidth: Theme.formWidth)
@@ -229,6 +249,12 @@ struct ConnectView: View {
         .onAppear { if address.isEmpty { address = presetAddress ?? model.lastServer?.address ?? "" } }
         // Changing the address during the check cancels it.
         .onChange(of: address) { _, new in model.addressChanged(new) }
+        .serverSearch($found)
+    }
+
+    /// The last server, unless its address is already in the field.
+    private var recentShown: ServerReminder? {
+        model.lastServer.flatMap { $0.address != address ? $0 : nil }
     }
 
     /// The second time nobody types the address again.
@@ -236,35 +262,10 @@ struct ConnectView: View {
         VStack(alignment: .leading, spacing: 0) {
             GroupsTitle(text: "Zuletzt verbunden")
             SeparatorLine()
-            Button {
+            ServerRow(name: last.name, detail: "\(last.address) · Jellyfin \(last.version)") {
                 address = last.address
                 linkUp()
-            } label: {
-                HStack(spacing: 12) {
-                    Circle().fill(Theme.accent).frame(width: 7, height: 7)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(last.name)
-                            // List row from the scale; before it was a literal 15.
-                            .font(Theme.listTitle)
-                            .foregroundStyle(Theme.font)
-                        Text("\(last.address) · Jellyfin \(last.version)")
-                            // The scale's info grade, 12 Regular. Before it was a literal 12 at the
-                            // call site.
-                            .font(Theme.small)
-                            .foregroundStyle(Theme.fontVeryQuiet)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        // 13 semibold: the chevron on the right of a row, as in `ValueRow` and
-                        // `ProfileRow`. 12 was the second number for the same symbol.
-                        .font(.system(size: 13, weight: .semibold))
-                        // White at 28 percent is 2.50:1; for a control symbol the limit is 3:1.
-                        .foregroundStyle(Theme.fontVeryQuiet)
-                }
-                .padding(.vertical, 14)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(Theme.PressRow())
             SeparatorLine()
         }
         .padding(.top, 36)
@@ -313,7 +314,7 @@ struct LoginView: View {
                 fields
                 if model.can(.quickConnect) { quickConnectDistance }
             }
-            .padding(.horizontal, 28)
+            .padding(.horizontal, Theme.edgeSpacing)
             .padding(.bottom, 40)
             .frame(maxWidth: Theme.formWidth)
             .frame(maxWidth: .infinity)
@@ -432,7 +433,6 @@ struct LoginView: View {
                     .padding(.top, 10)
                     .disabled(model.isWorking)
                     .disabled(user.isEmpty)
-                    .opacity(user.isEmpty ? 0.4 : 1)
             }
 
             if let error = model.errorMessage {
@@ -461,7 +461,7 @@ struct LoginView: View {
                 quickConnect = true
             } label: {
                 HStack(spacing: 9) {
-                    Image(systemName: "tv")
+                    Image(icon: "tv")
                         .accessibilityHidden(true)
                     Text("Mit Quick Connect anmelden")
                 }

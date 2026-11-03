@@ -19,6 +19,7 @@ struct ServerOnboardingView: View {
     @State private var password = ""
     /// "Advanced": custom headers for a service in front of the server.
     @State private var headers: [HeaderRow] = []
+    @State private var found: [FoundServer] = []
     /// The code path starts only once the server is set; otherwise every visit would fetch a code from a server that does not exist yet.
     @State private var perCode = true
     @State private var state = QuickConnectModel()
@@ -95,8 +96,20 @@ struct ServerOnboardingView: View {
             Button(examine ? "Moment…" : "Weiter", action: check)
                 .buttonStyle(ThemedButtonStyle())
                 .disabled(address.isEmpty || examine)
+
+            // Without the servers already in the bundle: another account there is
+            // "Weiteres Konto", not a new server.
+            TVFoundServers(
+                found: ServerDiscovery.shown(found, except: model.server.map(\.absoluteString))
+            ) { server in
+                address = server.address
+                check()
+            }
+            .frame(width: TVSpec.formWidth)
+            .padding(.top, TVSpec.onboardingFoundTop)
         }
         .padding(.top, TVSpec.onboardingBlockTop)
+        .serverSearch($found)
     }
 
     // MARK: Sign-in

@@ -28,9 +28,9 @@ struct SeerrSettingsView: View {
             Theme.reason.ignoresSafeArea()
             VStack(spacing: 0) {
                 // Title next to the arrow, not below it; see `SettingsView`.
-                SubpageHeader(title: String(localized: "Seerr")) { back() }
                 ScrollView { content }.scrollIndicators(.hidden)
             }
+            .fadingUnderSubpageHeader(title: String(localized: "Seerr")) { back() }
         }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" width="3300" height="2200">
+ <g id="Notes"><text id="template-version" x="0" y="0">Template v.3.0</text></g>
+ <g id="Guides">
+  <line id="Baseline-S" x1="263" x2="3036" y1="696" y2="696"/>
+  <line id="Capline-S" x1="263" x2="3036" y1="625.541" y2="625.541"/>
+  <line id="Baseline-M" x1="263" x2="3036" y1="1126" y2="1126"/>
+  <line id="Capline-M" x1="263" x2="3036" y1="1055.54" y2="1055.54"/>
+  <line id="Baseline-L" x1="263" x2="3036" y1="1556" y2="1556"/>
+  <line id="Capline-L" x1="263" x2="3036" y1="1485.54" y2="1485.54"/>
+  <line id="left-margin-Regular-M" x1="1594" x2="1594" y1="1030" y2="1150"/>
+  <line id="right-margin-Regular-M" x1="1706" x2="1706" y1="1030" y2="1150"/>
+ </g>
+ <g id="Symbols">
+  <g id="Regular-M"><path d="M 1688.5 1068.021 H 1676.25 V 1055.771 a 8.75 8.75 0 0 0 -8.75 -8.75 H 1611.5 A 8.75 8.75 0 0 0 1602.75 1055.771 V 1111.771 a 5.25 5.25 0 0 0 8.549 4.082 l 12.451 -10.062 V 1115.271 a 8.75 8.75 0 0 0 8.75 8.75 h 40.324 l 15.877 12.832 A 5.25 5.25 0 0 0 1697.25 1132.771 V 1076.771 A 8.75 8.75 0 0 0 1688.5 1068.021 Z M 1613.25 1100.776 V 1057.521 H 1665.75 v 35 H 1625.316 A 5.25 5.25 0 0 0 1622 1093.689 Z m 73.5 21 -8.75 -7.087 a 5.25 5.25 0 0 0 -3.299 -1.168 H 1634.25 V 1103.021 h 33.25 a 8.75 8.75 0 0 0 8.75 -8.75 V 1078.521 h 10.5 Z"/></g>
+ </g>
+</svg>

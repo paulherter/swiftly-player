@@ -143,9 +143,9 @@ fun PlexSignInPage(app: SwiftlyApplication, finished: () -> Unit, back: () -> Un
     Column(Modifier.fillMaxSize().background(Theme.reason)) {
         SubpageHeader(title, { stepBack() })
         Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.widthIn(max = Theme.formWidth).fillMaxWidth().padding(horizontal = Theme.edgePageWide).padding(bottom = 40.dp)) {
+            Column(Modifier.widthIn(max = Theme.formWidth).fillMaxWidth().padding(horizontal = Theme.edgeSpacing).padding(bottom = 40.dp)) {
                 when (val s = step) {
-                    PlexStep.Start, PlexStep.Opening -> PlexIntro()
+                    PlexStep.Start, PlexStep.Opening -> PlexIntro(step == PlexStep.Opening) { start() }
                     is PlexStep.Waiting -> PlexWaiting(s.secondsLeft)
                     PlexStep.LoadingServers -> PlexPlaceholder()
                     is PlexStep.Profiles -> PlexProfiles(s.list, ::pickProfile)
@@ -170,12 +170,8 @@ fun PlexSignInPage(app: SwiftlyApplication, finished: () -> Unit, back: () -> Un
         }
         // The bottom, as the footer on Apple: one button, or the quiet way to another account.
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Column(Modifier.widthIn(max = Theme.formWidth).fillMaxWidth().padding(horizontal = Theme.edgePageWide)) {
+            Column(Modifier.widthIn(max = Theme.formWidth).fillMaxWidth().padding(horizontal = Theme.edgeSpacing)) {
                 when (val s = step) {
-                    PlexStep.Start, PlexStep.Opening -> {
-                        val opening = s == PlexStep.Opening
-                        PrimaryButton(translated(if (opening) "Wird geöffnet…" else "Mit Plex anmelden"), released = !opening) { start() }
-                    }
                     is PlexStep.Waiting -> SecondaryButton(translated("Seite noch mal öffnen")) { openBrowser(s.url) }
                     is PlexStep.Servers -> if (s.list.isNotEmpty()) {
                         Box(Modifier.fillMaxWidth().heightIn(min = 44.dp), contentAlignment = Alignment.Center) {
@@ -192,7 +188,7 @@ fun PlexSignInPage(app: SwiftlyApplication, finished: () -> Unit, back: () -> Un
 // MARK: - Steps
 
 @Composable
-private fun PlexIntro() {
+private fun PlexIntro(opening: Boolean, start: () -> Unit) {
     Column {
         Box(Modifier.padding(top = 8.dp)) { ServerKindMark(ServerKind.Plex, 44.dp) }
         Text(translated("Die Anmeldung läuft auf der Seite von Plex. Dein Passwort bekommt Swiftly Player nie zu sehen."),
@@ -206,6 +202,9 @@ private fun PlexIntro() {
             PlexGuideLine(2, translated("Dort anmelden, dann schließt sie sich von selbst"))
             PlexGuideLine(3, translated("Server aussuchen, fertig"))
         }
+        // Under the guide, where the steps end (was pinned to the bottom edge).
+        PrimaryButton(translated(if (opening) "Wird geöffnet…" else "Plex öffnen"), released = !opening,
+                      modifier = Modifier.padding(top = 28.dp)) { start() }
     }
 }
 
@@ -264,7 +263,7 @@ private fun PlexProfiles(profiles: List<PlexProfile>, pick: (PlexProfile) -> Uni
                         Box(Modifier.align(Alignment.TopEnd).padding(end = 6.dp).size(22.dp)
                                 .background(Theme.raised, RoundedCornerShape(Theme.cornerSmall)),
                             contentAlignment = Alignment.Center) {
-                            Symbol(Glyph.Padlock, 10.dp, color = Theme.fontQuiet, strength = Strength.Semibold)
+                            Symbol(Glyph.Padlock, 10.dp, color = Theme.font, strength = Strength.Semibold)
                         }
                     }
                 }
@@ -360,7 +359,7 @@ private fun PlexServerRow(server: PlexServer, busy: Boolean, failed: Boolean, lo
             .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Box(Modifier.width(20.dp).breathing(busy), contentAlignment = Alignment.Center) {
-            Symbol(Glyph.Server, 17.dp, color = Theme.fontQuiet)
+            Symbol(Glyph.Server, 17.dp, color = Theme.font)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(server.name, style = Theme.body.copy(fontWeight = FontWeight.SemiBold), color = Theme.font, maxLines = 2,
@@ -377,7 +376,7 @@ private fun PlexServerRow(server: PlexServer, busy: Boolean, failed: Boolean, lo
         }
         // Running now: a spinner where the arrow stands, so the tap visibly did something.
         if (busy) CircularProgressIndicator(Modifier.size(16.dp), color = Theme.fontQuiet, strokeWidth = 2.dp)
-        else Symbol(Glyph.AngleRight, 13.dp, color = Theme.fontVeryQuiet, strength = Strength.Semibold)
+        else Symbol(Glyph.AngleRight, 13.dp, color = Theme.font, strength = Strength.Semibold)
     }
 }
 

@@ -63,14 +63,14 @@ struct PosterTile: View {
                  corner: Theme.cornerTile,
                  progress: item.userData?.playedPercentage.map { $0 / 100 }) {
                 Theme.area.overlay {
-                    Image(systemName: "film").foregroundStyle(Theme.fontVeryQuiet)
+                    Image(icon: "film").foregroundStyle(Theme.font)
                 }
             }
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 8)  {
             // Fixed width: fixed height. If the tile fills its column, the height
             // follows the actual width at 2:3, like every poster.
             poster
@@ -256,7 +256,7 @@ struct ItemDetailView: View {
                             .padding(.top, 18)
                     } else {
                     hero
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: Theme.blockGap) {
                         // Above the button after all, directly under the name: below it, it sat
                         // between button and action row and separated two things that belong
                         // together.
@@ -266,7 +266,7 @@ struct ItemDetailView: View {
                         // only 8 apart. The gap above was thus larger than between the fields,
                         // and the row read as a separate thing instead of a continuation of the
                         // button. Feedback: "so it looks like one clean element".
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: Theme.actionGap) {
                             primaryButton
                             actionRail
                         }
@@ -276,7 +276,7 @@ struct ItemDetailView: View {
                         description
                     }
                     .padding(.horizontal, Theme.margin(wide: wide))
-                    .padding(.top, 14)
+                    .padding(.top, 4)
                     }
 
                     // **Everything below arrives at once.** Cast, extras, collection and
@@ -286,6 +286,8 @@ struct ItemDetailView: View {
                     // empty-state hint while still loading.
                     if bottomPresent {
                         VStack(alignment: .leading, spacing: 0) {
+                            // Quiet and first: who has seen it belongs to the title itself.
+                            WatchersRow(model: model, item: item)
                             cast
                             extrasRail
                             // Above "Similar titles": the collection is the closer relation. Only
@@ -508,14 +510,14 @@ struct ItemDetailView: View {
         // showed only "Continue from 51:10" and left open how much is left. The
         // same question, the same answer: layout and spacing identical to
         // `SeriesView.primaryButton`.
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 8) {
             Button {
                 launch(since: resumeFrom ?? 0)
             } label: {
                 if let since = resumeFrom {
-                    Label("Fortsetzen ab \(timeText(since))", systemImage: "play.fill")
+                    Label("Fortsetzen ab \(timeText(since))", icon: "play.fill")
                 } else {
-                    Label("Abspielen", systemImage: "play.fill")
+                    Label("Abspielen", icon: "play.fill")
                 }
             }
             .buttonStyle(PrimaryButtonStyle(stretches: !wide))
@@ -555,7 +557,8 @@ struct ItemDetailView: View {
         HStack(spacing: 8) {
             if watchlistShown {
                 ActionButton(symbol: remembered ? "bookmark.fill" : "bookmark",
-                             title: "Merkliste", active: remembered, stretches: !broad) {
+                             title: "Merkliste", active: remembered, stretches: !broad,
+                             caption: remembered ? "Gemerkt" : "Merken") {
                     remembered.toggle()
                     // Switch immediately so the button responds, but revert if the server
                     // says no. Before, the display stayed put and lied.
@@ -577,14 +580,16 @@ struct ItemDetailView: View {
             // fields; that is why it grows here instead of always reserving a fifth
             // slot.
             if model.downloadButtonShow, current.type != "Series" {
-                DownloadField(entries: loaded, stretches: !broad) {
+                DownloadField(entries: loaded, stretches: !broad, caption: "Laden") {
                     ringTap(loaded, model.downloads) { loadSheet = true }
                 }
             }
 
-            ActionButton(symbol: "film", title: "Trailer", stretches: !broad) { trailerStart() }
+            ActionButton(symbol: "play.rectangle", title: "Trailer", stretches: !broad,
+                         caption: "Trailer") { trailerStart() }
             ActionButton(symbol: watched ? "checkmark.circle.fill" : "checkmark.circle",
-                         title: "Gesehen", active: watched, stretches: !broad) {
+                         title: "Gesehen", active: watched, stretches: !broad,
+                         caption: "Gesehen") {
                 watched.toggle()
                 Task {
                     if let reason = await model.setWatched(current, an: watched) {
@@ -593,7 +598,7 @@ struct ItemDetailView: View {
                     }
                 }
             }
-            ActionButton(symbol: "ellipsis", title: "Mehr", stretches: !broad) { moreOpen = true }
+            ActionButton(symbol: "ellipsis", title: "Mehr", stretches: !broad, caption: "Mehr") { moreOpen = true }
                 .asActionAnchor()
         }
         // No margin of its own anymore: the four fields share the row and end
@@ -636,7 +641,7 @@ struct ItemDetailView: View {
                 // more: "File" sat twice as far in as its rows and as "Cast" below.
                 GroupsTitle(text: "Datei")
                     .padding(.horizontal, -Theme.edgeSpacing)
-                    .padding(.top, 22)
+                    .padding(.top, Theme.railsSpacing)
                 Rectangle().fill(Theme.line).frame(height: 1)
                 if source.container != nil {
                     FileRow(designation: "Container", value: FileDetails.container(source) ?? "")
@@ -648,7 +653,7 @@ struct ItemDetailView: View {
                 }
                 ForEach(Array((source.mediaStreams ?? []).filter { $0.type == "Audio" }.prefix(2).enumerated()),
                         id: \.offset) { pair in
-                    FileRow(designation: pair.offset == 0 ? "Ton" : " ",
+                    FileRow(designation: "Ton",
                                value: pair.element.short)
                     Rectangle().fill(Theme.line).frame(height: 1)
                 }
@@ -810,12 +815,12 @@ struct Segment<ContentBody: View>: View {
                 // had zero. On the Seerr page both forms now meet.
                 RailTitle(text: title)
                 if arrow {
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right", size: 13)
                         // A chevron is 13 semibold. Before it was 12 semibold; at 12 the scale
                         // has Regular, and a semibold chevron in a Regular grade is none of the
                         // steps.
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.fontVeryQuiet)
+                        .font(.app(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.font)
                 }
             }
             .padding(.horizontal, Theme.margin(wide: wide))

@@ -13,8 +13,8 @@ struct GroupsRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "person.2.fill")
-                .font(.system(size: size + 1))
+            Image(icon: "person.2.fill", size: size + 1)
+                .font(.app(size: size + 1))
                 .foregroundStyle(Theme.accent)
             // Name and participants come from the server, verbatim.
             Text(verbatim: name)
@@ -22,7 +22,7 @@ struct GroupsRow: View {
                 .foregroundStyle(Theme.accent)
             Text(verbatim: "· \(withWhom)")
         }
-        .font(.system(size: size))
+        .font(.app(size: size))
         .accessibilityElement(children: .combine)
     }
 }
@@ -34,8 +34,8 @@ struct GroupsEvent: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .medium))
+            Image(icon: symbol, size: 15)
+                .font(.app(size: 15, weight: .medium))
                 .foregroundStyle(Theme.accent)
             Text(verbatim: text)
                 .font(Theme.body)
@@ -76,14 +76,14 @@ struct OfferingBadge: View {
     var body: some View {
         if count > 0 {
             Button(action: tapOn) {
-                Image(systemName: symbol)
-                    .font(.system(size: 20))
+                Image(icon: symbol, size: 20)
+                    .font(.app(size: 20))
                     .foregroundStyle(Theme.accent)
                     .frame(width: 44, height: 44)
                     .overlay(alignment: .topTrailing) {
                         if count > 1 {
                             Text(verbatim: "\(count)")
-                                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                                .font(.app(size: 11, weight: .semibold).monospacedDigit())
                                 .foregroundStyle(Theme.onAccent)
                                 .frame(minWidth: 16, minHeight: 16)
                                 .background(Theme.accent, in: Capsule())
@@ -231,7 +231,7 @@ struct SharedSheets: View {
                     .foregroundStyle(Theme.fontVeryQuiet)
                     .padding(.bottom, 6)
                 TextField(text: $name) { Text("Filmabend") }
-                    .font(.system(size: 17))
+                    .font(.app(size: 17))
                     .foregroundStyle(Theme.font)
                     .focused($taps)
                     .submitLabel(.done)
@@ -332,8 +332,8 @@ struct SharedSheets: View {
                        perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
             HStack(spacing: 14) {
-                Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .medium))
+                Image(icon: symbol, size: 17)
+                    .font(.app(size: 17, weight: .medium))
                     .foregroundStyle(Theme.accent)
                     .frame(width: 26)
                 VStack(alignment: .leading, spacing: 1) {
@@ -368,12 +368,12 @@ struct ReturnPathStrip: View {
             Spacer(minLength: 0)
             HStack(spacing: 12) {
                 Text("\(name) verlassen")
-                    .font(.system(size: 13))
+                    .font(.app(size: 13))
                     .foregroundStyle(Theme.font)
                     .lineLimit(1)
                 Button(action: join) {
                     Text("Wieder beitreten")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.app(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.accent)
                         .frame(minHeight: 44)
                         .contentShape(Rectangle())

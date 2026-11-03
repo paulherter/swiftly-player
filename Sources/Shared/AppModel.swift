@@ -53,6 +53,11 @@ final class AppModel {
     var watchlistShown: Bool { didSet { remember(watchlistShown, "merklisteAn") } }
     /// **The letter strip beside A–Z grids** (``AlphabetIndex``), on by default.
     var alphabetShown: Bool { didSet { remember(alphabetShown, "alphabetAn") } }
+    /// **"Gesehen von" on movie and series pages** (Jelly Twiggy plugin). On by default, but
+    /// the setting only shows once ``watchersServers`` knows the plugin; off, nothing is asked.
+    var watchersShown: Bool { didSet { remember(watchersShown, "gesehenVonAn") } }
+    /// Servers (by ``serverKey``) that answered a watchers request with a list at least once.
+    var watchersServers: Set<String> { didSet { remember(Array(watchersServers).sorted(), "gesehenVonServer") } }
 
     /// Empty means: take whatever the server specifies.
     var audioLanguage: String { didSet { remember(audioLanguage, "tonSprache") } }
@@ -693,6 +698,8 @@ final class AppModel {
         progressOnTiles = store.object(forKey: "fortschritt") as? Bool ?? true
         watchlistShown = store.object(forKey: "merklisteAn") as? Bool ?? true
         alphabetShown = store.object(forKey: "alphabetAn") as? Bool ?? true
+        watchersShown = store.object(forKey: "gesehenVonAn") as? Bool ?? true
+        watchersServers = Set(store.stringArray(forKey: "gesehenVonServer") ?? [])
         audioLanguage = store.string(forKey: "tonSprache") ?? ""
         let languageStored = store.string(forKey: "utSprache") ?? ""
         subtitleLanguage = languageStored
@@ -1299,6 +1306,24 @@ final class AppModel {
         let order: PlayOrder
     }
 
+    /// **A library page asked for by a row heading on the home page** (``StartRail/libraryJump``).
+    ///
+    /// The main view switches to the area, the open library page takes the order. The order
+    /// is stored right here as well: a page that was never opened reads it when it is built,
+    /// and only an open page needs to hear about it. Wrapped with an id so the same heading
+    /// tapped twice arrives twice.
+    var libraryJump: LibraryJumpRequest?
+
+    struct LibraryJumpRequest: Identifiable, Equatable {
+        let id = UUID()
+        let jump: LibraryJump
+    }
+
+    func openLibrary(_ jump: LibraryJump) {
+        LibraryModel.remember(jump.sorting, for: jump.art)
+        libraryJump = LibraryJumpRequest(jump: jump)
+    }
+
     /// The tracks that are playing, for handing the title over to another device.
     var playingTracks: TrackIndices { runningTracks }
 
@@ -1816,6 +1841,26 @@ final class AppModel {
     /// **From the account's server, with its access**, not the currently active one.
     /// Since multiple servers exist, the app asked the wrong server for the others'
     /// images, and they vanished until you switched to them.
+    /// **Who watched a title** for the "Gesehen von" row. `[]` when the switch is off, there is
+    /// no plugin or nobody has watched; the first list that comes back marks the server as
+    /// having the plugin, which is what makes the setting appear.
+    func watchers(of item: Item) async -> [Watcher] {
+        guard watchersShown, let client else { return [] }
+        let key = serverKey
+        guard let list = await client.watchers(itemID: item.id) else { return [] }
+        if !key.isEmpty, !watchersServers.contains(key) { watchersServers.insert(key) }
+        return list
+    }
+
+    /// The setting is offered only on a server where the plugin has answered.
+    var watchersPluginHere: Bool { watchersServers.contains(serverKey) }
+
+    /// A watcher's profile picture; `nil` without a picture (the row then shows the initial).
+    func watcherImageURL(_ watcher: Watcher) -> URL? {
+        guard watcher.imageTag != nil else { return nil }
+        return images?.user(watcher.userID, mark: watcher.imageTag, border: 160)
+    }
+
     func userImageURL(for account: Session) -> URL? {
         if account.kind == .plex { return account.plex?.userImage }
         return ImageAddress(base: account.serverURL, token: account.accessToken, kind: account.kind)
@@ -2039,6 +2084,25 @@ final class AppModel {
     func sortNames(from source: ShelfSource,
                    filter: LibraryFilter = .all) async -> [(name: String, sortName: String?)]? {
         await naturalList(from: source, filter: filter)?.map { ($0.name, $0.sortName) }
+    }
+
+    /// **The whole list in any order, as slim as the server allows**, for the index beside
+    /// the grid (``AlphabetIndex``). "By name" is the natural list; the others ask the
+    /// server in the grid's own order, with year, rating and date added but no images.
+    func indexList(from source: ShelfSource, sorting: Sorting,
+                   filter: LibraryFilter = .all) async -> [Item]? {
+        if sorting == .name { return await naturalList(from: source, filter: filter) }
+        guard let client else { return nil }
+        do {
+            return try await client.items(parentID: source.parent, limit: 0, startIndex: 0,
+                                          sortBy: sorting.inputField, sortOrder: source.bearing(sorting),
+                                          filters: filter.jellyfinFilter, isWatched: filter.isWatched,
+                                          recursive: source.recursive, includeItemTypes: source.types,
+                                          ids: [], personIDs: [], genres: [], slim: true).items
+        } catch {
+            Self.log.error("Indexliste nicht geladen: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     /// Everything bookmarked, **across all libraries**.

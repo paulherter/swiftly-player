@@ -87,9 +87,17 @@ struct MainView: View {
     @State private var movieSelection: SectionSelection = .all
     @State private var seriesSelection: SectionSelection = .all
 
-    init(model: AppModel) {
+    #if DEBUG
+    /// Which page an offscreen snapshot window opens on (`WindowOffPull.stage`).
+    var script: String?
+    #endif
+
+    init(model: AppModel, script: String? = nil) {
         self.model = model
         _controls = State(initialValue: PlayControls(model: model))
+        #if DEBUG
+        self.script = script
+        #endif
     }
 
     var body: some View {
@@ -126,9 +134,19 @@ struct MainView: View {
             // nothing because the bar never received them.
             .zIndex(1)
 
-            ZStack {
+            ZStack(alignment: .topLeading) {
                 Theme.reason
                 content
+                // **‹ › stand still.** They used to be part of every page's bar and so slid in
+                // and faded with each page. One pair here, above all pages and outside their
+                // transitions, is one control in one place. Not in the player.
+                if controls.wish == nil {
+                    NavArrows(canBack: navigator.canBack(section),
+                              canForward: navigator.canForward(section),
+                              back: { goBack() }, forward: { goForward() })
+                        .padding(.leading, 20)
+                        .frame(height: Theme.toolbarHeight)
+                }
             }
             // "Leave movie night / rejoin" after the player closes: bottom center of the content,
             // where hints usually go. Above it, what went wrong with the group.
@@ -225,6 +243,9 @@ struct MainView: View {
         .overlay { SharedPanel(takeover: takeover.offerings,
                                    continueWatching: { hereContinueWatching($0) }) }
         .task { gemeinsam.start(model) }
+        #if DEBUG
+        .task { await play(script) }
+        #endif
         .onDisappear { gemeinsam.finish() }
         // **The group starts the player, not the page.** Whoever creates it, whoever joins,
         // and when someone in the group sets a new title: it always arrives as a queue from
@@ -267,8 +288,19 @@ struct MainView: View {
         // Home" on the thank-you page): the pages above the home page close, the person
         // stays on the home page.
         .onChange(of: GiftFlow.shared.homeRequests) { _, _ in
+            if section != .start { navigator.leave(section) }
             section = .start
             navigator.back(in: .start, until: 0)
+        }
+        // **A row heading on the home page opens its library** (``StartRail/libraryJump``) in
+        // the row's order, at the top of the area. The shelf lives here, so the order is set on
+        // it directly; it stores it itself.
+        .onChange(of: model.libraryJump) { _, request in
+            guard let request else { return }
+            let target: Region = request.jump.art == "tvshows" ? .seriesList : .movies
+            (target == .movies ? movieShelf : seriesShelf).sorting = request.jump.sorting
+            navigator.back(in: target, until: 0)
+            section = target
         }
         // **On the click in the profile page** (design D, as on iPhone) the page itself slides
         // out, profile included, and the picture flies into the sidebar. See
@@ -316,6 +348,21 @@ struct MainView: View {
             guard let command = CommandPost.receive(post) else { return }
             execute(command)
         }
+        .focusedSceneValue(\.canBack, navigator.canBack(section))
+        .focusedSceneValue(\.canForward, navigator.canForward(section))
+        .onReceive(NotificationCenter.default.publisher(for: CommandPost.moreName)) { post in
+            executeMore(post)
+        }
+    }
+
+    /// The extra menu commands; kept out of `body` so the type checker stays quick.
+    private func executeMore(_ post: Notification) {
+        guard controls.wish == nil, let command = CommandPost.receiveMore(post) else { return }
+        switch command {
+        case .forward: goForward()
+        case .switchProfile: toProfile()
+        case .playTracks: break
+        }
     }
 
     /// How many pages are **shown**. Deliberately not the same as
@@ -353,161 +400,41 @@ struct MainView: View {
             let withGait = -width * 0.3
 
             ZStack {
-                // The section root always lies at the bottom.
-                // **`withGait` and the scrim belong *under* the id.**
-                //
-                // Above it they applied to the outgoing root as well as the new one, and both read the
-                // *new* section's `depth`. After leaving a page open in "Filme" and switching to
-                // "Start", the old root undid its `withGait` and the scrim faded out: a motion with a
-                // dark gradient that has no business there. It went unnoticed for Movies and Shows
-                // because a page lay on top and hid it.
-                //
-                // Under the id they belong to their own root. The outgoing one keeps its state and
-                // just fades out.
-                root
-                    // **The switch cross-fades, and only the root.**
-                    //
-                    // Without it the other libraries appeared abruptly while everything else fades in.
-                    //
-                    // **Order matters.** The animation sits directly on the root, i.e. before the offset
-                    // and scrim around it. Previously the parent had `.animation(value: section)`, which
-                    // applied to *everything* that changed in the same pass, including `depth`: the
-                    // outgoing root undid its `withGait` and the scrim faded out. That was the odd fade with
-                    // the dark gradient, and it is why the animation sits inside here.
-                    .transition(.opacity)
-                    .animation(Theme.reveal, value: rootId)
-                    .offset(x: depth > 0 ? withGait : 0)
-                    .overlay {
-                        // From `reason`, not `Color.black`: pure black exists in exactly one place, behind the
-                        // image in the player.
-                        Theme.reason.opacity(depth > 0 ? 0.28 : 0)
-                            .allowsHitTesting(false)
+                // **Start stays alive.** It used to be swapped like every section, and coming
+                // back rebuilt the whole home page graph: one block of about 110 ms on the main
+                // thread, every time (probe "filme → start", "profil → start"). Now it only
+                // fades; its rows, images and scroll position are still there. Only the opacity
+                // animates (`animation(_:body:)`), so nothing inside moves with it.
+                piece(.start, width: width, withGait: withGait)
+                    .animation(section == .start ? Theme.timeSectionFromIn : Theme.timeSectionToOut) {
+                        $0.opacity(section == .start ? 1 : 0)
                     }
-                    // **Whatever lies under a page takes no clicks.**
-                    //
-                    // This is the actual rule; the scrim above already says it: the root is covered, so it
-                    // is not operable. Without this line it stayed operable, and because `withGait` pushes
-                    // it thirty percent to the left, its chips and posters lay **under the sidebar**. In the
-                    // running window the "Serien" filter chip sat at x = 4 and the "Filme" sidebar row at
-                    // x = 12, and the click went to the chip. That is the "I click on the left and a title
-                    // opens" bug, and also "the bar reacts to nothing": it never received the click.
-                    //
-                    // `clipped()` and `clipShape` did not help: both clip the image, and the children's hit
-                    // area stays where it is.
-                    .allowsHitTesting(depth == 0)
-                    // **And out of the accessibility tree as well.** A covered page does not belong there;
-                    // VoiceOver would walk through buttons nobody sees. Same statement as
-                    // `allowsHitTesting`, for the second way in; without it the root stayed in the tree,
-                    // with chips at x = 4 under the sidebar.
-                    .accessibilityHidden(depth > 0)
-                    .id(section)
-                    // **The root explicitly lies at the bottom.** Without fixed layers the page slid in
-                    // under the home page's tiles, which looked like transparency.
-                    .zIndex(0)
-
-                // **The page stack as a whole, with its own id.**
-                //
-                // Without it the `ForEach` sat directly in this stack. On a sidebar switch its content
-                // changed from one section's pages to another's, and SwiftUI played the **slide-out
-                // motion** for each vanishing page, from the right with the shadow edge on top. After
-                // leaving a page open in "Filme" and going to "Start" the user saw a page slide where
-                // only a cross-fade was intended.
-                //
-                // With `.id(section)` the stack is swapped as **one** piece. Then that piece's
-                // cross-fade applies, and the motions inside it are reserved for going deeper, which
-                // is what they are for.
-                ZStack {
-                    ForEach(Array(navigator.pages(section).enumerated()), id: \.element.id) { slot, target in
-                        let uppermost = slot == depth - 1
-                        let shown = slot < depth
-
-                        ZStack {
-                            Theme.reason
-                            page(target)
-                        }
-                        // Off to the right until it is its turn; pages beneath move along a little.
-                        .offset(x: shown ? (uppermost ? 0 : withGait) : width)
-                        .overlay {
-                            Theme.reason.opacity(shown && !uppermost ? 0.28 : 0)
-                                .allowsHitTesting(false)
-                        }
-                        // The drop shadow on the leading edge. A narrow gradient **beside** the page, not
-                        // `.shadow`: a shadow around a screen-sized view forces it into its own offscreen
-                        // buffer, which the system rebuilds every frame.
-                        .overlay(alignment: .leading) {
-                            LinearGradient(colors: [Theme.reason.opacity(0.45), .clear],
-                                           startPoint: .trailing, endPoint: .leading)
-                                .frame(width: 28)
-                                .offset(x: -28)
-                                .allowsHitTesting(false)
-                        }
-                        // Same rule one level up: of the pages in the stack only the top one takes clicks.
-                        // The ones below carry the same scrim as the root, and what waits off to the right
-                        // is not there at all.
-                        .allowsHitTesting(uppermost)
-                        .accessibilityHidden(!uppermost)
-                        .zIndex(Double(slot + 1))
-                        // **Start sliding once the page is really in place.**
+                    .allowsHitTesting(section == .start)
+                    .accessibilityHidden(section != .start)
+                if section != .start {
+                    piece(section, width: width, withGait: withGait)
+                        // **The section as a whole, with one id.**
                         //
-                        // This used to wait with `Task.sleep(16 ms)`. That was a race: at 120 Hz a frame is a
-                        // bit over eight milliseconds, so the wakeup came either before or after the layout.
-                        // If before, insert and slide fell into the same transaction and the page jumped to
-                        // its place without motion. **That is the intermittent "sometimes smooth, sometimes
-                        // abrupt".** It was never the curve.
+                        // Root and page stack used to carry one each. Then an open page stack
+                        // vanishes abruptly while the root beneath still fades. A section is one
+                        // piece: whatever was open in it goes with it. **The open library belongs
+                        // in this id.**
                         //
-                        // `DispatchQueue.main.async` from `onAppear` is guaranteed to run after the current
-                        // transaction completes. No timer, no milliseconds, no race.
-                        .onAppear {
-                            // If the page is already in place, this is a return from a sidebar switch, and it
-                            // does not slide again.
-                            guard slot >= depth else { return }
-                            // From now on it slides; responses wait (`InTravel`).
-                            InTravel.begins()
-                            // **Only this one write.** There used to be a second, unanimated one next to it
-                            // (`ruht = false`). Both are state of the same view and land in one update pass, for
-                            // which SwiftUI picks *one* transaction. If it picks the empty one, the offset is set
-                            // without motion. It was the only place in the tree where a running motion could be
-                            // broken.
-                            DispatchQueue.main.async {
-                                withAnimation(Theme.timePagesPush) { shownDeep[section] = slot + 1 }
-                            }
-                        }
-                        // **Only sliding out is a transition.** Sliding in is done by the offset above so the
-                        // page is fully laid out beforehand. Nothing fades here: transparent while moving
-                        // looks like a bug.
-                        .transition(.asymmetric(insertion: .identity,
-                                                removal: .move(edge: .trailing)))
-                }
-                .zIndex(1)
+                        // Putting it on the root itself, one level deeper, cannot work: on a switch
+                        // the root is discarded and rebuilt with its modifiers, so an `.animation`
+                        // on it does not know about its own appearance. Insert and remove
+                        // animations belong on what stays, which is this piece.
+                        .id(rootId)
+                        // First the old goes, then the new comes, one after the other, opacity
+                        // only. The numbers and the reasoning are at `Theme.timeSectionToOut`.
+                        .transition(.sectionSwitch)
                 }
             }
-            // **Otherwise the root steps over the edge.** `withGait` pushes it one third to the
-            // left; without clipping that third lands over the sidebar and home page and sidebar
-            // are visible on top of each other.
-            .clipped()
-            // **The section as a whole, with one id.**
-            //
-            // Root and page stack used to carry one each. Then an open page stack vanishes abruptly
-            // while the root beneath still fades. A section is one piece: whatever was open in it
-            // goes with it. **The open library belongs in this id.**
-            //
-            // `section` alone used to be here. Switching between the other libraries does not
-            // change the section, so the id stayed the same, the piece was not swapped, and the
-            // fade-through never ran.
-            //
-            // Putting it on the root itself, one level deeper, cannot work: on a switch the root
-            // is discarded and rebuilt with its modifiers, so an `.animation` on it does not know
-            // about its own appearance. Insert and remove animations belong on what stays, which
-            // is this piece.
-            .id(rootId)
-            // First the old goes, then the new comes, one after the other, opacity only. The
-            // numbers and the reasoning are at `Theme.timeSectionToOut`.
-            .transition(.sectionSwitch)
-            // **Only here, not on the parent.** That is exactly why the first attempt failed: an
-            // animation with `value:` applies to everything that changes below it, and then also
-            // moved page offset and scrim, visible as a page slide with shadow edge where nothing
-            // should move. Here it sits on the piece being swapped; there is nothing inside to
-            // move, since the old one keeps its state and the new one is drawn fresh.
+            // **Only here, not on the parent.** An animation with `value:` applies to everything
+            // that changes below it, and then also moved page offset and scrim, visible as a page
+            // slide with shadow edge where nothing should move. Here it sits on the pieces being
+            // swapped; there is nothing inside to move, since the old one keeps its state and the
+            // new one is drawn fresh.
             .animation(.default, value: rootId)
         }
         .onChange(of: navigator.pages(section).count, initial: true) { alt, new in
@@ -527,19 +454,172 @@ struct MainView: View {
         //
         // Done here and not in the sidebar: Command-1 to -4 and the collections also switch
         // section.
+        //
+        // Start stays alive and is still visible while it fades out, so there the profile goes
+        // only once it is out of sight.
         .onChange(of: section) { alt, _ in
             guard navigator.inAccount(alt) else { return }
-            navigator.closeAccountBranch(in: alt, animated: false)
-            shownDeep[alt] = navigator.pages(alt).count
+            let close = {
+                guard section != alt else { return }
+                navigator.closeAccountBranch(in: alt, animated: false)
+                shownDeep[alt] = navigator.pages(alt).count
+            }
+            if alt == .start {
+                DispatchQueue.main.asyncAfter(deadline: .now() + FadeTimes.pageToOut) { close() }
+            } else {
+                close()
+            }
         }
     }
 
-    private var root: some View { sectionRoot }
+    /// One section as a piece: its root at the bottom, its page stack above.
+    @ViewBuilder
+    private func piece(_ s: Region, width: CGFloat, withGait: CGFloat) -> some View {
+        ZStack {
+            // The section root always lies at the bottom.
+            // **`withGait` and the scrim belong *under* the id.**
+            //
+            // Above it they applied to the outgoing root as well as the new one, and both read the
+            // *new* section's `depth`. After leaving a page open in "Filme" and switching to
+            // "Start", the old root undid its `withGait` and the scrim faded out: a motion with a
+            // dark gradient that has no business there. It went unnoticed for Movies and Shows
+            // because a page lay on top and hid it.
+            //
+            // Under the id they belong to their own root. The outgoing one keeps its state and
+            // just fades out.
+            sectionRoot(s)
+                // **The switch cross-fades, and only the root.**
+                //
+                // Without it the other libraries appeared abruptly while everything else fades in.
+                //
+                // **Order matters.** The animation sits directly on the root, i.e. before the offset
+                // and scrim around it. Previously the parent had `.animation(value: section)`, which
+                // applied to *everything* that changed in the same pass, including `deep(s)`: the
+                // outgoing root undid its `withGait` and the scrim faded out. That was the odd fade with
+                // the dark gradient, and it is why the animation sits inside here.
+                .transition(.opacity)
+                .animation(Theme.reveal, value: s)
+                .offset(x: deep(s) > 0 ? withGait : 0)
+                .overlay {
+                    // From `reason`, not `Color.black`: pure black exists in exactly one place, behind the
+                    // image in the player.
+                    Theme.reason.opacity(deep(s) > 0 ? 0.28 : 0)
+                        .allowsHitTesting(false)
+                }
+                // **Whatever lies under a page takes no clicks.**
+                //
+                // This is the actual rule; the scrim above already says it: the root is covered, so it
+                // is not operable. Without this line it stayed operable, and because `withGait` pushes
+                // it thirty percent to the left, its chips and posters lay **under the sidebar**. In the
+                // running window the "Serien" filter chip sat at x = 4 and the "Filme" sidebar row at
+                // x = 12, and the click went to the chip. That is the "I click on the left and a title
+                // opens" bug, and also "the bar reacts to nothing": it never received the click.
+                //
+                // `clipped()` and `clipShape` did not help: both clip the image, and the children's hit
+                // area stays where it is.
+                .allowsHitTesting(deep(s) == 0)
+                // **And out of the accessibility tree as well.** A covered page does not belong there;
+                // VoiceOver would walk through buttons nobody sees. Same statement as
+                // `allowsHitTesting`, for the second way in; without it the root stayed in the tree,
+                // with chips at x = 4 under the sidebar.
+                .accessibilityHidden(deep(s) > 0)
+                .id(s)
+                // **The root explicitly lies at the bottom.** Without fixed layers the page slid in
+                // under the home page's tiles, which looked like transparency.
+                .zIndex(0)
+
+            // **The page stack as a whole, with its own id.**
+            //
+            // Without it the `ForEach` sat directly in this stack. On a sidebar switch its content
+            // changed from one section's pages to another's, and SwiftUI played the **slide-out
+            // motion** for each vanishing page, from the right with the shadow edge on top. After
+            // leaving a page open in "Filme" and going to "Start" the user saw a page slide where
+            // only a cross-fade was intended.
+            //
+            // With `.id(section)` the stack is swapped as **one** piece. Then that piece's
+            // cross-fade applies, and the motions inside it are reserved for going deeper, which
+            // is what they are for.
+            ZStack {
+                ForEach(Array(navigator.pages(s).enumerated()), id: \.element.id) { slot, target in
+                    let uppermost = slot == deep(s) - 1
+                    let shown = slot < deep(s)
+
+                    ZStack {
+                        Theme.reason
+                        page(target)
+                    }
+                    // Off to the right until it is its turn; pages beneath move along a little.
+                    .offset(x: shown ? (uppermost ? 0 : withGait) : width)
+                    .overlay {
+                        Theme.reason.opacity(shown && !uppermost ? 0.28 : 0)
+                            .allowsHitTesting(false)
+                    }
+                    // The drop shadow on the leading edge. A narrow gradient **beside** the page, not
+                    // `.shadow`: a shadow around a screen-sized view forces it into its own offscreen
+                    // buffer, which the system rebuilds every frame.
+                    .overlay(alignment: .leading) {
+                        LinearGradient(colors: [Theme.reason.opacity(0.45), .clear],
+                                       startPoint: .trailing, endPoint: .leading)
+                            .frame(width: 28)
+                            .offset(x: -28)
+                            .allowsHitTesting(false)
+                    }
+                    // Same rule one level up: of the pages in the stack only the top one takes clicks.
+                    // The ones below carry the same scrim as the root, and what waits off to the right
+                    // is not there at all.
+                    .allowsHitTesting(uppermost)
+                    .accessibilityHidden(!uppermost)
+                    .zIndex(Double(slot + 1))
+                    // **Start sliding once the page is really in place.**
+                    //
+                    // This used to wait with `Task.sleep(16 ms)`. That was a race: at 120 Hz a frame is a
+                    // bit over eight milliseconds, so the wakeup came either before or after the layout.
+                    // If before, insert and slide fell into the same transaction and the page jumped to
+                    // its place without motion. **That is the intermittent "sometimes smooth, sometimes
+                    // abrupt".** It was never the curve.
+                    //
+                    // `DispatchQueue.main.async` from `onAppear` is guaranteed to run after the current
+                    // transaction completes. No timer, no milliseconds, no race.
+                    .onAppear {
+                        // If the page is already in place, this is a return from a sidebar switch, and it
+                        // does not slide again.
+                        guard slot >= deep(s) else { return }
+                        // From now on it slides; responses wait (`InTravel`).
+                        InTravel.begins()
+                        // **Only this one write.** There used to be a second, unanimated one next to it
+                        // (`ruht = false`). Both are state of the same view and land in one update pass, for
+                        // which SwiftUI picks *one* transaction. If it picks the empty one, the offset is set
+                        // without motion. It was the only place in the tree where a running motion could be
+                        // broken.
+                        DispatchQueue.main.async {
+                            withAnimation(Theme.timePagesPush) { shownDeep[s] = slot + 1 }
+                        }
+                    }
+                    // **Only sliding out is a transition.** Sliding in is done by the offset above so the
+                    // page is fully laid out beforehand. Nothing fades here: transparent while moving
+                    // looks like a bug.
+                    .transition(.asymmetric(insertion: .identity,
+                                            removal: .move(edge: .trailing)))
+            }
+            .zIndex(1)
+            }
+        }
+        // **Otherwise the root steps over the edge.** `withGait` pushes it one third to the
+        // left; without clipping that third lands over the sidebar and home page and sidebar
+        // are visible on top of each other.
+        .clipped()
+        // Each piece knows its own section, also Start while it waits unseen.
+        .environment(\.section, s)
+    }
+
+    /// How many pages are shown in section `s`.
+    private func deep(_ s: Region) -> Int { shownDeep[s] ?? 0 }
+
 
     @ViewBuilder
-    private var sectionRoot: some View {
-        switch section {
-        case .start:  HomeView(model: model, state: home)
+    private func sectionRoot(_ s: Region) -> some View {
+        switch s {
+        case .start:  HomeView(model: model, state: home, shown: section == .start)
         case .movies:  LibraryView(model: model, art: "movies", title: "Filme",
                                      shelf: movieShelf, choice: $movieSelection)
         case .seriesList: LibraryView(model: model, art: "tvshows", title: "Serien",
@@ -600,7 +680,25 @@ struct MainView: View {
         }
     }
 
-    private func back() { navigator.back(in: section) }
+    private func back() { goBack() }
+
+    /// Back and forward through the window's history (see `Navigator.Place`). When the
+    /// step lands in another section, its pages are already in place, so the shown depth
+    /// is set before switching; nothing slides.
+    private func goBack() {
+        guard let other = navigator.goBack(from: section) else { return }
+        switchTo(other)
+    }
+
+    private func goForward() {
+        guard let other = navigator.goForward(from: section) else { return }
+        switchTo(other)
+    }
+
+    private func switchTo(_ other: Region) {
+        shownDeep[other] = navigator.pages(other).count
+        section = other
+    }
 
     /// **Each subpage closes itself, not "the top one".** See
     /// `Navigator.close(_:in:)`; the difference caused the crash when adding a second
@@ -617,6 +715,7 @@ struct MainView: View {
     /// coming back to "Start" the profile was on top again. The second part is handled by
     /// `.onChange(of: section)`.
     private func sectionSelect(_ new: Region) {
+        if new != section { navigator.leave(section) }
         if new == section {
             // On the Mac, clicking the active row goes to the root (as in Finder); if the account
             // branch lies on it, that closes first.
@@ -645,6 +744,36 @@ struct MainView: View {
     /// one: two identical pages in a stack are an error here, not a cosmetic problem (see
     /// Command-comma in `ausfuehren`). If only Settings lies on top (via Command-comma,
     /// without a profile below), they leave without motion and the profile slides in.
+    #if DEBUG
+    /// Walks an offscreen snapshot window to one page, the way a click would.
+    private func play(_ script: String?) async {
+        guard let script else { return }
+        func first(_ shelf: LibraryModel) async -> Item? {
+            for _ in 0 ..< 40 where shelf.items.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
+            return shelf.items.first
+        }
+        switch script {
+        case "filme": section = .movies
+        case "serien": section = .seriesList
+        case "suche": section = .search
+        case "merkliste": section = .watchlist
+        case "profil": toProfile()
+        case "allgemein":
+            // The profile has to land before the next page goes on top of it.
+            toProfile()
+            try? await Task.sleep(for: .milliseconds(800))
+            navigator.openIt(.settings, in: section)
+        case "film":
+            section = .movies
+            if let item = await first(movieShelf) { navigator.openIt(.title(item), in: .movies) }
+        case "serie":
+            section = .seriesList
+            if let item = await first(seriesShelf) { navigator.openIt(.title(item), in: .seriesList) }
+        default: break
+        }
+    }
+    #endif
+
     private func toProfile() {
         if let i = navigator.pages(section).firstIndex(of: .profile) {
             navigator.back(in: section, until: i + 1)
@@ -757,27 +886,30 @@ struct Sidebar: View {
             // Space for the window controls, which sit above the sidebar.
             Color.clear.frame(height: Theme.signalHeight)
 
-            Wordmark(height: 28)
+            // Design: the wordmark 44 from the top, the first row at 92.
+            Wordmark(height: 26)
                 .padding(.horizontal, 20)
-                .padding(.bottom, 18)
+                .padding(.top, 44 - Theme.signalHeight)
+                .padding(.bottom, 92 - 44 - 26)
 
             VStack(spacing: 2) {
                 ForEach(Region.topGroup, id: \.self) { fall in
                     SidebarRow(symbol: fall.symbol,
                                        label: fall.label,
-                                       active: section == fall && !inAccount) {
+                                       active: section == fall && !inAccount,
+                                       shortcut: shortcut(fall)) {
                         sectionSelect(fall)
                     }
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 10)
 
             let mine = Region.mineGroup(downloads: model.downloadsAn, watchlist: model.watchlistShown)
             if !mine.isEmpty {
                 SidebarCategory(text: "Meins")
-                    .padding(.horizontal, 12)
-                    .padding(.top, 26)
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 22)
+                    .padding(.bottom, 6)
 
                 VStack(spacing: 2) {
                     ForEach(mine, id: \.self) { fall in
@@ -788,7 +920,7 @@ struct Sidebar: View {
                         }
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 10)
             }
 
             // **No "Bibliotheken" section anymore.** The other libraries were here and opened as
@@ -825,15 +957,13 @@ struct Sidebar: View {
                 // `Angebotszeile` provides the spoken label itself (title and what is playing).
             }
 
-            // `Divider` brings Apple's own color and weight; the overlay only painted over it.
-            // `SheetLine` is the app's one hairline and runs edge to edge.
-            SheetLine()
+            // **No hairline above the account** (design): the row stands on the sidebar alone.
 
             // Not a `NavigationLink`: the sidebar lies **beside** the stack, not inside it, so it
             // pushes the destination onto the visible section's stack itself.
             Button { toProfile() } label: { ProfileRow(model: model, active: inAccount) }
                 .buttonStyle(Theme.PressRow())
-                .padding(12)
+                .padding(10)
         }
         .frame(width: Theme.sidebarWidth)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -841,6 +971,17 @@ struct Sidebar: View {
         .animation(Theme.leap, value: continueWatching.map(\.id))
         .animation(Theme.leap, value: groups.map(\.id))
         .task { if model.views.isEmpty { await model.loadViews() } }
+    }
+
+    /// The menu's shortcut, shown at the end of the row (design: 11/500, quietest ink).
+    private func shortcut(_ region: Region) -> String? {
+        switch region {
+        case .start: "⌘1"
+        case .movies: "⌘2"
+        case .seriesList: "⌘3"
+        case .search: "⌘F"
+        default: nil
+        }
     }
 }
 
@@ -858,42 +999,40 @@ struct ProfileRow: View {
             symbolText
             VStack(alignment: .leading, spacing: 1) {
                 Text(verbatim: model.session?.userName ?? "—")
-                    .font(Theme.tileTitleText)
+                    .font(.app(size: 13, weight: .semibold))
                     .foregroundStyle(active ? Theme.accent : Theme.font)
                     .lineLimit(1)
                 Text(verbatim: model.serverName ?? "")
-                    .font(Theme.small)
+                    .font(.app(size: 11))
                     .foregroundStyle(Theme.fontVeryQuiet)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
+            // Says where the row leads: profile and settings.
+            Image(icon: "gearshape", size: 16)
+                .font(.app(size: 16))
+                .foregroundStyle(Theme.fontVeryQuiet)
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, 10)
-        .frame(height: 40)
-        // `accentQuiet` is exactly this tone, precomputed.
-        .background(active ? Theme.accentQuiet
+        .frame(height: 48)
+        .background(active ? Theme.accent.opacity(0.12)
                           : hovers ? Theme.hoverArea : .clear,
-                    in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .accessibilityAddTraits(active ? .isSelected : [])
         .onHover { hovers = $0 }
         .animation(Theme.timeFloat, value: hovers)
     }
 
-    /// **With several accounts, two circles overlap.** The active one in front with an
-    /// accent ring, the next one partly hidden behind it; a border in the sidebar color cuts
-    /// it free, like a group of participant avatars.
-    ///
-    /// There is always just **one** second circle, even with more accounts. The message
-    /// down here is "there is another one"; which and how many is on the profile page, one
-    /// click away.
+    /// The signed-in account's picture, 28 round.
     @ViewBuilder
     private var symbolText: some View {
-        let more = model.accounts.first { $0.accountKey != model.session?.accountKey }
-        HStack(spacing: -9) {
+        // **One circle** (design): the other accounts are one click away on the profile page.
+        HStack(spacing: 0) {
             let image = model.userImageURL()
             ProfileCharacter(name: model.session?.userName ?? "?",
-                          image: image, size: 26,
-                          highlighted: more != nil,
+                          image: image, size: 28,
+                          highlighted: false,
                           withoutImage: image.map { AccountSwitchTransition.shared.withoutImage.contains($0) } ?? false)
                 // **The account switch lands here** (design D): a separate view per image URL, or the
                 // old picture would show briefly on landing; and while the new one flies here, there is
@@ -901,7 +1040,7 @@ struct ProfileRow: View {
                 .id(image)
                 .opacity(AccountSwitchTransition.shared.transition.map { $0.replaced } ?? true ? 1 : 0)
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameRect in
-                    AccountSwitchTransition.shared.targetInBarReport(frameRect, size: 26, contentOff: 0)
+                    AccountSwitchTransition.shared.targetInBarReport(frameRect, size: 28, contentOff: 0)
                 }
                 // **The connected account lies on top.** An `HStack` with negative spacing draws in
                 // layout order, so the second would otherwise lie on top, showing the picture of an
@@ -911,12 +1050,6 @@ struct ProfileRow: View {
                 // the circles do not touch. It lies behind the picture, otherwise it would cover the
                 // accent ring.
                 .background { Circle().fill(Theme.area).padding(-2) }
-            if let more {
-                ProfileCharacter(name: more.userName,
-                              image: model.userImageURL(for: more),
-                              size: 26)
-                    .opacity(0.55)
-            }
         }
     }
 

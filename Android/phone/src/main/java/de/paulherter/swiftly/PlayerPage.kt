@@ -2051,7 +2051,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
     val handOver = if (!mediaWork.inGroup && !smallWindow) app.playTargets.value else emptyList()
     val title = plan?.headerLine?.takeIf { it.isNotEmpty() } ?: plan?.title.orEmpty()
     val meta = plan?.let {
-        if (it.episode && it.seasonNr != null && it.episodeNr != null) translated("Staffel %lld · Folge %lld", it.seasonNr, it.episodeNr)
+        if (it.episode && it.seasonNr != null && it.episodeNr != null) translated("S%lld · F%lld", it.seasonNr, it.episodeNr)
         else if (it.episode) it.subtitle.takeIf { u -> u.isNotEmpty() }
         else it.secondaryLine?.takeIf { n -> n.isNotEmpty() }
     }
@@ -2602,8 +2602,8 @@ private fun TimeRow(app: SwiftlyApplication, position: () -> Double, duration: D
     val jumpNow by rememberUpdatedState(jump)
     val marksNow by rememberUpdatedState(marks.toDoubleArray())
     val jerk = rememberJerk()
-    // **Remaining time or end: a tap toggles**: "-12:34" or "Ends at 22:41"; the choice persists.
-    var asEnd by remember { mutableStateOf(app.store.rememberValue("restzeitAlsEnde") == "1") }
+    // Remaining time ("−12:34") or end ("Endet um 22:41"): a setting ("Endzeit im Player"), not a tap.
+    val asEnd = app.settings.endTimeInPlayer
     Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Text(timeText(shown), style = digits, color = Theme.fontQuiet)
         BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()
@@ -2725,16 +2725,7 @@ private fun TimeRow(app: SwiftlyApplication, position: () -> Double, duration: D
         val end = if (asEnd) translated("Endet um %@",
             android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(System.currentTimeMillis() + (rest * 1000).toLong()))) else null
         Text(end ?: ("−" + timeText(rest)), style = digits, color = Theme.fontQuiet, maxLines = 1,
-             // Hidden, the remaining time accepts no tap: it goes to the tap areas below and shows the controls.
-             // Before, it toggled invisibly between remaining time and end.
-             modifier = (if (active) Modifier.onTap {
-                 asEnd = !asEnd
-                 app.store.remember("restzeitAlsEnde", if (asEnd) "1" else "0")
-             } else Modifier).semantics {
-                 contentDescription = end ?: translated("Restzeit")
-                 role = Role.Button
-                 onClick(label = translated("Wechselt zwischen Restzeit und Ende")) { asEnd = !asEnd; app.store.remember("restzeitAlsEnde", if (asEnd) "1" else "0"); true }
-             })
+             modifier = Modifier.semantics { contentDescription = end ?: translated("Restzeit") })
     }
 }
 
@@ -2831,7 +2822,7 @@ private fun DelayRow(milliseconds: Int, shove: (Int) -> Unit, reset: () -> Unit)
             val coverage by animateFloatAsState(if (a.isNull) 0f else 1f, label = "zuruecksetzen")
             Box(Modifier.size(PlayerMetric.button).iconPress(!a.isNull, translated("Zurücksetzen"), reset).alpha(coverage),
                 contentAlignment = Alignment.Center) {
-                Symbol(Glyph.Ruecksetzen, 16.dp, color = Theme.fontQuiet, strength = Strength.Medium)
+                Symbol(Glyph.Ruecksetzen, 16.dp, color = Theme.font, strength = Strength.Medium)
             }
         }
     }
@@ -2914,7 +2905,7 @@ private fun SettingsLayer(app: SwiftlyApplication, mediaWork: PlayItem, margin: 
                     Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp).semantics(mergeDescendants = true) {},
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(Modifier.width(18.dp), contentAlignment = Alignment.CenterStart) {
-                            Symbol(Glyph.PersonFilled, 14.dp, color = Theme.fontVeryQuiet)
+                            Symbol(Glyph.PersonFilled, 14.dp, color = Theme.font)
                         }
                         Text(name, style = Theme.listTitle, color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -3060,9 +3051,9 @@ private fun EpisodesLayer(app: SwiftlyApplication, seriesIdentifier: String, run
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 12.dp + margin.bottom),
                        modifier = Modifier.weight(1f).padding(top = 10.dp).graphicsLayer { alpha = reveal.value }) {
                 itemsIndexed(episodes, key = { _, f -> f.id }) { i, f ->
-                    if (i > 0) Box(Modifier.padding(start = Theme.edgeSpacing).fillMaxWidth().height(1.dp).background(Theme.line))
-                    Box(Modifier.background(if (f.id == runningId) Color.White.copy(alpha = 0.08f) else Color.Transparent)
-                            .semantics { this.selected = f.id == runningId }) {
+                    // No separator and no surface, as on iOS: the running episode only carries a larger picture
+                    // (`EpisodesRow.ongoing`); a surface would run across the full width.
+                    Box(Modifier.semantics { this.selected = f.id == runningId }) {
                         // Long press: the tile menu, in the player only with the watch state
                         // (`TileMenuRequest.inPlayer`); the row itself already starts the episode.
                         val menu = LocalTileMenu.current
@@ -3070,7 +3061,7 @@ private fun EpisodesLayer(app: SwiftlyApplication, seriesIdentifier: String, run
                             m(TileMenuRequest(f.id, f.title, "Episode", f.image, landscape = true, f.subline,
                                                  inPlayer = true, afterwards = { run.launch { episodesRefresh() } }))
                         } }
-                        EpisodesRow(f, lengthy = lengthy) { start(f.id) }
+                        EpisodesRow(f, lengthy = lengthy, ongoing = f.id == runningId) { start(f.id) }
                     }
                 }
             }

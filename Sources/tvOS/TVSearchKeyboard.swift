@@ -12,12 +12,20 @@ enum SearchTarget: Hashable {
 
 /// The measures of the search page, computed from the spec and never typed.
 enum SearchLayout {
-    /// 6 keys, 5 gaps, the card's inset on both sides: 444.
-    static var keyboardWidth: CGFloat {
-        CGFloat(SearchKeys.columns) * TVSpec.searchKey
-            + CGFloat(SearchKeys.columns - 1) * TVSpec.searchKeyGap
-            + 2 * TVSpec.listCardInset
-    }
+    /// The design's card: 460 wide with 16 inside on every side.
+    static let keyboardWidth: CGFloat = 460
+    static let keyboardInset: CGFloat = 16
+    /// What is left for the keys: 428. Six 64 keys sit "space-between" in it (gap 8.8).
+    static var keysWidth: CGFloat { keyboardWidth - 2 * keyboardInset }
+    /// The field and the bottom row are 72 high.
+    static let fieldHeight: CGFloat = 72
+    /// Left edge of the right column ("Zuletzt gesucht") and its width.
+    static let historyLeft: CGFloat = 620
+    static let historyWidth: CGFloat = 760
+    /// Measured on the simulator (design 620 / cap top 236): the right column landed 21 too far right
+    /// and the history 27 too low, so both are taken back here.
+    static let columnTrim: CGFloat = 21
+    static let historyTrim: CGFloat = 27
 
     /// 5 posters, 4 gaps: 1240.
     static var resultsWidth: CGFloat {
@@ -48,11 +56,14 @@ struct TVSearchKeyboard: View {
     var body: some View {
         VStack(spacing: TVSpec.searchFieldGap) {
             field
-            keys
+            VStack(spacing: TVSpec.searchKeyGap) {
+                keys
+                bottomRow
+            }
         }
-        .padding(TVSpec.listCardInset)
+        .padding(SearchLayout.keyboardInset)
         .frame(width: SearchLayout.keyboardWidth)
-        .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
+        .background(Theme.groupsArea, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
         // A hardware keyboard on the TV (or a Bluetooth one) types into the field as well.
         .onKeyPress(phases: [.down, .repeat]) { press in
             if press.key == .delete {
@@ -72,17 +83,17 @@ struct TVSearchKeyboard: View {
     private var caret: some View {
         Rectangle()
             .fill(Theme.accent)
-            .frame(width: TVSpec.searchCaretWidth, height: TVSpec.searchCaretHeight)
+            .frame(width: 3, height: 34)  // tv-spec: unrelated
             .accessibilityHidden(true)
     }
 
     /// Typed text first, then the caret. It stands still: a blinking one would be a pulse, and the
     /// page has none.
     private var field: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: TVSpec.valueIcon, weight: .medium))
-                .foregroundStyle(Theme.fontVeryQuiet)
+        HStack(spacing: 16) {
+            Image(icon: "magnifyingglass")
+                .font(.app(size: 28, weight: .medium))  // tv-spec: unrelated
+                .foregroundStyle(Theme.fontQuiet)
                 .accessibilityHidden(true)
             HStack(spacing: 0) {
                 if term.isEmpty {
@@ -90,7 +101,8 @@ struct TVSearchKeyboard: View {
                     Text("Titel, Serie, Person")
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .lineLimit(1)
-                        .padding(.leading, 6)
+                        // Design: the caret overlaps the gap by 12, the text follows 4 after it.
+                        .padding(.leading, 4)
                 } else {
                     // A trailing space is not measured by `Text`; a no-break space is, so the caret
                     // moves when the space key is pressed.
@@ -101,12 +113,12 @@ struct TVSearchKeyboard: View {
                     caret
                 }
             }
-            .font(Theme.body)
+            .font(.app(size: 28))  // tv-spec: unrelated
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 22)
-        .frame(height: Theme.buttonHeight)
-        .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
+        .padding(.horizontal, 16)
+        .frame(height: SearchLayout.fieldHeight)
+        .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Titel, Serie, Person"))
         .accessibilityValue(Text(verbatim: term))
@@ -114,16 +126,29 @@ struct TVSearchKeyboard: View {
 
     // MARK: Keys
 
+    /// The letter rows: six 64 keys, spread over the card's width.
     private var keys: some View {
         VStack(spacing: TVSpec.searchKeyGap) {
-            ForEach(Array(SearchKeys.rows(speech: true).enumerated()), id: \.offset) { _, row in
-                HStack(spacing: TVSpec.searchKeyGap) {
-                    ForEach(row, id: \.id) { key in
+            ForEach(Array(SearchKeys.rows(speech: true).dropLast().enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 0) {
+                    ForEach(Array(row.enumerated()), id: \.element.id) { i, key in
+                        if i > 0 { Spacer(minLength: 0) }
                         keyButton(key)
                     }
                 }
+                .frame(width: SearchLayout.keysWidth)
             }
         }
+    }
+
+    /// Delete and microphone: two 36 symbols, 72 high, "space-around" in the card.
+    private var bottomRow: some View {
+        HStack(spacing: SearchLayout.keysWidth - 2 * width(3)) {
+            ForEach(SearchKeys.rows(speech: true).last ?? [], id: \.id) { key in
+                keyButton(key)
+            }
+        }
+        .frame(width: SearchLayout.keysWidth)
     }
 
     private func width(_ span: Int) -> CGFloat {
@@ -137,7 +162,7 @@ struct TVSearchKeyboard: View {
             Button {
                 term = SearchKeys.typed(key.character, into: term)
             } label: {
-                Text(verbatim: key.character).font(Theme.listTitle)
+                Text(verbatim: key.character).font(.app(size: 30, weight: .semibold))
             }
             .buttonStyle(SearchKeyStyle())
             .frame(width: width(key.span), height: TVSpec.searchKey)
@@ -147,7 +172,7 @@ struct TVSearchKeyboard: View {
             Button {
                 term = SearchKeys.withSpace(term)
             } label: {
-                Image(systemName: "space").font(.system(size: TVSpec.valueIcon, weight: .medium))
+                Image(icon: "space").font(.app(size: 30, weight: .semibold))
             }
             // At the start of a word and after a space the key does nothing. It stays focusable so
             // that the focus paths do not jump.
@@ -162,10 +187,10 @@ struct TVSearchKeyboard: View {
                 if clearedByHold { clearedByHold = false; return }
                 term = SearchKeys.withoutLast(term)
             } label: {
-                Image(systemName: "delete.left").font(.system(size: TVSpec.valueIcon, weight: .medium))
+                Image(icon: "delete.left").font(.app(size: 36, weight: .medium))  // tv-spec: unrelated
             }
-            .buttonStyle(SearchKeyStyle(muted: term.isEmpty))
-            .frame(width: width(key.span), height: TVSpec.searchKey)
+            .buttonStyle(SearchKeyStyle(muted: false))
+            .frame(width: width(key.span), height: SearchLayout.fieldHeight)
             .focused(focus, equals: .key(key.id))
             // Hold for half a second: everything goes. No fourth key "clear all".
             .onLongPressGesture(minimumDuration: 0.5) {
@@ -178,7 +203,7 @@ struct TVSearchKeyboard: View {
 
         case .speak:
             SpeakKey(term: $term, focus: focus, id: key.id)
-                .frame(width: width(key.span), height: TVSpec.searchKey)
+                .frame(width: width(key.span), height: SearchLayout.fieldHeight)
         }
     }
 }
@@ -204,13 +229,14 @@ private struct SpeakKey: View {
             .opacity(TVSpec.hiddenFieldOpacity)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay {
-                Image(systemName: "mic")
-                    .font(.system(size: TVSpec.valueIcon, weight: .medium))
+                Image(icon: "mic")
+                    .font(.app(size: 36, weight: .medium))  // tv-spec: unrelated
                     .foregroundStyle(focused ? Theme.reason : Theme.fontQuiet)
                     .allowsHitTesting(false)
             }
             .background(focused ? Color.white : .clear,
                         in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
+            .settingsLift(focused)
             .scaleEffect(focused ? Theme.focusMagnifierSmall : 1)
             .animation(Theme.focusAnimation, value: focused)
             .accessibilityLabel(Text("Sprechen"))
@@ -236,6 +262,7 @@ private struct SearchKeyStyle: ButtonStyle {
                 .foregroundStyle(character)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(surface, in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
+                .settingsLift(focus)
                 .scaleEffect((focus ? Theme.focusMagnifierSmall : 1) * (configuration.isPressed ? TVSpec.pressScale : 1))
                 .animation(Theme.focusAnimation, value: focus)
                 .animation(Theme.pressCurve(configuration.isPressed), value: configuration.isPressed)

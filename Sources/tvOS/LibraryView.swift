@@ -73,6 +73,10 @@ struct LibraryView: View {
     /// The jump under way; walking the letters quickly drops the older ones.
     @State private var jumpTask: Task<Void, Never>?
     @State private var lastAtTitle: String?
+    #if DEBUG
+    @State private var debugDone = false
+    @State private var debugScroll = ScrollPosition()
+    #endif
     /// Sorting or filter changed and the response is pending: the grid keeps the old order, dimmed.
     @State private var switchedOver = false
 
@@ -95,7 +99,7 @@ struct LibraryView: View {
     @Environment(\.panelOpen) private var panelOpen
 
     private var columns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: Theme.gridColumn),
+        Array(repeating: GridItem(.fixed(Theme.posterWidth), spacing: Theme.gridColumn),
               count: Theme.gridColumns)
     }
 
@@ -150,6 +154,14 @@ struct LibraryView: View {
                     .padding(.bottom, 60)
                 }
                 .scrollIndicators(.hidden)
+                #if DEBUG
+                .scrollPosition($debugScroll)
+                #endif
+                // The soft shade under the tabs shows as soon as the grid has moved under them (it waited for 40 pt
+                // and the first rows ran bright under the bar, issue #45).
+                .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y > 4 } action: { _, now in
+                    LibraryScroll.shared.scrolled = now
+                }
                 // The look's glow, the same on every main page; goes up with the content.
                 .lookGlow()
                 // Back means: onto the title that was open. Without a preference tvOS picks a tile
@@ -177,14 +189,19 @@ struct LibraryView: View {
         // In the right margin, beside the grid; the 80 pt margin already fits it.
         .overlay(alignment: .trailing) {
             if let alphabet = shownAlphabet {
-                TVAlphabetRail(index: alphabet, current: topLetter,
+                TVAlphabetRail(index: alphabet, current: focusedLetter ?? topLetter,
                                preview: { letter in jumpTo(letter, focus: false) },
                                choose: { letter in jumpTo(letter, focus: true) })
-                    .padding(.trailing, (Theme.edgePage - TVAlphabetRail.width) / 2)
-                    .padding(.top, Theme.contentTop + 40)
+                    .padding(.trailing, -32)
+                    .padding(.top, 330 - Theme.edgeTop - 5)
                     .padding(.bottom, 60)
+                    // **It just appears**, like the grid beside it. It arrives after the
+                    // items (the task below), inside whatever animation the page is running,
+                    // and slid in from the far right (round 3 on the device).
+                    .transition(.identity)
             }
         }
+        .transaction(value: shownAlphabet == nil) { $0.animation = nil }
         .task(id: "\(state.identifier)|\(source?.key ?? "")|\(model.accountSwitch)|\(model.alphabetShown)") {
             guard model.alphabetShown, !listChoice else { return }
             await state.loadAlphabet(model, from: source)
@@ -223,7 +240,8 @@ struct LibraryView: View {
             ActionPanel(actions: panelContent.actions,
                            opened: panelBinding,
                            selected: panelContent.selected,
-                           category: panelCategory)
+                           category: panelCategory,
+                           start: panelStart)
                 .transition(.opacity)
         }
         .animation(Theme.motion(.easeInOut(duration: 0.18)), value: openPanel)
@@ -235,7 +253,35 @@ struct LibraryView: View {
             if new == nil, let alt { atTrigger = alt }
         }
         // Leaving the page with a panel open would leave the bar dead.
-        .onDisappear { panelOpen.wrappedValue = false }
+        .onDisappear { panelOpen.wrappedValue = false; LibraryScroll.shared.scrolled = false }
+        #if DEBUG
+        // Screenshot runs: `-bereich filme|serien` focuses the design's poster, `-gescrollt`
+        // scrolls to "Hafen 9", `-sortierung` opens the sort panel.
+        .task(id: state.items.count) {
+            guard DebugLaunch.has("-bereich"), !state.items.isEmpty, !debugDone else { return }
+            let scrolled = DebugLaunch.has("-gescrollt")
+            let name = scrolled ? "Hafen 9" : (art == "tvshows" ? "Die Brücke" : "Nordlicht")
+            if DebugLaunch.has("-sortierung") {
+                debugDone = true
+                try? await Task.sleep(for: .milliseconds(600))
+                openPanel = .sorting
+                return
+            }
+            // The test server has no film "Hafen 9"; fall back to the first poster of row 2.
+            guard let target = state.items.first(where: { $0.name == name })
+                ?? (scrolled && state.items.count > 7 ? state.items[7] : nil) else { return }
+            debugDone = true
+            try? await Task.sleep(for: .milliseconds(600))
+            if scrolled {
+                debugScroll.scrollTo(y: 280)
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            for wait in [0, 700, 1500] {
+                try? await Task.sleep(for: .milliseconds(wait))
+                atTitle = target.id
+            }
+        }
+        #endif
         .animation(Theme.reveal, value: state.loads)
         // The account switch belongs in the id too. `state.identifier` covers library, filter and
         // sorting, none of which change on a switch, so the page kept the previous account's
@@ -254,6 +300,22 @@ struct LibraryView: View {
     /// checkmark. Not under everything.
     private var reasonAudio: some View {
         Theme.reason.ignoresSafeArea()
+    }
+
+    /// The letter of the poster that has focus, so the strip follows it.
+    private var focusedLetter: String? {
+        guard let id = atTitle, let item = state.items.first(where: { $0.id == id }) else { return nil }
+        return AlphabetIndex.letter(name: item.name, sortName: item.sortName)
+    }
+
+    /// The row focus starts on; the first one, except for the `-sortierung` screenshot run.
+    private var panelStart: Int {
+        #if DEBUG
+        if openPanel == .sorting, DebugLaunch.has("-sortierung") {
+            return Sorting.allCases.firstIndex(of: .rating) ?? 0
+        }
+        #endif
+        return 0
     }
 
     /// What the open panel shows and which row is current.
@@ -326,7 +388,7 @@ struct LibraryView: View {
                 Button { openPanel = .library } label: {
                     Text(verbatim: label(choice))
                 }
-                .buttonStyle(CapsuleStyle())
+                .buttonStyle(CapsuleStyle(active: openPanel == .library))
                 .focused($atTrigger, equals: .library)
                 .panelTrigger(Panel.library.firer)
                 .accessibilityLabel(Text("Bibliothek, \(label(choice))"))
@@ -343,7 +405,7 @@ struct LibraryView: View {
                 Button { openPanel = .filter } label: {
                     Text(verbatim: state.filter.label)
                 }
-                .buttonStyle(CapsuleStyle(symbol: "line.3.horizontal.decrease"))
+                .buttonStyle(CapsuleStyle(symbol: "line.3.horizontal.decrease", active: openPanel == .filter))
                 .focused($atTrigger, equals: .filter)
                 .panelTrigger(Panel.filter.firer)
                 .accessibilityLabel(Text("Filter, \(state.filter.label)"))
@@ -351,7 +413,7 @@ struct LibraryView: View {
                 Button { openPanel = .sorting } label: {
                     Text(verbatim: state.sorting.label)
                 }
-                .buttonStyle(CapsuleStyle(symbol: "arrow.up.arrow.down"))
+                .buttonStyle(CapsuleStyle(symbol: "arrow.up.arrow.down", active: openPanel == .sorting))
                 .focused($atTrigger, equals: .sorting)
                 .panelTrigger(Panel.sorting.firer)
                 .accessibilityLabel(Text("Sortierung, \(state.sorting.label)"))
@@ -596,11 +658,11 @@ struct LibraryView: View {
 
     // MARK: Letter strip
 
-    /// Only where it means something: switched on, sorted by name, a grid of titles, and
-    /// more than one letter.
+    /// Only where it means something: switched on, a grid of titles, and more than one
+    /// entry for the order on screen (letters, years or ratings).
     private var shownAlphabet: AlphabetIndex? {
-        guard model.alphabetShown, state.sorting == .name, !listChoice,
-              let alphabet = state.alphabet, alphabet.isUseful else { return nil }
+        guard model.alphabetShown, !listChoice,
+              let alphabet = state.currentAlphabet else { return nil }
         return alphabet
     }
 
@@ -620,9 +682,9 @@ struct LibraryView: View {
     /// The letter of the first loaded title on screen. **Written only when it changes**:
     /// tiles come and go on every scroll.
     private func updateTopLetter() {
-        guard shownAlphabet != nil,
+        guard let alphabet = shownAlphabet,
               let item = state.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
-        let letter = AlphabetIndex.letter(name: item.name, sortName: item.sortName)
+        let letter = alphabet.key(of: item)
         if letter != topLetter { topLetter = letter }
     }
 }

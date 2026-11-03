@@ -25,20 +25,20 @@ struct PresentationView: View {
             // because pure black under a card was the whole distance at once; since the ground
             // is #101010 the jump is a fifth of that and needs no exception.
             Theme.reason.ignoresSafeArea()
-            VStack(spacing: 0) {
-                SubpageHeader(title: String(localized: "Darstellung")) { back() }
-                // **Two columns when wide**, like Settings and Playback: on the left what the page
-                // shows at all, on the right the genres. A narrow list in a wide window was the
-                // only page that did not.
+            // **Two columns when wide**, like Settings and Playback: on the left what the page
+            // shows at all, on the right the genres. A narrow list in a wide window was the
+            // only page that did not.
+            Group {
                 if wide {
                     HStack(alignment: .top, spacing: 0) {
-                        list { general; looks; rails }
+                        list { rails; general; looks }
                         list { libraryRails; genres }
                     }
                 } else {
-                    list { general; looks; rails; libraryRails; genres }
+                    list { rails; libraryRails; genres; general; looks }
                 }
             }
+            .fadingUnderSubpageHeader(title: String(localized: "Darstellung")) { back() }
         }
         .tint(Theme.accent)
         .navigationDestination(isPresented: $genreSelection) { GenreSelectionView(model: model) }
@@ -54,7 +54,9 @@ struct PresentationView: View {
         List { content() }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
+            .listSectionSpacing(Theme.groupTop)
             .contentMargins(.horizontal, Theme.margin(wide: wide), for: .scrollContent)
+            .contentMargins(.top, Theme.groupTop - Theme.firstGroupTrim, for: .scrollContent)
             #if os(iOS)
             .environment(\.editMode, .constant(.active))
             #endif
@@ -64,36 +66,36 @@ struct PresentationView: View {
 
     @ViewBuilder
     private var general: some View {
-        Section {
-            // This row is missing on iPad on purpose: the app must not force rotation there. See `Orientierung`.
-            if Orientierung.landscapeLockPossible {
-                ChoiceRow(symbol: "rectangle.on.rectangle",
-                          title: Text("Querformat im Player sperren"),
-                          an: Binding(get: { model.landscapeFixed },
-                                      set: { model.landscapeFixed = $0 }))
-                    .row()
-            }
-            ChoiceRow(symbol: "chart.bar.fill", title: Text("Fortschritt auf Kacheln"),
+        KitSection {
+            ChoiceRow(symbol: "chart.bar", title: Text("Fortschritt auf Kacheln"),
                       an: Binding(get: { model.progressOnTiles },
                                   set: { model.progressOnTiles = $0 }))
                 .row()
             ChoiceRow(symbol: "bookmark", title: Text("Merkliste"),
-                      under: Text("Seite, Filter und Knopf auf Film- und Serienseiten"),
+                      under: Text("Auf Film- und Serienseiten"),
                       an: Binding(get: { model.watchlistShown },
                                   set: { model.watchlistShown = $0 }))
                 .row()
-            ChoiceRow(symbol: "textformat.abc", title: Text("Alphabetische Suche in Listen"),
+            // Only once a server has shown it has the plugin.
+            if model.watchersPluginHere {
+                ChoiceRow(symbol: "eye", title: Text("Gesehen von"),
+                          under: Text("Zeigt auf Titelseiten, wer einen Titel gesehen hat"),
+                          an: Binding(get: { model.watchersShown },
+                                      set: { model.watchersShown = $0 }))
+                    .row()
+            }
+            ChoiceRow(symbol: "textformat.abc", title: Text("Alphabet in Listen"),
                       an: Binding(get: { model.alphabetShown },
                                   set: { model.alphabetShown = $0 }))
                 .row()
             #if os(iOS)
             ChoiceRow(symbol: "textformat", title: Text("Titel als Logo"),
-                      under: Text("Auf Film- und Serienseiten, wenn dein Server eins hat"),
+                      under: Text("Wenn dein Server eins hat"),
                       an: $titleAsLogo)
                 .row()
             #endif
         } header: {
-            Category(text: "Allgemein")
+            Category(text: "Filme und Serien")
         }
     }
 
@@ -106,7 +108,7 @@ struct PresentationView: View {
     private var looks: some View {
         let store = LookStore.shared
         let saved = store.saved
-        Section {
+        KitSection {
             currentLookRow(saved.look)
             if let season = saved.look.availability, season.isActive(at: LookClock.now) {
                 ChoiceRow(symbol: "sparkles", title: Text("Fledermäuse und Spinnennetz"),
@@ -143,15 +145,15 @@ struct PresentationView: View {
             HStack(spacing: 14) {
                 LookTile(look: look, size: 32)
                 Text(look.name)
-                    .growing(15, .semibold)
+                    .growing(Theme.rowTitleSize, .medium)
                     .foregroundStyle(Theme.font)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text("Ändern")
                     .growing(15, .semibold)
                     .foregroundStyle(Theme.accent)
             }
-            .padding(.horizontal, 16)
-            .frame(minHeight: 52)
+            .padding(.horizontal, Theme.edgeSpacing)
+            .frame(minHeight: Theme.rowHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(Theme.PressButton())
@@ -168,7 +170,7 @@ struct PresentationView: View {
     }
 
     private var rails: some View {
-        Section {
+        KitSection {
             ForEach(visibleRails) { rail in
                 ChoiceRow(symbol: rail.symbol, title: Text(rail.name),
                           an: Binding(get: { !model.startOut.contains(rail) },
@@ -176,17 +178,17 @@ struct PresentationView: View {
                                           if an { model.startOut.remove(rail) }
                                           else { model.startOut.insert(rail) }
                                       }))
-                    .row()
+                    .row(handle: true)
             }
             .onMove { from, to in move(from: from, to: to) }
             .deleteDisabled(true)
 
             ChoiceRow(symbol: "square.split.2x1",
                       title: Text("Neuzugänge getrennt"),
-                      under: Text("Neue Filme und neue Serien als eigene Reihen"),
+                      under: Text("Als eigene Reihen"),
                       an: Binding(get: { model.newAccessDisconnected },
                                   set: { model.newAccessDisconnected = $0 }))
-                .row()
+                .row(handleSpace: true)
         } header: {
             Category(text: "Startseite")
         } footer: {
@@ -209,24 +211,32 @@ struct PresentationView: View {
     /// with "+", in the order of this list, after the fixed rows. Remove by swiping or
     /// in edit mode.
     private var libraryRails: some View {
-        Section {
+        KitSection {
             ForEach(model.startLibraries) { entryRecord in
                 // From the server, so not translated.
                 Text(verbatim: entryRecord.name)
-                    .growing(15)
+                    .growing(Theme.rowTitleSize, .medium)
                     .foregroundStyle(Theme.font)
-                    .listRowBackground(Theme.groupsArea)
+                    .plainRow()
+                    .row()
             }
             .onMove { model.startLibraries.move(fromOffsets: $0, toOffset: $1) }
             .onDelete { model.startLibraries.remove(atOffsets: $0) }
 
             Button { librarySelection = true } label: {
-                Label("Bibliothek hinzufügen", systemImage: "plus")
-                    .growing(15, .semibold)
+                HStack(spacing: 14) {
+                    Image(icon: "plus", size: Theme.rowSymbolSize)
+                        .font(.app(size: Theme.rowSymbolSize))
+                        .frame(width: Theme.rowIconWidth)
+                    Text("Bibliothek hinzufügen")
+                        .growing(Theme.rowTitleSize, .medium)
+                }
                     .foregroundStyle(Theme.accent)
+                    .plainRow()
+                    .contentShape(Rectangle())
             }
             .buttonStyle(Theme.PressRow())
-            .listRowBackground(Theme.groupsArea)
+            .row()
             .deleteDisabled(true)
         } header: {
             Category(text: "Bibliotheken und Sammlungen")
@@ -240,7 +250,7 @@ struct PresentationView: View {
     /// away and showed all the server's genres instead: two different sets behind one
     /// switch, and nobody understood why.
     private var genres: some View {
-        Section {
+        KitSection {
             form("Als eigene Reihen", symbol: "rectangle.grid.1x2", an: !model.genreChips) { model.genreChips = false }
             form("Als Chips über den Reihen", symbol: "capsule", an: model.genreChips) { model.genreChips = true }
 
@@ -248,27 +258,34 @@ struct PresentationView: View {
                 // From the server, so not translated.
                 Text(verbatim: name)
                     // Body text from the ladder instead of its own number: the same size, just
-                    // without the number in the caller. Before: `.system(size: 15)`.
+                    // without the number in the caller. Before: `.app(size: 15)`.
                     // **Growing with the text, not fixed**. Size and weight are
                     // the tokens', they just follow the system font. The checkmarks and angles stay
                     // fixed: those are symbols, not text.
-                    .growing(15)
+                    .growing(Theme.rowTitleSize, .medium)
                     .foregroundStyle(Theme.font)
-                    .listRowBackground(Theme.groupsArea)
+                    .plainRow()
+                    .row()
             }
             .onMove { model.startGenres.move(fromOffsets: $0, toOffset: $1) }
             .onDelete { model.startGenres.remove(atOffsets: $0) }
 
             // A button, not a link: in edit mode a link in a list leads nowhere.
             Button { genreSelection = true } label: {
-                Label("Genre hinzufügen", systemImage: "plus")
-                    // List row: 15 Semibold. 15 Medium is on no ladder; there is no step between body text and list row. Before: `.system(size: 15, weight: .medium)`.
-                    .growing(15, .semibold)
+                HStack(spacing: 14) {
+                    Image(icon: "plus", size: Theme.rowSymbolSize)
+                        .font(.app(size: Theme.rowSymbolSize))
+                        .frame(width: Theme.rowIconWidth)
+                    Text("Genre hinzufügen")
+                        .growing(Theme.rowTitleSize, .medium)
+                }
                     .foregroundStyle(Theme.accent)
+                    .plainRow()
+                    .contentShape(Rectangle())
             }
             // **This row also responds to the press.** It was the one button on the page without any feedback.
             .buttonStyle(Theme.PressRow())
-            .listRowBackground(Theme.groupsArea)
+            .row()
             .deleteDisabled(true)
         } header: {
             Category(text: "Genres")
@@ -280,8 +297,8 @@ struct PresentationView: View {
         Button(action: select) {
             RowsLayout(symbol: symbol, title: Text(title), under: nil, dimmedDown: false) {
                 if an {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .semibold))
+                    Image(icon: "checkmark", size: 13)
+                        .font(.app(size: 13, weight: .semibold))
                         // **Selected means white and weight, not color.** The checkmark used to be teal;
                         // that is ranking among siblings, and the accent carries only state. Semibold is
                         // already the row's title.
@@ -308,20 +325,58 @@ struct PresentationView: View {
 /// There is a reason for a copy at all: `Gruppentitel` brings its page margin, and
 /// in a list the list sets it. The size still belongs in one place, so this reads
 /// it from there instead of writing it again.
+private struct KitSection<Body0: View, Head: View, Foot: View>: View {
+    @ViewBuilder var content: () -> Body0
+    @ViewBuilder var header: () -> Head
+    @ViewBuilder var footer: () -> Foot
+    var body: some View {
+        Section {
+            content()
+        } header: {
+            header()
+                .textCase(nil)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 12)
+                .listRowInsets(EdgeInsets())
+        } footer: {
+            footer()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 8)
+                .listRowInsets(EdgeInsets())
+        }
+    }
+}
+
+private extension KitSection where Foot == EmptyView {
+    init(@ViewBuilder content: @escaping () -> Body0, @ViewBuilder header: @escaping () -> Head) {
+        self.init(content: content, header: header, footer: { EmptyView() })
+    }
+}
+
 private struct Category: View {
     let text: LocalizedStringKey
     var body: some View {
         Text(text)
-            .growing(20, .semibold)
-            .tracking(Theme.lockRail)
-            .foregroundStyle(Theme.fontQuiet)
+            .growing(22, .bold)
+            .tracking(Theme.lockSection)
+            .foregroundStyle(Theme.font)
     }
 }
 
 private extension View {
-    /// A row from our components inside Apple's list: its inner margin removed, since the row brings its own, and our ground.
-    func row(selected: Bool = false) -> some View {
-        listRowInsets(EdgeInsets())
+    func plainRow() -> some View {
+        frame(maxWidth: .infinity, minHeight: Theme.rowHeight, alignment: .leading)
+            .padding(.horizontal, Theme.edgeSpacing)
+    }
+
+    /// A row from our components inside Apple's list: its inner margin removed, since the row brings its own,
+    /// the line across the full width like every other card. `handleSpace` keeps a row without a handle
+    /// in line with the switches of the rows that have one; the handle column is 40 wide.
+    func row(selected: Bool = false, handle: Bool = false, handleSpace: Bool = false) -> some View {
+        padding(.trailing, handleSpace ? 40 : 0)
+            .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+            .alignmentGuide(.listRowSeparatorTrailing) { d in d.width + (handle ? 40 : 0) }
+            .listRowInsets(EdgeInsets())
             // **Selected means one step higher.** As long as the checkmark was teal, the
             // color was the whole message; in white the selected row needs its ground too,
             // otherwise it no longer stands out. `erhoeht` is the same tone the selected
@@ -351,7 +406,6 @@ struct GenreSelectionView: View {
             // is #101010 the jump is a fifth of that and needs no exception.
             Theme.reason.ignoresSafeArea()
             VStack(spacing: 0) {
-                SubpageHeader(title: String(localized: "Genre hinzufügen")) { back() }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         if disrupted, all.isEmpty {
@@ -385,6 +439,7 @@ struct GenreSelectionView: View {
                 }
                 .scrollIndicators(.hidden)
             }
+            .fadingUnderSubpageHeader(title: String(localized: "Genre hinzufügen")) { back() }
         }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
@@ -415,7 +470,6 @@ struct LibrarySelectionView: View {
         ZStack(alignment: .top) {
             Theme.reason.ignoresSafeArea()
             VStack(spacing: 0) {
-                SubpageHeader(title: String(localized: "Bibliothek hinzufügen")) { back() }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         if loaded, pick.isEmpty {
@@ -448,6 +502,7 @@ struct LibrarySelectionView: View {
                 }
                 .scrollIndicators(.hidden)
             }
+            .fadingUnderSubpageHeader(title: String(localized: "Bibliothek hinzufügen")) { back() }
         }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)

@@ -19,7 +19,7 @@ struct MacAdvanced: View {
                 } label: {
                     HStack(spacing: 6) {
                         Text("Erweitert")
-                        Image(systemName: "chevron.right")
+                        Image(icon: "chevron.right")
                             .font(Theme.badge)
                             .rotationEffect(.degrees(opened ? 90 : 0))
                             .accessibilityHidden(true)
@@ -53,7 +53,7 @@ struct MacAdvanced: View {
                         Button {
                             rows.removeAll { $0.id == row.id }
                         } label: {
-                            Image(systemName: "minus.circle")
+                            Image(icon: "minus.circle")
                                 .font(Theme.body)
                                 .foregroundStyle(Theme.fontVeryQuiet)
                                 .frame(width: 28, height: 28)
@@ -75,7 +75,7 @@ struct MacAdvanced: View {
                 rows.append(HeaderRow())
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "plus")
+                    Image(icon: "plus")
                         .accessibilityHidden(true)
                     Text("Header hinzufügen")
                 }

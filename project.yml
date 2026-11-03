@@ -36,7 +36,7 @@ settings:
     # The counter applies per version, so it restarts at 1 for a new version.
     # Before resetting it, check the highest build number already uploaded for
     # that version on all platforms in App Store Connect.
-    CURRENT_PROJECT_VERSION: "41"
+    CURRENT_PROJECT_VERSION: "42"
     # Same identifier as in the free-account days: Apple converted the personal
     # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9
@@ -117,6 +117,9 @@ targets:
         # `Orientierung`: on iPhone it stays portrait, the player may rotate. On
         # iPad the frame applies unchanged, since a multitasking-capable app
         # must not force rotation.
+        # The app's typeface (Inter, variable): `Font.app` uses it.
+        UIAppFonts:
+          - InterVariable.ttf
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
@@ -218,6 +221,7 @@ targets:
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
       - path: Sources/Shared/AppModel+Servers.swift
+      - path: Sources/Shared/WatchersText.swift
       - path: Sources/Shared/SettingsSyncRun.swift
       # **Only the management, not the views.** Downloads exist only on iPhone
       # and iPad, but `AppModel` holds them and `AppModel` is shared. The class
@@ -227,6 +231,13 @@ targets:
       - path: Sources/Shared/LoginModel.swift
       - path: Sources/Shared/PlayRequest.swift
       - path: Sources/Shared/Colors.swift
+      - path: Sources/Shared/AppFont.swift
+      - path: Sources/Shared/AppIcon.swift
+      # Inter and our icons, the same files as on iPhone: the TV uses the same kit.
+      - path: Sources/iOS/Fonts/InterVariable.ttf
+        buildPhase: resources
+      - path: Sources/iOS/Icons.xcassets
+      - path: Sources/iOS/IconMap.swift
       # The active look: `Theme.accent` reads from it.
       - path: Sources/Shared/LookStore.swift
       # The gift's flow (What's New, the offer, picking it up, the looks panel's state) is
@@ -379,6 +390,9 @@ targets:
         # language and stays German.
         CFBundleDevelopmentRegion: en
         CFBundleDisplayName: Swiftly
+        # The app's typeface (Inter, variable): `Font.app` uses it.
+        UIAppFonts:
+          - InterVariable.ttf
         CFBundleShortVersionString: $(MARKETING_VERSION)
         # **Without this the app falls back to 1 while the Top Shelf is at 2.**
         # Xcode warns at build time and App Store Connect rejects the upload: an
@@ -527,6 +541,7 @@ targets:
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
       - path: Sources/Shared/AppModel+Servers.swift
+      - path: Sources/Shared/WatchersText.swift
       - path: Sources/Shared/SettingsSyncRun.swift
       # **Only the management, not the views.** Downloads exist only on iPhone
       # and iPad, but `AppModel` holds them and `AppModel` is shared. The class
@@ -562,6 +577,13 @@ targets:
       - path: Sources/Shared/LibraryModel.swift
       - path: Sources/Shared/WatchlistModel.swift
       - path: Sources/Shared/Colors.swift
+      - path: Sources/Shared/AppFont.swift
+      - path: Sources/Shared/AppIcon.swift
+      # Inter and our icons, the same files as on iPhone: the Mac uses the same kit.
+      - path: Sources/iOS/Fonts/InterVariable.ttf
+        buildPhase: resources
+      - path: Sources/iOS/Icons.xcassets
+      - path: Sources/iOS/IconMap.swift
       # The active look: `Theme.accent` reads from it.
       - path: Sources/Shared/LookStore.swift
       # The Halloween gift, the looks sheet and "What's new": one sheet from below, the
@@ -722,6 +744,8 @@ targets:
         # No light theme - the design is built for dark, and without this macOS
         # draws the window buttons light.
         NSRequiresAquaSystemAppearance: false
+        # Inter is registered from the bundle's Resources folder (macOS has no UIAppFonts).
+        ATSApplicationFontsPath: .
         NSAppTransportSecurity:
           # **Only this one key, on purpose.**
           #

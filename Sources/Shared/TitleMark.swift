@@ -187,12 +187,12 @@ struct TitleMark: View {
             .tracking(Theme.lockTitle)
             .foregroundStyle(Theme.font)
         switch slot {
-        case .page: t
+        case .page: t.lineLimit(3).minimumScaleFactor(0.7)
         case .column: t.lineLimit(2)
         case .compartment(let height):
             t.lineLimit(1)
                 // A long title shrinks instead of pushing the page.
-                .minimumScaleFactor(0.62)
+                .minimumScaleFactor(0.5)
                 .frame(height: height, alignment: .leading)
         }
     }

@@ -90,8 +90,8 @@ struct DownloadRing: View {
     }
 
     private func image(_ name: String, _ size: CGFloat, _ color: Color) -> some View {
-        Image(systemName: name)
-            .font(.system(size: size, weight: .semibold))
+        Image(icon: name)
+            .font(.app(size: size, weight: .semibold))
             .foregroundStyle(color)
     }
 
@@ -274,7 +274,7 @@ struct LoadPanel: View {
         HStack(spacing: 10) {
             // A row in a popover: icon and text on the type scale, 20 wide icon column.
             // The scale has 13 only as a medium weight, so it is not used without a role.
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 .font(Theme.body)
                 .foregroundStyle(cautionary ? Theme.warning : Theme.fontQuiet)
                 .frame(width: 20)
@@ -304,7 +304,7 @@ struct LoadPanel: View {
     /// selection.
     private var qualityRow: some View {
         HStack(spacing: 10) {
-            Image(systemName: "sparkles")
+            Image(icon: "sparkles")
                 .font(Theme.body)
                 .foregroundStyle(Theme.fontQuiet)
                 .frame(width: 20)
@@ -325,7 +325,7 @@ struct LoadPanel: View {
     /// The audio with the choice on the right, built like the quality row.
     private var audioRow: some View {
         HStack(spacing: 10) {
-            Image(systemName: "speaker.wave.2")
+            Image(icon: "speaker.wave.2")
                 .font(Theme.body)
                 .foregroundStyle(Theme.fontQuiet)
                 .frame(width: 20)
@@ -610,7 +610,7 @@ struct MacDownloadRow: View {
             Button(action: activate) {
             HStack(spacing: 16) {
             if edit {
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                Image(icon: selected ? "checkmark.circle.fill" : "circle")
                     .font(Theme.categoryLarge.weight(.regular))
                     .foregroundStyle(selected ? Theme.accent : Theme.fontVeryQuiet)
                     .accessibilityHidden(true)
@@ -670,8 +670,8 @@ struct MacDownloadRow: View {
                     ringClick(entries, management) {}
                 }
             } else {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
+                Image(icon: "chevron.right")
+                    .font(.app(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.fontVeryQuiet)
                     .frame(width: 36)
                     .accessibilityHidden(true)
@@ -1340,8 +1340,8 @@ struct MacLoadSelection: View {
                 .monospacedDigit()
         case .few(let missing):
             HStack(spacing: 5) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 12, weight: .semibold))
+                Image(icon: "info.circle")
+                    .font(.app(size: 12, weight: .semibold))
                     .accessibilityHidden(true)
                 Text(verbatim: String(localized: "\(DownloadRules.size(missing)) zu wenig"))
                     .font(Theme.small)
@@ -1408,8 +1408,8 @@ struct MacLoadSelection: View {
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .monospacedDigit()
                     if let expanded {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 13, weight: .semibold))
+                        Image(icon: "chevron.down")
+                            .font(.app(size: 13, weight: .semibold))
                             .foregroundStyle(Theme.fontVeryQuiet)
                             .rotationEffect(.degrees(expanded ? 0 : -90))
                             .accessibilityHidden(true)
@@ -1438,16 +1438,16 @@ struct MacLoadSelection: View {
                 Circle().strokeBorder(Theme.fontVeryQuiet, lineWidth: 1.6)
             case .part:
                 Circle().fill(Theme.accent)
-                Image(systemName: "minus").font(.system(size: 12, weight: .semibold))
+                Image(icon: "minus").font(.app(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.onAccent)
             case .full:
                 Circle().fill(Theme.accent)
-                Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold))
+                Image(icon: "checkmark").font(.app(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.onAccent)
             case .present:
                 // **Quiet, no circle.** A checkmark in the accent color would mean
                 // "selected"; this one only says nothing is left to do.
-                Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
+                Image(icon: "checkmark").font(.app(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.fontVeryQuiet)
             }
         }
@@ -1581,13 +1581,13 @@ struct MacQualityBadge: View {
 
     private func badge(expandable: Bool) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: choice.isOriginal ? "checkmark" : "arrow.down.right.and.arrow.up.left")
-                .font(.system(size: 11, weight: .semibold))
+            Image(icon: choice.isOriginal ? "checkmark" : "arrow.down.right.and.arrow.up.left")
+                .font(.app(size: 11, weight: .semibold))
                 .accessibilityHidden(true)
             Text(verbatim: choice.badge()).font(Theme.small).monospacedDigit()
             if expandable {
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                Image(icon: "chevron.up.chevron.down")
+                    .font(.app(size: 9, weight: .semibold))
                     .accessibilityHidden(true)
             }
         }
@@ -1625,12 +1625,12 @@ struct MacAudioBadge: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "speaker.wave.2")
-                    .font(.system(size: 11, weight: .semibold))
+                Image(icon: "speaker.wave.2")
+                    .font(.app(size: 11, weight: .semibold))
                     .accessibilityHidden(true)
                 Text(verbatim: current).font(Theme.small).lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                Image(icon: "chevron.up.chevron.down")
+                    .font(.app(size: 9, weight: .semibold))
                     .accessibilityHidden(true)
             }
             .foregroundStyle(Theme.accent)

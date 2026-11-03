@@ -172,7 +172,11 @@ public struct PlexMapper: Sendable {
             providerIds: providers.isEmpty ? nil : providers,
             originalLanguage: m.originalLanguage,
             mediaType: ["movie", "episode", "clip"].contains(m.type) ? "Video" : nil,
-            sortName: (m.titleSort ?? m.title).lowercased())
+            sortName: (m.titleSort ?? m.title).lowercased(),
+            // Seconds since 1970; as ISO 8601 like Jellyfin's `DateCreated`.
+            dateCreated: m.addedAt.map {
+                ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: TimeInterval($0)))
+            })
     }
 
     // MARK: - Files

@@ -91,7 +91,7 @@ class PlayerActivity : ComponentActivity() {
         if (android.os.Build.VERSION.SDK_INT >= 31 && imageImageAllowed(app.isTv, packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE))) {
             runCatching { setPictureInPictureParams(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).setAutoEnterEnabled(true).build()) }
         }
-        setContent {
+        setInterContent {
             // The tile menu needs its own holder here: the player runs in its own activity, so
             // `LocalTileMenu` from `MainScreen` does not reach over. Without it
             // `LocalTileMenu.current` would be `null` and a long press on an episode in the player

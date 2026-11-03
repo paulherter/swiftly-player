@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -85,27 +86,8 @@ object FlavorSupport {
 
     @Composable
     fun PhoneSheetBody(app: SwiftlyApplication, close: () -> Unit) {
-        var entering by remember { mutableStateOf(false) }
         val context = LocalContext.current
-        Column {
-            SupportMark()
-            if (!entering) {
-                SheetText(translated("Wir bauen Swiftly ohne Werbung und ohne Tracking. Wenn es deine Abende besser macht, hilft uns ein Kaffee, weiterzumachen."))
-                SheetText(translated("Alles bleibt für alle kostenlos."), quiet = false, top = 14.dp)
-                SheetText(translated("Mit deinem Unterstützer-Schlüssel bekommst du ein Herz in „Über“ und zusätzliche App-Icons."), small = true, top = 4.dp)
-                Column(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).padding(top = 18.dp),
-                       verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PrimaryButton(translated("Auf der Website unterstützen")) { close(); app.addressOpen(context, WEBSITE) }
-                    Text(translated("Öffnet swiftlyplayer.com/supporter im Browser."), style = Theme.small, color = Theme.fontVeryQuiet,
-                         modifier = Modifier.align(Alignment.CenterHorizontally))
-                    SecondaryButton(translated("Ich habe einen Unterstützer-Schlüssel")) { entering = true }
-                    SecondaryButton(translated("Vielleicht später"), action = close)
-                }
-            } else {
-                KeyEntry(app, close)
-            }
-            Spacer(Modifier.height(16.dp))
-        }
+        GrowDirectBody(app, close, website = { app.addressOpen(context, WEBSITE) }) { done -> KeyEntry(app, done) }
     }
 
     @Composable
@@ -146,35 +128,40 @@ object FlavorSupport {
     @Composable
     fun TvAskBody(app: SwiftlyApplication, close: () -> Unit, first: FocusRequester) {
         var entering by remember { mutableStateOf(false) }
-        Text(translated("Swiftly unterstützen"), style = TvTheme.titleLarge, color = Theme.font)
-        if (!entering) {
-            Text(translated("Mit deinem Unterstützer-Schlüssel bekommst du ein Herz in „Über“ und zusätzliche App-Icons."),
-                 style = TvTheme.body, color = Theme.fontQuiet, modifier = Modifier.padding(top = 12.dp).widthIn(max = 620.dp))
-            Text(translated("Auf der Website unterstützen"), style = TvTheme.body, color = Theme.font, modifier = Modifier.padding(top = 28.dp))
-            Text("swiftlyplayer.com/supporter", style = TvTheme.titleLarge, color = Theme.font, modifier = Modifier.padding(top = 6.dp))
-            Text(translated("Alles bleibt für alle kostenlos."), style = TvTheme.body, color = Theme.fontQuiet, modifier = Modifier.padding(top = 20.dp))
-            Row(Modifier.padding(top = 28.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                TvButton(translated("Ich habe einen Unterstützer-Schlüssel"), modifier = Modifier.focusRequester(first)) { entering = true }
-                TvButton(translated("Vielleicht später"), perform = close)
+        Column(Modifier.width(de.paulherter.swiftly.tv.GrowColumn)) {
+            de.paulherter.swiftly.tv.TvLooksHero(app, Modifier.fillMaxWidth().padding(top = 18.dp)) { close(); de.paulherter.swiftly.tv.tvLooksOpen(app) }
+            Column(Modifier.padding(top = 12.dp, start = 10.dp, end = 10.dp)) {
+            Text(translated("Swiftly unterstützen"), style = TvTheme.titleLarge, color = Theme.font)
+            if (!entering) {
+                Text(translated("Mit deinem Unterstützer-Schlüssel bekommst du ein Herz in „Über“ und zusätzliche App-Icons."),
+                     style = TvTheme.body, color = Theme.fontQuiet, modifier = Modifier.padding(top = 12.dp).widthIn(max = 620.dp))
+                Text(translated("Auf der Website unterstützen"), style = TvTheme.body, color = Theme.font, modifier = Modifier.padding(top = 28.dp))
+                Text("swiftlyplayer.com/supporter", style = TvTheme.titleLarge, color = Theme.font, modifier = Modifier.padding(top = 6.dp))
+                Text(translated("Alles bleibt für alle kostenlos."), style = TvTheme.body, color = Theme.fontQuiet, modifier = Modifier.padding(top = 20.dp))
+                Row(Modifier.padding(top = 28.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    TvButton(translated("Ich habe einen Unterstützer-Schlüssel"), modifier = Modifier.focusRequester(first)) { entering = true }
+                    TvButton(translated("Vielleicht später"), perform = close)
+                }
+            } else {
+                var key by remember { mutableStateOf("") }
+                var refused by remember { mutableStateOf(false) }
+                val field = remember { FocusRequester() }
+                LaunchedEffect(Unit) { delay(TvTheme.focusDeadline); runCatching { field.requestFocus() } }
+                val submit = { if (key.isNotBlank()) { if (activate(app, key)) close() else refused = true } }
+                Text(translated("Den Schlüssel bekommst du, nachdem du uns auf der Website unterstützt hast: auf der Danke-Seite und per E-Mail."),
+                     style = TvTheme.body, color = Theme.fontQuiet, modifier = Modifier.padding(top = 12.dp).widthIn(max = 620.dp))
+                TvField(key, { key = it; refused = false }, "SS2-…", Modifier.padding(top = 24.dp).widthIn(max = 620.dp).focusRequester(field),
+                        imeAction = ImeAction.Done, keyboardAction = submit)
+                if (refused) Text(translated("Dieser Schlüssel passt nicht. Prüf ihn auf Tippfehler und versuch es noch einmal."),
+                                  style = TvTheme.body, color = Theme.error, modifier = Modifier.padding(top = 10.dp))
+                Row(Modifier.padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    TvButton(translated("Aktivieren"), released = key.isNotBlank(), perform = submit)
+                    TvButton(translated("Vielleicht später"), perform = close)
+                }
+                Text("${translated("Schlüssel verloren? Schreib uns an")} $CONTACT", style = TvTheme.small, color = Theme.fontVeryQuiet,
+                     modifier = Modifier.padding(top = 20.dp))
             }
-        } else {
-            var key by remember { mutableStateOf("") }
-            var refused by remember { mutableStateOf(false) }
-            val field = remember { FocusRequester() }
-            LaunchedEffect(Unit) { delay(TvTheme.focusDeadline); runCatching { field.requestFocus() } }
-            val submit = { if (key.isNotBlank()) { if (activate(app, key)) close() else refused = true } }
-            Text(translated("Den Schlüssel bekommst du, nachdem du uns auf der Website unterstützt hast: auf der Danke-Seite und per E-Mail."),
-                 style = TvTheme.body, color = Theme.fontQuiet, modifier = Modifier.padding(top = 12.dp).widthIn(max = 620.dp))
-            TvField(key, { key = it; refused = false }, "SS2-…", Modifier.padding(top = 24.dp).widthIn(max = 620.dp).focusRequester(field),
-                    imeAction = ImeAction.Done, keyboardAction = submit)
-            if (refused) Text(translated("Dieser Schlüssel passt nicht. Prüf ihn auf Tippfehler und versuch es noch einmal."),
-                              style = TvTheme.body, color = Theme.error, modifier = Modifier.padding(top = 10.dp))
-            Row(Modifier.padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                TvButton(translated("Aktivieren"), released = key.isNotBlank(), perform = submit)
-                TvButton(translated("Vielleicht später"), perform = close)
             }
-            Text("${translated("Schlüssel verloren? Schreib uns an")} $CONTACT", style = TvTheme.small, color = Theme.fontVeryQuiet,
-                 modifier = Modifier.padding(top = 20.dp))
         }
     }
 }

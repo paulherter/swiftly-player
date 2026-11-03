@@ -118,10 +118,10 @@ fun SeerrTileView(k: SeerrTile, modifier: Modifier = Modifier, perform: () -> Un
 /** Heading of a result block with count, e.g. "On your server", "Can be requested". */
 @Composable
 fun BlockTitle(title: String, count: Int, modifier: Modifier = Modifier) {
-    // `blockTitle`: heading 20 `schriftLeise`, count badge on the right, 16 above, 10 below.
+    // `blockTitle`: heading 22 bold white, count badge on the right, 16 above, 10 below.
     Row(modifier.fillMaxWidth().padding(top = 16.dp, bottom = 10.dp), verticalAlignment = Alignment.Bottom) {
-        Text(title, style = Theme.rail,
-             color = Theme.fontQuiet, modifier = Modifier.weight(1f))
+        Text(title, style = Theme.section,
+             color = Theme.font, modifier = Modifier.weight(1f))
         if (count > 0) CountMark(count)
     }
 }

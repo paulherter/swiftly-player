@@ -57,8 +57,8 @@ private struct SupportButtonStyle: ButtonStyle {
 
 /// **The heart in the home header.** White like the other bar buttons: it is a
 /// destination, not a state.
+/// White like the bookmark: a destination, not a state, and the accent belongs to state.
 struct MacSupportHeart: View {
-    @State private var hovers = false
 
     var body: some View {
         // Supporters have said thank you already; the heart goes away for them.
@@ -69,15 +69,13 @@ struct MacSupportHeart: View {
         Button {
             SupportModel.shared.open()
         } label: {
-            Image(systemName: "heart.fill")
-                .font(.system(size: 17))
-                .foregroundStyle(hovers ? Theme.font : Theme.fontQuiet)
+            Image(icon: "heart.fill")
+                .font(.app(size: 17))
+                .foregroundStyle(Theme.font)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(Theme.PressButton())
-        .onHover { hovers = $0 }
-        .animation(Theme.timeFloat, value: hovers)
         .accessibilityLabel(Text(SupportCopy.supportSwiftly.localized))
     }
 }
@@ -88,7 +86,7 @@ struct MacSupporterMark: View {
     var body: some View {
         if SupportModel.shared.isSupporter {
             HStack(spacing: 4) {
-                Image(systemName: "heart.fill")
+                Image(icon: "heart.fill")
                     .foregroundStyle(Theme.accent)
                     .accessibilityHidden(true)
                 Text(SupportCopy.supporterBadge.localized)
@@ -110,8 +108,8 @@ struct MacSupporterAvatarBadge: ViewModifier {
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottomTrailing) {
             if shown, SupportModel.shared.isSupporter {
-                Image(systemName: "heart.fill")
-                    .font(.system(size: size * 0.2, weight: .semibold))
+                Image(icon: "heart.fill")
+                    .font(.app(size: size * 0.2, weight: .semibold))
                     .foregroundStyle(Theme.accent)
                     .padding(size * 0.06)
                     .background(Theme.groupsArea, in: Circle())
@@ -123,7 +121,7 @@ struct MacSupporterAvatarBadge: ViewModifier {
 }
 
 /// **The settings group "Swiftly"**: always here from the first launch on, it is the
-/// entry App Review is pointed to. The icon picker sits right under the row.
+/// entry App Review is pointed to. Like on iPhone: icons come with the looks.
 struct MacSupportSettingsGroup: View {
     var body: some View {
         let support = SupportModel.shared
@@ -133,8 +131,6 @@ struct MacSupportSettingsGroup: View {
                       under: Text(SupportCopy.sayThanks.localized),
                       value: support.isSupporter ? SupportCopy.thankYou.localized : nil,
                       action: { support.open() })
-            SheetLine().padding(.leading, Theme.separatorInsetCard)
-            MacAppIconPicker()
                 .padding(16)
             #if DEBUG
             SheetLine().padding(.leading, Theme.separatorInsetCard)
@@ -272,100 +268,6 @@ private struct MacSupportPresentation: ViewModifier {
             sheetAllowed: sheet && !model.ratingDue && !model.discordHintDue && !gift.bigAskShown
                 && gift.stage == nil && Date.now.timeIntervalSince(playerClosedAt) > 10)
         if SupportModel.shared.presented { gift.noteBigAsk() }
-    }
-}
-
-// MARK: - App icon
-
-/// An icon from the bundle (`nil` = the standard one).
-private struct MacIconImage: View {
-    let icon: SupporterIcon?
-    let size: CGFloat
-    let corner: CGFloat
-
-    var body: some View {
-        Group {
-            if let image = SupporterIcon.image(icon) {
-                Image(nsImage: image).resizable()
-            } else {
-                Theme.area
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-    }
-}
-
-/// **The icon picker: the Dock icon of the running app.** Supporters choose; everyone
-/// else sees the same icons as a preview with the way to support right below. Back to
-/// the original with "Standard", always.
-struct MacAppIconPicker: View {
-    @State private var failed = false
-
-    private var support: SupportModel { .shared }
-    private let columns = [GridItem(.adaptive(minimum: 84), spacing: 12, alignment: .top)]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if !support.isSupporter {
-                Text(SupportCopy.storeThankYouGifts.localized)
-                    .font(Theme.body)
-                    .foregroundStyle(Theme.fontQuiet)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, 16)
-            }
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
-                tile(nil)
-                ForEach(SupporterIcon.allCases) { tile($0) }
-            }
-            if failed {
-                Text("Das Icon ließ sich nicht wechseln.")
-                    .font(Theme.small)
-                    .foregroundStyle(Theme.fontQuiet)
-                    .padding(.top, 16)
-            }
-            if !support.isSupporter {
-                Button {
-                    support.open()
-                } label: {
-                    Label(SupportCopy.supportSwiftly.localized, systemImage: "heart.fill")
-                }
-                .buttonStyle(SupportButtonStyle(primary: true))
-                .padding(.top, 20)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func tile(_ icon: SupporterIcon?) -> some View {
-        let selected = support.isChosen(icon)
-        return Button {
-            Task {
-                await support.choose(icon)
-                failed = support.appIcon != icon
-            }
-        } label: {
-            VStack(spacing: 8) {
-                MacIconImage(icon: icon, size: 64, corner: 14)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .strokeBorder(selected ? Theme.accent : .clear, lineWidth: 2)
-                            .padding(-4)
-                    }
-                Text(icon?.name ?? String(localized: "Standard"))
-                    .font(Theme.small)
-                    .foregroundStyle(selected ? Theme.font : Theme.fontQuiet)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(Theme.PressButton())
-        // A preview for everyone else: visible, not selectable; only the way back is open.
-        .disabled(!support.canChoose(icon))
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
 

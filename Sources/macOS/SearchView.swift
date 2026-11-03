@@ -8,7 +8,12 @@ struct SearchView: View {
     @Environment(Navigator.self) private var navigator
     @Environment(\.section) private var section
 
+    #if DEBUG
+    @State private var term = WindowOffPull.searchTerm ?? ""
+    #else
     @State private var term = ""
+    #endif
+    @State private var headerState = HeaderState()
     /// An account switch is in progress: content holds still, then appears staggered.
     @State private var change = false
     @State private var hit: [Item] = []
@@ -51,36 +56,80 @@ struct SearchView: View {
         .padding(.top, 70)
     }
 
-    /// "Zuletzt gesucht": same list as on iPhone and TV, here as rows in a card.
+    /// "Zuletzt gesucht": the iPhone list. Plain rows under the heading, no card: the
+    /// card made a convenience look like a settings group.
     private var recent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                // Same section header as above every other group; this was the third copy of the
-                // same heading.
-                GroupsTitle(text: "Zuletzt gesucht")
+                category("Zuletzt gesucht")
                 Spacer(minLength: 8)
                 Button { lastRaw = "" } label: {
                     Text("Löschen")
-                        .font(Theme.body.weight(.medium))
-                        .foregroundStyle(Theme.accent)
+                        .growing(13, .medium)
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                        .frame(minHeight: 32)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(Theme.PressButton())
             }
             .padding(.top, 26)
-            .padding(.bottom, 8)
 
-            CardView {
-                ForEach(Array(last.enumerated()), id: \.offset) { spot, word in
-                    if spot > 0 { SheetLine().padding(.leading, Theme.separatorInsetCard) }
-                    Button { term = word } label: {
-                        ValuesRow(symbol: "clock.arrow.circlepath",
-                                   title: Text(verbatim: word), hoverable: true)
+            ForEach(Array(last.enumerated()), id: \.offset) { spot, word in
+                Button { term = word } label: {
+                    HStack(spacing: 12) {
+                        Image(icon: "clock.arrow.circlepath")
+                            .font(Theme.body)
+                            .foregroundStyle(Theme.font)
+                            .frame(width: 20)
+                            .accessibilityHidden(true)
+                        Text(verbatim: word)
+                            .growing(15, .semibold)
+                            .foregroundStyle(Theme.font)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(Theme.PressRow())
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(Theme.PressRow())
+                if spot < last.count - 1 {
+                    SheetLine().padding(.leading, 32)
                 }
             }
         }
         .frame(maxWidth: Theme.readWidth, alignment: .leading)
+    }
+
+    /// The heading of every search block, the iPhone's level: section size, white.
+    private func category(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .font(Theme.section)
+            .tracking(Theme.lockSection)
+            .foregroundStyle(Theme.font)
+    }
+
+    /// **Hits grouped by kind, as on iPhone**: Serien, Filme, Folgen, Weiteres. One
+    /// mixed grid made the reader check each tile for what it is.
+    @ViewBuilder
+    private func group(_ label: LocalizedStringKey, _ entries: [Item]) -> some View {
+        if !entries.isEmpty {
+            // Group title 22/700, margin 30 0 12 (design).
+            Text(label)
+                .font(Theme.section)
+                .tracking(-0.2)
+                .foregroundStyle(Theme.font)
+                .padding(.top, 30)
+                .padding(.bottom, 12)
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 20) {
+                ForEach(entries, id: \.id) { entryRecord in
+                    Button { navigator.openIt(.title(entryRecord), in: section) } label: {
+                        SearchPoster(model: model, entry: entryRecord)
+                    }
+                    .buttonStyle(Theme.PressButton())
+                    .tileMenu(entryRecord, model: model)
+                }
+            }
+        }
     }
 
     /// Retry: same term, new attempt. Otherwise the user would have to append a
@@ -92,24 +141,66 @@ struct SearchView: View {
     }
 
     private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 120, maximum: 120), spacing: 16, alignment: .topLeading)]
+    }
+
+    /// The Seerr tiles keep the shared tile size.
+    private var seerrColumns: [GridItem] {
         [GridItem(.adaptive(minimum: Theme.tileWidth, maximum: Theme.tileWidth),
                   spacing: Theme.tileSpacing, alignment: .topLeading)]
+    }
+
+    /// The field: 520 x 40, radius 12, surface fill; focus = 3 pt accent ring at 35 % plus a
+    /// 1 pt accent edge.
+    private var field: some View {
+        HStack(spacing: 10) {
+            Image(icon: "magnifyingglass", size: 16)
+                .font(.app(size: 16))
+                .foregroundStyle(Theme.fontVeryQuiet)
+                .accessibilityHidden(true)
+            TextField("", text: $term,
+                      prompt: Text("Titel, Serie, Person").foregroundColor(Theme.fontVeryQuiet))
+                .textFieldStyle(.plain)
+                .font(.app(size: 15))
+                .foregroundStyle(Theme.font)
+                .focused($inField)
+                .onSubmit { lastRaw = SearchHistory.remember(term, in: lastRaw) }
+            if !term.isEmpty {
+                Button { term = ""; inField = true } label: {
+                    Image(icon: "xmark.circle.fill", size: 16)
+                        .font(.app(size: 16))
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Löschen"))
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 40)
+        .frame(maxWidth: 520)
+        .background(Theme.area, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background {
+            if inField {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Theme.accent.opacity(0.35), lineWidth: 6)
+            }
+        }
+        .overlay {
+            if inField {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Theme.accent, lineWidth: 1)
+            }
+        }
+        .animation(Theme.timeFloat, value: inField)
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Suche")
-                    .font(Theme.titleLarge)
-                    .tracking(Theme.lockTitle)
-                    .foregroundStyle(Theme.font)
+                MacPageTitle(text: "Suche", bottom: 16)
 
-                InputRow(text: $term, symbol: "magnifyingglass",
-                             placeholder: String(localized: "Titel, Serie, Person"),
-                             completion: { lastRaw = SearchHistory.remember(term, in: lastRaw) })
-                    .frame(maxWidth: Theme.formWidth)
-                    .padding(.top, 14)
-                    .focused($inField)
+                field
 
                 // With nothing in the field: where the user left off. A click searches it again.
                 if term.isEmpty {
@@ -124,25 +215,14 @@ struct SearchView: View {
                         .transition(.opacity)
                         .allowsHitTesting(false)
                 } else if !hit.isEmpty {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 20) {
-                        ForEach(hit, id: \.id) { entryRecord in
-                            Button { navigator.openIt(.title(entryRecord), in: section) } label: {
-                                PosterCell(title: entryRecord.name,
-                                             secondLine: entryRecord.hitInfo,
-                                             image: model.imageURL(for: entryRecord, portrait: true),
-                                             progress: entryRecord.userData?.playedPercentage.map { $0 / 100 },
-                                             mark: DisplayRules.tileMark(
-                                             art: entryRecord.type,
-                                             seasons: entryRecord.childCount,
-                                             watched: entryRecord.userData?.played,
-                                             openEpisodes: entryRecord.userData?.unplayedItemCount),
-                                             symbolText: entryRecord.tileCharacter)
-                            }
-                            .buttonStyle(Theme.PressButton())
-                            .tileMenu(entryRecord, model: model)
-                        }
+                    VStack(alignment: .leading, spacing: 0) {
+                        group("Serien", hit.filter { $0.type == "Series" })
+                        group("Filme", hit.filter { $0.type == "Movie" })
+                        group("Folgen", hit.filter { $0.type == "Episode" })
+                        group("Weiteres", hit.filter {
+                            !["Series", "Movie", "Episode"].contains($0.type ?? "")
+                        })
                     }
-                    .padding(.top, 24)
                 } else if searched, disrupted, !term.isEmpty, seerrHit.isEmpty {
                     // Same text as in the library, including the server address: one cause, one
                     // diagnosis.
@@ -166,19 +246,14 @@ struct SearchView: View {
 
                 if !seerrHit.isEmpty {
                     HStack(alignment: .firstTextBaseline) {
-                        // **Row heading, not all caps.** 13 semibold is on no scale (13 exists only as
-                        // medium), and `Gruppentitel` already uses normal case; this was the third copy of
-                        // the same heading.
-                        Text("Kann angefragt werden")
-                            .font(Theme.rail)
-                            .tracking(Theme.lockRail)
-                            .foregroundStyle(Theme.fontQuiet)
+                        // The iPhone wording: it says which way the request goes.
+                        category("Über Seerr anfragen")
                         Spacer(minLength: 8)
                         CountMark(count: seerrHit.count)
                     }
                     .padding(.top, hit.isEmpty ? 30 : 40)
 
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 20) {
+                    LazyVGrid(columns: seerrColumns, alignment: .leading, spacing: 20) {
                         ForEach(seerrHit) { t in
                             Button { navigator.openIt(.seerrTitle(t), in: section) } label: {
                                 SeerrTile(hit: t)
@@ -196,6 +271,13 @@ struct SearchView: View {
         // The look's glow, the same on every main page; goes up with the content.
         .lookGlow()
         .scrollIndicators(.never)
+        // ‹ › and, once scrolled, the page name, as on every main page.
+        .overlay(alignment: .top) {
+            StateBar(title: "Suche", state: headerState)
+        }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
+            headerState.offset = new
+        }
         .accountSwitchFade(model: model, ready: true, change: $change)
         // Term and results belong to the previous account.
         .onChange(of: model.accountSwitch) { _, _ in
@@ -244,5 +326,48 @@ struct SearchView: View {
         .onReceive(NotificationCenter.default.publisher(for: CommandPost.name)) { post in
             if CommandPost.receive(post) == .search { inField = true }
         }
+    }
+}
+
+/// A search hit: poster 120 x 180 radius 10, title 14/600, year 12 in the quiet tone.
+private struct SearchPoster: View {
+    let model: AppModel
+    let entry: Item
+    @State private var hovers = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ImageArea(image: model.imageURL(for: entry, portrait: true),
+                      width: 120, height: 180,
+                      progress: entry.userData?.playedPercentage.map { $0 / 100 },
+                      symbolText: entry.tileCharacter)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(alignment: .topTrailing) {
+                    if let mark = DisplayRules.tileMark(
+                        art: entry.type,
+                        seasons: entry.childCount,
+                        watched: entry.userData?.played,
+                        openEpisodes: entry.userData?.unplayedItemCount) {
+                        TileBadge(mark: mark)
+                    }
+                }
+                .scaleEffect(hovers ? 1.04 : 1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(verbatim: entry.name)
+                    .font(.app(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.font)
+                    .lineLimit(1)
+                if !entry.hitInfo.isEmpty {
+                    Text(verbatim: entry.hitInfo)
+                        .font(.app(size: 12))
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .frame(width: 120, alignment: .leading)
+        .onHover { hovers = $0 }
+        .animation(Theme.timeFloat, value: hovers)
+        .accessibilityElement(children: .combine)
     }
 }

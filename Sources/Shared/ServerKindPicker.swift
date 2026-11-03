@@ -43,7 +43,7 @@ struct ServerKindPicker: View {
                     }
                     .padding(.top, 28)
                 }
-                .padding(.horizontal, Theme.edgePageWide)
+                .padding(.horizontal, Theme.edgeSpacing)
                 .padding(.bottom, 40)
                 // The same column as sign-in and server: on iPad the cards would otherwise
                 // be 1000 points wide and the sentence a single line.
@@ -115,17 +115,17 @@ struct ServerKindPicker: View {
                             Text("Kommt mit einem der nächsten Updates.")
                         }
                     }
-                    .growing(15)
+                    .growing(14)
                     .lineSpacing(2)
                     .foregroundStyle(open ? Theme.fontQuiet : Theme.fontVeryQuiet)
                     .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 if open {
-                    Image(systemName: "chevron.right")
+                    Image(icon: "chevron.right", size: 13)
                         // The chevron of a row, as in `ValueRow`: 13 semibold, quiet.
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.fontVeryQuiet)
+                        .font(.app(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.font)
                         .accessibilityHidden(true)
                 }
             }

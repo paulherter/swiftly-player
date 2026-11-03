@@ -484,7 +484,7 @@ extension App {
         gtk_widget_set_sensitive(button, state.selected.isEmpty ? 0 : 1)
         let panelBox = held(panel)
         signal(button, "clicked") { [weak self] in
-            gtk_popover_popdown(asPanel(panelBox.widget))
+            panelDown(panelBox.widget)
             letGo(panelBox)
             guard let self else { return }
             self.seasonLoad(selectedEpisodes, quality: state.quality, audio: audioNow)

@@ -348,6 +348,14 @@ enum LookIcon {
         #elseif os(macOS)
         // `nil` brings back the bundle's icon, or the supporter icon picked in Settings
         // (like on iPhone, where a look without an icon leaves that one alone).
+        //
+        // **After the look's motion.** Setting the Dock icon decodes an image and talks to
+        // the Dock on the main thread; called right from "Use" it landed in the middle of
+        // the recolour and the closing panel. A newer call wins over one still waiting.
+        dockTurn += 1
+        let turn = dockTurn
+        try? await Task.sleep(for: .seconds(0.45))
+        guard turn == dockTurn else { return }
         NSApp.applicationIconImage = name.flatMap { NSImage(named: $0.replacingOccurrences(of: "AppIcon-", with: "DockIcon-")) }
         if name == nil {
             SupporterIcon.restoreOnLaunch(isSupporter: SupportModel.shared.isSupporter)
@@ -360,6 +368,10 @@ enum LookIcon {
     @MainActor static func restore() async {
         await apply(LookStore.shared.palette.iconName)
     }
+
+    #if os(macOS)
+    @MainActor private static var dockTurn = 0
+    #endif
 }
 
 // MARK: - Clock

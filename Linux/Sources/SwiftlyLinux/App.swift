@@ -31,11 +31,17 @@ final class App: @unchecked Sendable {
 
     // Sign-in, two steps
     private var loginStep: Widget!     // GtkStack: server -> account
-    private var serverField: Widget!
+    var serverField: Widget!
     /// "Advanced" under the address: custom headers (issue #4).
     private var loginReader: HeaderRowReader?
     private var connectButton: Widget!
     private var serverState: Widget!
+    /// The servers on the local network: one search for both pages that offer them,
+    /// sign-in and "Server hinzufügen". See `ServerSearch.swift`.
+    var foundServers: [FoundServer] = []
+    var foundOnLogin: Widget!
+    var foundOnOnboarding: Widget?
+    var serverSearchRun: Task<Void, Never>?
     private var serverRow: Widget!
     private var versionRow: Widget!
     private var serverURL: URL?
@@ -138,7 +144,8 @@ final class App: @unchecked Sendable {
     /// overlap and GTK has no negative margins.
     var profileCircle: Widget!
 
-    var client: (any MediaServer)?
+    /// The arrows beside the title bar follow the sign-in: shown once a server is there.
+    var client: (any MediaServer)? { didSet { navRefresh() } }
     var addresses: ImageAddress?
     /// Runs only at startup, then fades out.
     var startAnimation: StartAnimation?
@@ -380,9 +387,23 @@ final class App: @unchecked Sendable {
 
         keysSetUp()
         onProperty(UnsafeMutableRawPointer(window), "notify::fullscreened") { [weak self] in
-            guard let self, self.runningTitle != nil else { return }
-            self.fullscreenShow(full: gtk_window_is_fullscreen(asWindow(self.window)) != 0)
+            guard let self else { return }
+            if self.runningTitle != nil {
+                self.fullscreenShow(full: gtk_window_is_fullscreen(asWindow(self.window)) != 0)
+            }
+            #if os(Windows)
+            // Leaving fullscreen rebuilds the native frame; the clip around GTK's ring has to follow.
+            for delay in [0.1, 0.5] { postDeadline(delay) { WindowFrame.makeTransparent() } }
+            #endif
         }
+        #if os(Windows)
+        // Maximising and restoring rebuild the frame the same way.
+        for name in ["notify::maximized", "notify::default-width"] {
+            onProperty(UnsafeMutableRawPointer(window), name) {
+                postDeadline(0.15) { WindowFrame.makeTransparent() }
+            }
+        }
+        #endif
         g_signal_connect_data(UnsafeMutableRawPointer(window), "close-request",
                               unsafeBitCast(closeRequested, to: GCallback.self),
                               Unmanaged.passUnretained(self).toOpaque(),
@@ -418,7 +439,15 @@ final class App: @unchecked Sendable {
         gtk_window_present(asWindow(window))
         #if os(Windows)
         // The native window exists only once it is shown; ask again after the first frames.
+        WindowFrame.watch()
         postDeadline(0.3) { WindowFrame.makeTransparent() }
+        // GTK's ring around the window is what the surface has beyond the widget.
+        postDeadline(1.0) {
+            let surface = Int(gdk_surface_get_width(gtk_native_get_surface(OpaquePointer(self.window))))
+            let ring = (surface - Int(gtk_widget_get_width(self.window))) / 2
+            if (1...40).contains(ring) { WindowFrame.ring = ring }
+            WindowFrame.makeTransparent()
+        }
         #endif
         postDeadline(6) { [weak self] in self?.supportSheetWarmUp() }
         characterItemReport()
@@ -604,6 +633,12 @@ final class App: @unchecked Sendable {
             guard let self else { return }
             gtk_stack_set_visible_child_name(OpaquePointer(self.loginStep), "art")
         }
+
+        foundOnLogin = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_set_size_request(foundOnLogin, Int32(Theme.loginWidth), -1)
+        gtk_widget_set_halign(foundOnLogin, GTK_ALIGN_CENTER)
+        append(center, foundOnLogin)
+        serverSearchStart()
 
         signal(connectButton, "clicked") { [weak self] in self?.linkUp() }
         signal(serverField, "activate") { [weak self] in self?.linkUp() }
@@ -863,7 +898,7 @@ final class App: @unchecked Sendable {
 
     // MARK: Step one: connect
 
-    private func linkUp() {
+    func linkUp() {
         guard !reportCurrent else { return }
         let typedInput = text(serverField).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !typedInput.isEmpty else { serverStateShow(translated("Trag erst eine Adresse ein.")); return }
@@ -1162,6 +1197,7 @@ final class App: @unchecked Sendable {
         // a switch: `loaded` was only cleared on sign-out, and a section loads
         // exactly once.
         pagesStack.removeAll()
+        navReset()
         loaded.removeAll()
         openSubpage = nil
         // **And an open library page.** It shows a collection of the previous
@@ -1568,7 +1604,7 @@ final class App: @unchecked Sendable {
     /// places. With a third section (watchlist) each would have become a
     /// three-way chain, and every forgotten spot would silently have filled the
     /// wrong page. A dictionary has no special case.
-    private var gridField: [Region: Widget] = [:]
+    var gridField: [Region: Widget] = [:]
     private var numberField: [Region: Widget] = [:]
     var searchField: Widget!
     /// "Zuletzt gesucht": shown while the field is empty.
@@ -1645,13 +1681,29 @@ final class App: @unchecked Sendable {
         return .all
     }
 
+    /// **A row heading on the home page opens its library** (``StartRail/libraryJump``) in the
+    /// row's order, at the top of the area. The order is stored as if picked on the page; an
+    /// area already loaded in another order loads again, as after a tap on the sort button.
+    func libraryJumpOpen(_ jump: LibraryJump) {
+        let was: Region = jump.art == "tvshows" ? .seriesList : .movies
+        // An area opened for the first time loads in `show` with the stored order already.
+        let reload = sortingFrom(was) != jump.sorting && loaded.contains(was)
+        sortingSet(was, jump.sorting)
+        pagesStack[was] = []
+        show(was)
+        if reload {
+            chipsFill(was)
+            gridLoad(was)
+        }
+    }
+
     private func sortingSet(_ was: Region, _ new: Sorting) {
         if was == .collection { collectionSorting = new; return }
         selection.sortingPerPlace[placeKey(was)] = new.rawValue
         selection.secure()
     }
 
-    private func filterSet(_ was: Region, _ new: LibraryFilter) {
+    func filterSet(_ was: Region, _ new: LibraryFilter) {
         if was == .collection { collectionFilter = new; return }
         selection.filterPerPlace[placeKey(was)] = new.rawValue
         selection.secure()
@@ -1659,7 +1711,7 @@ final class App: @unchecked Sendable {
     private var chipRows: [Region: Widget] = [:]
     /// The placeholder content of a grid page with nothing to show, only where
     /// the Mac has one.
-    private var emptyField: [Region: Widget] = [:]
+    var emptyField: [Region: Widget] = [:]
     /// The small title in the `Bestandsleiste` per section; it changes when a
     /// library or genre brings a different name.
     var barTitle: [Region: Widget] = [:]
@@ -1674,7 +1726,7 @@ final class App: @unchecked Sendable {
                     translated("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier."))
         // Mirrors the empty state in `GenreView.swift`.
         case .genre:
-            return ("tag-symbolic", translated("Nichts in diesem Genre"),
+            return ("paint:tag", translated("Nichts in diesem Genre"),
                     translated("In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien."))
         default: return nil
         }
@@ -1800,6 +1852,14 @@ final class App: @unchecked Sendable {
     /// Which subpage is open (profile, Quick Connect, ...), `nil` if none. They do
     /// not live in the section stack: on the Mac they also lie across it.
     var openSubpage: Subpage? { didSet { sectionRowsDraw() } }
+    /// Window-wide history behind the two arrows in the header bar (`NavArrows.swift`).
+    var navHistory: [NavPlace] = []
+    var navFuture: [NavPlace] = []
+    var navNow: NavPlace?
+    var navPending: NavPlace?
+    var navBackButton: Widget?
+    var navForwardButton: Widget?
+    var navArrowsRow: Widget?
     var openList: ValuesSelection?
     var selection = Choices.read()
     /// Keeps the synced settings equal across devices (see ``SettingsSyncRun``).
@@ -2141,7 +2201,7 @@ final class App: @unchecked Sendable {
     /// its place.
     var updateSpace: Widget?
     #endif
-    var runningTitle: Item?
+    var runningTitle: Item? { didSet { navRefresh() } }
     /// **The TV button waits for the plan**: the icon row is built before it
     /// arrives, and only a stream from the server can be handed over.
     var runningPlan: PlaybackPlan? { didSet { playHandOverRefresh() } }
@@ -2593,14 +2653,21 @@ final class App: @unchecked Sendable {
         case 0x031: show(.start)                          // 1
         case 0x032: show(.movies)                          // 2
         case 0x033: show(.seriesList)                         // 3
+        // Mac "Gehe zu": Merkliste ⌘4 and Downloads ⌘5, each only while the row exists.
+        case 0x034 where selection.watchlistShown: show(.watchlist)
+        case 0x035 where downloadsAn: show(.downloads)
+        // Mac "Profil wechseln" ⇧⌘P.
+        case 0x050 where runningTitle == nil && client != nil: subpageOpen(.profile)
         case 0x066, 0x046:                                 // f / F
             show(.search)
             gtk_widget_grab_focus(searchField)
+        case 0x05D:                                        // ]
+            navForwardStep()
         case 0x05B:                                        // [
             // **Back**: the Mac has it as Cmd+[ in the "Gehe zu" menu
             // (`SwiftlyApp.swift`). Without it, the arrow is the only way back from a
             // subpage.
-            back()
+            navBackStep()
         // **The two shortcuts every desktop app has** (GNOME HIG): Ctrl+, opens the
         // settings like Cmd+, on the Mac, Ctrl+Q quits. Not in the player, where the
         // page would lie behind the movie.
@@ -2625,6 +2692,13 @@ final class App: @unchecked Sendable {
     /// it the window could no longer be closed.
     private func headerRowFill() {
         gtk_header_bar_set_title_widget(OpaquePointer(headerLine), titleLine)
+        // **‹ › sit where the Mac has them** (`NavArrows` in `MainView`): the bar is the
+        // Mac's 52 high toolbar band, the pair starts 20 in from the content edge (the sidebar
+        // is as wide as the Mac's) and is centered in it, so there is room above and below.
+        let arrows: Widget! = navArrowsBuild()
+        gtk_widget_set_valign(arrows, GTK_ALIGN_CENTER)
+        gtk_widget_set_margin_start(arrows, Int32(Theme.sidebarWidth) + 20)
+        gtk_header_bar_pack_start(OpaquePointer(headerLine), arrows)
         headerRowShow(false)
     }
 
@@ -2664,10 +2738,12 @@ final class App: @unchecked Sendable {
         // `Region.mineGroup`; the measurements are those of the library group,
         // since it is the same kind of subheading.
         mineCategory = category(translated("Meins"))
-        gtk_widget_set_margin_top(mineCategory, 26)
-        gtk_widget_set_margin_bottom(mineCategory, 8)
-        gtk_widget_set_margin_start(mineCategory, 12)
-        gtk_widget_set_margin_end(mineCategory, 12)
+        // Mac 1.1 SidebarCategory: 12 semibold, 20 sides (10 here + 10 in category()), 22 above, 6 below.
+        gtk_widget_add_css_class(mineCategory, "swiftly-seitenrubrik")
+        gtk_widget_set_margin_top(mineCategory, 22)
+        gtk_widget_set_margin_bottom(mineCategory, 6)
+        gtk_widget_set_margin_start(mineCategory, 10)
+        gtk_widget_set_margin_end(mineCategory, 10)
         append(middle, mineCategory)
 
         myList = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
@@ -2705,7 +2781,8 @@ final class App: @unchecked Sendable {
     private func sectionRow(_ fall: Region) -> Widget! {
         let row = sidebarRow(symbol: fall.symbol,
                                        text: fall.label,
-                                       active: fall == section)
+                                       active: fall == section,
+                                       shortcut: fall.abbreviation)
         // **The shortcut sits on the tooltip.**
         //
         // On the Mac all five are visible in the menu bar under "Gehe zu"
@@ -2945,7 +3022,7 @@ final class App: @unchecked Sendable {
             append(list, actionRow(devicesCharacter(session.devicesKind),
                                             "\(device) · \(session.titleLine) · \(spot)") {
                 [weak self] in
-                gtk_popover_popdown(asPanel(panel))
+                panelDown(panel)
                 self?.adopt(session)
             })
         }
@@ -3057,6 +3134,13 @@ final class App: @unchecked Sendable {
         append(names, profileServer)
         append(rail, names)
 
+        // Mac 1.1 footer row: gear 16 on the right, very quiet.
+        let gear: Widget! = gtk_image_new_from_icon_name("emblem-system-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(gear), 16)
+        gtk_widget_add_css_class(gear, "swiftly-fusszahnrad")
+        gtk_widget_set_valign(gear, GTK_ALIGN_CENTER)
+        append(rail, gear)
+
         gtk_button_set_child(asButton(button), rail)
         // On macOS the row leads to the profile; "Abmelden" is one level deeper there.
         signal(button, "clicked") { [weak self] in self?.subpageOpen(.profile) }
@@ -3076,6 +3160,7 @@ final class App: @unchecked Sendable {
     ///
     /// The order in the `GtkFixed` decides which covers which: when pushing forward the new layer must be on top, when pushing back the old one, because it is the one that moves.
     func shove(toward target: Widget!, bearing wished: Push) {
+        navNote(wished)
         // **With reduced motion nothing slides**; the page briefly cross-fades, as on Apple, where "Reduce Motion" replaces every transition with a fade. The fade below reads the setting itself and then uses `Theme.timeReduced`.
         let bearing: Push = motionReduced() && (wished == .deeper || wished == .back)
             ? .fade : wished
@@ -3149,6 +3234,7 @@ final class App: @unchecked Sendable {
     /// If the stack is already on top, it switches in place (`switchStack`). If a detail page lies above, `shove(toward:bearing:)` fades it out and the stack in; the stack itself already stands on the new area.
     func sectionShow(_ identifier: String, push: Push) {
         if onTop == content, push == .fade {
+            navNote(push)
             switchStack(content, toward: identifier)
             return
         }
@@ -3233,7 +3319,11 @@ final class App: @unchecked Sendable {
         }
         // **Whoever goes to "Suche" wants to type.** macOS sets the focus when the page appears; here it only worked via Ctrl+F.
         if new == .search { gtk_widget_grab_focus(searchField); searchHistoryShow() }
-        // **Each area loads once.** On macOS the state of each area is kept, so switching between movies and series only waits the first time.
+        sectionLoadOnce(new)
+    }
+
+    /// **Each area loads once.** On macOS the state of each area is kept, so switching between movies and series only waits the first time.
+    func sectionLoadOnce(_ new: Region) {
         guard !loaded.contains(new) else { return }
         loaded.insert(new)
         switch new {
@@ -3315,32 +3405,21 @@ final class App: @unchecked Sendable {
         gtk_widget_set_size_request(small, -1, Int32(Theme.headerBarHeight))
         gtk_widget_set_valign(small, GTK_ALIGN_START)
         gtk_widget_set_halign(small, GTK_ALIGN_FILL)
-        // With arrow: 16 + 40 + 4, like `HStack(spacing: 4)` with the `BackArrow` inset by 8.
-        gtk_widget_set_margin_start(small, Int32(back == nil ? Theme.edgeSpacing
-                                                                : Theme.edgeSpacing - 8 + 44))
+        // The arrows live in the window's header bar; a page's own bar only keeps its place.
+        gtk_widget_set_margin_start(small, Int32(Theme.edgeSpacing))
         gtk_widget_set_margin_end(small, Int32(Theme.edgeSpacing))
         gtk_widget_set_opacity(small, 0)
         gtk_widget_set_can_target(small, 0)
         gtk_overlay_add_overlay(OpaquePointer(over), small)
 
-        if let back {
-            let arrow: Widget! = gtk_button_new()
-            gtk_widget_add_css_class(arrow, "swiftly-zurueck")
-            caption(arrow, translated("Zurück"))
-            gtk_button_set_child(asButton(arrow),
-                                 gtk_image_new_from_icon_name("go-previous-symbolic"))
-            gtk_widget_set_size_request(arrow, 40, 40)
-            gtk_widget_set_halign(arrow, GTK_ALIGN_START)
-            gtk_widget_set_valign(arrow, GTK_ALIGN_START)
-            gtk_widget_set_margin_start(arrow, Int32(Theme.edgeSpacing - 8))
-            signal(arrow, "clicked", back)
-            gtk_overlay_add_overlay(OpaquePointer(over), arrow)
-        }
+        _ = back
 
         guard let adjustment = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller))
         else { return (over, small!) }
         // **Start point, derived rather than guessed.** The large title (28 bold, about 33 high) starts `contentTop` below the top edge; its bottom edge reaches the bar's at `contentTop + 33 − 40`. The bar fades in over the next 26 points.
         let since = Double(max(Theme.contentTop + 33 - Theme.headerBarHeight, 0))
+        // Mac 1.1: fade-in from scroll depth 39 over 26 (= max(contentTop + 33 − 52, 0)); assert it stays so.
+        assert(Theme.contentTop != 58 || since == 39)
         let rail = valueSeries.map { held($0) }
         signalRaw(UnsafeMutableRawPointer(adjustment), "value-changed") {
             let value = gtk_adjustment_get_value(adjustment)
@@ -3362,33 +3441,34 @@ final class App: @unchecked Sendable {
     /// The button shows the **chosen value**; the options are in the panel below. When open it shows the rotated chevron and the raised surface.
     ///
     /// **At most one open at a time:** the panel is a self-closing `GtkPopover`, so a click elsewhere, even on the neighbouring button, closes it and does nothing else. This is the behaviour of `SelectionSupervision`.
-    func selectionButton(symbolText: Widget, value: String,
+    func selectionButton(symbolText: Widget?, value: String,
                    entries: [(text: String, selected: Bool, perform: () -> Void)]) -> Widget! {
-        let angle: Widget! = gtk_image_new_from_icon_name("pan-up-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(angle), 12)
-        gtk_widget_set_visible(angle, 0)
-        let characterCompartment = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 0)
-        append(characterCompartment, symbolText)
-        append(characterCompartment, angle)
-        let button = chip(value, drawing: characterCompartment)
+        // **The chevron is always there** (Mac 1.1 `SelectionButton`: Chevron 11, spaced 7 from the word); open, it points up.
+        let angle: Widget! = gtk_image_new_from_icon_name("pan-down-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(angle), 11)
+        var characterCompartment: Widget?
+        if let symbolText {
+            characterCompartment = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 0)
+            append(characterCompartment, symbolText)
+        }
+        let button = chip(value, drawing: characterCompartment, trailing: angle)
         signal(button, "clicked") { [weak self] in
             guard let self else { return }
             let list = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
-            gtk_widget_set_size_request(list, 220, -1)
+            // Mac 1.1: panel width 190 (was 220).
+            gtk_widget_set_size_request(list, 190, -1)
             let panel = self.panelOpen(an: button)
             gtk_popover_set_child(asPanel(panel), Scaling.wrapped(list))
             for e in entries {
                 append(list, self.selectionRow(e.text, selected: e.selected, panel: panel, perform: e.perform))
             }
             gtk_widget_add_css_class(button, "swiftly-aktiv")
-            gtk_widget_set_visible(symbolText, 0)
-            gtk_widget_set_visible(angle, 1)
-            let k = held(button), z = held(symbolText), w = held(angle)
+            gtk_image_set_from_icon_name(OpaquePointer(angle), "pan-up-symbolic")
+            let k = held(button), w = held(angle)
             signal(panel, "closed") {
                 gtk_widget_remove_css_class(k.widget, "swiftly-aktiv")
-                gtk_widget_set_visible(z.widget, 1)
-                gtk_widget_set_visible(w.widget, 0)
-                letGo(k); letGo(z); letGo(w)
+                gtk_image_set_from_icon_name(OpaquePointer(w.widget), "pan-down-symbolic")
+                letGo(k); letGo(w)
             }
             gtk_popover_popup(asPanel(panel))
         }
@@ -3416,7 +3496,7 @@ final class App: @unchecked Sendable {
         gtk_button_set_child(asButton(row), r)
         let t = held(panel)
         signal(row, "clicked") {
-            if let panel = t.widget { gtk_popover_popdown(asPanel(panel)) }
+            if let panel = t.widget { panelDown(panel) }
             perform()
         }
         signal(row, "destroy") { letGo(t) }
@@ -3532,16 +3612,7 @@ final class App: @unchecked Sendable {
                             withServer: Bool = true,
                             withNumber: Bool = true) -> Widget! {
         let rail = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
-        if let back {
-            let arrow: Widget! = gtk_button_new()
-            gtk_widget_add_css_class(arrow, "swiftly-zurueck")
-            caption(arrow, translated("Zurück"))
-            gtk_button_set_child(asButton(arrow),
-                                 gtk_image_new_from_icon_name("go-previous-symbolic"))
-            gtk_widget_set_valign(arrow, GTK_ALIGN_CENTER)
-            signal(arrow, "clicked", back)
-            append(rail, arrow)
-        }
+        _ = back
         let column = stack(GTK_ORIENTATION_VERTICAL, spacing: 3)
         gtk_widget_set_hexpand(column, 1)
         let t = label(title, style: "swiftly-titel-gross")
@@ -3573,7 +3644,8 @@ final class App: @unchecked Sendable {
     /// On macOS the row carries the inset **inside** (`Blätterreihe.rand`): the tiles start under the heading and still scroll to the window edge. Same here.
     private func startSectionBuild() -> Widget! {
         // **The home page has a title** (like macOS): movies, series, search, watchlist and downloads all have a heading, only the home page lacked one. Same size, same place, same `Bestandsleiste` when scrolling.
-        let page = stack(GTK_ORIENTATION_VERTICAL, spacing: Int32(Theme.railsSpacing))
+        // Mac 1.1: 22 from the title to the first rail, not the 40 between rails.
+        let page = stack(GTK_ORIENTATION_VERTICAL, spacing: 22)
         // **The same scroller as everywhere**: `EXTERNAL`, no system scrollbar.
         let scroller = pagesScroller()
         // The top spacing lives in the stylesheet as `padding` (`contentTop`).
@@ -3584,7 +3656,7 @@ final class App: @unchecked Sendable {
         gtk_widget_set_halign(page, GTK_ALIGN_FILL)
         gtk_widget_set_margin_bottom(page, 40)
 
-        let title = label(translated("Startseite"), style: "swiftly-titel-gross")
+        let title = label(translated("Start"), style: "swiftly-titel-gross")
         gtk_label_set_xalign(OpaquePointer(title), 0)
         gtk_widget_set_hexpand(title, 1)
         // The heart sits at the right end of the title row ("Support Swiftly").
@@ -3592,7 +3664,7 @@ final class App: @unchecked Sendable {
         gtk_widget_set_margin_start(titleRow, Int32(Theme.edgeSpacing))
         gtk_widget_set_margin_end(titleRow, Int32(Theme.edgeSpacing))
         append(titleRow, title)
-        append(titleRow, supportHeart())
+        // Mac 1.1: no heart in the bar any more, supporting lives in the profile.
         append(page, titleRow)
 
         // **The page has no side inset**; the row carries it inside (`Blätterreihe.rand`) so the tiles scroll to the window edge.
@@ -3600,7 +3672,7 @@ final class App: @unchecked Sendable {
         gtk_widget_set_hexpand(railsStack, 1)
         append(page, railsStack)
         gtk_scrolled_window_set_child(OpaquePointer(scroller), page)
-        return stateBar(scroller, title: translated("Startseite")).wrapper
+        return stateBar(scroller, title: translated("Start")).wrapper
     }
 
     private func gridPageBuild(_ was: Region) -> Widget! {
@@ -3615,9 +3687,9 @@ final class App: @unchecked Sendable {
                                     back: was == .genre ? { [weak self] in
                                         self?.show(.start)
                                     } : nil,
-                                    withServer: was != .genre && was != .watchlist
-                                        && was != .collection,
-                                    withNumber: was != .genre))
+                                    // Mac 1.1: the library title line is the title alone; server name and count are gone (only the watchlist keeps its count).
+                                    withServer: false,
+                                    withNumber: was == .watchlist))
         // Only these pages change their title.
         if was == .collection { collectionTitle = title }
         if was == .movies || was == .seriesList { titleSelectionInBuild(was, title: title) }
@@ -3638,7 +3710,7 @@ final class App: @unchecked Sendable {
         gtk_widget_set_visible(loader, 0)
         append(block, loader)
 
-        let grid = gridBuild()
+        let grid = gridBuild(rowSpacing: was == .watchlist ? 20 : 24)
         gtk_widget_set_margin_top(grid, was == .genre ? 20 : 22)
         append(block, grid)
 
@@ -3654,6 +3726,7 @@ final class App: @unchecked Sendable {
         loaderField[was] = loader
 
         let frameRect = pagesFrame(block)
+        if was != .watchlist { gridSpread(grid, scroller: frameRect) }
         // Tiles scrolled far away release their images (`TileImageGuard`).
         let sentry = TileImageGuard(scroller: frameRect)
         let gridPointer = UnsafeMutableRawPointer(grid!)
@@ -3696,13 +3769,13 @@ final class App: @unchecked Sendable {
                                             translated("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier."),
                                             top: 80, drawing: memo.display))
             case .genre:
-                append(inputField, emptyState("tag-symbolic", translated("Nichts in diesem Genre"),
+                append(inputField, emptyState("paint:tag", translated("Nichts in diesem Genre"),
                                             translated("In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien."),
                                             top: 80))
             default:
                 let filter = filterFrom(was)
                 if filter == .all {
-                    append(inputField, emptyState("mail-inbox-symbolic", translated("Hier ist noch nichts"),
+                    append(inputField, emptyState("paint:tray", translated("Hier ist noch nichts"),
                                                 was == .collection
                                                     ? translated("Sobald in dieser Sammlung etwas liegt, taucht es hier auf.")
                                                     : translated("Sobald in dieser Bibliothek etwas liegt, taucht es hier auf."),
@@ -3778,9 +3851,8 @@ final class App: @unchecked Sendable {
                 })
             }))
         } else {
-            let funnel = FilterCharacter()
-            signal(funnel.display, "destroy") { _ = funnel }
-            append(row, selectionButton(symbolText: funnel.display, value: nowFilter.label,
+            // Mac 1.1: the filter button has no symbol any more, just the value and the caret.
+            append(row, selectionButton(symbolText: nil, value: nowFilter.label,
                                        entries: filterList(was).map { fall in
                 (text: fall.label, selected: fall == nowFilter, perform: { [weak self] () -> Void in
                     guard let self, fall != self.filterFrom(was) else { return }
@@ -3791,8 +3863,9 @@ final class App: @unchecked Sendable {
             }))
         }
         // The icon of the chosen sort order, not the same arrows for all (macOS `Sorting.symbol`).
-        let arrows: Widget! = characterImage(nowSort.characterNames)
-        gtk_image_set_pixel_size(OpaquePointer(arrows), 12)
+        // Mac 1.1: one `arrow.up.arrow.down` for every order (was one icon per order).
+        let arrows: Widget! = characterImage(["view-sort-descending-symbolic", "view-sort-ascending-symbolic"])
+        gtk_image_set_pixel_size(OpaquePointer(arrows), 14)
         append(row, selectionButton(symbolText: arrows, value: nowSort.label,
                                    entries: sortUp))
         // **For "Sammlungen" the row stays, just empty** (macOS `LibraryView`): the list of collections needs neither filtering nor sorting. If the row disappeared, the grid would jump by its height on switching.
@@ -3919,7 +3992,8 @@ final class App: @unchecked Sendable {
     }
 
     private func searchBuild() -> Widget! {
-        let block = stack(GTK_ORIENTATION_VERTICAL, spacing: 20)
+        // Mac 1.1: 16 from the title to the field (`MacPageTitle(bottom: 16)`).
+        let block = stack(GTK_ORIENTATION_VERTICAL, spacing: 16)
         var unused: Widget!
         var unusedTitle: Widget!
         var unusedServerRow: Widget!
@@ -3931,24 +4005,32 @@ final class App: @unchecked Sendable {
         searchField = inputRow(symbol: "system-search-symbolic",
                                 placeholder: translated("Titel, Serie, Person"))
         // **420 wide, not across the page**: `SearchView.swift:102` caps it with `frame(maxWidth: 420)`. A field 1200 points wide looks like it expects a sentence.
-        gtk_widget_set_size_request(searchField, 420, Int32(Theme.fieldHeight))
+        // Mac 1.1: 520 wide (was 420), accent edge and ring in focus.
+        gtk_widget_add_css_class(searchField, "swiftly-suchfeld")
+        gtk_widget_set_size_request(searchField, 520, Int32(Theme.fieldHeight))
         gtk_widget_set_halign(searchField, GTK_ALIGN_START)
         gtk_widget_set_hexpand(searchField, 0)
         append(block, searchField)
 
         // **"Zuletzt gesucht", the same list as on iPhone, TV and macOS.** The logic is `SearchHistory` in the package and had never been connected here: with an empty field Linux showed nothing.
-        let (historyOuter, historySpace) = rowsGroup()
+        // Mac 1.1: plain rows under the heading, no card (a card made a convenience look like a settings group).
+        let historySpace = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        let historyOuter: Widget! = historySpace
         searchHistoryBlock = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
         let historyHeader = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
         gtk_widget_set_margin_top(historyHeader, 26)
         gtk_widget_set_margin_bottom(historyHeader, 8)
         let historyTitle = category(translated("Zuletzt gesucht"))
+        gtk_widget_remove_css_class(historyTitle, "swiftly-leise")
+        gtk_widget_add_css_class(historyTitle, "swiftly-gruppenrubrik")
+        gtk_widget_set_margin_start(historyTitle, 0)
         gtk_widget_set_hexpand(historyTitle, 1)
         append(historyHeader, historyTitle)
         let historyDistance: Widget! = gtk_button_new()
         gtk_widget_add_css_class(historyDistance, "swiftly-blank")
         gtk_button_set_child(asButton(historyDistance),
-                             label(translated("Löschen"), style: "swiftly-zaehlmarke"))
+                             label(translated("Löschen"), style: "swiftly-alle"))
+        gtk_widget_set_size_request(historyDistance, -1, 32)
         signal(historyDistance, "clicked") { [weak self] in
             self?.searchHistorySet("")
             self?.selection.secure()
@@ -3969,10 +4051,13 @@ final class App: @unchecked Sendable {
         gtk_widget_set_visible(searchHint, 0)
         append(block, searchHint)
 
+        // Mac 1.1: hits grouped by kind (Serien, Filme, Folgen, Weiteres), 120 x 180 tiles; `searchGrid` stays as an empty counterpart for the debug console.
         searchGrid = gridBuild()
-        append(block, searchGrid)
+        gtk_widget_set_visible(searchGrid, 0)
+        searchGroups = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        append(block, searchGroups)
         // **Empty is information.** Without it the page just sits there, and the user cannot tell whether a search ran or nothing exists.
-        searchEmpty = emptyState("mail-inbox-symbolic", translated("Nichts gefunden"), nil)
+        searchEmpty = emptyState("paint:tray", translated("Nichts gefunden"), nil)
         gtk_widget_set_visible(searchEmpty, 0)
         append(block, searchEmpty)
         // **Failed is not empty** (macOS `SearchView` `disrupted`). This used `try?`, so a network error looked like "Nichts gefunden". It is filled only on error, so the address is that of the currently logged-in server.
@@ -3988,7 +4073,11 @@ final class App: @unchecked Sendable {
         gtk_widget_set_margin_top(seerrRow, 12)
         gtk_widget_set_visible(seerrRow, 0)
         // **A section heading, not a row heading.** On macOS this is 13 semibold uppercase with 0.5 tracking in `schriftSehrLeise` (`SearchView.swift:143`); here it was `swiftly-reihe`, 20 points like above a home row. That made the Seerr block heavier than the own results above, which have no heading.
-        seerrHeading = category(translated("Kann angefragt werden"))
+        // Mac 1.1: the iPhone wording, section size, white.
+        seerrHeading = category(translated("Über Seerr anfragen"))
+        gtk_widget_remove_css_class(seerrHeading, "swiftly-leise")
+        gtk_widget_add_css_class(seerrHeading, "swiftly-gruppenrubrik")
+        gtk_widget_set_margin_start(seerrHeading, 0)
         gtk_label_set_xalign(OpaquePointer(seerrHeading), 0)
         gtk_widget_set_hexpand(seerrHeading, 1)
         append(seerrRow, seerrHeading)
@@ -4009,7 +4098,39 @@ final class App: @unchecked Sendable {
             self.searching(self.searchTick, remember: true)
         }
         signal(searchField, "changed") { [weak self] in self?.searchTriggered() }
-        return pagesFrame(block)
+        // Mac 1.1: ‹ › and, once scrolled, the page name, as on every main page.
+        return stateBar(pagesFrame(block), title: translated("Suche")).wrapper
+    }
+
+    var searchGroups: Widget!
+
+    /// **Hits grouped by kind, as on iPhone** (Mac 1.1 `SearchView.group`): group title 22/700, margin 30 above and 12 below, 120 x 180 posters 16 apart.
+    func searchFill(_ hit: [Item]) {
+        guard let searchGroups else { return }
+        wipe(searchGroups)
+        let groups: [(String, (Item) -> Bool)] = [
+            ("Serien", { $0.type == "Series" }),
+            ("Filme", { $0.type == "Movie" }),
+            ("Folgen", { $0.type == "Episode" }),
+            ("Weiteres", { !["Series", "Movie", "Episode"].contains($0.type ?? "") }),
+        ]
+        for (name, matches) in groups {
+            let list = hit.filter(matches)
+            guard !list.isEmpty else { continue }
+            let title = label(translated(name), style: "swiftly-gruppenrubrik")
+            gtk_label_set_xalign(OpaquePointer(title), 0)
+            gtk_widget_set_margin_top(title, 30)
+            gtk_widget_set_margin_bottom(title, 12)
+            append(searchGroups, title)
+            let grid = gridBuild(rowSpacing: 20)
+            // Tiles are 120 wide here; a homogeneous box would widen every cell to the 150 minimum.
+            gtk_flow_box_set_homogeneous(OpaquePointer(grid), 0)
+            for item in list {
+                gtk_flow_box_insert(OpaquePointer(grid),
+                                    gridTile(item, inquiry: true, width: 120, height: 180), -1)
+            }
+            append(searchGroups, grid)
+        }
     }
 
     /// **A scroll area without a bar, but with smooth scrolling.**
@@ -4054,8 +4175,7 @@ final class App: @unchecked Sendable {
         gtk_widget_set_size_request(circle, 78, 78)
         gtk_widget_set_halign(circle, GTK_ALIGN_CENTER)
         // A drawn icon where the icon font has nothing suitable.
-        let image: Widget! = drawing ?? gtk_image_new_from_icon_name(symbol)
-        if drawing == nil { gtk_image_set_pixel_size(OpaquePointer(image), 44) }
+        let image: Widget! = drawing ?? iconWidget(symbol, size: 44, style: "swiftly-malzeichen")
         gtk_widget_set_halign(image, GTK_ALIGN_CENTER)
         gtk_widget_set_valign(image, GTK_ALIGN_CENTER)
         gtk_widget_set_vexpand(image, 1)
@@ -4164,16 +4284,35 @@ final class App: @unchecked Sendable {
     }
 
     /// A wrapping grid. GTK's `GtkFlowBox` does exactly what a `LazyVGrid` with fixed column width does on macOS.
-    func gridBuild() -> Widget! {
+    func gridBuild(rowSpacing: Int = 20) -> Widget! {
         let grid: Widget! = gtk_flow_box_new()
         gtk_flow_box_set_selection_mode(OpaquePointer(grid), GTK_SELECTION_NONE)
         gtk_flow_box_set_homogeneous(OpaquePointer(grid), 1)
         gtk_flow_box_set_column_spacing(OpaquePointer(grid), UInt32(Theme.tileSpacing))
-        gtk_flow_box_set_row_spacing(OpaquePointer(grid), UInt32(Theme.railsSpacing))
+        // Mac 1.1: 24 between library rows (`LibraryView.rowSpacing`), 20 on watchlist and search (was 40 on all).
+        gtk_flow_box_set_row_spacing(OpaquePointer(grid), UInt32(rowSpacing))
         gtk_flow_box_set_min_children_per_line(OpaquePointer(grid), 2)
-        gtk_flow_box_set_max_children_per_line(OpaquePointer(grid), 10)
+        gtk_flow_box_set_max_children_per_line(OpaquePointer(grid), 40)
         gtk_widget_set_valign(grid, GTK_ALIGN_START)
         return grid
+    }
+
+    /// **Fixed tiles spread to both edges** (Mac 1.1 `LibraryView.columns`): as many 150 wide columns as fit with at least 16 between, the rest shared out between them. A FlowBox cannot space its columns itself, so the gap and the column count follow the scroller's width.
+    func gridSpread(_ grid: Widget!, scroller: Widget!) {
+        guard let adjustment = gtk_scrolled_window_get_hadjustment(OpaquePointer(scroller)) else { return }
+        let box = OpaquePointer(grid)
+        func apply() {
+            let usable = gtk_adjustment_get_page_size(adjustment) - Double(2 * Theme.edgeSpacing)
+            guard usable > 0 else { return }
+            let tile = Double(Theme.tileWidth), least = Double(Theme.tileSpacing)
+            let n = max(1, Int((usable + least) / (tile + least)))
+            let gap = n > 1 ? max(least, ((usable - Double(n) * tile) / Double(n - 1)).rounded(.down)) : 0
+            gtk_flow_box_set_column_spacing(box, UInt32(gap))
+            gtk_flow_box_set_min_children_per_line(box, UInt32(n))
+            gtk_flow_box_set_max_children_per_line(box, UInt32(n))
+        }
+        onProperty(UnsafeMutableRawPointer(adjustment), "notify::page-size") { apply() }
+        apply()
     }
 
     /// - Parameter auskunft: Whether the second line carries the full result info ("Serie · 3 Staffeln", "Breaking Bad · S1 E4 · 52 Min.") instead of just the year. **Search only.** macOS sets it there (`SearchView.swift:117`) and not in the library (`LibraryView.swift:136`).
@@ -4467,6 +4606,7 @@ final class App: @unchecked Sendable {
         addresses = nil
         loaded.removeAll()
         pagesStack.removeAll()
+        navReset()
         openSubpage = nil
         wipe(railsStack)
         gtk_editable_set_text(OpaquePointer(passwordField), "")
@@ -4824,12 +4964,12 @@ final class App: @unchecked Sendable {
                 .visible(stored: railsEpisode, from: Set(hidden), disconnected: disconnected)
                 .compactMap { r in
                     guard let (art, items) = content[r], !items.isEmpty else { return nil }
-                    return (translated(r.railsTitle), art, items, nil)
+                    return (translated(r.railsTitle), art, items, r.libraryJump.map(RailHeader.library))
                 }
             // Between the fixed rows and the genres, as on Apple. The header opens the library or collection.
             collected += libraries.map { r in
                 (r.name, .new, r.items,
-                 librarySelection.first { $0.id == r.id }?.item ?? Item(id: r.id, name: r.name))
+                 .collection(librarySelection.first { $0.id == r.id }?.item ?? Item(id: r.id, name: r.name)))
             }
             collected += home.genreRails.map { ($0.name, .new, $0.items, nil) }
             let rails = collected
@@ -4903,6 +5043,9 @@ final class App: @unchecked Sendable {
             }
             gridFilter[was] = nil
             gridRaw[was] = nil
+            if sort != .name, since == 0 {
+                indexLoad(was, parent: source.parent, source: source, sorting: sort, filter: f, client: client)
+            }
             // "By name" pages come from the naturally sorted list; the first page fetches it
             // fresh, later pages reuse it.
             let cachedNatural = sort == .name && since > 0 ? gridNatural[was] : nil
@@ -5008,7 +5151,9 @@ final class App: @unchecked Sendable {
         guard let strip = alphabetStrips[was] else { return }
         let titles = was == .collection
             || (sectionSelection(was) != .collections && sectionSelection(was) != .playlists)
-        let on = selection.alphabetShown && sortingFrom(was) == .name && titles
+        // Only the index of the order on screen: right after switching, the old one would
+        // point at the wrong titles.
+        let on = selection.alphabetShown && gridAlphabet[was]?.sorting == sortingFrom(was) && titles
         let height = gridScrollers[was].map { Double(gtk_widget_get_height($0)) } ?? 0
         strip.show(on ? gridAlphabet[was] : nil, height: height - Double(Theme.contentTop + 96 + Theme.edgeSpacing))
         alphabetTopUpdate(was)
@@ -5025,7 +5170,7 @@ final class App: @unchecked Sendable {
     private func alphabetJump(_ was: Region, _ letter: String) {
         guard let alphabet = gridAlphabet[was] else { return }
         let items = gridItems[was] ?? []
-        if let i = alphabet.target(for: letter, inLoaded: items.map { ($0.name, $0.sortName) }) {
+        if let i = alphabet.target(for: letter, in: items) {
             pendingLetter[was] = nil
             gridScroll(was, to: i)
             return
@@ -5083,14 +5228,33 @@ final class App: @unchecked Sendable {
         let index = Int(gtk_flow_box_child_get_index(kind))
         let items = gridItems[was] ?? []
         guard items.indices.contains(index) else { return }
-        strip.highlight(AlphabetIndex.letter(name: items[index].name, sortName: items[index].sortName))
+        strip.highlight(gridAlphabet[was]?.key(of: items[index]))
     }
 
     /// The naturally sorted list of a grid and its letter strip, on the main thread.
     private func naturalStore(_ was: Region, _ list: [Item]) {
         gridNatural[was] = list
-        gridAlphabet[was] = AlphabetIndex(titles: list.map { ($0.name, $0.sortName) })
+        gridAlphabet[was] = AlphabetIndex(items: list, sorting: .name)
         alphabetRailUpdate(was)
+    }
+
+    /// **The index strip for any other order**: the whole list once, slim, in the grid's
+    /// order, beside the first page (``AlphabetIndex/init(items:sorting:)``). Kept only if
+    /// the order is still the same when it arrives.
+    private func indexLoad(_ was: Region, parent: String?, source: ShelfSource, sorting sort: Sorting,
+                           filter f: LibraryFilter, client: any MediaServer) {
+        Task.detached { [self] in
+            guard let list = try? await client.items(
+                parentID: parent, limit: 0, startIndex: 0, sortBy: sort.inputField,
+                sortOrder: source.bearing(sort), filters: f.jellyfinFilter, isWatched: f.isWatched,
+                recursive: source.recursive, includeItemTypes: source.types,
+                ids: [], personIDs: [], genres: [], slim: true).items else { return }
+            onMainThread {
+                guard self.sortingFrom(was) == sort, self.filterFrom(was) == f else { return }
+                self.gridAlphabet[was] = AlphabetIndex(items: list, sorting: sort)
+                self.alphabetRailUpdate(was)
+            }
+        }
     }
 
     /// An answer into the grid, on the main thread.
@@ -5154,6 +5318,9 @@ final class App: @unchecked Sendable {
         let oldFilter = since == 0 ? nil : gridFilter[was]
         let start = since == 0 ? 0 : (gridRaw[was]?.offset ?? 0)
         let cachedNatural = sort == .name && since > 0 ? gridNatural[was] : nil
+        if sort != .name, since == 0 {
+            indexLoad(was, parent: nil, source: source, sorting: sort, filter: f, client: client)
+        }
         Task.detached { [self] in
             // "By name": the raw pages are slices of the naturally sorted list.
             var natural: [Item]? = cachedNatural
@@ -5233,7 +5400,7 @@ final class App: @unchecked Sendable {
         let mine = searchTick
         let term = text(searchField).trimmingCharacters(in: .whitespacesAndNewlines)
         guard DisplayRules.searchTermFits(term) else {
-            gridFill(searchGrid, [])
+            searchFill([])
             gtk_widget_set_visible(searchEmpty, 0)
             gtk_widget_set_visible(searchDisturbance, 0)
             seerrHitShow([])
@@ -5281,7 +5448,7 @@ final class App: @unchecked Sendable {
         guard searchGrid != nil else { return }
         searchTick += 1
         if searchField != nil { gtk_editable_set_text(OpaquePointer(searchField), "") }
-        gridFill(searchGrid, [])
+        searchFill([])
         ownHitEmpty = false
         seerrHitShow([])
         if searchEmpty != nil { gtk_widget_set_visible(searchEmpty, 0) }
@@ -5303,11 +5470,24 @@ final class App: @unchecked Sendable {
                 let stroke: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
                 gtk_widget_add_css_class(stroke, "swiftly-trennlinie")
                 gtk_widget_set_size_request(stroke, -1, 1)
-                gtk_widget_set_margin_start(stroke, 48)
+                gtk_widget_set_margin_start(stroke, 32)
                 append(searchHistoryList, stroke)
             }
-            let row = valuesRow(symbol: "document-open-recent-symbolic", title: word) {
-                [weak self] in
+            // Mac 1.1: icon 20, word 15 semibold white, 44 high, hairline from 32.
+            let row: Widget! = gtk_button_new()
+            gtk_widget_add_css_class(row, "swiftly-suchzeile")
+            let line = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
+            let icon: Widget! = gtk_image_new_from_icon_name("document-open-recent-symbolic")
+            gtk_image_set_pixel_size(OpaquePointer(icon), 15)
+            gtk_widget_set_size_request(icon, 20, -1)
+            append(line, icon)
+            let words = label(word, style: "swiftly-listentitel")
+            gtk_label_set_xalign(OpaquePointer(words), 0)
+            gtk_label_set_ellipsize(OpaquePointer(words), PANGO_ELLIPSIZE_END)
+            gtk_widget_set_hexpand(words, 1)
+            append(line, words)
+            gtk_button_set_child(asButton(row), line)
+            signal(row, "clicked") { [weak self] in
                 guard let self else { return }
                 gtk_editable_set_text(OpaquePointer(self.searchField), word)
                 self.searchTick += 1
@@ -5325,7 +5505,7 @@ final class App: @unchecked Sendable {
         let term = text(searchField).trimmingCharacters(in: .whitespacesAndNewlines)
         // **The threshold comes from the package**: `DisplayRules` requires two characters, trimmed. This used `!term.isEmpty`, so a single letter triggered a server request, unlike on macOS. The timer checks it too, but Enter and a click on a history entry bypass it.
         guard DisplayRules.searchTermFits(term) else {
-            gridFill(searchGrid, [])
+            searchFill([])
             searchHistoryShow()
             return
         }
@@ -5340,7 +5520,7 @@ final class App: @unchecked Sendable {
             let hit = ListRules.withoutDouble(answer ?? [])
             onMainThread {
                 guard self.searchTick == mine else { return }
-                self.gridFill(self.searchGrid, hit, inquiry: true)
+                self.searchFill(hit)
                 self.searchDisturbanceShow(answer == nil, mine: mine)
                 // **Both empty, not only the library.** With only `hit.isEmpty`, this branch would win as soon as the own server has nothing, and "Nichts gefunden" would stand above the Seerr results, exactly the case the integration exists for. The Seerr part answers later and fades in.
                 // Failed does not count as empty; otherwise the Seerr part would put "Nichts gefunden" above the failure.
@@ -5432,15 +5612,20 @@ final class App: @unchecked Sendable {
         }
         guard !rails.isEmpty else {
             append(railsStack,
-                      emptyState("mail-inbox-symbolic", translated("Hier ist noch nichts"),
+                      emptyState("paint:tray", translated("Hier ist noch nichts"),
                                   translated("Sobald der Server Titel hat, stehen sie hier."),
                                   top: 120))
             return
         }
         for (i, (title, art, titleList, header)) in rails.enumerated() {
             let rail = railBuild(title: title, art: art, items: titleList,
-                                   header: header.map { entryRecord in
-                                       { [weak self] in self?.collectionOpen(entryRecord, art: nil) }
+                                   header: header.map { target in
+                                       { [weak self] in
+                                           switch target {
+                                           case let .collection(entryRecord): self?.collectionOpen(entryRecord, art: nil)
+                                           case let .library(jump): self?.libraryJumpOpen(jump)
+                                           }
+                                       }
                                    })
             append(railsStack, rail)
             if staggered { railOccur(rail, number: i + tick) }
@@ -5475,7 +5660,7 @@ final class App: @unchecked Sendable {
         // 12, not 10: the same role has 12 on the detail page (macOS `Rail`).
         let block = stack(GTK_ORIENTATION_VERTICAL, spacing: 12)
         // **The row height is fixed, not left to layout** (macOS `Rail.railsHeightValue`): title line 24, 12 gap, 4 inset, image height, 8 gap, text block 32, 4 inset. So "Weiterschauen" has the same space below as every other row, not that of a portrait cover that does not exist there, and a tile without a subline does not make the row shorter. Top-aligned, so nothing hangs in the middle.
-        gtk_widget_set_size_request(block, -1, Int32(24 + 12 + 4 + imageHeight + 8 + 32 + 4))
+        gtk_widget_set_size_request(block, -1, Int32(28 + 12 + 4 + imageHeight + 8 + 34 + 4))
         gtk_widget_set_valign(block, GTK_ALIGN_START)
         gtk_widget_set_vexpand(block, 0)
 
@@ -5492,10 +5677,20 @@ final class App: @unchecked Sendable {
             gtk_widget_add_css_class(button, "swiftly-reihenkopf")
             gtk_button_set_child(asButton(button), heading)
             gtk_widget_set_halign(button, GTK_ALIGN_START)
-            gtk_widget_set_margin_start(button, Int32(margin))
-            gtk_widget_set_margin_end(button, Int32(margin))
             signal(button, "clicked", header)
-            append(block, button)
+            // **"Alle" at the end of the line** (Mac 1.1 `Rail`): the row's way to its full page, 13 semibold, quietest ink.
+            let all = gtk_button_new()
+            gtk_widget_add_css_class(all, "swiftly-reihenkopf")
+            gtk_button_set_child(asButton(all), label(translated("Alle"), style: "swiftly-alle"))
+            gtk_widget_set_valign(all, GTK_ALIGN_CENTER)
+            signal(all, "clicked", header)
+            let headLine = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
+            gtk_widget_set_margin_start(headLine, Int32(margin))
+            gtk_widget_set_margin_end(headLine, Int32(margin))
+            gtk_widget_set_hexpand(button, 1)
+            append(headLine, button)
+            append(headLine, all)
+            append(block, headLine)
         } else {
             append(block, heading)
         }
@@ -5676,15 +5871,16 @@ final class App: @unchecked Sendable {
     /// A tile in the grid: poster, name, year.
     ///
     /// **It keeps its width.** A `GtkFlowBox` stretches its children across the row; resizing the window made the posters grow to odd sizes, while on the home page they stay at 150. macOS uses a `LazyVGrid` with a **fixed** column width: leftover space goes into the gap, not the tile. Centre alignment gives exactly that.
-    private func gridTile(_ item: Item, inquiry: Bool = false,
-                              sentry: TileImageGuard? = nil) -> Widget! {
-        let (cage, image) = framedImage(width: Theme.tileWidth,
-                                           height: Theme.tileHeight,
+    func gridTile(_ item: Item, inquiry: Bool = false,
+                              sentry: TileImageGuard? = nil,
+                              width: Int = Theme.tileWidth, height: Int = Theme.tileHeight) -> Widget! {
+        let (cage, image) = framedImage(width: width,
+                                           height: height,
                                            style: "swiftly-plakat")
         if let address = addresses.flatMap({ ImageSelection.portrait(item, addresses: $0,
-                                                              maxHeight: Scaling.requestEdge(Theme.tileHeight)) }) {
+                                                              maxHeight: Scaling.requestEdge(height)) }) {
             imageLoad(image, url: address, key: ImageKey.of(address),
-                      border: Scaling.imageEdge(Theme.tileHeight),
+                      border: Scaling.imageEdge(height),
                       fallbackSeries: item.seriesId != nil || item.type == "Series")
             sentry?.record(image, url: address, key: ImageKey.of(address),
                              border: Scaling.imageEdge(Theme.tileHeight))
@@ -5695,13 +5891,13 @@ final class App: @unchecked Sendable {
         tileMarkPut(cage, item: item)
         // Started titles in library, genre and search, as on macOS.
         if selection.progressOnTiles, let share = item.watchedShare {
-            barPut(cage, width: Theme.tileWidth, share: share)
+            barPut(cage, width: width, share: share)
         }
         // Every search hit and every tile in the grid leads to the page; none starts playback.
         let bottom: String? = inquiry ? item.hitInfo : item.productionYear.map(String.init)
         let address = addresses.flatMap { ImageSelection.portrait(item, addresses: $0,
                                                            maxHeight: Scaling.requestEdge(Theme.tileHeight)) }
-        let tile = tileWrapper(image: cage, width: Theme.tileWidth,
+        let tile = tileWrapper(image: cage, width: width,
                                   top: item.name, bottom: bottom,
                                   name: tileName(item, top: item.name, bottom: bottom),
                                   menu: TileMenuDetail(item: item, image: address,
@@ -5709,7 +5905,7 @@ final class App: @unchecked Sendable {
                                   prefetch: { [weak self] in self?.planPrefetchBald(item) }) {
             [weak self] in self?.openIt(item)
         }
-        gtk_widget_set_halign(tile, GTK_ALIGN_CENTER)
+        gtk_widget_set_halign(tile, width == Theme.tileWidth ? GTK_ALIGN_CENTER : GTK_ALIGN_START)
         gtk_widget_set_valign(tile, GTK_ALIGN_START)
         return tile
     }
@@ -5738,10 +5934,10 @@ final class App: @unchecked Sendable {
         append(tile, image)
 
         let text = stack(GTK_ORIENTATION_VERTICAL, spacing: 1)
-        append(text, tileTitle(top, style: "swiftly-kacheltitel"))
+        append(text, tileTitle(top, style: "swiftly-kachelname"))
         if let bottom, !bottom.isEmpty {
             let second = tileTitle(bottom, style: "swiftly-zweitzeile")
-            gtk_widget_add_css_class(second, "dim-label")
+            gtk_widget_add_css_class(second, "swiftly-kachelzeile")
             append(text, second)
         }
         append(tile, text)
@@ -5782,6 +5978,11 @@ nonisolated(unsafe) private let keyPressed: @convention(c) (
     guard let data else { return 0 }
     let app = Unmanaged<App>.fromOpaque(data).takeUnretainedValue()
     let ctrl = (condition.rawValue & GDK_CONTROL_MASK.rawValue) != 0
+    // Alt+Left / Alt+Right walk the window history like the header-bar arrows.
+    if (condition.rawValue & GDK_ALT_MASK.rawValue) != 0, app.runningTitle == nil {
+        if value == 0xFF51 { app.navBackStep(); return 1 }
+        if value == 0xFF53 { app.navForwardStep(); return 1 }
+    }
     return app.keyButton(value, ctrl: ctrl) ? 1 : 0
 }
 

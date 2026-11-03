@@ -2,215 +2,41 @@ import AppKit
 import JellyfinKit
 import SwiftUI
 
-/// Profile, Quick Connect, playback, settings, sign out.
-///
-/// Layout and order are taken verbatim from the iPhone version: a centered
-/// image block, then three groups separated only by whitespace. No cards.
-///
-/// The page is kept narrow in the window; stretched to full width, icon and
-/// value would end up half a meter apart.
+
+/// Profile page, as in the approved Mac design: title, then two columns of 470 pt.
+/// Left: account card, look card, support card, Wiedergabe / Darstellung / Allgemein.
+/// Right: server group (add, Quick Connect, sign out), then the links.
 struct ProfileView: View {
     let model: AppModel
     let back: () -> Void
+    @State private var headerState = HeaderState()
     @Environment(Navigator.self) private var navigator
     @Environment(\.section) private var section
     @Environment(\.openURL) private var open
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 0) {
-                // **A page title like every other subpage.** It used to be only the arrow,
-                // on the grounds that the image block was the title. As a card, though, it is
-                // an object on the page, not a header.
-                //
-                // **Aligned with the cards, not in front of them.** The header was pulled
-                // left by one page margin and collided with the sidebar; on every other
-                // subpage the arrow sits above the content edge.
-                SubpageHeader(title: "Profil", back: back)
-                    .padding(.bottom, 10)
-                    // **If the page opens in the middle of an account switch**, the switch
-                    // finishes immediately: new account active, profile image in place. See
-                    // `AccountSwitchTransition.complete`.
+            VStack(alignment: .leading, spacing: 0) {
+                MacPageTitle(text: "Profil", bottom: 18)
+                    // If the page opens in the middle of an account switch, the switch
+                    // finishes immediately (see `AccountSwitchTransition.complete`).
                     .onAppear { AccountSwitchTransition.shared.complete() }
 
-                // **Looks at the top, by state** (`LookProfileEntry`), as on iPhone: who has a
-                // look to choose sees a quiet card with it; the teaser for the supporter looks;
-                // everyone else sees nothing here.
-                if lookEntry != .none || supporterStatusShown {
-                    VStack(spacing: 16) {
-                        switch lookEntry {
-                        case .current:
-                            CurrentLookCard(playing: model.playerOpen) { GiftFlow.shared.openLooksOnHome() }
-                        case .teaser:
-                            SupportLooksCard()
-                        case .none:
-                            EmptyView()
-                        }
-                        SupportStatusCard()
-                    }
-                    .padding(.top, 6)
-                    .padding(.bottom, 16)
-                    .animation(Theme.reveal, value: SupportModel.shared.isSupporter)
-                    .animation(Theme.reveal, value: lookEntry)
+                HStack(alignment: .top, spacing: 24) {
+                    leftColumn.frame(minWidth: 0, maxWidth: 470, alignment: .topLeading)
+                    rightColumn.frame(minWidth: 0, maxWidth: 470, alignment: .topLeading)
                 }
+                .frame(maxWidth: 964, alignment: .leading)
 
-                AccountCard(model: model,
-                           insertOn: { server in
-                               // By the known kind of that server: its sign-in without the picker.
-                               navigator.openIt(.serverAdd(ServerRoute(
-                                   preset: server, kind: model.accounts(on: server).first?.kind)),
-                                                in: section)
-                           },
-                           insert: {
-                               // Another account on the connected server, by its kind: Jellyfin
-                               // and Emby sign in on the page with the user list, Plex through
-                               // plex.tv.
-                               if model.session?.kind == .plex {
-                                   navigator.openIt(.serverAdd(ServerRoute(
-                                       preset: model.session?.serverURL, kind: .plex)), in: section)
-                               } else {
-                                   navigator.openIt(.accountAdd, in: section)
-                               }
-                           })
-
-                Color.clear.frame(height: 20)
-
-                // Quick Connect is Jellyfin's; the other kinds have no counterpart.
-                if model.can(.quickConnect) {
-                    RowsGroup {
-                        Button { navigator.openIt(.quickConnect, in: section) } label: {
-                            ValuesRow(symbol: "rectangle.and.text.magnifyingglass",
-                                       title: Text("Quick Connect"),
-                                       under: Text("Code vom Fernseher eingeben"),
-                                       accent: true, arrow: true, hoverable: true)
-                        }
-                        .buttonStyle(Theme.PressRow())
-                    }
-
-                    Color.clear.frame(height: 18)
-                }
-
-                // **The categories live here, as on iPhone and iPad.**
-                //
-                // They briefly moved to Settings, on the grounds that Command-comma promises
-                // everything there. The argument is right but the price was too high: the
-                // profile became a single row, and anyone looking for "Darstellung" had to
-                // know it is two levels deeper than on every other device. Command-comma
-                // still opens Settings; what is there concerns the device.
-                RowsGroup {
-                    Button { navigator.openIt(.playback, in: section) } label: {
-                        ValuesRow(symbol: "play.fill", title: Text("Wiedergabe"),
-                                   under: Text("Sprache, Untertitel, Tempo"),
-                                   arrow: true, hoverable: true)
-                    }
-                    .buttonStyle(Theme.PressRow())
-                    SheetLine().padding(.leading, Theme.separatorInsetCard)
-                    Button { navigator.openIt(.presentation, in: section) } label: {
-                        ValuesRow(symbol: "square.grid.2x2", title: Text("Darstellung"),
-                                   under: Text("Startseite, Reihen, Genres"),
-                                   arrow: true, hoverable: true)
-                    }
-                    .buttonStyle(Theme.PressRow())
-                    SheetLine().padding(.leading, Theme.separatorInsetCard)
-                    // A plain way to the looks while a gift can be picked up and nothing above
-                    // leads there.
-                    if LookProfileEntry.showsLooksRow(entry: lookEntry,
-                                                      giftAvailable: LookStore.shared.freeLooks().count > 1) {
-                        Button { GiftFlow.shared.openLooksOnHome() } label: {
-                            ValuesRow(symbol: "paintpalette", title: Text("Looks"),
-                                       under: Text("Original und Halloween"),
-                                       arrow: true, hoverable: true)
-                        }
-                        .buttonStyle(Theme.PressRow())
-                        SheetLine().padding(.leading, Theme.separatorInsetCard)
-                    }
-                    Button { navigator.openIt(.settings, in: section) } label: {
-                        ValuesRow(symbol: "gearshape", title: Text("Einstellungen"),
-                                   arrow: true, hoverable: true)
-                    }
-                    .buttonStyle(Theme.PressRow())
-                }
-
-                Color.clear.frame(height: 18)
-
-                RowsGroup {
-                    // **Now with content below.** This used to be a note that multiple servers
-                    // would come later, while the account bundle held exactly one. It now holds
-                    // several, and the row leads to the sign-in flow: address, then sign in,
-                    // optionally with Quick Connect.
-                    //
-                    // "Weiteres Konto hinzufuegen" is gone: the plus in the account card does
-                    // the same, and does it where the accounts are.
-                    Button { navigator.openIt(.serverAdd(ServerRoute()), in: section) } label: {
-                        ValuesRow(symbol: "externaldrive.connected.to.line.below",
-                                   title: Text("Server hinzufügen"),
-                                   under: Text("Jellyfin, Emby oder Plex, auch gemischt"),
-                                   arrow: true, hoverable: true)
-                    }
-                    .buttonStyle(Theme.PressRow())
-                    SheetLine().padding(.leading, Theme.separatorInsetCard)
-                    // **Affects only the active account.** If others exist, the app switches to
-                    // the next one; only the last one leads back to the sign-in screen. This is
-                    // implemented in the state holder, not here.
-                    ValuesRow(symbol: "rectangle.portrait.and.arrow.right",
-                               title: Text("Abmelden")) { model.signOut() }
-                }
-
-                Color.clear.frame(height: 18)
-
-                // **Rate, Discord, report a bug: at the very bottom.** They used to be in
-                // Settings, where they were rarely seen.
-                RowsGroup {
-                    ValuesRow(symbol: "star", title: Text("Swiftly bewerten"),
-                               under: Text("Im App Store"),
-                               action: { open(Community.appStoreRating) })
-                    SheetLine().padding(.leading, Theme.separatorInsetCard)
-                    ValuesRow(symbol: "bubble.left.and.bubble.right", title: Text("Discord beitreten"),
-                               under: Text("Fragen stellen und sagen, was fehlt"),
-                               action: { open(Community.discord) })
-                    SheetLine().padding(.leading, Theme.separatorInsetCard)
-                    ValuesRow(symbol: "ladybug", title: Text("Fehler melden"),
-                               under: Text("Auf GitHub, deine App-Version ist schon eingetragen"),
-                               action: { open(Version.errorReport) })
-                    SheetLine().padding(.leading, Theme.separatorInsetCard)
-                    // Next to "Fehler melden" because it belongs with it: whoever reports a bug
-                    // in Discord attaches this.
-                    ValuesRow(symbol: "doc.text", title: Text("Protokoll teilen"),
-                               under: Text("Die letzte Stunde, ohne Zugangsdaten"),
-                               action: { logShare() })
-                    SheetLine().padding(.leading, Theme.separatorInsetCard)
-                    // Last, because it sets nothing: it shows what is in the app and where the
-                    // VLCKit source code is.
-                    ValuesRow(symbol: "text.book.closed", title: Text("Open-Source-Lizenzen"),
-                               under: Text("Was in Swiftly steckt, und der Quelltext von VLCKit"),
-                               arrow: true,
-                               action: { navigator.openIt(.licenses, in: section) })
-                }
-
-                // **Not typed in.** This used to say "Swiftly 1.0", which has been wrong
-                // since the first release, and this is exactly the line a tester copies into
-                // a bug report.
+                // Not typed in: this is the line a tester copies into a bug report.
                 HStack(spacing: 10) {
                     Text(verbatim: Version.row)
                         .font(Theme.small)
                         .foregroundStyle(Theme.fontVeryQuiet)
                     MacSupporterMark()
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 26)
+                .padding(.top, 26)
             }
-            // **Left-aligned, not centered in the window, as on iPad.** The page used to
-            // hang as a narrow column between the sidebar and the right edge, touching
-            // no existing edge. The width stays limited; the leftover space is now on
-            // the right instead of on both sides.
-            //
-            // **Form width, not reading width.** 700 was too much: a row of an icon, a
-            // word and a chevron, stretched over 700 points and 46 tall, is a stripe
-            // with text at the edge. Reading width is the measure for **running text**;
-            // a list of rows is a form, and `formWidth` exists for that. This keeps
-            // the rows in the same proportion as on iPhone, and the accounts in the card
-            // above read as a group rather than a row trailing off to the right.
-            .frame(maxWidth: Theme.formWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Theme.edgeSpacing)
             .padding(.top, Theme.contentTop)
@@ -219,16 +45,140 @@ struct ProfileView: View {
         // The look's glow, the same on every main page; goes up with the content.
         .lookGlow()
         .scrollIndicators(.never)
-        // **The milky bar at the top edge.** macOS 26 puts it over every scroll view
-        // by itself. It was never in our code, which is why it was easy to look in
-        // the wrong place. Over the image it blended in; on a plain background on the
-        // left it showed up as a bar.
-        //
-        // What the framework adds unasked has to be switched off just like what you
-        // write yourself.
+        // ‹ › and, once scrolled, the page name.
+        .overlay(alignment: .top) {
+            StateBar(title: "Profil", state: headerState, back: back)
+        }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
+            headerState.offset = new
+        }
+        // macOS 26 puts a milky bar over every scroll view by itself; switched off here.
         .pagesScroll()
         // The pop-up on the first visit.
         .supportProfileIntro()
+    }
+
+    // MARK: Left column
+
+    private var leftColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            AccountCard(model: model,
+                       insertOn: { server in
+                           // By the known kind of that server: its sign-in without the picker.
+                           navigator.openIt(.serverAdd(ServerRoute(
+                               preset: server, kind: model.accounts(on: server).first?.kind)),
+                                            in: section)
+                       },
+                       insert: {
+                           // Another account on the connected server, by its kind: Jellyfin
+                           // and Emby sign in on the page with the user list, Plex through
+                           // plex.tv.
+                           if model.session?.kind == .plex {
+                               navigator.openIt(.serverAdd(ServerRoute(
+                                   preset: model.session?.serverURL, kind: .plex)), in: section)
+                           } else {
+                               navigator.openIt(.accountAdd, in: section)
+                           }
+                       })
+
+            // The look card replaces the old "Wähl deinen Look" banner.
+            LookLineCard {
+                if lookEntry == .current {
+                    GiftFlow.shared.openLooksOnHome()
+                } else {
+                    SupportFlow.shared.openLooks()
+                }
+            }
+            .padding(.top, 18)
+
+            Group {
+                if SupportModel.shared.isSupporter {
+                    SupportStatusCard()
+                } else {
+                    SupportLineCard()
+                }
+            }
+            .padding(.top, 16)
+            .animation(Theme.reveal, value: SupportModel.shared.isSupporter)
+
+            // The categories live here, as on iPhone and iPad.
+            RowsGroup {
+                Button { navigator.openIt(.playback, in: section) } label: {
+                    ValuesRow(symbol: "play.circle", title: Text("Wiedergabe"),
+                               under: Text("Qualität, Sprache, Player"),
+                               arrow: true, hoverable: true)
+                }
+                .buttonStyle(Theme.PressRow())
+                GroupLine()
+                Button { navigator.openIt(.presentation, in: section) } label: {
+                    ValuesRow(symbol: "textformat.size", title: Text("Darstellung"),
+                               under: Text("Startseite, Reihen, Genres"),
+                               arrow: true, hoverable: true)
+                }
+                .buttonStyle(Theme.PressRow())
+                GroupLine()
+                Button { navigator.openIt(.settings, in: section) } label: {
+                    ValuesRow(symbol: "gearshape", title: Text("Allgemein"),
+                               under: Text("Downloads, Server, Sync"),
+                               arrow: true, hoverable: true)
+                }
+                .buttonStyle(Theme.PressRow())
+            }
+            .padding(.top, 18)
+        }
+    }
+
+    // MARK: Right column
+
+    private var rightColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            RowsGroup {
+                // Leads to the sign-in flow: address, then sign in, optionally with Quick Connect.
+                Button { navigator.openIt(.serverAdd(ServerRoute()), in: section) } label: {
+                    ValuesRow(symbol: "externaldrive.connected.to.line.below",
+                               title: Text("Server hinzufügen"),
+                               under: Text("Jellyfin, Emby oder Plex, auch gemischt"),
+                               arrow: true, hoverable: true)
+                }
+                .buttonStyle(Theme.PressRow())
+                // Quick Connect is Jellyfin's; the other kinds have no counterpart.
+                if model.can(.quickConnect) {
+                    GroupLine()
+                    Button { navigator.openIt(.quickConnect, in: section) } label: {
+                        ValuesRow(symbol: "rectangle.and.text.magnifyingglass",
+                                   title: Text("Quick Connect"),
+                                   under: Text("Code vom Fernseher eingeben"),
+                                   accent: true, arrow: true, hoverable: true)
+                    }
+                    .buttonStyle(Theme.PressRow())
+                }
+                GroupLine()
+                // Affects only the active account: with others present the app switches to the
+                // next one; only the last leads back to sign-in (done in the state holder).
+                ValuesRow(symbol: "rectangle.portrait.and.arrow.right",
+                           title: Text("Abmelden")) { model.signOut() }
+            }
+
+            RowsGroup {
+                ValuesRow(symbol: "star", title: Text("Swiftly bewerten"), external: true,
+                           action: { open(Community.appStoreRating) })
+                GroupLine()
+                ValuesRow(symbol: "bubble.left.and.bubble.right", title: Text("Discord beitreten"),
+                           external: true, action: { open(Community.discord) })
+                GroupLine()
+                ValuesRow(symbol: "ladybug", title: Text("Fehler melden"),
+                           external: true, action: { open(Version.errorReport) })
+                GroupLine()
+                // Next to "Fehler melden": whoever reports a bug attaches this.
+                ValuesRow(symbol: "doc.text", title: Text("Protokoll teilen"),
+                           action: { logShare() })
+                GroupLine()
+                ValuesRow(symbol: "text.book.closed", title: Text("Open-Source-Lizenzen"),
+                           arrow: true,
+                           action: { navigator.openIt(.licenses, in: section) })
+            }
+            .padding(.top, 18)
+        }
     }
 
     /// What the top of the page shows about looks.
@@ -238,13 +188,8 @@ struct ProfileView: View {
                                    ownsLook: LookStore.shared.ownsLook)
     }
 
-    private var supporterStatusShown: Bool {
-        SupportModel.shared.isSupporter
-    }
-
-    /// **The Mac share menu, at the click position.** The counterpart of the
-    /// share sheet on iPhone. There is no sheet from below on the Mac; the menu
-    /// attaches to the pointer, so to the row.
+    /// **The Mac share menu, at the click position.** There is no sheet from below on the
+    /// Mac; the menu attaches to the pointer, so to the row.
     private func logShare() {
         guard let file = LogFile.write(),
               let window = NSApp.keyWindow, let area = window.contentView else { return }
@@ -253,6 +198,86 @@ struct ProfileView: View {
             .show(relativeTo: NSRect(origin: point, size: .zero), of: area, preferredEdge: .minY)
     }
 }
+
+/// The look card: palette, the current look's name, a caret.
+///
+/// **Built like "Swiftly unterstützen" below it.** It used to show three preview
+/// swatches in front of the name; next to the plain support row they read as three
+/// odd boxes, not as looks. Two rows of one kind belong in one form.
+private struct LookLineCard: View {
+    let action: () -> Void
+
+    var body: some View {
+        let current = LookStore.shared.palette.look
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(icon: "paintpalette", size: 22)
+                    .font(.app(size: 22))
+                    .foregroundStyle(Theme.font)
+                    .frame(width: 26)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: current.name)
+                        .font(.app(size: 17, weight: .semibold))
+                        .foregroundStyle(Theme.font)
+                    Text("Dein aktueller Look")
+                        .font(.app(size: 13))
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                }
+                Spacer(minLength: 0)
+                Image(icon: "chevron.right")
+                    .font(.app(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.fontQuiet)
+                    .accessibilityHidden(true)
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.groupsArea, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(Theme.PressButton())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("Dein Look: \(current.name)"))
+    }
+}
+
+/// "Swiftly unterstützen": heart, two lines, caret.
+private struct SupportLineCard: View {
+    var body: some View {
+        Button { SupportModel.shared.open() } label: {
+            HStack(spacing: 12) {
+                Image(icon: "heart", size: 22)
+                    .font(.app(size: 22))
+                    .foregroundStyle(Theme.font)
+                    .frame(width: 26)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(SupportCopy.supportSwiftly.localized)
+                        .font(.app(size: 17, weight: .semibold))
+                        .foregroundStyle(Theme.font)
+                    Text(SupportCopy.sayThanks.localized)
+                        .font(.app(size: 13))
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                }
+                Spacer(minLength: 0)
+                Image(icon: "chevron.right")
+                    .font(.app(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.fontQuiet)
+                    .accessibilityHidden(true)
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.groupsArea, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(Theme.PressButton())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
 
 /// **`imageBlock`, `Kontenstreifen` and `AccountCircle` used to be here**: a
 /// centered image block with a strip of scrolling circles. They called each
@@ -409,7 +434,7 @@ struct AccountAddView: View {
     /// Where the account goes. A display, not a field.
     private var serverRow: some View {
         HStack(spacing: 10) {
-            Image(systemName: "server.rack")
+            Image(icon: "server.rack")
                 .font(Theme.small)
                 .accessibilityHidden(true)
             Text(verbatim: serverDescription)
@@ -466,43 +491,7 @@ struct AccountAddView: View {
 
     @ViewBuilder
     private var codePart: some View {
-        if let preGait = state.preGait {
-            Text("Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.")
-                .font(Theme.secondLine)
-                .foregroundStyle(Theme.fontQuiet)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 26)
-
-            Text(verbatim: preGait.code)
-                .font(Theme.titleLarge.monospacedDigit())
-                .tracking(6)
-                .foregroundStyle(Theme.font)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-                .background(Theme.area,
-                            in: RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
-                // A click puts the code on the clipboard; it is usually pasted right away
-                // into a browser window next to it.
-                .copyable(preGait.code)
-                .padding(.top, 14)
-
-            HStack(spacing: 10) {
-                Text("Läuft ab in \(state.secondsLeft / 60):\(String(format: "%02d", state.secondsLeft % 60))")
-                    .font(Theme.secondLine)
-                    .foregroundStyle(Theme.fontVeryQuiet)
-            }
-            .padding(.top, 14)
-        } else if let error = state.error {
-            Text(verbatim: error)
-                .font(Theme.secondLine)
-                .foregroundStyle(Theme.warning)
-                .padding(.top, 26)
-        } else {
-            // The code arrives shortly; until then its shape is shown.
-            LoadField(corner: Theme.cornerField)
-                .frame(width: 240, height: 64)
-                .padding(.top, 26)
-        }
+        QuickConnectCode(state: state, hint: "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.")
 
         errorRow
 
@@ -571,7 +560,7 @@ struct OutlineButton: View {
     var body: some View {
         Button(action: pick) {
             HStack(spacing: 9) {
-                Image(systemName: symbol).font(Theme.body)
+                Image(icon: symbol).font(Theme.body)
                     .accessibilityHidden(true)
                 Text(label).font(Theme.body.weight(.medium))
             }
@@ -591,20 +580,10 @@ struct OutlineButton: View {
     }
 }
 
-/// **The account card, taken verbatim from iPhone and iPad.**
+/// **The account card** (design: avatar 56, name, "server · version", then "Konto hinzufügen").
 ///
-/// Two axes, two gestures, saying two different things: **clicking** an
-/// account in the row switches the user on the same server; **paging** the
-/// card switches the server. A second account is a housemate (same library,
-/// different progress). A second server is a different place.
-///
-/// **The accounts, sorted by server.**
-///
-/// **Stacked, not swipeable.** On iPhone each server has a card in a paged
-/// band with dots below, because the page is narrow there and two stacked
-/// cards would be two screen heights. A window has room downward, and
-/// swiping is a finger gesture, so here the servers are simply stacked, the
-/// connected one first. The deviation is justified by input method and window size, not taste.
+/// Clicking another account in the card switches the user on the same server. One card per
+/// server, the connected one first; stacked rather than paged, as a window has the room.
 private struct AccountCard: View {
     let model: AppModel
     /// An account on a **different** server than the connected one.
@@ -632,8 +611,7 @@ private struct AccountCard: View {
     }
 
     /// Where the profile images live, globally: the account switch lifts the
-    /// chosen one from there. A plain class, so scrolling does not rebuild on
-    /// every image, as on iPhone.
+    /// chosen one from there. A plain class, so scrolling does not rebuild on every image.
     @State private var circles = CircleStore()
     private final class CircleStore {
         var frameRect: [String: CGRect] = [:]
@@ -642,10 +620,7 @@ private struct AccountCard: View {
     /// A switch is running: everything except the chosen image steps back.
     private var switches: Bool { AccountSwitchTransition.shared.transition != nil }
 
-    /// **Switching, with motion** (design D, as on iPhone). See
-    /// `AccountSwitchTransition` and, on the Mac, `AccountSwitchStage`: the page moves
-    /// out, the image flies in an arc into the sidebar, the ring pops, the home
-    /// rows arrive staggered.
+    /// Switching, with motion: see `AccountSwitchTransition` and `AccountSwitchStage`.
     private func switchTo(toward account: Session) {
         let from = circles.frameRect[account.accountKey] ?? .zero
         let address = model.userImageURL(for: account)
@@ -671,17 +646,21 @@ private struct AccountCard: View {
         // the first account there. A click switches to it.
         let front = active ? model.session : all.first
         let other = all.filter { $0.accountKey != front?.accountKey }
-        CardView {
+        VStack(alignment: .leading, spacing: 0) {
             headerLine(front, active: active, server: server)
-            SheetLine()
-            rail(other, active: active, server: server)
+            ForEach(other, id: \.accountKey) { account in
+                otherRow(account).padding(.top, 12)
+            }
+            addRow(active: active, server: server).padding(.top, 20)
         }
-        // The connected server carries the accent border; the others are ordinary
-        // cards. With only one server there is nothing to distinguish, so the border
-        // is omitted.
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.groupsArea, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        // The connected server carries the accent border; with only one server there is
+        // nothing to distinguish, so the border is omitted.
         .overlay {
             if active, model.server.count > 1 {
-                RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(Theme.accent.opacity(0.55), lineWidth: 1.5)
             }
         }
@@ -691,6 +670,10 @@ private struct AccountCard: View {
     private func headerLine(_ account: Session?, active: Bool, server: URL?) -> some View {
         let key = account?.accountKey ?? ""
         let flying = AccountSwitchTransition.shared.transition?.account == key
+        let line = active
+            ? [model.serverName ?? server?.host(), model.serverVersion]
+                .compactMap { $0 }.joined(separator: " · ")
+            : (server?.host() ?? "")
         let content = HStack(spacing: 14) {
             ProfileCharacter(name: account?.userName ?? "?",
                           image: account.flatMap { model.userImageURL(for: $0) },
@@ -705,32 +688,16 @@ private struct AccountCard: View {
                 .animation(flying ? nil : AccountSwitchTransition.lift, value: switches)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: account?.userName ?? String(localized: "Angemeldet"))
-                    // 19 is on no scale; 20 semibold is the row heading level, and its
-                    // tracking is tied to it.
-                    .font(Theme.rail)
-                    .tracking(Theme.lockRail)
+                    .font(.app(size: 17, weight: .bold))
                     .foregroundStyle(Theme.font)
-                // Name and version are known only from the connected server; for the others
-                // the address is shown.
-                Text(verbatim: active ? (model.serverName ?? server?.host() ?? "")
-                                     : (server?.host() ?? ""))
-                    .font(Theme.small)
+                    .lineLimit(1)
+                Text(verbatim: line)
+                    .font(.app(size: 13))
                     .foregroundStyle(Theme.fontVeryQuiet)
                     .lineLimit(1)
-                // **The line is always present, even without a version.** The version only
-                // arrives with the server's response, so late after a cold start or a server
-                // switch. If the line were drawn only then, the text block would grow and
-                // name and address would jump up (same bug as on Android).
-                if active {
-                    Text(verbatim: "\(account?.kind.shownName ?? ServerKind.jellyfin.shownName) \(model.serverVersion ?? "")")
-                        .font(Theme.small)
-                        .foregroundStyle(Theme.fontVeryQuiet)
-                        .lineLimit(1)
-                        .opacity(model.serverVersion == nil ? 0 : 1)
-                        .accessibilityHidden(model.serverVersion == nil)
-                } else {
+                if !active {
                     Text("Klicken zum Wechseln")
-                        .font(Theme.small)
+                        .font(.app(size: 13))
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .lineLimit(1)
                 }
@@ -739,7 +706,6 @@ private struct AccountCard: View {
             .opacity(switches ? 0 : 1)
             Spacer(minLength: 0)
         }
-        .padding(16)
         .contentShape(Rectangle())
         .animation(AccountSwitchTransition.lift, value: switches)
         if !active, let account {
@@ -750,64 +716,60 @@ private struct AccountCard: View {
         }
     }
 
-    /// The other accounts on this server, followed by the plus.
-    private func rail(_ other: [Session], active: Bool, server: URL?) -> some View {
-        // **Verbatim the iPhone's row**, with its two subtleties: it scrolls
-        // horizontally when a server has many accounts, and it keeps its height even
-        // when empty. Otherwise the card of a server with a single account is lower
-        // than the others, which on the Mac looked as if the row had slipped.
-        ScrollView(.horizontal) {
-        HStack(spacing: 14) {
-            Color.clear.frame(width: 0, height: 40)
-            ForEach(other, id: \.accountKey) { account in
-                let flying = AccountSwitchTransition.shared.transition?.account == account.accountKey
-                Button { switchTo(toward: account) } label: {
-                    ProfileCharacter(name: account.userName,
-                                  image: model.userImageURL(for: account),
-                                  size: 40)
-                        .modifier(remember(account.accountKey))
-                        // The chosen one lifts off, the others shrink away; the chosen one is gone
-                        // immediately, otherwise it would briefly appear twice.
-                        .opacity(switches ? 0 : 1)
-                        .scaleEffect(switches && !flying && !Theme.motionReduced ? 0.8 : 1)
-                        .animation(flying ? nil : AccountSwitchTransition.lift, value: switches)
+    /// Another account on the same server: a click switches to it.
+    private func otherRow(_ account: Session) -> some View {
+        let flying = AccountSwitchTransition.shared.transition?.account == account.accountKey
+        return Button { switchTo(toward: account) } label: {
+            HStack(spacing: 14) {
+                ProfileCharacter(name: account.userName,
+                              image: model.userImageURL(for: account),
+                              size: 40)
+                    .modifier(remember(account.accountKey))
+                    // The chosen one lifts off, the others shrink away.
+                    .opacity(switches ? 0 : 1)
+                    .scaleEffect(switches && !flying && !Theme.motionReduced ? 0.8 : 1)
+                    .animation(flying ? nil : AccountSwitchTransition.lift, value: switches)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: account.userName)
+                        .font(Theme.listTitle)
+                        .foregroundStyle(Theme.font)
+                        .lineLimit(1)
+                    Text("Klicken zum Wechseln")
+                        .font(.app(size: 13))
+                        .foregroundStyle(Theme.fontVeryQuiet)
                 }
-                .buttonStyle(Theme.PressButton())
-                // `.help` sets the tooltip under the pointer, not the label: the profile
-                // icon alone tells VoiceOver nothing.
-                .accessibilityLabel(Text("Zu \(account.userName) wechseln"))
-                .help(Text(verbatim: account.userName))
+                .opacity(switches ? 0 : 1)
+                Spacer(minLength: 0)
             }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Theme.PressButton())
+        .accessibilityLabel(Text("Zu \(account.userName) wechseln"))
+    }
 
-            // **The plus is on every card** and creates an account on *this* server. On
-            // the connected one it is the usual sign-in; on another it is the same as
-            // adding a server, only with the address filled in. It used to be only on the
-            // connected server's card, so creating an account elsewhere meant switching
-            // there first.
-            Button {
-                if active { insert() } else if let server { insertOn(server) }
-            } label: {
-                // **A field on `area`, not a dashed circle.** The dashed circle was the
-                // only dashed line in the app and the only circle on a card. A button without
-                // a label is square.
-                Image(systemName: "plus")
-                    .font(Theme.listTitle)
-                    .foregroundStyle(Theme.fontQuiet)
-                    .frame(width: Theme.buttonField, height: Theme.buttonField)
-                    .background(Theme.area,
-                                in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
-                    .contentShape(Rectangle())
+    /// "Konto hinzufügen" on every card: creates an account on *this* server. On the
+    /// connected one it is the usual sign-in; on another it is the same as adding a server,
+    /// only with the address filled in.
+    private func addRow(active: Bool, server: URL?) -> some View {
+        Button {
+            if active { insert() } else if let server { insertOn(server) }
+        } label: {
+            HStack(spacing: 16) {
+                Image(icon: "plus", size: 20)
+                    .font(.app(size: 20))
+                    .foregroundStyle(Theme.font)
+                    .frame(width: 26)
+                    .accessibilityHidden(true)
+                Text("Konto hinzufügen")
+                    .font(.app(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.font)
+                Spacer(minLength: 0)
             }
-            .buttonStyle(Theme.PressButton())
-            // `.help` sets the tooltip under the pointer, not the label: VoiceOver read
-            // only "button" here.
-            .accessibilityLabel(Text("Weiteres Konto hinzufügen"))
-            .help(Text("Weiteres Konto hinzufügen"))
-            .opacity(switches ? 0 : 1)
-            .animation(AccountSwitchTransition.lift, value: switches)
+            .frame(minHeight: 36)
+            .contentShape(Rectangle())
         }
-        .padding(16)
-        }
-        .scrollIndicators(.hidden)
+        .buttonStyle(Theme.PressButton())
+        .opacity(switches ? 0 : 1)
+        .animation(AccountSwitchTransition.lift, value: switches)
     }
 }

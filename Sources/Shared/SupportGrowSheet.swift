@@ -56,8 +56,8 @@ struct SupportGrowSheet: View {
 
     private var closeButton: some View {
         Button { close() } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 12, weight: .bold))
+            Image(icon: "xmark", size: 12)
+                .font(.app(size: 12, weight: .bold))
                 .foregroundStyle(Theme.font)
                 .frame(width: 30, height: 30)
                 .background(Color.black.opacity(0.4), in: Circle())
@@ -317,7 +317,7 @@ private struct PlanTile: View {
             .overlay(alignment: .topTrailing) { indicator.padding(12) }
             .overlay(alignment: .topLeading) {
                 badge
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.app(size: 10, weight: .bold))
                     .tracking(0.4)
                     .textCase(.uppercase)
                     .foregroundStyle(badgeLoud ? Color(white: 0.04) : Theme.font)
@@ -341,8 +341,8 @@ private struct PlanTile: View {
                 .strokeBorder(Theme.font.opacity(0.25), lineWidth: 1.5)
                 .opacity(isChosen ? 0 : 1)
             if isChosen {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 10, weight: .heavy))
+                Image(icon: "checkmark", size: 10)
+                    .font(.app(size: 10, weight: .heavy))
                     .foregroundStyle(Theme.onAccent)
                     .frame(width: 20, height: 20)
                     .background(Theme.accent, in: Circle())
@@ -435,8 +435,8 @@ private struct PricesUnavailableCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            Image(systemName: "icloud.slash")
-                .font(.system(size: 18))
+            Image(icon: "icloud.slash", size: 18)
+                .font(.app(size: 18))
                 .foregroundStyle(Theme.font)
                 .frame(width: 40, height: 40)
                 .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
@@ -450,7 +450,7 @@ private struct PricesUnavailableCard: View {
                     .foregroundStyle(Theme.fontQuiet)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(action: retry) {
-                    Label("App Store erneut fragen", systemImage: "arrow.clockwise")
+                    Label("App Store erneut fragen", icon: "arrow.clockwise")
                         .growing(14, .semibold)
                         .foregroundStyle(Theme.font)
                         .padding(.horizontal, 14)
@@ -507,8 +507,8 @@ struct LooksHero: View {
             Button(action: tryLooks) {
                 HStack(spacing: 6) {
                     Text("Look ausprobieren")
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .bold))
+                    Image(icon: "chevron.right", size: 11)
+                        .font(.app(size: 11, weight: .bold))
                         .accessibilityHidden(true)
                 }
                 .growing(13, .semibold)
@@ -545,14 +545,14 @@ struct LookMiniPhone: View {
                 .frame(height: 64)
             Wordmark(height: 11.6, logo: palette.logoStyle)
                 .offset(x: 9, y: 16)
-            Image(systemName: "heart.fill")
-                .font(.system(size: 10))
+            Image(icon: "heart.fill", size: 10)
+                .font(.app(size: 10))
                 .foregroundStyle(Theme.font)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.trailing, 9)
                 .offset(y: 16)
             Text("Weiterschauen")
-                .font(.system(size: 7.5, weight: .semibold))
+                .font(.app(size: 7.5, weight: .semibold))
                 .foregroundStyle(Theme.font)
                 .lineLimit(1)
                 .offset(x: 9, y: 34)
@@ -730,8 +730,8 @@ private struct RisingHearts: View {
                             let eased = 1 - pow(1 - phase, 3)
                             let opacity = local < 0 ? 0
                                 : phase < 0.2 ? phase / 0.2 * 0.9 : 0.9 * (1 - (phase - 0.2) / 0.8)
-                            Image(systemName: "heart.fill")
-                                .font(.system(size: heart.size))
+                            Image(icon: "heart.fill", size: heart.size)
+                                .font(.app(size: heart.size))
                                 .foregroundStyle(Theme.font)
                                 .scaleEffect(0.6 + 0.4 * eased)
                                 .opacity(opacity)

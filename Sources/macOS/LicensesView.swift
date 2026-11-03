@@ -147,7 +147,7 @@ struct LicenseView: View {
                     .multilineTextAlignment(.leading)
                 // Shows that the row opens the address; the accent stays reserved for state.
                 if leadsRoute {
-                    Image(systemName: "arrow.up.right")
+                    Image(icon: "arrow.up.right")
                         .font(Theme.small)
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .accessibilityHidden(true)

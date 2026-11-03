@@ -90,10 +90,10 @@ struct TVEpisodesCard: View {
                 Text("in \(rest) s")
                     .monospacedDigit()
             }
-            .font(.system(size: CGFloat(metrics.small), weight: .semibold))
+            .font(.app(size: CGFloat(metrics.small), weight: .semibold))
             .foregroundStyle(Theme.fontVeryQuiet)
             Text(verbatim: episode.name)
-                .font(.system(size: CGFloat(metrics.title), weight: .semibold))
+                .font(.app(size: CGFloat(metrics.title), weight: .semibold))
                 .foregroundStyle(Theme.font)
                 .lineLimit(1)
         }

@@ -81,7 +81,7 @@ fun TvCollection(app: SwiftlyApplication, target: Destination, open: (Destinatio
             }
         })
         // The letter strip, as on the library page (`TvLibrary`); tile i is grid item i + 1.
-        if (app.settings.alphabet && state.sorting == "name" && state.letters.size > 1) {
+        if (app.settings.alphabet && state.letters.size > 1) {
             val current by remember(state) {
                 derivedStateOf { state.items.getOrNull(maxOf(0, lattice.firstVisibleItemIndex - 1))?.letter }
             }

@@ -284,11 +284,17 @@ struct PlayerScreen: View {
                 .zIndex(7)
 
             if screenDistance {
-                // **Flat dimming, no gradient.** Same as iOS `Playerschleier`
-                // (Sources/iOS/PlayerScreen.swift): rgba(11,11,13,.42), no gradient, as in the
-                // design. While the next-episode card is up it dims the picture the same way,
-                // and the card sits in front (as on iOS).
-                Theme.reason.opacity(0.42)
+                // **Two gradients, as in the Mac design**: black .72 fading out, 200 pt high
+                // at the top and 260 pt at the bottom, instead of the flat dimming. While the
+                // next-episode card is up they dim the picture the same way, and the card
+                // sits in front.
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [PlayerLook.shade, .clear], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 200)
+                    Spacer(minLength: 0)
+                    LinearGradient(colors: [.clear, PlayerLook.shade], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 260)
+                }
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
                     .opacity(dimmed ? 1 : 0)
@@ -309,7 +315,7 @@ struct PlayerScreen: View {
             // visible while loading.
             if techBadge {
                 TechBadge(plan: plan, values: playValues, area: area)
-                    .padding(.leading, mass.page)
+                    .padding(.leading, mass.titleLeft)
                     .padding(.top, mass.top + mass.button + Theme.tileSpacing)
                     .offset(y: controlsPresent && openLayer == nil ? 0 : -(mass.button + Theme.tileSpacing))
                     .animation(Theme.motionReduced ? nil
@@ -527,6 +533,16 @@ struct PlayerScreen: View {
             default: break
             }
         }
+        // The menu item that is not in `AppCommand`: tracks.
+        .onReceive(NotificationCenter.default.publisher(for: CommandPost.moreName)) { post in
+            guard openLayer == nil, let command = CommandPost.receiveMore(post) else { return }
+            switch command {
+            case .playTracks: unfoldLayer(.tracks)
+            default: break
+            }
+        }
+        // Lets the menu bar know whether the plain keys are the player's right now.
+        .focusedSceneValue(\.playerKeysFree, openLayer == nil)
         // Keyboard shortcuts. They also appear in the menu bar so they can be found
         // without knowing them.
         .background {
@@ -573,10 +589,8 @@ struct PlayerScreen: View {
                 // Full screen without having to hit the button; the same key the window traffic
                 // lights offer.
                 Button("") { holder.fullscreenToggle() }.keyboardShortcut("f", modifiers: [])
-                // "Small window" is currently removed from the UI; the shortcut goes with it,
-                // otherwise there would be a way in with no way back.
-                Button("") { }
-                    .keyboardShortcut("p", modifiers: [.command, .option])
+                // T (tracks) and Option-Command-P (small window) live in the "Wiedergabe" menu
+                // (`MenuBar`) and arrive through `CommandPost.moreName`.
             }
             .opacity(0)
         }
@@ -620,13 +634,13 @@ struct PlayerScreen: View {
     /// button and no speed control. While scrubbing the icons make way for the
     /// preview.
     private var iconRail: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             VolumeSlider(mass: mass, value: $volume,
                               expanded: volumeShort, pulls: $volumePulls,
                               mutedToggle: volumeMuted,
                               wheelRotated: { volumeWheel($0) })
-            IconButton(symbol: "captions.bubble", label: "Audio & Untertitel",
-                        mass: mass) { unfoldLayer(.tracks) }
+            IconButton(symbol: "captions.bubble", label: "Ton und Untertitel", mass: mass,
+                        key: "T") { unfoldLayer(.tracks) }
             if hasEpisodes {
                 IconButton(symbol: "rectangle.stack", label: "Folgen",
                             mass: mass) { unfoldLayer(.episodes) }
@@ -636,10 +650,10 @@ struct PlayerScreen: View {
             IconButton(symbol: holder.isFullscreen ? "arrow.down.right.and.arrow.up.left"
                                                     : "arrow.up.left.and.arrow.down.right",
                         label: holder.isFullscreen ? "Vollbild verlassen" : "Vollbild",
-                        mass: mass) { holder.fullscreenToggle() }
+                        mass: mass, key: "F") { holder.fullscreenToggle() }
             handOverMenu
             IconButton(symbol: "xmark", label: "Player schließen",
-                        mass: mass) { finish() }
+                        mass: mass, key: "esc") { finish() }
         }
     }
 
@@ -653,15 +667,15 @@ struct PlayerScreen: View {
                 Section {
                     ForEach(targets, id: \.deviceID) { target in
                         Button { handOver(to: target) } label: {
-                            Label { Text(verbatim: target.name) } icon: { Image(systemName: "tv") }
+                            Label { Text(verbatim: target.name) } icon: { Image(icon: "tv") }
                         }
                     }
                 } header: {
                     Text("Übergeben an …")
                 }
             } label: {
-                Image(systemName: "tv")
-                    .font(.system(size: mass.symbol, weight: .medium))
+                Image(icon: "tv")
+                    .font(.app(size: mass.symbol, weight: .medium))
                     .foregroundStyle(.white)
                     .frame(width: mass.button, height: mass.button)
                     .contentShape(Rectangle())
@@ -704,7 +718,7 @@ struct PlayerScreen: View {
         let present = (controlsPresent && openLayer == nil) || openLayer == .episodes
         return HStack(alignment: .top, spacing: 12) {
             Text(verbatim: titleLine)
-                .font(.system(size: mass.title, weight: .semibold))
+                .font(.app(size: mass.title, weight: .bold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
             Spacer(minLength: 0)
@@ -712,7 +726,8 @@ struct PlayerScreen: View {
                 .hidden()
                 .accessibilityHidden(true)
         }
-        .padding(.horizontal, mass.page)
+        .padding(.leading, mass.titleLeft)
+        .padding(.trailing, mass.page)
         .padding(.top, mass.top)
         .frame(maxHeight: .infinity, alignment: .top)
         .allowsHitTesting(false)
@@ -726,7 +741,7 @@ struct PlayerScreen: View {
                 // Placeholder only: what is shown is the title from `stateTitle`, which stays
                 // put while the episode layer is open.
                 Text(verbatim: titleLine)
-                    .font(.system(size: mass.title, weight: .semibold))
+                    .font(.app(size: mass.title, weight: .bold))
                     .lineLimit(1)
                     .opacity(0)
                     .accessibilityHidden(true)
@@ -742,7 +757,7 @@ struct PlayerScreen: View {
                             .foregroundStyle(Theme.warning)
                     }
                 }
-                .font(.system(size: mass.meta))
+                .font(.app(size: mass.meta))
                 .foregroundStyle(Theme.fontQuiet)
                 .lineLimit(1)
             }
@@ -754,7 +769,8 @@ struct PlayerScreen: View {
                 .opacity(atSlider ? 0 : 1)
                 .allowsHitTesting(!atSlider)
         }
-        .padding(.horizontal, mass.page)
+        .padding(.leading, mass.titleLeft)
+        .padding(.trailing, mass.page)
         .padding(.top, mass.top)
         .overlay(alignment: .bottom) {
             // Below the header row, centered: there it gets in the way of neither the
@@ -805,22 +821,46 @@ struct PlayerScreen: View {
     }
 
     /// Centered in the picture. The mouse has to go there anyway, unlike a thumb
-    /// resting at the edge.
+    /// resting at the edge. Design: row top at 350 pt (centre 380 in an 800 pt window,
+    /// so 20 pt above the middle), key hints top at 440.
     private var centerControls: some View {
-        HStack(spacing: 80) {
-            JumpButton(symbol: "gobackward.\(model.backSeconds)", large: 30, tick: tickBack,
-                        label: "\(model.backSeconds) Sekunden zurück") {
-                vault(-Double(model.backSeconds))
+        ZStack {
+            HStack(spacing: 66) {
+                JumpButton(symbol: "gobackward", number: model.backSeconds, large: 44, box: 48,
+                            tick: tickBack,
+                            label: "\(model.backSeconds) Sekunden zurück") {
+                    vault(-Double(model.backSeconds))
+                }
+                JumpButton(symbol: runsNow ? "pause.fill" : "play.fill", large: 52, box: 60,
+                            fill: true, snappy: true,
+                            label: runsNow ? "Anhalten" : "Abspielen") { toggle() }
+                // Forward goes further than back: forward skips intros and ads, backward looks
+                // for a line of dialogue.
+                JumpButton(symbol: "goforward", number: model.forwardSeconds, large: 44, box: 48,
+                            tick: tickPre,
+                            label: "\(model.forwardSeconds) Sekunden vor") {
+                    vault(Double(model.forwardSeconds))
+                }
             }
-            JumpButton(symbol: runsNow ? "pause.fill" : "play.fill", large: 40, snappy: true,
-                        label: runsNow ? "Anhalten" : "Abspielen") { toggle() }
-            // Forward goes further than back: forward skips intros and ads, backward looks
-            // for a line of dialogue.
-            JumpButton(symbol: "goforward.\(model.forwardSeconds)", large: 30, tick: tickPre,
-                        label: "\(model.forwardSeconds) Sekunden vor") {
-                vault(Double(model.forwardSeconds))
-            }
+            .offset(y: -20)
+            keyHints
+                .offset(y: 50)
         }
+    }
+
+    /// The keys that work in the player, quiet under the buttons; they come and go with
+    /// the controls. Not a control themselves: no clicks.
+    private var keyHints: some View {
+        HStack(spacing: 16) {
+            KeyHint(key: "←", text: Text(verbatim: "\(model.backSeconds) s"))
+            KeyHint(key: String(localized: "Leertaste"),
+                    text: Text(runsNow ? "Pause" : "Abspielen"))
+            KeyHint(key: "→", text: Text(verbatim: "\(model.forwardSeconds) s"))
+        }
+        .font(.app(size: 12))
+        .foregroundStyle(Theme.fontQuiet)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     /// Only the scrubber, full width: elapsed time on the left, remaining time on the
@@ -1709,13 +1749,19 @@ struct MacVideoSurface: NSViewRepresentable {
 
 // MARK: - Player building blocks
 
-/// Round button in the middle: -10, pause/play, +10. Unlike the old version there
-/// is no shortcut label underneath: the same look as iOS, which shows no keyboard
-/// hints in the player.
+/// Plain button in the middle: -10, pause/play, +30, no circle behind it (design).
+/// The skip buttons carry their seconds inside the arrow; the keys are shown
+/// separately under the row (``KeyHint``).
 struct JumpButton: View {
     let symbol: String
-    /// Edge length of the symbol itself: 30 for +/-10, 40 for play/pause.
+    /// The seconds written inside the arrow, for the two skip buttons.
+    var number: Int?
+    /// Edge length of the symbol itself: 44 for the skips, 52 for play/pause.
     let large: CGFloat
+    /// Hit area; the design's 48 for the skips, 60 for play/pause.
+    let box: CGFloat
+    /// Filled glyph (play/pause) or the regular outline (skips).
+    var fill = false
     /// Counts every press. A **value**, not a switch: the effect replays on every
     /// change, even on the tenth seek in a row.
     var tick: Int = 0
@@ -1728,7 +1774,7 @@ struct JumpButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            Image(icon: symbol)
                 // **Without this SwiftUI cross-fades the two symbols**, which looks like a bug,
                 // not intent.
                 //
@@ -1737,14 +1783,22 @@ struct JumpButton: View {
                 // otherwise the whole player feels sluggish. So the plain replace is used there.
                 .contentTransition(.symbolEffect(snappy ? .replace.offUp
                                                        : .replace.downUp))
-                .font(.system(size: large, weight: .medium))
+                .font(.app(size: large, weight: fill ? .medium : .regular))
                 .foregroundStyle(Theme.font)
                 // Discrete SF Symbols effect: plays once and returns to rest by itself. No
                 // bounce with reduced motion; the setting is already queried nearby for the
                 // scale.
                 .symbolEffect(.bounce, options: .speed(1.7),
                               value: Theme.motionReduced ? 0 : tick)
-                .frame(width: large * 1.8, height: large * 1.8)
+                .overlay {
+                    if let number {
+                        Text(verbatim: "\(number)")
+                            .font(.app(size: 12, weight: .bold))
+                            .foregroundStyle(Theme.font)
+                            .offset(y: 1)
+                    }
+                }
+                .frame(width: box, height: box)
                 .scaleEffect(hovers ? 1.06 : 1)
                 .contentShape(Rectangle())
         }
@@ -1753,6 +1807,29 @@ struct JumpButton: View {
         .animation(Theme.timeFloat, value: hovers)
         .accessibilityLabel(Text(label))
     }
+}
+
+/// One keyboard hint under the middle buttons: keycap (white .12) plus what it does.
+private struct KeyHint: View {
+    let key: String
+    let text: Text
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(verbatim: key)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(Color.white.opacity(0.12),
+                            in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            text
+        }
+    }
+}
+
+/// Values only the player's overlay uses (design: Mac player).
+fileprivate enum PlayerLook {
+    /// The black of the top and bottom gradients.
+    static let shade = Color.black.opacity(0.72)
 }
 
 /// Time on the left, slider, remaining time on the right.
@@ -1770,19 +1847,19 @@ private struct TimeRow: View {
     /// On release: where to seek.
     let vault: (Double) -> Void
 
-    /// **Remaining time or end time; a click toggles**, like the tap on iPhone:
-    /// "-12:34" or "Ends at 22:41". The choice persists under the same key. No
-    /// separate button, no second line.
-    @AppStorage("restzeitAlsEnde") private var asEnd = false
+    /// **Remaining time, or the end time** when Settings → Playback → "Endzeit im Player"
+    /// is on (``PlayerEndTime``, off by default). Plain text, no second line.
+    @AppStorage(PlayerEndTime.key) private var asEnd = PlayerEndTime.standard
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             Text(PlayTime.text(position))
+                .foregroundStyle(.white)
             TimeSlider(position: $position, duration: duration, atSlider: $atSlider, mass: mass,
                        marks: marks, chapter: chapter, preview: preview, vault: vault)
             remainingTime
         }
-        .font(.system(size: mass.time).monospacedDigit())
+        .font(.app(size: mass.time, weight: .medium).monospacedDigit())
         .foregroundStyle(Theme.fontQuiet)
     }
 
@@ -1792,19 +1869,11 @@ private struct TimeRow: View {
     }
 
     private var remainingTime: some View {
-        Button {
-            asEnd.toggle()
-        } label: {
-            Group {
-                if asEnd { end } else { Text(verbatim: "−" + PlayTime.text(max(duration - position, 0))) }
-            }
-            .lineLimit(1)
-            .contentShape(Rectangle().inset(by: -8))
+        Group {
+            if asEnd { end } else { Text(verbatim: "−" + PlayTime.text(max(duration - position, 0))) }
         }
-        .buttonStyle(.plain)
-        .help(Text("Wechselt zwischen Restzeit und Ende"))
+        .lineLimit(1)
         .accessibilityLabel(asEnd ? end : Text("Restzeit"))
-        .accessibilityHint(Text("Wechselt zwischen Restzeit und Ende"))
     }
 }
 
@@ -1996,34 +2065,32 @@ private struct TimeSlider: View {
         GeometryReader { g in
             let spot = duration * share
             let image = preview(spot)
-            let box: CGFloat = 170
-            let height = box * 9 / 16
+            // Design: 160 x 90, 2 pt white ring, time below.
+            let box: CGFloat = 160
+            let height: CGFloat = 90
             let name = ChapterBar.chapter(at: spot, in: chapter)?.name ?? ""
             let half = image != nil ? box / 2 : max(name.isEmpty ? 40 : boxWidth / 2, 40)
             let x = min(max(g.size.width * share, half), max(g.size.width - half, half))
-            VStack(spacing: 6) {
+            VStack(spacing: 5) {
                 if let image {
                     Image(decorative: image, scale: 1)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: box, height: height)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.corner,
-                                                    style: .continuous))
-                        // `rand` is the token for the few places that truly need an edge; a thumbnail over
-                        // moving video is one of them.
-                        .overlay(RoundedRectangle(cornerRadius: Theme.corner,
-                                                  style: .continuous)
-                            .strokeBorder(Theme.margin, lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        // The ring keeps a thumbnail readable over moving video.
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(.white, lineWidth: 2))
                 }
                 HStack(spacing: 6) {
                     if !name.isEmpty {
                         Text(verbatim: name)
-                            .font(.system(size: mass.time))
+                            .font(.app(size: 12))
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
                     Text(PlayTime.text(spot))
-                        .font(.system(size: mass.time, weight: .semibold).monospacedDigit())
+                        .font(.app(size: 12, weight: .semibold).monospacedDigit())
                         .layoutPriority(1)
                 }
                 .foregroundStyle(.white)
@@ -2031,7 +2098,8 @@ private struct TimeSlider: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { boxWidth = $0 }
             .frame(maxWidth: box)
             .fixedSize(horizontal: false, vertical: true)
-            .position(x: x, y: -((image == nil ? 0 : height + 6) + mass.time) / 2 - 2)
+            // The time label reaches 8 pt into the 44 pt bar row, as in the design.
+            .position(x: x, y: 8 - ((image == nil ? 0 : height + 5) + 15) / 2)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -2051,15 +2119,15 @@ private struct OfferingButton: View {
         if offering.visible {
             Button(action: action) {
                 HStack(spacing: 8) {
-                    Image(systemName: "forward.end.fill")
+                    Image(icon: "forward.end.fill")
+                        .font(.app(size: 16))
                         .accessibilityHidden(true)
                     Text(verbatim: offering.label)
                 }
                 .font(Theme.listTitle)
                 .padding(.horizontal, 18)
                 .frame(height: 40)
-                .background(.white, in: RoundedRectangle(cornerRadius: Theme.cornerField,
-                                                         style: .continuous))
+                .background(.white, in: Capsule())
             }
             .buttonStyle(Theme.PressButton())
             .foregroundStyle(Self.dark)
@@ -2124,8 +2192,6 @@ final class WindowHolder {
                 })
         }
     }
-    @ObservationIgnored private var before: NSRect?
-    private(set) var isSmall = false
     /// Whether the player currently fills the window.
     private(set) var inPlayer = false
 
@@ -2136,8 +2202,7 @@ final class WindowHolder {
     /// Whether the pointer is at the top of the player, where the traffic lights are.
     private(set) var pointerTop = false
 
-    /// The traffic lights vanish in the small window, where they do not belong, **and in
-    /// the player they leave with the controls.**
+    /// The traffic lights **leave with the controls in the player.**
     ///
     /// That is right: they are controls, and controls withdraw after four seconds of
     /// quiet. A film with three colored dots stuck on it is not full screen.
@@ -2151,7 +2216,7 @@ final class WindowHolder {
     /// the traffic lights the **window**. Two actions, two places.
     private var signalVisible: Bool {
         if isFullscreen { return true }
-        return !isSmall && (!inPlayer || pointerTop)
+        return !inPlayer || pointerTop
     }
 
     private func signalCatchUp(soft: Bool = false) {
@@ -2215,63 +2280,13 @@ final class WindowHolder {
 
     func fullscreenToggle() { window?.toggleFullScreen(nil) }
 
-    /// Small window on or off.
-    ///
-    /// **First out of full screen.** There macOS ignores both `setFrame` and the window
-    /// level, so the small window would stay screen-filling. The way back waits for the
-    /// notification that full screen has really been left; before that the window
-    /// still has the old size.
-    func setSmall(_ small: Bool) {
-        guard let window, small != isSmall else { return }
-        isSmall = small
-
-        if small, isFullscreen {
-            var observer: NSObjectProtocol?
-            observer = NotificationCenter.default.addObserver(
-                forName: NSWindow.didExitFullScreenNotification,
-                object: window, queue: .main) { [weak self] _ in
-                    if let observer { NotificationCenter.default.removeObserver(observer) }
-                    MainActor.assumeIsolated { self?.smallApply(true) }
-                }
-            window.toggleFullScreen(nil)
-            return
-        }
-        smallApply(small)
-    }
-
-    private func smallApply(_ small: Bool) {
-        guard let window else { return }
-
-        signalCatchUp()
-        // Without a title bar to grab, the window is dragged by its picture.
-        window.isMovableByWindowBackground = small
-        window.level = small ? .floating : .normal
-
-        // **No `contentAspectRatio`.** A set ratio has to be removed when switching back,
-        // and `.zero` is not a valid value for that: AppKit keeps computing with it and
-        // crashes while dragging (`_resizeWithEvent:`, brk 1). Measured, happened once.
-        // The picture letterboxes anyway when the window does not match.
-        if small {
-            before = window.frame
-            window.contentMinSize = NSSize(width: 320, height: 180)
-            let content = NSRect(origin: .zero, size: NSSize(width: 480, height: 270))
-            var frameRect = window.frameRect(forContentRect: content)
-            if let screen = window.screen?.visibleFrame {
-                frameRect.origin = CGPoint(x: screen.maxX - frameRect.width - 24,
-                                        y: screen.minY + 24)
-            }
-            window.setFrame(frameRect, display: true, animate: true)
-        } else {
-            window.contentMinSize = NSSize(width: Theme.windowMinWidth,
-                                            height: Theme.windowMinHeight)
-            if let before { window.setFrame(before, display: true, animate: true) }
-        }
-    }
+    /// **No picture-in-picture on the Mac.** It used to be the small window floating
+    /// above all others (AVKit's picture-in-picture exists on iOS only); it never worked
+    /// reliably and was removed with its button, menu item and shortcut.
 
     /// On leaving the player, undo everything; otherwise the main window would stay
-    /// without traffic lights and above all others.
+    /// without traffic lights.
     func cleanUp() {
-        if isSmall { isSmall = false; smallApply(false) }
         // **The app leaves the player the way it entered it.**
         //
         // The player always undid the small window, but not full screen. Anyone who went
@@ -2328,8 +2343,8 @@ private struct JumpMark: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: bearing < 0 ? "gobackward" : "goforward")
-                .font(.system(size: 32, weight: .medium))
+            Image(icon: bearing < 0 ? "gobackward" : "goforward")
+                .font(.app(size: 32, weight: .medium))
                 .symbolEffect(.bounce, options: .speed(1.7),
                               value: Theme.motionReduced ? false : rotated)
             Text(verbatim: "\(seconds) s").font(Theme.tile)

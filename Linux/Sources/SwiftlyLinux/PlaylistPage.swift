@@ -106,7 +106,7 @@ extension App {
                     gtk_label_set_text(OpaquePointer(figure), String(items.count))
                     gtk_widget_set_visible(figure, items.isEmpty ? 0 : 1)
                     if items.isEmpty {
-                        append(state, self.emptyState("mail-inbox-symbolic", translated("Hier ist noch nichts"),
+                        append(state, self.emptyState("paint:tray", translated("Hier ist noch nichts"),
                                                       translated("Sobald in dieser Wiedergabeliste etwas liegt, taucht es hier auf."),
                                                       top: 80))
                         gtk_widget_set_visible(state, 1)

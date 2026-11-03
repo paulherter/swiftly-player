@@ -36,12 +36,10 @@ struct PlaybackSettingsView: View {
             // distance at once; since the background is #101010 the jump is a fifth of that
             // and needs no exception.
             Theme.reason.ignoresSafeArea()
-            VStack(spacing: 0) {
-                // Title beside the arrow, not below it; see `SettingsView`.
-                SubpageHeader(title: String(localized: "Wiedergabe")) { back() }
-                ScrollView { content }
-                    .scrollIndicators(.hidden)
-            }
+            // Title beside the arrow, not below it; see `SettingsView`.
+            ScrollView { content.padding(.top, -Theme.firstGroupTrim) }
+                .scrollIndicators(.hidden)
+                .fadingUnderSubpageHeader(title: String(localized: "Wiedergabe")) { back() }
             sheet
         }
         #if os(iOS)
@@ -82,13 +80,14 @@ struct PlaybackSettingsView: View {
         let select: (() -> Void)? = directPlay ? nil : { openIt(.bitrate) }
 
         return SettingGroup(title: "Qualität") {
-            ChoiceRow(symbol: "play.fill", title: Text("Immer Direct Play"),
-                      under: Text("Der Server wandelt nie um, es läuft immer die Originaldatei"),
+            ChoiceRow(symbol: "play", title: Text("Immer Direct Play"),
+                      under: Text("Der Server wandelt nie um"),
                       an: Binding(get: { directPlay },
                                   set: { model.alwaysDirectPlay = $0 }))
                 .disabled(!free)
             SheetLine()
-            ValueRow(symbol: "chart.bar", title: Text("Höchste Bitrate"),
+            ValueRow(symbol: "speedometer", title: Text("Höchste Bitrate"),
+                      under: directPlay ? Text("Nicht nötig bei Direct Play") : nil,
                       value: Bitrate.text(model.bitratesLimit),
                       dimmedDown: directPlay, action: select)
         }
@@ -105,13 +104,13 @@ struct PlaybackSettingsView: View {
                       action: { openIt(.subtitle) })
             SheetLine()
             ChoiceRow(symbol: "text.alignleft", title: Text("Untertitel automatisch"),
-                      under: Text("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
+                      under: Text("Wenn der Ton nicht deine Sprache ist"),
                       an: Binding(get: { model.subtitleAutomatic },
                                   set: { model.subtitleAutomatic = $0 }))
             SheetLine()
             // The page for size, colour, outline and so on (spec: subtitle look, section 1).
             NavigationLink(value: SubtitleLookRoute()) {
-                ValueRow(symbol: "textformat.size", title: Text("Aussehen der Untertitel"),
+                ValueRow(symbol: "textformat.size", title: Text("Untertitel-Stil"),
                          value: model.subtitleLook.entryValue, chevron: true)
             }
             .buttonStyle(Theme.PressRow())
@@ -119,26 +118,21 @@ struct PlaybackSettingsView: View {
     }
 
     @AppStorage("technikschild") private var techBadge = false
+    @AppStorage(PlayerEndTime.key) private var showsEnd = PlayerEndTime.standard
     @AppStorage("introAbspannAuto") private var skipAutomatic = false
 
     private var behavior: some View {
-        SettingGroup(title: "Verhalten") {
-            ChoiceRow(symbol: "forward.end.fill", title: Text("Nächste Folge automatisch"),
+        VStack(alignment: .leading, spacing: 0) {
+        SettingGroup(title: "Ablauf") {
+            ChoiceRow(symbol: "forward.end", title: Text("Nächste Folge automatisch"),
                       an: Binding(get: { model.nextAutomatic },
                                   set: { model.nextAutomatic = $0 }))
             SheetLine()
-            ChoiceRow(symbol: "forward.fill", title: Text("Intro und Abspann automatisch überspringen"),
+            ChoiceRow(symbol: "forward", title: Text("Intro und Abspann"),
+                      under: Text("Werden automatisch übersprungen"),
                       an: $skipAutomatic)
-            SheetLine()
-            // **The switch for the tech badge.**
-            //
-            // It sits under "Behavior" and not with the picture rules: it changes nothing
-            // about playback, it only shows what playback does. Off until someone looks for
-            // it, like Downloads and Seerr.
-            ChoiceRow(symbol: "waveform.badge.magnifyingglass",
-                      title: Text("Technische Daten im Player"),
-                      an: $techBadge)
-            SheetLine()
+        }
+        SettingGroup(title: "Im Player") {
             ValueRow(symbol: "gobackward", title: Text("Zurückspulen"),
                       value: "\(model.backSeconds) s",
                       action: { openIt(.back) })
@@ -147,7 +141,7 @@ struct PlaybackSettingsView: View {
                       value: "\(model.forwardSeconds) s",
                       action: { openIt(.forward) })
             SheetLine()
-            // **Under "Behavior", not under quality.** It changes nothing about the picture,
+            // **With the player, not under quality.** It changes nothing about the picture,
             // only how much buffer the player holds before a shaky connection breaks
             // through.
             ValueRow(symbol: "wifi.exclamationmark", title: Text("Puffer"),
@@ -156,8 +150,36 @@ struct PlaybackSettingsView: View {
             SheetLine()
             // Same place and words as "Player" on Android. Applies from the next title.
             ValueRow(symbol: "play.rectangle", title: Text("Player"),
-                      value: model.playerEngine.name,
+                      value: {
+                          // The row says what it does; the sheet keeps the full names.
+                          switch model.playerEngine {
+                          case .dolbyVision: return String(localized: "Automatisch")
+                          case .avPlayer: return "AVPlayer"
+                          case .vlc: return "VLC"
+                          }
+                      }(),
                       action: { openIt(.engine) })
+            SheetLine()
+            // Moved here from Darstellung; missing on iPad on purpose, see `Orientierung`.
+            if Orientierung.landscapeLockPossible {
+                ChoiceRow(symbol: "rectangle.on.rectangle",
+                          title: Text("Querformat sperren"),
+                          an: Binding(get: { model.landscapeFixed },
+                                      set: { model.landscapeFixed = $0 }))
+                SheetLine()
+            }
+            // Shows what playback does, changes nothing about it. Off until someone looks for it.
+            ChoiceRow(symbol: "waveform.badge.magnifyingglass",
+                      title: Text("Technische Daten"),
+                      under: Text("Zeigt Format und Bitrate im Player"),
+                      an: $techBadge)
+            SheetLine()
+            // "Endet um 18:38" instead of the remaining time; off by default (`PlayerEndTime`).
+            ChoiceRow(symbol: "clock",
+                      title: Text("Endzeit im Player"),
+                      under: Text("Zeigt, wann der Titel endet"),
+                      an: $showsEnd)
+        }
         }
     }
 
@@ -356,6 +378,8 @@ struct ValueRow: View {
     var action: (() -> Void)?
     /// The arrow for a row that is the label of a `NavigationLink` (no action of its own).
     var chevron = false
+    /// The action runs on this page, so no arrow promises another one.
+    var inPlace = false
 
     var body: some View {
         let shell = RowsLayout(symbol: symbol, title: title, under: under,
@@ -366,19 +390,26 @@ struct ValueRow: View {
                         // The value grows with it like the title beside it, otherwise half the row would
                         // follow the system font and the other half not.
                         .growing(15)
-                        .foregroundStyle(Theme.fontQuiet)
+                        .foregroundStyle(dimmedDown ? Theme.fontVeryQuiet : Theme.font)
+                        .lineLimit(1)
                 }
-                if action != nil || chevron {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
+                if (action != nil && !inPlace) || chevron {
+                    Image(icon: "chevron.right", size: 13)
+                        .font(.app(size: 13, weight: .semibold))
                         // See RootView: 28 percent is 2.50:1.
-                        .foregroundStyle(Theme.fontVeryQuiet)
+                        .foregroundStyle(Theme.font)
+                        .accessibilityHidden(true)
+                }
+                if inPlace, action != nil {
+                    Image(icon: "arrow.clockwise", size: 13)
+                        .font(.app(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.font)
                         .accessibilityHidden(true)
                 }
             }
         }
         if let action {
-            Button(action: action) { shell }.buttonStyle(Theme.PressButton())
+            Button(action: action) { shell }.buttonStyle(Theme.PressRow())
         } else {
             // Title and value as one statement ("Server, 10.9.11").
             shell.accessibilityElement(children: .combine)
@@ -397,16 +428,17 @@ struct RowsLayout<Right: View>: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: symbol)
-                .font(.system(size: 17))
-                .frame(width: 20)
+            Image(icon: symbol, size: Theme.rowSymbolSize)
+                .font(.app(size: Theme.rowSymbolSize))
+                .foregroundStyle(dimmedDown ? Theme.fontVeryQuiet : Theme.font)
+                .frame(width: Theme.rowIconWidth)
                 // Decorative: without it VoiceOver read symbol names such as
                 // "externaldrive.connected.to.line.below".
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 // **List row: 15 semibold.** 16 regular was as loud as the explanation below it;
                 // the name leads, the value follows.
-                title.growing(15, .semibold)
+                title.growing(Theme.rowTitleSize, .medium)
                     // **Dimmed, not translucent**.
                     //
                     // `Theme.font.opacity(0.4)` was on the whole row. Two problems in one value:
@@ -431,7 +463,8 @@ struct RowsLayout<Right: View>: View {
         // state; the text column sets its own tone.
         .foregroundStyle(dimmedDown ? Theme.fontVeryQuiet : Theme.font)
         .padding(.horizontal, Theme.margin(wide: wide))
-        .padding(.vertical, 14)
+        .padding(.vertical, Theme.rowPadV)
+        .frame(minHeight: Theme.rowHeight)
         .contentShape(Rectangle())
     }
 }

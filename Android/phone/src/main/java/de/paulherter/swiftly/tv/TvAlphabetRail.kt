@@ -3,6 +3,8 @@ package de.paulherter.swiftly.tv
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
@@ -22,7 +24,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -33,7 +40,7 @@ import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.translated
 
 /** Mirrors `TVAlphabetRail.width`, scaled to the 40 dp margin. */
-val TvAlphabetRailWidth = 32.dp
+val TvAlphabetRailWidth = 28.dp
 
 /**
  * Mirrors `TVAlphabetRail` on tvOS: a column of focusable letters in the right margin beside a
@@ -52,25 +59,40 @@ fun TvAlphabetRail(letters: List<LetterEntry>, current: String?, modifier: Modif
         val at = letters.indexOfFirst { it.letter == current }
         if (at >= 0) list.animateScrollToItem(maxOf(0, at - 4))
     }
-    LazyColumn(modifier.width(TvAlphabetRailWidth).fillMaxHeight().focusGroup()
+    // A soft edge says there are more letters above or below (tvOS mask: clear 0, black .02, black .98, clear 1).
+    LazyColumn(modifier.width(TvAlphabetRailWidth).fillMaxHeight()
+                   .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                   .drawWithContent {
+                       drawContent()
+                       drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.02f to Color.Black, 0.98f to Color.Black, 1f to Color.Transparent),
+                                blendMode = BlendMode.DstIn)
+                   }.focusGroup()
                    .semantics { contentDescription = translated("Alphabet") },
                state = list, contentPadding = PaddingValues(vertical = 8.dp),
                horizontalAlignment = Alignment.CenterHorizontally) {
         items(letters, key = { it.letter }) { entry ->
-            FocusArea(Modifier.height(28.dp), magnifier = 1.1f,
-                      focusChanged = { inside ->
-                          if (inside) { focused = entry.letter; jump(entry.letter) }
-                          else if (focused == entry.letter) focused = null
-                      },
-                      perform = { jump(entry.letter) }) { focus ->
-                Box(Modifier.size(24.dp).clip(CircleShape).background(if (focus) Theme.accent else Color.Transparent),
-                    contentAlignment = Alignment.Center) {
-                    Text(entry.letter, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                         color = when {
-                             focus -> Theme.font
-                             entry.letter == current -> Theme.accent
-                             else -> Theme.fontQuiet
-                         })
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // The next step of a scale, not focusable.
+                if (entry.gap) {
+                    Box(Modifier.height(10.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(4.dp).clip(CircleShape).background(Theme.fontVeryQuiet))
+                    }
+                }
+                FocusArea(Modifier.height(21.5.dp), magnifier = 1.15f,
+                          focusChanged = { inside ->
+                              if (inside) { focused = entry.letter; jump(entry.letter) }
+                              else if (focused == entry.letter) focused = null
+                          },
+                          perform = { jump(entry.letter) }) { focus ->
+                    Box(Modifier.size(20.dp).clip(CircleShape).background(if (focus) Theme.accent else Color.Transparent),
+                        contentAlignment = Alignment.Center) {
+                        Text(entry.label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                             color = when {
+                                 focus -> Theme.font
+                                 entry.letter == current -> Theme.accent
+                                 else -> Theme.fontVeryQuiet
+                             })
+                    }
                 }
             }
         }

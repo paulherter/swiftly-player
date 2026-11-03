@@ -146,8 +146,8 @@ private struct KindCard: View {
                 }
                 Spacer(minLength: 0)
                 if open {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
+                    Image(icon: "chevron.right")
+                        .font(.app(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .accessibilityHidden(true)
                 }

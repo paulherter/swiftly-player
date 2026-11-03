@@ -184,17 +184,6 @@ extension App {
 
 extension App {
 
-    /// The row "Support Swiftly" for Settings and the profile page.
-    func supportRow() -> Widget! {
-        valuesRow(symbol: "emblem-favorite-symbolic",
-                  title: translated(SupportCopy.supportSwiftly.key),
-                  under: isSupporter ? nil : translated(SupportCopy.freeForEveryone.key),
-                  value: isSupporter ? translated(SupportCopy.supporterBadge.key) : nil,
-                  arrow: !isSupporter) { [weak self] in
-            self?.supportOpen()
-        }
-    }
-
     /// The version line, with the heart and "Unterstützer" for supporters (`versionMark`).
     func versionLine(_ text: String) -> Widget! {
         let line = versionMark(text)
@@ -249,7 +238,7 @@ extension App {
         append(card, ask)
 
         let buttons = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
-        let support = primaryButton(translated(SupportCopy.cardSupport.key), symbol: "emblem-favorite-symbolic")
+        let support = primaryButton(translated(SupportCopy.cardSupport.key), symbol: "paint:heart")
         gtk_widget_set_size_request(support, 160, Int32(Theme.primaryButtonHeight))
         signal(support, "clicked") { [weak self] in self?.supportOpen() }
         append(buttons, support)
@@ -277,7 +266,7 @@ extension App {
         let list = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
         append(list, actionRow("window-close-symbolic", translated(SupportCopy.dontShowAgain.key)) {
             [weak self] in
-            gtk_popover_popdown(asPanel(panel))
+            panelDown(panel)
             guard let self else { return }
             var history = self.supportStore.promptHistory
             history.dismissCard()

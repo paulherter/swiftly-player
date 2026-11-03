@@ -17,9 +17,16 @@ struct ExtraTile: View {
             PlayRequest.start(extra, model: model, prepares: $prepares,
                                   missing: missing, play: play)
         } label: {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 8) {
                 Picture(url: model.imageURL(for: extra, maxHeight: 300),
-                     width: 210, height: 118)
+                     width: 210, height: 118) {
+                    Image(icon: "film", size: Theme.emptySymbol / 2)
+                        .font(.app(size: Theme.emptySymbol / 2))
+                        .foregroundStyle(Theme.font)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Theme.area)
+                }
+                VStack(alignment: .leading, spacing: 1) {
                 Text(extra.name)
                     .font(Theme.tile).foregroundStyle(Theme.font).lineLimit(1)
                 // An extra without a runtime reports 0, not nothing; without the rule it
@@ -28,6 +35,7 @@ struct ExtraTile: View {
                    let s = extra.runtimeSeconds {
                     Text(runtime(s)).font(Theme.small)
                         .foregroundStyle(Theme.fontVeryQuiet)
+                }
                 }
             }
             .frame(width: 210, alignment: .leading)

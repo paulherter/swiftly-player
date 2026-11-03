@@ -19,7 +19,7 @@ struct TVAdvanced: View {
                 } label: {
                     HStack(spacing: 12) {
                         Text("Erweitert")
-                        Image(systemName: opened ? "chevron.down" : "chevron.right")
+                        Image(icon: opened ? "chevron.down" : "chevron.right")
                             .accessibilityHidden(true)
                     }
                 }
@@ -45,7 +45,7 @@ struct TVAdvanced: View {
                         Button {
                             rows.removeAll { $0.id == row.id }
                         } label: {
-                            Image(systemName: "minus")
+                            Image(icon: "minus")
                         }
                         .buttonStyle(ThemedButtonStyle(onlySymbol: true))
                         .accessibilityLabel(Text("Entfernen"))
@@ -62,7 +62,7 @@ struct TVAdvanced: View {
                 rows.append(HeaderRow())
             } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: "plus")
+                    Image(icon: "plus")
                         .accessibilityHidden(true)
                     Text("Header hinzufügen")
                 }

@@ -63,9 +63,6 @@ final class SupportFlow {
     /// What is being tried on (the preview's own state lives in `LookStore`).
     var trying: LookSelection { LookStore.shared.selection }
 
-    /// **A look change is a short cross-fade of color and glow**, nothing that moves.
-    static var lookChange: Animation { Motion.change }
-
     /// A purchase from inside the preview: the preview stays under the thank-you page and
     /// closes with the sheet.
     @ObservationIgnored private var closeWithSheet = false
@@ -90,7 +87,7 @@ final class SupportFlow {
     /// opens, and the look follows the purchase.
     func keep() {
         let icon = trying.palette.iconName
-        switch withAnimation(Self.lookChange, { LookStore.shared.keep() }) {
+        switch Motion.recolor({ LookStore.shared.keep() }) {
         case .kept:
             GiftFlow.shared.close()
             Task { await LookIcon.apply(icon) }
@@ -137,7 +134,7 @@ final class SupportFlow {
     /// else, who gets the support sheet instead.
     @discardableResult
     func choose(_ selection: LookSelection) -> Bool {
-        guard withAnimation(Self.lookChange, { LookStore.shared.choose(selection) }) else {
+        guard Motion.recolor({ LookStore.shared.choose(selection) }) else {
             SupportModel.shared.open()
             return false
         }

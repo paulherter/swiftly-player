@@ -357,7 +357,7 @@ struct LoadSelection: View {
                 proceed(selectedEpisodes, quality, audio)
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "arrow.down")
+                    Image(icon: "arrow.down")
                         .font(Theme.categoryLarge)
                         .accessibilityHidden(true)
                     Text(verbatim: selected.isEmpty
@@ -389,8 +389,8 @@ struct LoadSelection: View {
                 .monospacedDigit()
         case .few(let missing):
             HStack(spacing: 5) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 12, weight: .semibold))
+                Image(icon: "info.circle", size: 12)
+                    .font(.app(size: 12, weight: .semibold))
                     .accessibilityHidden(true)
                 Text(verbatim: String(localized: "\(DownloadRules.size(missing)) zu wenig"))
                     .font(Theme.small)
@@ -470,9 +470,9 @@ struct LoadSelection: View {
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .monospacedDigit()
                     if let expanded {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Theme.fontVeryQuiet)
+                        Image(icon: "chevron.down", size: 12)
+                            .font(.app(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.font)
                             .rotationEffect(.degrees(expanded ? 0 : -90))
                             .accessibilityHidden(true)
                     }
@@ -520,17 +520,17 @@ struct LoadSelection: View {
             case .part:
                 Circle().fill(Theme.accent)
                 // Semibold, not `.heavy`: three weights, and `.heavy` is dropped.
-                Image(systemName: "minus").font(.system(size: 12, weight: .semibold))
+                Image(icon: "minus", size: 12).font(.app(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.onAccent)
             case .full:
                 Circle().fill(Theme.accent)
-                Image(systemName: "checkmark").font(Theme.group)
+                Image(icon: "checkmark").font(Theme.group)
                     .foregroundStyle(Theme.onAccent)
             case .present:
                 // **Quiet, without a circle.** A check in accent would mean "selected"; this
                 // only says nothing is left to do.
-                Image(systemName: "checkmark").font(Theme.listTitle)
-                    .foregroundStyle(Theme.fontVeryQuiet)
+                Image(icon: "checkmark").font(Theme.listTitle)
+                    .foregroundStyle(Theme.font)
             }
         }
         .frame(width: 22, height: 22)
@@ -632,7 +632,7 @@ struct QualityBadge: View {
                         withAnimation(Theme.toggle) { choice = q }
                     } label: {
                         if q == choice {
-                            Label(row(q), systemImage: "checkmark")
+                            Label(row(q), icon: "checkmark")
                         } else {
                             Text(verbatim: row(q))
                         }
@@ -667,7 +667,7 @@ struct QualityBadge: View {
 
     private func badge(expandable: Bool) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: choice.isOriginal ? "checkmark" : "arrow.down.right.and.arrow.up.left")
+            Image(icon: choice.isOriginal ? "checkmark" : "arrow.down.right.and.arrow.up.left")
                 .font(Theme.group)
                 .accessibilityHidden(true)
             Text(verbatim: choice.badge())
@@ -675,8 +675,8 @@ struct QualityBadge: View {
                 .monospacedDigit()
                 .contentTransition(.numericText())
             if expandable {
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
+                Image(icon: "chevron.up.chevron.down", size: 10)
+                    .font(.app(size: 10, weight: .semibold))
                     .accessibilityHidden(true)
             }
         }
@@ -710,7 +710,7 @@ struct AudioBadge: View {
                     withAnimation(Theme.toggle) { choice = option.choice }
                 } label: {
                     if option.choice == choice {
-                        Label(option.label, systemImage: "checkmark")
+                        Label(option.label, icon: "checkmark")
                     } else {
                         Text(verbatim: option.label)
                     }
@@ -718,15 +718,15 @@ struct AudioBadge: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "speaker.wave.2")
+                Image(icon: "speaker.wave.2")
                     .font(Theme.group)
                     .accessibilityHidden(true)
                 Text(verbatim: current)
                     .font(Theme.small)
                     .lineLimit(1)
                     .contentTransition(.numericText())
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
+                Image(icon: "chevron.up.chevron.down", size: 10)
+                    .font(.app(size: 10, weight: .semibold))
                     .accessibilityHidden(true)
             }
             .foregroundStyle(Theme.accent)

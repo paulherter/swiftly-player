@@ -55,6 +55,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.*
@@ -111,11 +113,19 @@ fun TvGrid(tiles: List<GridTile>, loadMore: () -> Unit = {}, focus: FocusRequest
     TvGlow(glowApp, scrolled = {
         if (lattice.firstVisibleItemIndex > 0) TV_GLOW_SCROLL_MAX else lattice.firstVisibleItemScrollOffset / glowDensity
     })
-    LazyVerticalGrid(GridCells.Fixed(TvTheme.gridColumns), state = lattice, modifier = Modifier.fillMaxSize(),
+    LazyVerticalGrid(PosterColumns, state = lattice, modifier = Modifier.fillMaxSize(),
                      contentPadding = PaddingValues(start = TvTheme.edgePage, end = TvTheme.edgePage, bottom = 40.dp),
                      horizontalArrangement = Arrangement.spacedBy(TvTheme.gridColumn),
-                     verticalArrangement = Arrangement.spacedBy(TvTheme.latticeRow - 16.dp)) {
-        item(span = { GridItemSpan(maxLineSpan) }) { header() }
+                     verticalArrangement = Arrangement.spacedBy(TvTheme.latticeRow)) {
+        // The row gap is the design's 58 pt *below the caption*; the chip row sits 48 pt above the grid, so the
+        // header gives back the difference.
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Box(Modifier.layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                val trim = (TvTheme.latticeRow - TvTheme.capsuleRailPadding).roundToPx().coerceAtLeast(0)
+                layout(placeable.width, placeable.height - trim) { placeable.place(0, 0) }
+            }) { header() }
+        }
         if (loads && tiles.isEmpty()) {
             items(TvTheme.gridColumns * placeholderRails) { TvTilePlaceholder() }
         } else {
@@ -136,6 +146,15 @@ fun TvGrid(tiles: List<GridTile>, loadMore: () -> Unit = {}, focus: FocusRequest
         more()
     }
     }
+}
+
+/**
+ * Seven fixed poster columns (tvOS 1.1: `GridItem(.fixed(posterWidth))`, gap 40): the grid is 7 x 104 + 6 x 20 dp wide and
+ * left-aligned at the page edge, the free strip on the right is for the letter rail.
+ */
+private val PosterColumns = object : GridCells {
+    override fun Density.calculateCrossAxisCellSizes(availableSize: Int, spacing: Int): List<Int> =
+        List(TvTheme.gridColumns) { TvTheme.posterWidth.roundToPx() }
 }
 
 /** Mirrors `TilePlaceholder` on tvOS: poster size, below it two breathing lines. */
@@ -222,10 +241,16 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
     val collections = state.listSelected
     val focus = firstFocus(!state.loads || collections)
     val lattice = rememberLazyGridState()
+    // The soft shade under the tabs shows only once the grid has moved under them (tvOS: contentOffset.y > 40 pt).
+    LaunchedEffect(lattice) {
+        snapshotFlow { lattice.firstVisibleItemIndex > 0 || lattice.firstVisibleItemScrollOffset > 20 * 2 }
+            .collect { TvLibraryScroll.scrolled = it }
+    }
+    DisposableEffect(Unit) { onDispose { TvLibraryScroll.scrolled = false } }
     Box(Modifier.fillMaxSize()) {
         TvGrid(if (collections) emptyList() else state.items, { run.launch { state.loadMore(app.kern) } }, focus, open,
                  loads = state.loads && !collections, withUnderRow = false, lattice = lattice, header = {
-            Column(Modifier.padding(top = headerBottom + 14.dp, bottom = 10.dp)) {
+            Column(Modifier.padding(top = headerBottom + 14.dp)) {
                 // **A fixed height with and without capsules** (tvOS: `.frame(height: chipHeight)`): "Sammlungen"
                 // has no filter and sort, and the row would shift on switching.
                 Row(Modifier.height(TvTheme.chipHeight), verticalAlignment = Alignment.CenterVertically,
@@ -294,14 +319,14 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
         })
         // **The letter strip in the right margin** where it means something (switched on, "By name", a
         // grid of titles). The grid's first item is the header, so tile i is item i + 1.
-        if (app.settings.alphabet && state.sorting == "name" && !collections && state.letters.size > 1) {
+        if (app.settings.alphabet && !collections && state.letters.size > 1) {
             val current by remember(state) {
                 derivedStateOf { state.items.getOrNull(maxOf(0, lattice.firstVisibleItemIndex - 1))?.letter }
             }
             TvAlphabetRail(state.letters, current,
                            Modifier.align(Alignment.TopEnd)
-                               .padding(end = (TvTheme.edgePage - TvAlphabetRailWidth) / 2,
-                                        top = headerBottom + 70.dp, bottom = 24.dp)) { letter ->
+                               // tvOS: trailing -32 from the page edge, top at 330 - 5 pt, bottom 60 pt.
+                               .padding(end = TvTheme.edgePage - 16.dp, top = 162.dp, bottom = 30.dp)) { letter ->
                 run.launch { state.jumpTarget(app.kern, letter)?.let { lattice.animateScrollToItem(it + 1) } }
             }
         }
@@ -338,7 +363,7 @@ private fun TvCapsuleWithPanel(text: String, symbol: Glyph?, entries: List<Choic
     val margin = with(LocalDensity.current) { TvTheme.edgePage.roundToPx() }
     val padding = with(LocalDensity.current) { 8.dp.roundToPx() }
     Box {
-        TvCapsule(text, Modifier.focusRequester(capsule), symbol = symbol) {
+        TvCapsule(text, Modifier.focusRequester(capsule), symbol = symbol, active = opened) {
             if (opened) close() else { sharing[0] = false; opened = true }
         }
         if (opened) {
@@ -364,8 +389,9 @@ private fun TvCapsuleWithPanel(text: String, symbol: Glyph?, entries: List<Choic
             Popup(popupPositionProvider = status, onDismissRequest = { close() },
                   properties = PopupProperties(focusable = true)) {
                 CompositionLocalProvider(LocalWithinPanel provides true) {
-                    Column(Modifier.width(310.dp).clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.raised)
-                            .heightIn(max = 420.dp).verticalScroll(rememberScrollState())
+                    // Design menu: #303030, r24, pad 10, selection menus 420 wide (pt / 2 here).
+                    Column(Modifier.width(210.dp).clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.raised)
+                            .heightIn(max = 420.dp).verticalScroll(rememberScrollState()).padding(5.dp)
                             .focusProperties { exit = { if (sharing[0]) FocusRequester.Default else FocusRequester.Cancel } }
                             .focusGroup()) {
                         entries.forEachIndexed { i, e ->
@@ -377,8 +403,7 @@ private fun TvCapsuleWithPanel(text: String, symbol: Glyph?, entries: List<Choic
                                      modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp))
                             }
                             val an = e.value == selected
-                            TvRow(e.text, if (an) Glyph.CheckmarkCircleFilled else Glyph.Ring,
-                                    symbolColor = if (an) Theme.accent else Theme.font,
+                            TvMenuRow(e.text, check = an, selected = an,
                                     modifier = (if (i == 0) Modifier.focusRequester(first) else Modifier)
                                         .semantics { this.selected = an }) {
                                 close()
@@ -402,7 +427,7 @@ fun TvWatchlist(app: SwiftlyApplication, open: (Destination) -> Unit) {
     de.paulherter.swiftly.WatchStateChange(app) { state.load(app.kern) }
     val focus = firstFocus(!state.loads)
     TvGrid(state.items, { run.launch { state.loadMore(app.kern) } }, focus, open, loads = state.loads, withUnderRow = false, header = {
-        Column(Modifier.padding(top = headerBottom + 14.dp, bottom = 10.dp)) {
+        Column(Modifier.padding(top = headerBottom + 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 genres.forEach { g -> TvChip(g.text, state.genre == g.value) { state.genreSet(g.value) } }
                 Spacer(Modifier.weight(1f))

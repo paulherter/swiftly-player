@@ -304,7 +304,8 @@ extension App {
         // `chevron.down`, open `chevron.up` (`SeriesView.swift:548`); a bare text label
         // gives no hint that it expands.
         let pill: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(pill, "swiftly-chip")
+        // Mac 1.1 `SeasonPill`: 15 semibold, 34 high, corner 8, `area` (hover `raised`), chevron 11.
+        gtk_widget_add_css_class(pill, "swiftly-staffelpille")
         gtk_widget_set_halign(pill, GTK_ALIGN_START)
         let pillsContent = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 6)
         let pillsText = label(choice.now?.name ?? translated("Staffel"))
@@ -321,7 +322,7 @@ extension App {
         gtk_widget_set_visible(pill, seasons.isEmpty ? 0 : 1)
         gtk_image_set_pixel_size(OpaquePointer(pillsAngle), 11)
 
-        let episodesSpace = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
+        let episodesSpace = stack(GTK_ORIENTATION_VERTICAL, spacing: 6) // Mac 1.1: 6 between rows
 
         // **An in-place list, not a sheet.**
         //
@@ -567,8 +568,13 @@ extension App {
     /// And this many per step afterwards.
     static let episodesJeStep = 4
 
-    /// An episode in the list. Image 160 × 90 (16 : 9), 18 gap, below it a header line
-    /// with runtime on the right and two lines of description.
+    /// An episode in the list (Mac 1.1 `EpisodesRow`). Image 160 × 90 (16 : 9), 16 gap, then
+    /// a header line (title 15 semibold, runtime 12 very quiet right after it, a check circle
+    /// when watched) and three lines of description at 13. Padding 10, hover surface
+    /// `groupsArea` with corner 12 instead of the old image zoom and play disc.
+    /// Not ported: the hover icons for download and the "..." menu; the pointer reaches the
+    /// same entries through the right-click tile menu below, and GTK has no clean
+    /// hover-only button without the nesting problem noted here.
     ///
     /// **The episode's image, not the series'.** `ImageSelection.landscape` deliberately takes the
     /// series backdrop, which is right for "Continue watching" but wrong here: in an
@@ -587,8 +593,11 @@ extension App {
         // **A gesture, not a button.** The row already contains a button (the toggle
         // checkmark), and a button inside a button is not a safe construction in GTK. The
         // Mac uses `.onTapGesture` for the same reason.
-        let row = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 18)
+        let row = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 16)
         gtk_widget_add_css_class(row, "swiftly-folgenzeile")
+        // On the series page the image lines up at 36 (list margin 26 + padding 10); the
+        // player's episode layer keeps the full-width rows.
+        if action == nil { gtk_widget_set_margin_start(row, 26); gtk_widget_set_margin_end(row, 26) }
         if running { gtk_widget_add_css_class(row, "swiftly-aktiv") }
 
         let (wrapper, image) = framedImage(width: 160, height: 90, style: "swiftly-plakat")
@@ -609,23 +618,11 @@ extension App {
         // **A full bar and a checkmark would be the same information twice**, so the bar
         // shows only while not watched.
         var barParts: [Widget?] = []
-        if selection.progressOnTiles, !episode.isWatched,
-           let share = episode.watchedShare {
+        // Mac 1.1: a watched episode shows a full bar, no dimming, no badge on the image; the
+        // check circle sits in the header line instead.
+        if selection.progressOnTiles, let share = episode.isWatched ? 1 : episode.watchedShare {
             barParts = barPut(wrapper, width: 160, share: share)
         }
-        let imageCheckmark = watchedCheckmarkPut(wrapper, an: episode.isWatched)
-        // **A play icon over the image when the pointer is there**; the Mac has it
-        // (`SeriesView.swift:665-674`). Without it a still does not look clickable.
-        let circle: Widget! = gtk_image_new_from_icon_name("media-playback-start-symbolic")
-        gtk_image_set_pixel_size(OpaquePointer(circle), 16)
-        gtk_widget_add_css_class(circle, "swiftly-spielkreis")
-        gtk_widget_set_halign(circle, GTK_ALIGN_CENTER)
-        gtk_widget_set_valign(circle, GTK_ALIGN_CENTER)
-        // Always present, only invisible, so it can fade in instead of popping up
-        // (`zeitSchweben`). Clicks pass through to the row.
-        gtk_widget_set_opacity(circle, 0)
-        gtk_widget_set_can_target(circle, 0)
-        gtk_overlay_add_overlay(OpaquePointer(wrapper), circle)
         append(row, wrapper)
 
         let text = stack(GTK_ORIENTATION_VERTICAL, spacing: 5)
@@ -633,11 +630,10 @@ extension App {
 
         let header = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 8)
         let number = episode.indexNumber.map { "\($0). " } ?? ""
-        let name = label(number + episode.name, style: "swiftly-kacheltitel")
+        let name = label(number + episode.name, style: "swiftly-listentitel")
         gtk_label_set_xalign(OpaquePointer(name), 0)
         gtk_label_set_ellipsize(OpaquePointer(name), PANGO_ELLIPSIZE_END)
         gtk_label_set_max_width_chars(OpaquePointer(name), 1)
-        gtk_widget_set_hexpand(name, 1)
         append(header, name)
         // **Started: remaining time instead of runtime**, like `EpisodesRow` on the iPhone
         // ("24 minutes left"). The bar in the image says how far, the text says how long
@@ -651,15 +647,23 @@ extension App {
             let duration = label(text, style: "swiftly-zweitzeile")
             durationField = duration
             gtk_widget_add_css_class(duration, "swiftly-leise")
+            gtk_widget_add_css_class(duration, "swiftly-folgendauer")
             append(header, duration)
         }
+        // The check circle after the runtime (Mac `checkmark.circle.fill` 14, very quiet).
+        let calm: Widget! = gtk_image_new_from_icon_name("object-select-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(calm), 14)
+        gtk_widget_add_css_class(calm, "swiftly-leise")
+        gtk_widget_set_visible(calm, episode.isWatched ? 1 : 0)
+        append(header, calm)
         append(text, header)
 
         if let content = episode.description, !content.isEmpty {
             let z = label(content, style: "swiftly-zweitzeile", wrap: true)
             gtk_widget_add_css_class(z, "dim-label")
+            gtk_widget_add_css_class(z, "swiftly-folgentext")
             gtk_label_set_xalign(OpaquePointer(z), 0)
-            gtk_label_set_lines(OpaquePointer(z), 2)
+            gtk_label_set_lines(OpaquePointer(z), 3)
             gtk_label_set_ellipsize(OpaquePointer(z), PANGO_ELLIPSIZE_END)
             gtk_label_set_justify(OpaquePointer(z), GTK_JUSTIFY_LEFT)
             gtk_widget_set_size_request(z, 200, -1)
@@ -672,7 +676,6 @@ extension App {
         // the tile menu (right click). The checkmark as *information* is on the image and
         // stays there, also under the pointer.
         var watched = episode.isWatched
-        let calm = imageCheckmark
 
         // **No spinner per episode any more**: it was one of three ways to download and the
         // worst, with twenty-five episodes giving twenty-five of the same. To download a
@@ -701,11 +704,10 @@ extension App {
             current = new
             for part in barParts { gtk_overlay_remove_overlay(OpaquePointer(wrapper), part) }
             barParts = []
-            if self.selection.progressOnTiles, !new.isWatched, let share = new.watchedShare {
+            if self.selection.progressOnTiles, let share = new.isWatched ? 1 : new.watchedShare {
                 barParts = barPut(wrapper, width: 160, share: share)
             }
             watched = new.isWatched
-            imageDim(wrapper, watched)
             gtk_widget_set_visible(calm, watched ? 1 : 0)
             if let inputField = durationField, let text = durationText(new) {
                 gtk_label_set_text(OpaquePointer(inputField), text)
@@ -721,7 +723,6 @@ extension App {
             let front = hovers || focused
             if front { gtk_widget_add_css_class(row, "swiftly-schwebt") }
             else { gtk_widget_remove_css_class(row, "swiftly-schwebt") }
-            crossfade(circle, on: front ? 1 : 0, duration: Theme.timeFloat)
         }
         // The download button stays. It used to be hidden on leave, and as soon as its
         // panel opened the pointer left the row, the button vanished and took the panel

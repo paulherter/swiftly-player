@@ -25,7 +25,7 @@ public func runtime(_ seconds: Double) -> String {
 public func timeText(_ seconds: Double) -> String {
     let total = Int(capped: seconds)
     let (h, m) = (total / 3600, (total % 3600) / 60)
-    return h > 0 ? "\(h):\(String(format: "%02d", m)) h" : "\(m) min"
+    return h > 0 ? translated("\(h) Std. \(m) Min.") : translated("\(m) Min.")
 }
 
 /// “7,8” instead of “7.8”: Jellyfin delivers a dot, German writes a comma.
@@ -89,6 +89,15 @@ public extension Item {
         return parts.joined(separator: " · ")
     }
 
+    /// The hit line under a group that already names the kind: short enough for one poster width.
+    var groupedHitInfo: String? {
+        if type == "Episode" { return hitInfo }
+        var parts: [String] = []
+        if let year = productionYear { parts.append(String(year)) }
+        if let count = childCount, type == "Series" { parts.append(translated("\(count) Staffeln")) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     /// “12 minutes left”, or `nil` if nothing worth mentioning is missing.
     ///
     /// Once existed twice and was **not** the same: once “Noch 12 Minuten”, once “Noch 12
@@ -96,7 +105,7 @@ public extension Item {
     /// translation.
     var remainingTimeText: String? {
         guard let total = runtimeSeconds, total > 0, let since = resumeFrom else { return nil }
-        return translated("Noch \(Int(capped: (total - since) / 60)) Minuten")
+        return translated("Noch \(max(Int(capped: ((total - since) / 60).rounded(.up)), 1)) Min.")
     }
 
     /// **The line under a continue-watching tile**: “S2 · F5 · noch 12 Min.” for an

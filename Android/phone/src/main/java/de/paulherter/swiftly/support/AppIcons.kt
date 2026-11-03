@@ -6,31 +6,24 @@ import android.content.pm.PackageManager
 import de.paulherter.swiftly.R
 
 /**
- * **Supporter app icons on the phone**: one `activity-alias` per icon in the manifest, all pointing
+ * **App icons on the phone, only with the looks**: one `activity-alias` per icon in the manifest, all pointing
  * at `MainActivity`; exactly one carries the launcher entry at a time. Switching enables the new
  * alias first and only then disables the others, so the app is never without an icon.
  *
- * The alias names are strings in the manifest (`.icon.Standard`, `.icon.Heart` …).
+ * The alias names are strings in the manifest (`.icon.Standard`, `.icon.LookNeonNight` …).
  * `Werkzeuge/manifest-classes-check.py` checks that every alias points at a class in the DEX.
- * The resources come from `Assets/SupporterIcons/android` (`build-icons.py`).
  *
  * TV has no alternate icons (the banner stays), as on tvOS.
  */
 object AppIcons {
     data class Icon(val name: String, val background: Int, val foreground: Int)
 
-    /** Standard first, then the six from `Assets/SupporterIcons/README.md`, in its order. */
+    /** The standard icon; the others are the looks' (`looks`). */
     val all = listOf(
         Icon("Standard", R.drawable.ic_launcher_background, R.drawable.ic_launcher_foreground),
-        Icon("Heart", R.drawable.ic_launcher_heart_background, R.drawable.ic_launcher_heart_foreground),
-        Icon("Aurora", R.drawable.ic_launcher_aurora_background, R.drawable.ic_launcher_aurora_foreground),
-        Icon("Gold", R.drawable.ic_launcher_gold_background, R.drawable.ic_launcher_gold_foreground),
-        Icon("Light", R.drawable.ic_launcher_light_background, R.drawable.ic_launcher_light_foreground),
-        Icon("Night", R.drawable.ic_launcher_night_background, R.drawable.ic_launcher_night_foreground),
-        Icon("Coffee", R.drawable.ic_launcher_coffee_background, R.drawable.ic_launcher_coffee_foreground),
     )
 
-    /** One icon per look (`tools/look-icons.py`), as `activity-alias` `.icon.Look<Name>`; not in the picker grid. */
+    /** One icon per look (`tools/look-icons.py`), as `activity-alias` `.icon.Look<Name>`. */
     val looks = listOf(
         Icon("LookHalloween", R.drawable.ic_launcher_look_halloween_background, R.drawable.ic_launcher_look_halloween_foreground),
         Icon("LookNeonNight", R.drawable.ic_launcher_look_neonnight_background, R.drawable.ic_launcher_look_neonnight_foreground),
@@ -42,7 +35,7 @@ object AppIcons {
         Icon("LookEmerald", R.drawable.ic_launcher_look_emerald_background, R.drawable.ic_launcher_look_emerald_foreground),
     )
 
-    /** Every alias there is: the picker's icons and the looks'. */
+    /** Every alias there is. */
     private val universe get() = all + looks
 
     /** The icon of a look alias; the standard icon for none. */
@@ -78,10 +71,5 @@ object AppIcons {
             }
             Support.log("App-Icon: $name")
         }.onFailure { Support.log("App-Icon fehlgeschlagen: $it") }
-    }
-
-    /** Back to the standard icon, e.g. when a refunded purchase withdraws the status. */
-    fun reset(context: Context) {
-        if (current(context) != "Standard") set(context, "Standard")
     }
 }

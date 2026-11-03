@@ -137,7 +137,7 @@
   {
    "id": "inter",
    "name": "Inter (typeface)",
-   "version": "Inter-SemiBold.ttf (18pt SemiBold); on Linux and Windows also InterVariable.ttf",
+   "version": "Inter-SemiBold.ttf (18pt SemiBold); on Linux, Windows and Android also InterVariable.ttf",
    "spdx": "OFL-1.1",
    "urheber": "The Inter Project Authors",
    "quelle": "https://github.com/rsms/inter",
@@ -147,10 +147,26 @@
     "macos",
     "tvos",
     "linux",
-    "windows"
+    "windows",
+    "android"
    ],
    "texte": [
     "OFL-1.1-Inter.txt"
+   ],
+   "gruppe": "app"
+  },
+  {
+   "id": "phosphor",
+   "name": "Phosphor Icons (icon set)",
+   "version": "2.1.1 (bold and fill weights)",
+   "spdx": "MIT",
+   "urheber": "Phosphor Icons",
+   "quelle": "https://github.com/phosphor-icons/core",
+   "plattformen": [
+    "android"
+   ],
+   "texte": [
+    "MIT.txt"
    ],
    "gruppe": "app"
   },

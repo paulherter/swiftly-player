@@ -62,7 +62,7 @@ fun EmbySignInPage(app: SwiftlyApplication, address: String?, finished: () -> Un
     Column(Modifier.fillMaxSize().background(Theme.reason)) {
         SubpageHeader(translated("Mit Emby anmelden"), { model.goBack() })
         Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.widthIn(max = Theme.formWidth).fillMaxWidth().padding(horizontal = Theme.edgePageWide)
+            Column(Modifier.widthIn(max = Theme.formWidth).fillMaxWidth().padding(horizontal = Theme.edgeSpacing)
                        .padding(bottom = 40.dp).navigationBarsPadding().imePadding()) {
                 val found = model.server
                 if (found == null) AddressStep(model.address, { model.address = it; model.problem = null }, headers, model.checking,
@@ -90,7 +90,7 @@ private fun AddressStep(address: String, change: (String) -> Unit, headers: andr
         AdvancedSection(headers, modifier = Modifier.padding(top = 6.dp))
         val empty = address.isBlank()
         PrimaryButton(translated(if (checking) "Verbinden…" else "Verbinden"), released = !empty && !checking,
-                      modifier = Modifier.padding(top = 22.dp).alpha(if (empty) 0.4f else 1f)) { check() }
+                      modifier = Modifier.padding(top = 22.dp)) { check() }
         when (problem) {
             null -> {}
             // The same hint as everywhere a server does not answer: one sentence for one situation.
@@ -136,7 +136,7 @@ private fun SignInStep(serverName: String, version: String, users: List<EmbyUser
             InputField(user, userChange, Glyph.Person, translated("Benutzername"))
             InputField(password, passwordChange, Glyph.Padlock, translated("Passwort"), secret = true) { signIn() }
             PrimaryButton(translated(if (signingIn) "Anmelden…" else "Anmelden"), released = user.isNotEmpty() && !signingIn,
-                          modifier = Modifier.padding(top = 10.dp).alpha(if (user.isEmpty()) 0.4f else 1f)) { signIn() }
+                          modifier = Modifier.padding(top = 10.dp)) { signIn() }
             error?.let {
                 Text(it, style = Theme.small, color = Theme.error, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             }

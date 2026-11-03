@@ -29,8 +29,8 @@ struct DiscordHint: View {
                     open(Community.discord)
                 } label: {
                     HStack(spacing: 14) {
-                        Image(systemName: "bubble.left.and.bubble.right")
-                            .font(.system(size: 17))
+                        Image(icon: "bubble.left.and.bubble.right", size: 17)
+                            .font(.app(size: 17))
                             .frame(width: 20)
                         Text("Discord beitreten")
                             // **17 and 52 like any other row in a sheet** - the same values `ActionSheet`
@@ -41,7 +41,7 @@ struct DiscordHint: View {
                             // The component itself does not fit: `ActionSheet` only knows a heading
                             // and rows, while here an explanatory paragraph sits in between. So only
                             // the metrics are reused, not the container.
-                            .font(.system(size: 17))
+                            .font(.app(size: 17))
                         Spacer(minLength: 0)
                     }
                     .foregroundStyle(Theme.font)

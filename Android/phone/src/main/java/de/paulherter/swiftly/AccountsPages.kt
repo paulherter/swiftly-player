@@ -40,6 +40,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -78,8 +80,7 @@ import org.json.JSONObject
 fun SecondaryButton(symbol: Glyph, text: String, accent: Boolean = true, perform: () -> Unit) {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
-    val mass by androidx.compose.animation.core.animateFloatAsState(
-        if (pressed) Motion.PressMetric else 1f, Motion.release(), label = "druck")
+    val mass = de.paulherter.swiftly.shared.pressMass(pressed)
     Row(Modifier.fillMaxWidth().heightIn(min = Theme.buttonHeight)
             .graphicsLayer { scaleX = mass; scaleY = mass }
             .clip(RoundedCornerShape(Theme.corner))
@@ -111,7 +112,7 @@ fun ProfileCharacter(name: String, image: String?, size: Dp, highlighted: Boolea
         SubcomposeAsyncImage(model = image, contentDescription = name, contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize().clip(CircleShape),
             error = {
-                Box(Modifier.fillMaxSize().background(Theme.raised), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxSize().background(Theme.profileBrush(name)), contentAlignment = Alignment.Center) {
                     Text(name.take(1).uppercase(), color = Theme.font,
                          style = TextStyle(fontSize = (size.value * 0.38f).sp, fontWeight = FontWeight.SemiBold))
                 }
@@ -245,6 +246,10 @@ fun ServerOnboardingPage(app: SwiftlyApplication, preset: String?, kindPicked: B
     /** "Advanced": custom headers for a service in front of the server. */
     val headers = rememberHeaderRow()
     val run = rememberCoroutineScope()
+    // Without the servers already in the bundle: another account there is "Konto hinzufügen".
+    val found = rememberFoundServers(app, remember {
+        JSONArray(app.store.accounts?.let { Kern.bundleServers(it) } ?: "[]").let { a -> (0 until a.length()).map(a::getString) }
+    })
 
     fun cancel() { app.kern.onboardingCancel(); back() }
     fun record(session: String) { app.kern.onboardingCancel(); app.sessionRecord(session) }
@@ -325,6 +330,9 @@ fun ServerOnboardingPage(app: SwiftlyApplication, preset: String?, kindPicked: B
                         AdvancedSection(headers)
                         PrimaryButton(translated(if (examine) "Verbinden…" else "Verbinden"), released = address.isNotBlank() && !examine,
                                    modifier = Modifier.padding(top = 10.dp).alpha(if (address.isBlank()) 0.4f else 1f)) { check() }
+                        if (preset == null) {
+                            FoundServers(found, Modifier.padding(top = 16.dp)) { address = it.address; check() }
+                        }
                     }
                 }
                 // `error`, not `warning`: a rejected sign-in went wrong.
@@ -410,6 +418,24 @@ private fun CardContent(app: SwiftlyApplication, card: ServerCard, multiple: Boo
         }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(Theme.line))
+    // The plus on this card adds an account on *this* server: on the connected one the usual sign-in, on a
+    // foreign one the intake with its address.
+    val add = {
+        if (card.active) open(Destination("weiteresKonto", translated("Konto hinzufügen"), "WeiteresKonto"))
+        else open(Destination(card.address, translated("Konto hinzufügen"), "ServerAufnahme", role = card.kind.raw))
+    }
+    if (other.isEmpty()) {
+        // Alone on its server: the plus says what it does, as a row like the ones below (`addRow`).
+        val label = translated("Weiteres Konto hinzufügen")
+        Row(Modifier.fillMaxWidth().heightIn(min = Theme.rowHeight).pressRow(add)
+                .semantics(mergeDescendants = true) { contentDescription = label }
+                .padding(horizontal = 16.dp, vertical = Theme.rowPadV),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(Modifier.width(Theme.rowIconWidth), contentAlignment = Alignment.Center) { Symbol(Glyph.Plus, Theme.rowSymbolSize, color = Theme.accent) }
+            Text(translated("Konto hinzufügen"), style = Theme.body.copy(fontSize = Theme.rowTitleSize, fontWeight = FontWeight.Medium), color = Theme.font)
+        }
+        return
+    }
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         other.forEach { k ->
             val frameRect = remember { arrayOf(androidx.compose.ui.geometry.Rect.Zero) }
@@ -417,15 +443,12 @@ private fun CardContent(app: SwiftlyApplication, card: ServerCard, multiple: Boo
                 AccountSwitchTransition.start(app, k.identifier, k.name, k.image, frameRect[0], Theme.groupsArea, density, calm)
             }) { ProfileCharacter(k.name, k.image, 40.dp) }
         }
-        // The plus: on the own server another account, on a foreign one the intake with its address.
-        // A field on `area`, not a dashed circle (iPhone: a button without a label is square).
-        Box(Modifier.size(40.dp).background(Theme.area, RoundedCornerShape(Theme.corner))
-                .tapOn {
-                    if (card.active) open(Destination("weiteresKonto", translated("Konto hinzufügen"), "WeiteresKonto"))
-                    else open(Destination(card.address, translated("Konto hinzufügen"), "ServerAufnahme", role = card.kind.raw))
-                },
-            contentAlignment = Alignment.Center) {
-            Symbol(Glyph.Plus, 15.dp, color = Theme.fontQuiet, strength = Strength.Semibold, description = translated("Konto hinzufügen"))
+        // A field on `area`, not a dashed circle; the field stays 40, the hit area becomes 44.
+        // The row is 40 high with the others and 44 here, as on iPhone the row keeps its height.
+        Box(Modifier.size(44.dp).tapOn(add), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(40.dp).background(Theme.area, RoundedCornerShape(Theme.corner)), contentAlignment = Alignment.Center) {
+                Symbol(Glyph.Plus, 15.dp, color = Theme.font, strength = Strength.Semibold, description = translated("Weiteres Konto hinzufügen"))
+            }
         }
     }
 }

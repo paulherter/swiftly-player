@@ -10,6 +10,8 @@ import SwiftUI
 struct SeriesDetailView: View {
     let model: AppModel
     let series: Item
+    /// The production year from the freshly fetched series, for entries that arrive without one.
+    @State private var freshYear: Int?
     /// Coming from an episode, that episode's season is preselected.
     var startSeasonID: String? = nil
     /// The season **number** of the episode we came from.
@@ -180,14 +182,14 @@ struct SeriesDetailView: View {
                             .padding(.bottom, 22)
                     } else {
                     hero
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: Theme.blockGap) {
                         // Above the button, directly under the name.
                         proofRow
                         // **Button and row are one block, so they sit closer.** The spacing was 14, as
                         // large as to everything else, but horizontally the row's fields are only 8
                         // apart. The gap above was then larger than the gap between fields, and the row
                         // read as a separate thing instead of a continuation of the button.
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: Theme.actionGap) {
                             primaryButton
                             actionRail
                         }
@@ -197,9 +199,12 @@ struct SeriesDetailView: View {
                         description
                     }
                     .padding(.horizontal, Theme.margin(wide: wide))
-                    .padding(.top, 14)
+                    .padding(.top, 4)
                     .padding(.bottom, 22)
                     }
+
+                    WatchersRow(model: model, item: series)
+                        .padding(.bottom, 8)
 
                     PageTab(title: extras.isEmpty ? ["Folgen", "Besetzung", "Ähnliches"]
                                                  : ["Folgen", "Besetzung", "Ähnliches", "Extras"],
@@ -411,6 +416,7 @@ struct SeriesDetailView: View {
         // which would otherwise refetch the series every time.
         let current = await d ?? series
         SeriesCache.shared.remember(current)
+        freshYear = current.productionYear
         let selectedID = selectedSeason?.id
         SeriesCache.shared.remember(series.id) {
             $0.seasons = seasons
@@ -484,7 +490,8 @@ struct SeriesDetailView: View {
 
     private var secondaryLine: String {
         var parts: [String] = []
-        if let year = series.productionYear { parts.append(String(year)) }
+        // The entry the page was opened with often has no year; the fresh series brings it.
+        if let year = series.productionYear ?? freshYear { parts.append(String(year)) }
         // Not `childCount`: that field means different things depending on the query and
         // read one for a series with nineteen seasons. Once the seasons are loaded we
         // count them ourselves.
@@ -528,7 +535,7 @@ struct SeriesDetailView: View {
     }
 
     private var primaryButton: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 8) {
             Button {
                 if let state { launch(state) }
             } label: {
@@ -541,7 +548,7 @@ struct SeriesDetailView: View {
                     Text(verbatim: " ").hidden()
                     if buttonReady {
                         HStack(spacing: 8) {
-                            Image(systemName: "play.fill").font(.system(size: 15))
+                            Image(icon: "play.fill", size: 15).font(.app(size: 15))
                                 .opacity(prepares ? 0.5 : 1)
                             Text(buttonText)
                         }
@@ -586,7 +593,8 @@ struct SeriesDetailView: View {
         HStack(spacing: 8) {
             if watchlistShown {
                 ActionButton(symbol: remembered ? "bookmark.fill" : "bookmark",
-                             title: "Merkliste", active: remembered, stretches: !broad) {
+                             title: "Merkliste", active: remembered, stretches: !broad,
+                             caption: remembered ? "Gemerkt" : "Merken") {
                     remembered.toggle()
                     Task {
                         if let reason = await model.setWatchlist(series, an: remembered) {
@@ -607,7 +615,7 @@ struct SeriesDetailView: View {
             // With downloads off there is nothing to download and the trailer keeps its
             // place.
             if model.downloadButtonShow {
-                ActionButton(symbol: "arrow.down", title: "Laden", stretches: !broad) {
+                ActionButton(symbol: "arrow.down", title: "Laden", stretches: !broad, caption: "Laden") {
                     // **Always the selection sheet, even with one season.**
                     //
                     // It used to depend on `seasons.count > 1`; with a single season it went
@@ -617,10 +625,12 @@ struct SeriesDetailView: View {
                     selectionOpen = true
                 }
             } else {
-                ActionButton(symbol: "film", title: "Trailer", stretches: !broad) { trailerStart() }
+                ActionButton(symbol: "play.rectangle", title: "Trailer", stretches: !broad,
+                             caption: "Trailer") { trailerStart() }
             }
             ActionButton(symbol: watched ? "checkmark.circle.fill" : "checkmark.circle",
-                         title: "Gesehen", active: watched, stretches: !broad) {
+                         title: "Gesehen", active: watched, stretches: !broad,
+                         caption: "Gesehen") {
                 watched.toggle()
                 Task {
                     if let reason = await model.setWatched(series, an: watched) {
@@ -630,7 +640,7 @@ struct SeriesDetailView: View {
                     // Refetching goes through `model.pagesRefresh`.
                 }
             }
-            ActionButton(symbol: "ellipsis", title: "Mehr", stretches: !broad) { moreOpen = true }
+            ActionButton(symbol: "ellipsis", title: "Mehr", stretches: !broad, caption: "Mehr") { moreOpen = true }
                 .asActionAnchor()
         }
         // No own padding anymore: the four fields share the row and end where the button
@@ -765,7 +775,7 @@ struct SeriesDetailView: View {
             // Until then no "No cast", and **a row shaped like the tiles**, not one point of
             // height: otherwise the tab grew by a whole row on arrival.
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 84, maximum: 110), spacing: 14)],
-                      spacing: 20) {
+                      spacing: Theme.gridRowGap) {
                 ForEach(0 ..< 4, id: \.self) { _ in
                     VStack(spacing: 7) {
                         LoadField(corner: 38).frame(width: 76, height: 76)
@@ -782,7 +792,7 @@ struct SeriesDetailView: View {
             emptyHint("Keine Besetzung hinterlegt.")
         } else {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 84, maximum: 110), spacing: 14)],
-                      spacing: 20) {
+                      spacing: Theme.gridRowGap) {
                 ForEach(folks) { person in
                     NavigationLink(value: PersonRoute(person: person, origin: series.name)) {
                         CastTile(image: model.personImage(person),
@@ -833,7 +843,7 @@ struct SeriesDetailView: View {
             let usableNow = gridWidth - 2 * Theme.margin(wide: wide)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.tileSpacing),
                                      count: Theme.columns(usableNow: usableNow, wide: wide)),
-                      alignment: .leading, spacing: 20) {
+                      alignment: .leading, spacing: Theme.gridRowGap) {
                 ForEach(similar) { title in
                     NavigationLink(value: title) {
                         PosterTile(model: model, item: title, width: nil)
@@ -1018,7 +1028,7 @@ struct EpisodesPlaceholder: View {
         EpisodesRowsLayout(title: Text(verbatim: "10. Folgentitel"),
                            secondaryLine: Text(verbatim: "45 min"),
                            placeholder: true) {
-            LoadField().frame(width: 116, height: 116 * 65 / 116)
+            LoadField().frame(width: Theme.episodeWidth, height: Theme.episodeHeight)
         }
         .accessibilityHidden(true)
     }
@@ -1052,9 +1062,7 @@ struct EpisodesRowsLayout<Preview: View>: View {
                     .foregroundStyle(placeholder ? .clear : titleColor)
                     .overlay { if placeholder { LoadField(corner: 3).padding(.vertical, 3) } }
                     .multilineTextAlignment(.leading)
-                    // **Single line.** Two lines made the rows of a season end at different heights
-                    // and pushed the detail below away; same decision as on the tile.
-                    .lineLimit(1)
+                    .lineLimit(2)
 
                 secondaryLine
                     // The detail under the title grows with it, otherwise half the row would follow
@@ -1067,7 +1075,7 @@ struct EpisodesRowsLayout<Preview: View>: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Theme.margin(wide: wide))
-        .padding(.vertical, 12)
+        .padding(.vertical, 14)
     }
 }
 
@@ -1134,11 +1142,11 @@ struct EpisodesRow: View {
     /// tile; no new symbol, just one more place.
     /// 134 instead of 152, same aspect ratio: large enough to see without
     /// comparison, small enough that the row does not fall out of the list.
-    private var imageWidthValue: CGFloat { ongoing ? 134 : 116 }
+    private var imageWidthValue: CGFloat { ongoing ? Theme.episodeWidthOngoing : Theme.episodeWidth }
 
     private var preview: some View {
-        Picture(url: model.imageURL(for: episode, maxHeight: 220),
-             width: imageWidthValue, height: imageWidthValue * 65 / 116, corner: Theme.cornerTile,
+        Picture(url: model.imageURL(for: episode, maxHeight: 280),
+             width: imageWidthValue, height: imageWidthValue * Theme.episodeHeight / Theme.episodeWidth, corner: Theme.cornerTile,
              // A full bar **and** a checkmark would be the same information twice.
              progress: watched ? nil
                                   : episode.userData?.playedPercentage.map { $0 / 100 })
@@ -1154,7 +1162,7 @@ struct EpisodesRow: View {
               let total = episode.runtimeSeconds else { return "" }
         // Runtime only: the file size is in the load selection, and on the episode it is
         // a number without a question behind it.
-        return episode.remainingTimeText ?? "\(Int(total / 60)) min"
+        return episode.remainingTimeText ?? String(localized: "\(Int(total / 60)) Min.")
     }
 }
 
@@ -1345,7 +1353,7 @@ extension SeriesDetailView {
     var sheetTitle: String {
         guard let state else { return series.name }
         if let st = state.parentIndexNumber, let fo = state.indexNumber {
-            return "\(series.name) · S\(st) E\(fo)"
+            return "\(series.name) · " + String(localized: "S\(st) · F\(fo)")
         }
         return series.name
     }

@@ -84,6 +84,21 @@ func append(_ parent: Widget!, _ kind: Widget!) {
 /// instead of this function alone.
 final class PanelState { var present = true }
 
+/// **Closing a popover plays the opening backwards** (the Mac shrinks the panel into its
+/// button): the style class `swiftly-zu` runs the closing keyframes, then the popover goes.
+func panelDown(_ panel: Widget!) {
+    guard let panel, gtk_widget_get_parent(panel) != nil else { return }
+    if motionReduced() { gtk_popover_popdown(asPanel(panel)); return }
+    gtk_widget_add_css_class(panel, "swiftly-zu")
+    let keep = Retained(panel)
+    postDeadline(0.16) {
+        if gtk_widget_get_parent(keep.widget) != nil {
+            gtk_popover_popdown(asPanel(keep.widget))
+            gtk_widget_remove_css_class(keep.widget, "swiftly-zu")
+        }
+    }
+}
+
 ///
 /// **The popover hangs from a corner of its button:** flush left below it, no
 /// arrow, 8 pt gap, and it grows from that corner (`swiftly-aufklappen` in the
@@ -1072,6 +1087,27 @@ func inClipboard(_ text: String, an widget: Widget!) {
     guard let display = gtk_widget_get_display(widget) else { return }
     let store = gdk_display_get_clipboard(display)
     gdk_clipboard_set_text(store, text)
+}
+
+/// **A cell of fixed width around a wrapping label.**
+///
+/// GTK has no max-width, and a wrapped label asks for its whole line however
+/// `max_width_chars` is set (a 700 pt biography ran about 780 on Windows).
+/// A scroller with both policies off, a fixed content width and natural height is a real
+/// fixed-width cell, and with both policies off it does not take the mouse wheel.
+/// **The label must have a small minimum** (`max_width_chars` 1 or ellipsize), otherwise the
+/// never-scroll cell has to take its whole line as minimum.
+func fixedWidthCell(_ child: Widget!, width: Int) -> Widget! {
+    let cell: Widget! = gtk_scrolled_window_new()
+    gtk_scrolled_window_set_policy(OpaquePointer(cell), GTK_POLICY_NEVER, GTK_POLICY_NEVER)
+    gtk_scrolled_window_set_min_content_width(OpaquePointer(cell), Int32(width))
+    gtk_scrolled_window_set_max_content_width(OpaquePointer(cell), Int32(width))
+    gtk_scrolled_window_set_propagate_natural_width(OpaquePointer(cell), 0)
+    gtk_scrolled_window_set_propagate_natural_height(OpaquePointer(cell), 1)
+    gtk_widget_set_hexpand(cell, 0)
+    gtk_widget_set_halign(cell, GTK_ALIGN_START)
+    gtk_scrolled_window_set_child(OpaquePointer(cell), child)
+    return cell
 }
 
 @inline(__always) func asStack(_ w: Widget!) -> OpaquePointer! {

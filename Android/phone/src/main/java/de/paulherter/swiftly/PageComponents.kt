@@ -1,5 +1,6 @@
 package de.paulherter.swiftly
 
+import androidx.activity.compose.setContent
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -312,14 +313,17 @@ fun CountMark(count: Int) {
 fun HeaderTargets(app: SwiftlyApplication, open: (Destination) -> Unit, front: @Composable () -> Unit = {}) {
     // `vorn`: what only one page has (Edit on Downloads); left of the rest because it comes and goes.
     Row(verticalAlignment = Alignment.CenterVertically) {
-        TakeoverCharacter(app)
         front()
+        // The heart belongs to the group, on every main page (`HeaderTargets`): left of the watchlist, and while
+        // something plays elsewhere (or a group exists) the offer takes its place instead of a further icon.
+        if (app.offerings.value.size + app.gemeinsam.value.openGroups.size > 0) TakeoverCharacter(app)
+        else de.paulherter.swiftly.support.SupportHeaderHeart(app)
         // Filled, but not a state: here the bookmark is a destination, not a marker. Gone when the
         // watchlist is switched off in Appearance.
         if (app.settings.watchlist) {
             Box(Modifier.size(44.dp).tapOn { open(Destination("merkliste", translated("Merkliste"), "Merkliste")) },
                 contentAlignment = Alignment.Center) {
-                Symbol(Glyph.BookmarkFilled, 20.dp, color = Theme.font, description = translated("Merkliste"))
+                Symbol(Glyph.BookmarkFilled, Theme.actionSymbol, color = Theme.font, description = translated("Merkliste"))
             }
         }
         // `ProfileTarget`: the 34 icon in a 44 hit area, shifted 7 outward so the circle sits flush at the
@@ -345,7 +349,7 @@ fun ProfileImage(app: SwiftlyApplication, size: Dp) {
         contentScale = ContentScale.Crop,
         modifier = Modifier.size(size).clip(CircleShape),
         error = {
-            Box(Modifier.fillMaxSize().background(Theme.raised), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().background(Theme.profileBrush(app.username())), contentAlignment = Alignment.Center) {
                 // Letter = size x 0.38 semibold (`ProfileCharacter`).
                 Text(app.username().take(1).uppercase(), color = Theme.font,
                      style = TextStyle(fontSize = (size.value * 0.38f).sp, fontWeight = FontWeight.SemiBold))
@@ -381,11 +385,13 @@ fun ValuePill(symbol: Glyph, text: String, perform: () -> Unit) {
     // Fill without border, and `area` instead of `erhoeht`. They were the only buttons in the app
         // with an outline and looked like a foreign kind. `erhoeht` is what lies on a surface; the
         // pill lies on the page. `minHeight` so growing system text does not clip the label.
-    Row(Modifier.heightIn(min = Theme.pillsHeight).clip(CircleShape).background(Theme.area)
-            .tapOn(perform).padding(horizontal = 11.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Symbol(symbol, 12.dp, color = Theme.fontQuiet, strength = Strength.Medium)
-        Text(text, style = Theme.tile, color = Theme.font)
+    // The field stays 30 high, the hit area becomes 44 (7 above and below, `padding(.vertical, 7)` + `contentShape`).
+    Box(Modifier.tapOn(perform).padding(vertical = 7.dp)) {
+        Row(Modifier.heightIn(min = Theme.pillsHeight).clip(CircleShape).background(Theme.area).padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Symbol(symbol, 11.dp, color = Theme.font, strength = Strength.Medium)
+            Text(text, style = Theme.tile, color = Theme.font)
+        }
     }
 }
 
@@ -410,8 +416,8 @@ fun TileBadge(mark: String, figure: Int, modifier: Modifier = Modifier) {
         "staffeln" -> if (figure == 1) translated("1 Staffel") else translated("%lld Staffeln", figure)
         else -> null
     }
-    val form = RoundedCornerShape(9.dp)
-    Row(modifier.padding(6.dp).clip(form).background(Theme.reason.copy(alpha = 0.78f)).border(1.dp, Theme.margin, form)
+    val form = RoundedCornerShape(Theme.cornerSmall)
+    Row(modifier.padding(6.dp).clip(form).background(Theme.reason.copy(alpha = 0.78f))
             .padding(horizontal = if (wording == null) 5.dp else 6.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
         if (mark == "gesehen") Symbol(Glyph.Checkmark, 10.dp, color = Theme.font, strength = Strength.Semibold)
@@ -446,11 +452,11 @@ fun LoadField(modifier: Modifier, corner: Dp = Theme.cornerTile) {
 /** Mirrors `TilePlaceholder`: 2:3 poster, two lines below. */
 @Composable
 fun TilePlaceholder() {
-    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         LoadField(Modifier.fillMaxWidth().aspectRatio(2f / 3f))
-        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            LoadField(Modifier.fillMaxWidth().height(11.dp), 3.dp)
-            LoadField(Modifier.size(42.dp, 9.dp), 3.dp)
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            LoadField(Modifier.fillMaxWidth().height(16.dp), 3.dp)
+            LoadField(Modifier.size(42.dp, 14.dp), 3.dp)
         }
     }
 }
@@ -487,13 +493,14 @@ fun EmptyState(symbol: Glyph, headerLine: String, text: String, loads: Boolean =
                .padding(horizontal = 34.dp),
            horizontalAlignment = Alignment.CenterHorizontally,
            verticalArrangement = Arrangement.Center) {
-        Box(Modifier.size(Theme.circleEmpty).clip(CircleShape).background(Theme.area),
+        Box(Modifier.size(Theme.emptyDisc).clip(CircleShape).background(Theme.area),
             contentAlignment = Alignment.Center) {
-            Symbol(symbol, 44.dp, Modifier.graphicsLayer { alpha = breath }, color = Theme.fontQuiet)
+            Symbol(symbol, Theme.emptySymbol, Modifier.graphicsLayer { alpha = breath }, color = Theme.font)
         }
-        Text(headerLine, style = Theme.rail, color = Theme.font, modifier = Modifier.padding(top = 22.dp, bottom = 7.dp))
+        Text(headerLine, style = Theme.subpageTitle.copy(textAlign = TextAlign.Center), color = Theme.font,
+             modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
         Text(text, style = Theme.body.copy(lineHeight = 21.sp, textAlign = TextAlign.Center),
-             color = Theme.fontQuiet, modifier = Modifier.widthIn(max = 262.dp))
+             color = Theme.fontQuiet, modifier = Modifier.widthIn(max = Theme.emptyTextWidth))
         primaryButton?.let { (title, perform) ->
             PrimaryButton(title, stretches = false, modifier = Modifier.padding(top = 24.dp), action = perform)
         }
@@ -528,20 +535,19 @@ fun DisturbHint(address: String?, modifier: Modifier = Modifier, spacingTop: Dp 
                  retry: (() -> Unit)? = null) {
     Column(modifier.fillMaxWidth().padding(top = spacingTop, start = 34.dp, end = 34.dp),
            horizontalAlignment = Alignment.CenterHorizontally) {
-        // The only icon in the app at 30: the size is on no scale and is taken from the source so the
-                // same hint looks the same on all platforms.
-        Symbol(Glyph.ServerRoute, 30.dp, color = Theme.fontQuiet)
-        Text(translated("Server ist abgetaucht"), style = Theme.categoryLarge, color = Theme.font,
+        // `DisturbHint`: the empty-state symbol (52, white), the 28 bold title, 15 text in `fontQuiet`.
+        Symbol(Glyph.WlanDisruption, Theme.emptySymbol, color = Theme.font)
+        Text(translated("Server ist abgetaucht"), style = Theme.subpageTitle, color = Theme.font, textAlign = TextAlign.Center,
              modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
         Text(translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?",
                         address ?: translated("Der Server")),
-             style = Theme.small.copy(fontSize = 14.sp, lineHeight = 16.sp, textAlign = TextAlign.Center),
-             color = Theme.fontVeryQuiet, modifier = Modifier.widthIn(max = 262.dp))
+             style = Theme.body.copy(fontSize = 15.sp, lineHeight = 22.sp, textAlign = TextAlign.Center),
+             color = Theme.fontQuiet, modifier = Modifier.widthIn(max = Theme.emptyTextWidth))
         // A real button from the kit, not just text: as a quiet button "Erneut versuchen" had no
                 // surface and no border and did not read as a button. Now the secondary button, as wide as
                 // its text, the same shape as every other second button.
-        retry?.let { SecondaryButton(translated("Erneut versuchen"), stretches = false, accent = true,
-                                 modifier = Modifier.padding(top = 16.dp), action = it) }
+        retry?.let { PrimaryButton(translated("Erneut versuchen"), stretches = false,
+                                 modifier = Modifier.padding(top = 22.dp), action = it) }
     }
 }
 
@@ -631,6 +637,8 @@ class SheetRequest(val title: String, val entries: List<Choice>, val selected: S
                    * status bar, ground `reason` instead of `area`. The content column fills it.
                    */
                   val full: Boolean = false,
+                  /** One quiet line under the title, for a question that needs a word of reassurance (`note`). */
+                  val note: String? = null,
                   /** Drawn behind the content over the whole card (`SheetModifier.light`, `LookGlowLayer`). */
                   val backdrop: (@Composable BoxScope.() -> Unit)? = null,
                   val select: (String) -> Unit)
@@ -735,7 +743,11 @@ private fun SheetCard(w: SheetRequest, pull: Animatable<Float, AnimationVector1D
             // heading from its own rows.
             if (w.heading) Text(w.title, style = Theme.categoryLarge,
                  color = Theme.font, maxLines = 1,
-                 modifier = Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 5.dp, bottom = 14.dp))
+                 modifier = Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 5.dp, bottom = if (w.note != null) 4.dp else 14.dp))
+            w.note?.let {
+                Text(it, style = Theme.small, color = Theme.fontQuiet,
+                     modifier = Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).padding(bottom = 14.dp))
+            }
             val own = w.content
             when {
                 own != null -> own(close)
@@ -750,8 +762,8 @@ private fun SheetCard(w: SheetRequest, pull: Animatable<Float, AnimationVector1D
 /** The cancel row at the foot of a sheet, `SheetCancel`: 15 Medium `schriftLeise`, at least 54. */
 @Composable
 internal fun SheetCancel(close: () -> Unit) {
-    Box(Modifier.fillMaxWidth().heightIn(min = 54.dp).pressRow(close), contentAlignment = Alignment.Center) {
-        Text(translated("Abbrechen"), style = Theme.buttonText, color = Theme.fontQuiet)
+    Box(Modifier.fillMaxWidth().heightIn(min = Theme.rowHeight).pressRow(close), contentAlignment = Alignment.Center) {
+        Text(translated("Abbrechen"), style = Theme.buttonText, color = Theme.font)
     }
 }
 
@@ -778,7 +790,7 @@ private fun SelectionRows(w: SheetRequest, close: () -> Unit) {
                          .padding(top = Theme.tileSpacing, bottom = 4.dp).semantics { heading() })
             }
             val an = e.value == w.selected
-            Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).pressRow { close(); w.select(e.value) }
+            Row(Modifier.fillMaxWidth().heightIn(min = Theme.rowHeight).pressRow { close(); w.select(e.value) }
                     .padding(horizontal = Theme.edgeSpacing),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Box(Modifier.width(18.dp), contentAlignment = Alignment.Center) {
@@ -847,3 +859,13 @@ private fun SeasonSelection(w: SheetRequest, amount: Set<String>, setDown: (Set<
         Text(w.completionText(amount.size), style = Theme.listTitle, color = if (amount.isEmpty()) Theme.fontVeryQuiet else Theme.accent)
     }
 }
+
+/**
+ * `setContent` with Inter as the default text style: a `Text` without its own style would otherwise
+ * fall back to the system font. The iPhone sets `.font(.app)` at the root the same way.
+ */
+fun androidx.activity.ComponentActivity.setInterContent(content: @Composable () -> Unit) =
+    setContent {
+        androidx.compose.material3.ProvideTextStyle(
+            androidx.compose.ui.text.TextStyle(fontFamily = de.paulherter.swiftly.shared.Inter), content)
+    }

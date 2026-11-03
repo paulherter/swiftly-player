@@ -97,8 +97,8 @@ struct TVServerKindPicker: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: TVSpec.valueIcon, weight: .semibold))
+                Image(icon: "chevron.right")
+                    .font(.app(size: TVSpec.valueIcon, weight: .semibold))
                     .foregroundStyle(Theme.fontVeryQuiet)
                     .accessibilityHidden(true)
             }

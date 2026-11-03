@@ -239,16 +239,29 @@ extension App {
         gtk_widget_set_margin_start(block, Int32(Theme.edgeSpacing))
         gtk_widget_set_margin_end(block, Int32(Theme.edgeSpacing))
 
-        let inputField = label(text, style: "swiftly-beschreibung", wrap: true)
+        // Pango counts `lines` per paragraph, so a biography with blank lines ignored the
+        // four-line limit; folded, the paragraphs run together, open they stay as written.
+        let folded = text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        let inputField = label(folded, style: "swiftly-beschreibung", wrap: true)
         gtk_label_set_xalign(OpaquePointer(inputField), 0)
+        // Mac `PersonView.biography`: left-aligned, at most `readWidth` wide (`label(wrap:)` centres).
+        gtk_label_set_justify(OpaquePointer(inputField), GTK_JUSTIFY_LEFT)
+        gtk_widget_set_halign(block, GTK_ALIGN_START)
+        // Mac `readWidth` 700. A wrapping label asks for its whole text width; max_width_chars 1
+        // makes the size request the width (same trick as `TechBadge`); 92 chars ran ~1050 wide.
+        gtk_label_set_max_width_chars(OpaquePointer(inputField), 1)
+        gtk_widget_set_size_request(inputField, Int32(Theme.readWidth), -1)
+        gtk_widget_set_halign(inputField, GTK_ALIGN_START)
         gtk_label_set_lines(OpaquePointer(inputField), 4)
         gtk_label_set_ellipsize(OpaquePointer(inputField), PANGO_ELLIPSIZE_END)
-        append(block, inputField)
+        // Fixed 700 cell: `max_width_chars`/`size_request` left it about 780 on Windows.
+        append(block, fixedWidthCell(inputField, width: Theme.readWidth))
 
         // **Not a standard control**: a bare glyph with a word, not a
         // `GtkExpander`.
         let more: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(more, "swiftly-umriss")
+        gtk_widget_add_css_class(more, "swiftly-mehrwort")
+        gtk_widget_set_margin_top(more, 8)
         gtk_widget_set_halign(more, GTK_ALIGN_START)
         gtk_button_set_label(asButton(more), translated("Mehr"))
         // `Widget` is a pointer, not an object, so `weak` does not work on it. It is
@@ -256,6 +269,7 @@ extension App {
         // fields belong to the same page.
         signal(more, "clicked") {
             let whole = gtk_label_get_lines(OpaquePointer(inputField)) == 4
+            gtk_label_set_text(OpaquePointer(inputField), whole ? text : folded)
             gtk_label_set_lines(OpaquePointer(inputField), whole ? -1 : 4)
             gtk_label_set_ellipsize(OpaquePointer(inputField),
                                     whole ? PANGO_ELLIPSIZE_NONE : PANGO_ELLIPSIZE_END)

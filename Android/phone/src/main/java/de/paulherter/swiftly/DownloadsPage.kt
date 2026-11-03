@@ -141,16 +141,19 @@ internal fun RowScope.DownloadField(app: SwiftlyApplication, id: String, title: 
     val jerk = rememberJerk()
     // 48 x 48 like every other field of the action row (it was the only one at 44). The download
     // choice behind it is unchanged; this is only about the field.
-    Box(Modifier.weight(1f).height(Theme.buttonHeight).clip(RoundedCornerShape(Theme.corner)).background(buttonArea(LocalImageColor.current))
-            .tapOn { jerk(Jerk.Lightweight); app.downloads.paintTap(p) { app.downloadsCreate(listOf(id), title) } },
-        contentAlignment = Alignment.Center) {
-        // A plain arrow without a download, a filled circle when downloaded; both 17 semibold like the
-        // neighbor. The ring (22) is shown only while it runs, waits or hangs.
-        when (p?.state) {
-            null -> Symbol(Glyph.ArrowDown, 17.dp, color = Theme.font, strength = Strength.Semibold, description = translated("Laden"))
-            "fertig" -> Symbol(Glyph.LoadCircleFilled, 17.dp, color = Theme.accent, strength = Strength.Semibold, description = translated("Geladen, entfernen"))
-            else -> DownloadRing(p, 22.dp)
+    // 1.1: like the other fields of the row, no surface; icon 22 (`actionSymbol`) with the word "Laden" under it.
+    Column(Modifier.weight(1f).tapOn { jerk(Jerk.Lightweight); app.downloads.paintTap(p) { app.downloadsCreate(listOf(id), title) } },
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Box(Modifier.fillMaxWidth().height(36.dp), contentAlignment = Alignment.Center) {
+            // A plain arrow without a download, a filled circle when downloaded. The ring (22) is shown
+            // only while it runs, waits or hangs.
+            when (p?.state) {
+                null -> Symbol(Glyph.ArrowDown, Theme.actionSymbol, color = Theme.font, description = translated("Laden"))
+                "fertig" -> Symbol(Glyph.LoadCircleFilled, Theme.actionSymbol, color = Theme.accent, description = translated("Geladen, entfernen"))
+                else -> DownloadRing(p, 22.dp)
+            }
         }
+        Text(translated("Laden"), style = Theme.small, color = Theme.fontQuiet, maxLines = 1)
     }
 }
 
@@ -555,7 +558,7 @@ private fun DownloadRow(app: SwiftlyApplication, p: DownloadItem, image: File, l
         // single row; a series row stands for many episodes.
         val watched = group == null && p.watched
         // Watched is only darker, not transparent, as in the episode list (`WATCHED_DIM`).
-        Box(Modifier.size(if (landscape) 116.dp else 64.dp, if (landscape) 65.dp else 96.dp).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
+        Box(Modifier.size(if (landscape) Theme.episodeWidth else 64.dp, if (landscape) Theme.episodeHeight else 96.dp).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
             AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Crop,
                        colorFilter = if (watched) WATCHED_DIM else null, modifier = Modifier.fillMaxSize())
             if (watched) WatchedCheckmark()
@@ -704,7 +707,7 @@ fun OfflineGroup(app: SwiftlyApplication) {
     val e = app.settings
     val v = app.downloads
     SettingGroup(translated("Offline")) {
-        ChoiceRow(Glyph.LoadCircle, translated("Downloads"), translated("Titel aufs Gerät laden und offline schauen"), e.downloadsAn) { an ->
+        ChoiceRow(Glyph.LoadCircle, translated("Downloads"), translated("Titel offline schauen"), e.downloadsAn) { an ->
             val count = v.entries.value.size
             if (!an && count > 0) {
                 app.sheet.value = SheetRequest(translated("%lld Titel bleiben auf dem Gerät", count),
@@ -717,12 +720,12 @@ fun OfflineGroup(app: SwiftlyApplication) {
         }
         if (e.downloadsAn) {
             SeparatorLine()
-            ChoiceRow(Glyph.Wlan, translated("Nur über WLAN"), translated("Downloads warten, bis du im WLAN bist"), e.onlyOverWLAN) {
+            ChoiceRow(Glyph.Wlan, translated("Nur über WLAN"), translated("Downloads warten auf WLAN"), e.onlyOverWLAN) {
                 e.onlyOverWLAN = it
                 v.tick()
             }
             SeparatorLine()
-            ChoiceRow(Glyph.Pile, translated("Nächste Folge laden"), translated("Lädt die nächste, löscht die gesehene"), e.loadNextEpisode) {
+            ChoiceRow(Glyph.Pile, translated("Nächste Folge vorab laden"), translated("Lädt die nächste, löscht die gesehene"), e.loadNextEpisode) {
                 e.loadNextEpisode = it
             }
             SeparatorLine()

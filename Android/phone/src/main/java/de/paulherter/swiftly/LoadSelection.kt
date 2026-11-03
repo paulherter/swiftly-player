@@ -321,7 +321,7 @@ private fun SelectionRow(box: CheckboxState, title: String, right: String, small
                 val rotation by animateFloatAsState(if (expanded) 0f else -90f, Motion.sheet(), label = "pfeil")
                 Spacer(Modifier.width(10.dp))
                 Symbol(Glyph.AngleDown, 12.dp, Modifier.graphicsLayer { rotationZ = rotation },
-                       color = Theme.fontVeryQuiet, strength = Strength.Semibold,
+                       color = Theme.font, strength = Strength.Semibold,
                        description = translated(if (expanded) "Zuklappen" else "Aufklappen"))
             }
         }
@@ -347,7 +347,7 @@ private fun BoxImage(k: CheckboxState) {
                     Symbol(Glyph.Checkmark, 11.dp, color = Theme.onAccent, strength = Strength.Semibold)
                 }
                 // Quiet, no circle: an accent tick would mean "selected"; this one says nothing is left to do.
-                CheckboxState.There -> Symbol(Glyph.Checkmark, 15.dp, color = Theme.fontVeryQuiet, strength = Strength.Semibold)
+                CheckboxState.There -> Symbol(Glyph.Checkmark, 15.dp, color = Theme.font, strength = Strength.Semibold)
             }
         }
     }

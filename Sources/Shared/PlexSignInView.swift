@@ -35,7 +35,7 @@ struct PlexSignInView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     content
                 }
-                .padding(.horizontal, Theme.edgePageWide)
+                .padding(.horizontal, Theme.edgeSpacing)
                 .padding(.bottom, 40)
                 .frame(maxWidth: Theme.formWidth)
                 .frame(maxWidth: .infinity)
@@ -102,6 +102,12 @@ struct PlexSignInView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 20)
             guide
+            // Under the guide, where the steps end; it was pinned to the bottom edge.
+            let opening = model.step == .opening
+            Button(opening ? "Wird geöffnet…" : "Plex öffnen") { model.actions.start() }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(opening)
+                .padding(.top, 28)
         }
     }
 
@@ -233,9 +239,9 @@ struct PlexSignInView: View {
     /// On the portrait's upper right edge, as a mark on a picture: a small field, not a
     /// circle (round is only what is a picture).
     private var lockMark: some View {
-        Image(systemName: "lock.fill")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.fontQuiet)
+        Image(icon: "lock.fill", size: 10)
+            .font(.app(size: 10, weight: .semibold))
+            .foregroundStyle(Theme.font)
             .frame(width: 22, height: 22)
             .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
             .padding(.trailing, 6)
@@ -320,9 +326,9 @@ struct PlexSignInView: View {
         let failed = model.unreachable.contains(server.id)
         return Button { model.actions.pickServer(server) } label: {
             HStack(spacing: 14) {
-                Image(systemName: "externaldrive")
-                    .font(.system(size: 17))
-                    .foregroundStyle(Theme.fontQuiet)
+                Image(icon: "externaldrive", size: 17)
+                    .font(.app(size: 17))
+                    .foregroundStyle(Theme.font)
                     .frame(width: 20)
                     .breathing(busy)
                     .accessibilityHidden(true)
@@ -341,9 +347,9 @@ struct PlexSignInView: View {
                     ProgressView().controlSize(.small)
                         .accessibilityHidden(true)
                 } else {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.fontVeryQuiet)
+                    Image(icon: "chevron.right", size: 13)
+                        .font(.app(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.font)
                         .accessibilityHidden(true)
                 }
             }
@@ -424,11 +430,6 @@ struct PlexSignInView: View {
     private var footer: some View {
         Group {
             switch model.step {
-            case .start, .opening:
-                let opening = model.step == .opening
-                Button(opening ? "Wird geöffnet…" : "Mit Plex anmelden") { model.actions.start() }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .disabled(opening)
             case let .waiting(prompt):
                 Button("Seite noch mal öffnen") { openBrowser(prompt) }
                     .buttonStyle(SecondaryButtonStyle())
@@ -443,7 +444,7 @@ struct PlexSignInView: View {
                 EmptyView()
             }
         }
-        .padding(.horizontal, Theme.edgePageWide)
+        .padding(.horizontal, Theme.edgeSpacing)
         .frame(maxWidth: Theme.formWidth)
         .frame(maxWidth: .infinity)
         .padding(.bottom, 24)

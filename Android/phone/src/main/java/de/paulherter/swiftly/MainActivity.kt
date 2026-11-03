@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.layer.drawLayer
 import de.paulherter.swiftly.shared.Theme
+import kotlinx.coroutines.future.await
 
 /** Mirrors `RootView` in Shared: server, sign-in, then the app. */
 sealed interface Phase {
@@ -72,7 +73,7 @@ class MainActivity : ComponentActivity() {
                 statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
                 navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
             )
-            setContent { BetaRedirectPage { openGooglePlay() } }
+            setInterContent { BetaRedirectPage { openGooglePlay() } }
             return
         }
         // On TV continue straight into the TV UI. The normal launcher entry (e.g. "Open" after installing
@@ -90,6 +91,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
         val app = application as SwiftlyApplication
+        DebugOpen.read(intent)
         // The first download asks for the notification permission (`SwiftlyApplication.messageRightAsk`);
         // nobody needs the answer: if denied, downloads just run without a notification.
         val messageRight = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
@@ -102,7 +104,7 @@ class MainActivity : ComponentActivity() {
         if (resources.configuration.smallestScreenWidthDp < 600 && !app.isTv) {
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
-        setContent {
+        setInterContent {
             var phase by remember { mutableStateOf<Phase>(if (app.sessionAgainFromSet()) Phase.Start else Phase.Server) }
             // Only after the player, with a short delay, as in `RootView`: the prompt comes when someone
             // has just finished watching, not in the middle of playback.
@@ -123,6 +125,20 @@ class MainActivity : ComponentActivity() {
                 kotlinx.coroutines.delay(1500)
                 if (app.play.value != null) { app.discordHintDue.value = true; return@LaunchedEffect }
                 discordHintShow(app, this@MainActivity)
+            }
+            // Debug builds only: sign in to a test Emby by launch extras (`testServer`, `testUser`, `testPassword`).
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                val address = intent?.getStringExtra("testServer")
+                if (!BuildConfig.DEBUG || address == null || app.sessionAgainFromSet()) return@LaunchedEffect
+                runCatching {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        app.kern.embyCheck(address, "[]").await()
+                        val session = app.kern.embySignIn(intent.getStringExtra("testUser").orEmpty(), intent.getStringExtra("testPassword").orEmpty()).await()
+                        app.kern.onboardingCancel()
+                        app.sessionRecord(session)
+                    }
+                    phase = Phase.Start
+                }.onFailure { android.util.Log.w("Swiftly", "testServer sign-in failed: $it") }
             }
             // Signed out: back to server selection.
             androidx.compose.runtime.LaunchedEffect(app.signedOut.intValue) { if (app.signedOut.intValue > 0) phase = Phase.Server }

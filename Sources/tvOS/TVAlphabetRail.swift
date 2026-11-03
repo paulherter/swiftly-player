@@ -1,7 +1,8 @@
 import JellyfinKit
 import SwiftUI
 
-/// **The letter strip on Apple TV**, in the right margin beside a "By name" grid.
+/// **The index strip on Apple TV**, in the right margin beside a grid: letters for "By
+/// name", years or ratings for the other orders (``AlphabetIndex``).
 ///
 /// The remote has no slide, so the strip is a column of focusable letters: right from the
 /// last column reaches it, up and down walk the letters and the grid follows at once, a
@@ -27,15 +28,20 @@ struct TVAlphabetRail: View {
     /// Wide enough for a focused letter in its circle, narrow enough for the 80 pt margin.
     static let width: CGFloat = 56
     /// One letter's row, readable from the sofa.
-    static let row: CGFloat = 40
+    static let row: CGFloat = 43  // 24 pt line (29) + 14 gap, as in the design
 
     var body: some View {
         ScrollViewReader { reader in
             ScrollView(.vertical) {
                 VStack(spacing: 0) {
                     ForEach(index.entries) { entry in
+                        // The next step of a scale, half a row, not focusable.
+                        if entry.gap {
+                            Circle().fill(Theme.fontVeryQuiet).frame(width: 6, height: 6)
+                                .frame(width: Self.width, height: Self.row * AlphabetIndex.gapShare)
+                        }
                         Button { choose(entry.letter) } label: {
-                            LetterLabel(letter: entry.letter, current: entry.letter == current,
+                            LetterLabel(letter: entry.label, current: entry.letter == current,
                                         height: Self.row)
                         }
                         .buttonStyle(LetterStyle())
@@ -43,13 +49,12 @@ struct TVAlphabetRail: View {
                         .id(entry.letter)
                     }
                 }
-                .padding(.vertical, Self.row)
             }
             .scrollIndicators(.hidden)
             // A soft edge says there are more letters above or below.
             .mask(LinearGradient(stops: [.init(color: .clear, location: 0),
-                                         .init(color: .black, location: 0.06),
-                                         .init(color: .black, location: 0.94),
+                                         .init(color: .black, location: 0.02),
+                                         .init(color: .black, location: 0.98),
                                          .init(color: .clear, location: 1)],
                                  startPoint: .top, endPoint: .bottom))
             .onChange(of: current) { _, new in
@@ -75,8 +80,8 @@ private struct LetterLabel: View {
 
     var body: some View {
         Text(verbatim: letter)
-            .font(.system(size: 22, weight: .semibold))
-            .foregroundStyle(isFocused ? Theme.font : current ? Theme.accent : Theme.fontQuiet)
+            .font(.app(size: 24, weight: .semibold))
+            .foregroundStyle(isFocused ? Theme.font : current ? Theme.accent : Theme.fontVeryQuiet)
             .frame(width: 40, height: 40)
             .background(Circle().fill(isFocused ? Theme.accent : .clear))
             .scaleEffect(isFocused ? 1.15 : 1)

@@ -145,6 +145,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
     var selfSelected by remember(target.id) { mutableStateOf(false) }
     var similar by remember(target.id) { mutableStateOf<List<GridTile>?>(null) }
     var similarDisturbed by remember(target.id) { mutableStateOf(false) }
+    var watchers by remember(target.id) { mutableStateOf<List<Watcher>>(emptyList()) }
     var extras by remember(target.id) { mutableStateOf<List<Extra>>(emptyList()) }
     // Without remembered episodes the placeholders show from the first frame, not only after the fetch.
     var episodesLoads by remember(target.id) { mutableStateOf(episodes.isEmpty()) }
@@ -185,6 +186,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
 
     /** **One load for everything**, also after "Mark season watched"; a separate refresh once forgot the schedule on iOS. */
     suspend fun load() {
+        section.launch { watchers = watchersLoad(app, target.id) }
         try {
             // Similar titles arrive in the same step as the series (iOS `SeriesDetailView.load`); loading
             // them only after series and episodes made the bottom shift.
@@ -315,7 +317,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (app.settings.watchlist) {
-                        ActionButton(if (remembered) Glyph.BookmarkFilled else Glyph.Bookmark, translated("Merkliste"), remembered) {
+                        ActionButton(if (remembered) Glyph.BookmarkFilled else Glyph.Bookmark, translated("Merkliste"), remembered, translated(if (remembered) "Gemerkt" else "Merken")) {
                             toggle(!remembered, { remembered = it }) { id, an -> app.kern.remember(id, an).await() }
                         }
                     }
@@ -323,16 +325,16 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                     // the load selection, also for a season: single episodes must always be selectable. The trailer
                     // moves to the More sheet for it. With downloads off, it keeps its place.
                     if (app.settings.downloadButtonShow) {
-                        ActionButton(Glyph.ArrowDown, translated("Laden"), false) {
+                        ActionButton(Glyph.ArrowDown, translated("Laden"), false, translated("Laden")) {
                             s?.let { loadSelectionShow(app, it.id, it.name, it.seasons) }
                         }
                     } else {
-                        ActionButton(Glyph.Film, translated("Trailer"), false) { trailerStart() }
+                        ActionButton(Glyph.PlayRectangle, translated("Trailer"), false, translated("Trailer")) { trailerStart() }
                     }
-                    ActionButton(if (watched) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle, translated("Gesehen"), watched) {
+                    ActionButton(if (watched) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle, translated("Gesehen"), watched, translated("Gesehen")) {
                         toggle(!watched, { watched = it }) { id, an -> app.kern.watched(id, an).await() }
                     }
-                    ActionButton(Glyph.More, translated("Mehr"), false) {
+                    ActionButton(Glyph.More, translated("Mehr"), false, translated("Mehr")) {
                         val selectedSeason = s?.seasons?.firstOrNull { it.id == season }
                         // `TitleActions.forSeries`.
                         val entries = buildList {
@@ -398,6 +400,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                 s?.description?.let { CollapsibleText(it) }
             }
 
+            WatchedBy(watchers)
             Spacer(Modifier.height(22.dp))
             PageTab(listOfNotNull(translated("Folgen"), translated("Besetzung"), translated("Ähnliches"), if (extras.isNotEmpty()) translated("Extras") else null), tab) { tab = it }
 
@@ -516,17 +519,19 @@ internal fun SeasonHeader(seasons: List<Season>, selected: String?, opened: Bool
     val height = if (compact) 28.dp else 34.dp
     // Where the field sits in the window, read when the list opens: it may only reach down to the screen's edge.
     val fieldTop = remember { floatArrayOf(0f) }
-    Box((if (compact) Modifier.zIndex(10f) else Modifier.fillMaxWidth().zIndex(10f).padding(start = Theme.edgeSpacing, top = 14.dp, bottom = 14.dp))
+    Box((if (compact) Modifier.zIndex(10f) else Modifier.fillMaxWidth().zIndex(10f).padding(start = Theme.edgeSpacing, top = 7.dp, bottom = 7.dp))
             .onGloballyPositioned { fieldTop[0] = it.positionInWindow().y }) {
-        Row(Modifier.tapOn { if (multiple && android.os.SystemClock.uptimeMillis() - closedAround[0] > 300) setOpen(!opened) }
-                .heightIn(min = height)
-                .then(if (compact) Modifier else Modifier.clip(RoundedCornerShape(Theme.cornerSmall)).background(buttonArea(LocalImageColor.current)).padding(horizontal = 11.dp)),
+        // iPhone `ExpandList`: a capsule 30 high with 12 inside, hit area widened back to 44 (7 above and below,
+        // taken off the 14 around it, so the layout stays where it was).
+        Row((if (compact) Modifier.tapOn { if (multiple && android.os.SystemClock.uptimeMillis() - closedAround[0] > 300) setOpen(!opened) }.heightIn(min = height)
+             else Modifier.tapOn { if (multiple && android.os.SystemClock.uptimeMillis() - closedAround[0] > 300) setOpen(!opened) }.padding(vertical = 7.dp).heightIn(min = 30.dp))
+                .then(if (compact) Modifier else Modifier.clip(androidx.compose.foundation.shape.CircleShape).background(buttonArea(LocalImageColor.current)).padding(horizontal = 12.dp)),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(seasons.firstOrNull { it.id == selected }?.name ?: translated("Staffel"),
                  style = if (compact) Theme.small.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold) else Theme.listTitle,
                  color = Theme.font)
             if (multiple) Symbol(Glyph.AngleDown, 11.dp, Modifier.graphicsLayer { rotationZ = rotation },
-                                color = Theme.fontVeryQuiet, strength = Strength.Semibold, description = translated("Öffnet die Auswahl"))
+                                color = if (compact) Theme.fontVeryQuiet else Theme.font, strength = Strength.Semibold, description = translated("Öffnet die Auswahl"))
         }
         // **Above the episodes, not between them.** A popup has no height in the page and stays
         // tappable; a drawing outside the header row would get no taps.
@@ -536,7 +541,7 @@ internal fun SeasonHeader(seasons: List<Season>, selected: String?, opened: Bool
             val density = LocalDensity.current
             // 16 margin in the popup for the motion; the list sits 6 below the field.
             val margin = with(density) { 16.dp.roundToPx() }
-            val bottom = with(density) { (height + 6.dp).roundToPx() }
+            val bottom = with(density) { (height + 6.dp + (if (compact) 0.dp else 7.dp)).roundToPx() }
             Popup(offset = IntOffset(-margin, bottom - margin), onDismissRequest = { closedAround[0] = android.os.SystemClock.uptimeMillis(); setOpen(false) },
                   properties = PopupProperties(focusable = false)) {
                 AnimatedVisibility(condition, Modifier.padding(16.dp),
@@ -584,16 +589,18 @@ internal fun SeasonHeader(seasons: List<Season>, selected: String?, opened: Bool
 }
 
 /**
- * Mirrors `EpisodesRow`: image 116 × 65, title "3. Name" on two lines, remaining or total time below.
+ * Mirrors `EpisodesRow`: image 148 × 83 (`episodeWidth` x `episodeHeight`), title "3. Name" on two lines, remaining or total time below.
  * **Watched steps back** instead of disappearing: image and title dimmed, tick on the image.
  * Bar and tick together would be the same information twice.
  */
 @Composable
-internal fun EpisodesRow(f: Episode, end: (@Composable () -> Unit)? = null, lengthy: (() -> Unit)? = null, perform: () -> Unit) {
+internal fun EpisodesRow(f: Episode, end: (@Composable () -> Unit)? = null, lengthy: (() -> Unit)? = null, ongoing: Boolean = false, perform: () -> Unit) {
     EpisodesRowsLayout(if (lengthy != null) Modifier.pressRowLong(lengthy, perform) else Modifier.pressRow(perform), f.title, f.subline, if (f.watched) Theme.fontQuiet else Theme.font, end = end) {
         // **Watched only gets darker, not transparent** (`Gesehenhaken`, `colorMultiply`): with opacity
         // the background shone through, and on a page in image colour every watched still took on its tint.
-        Box(Modifier.size(116.dp, 65.dp).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
+        // The running episode in the player: a larger picture, no surface (`EpisodesRow.ongoing`).
+        val width = if (ongoing) Theme.episodeWidthOngoing else Theme.episodeWidth
+        Box(Modifier.size(width, width * (Theme.episodeHeight.value / Theme.episodeWidth.value)).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
             AsyncImage(model = f.image, contentDescription = null, contentScale = ContentScale.Crop,
                        colorFilter = if (f.watched) WATCHED_DIM else null, modifier = Modifier.fillMaxSize())
             // Bar and tick together would be the same information twice.
@@ -607,13 +614,13 @@ internal fun EpisodesRow(f: Episode, end: (@Composable () -> Unit)? = null, leng
 @Composable
 private fun EpisodesRowsLayout(modifier: Modifier, title: String, subline: String?, titleColor: Color,
                                end: (@Composable () -> Unit)? = null, image: @Composable () -> Unit) {
-    Row(Modifier.fillMaxWidth().then(modifier).padding(horizontal = Theme.edgeSpacing, vertical = 12.dp),
+    Row(Modifier.fillMaxWidth().then(modifier).padding(horizontal = Theme.edgeSpacing, vertical = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         image()
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             // Row with image: title 15 semibold, subline 12.
-            // **Single line**, or the rows of a season would end at different heights.
-            Text(title, style = Theme.listTitle, color = titleColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Two lines like `.lineLimit(2)` on iOS; the image beside it is taller than two lines, so rows keep their height.
+            Text(title, style = Theme.listTitle, color = titleColor, maxLines = 2, overflow = TextOverflow.Ellipsis)
             subline?.let { Text(it, style = Theme.small, color = Theme.fontVeryQuiet, maxLines = 1) }
         }
         end?.let { Box(Modifier.align(Alignment.CenterVertically)) { it() } }

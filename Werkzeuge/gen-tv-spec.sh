@@ -87,6 +87,7 @@ scales = [num(v) for k, v in spec["scales"].items() if k.startswith("focusMagnif
 for f in spec["guarded"]["kotlin"]:
     path = root / f
     for n, line in enumerate(path.read_text().splitlines(), 1):
+        if "tv-spec: unrelated" in line: continue
         code = line.split("//")[0]
         for L in lengths:
             if re.search(r"(?<![\w.])" + re.escape(L) + r"(\.0)?\.dp\b", code): bad.append(f"{f}:{n}: literal {L}.dp is in tv-spec.json")
@@ -97,6 +98,7 @@ for f in spec["guarded"]["kotlin"]:
 for f in spec["guarded"]["swift"]:
     path = root / f
     for n, line in enumerate(path.read_text().splitlines(), 1):
+        if "tv-spec: unrelated" in line: continue
         code = line.split("//")[0]
         for v in sorted({num(v) for v in spec["lengths"].values() if v >= 26}):
             if re.search(r"(?<![\w.])" + re.escape(v) + r"(\.0)?\b(?!\s*[%x])", code) and re.search(r"padding|frame|spacing|cornerRadius|size:", code):

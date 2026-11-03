@@ -87,13 +87,6 @@ extension App {
         gtk_widget_set_margin_start(bar, Int32(Theme.edgeSpacing - 8))
         gtk_widget_set_margin_top(bar, 24)
 
-        let arrow: Widget! = gtk_button_new()
-        gtk_widget_add_css_class(arrow, "swiftly-zurueck")
-        caption(arrow, translated("Zurück"))
-        gtk_button_set_child(asButton(arrow), gtk_image_new_from_icon_name("go-previous-symbolic"))
-        signal(arrow, "clicked") { [weak self] in self?.subpageBack() }
-        append(bar, arrow)
-
         gtk_overlay_add_overlay(OpaquePointer(header), bar)
         return header
     }

@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -200,7 +199,7 @@ fun SuchPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
             Row(Modifier.fillMaxWidth().onSizeChanged { headerHeight = it.height }.graphicsLayer { alpha = 1f - headerDistance.value }
                     .padding(horizontal = Theme.edgeSpacing).padding(bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Text(translated("Suchen"), style = Theme.titleLarge, color = Theme.font,
+                Text(translated("Suche"), style = Theme.titleLarge, color = Theme.font,
                      modifier = Modifier.weight(1f))
                 HeaderTargets(app, open)
             }
@@ -228,8 +227,8 @@ fun SuchPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                        fadeOut(tween(90, easing = Motion.soft))) {
                 Box(Modifier.padding(start = 12.dp).size(44.dp).tapOn { st.term = ""; focusManager.clearFocus(); st.searchMode = false },
                     contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(36.dp).clip(CircleShape).background(Theme.area), contentAlignment = Alignment.Center) {
-                        Symbol(Glyph.Cross, 15.dp, color = Theme.fontQuiet, strength = Strength.Semibold, description = translated("Suche schließen"))
+                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(Theme.corner)).background(Theme.area), contentAlignment = Alignment.Center) {
+                        Symbol(Glyph.Cross, 15.dp, color = Theme.font, strength = Strength.Semibold, description = translated("Suche schließen"))
                     }
                 }
             }
@@ -254,14 +253,14 @@ fun SuchPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                     // **No ring:** if results are already there, they stay until new ones arrive.
                     st.hunts && st.hit.isEmpty() && st.seerr.isEmpty() -> {
                         whole("abstand") { Spacer(Modifier.height(12.dp)) }
-                        items(count * 2, key = { "platzhalter$it" }) { Box(Modifier.padding(bottom = 20.dp)) { TilePlaceholder() } }
+                        items(count * 2, key = { "platzhalter$it" }) { Box(Modifier.padding(bottom = Theme.gridRow)) { TilePlaceholder() } }
                     }
                     // **Failed is not empty.** Before, a network error also showed "No results for …", a
                     // statement about the catalog nobody had checked.
                     st.disrupted && st.hit.isEmpty() && st.seerr.isEmpty() && !AccountSwitchTransition.waits -> whole("gestoert") {
                         // The full server formula, as on every other page; 24 above.
                         Box(Modifier.fillMaxWidth().padding(top = 24.dp).height(360.dp)) {
-                            EmptyState(Glyph.ServerRoute, translated("Server ist abgetaucht"),
+                            EmptyState(Glyph.WlanDisruption, translated("Server ist abgetaucht"),
                                 translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serverAddress()),
                                 primaryButton = translated("Erneut versuchen") to { redo++ })
                         }
@@ -298,20 +297,20 @@ fun SuchPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                 // List row, not `Theme.group`: tiles follow below, and an all-caps row would be a third style.
                                 // 14 above: for all but the first group 10 are already below the grid above
                                 // (20 row spacing instead of 10 grid end).
-                                Text(translated(title), style = Theme.listTitle,
-                                     color = Theme.fontQuiet, modifier = Modifier.padding(top = if (firstGroup) 14.dp else 4.dp, bottom = 6.dp))
+                                Text(translated(title), style = Theme.listTitle.copy(fontSize = Theme.rowTitleSize),
+                                     color = Theme.font, modifier = Modifier.padding(top = if (firstGroup) Theme.cardGap - 10.dp else 0.dp, bottom = 12.dp))
                             }
                             // Every result leads to its page; nothing plays directly from search.
                             items(group, key = { it.id }) { k ->
                                 // 20 as in Library, Watchlist and Genre; narrow search was the only one at 16.
-                                GridTileView(k, Modifier.padding(bottom = 20.dp)) { open(Destination(k.id, k.title, k.type)) }
+                                GridTileView(k, Modifier.padding(bottom = Theme.gridRow)) { open(Destination(k.id, k.title, k.type)) }
                             }
                         }
                     }
                     if (st.seerr.isNotEmpty()) {
                         whole("block-seerr") { BlockTitle(translated("Über Seerr anfragen"), st.seerr.size, Modifier.padding(top = 8.dp)) }
                         items(st.seerr, key = { "seerr-" + it.key }) { t ->
-                            SeerrTileView(t, Modifier.padding(bottom = 20.dp)) {
+                            SeerrTileView(t, Modifier.padding(bottom = Theme.gridRow)) {
                                 app.seerrHit[t.key] = t
                                 open(Destination(t.key, t.title, "Seerrtitel"))
                             }
@@ -338,7 +337,7 @@ private fun SearchField(text: String, change: (String) -> Unit, focus: FocusRequ
             .clickable(remember { MutableInteractionSource() }, null) { focus.requestFocus() }
             .padding(start = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Symbol(Glyph.Magnifier, 17.dp, color = Theme.fontVeryQuiet)
+        Symbol(Glyph.Magnifier, 17.dp, color = Theme.font)
         Box(Modifier.weight(1f)) {
             if (text.isEmpty()) Text(translated("Filme, Serien, Folgen"), style = Theme.body, color = Theme.fontVeryQuiet)
             BasicTextField(value = text, onValueChange = change, singleLine = true,
@@ -361,7 +360,7 @@ private fun SearchField(text: String, change: (String) -> Unit, focus: FocusRequ
 private fun EmptyHint() {
     Column(Modifier.fillMaxWidth().padding(top = 70.dp), horizontalAlignment = Alignment.CenterHorizontally,
            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Symbol(Glyph.Magnifier, 44.dp, color = Theme.fontVeryQuiet)
+        Symbol(Glyph.Magnifier, 44.dp, color = Theme.font)
         Text(translated("Filme, Serien und Folgen durchsuchen"), style = Theme.body, color = Theme.fontQuiet)
     }
 }
@@ -374,8 +373,8 @@ private fun History(words: List<String>, erase: () -> Unit, select: (String) -> 
             // Heading: 20 semibold in normal case, `schriftLeise`. A search heading has no other role
             // than a settings heading.
             Text(translated("Zuletzt gesucht"),
-                 style = Theme.rail,
-                 color = Theme.fontQuiet, modifier = Modifier.weight(1f))
+                 style = Theme.section,
+                 color = Theme.font, modifier = Modifier.weight(1f))
             Text(translated("Löschen"), style = Theme.tile, color = Theme.fontVeryQuiet,
                  modifier = Modifier.tapOn(erase))
         }
@@ -383,7 +382,7 @@ private fun History(words: List<String>, erase: () -> Unit, select: (String) -> 
             if (i > 0) Box(Modifier.padding(start = 34.dp).fillMaxWidth().height(1.dp).background(Theme.line))
             Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).pressRow { select(word) },
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) { Symbol(Glyph.History, 15.dp, color = Theme.fontVeryQuiet) }
+                Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) { Symbol(Glyph.History, 15.dp, color = Theme.font) }
                 Text(word, style = Theme.listTitle, color = Theme.font,
                      maxLines = 1, overflow = TextOverflow.Ellipsis)
             }

@@ -127,7 +127,7 @@ struct PlaylistView: View {
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.tileSpacing),
                                      count: columns),
-                      alignment: .leading, spacing: 20) {
+                      alignment: .leading, spacing: Theme.gridRowGap) {
                 ForEach(shown) { item in
                     NavigationLink(value: item) {
                         PosterTile(model: model, item: item, width: nil)

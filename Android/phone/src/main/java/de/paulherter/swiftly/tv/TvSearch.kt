@@ -46,6 +46,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.Destination
 import de.paulherter.swiftly.SearchState
 import de.paulherter.swiftly.SeerrMark
@@ -191,7 +195,8 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
 
     Box(Modifier.fillMaxSize()) {
         TvGlow(app, scrolled = { scroll.value / density.density })
-        Row(Modifier.fillMaxSize().padding(start = TvTheme.edgePage), horizontalArrangement = Arrangement.spacedBy(TvSpec.columnGap)) {
+        Row(Modifier.fillMaxSize().padding(start = TvTheme.edgePage), horizontalArrangement = Arrangement.spacedBy(SearchLayout.historyLeft - TvTheme.edgePage - SearchLayout.keyboardWidth)) {
+            // Design: keyboard card 80..540 pt, hits and history from 620 pt.
             TvSearchKeyboard(st.term, { st.term = it }, focus, speaking,
                 speak = if (canSpeak) ({
                     speaking = true
@@ -291,16 +296,30 @@ private fun Loading() {
  */
 @Composable
 private fun Recent(history: List<String>, focus: SearchFocus, onPick: (String) -> Unit, onClear: () -> Unit) {
-    Column(Modifier.width(TvSpec.formWidth)) {
-        Text(translated("Zuletzt gesucht"), style = TvTheme.rail, color = Theme.fontQuiet,
-             modifier = Modifier.padding(horizontal = TvSpec.rowInset).padding(bottom = TvSpec.groupsTitleBottom))
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.area).padding(TvSpec.listCardInset)) {
+    // Design: heading 44/700 on the bare background, 24 pt above the group; rows are settings rows (84 pt,
+    // 40 pt symbol in a 52 pt column, white focus surface over the group), the card is `groupsArea`.
+    Column(Modifier.width(SearchLayout.historyWidth)) {
+        Text(translated("Zuletzt gesucht"), style = TvTheme.rail, color = Theme.font, modifier = Modifier.padding(bottom = 12.dp))
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.groupsArea).padding(horizontal = 13.dp)) {
             history.forEachIndexed { i, w ->
-                TvRow(w, Glyph.History, modifier = if (i == 0) Modifier.focusRequester(focus.recent) else Modifier) { onPick(w) }
+                HistoryRow(w, Glyph.History, if (i == 0) Modifier.focusRequester(focus.recent) else Modifier) { onPick(w) }
                 SeparatorLine()
             }
-            TvRow(translated("Verlauf löschen"), Glyph.Papierkorb, modifier = if (history.isEmpty()) Modifier.focusRequester(focus.recent) else Modifier) { onClear() }
+            HistoryRow(translated("Verlauf löschen"), Glyph.Papierkorb, if (history.isEmpty()) Modifier.focusRequester(focus.recent) else Modifier) { onClear() }
         }
+    }
+}
+
+/** A history row: symbol in its column, then the text; the settings look (`TvSettingsRow`), symbol quiet at rest. */
+@Composable
+private fun HistoryRow(text: String, symbol: Glyph, modifier: Modifier, perform: () -> Unit) {
+    TvSettingsRow(modifier, perform = perform) { focus ->
+        Box(Modifier.width(TvSpec.rowSymbolColumn), contentAlignment = Alignment.Center) {
+            Symbol(symbol, 20.dp, color = if (focus) Theme.reason else Theme.fontVeryQuiet, strength = Strength.Medium)
+        }
+        Text(text, style = TvTheme.button.copy(fontSize = 15.sp, fontWeight = FontWeight.Medium),
+             color = if (focus) Theme.reason else Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis,
+             modifier = Modifier.padding(start = 14.dp))
     }
 }
 

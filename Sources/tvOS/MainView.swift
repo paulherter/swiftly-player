@@ -468,9 +468,13 @@ struct MainView: View {
             //
             // On the remaining sections it stays: tiles scroll under the bar, and without it they
             // hit it bright.
-            if (barPresent || anRoot), section != .start {
+            // Only Filme and Serien: their grids scroll under the tabs. Elsewhere nothing lies
+            // behind the bar, and a shade there read as a bar of its own.
+            if (barPresent || anRoot), section == .movies || section == .seriesList {
                 // Only a quiet shadow: the look's glow lies behind the page and must shine through.
-                HeaderHistory(soft: true, strength: 0.3).zIndex(1).opacity(barPresent ? 1 : 0)
+                HeaderHistory(soft: true).zIndex(1)
+                    .opacity(barPresent && LibraryScroll.shared.scrolled ? 1 : 0)
+                    .animation(Theme.motion(.easeInOut(duration: 0.2)), value: LibraryScroll.shared.scrolled)
             }
 
             if barPresent || anRoot {
@@ -563,11 +567,32 @@ struct MainView: View {
         if arguments.contains("-spurlauf") { await trackRun(); return }
         guard let i = arguments.firstIndex(of: "-zeige"), i + 1 < arguments.count
         else { return }
+        if arguments[i + 1] == "einstellungen" {
+            paths[section.rawValue].append(ProfileRoute())
+            return
+        }
+        if arguments[i + 1] == "herz" {
+            SupportModel.shared.presented = true
+            return
+        }
         if model.views.isEmpty { await model.loadViews() }
+        // `-zeige player`: the episode the home hero shows, a minute in.
+        if arguments[i + 1] == "player" {
+            guard let bib = model.views.first(where: { $0.collectionType == "tvshows" }),
+                  let page = await model.items(in: bib.id),
+                  let series = page.title.first(where: { $0.name == "Hafen 9" }) ?? page.title.first,
+                  let episode = (await model.episodes(series: series.id, season: nil))?.dropFirst(2).first,
+                  let plan = await model.plan(for: episode.id)
+            else { return }
+            play = PlayRequest(item: episode, plan: plan, startAt: 1781)
+            return
+        }
         let art = arguments[i + 1] == "film" ? "movies" : "tvshows"
+        // `-zeige film` shows "Atlas", `-zeige serie` shows "Die Brücke" (design screens).
+        let wanted = arguments[i + 1] == "film" ? "Atlas" : "Die Brücke"
         guard let bib = model.views.first(where: { $0.collectionType == art }),
               let page = await model.items(in: bib.id),
-              let firstOne = page.title.first
+              let firstOne = page.title.first(where: { $0.name == wanted }) ?? page.title.first
         else { return }
         paths[section.rawValue].append(firstOne)
     }

@@ -163,11 +163,11 @@ struct HomeView: View {
         }
         .overlay(alignment: .topTrailing) {
             ActionSheet(opened: $signOutSheet,
-                           title: String(localized: "Abmelden von \(model.session?.userName ?? "")"),
+                           title: String(localized: "Von \(model.session?.userName ?? "") abmelden?"),
                            actions: [
                 TitleAction(symbol: "rectangle.portrait.and.arrow.right",
                               text: "Abmelden", cautionary: true) { model.signOut() },
-            ])
+            ], note: "Du kannst dich jederzeit wieder anmelden.")
         }
         .playerCover(item: $play) { wish in
             PlayerScreen(model: model, item: wish.item,
@@ -403,12 +403,12 @@ struct HomeView: View {
         case .newMovies:
             if !state.newMovies.isEmpty {
                 Rail(model: model, title: "Zuletzt hinzugefügte Filme",
-                      items: state.newMovies, newAccess: true)
+                      items: state.newMovies, jump: rail.libraryJump, newAccess: true)
             }
         case .newSeries:
             if !state.newSeries.isEmpty {
                 Rail(model: model, title: "Zuletzt hinzugefügte Serien",
-                      items: state.newSeries, newAccess: true)
+                      items: state.newSeries, jump: rail.libraryJump, newAccess: true)
             }
         case .newArrivals:
             if !state.recent.isEmpty {
@@ -490,6 +490,8 @@ private struct Rail: View {
     let items: [Item]
     /// Set means: the heading leads to the page behind it.
     var target: CollectionRoute? = nil
+    /// Set means: the heading opens a library area in this order (``StartRail/libraryJump``).
+    var jump: LibraryJump? = nil
     /// Landscape tiles instead of portrait, only for "Continue Watching".
     var landscape = false
     /// Shows *what* was newly added instead of the episode number.
@@ -515,7 +517,7 @@ private struct Rail: View {
     private var railsHeightValue: CGFloat {
         let image = landscape ? Theme.railsLandscapeHeight(wide: wide)
                         : Theme.railsHeight(wide: wide)
-        return 24 + 12 + image + 7 + 32
+        return 28 + 12 + image + 8 + (landscape ? 36 : 32)
     }
 
     var body: some View {
@@ -532,6 +534,9 @@ private struct Rail: View {
             Group {
                 if let target {
                     NavigationLink(value: target) { RailTitle(text: title, name: name) }
+                        .buttonStyle(Theme.PressButton())
+                } else if let jump {
+                    Button { model.openLibrary(jump) } label: { RailTitle(text: title, name: name) }
                         .buttonStyle(Theme.PressButton())
                 } else {
                     RailTitle(text: title, name: name)
@@ -598,23 +603,23 @@ private struct Tile: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Picture(url: landscape ? model.landscapeImageURL(for: item)
-                           : model.imageURL(for: item, maxHeight: 500, portrait: true),
+        VStack(alignment: .leading, spacing: 8) {
+            Picture(url: landscape ? model.landscapeImageURL(for: item, width: 1000)
+                           : model.imageURL(for: item, maxHeight: 600, portrait: true),
                  width: width, height: height, corner: Theme.cornerTile,
                  progress: progress) {
                 // If the title has no landscape image, the poster steps in: cropped, but still
                 // the cover and not a still.
-                Picture(url: model.imageURL(for: item, maxHeight: 500, portrait: true),
+                Picture(url: model.imageURL(for: item, maxHeight: 600, portrait: true),
                      width: width, height: height, corner: Theme.cornerTile) {
                     // **And if that is missing too, a symbol instead of emptiness.**
                     //
                     // A blank surface looks like a bug in the app, and was reported exactly that
                     // way. A symbol says: an image belongs here, the server has none.
                     Theme.area.overlay {
-                        Image(systemName: item.tileCharacter)
-                            .font(.system(size: 22))
-                            .foregroundStyle(Theme.fontVeryQuiet)
+                        Image(icon: item.tileCharacter, size: 22)
+                            .font(.app(size: 22))
+                            .foregroundStyle(Theme.font)
                     }
                 }
             }
@@ -633,14 +638,14 @@ private struct Tile: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.seriesName ?? item.name)
-                    .font(Theme.tile)
+                    .font(landscape ? Theme.listTitle : Theme.tile)
                     .foregroundStyle(Theme.font)
                     .lineLimit(1)
                 if let abbreviation = subline {
                     Text(abbreviation)
                         .font(Theme.small)
                         .monospacedDigit()
-                        .foregroundStyle(Theme.fontQuiet)
+                        .foregroundStyle(Theme.fontVeryQuiet)
                         .lineLimit(1)
                 }
             }

@@ -24,8 +24,8 @@ struct SupportLooksCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 6) {
                         Text("Look ausprobieren")
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .bold))
+                        Image(icon: "chevron.right", size: 11)
+                            .font(.app(size: 11, weight: .bold))
                             .accessibilityHidden(true)
                     }
                     .growing(14, .semibold)
@@ -40,19 +40,10 @@ struct SupportLooksCard: View {
                 .padding(.bottom, 18)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            // **Dark glass without a live blur.** Translucent, so the glow behind it shows at
-            // the top, dark below that, with a light edge at the top. A material here
-            // redrew the blur on every frame of the icon animation.
-            .background {
-                RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous)
-                    .fill(LinearGradient(colors: [Color(white: 0.10).opacity(0.62), Color(white: 0.07).opacity(0.9)],
-                                         startPoint: .top, endPoint: .bottom))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous)
-                    .strokeBorder(LinearGradient(colors: [Theme.font.opacity(0.14), Theme.font.opacity(0.04)],
-                                                 startPoint: .top, endPoint: .bottom), lineWidth: 1)
-            }
+            // **The standard card, flat.** The same fill as every other card on the page: no
+            // gradient and no outline, and no live blur either.
+            .background(Theme.groupsArea,
+                        in: RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
         }
         .buttonStyle(Theme.PressButton())
@@ -138,8 +129,8 @@ struct SupportStatusCard: View {
         let support = SupportModel.shared
         if support.isSupporter {
             HStack(spacing: 14) {
-                Image(systemName: support.plan == .tip ? "cup.and.saucer.fill" : "heart.fill")
-                    .font(.system(size: 18))
+                Image(icon: support.plan == .tip ? "cup.and.saucer.fill" : "heart.fill", size: 18)
+                    .font(.app(size: 18))
                     .foregroundStyle(Theme.accent)
                     .frame(width: 44, height: 44)
                     .background(
@@ -249,8 +240,8 @@ private struct ProfileIntroPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Image(systemName: "heart.fill")
-                .font(.system(size: 28))
+            Image(icon: "heart.fill", size: 28)
+                .font(.app(size: 28))
                 .foregroundStyle(Theme.accent)
                 .frame(width: 60, height: 60)
                 .background(
@@ -289,9 +280,9 @@ private struct ProfileIntroPanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .topTrailing) {
             Button(action: later) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Theme.fontQuiet)
+                Image(icon: "xmark", size: 13)
+                    .font(.app(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.font)
                     .frame(width: 30, height: 30)
                     .background(Theme.raised, in: Circle())
                     .frame(width: 44, height: 44)
@@ -306,8 +297,8 @@ private struct ProfileIntroPanel: View {
 
     private func fact(_ symbol: String, accent: Bool, _ text: Text) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: symbol)
-                .font(.system(size: 14, weight: .semibold))
+            Image(icon: symbol, size: 14)
+                .font(.app(size: 14, weight: .semibold))
                 .foregroundStyle(accent ? Theme.accent : Theme.font)
                 .frame(width: 32, height: 32)
                 .background(Theme.raised, in: RoundedRectangle(cornerRadius: 9, style: .continuous))

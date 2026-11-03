@@ -276,6 +276,14 @@ struct MainView: View {
             paths[Region.start.rawValue] = NavigationPath()
             section = .start
         }
+        // **A row heading on the home page opens its library** (``StartRail/libraryJump``): the
+        // area comes up at its top, not at a detail page left open in it earlier.
+        .onChange(of: model.libraryJump) { _, request in
+            guard let request else { return }
+            let target: Region = request.jump.art == "tvshows" ? .seriesList : .movies
+            paths[target.rawValue] = NavigationPath()
+            section = target
+        }
         #if DEBUG
         .task {
             guard AccountSwitchRun.an else { return }
@@ -747,6 +755,13 @@ struct LibraryView: View {
         // the new one. `load()` explains why a cancellation is not a failure
         // here.
         .task(id: "\(state.identifier)|\(model.accountSwitch)") { await loadAlone() }
+        // **A row heading on the home page asked for this page in an order.** A page that is
+        // already built does not read the store again; changing the order here reloads it
+        // through the identifier above, as a tap on the sort chip would.
+        .onChange(of: model.libraryJump) { _, request in
+            guard let request, request.jump.art == art else { return }
+            state.sorting = request.jump.sorting
+        }
         // **Libraries can arrive after the page.**
         //
         // `load()` picks one from `model.views` on the first run; if the list
@@ -788,7 +803,7 @@ struct LibraryView: View {
                         .transition(.opacity)
                 }
 
-                LazyVGrid(columns: columns(count), alignment: .leading, spacing: 20) {
+                LazyVGrid(columns: columns(count), alignment: .leading, spacing: Theme.gridRowGap) {
                     if choice == .collections {
                         collectionTiles
                     } else if choice == .playlists {
@@ -831,7 +846,7 @@ struct LibraryView: View {
                         Task { await state.loadMore(model, from: source) }
                     }
                     .buttonStyle(Theme.PressButton())
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.app(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.accent)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .contentShape(Rectangle())
@@ -985,9 +1000,10 @@ struct LibraryView: View {
                                         else { Text(verbatim: label(choice)) }
                                     }
                                         .font(Theme.titleLarge).tracking(Theme.lockTitle)
-                                    Image(systemName: "chevron.down")
+                                        .lineLimit(1).minimumScaleFactor(0.6)
+                                    Image(icon: "chevron.down", size: 15)
                                         .font(Theme.listTitle)
-                                        .foregroundStyle(Theme.fontQuiet)
+                                        .foregroundStyle(Theme.font)
                                         .accountSwitchPart(present: present)
                                 }
                             }
@@ -1116,11 +1132,11 @@ struct LibraryView: View {
     /// "Collections" and "Playlists" come from memory, not from a query.
     private var listChoice: Bool { choice == .collections || choice == .playlists }
 
-    /// The strip only where it means something: switched on, sorted A–Z, a grid of titles,
-    /// and more than one letter.
+    /// The strip only where it means something: switched on, a grid of titles, and more
+    /// than one entry for the order on screen (letters, years or ratings).
     private var shownAlphabet: AlphabetIndex? {
-        guard model.alphabetShown, state.sorting == .name, !listChoice,
-              let alphabet = state.alphabet, alphabet.isUseful else { return nil }
+        guard model.alphabetShown, !listChoice,
+              let alphabet = state.currentAlphabet else { return nil }
         return alphabet
     }
 
@@ -1146,9 +1162,9 @@ struct LibraryView: View {
     /// changes**: tiles come and go on every scroll, and a state change per tile would
     /// redraw the whole page each time.
     private func updateTopLetter() {
-        guard shownAlphabet != nil,
+        guard let alphabet = shownAlphabet,
               let item = state.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
-        let letter = AlphabetIndex.letter(name: item.name, sortName: item.sortName)
+        let letter = alphabet.key(of: item)
         if letter != topLetter { topLetter = letter }
     }
 

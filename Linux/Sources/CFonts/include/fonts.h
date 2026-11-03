@@ -18,4 +18,9 @@
  */
 int fonts_load(const char *folder);
 
+
+/* Tells the Pango font map (fontconfig backend) that the font set changed. */
+int fonts_announce(void *fontmap);
+int fonts_count(void);
+
 #endif

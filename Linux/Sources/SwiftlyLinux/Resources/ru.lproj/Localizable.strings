@@ -129,16 +129,12 @@
 "dem Server" = "серверу";
 "Ähnliches" = "Похожее";
 "Übersicht öffnen" = "Открыть обзор";
-
-/* Wiedergabemenue: Bildformat (08.09.2026) */
 "Bildformat" = "Формат кадра";
 "Formatfüllend" = "Растянуть";
 "Füllen" = "Растянуть";
 "Ganzes Bild" = "По размеру";
 "Original" = "Оригинальное";
 "Keine" = "Нет";
-
-/* Technikschild (08.09.2026) */
 "Anzeigen" = "Показать";
 "Beschädigt" = "Повреждён";
 "Bild" = "Видео";
@@ -155,11 +151,7 @@
 "Verworfen" = "Отброшено";
 "Vorrat" = "Запас";
 "Zeigt Ø" = "Показано, в ср.";
-
-/* Merkliste als eigene Seite (08.09.2026) */
 "Merkliste" = "Избранное";
-
-/* Seerr (08.09.2026) */
 "Adresse" = "Адрес";
 "Verbunden" = "Подключено";
 "Nicht verbunden" = "Не подключено";
@@ -171,8 +163,6 @@
 "Getrennt" = "Отключено";
 "Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen." = "Jellyseerr или Overseerr. Тогда поиск покажет и тайтлы, которых ещё нет на вашем сервере, и их можно будет запросить.";
 "Keine Verbindung" = "Нет подключения";
-
-/* Seerr */
 "Abbrechen" = "Отменить";
 "Anfragen" = "Запросить";
 "Anfragen über Seerr" = "Запросы через Seerr";
@@ -182,8 +172,6 @@
 "wartet" = "ожидает";
 "angefragt" = "запрошено";
 "teilweise" = "частично";
-
-/* Downloads */
 "%lld Folgen" = "Эпизодов: %lld";
 "%lld Titel" = "Тайтлов: %lld";
 "%d Titel auf diesem Rechner" = "Тайтлов на этом компьютере: %d";
@@ -219,8 +207,6 @@
 "Wartet" = "Ожидает";
 "Was du hier ablegst, läuft auch ohne Netz." = "То, что здесь лежит, воспроизводится и без сети.";
 "Wird geladen." = "Загружается.";
-
-/* Seerr-Seite und Downloads */
 "%lld Min." = "%lld мин";
 "%lld Staffeln anfragen" = "Запросить сезоны: %lld";
 "Abwählen" = "Снять выбор";
@@ -238,8 +224,6 @@
 "Zuklappen" = "Свернуть";
 "frei" = "свободно";
 "Ähnliche Titel" = "Похожие тайтлы";
-
-/* Seerr-Zugang */
 "Aktiv" = "Активен";
 "Sitzung abgelaufen" = "Сеанс истёк";
 "Seerr nicht erreichbar" = "Seerr недоступен";
@@ -247,26 +231,18 @@
 "Puffer" = "Буфер";
 "Discord" = "Discord";
 "Zeigt im Profil, was gerade läuft" = "Показывает в профиле, что сейчас воспроизводится";
-
-/* Personenseite */
 "Geboren %@" = "Дата рождения: %@";
 "%1$@ in %2$@" = "%1$@ в %2$@";
 "Mehr" = "Ещё";
 "Weniger" = "Меньше";
 "Auf deinem Server gibt es sonst nichts mit %@." = "Больше ничего с участием %@ на вашем сервере нет.";
-
-/* Kachelplakette (E16) */
 "1 Staffel" = "1 сезон";
 "%lld Staffeln" = "Сезонов: %lld";
-
-/* Suchverlauf */
 "Zuletzt gesucht" = "Недавние запросы";
 "Löschen" = "Очистить";
 "Staffel" = "Сезон";
 "Zuletzt hinzugefügte Filme" = "Недавно добавленные фильмы";
 "Zuletzt hinzugefügte Serien" = "Недавно добавленные сериалы";
-
-/* Kontokarte und Serveraufnahme */
 "Server hinzufügen" = "Добавить сервер";
 "Ein zweiter Jellyfin, eigene Konten" = "Второй Jellyfin со своими учётными записями";
 "Klicken zum Wechseln" = "Щёлкните, чтобы переключить";
@@ -276,8 +252,6 @@
 "Weiter" = "Далее";
 "Prüfe …" = "Проверка…";
 "Diese Adresse ergibt keinen Server." = "По этому адресу сервер не найден.";
-
-/* Darstellung: Startseite und Genres */
 "Startseite" = "Главный экран";
 "Reihen" = "Ряды";
 "Reihen, ihre Folge und Genres" = "Ряды, их порядок и жанры";
@@ -304,8 +278,6 @@
 "Neu hinzugefügt" = "Недавно добавленные";
 "Nur über WLAN" = "Только по Wi-Fi";
 "Downloads warten, bis du im WLAN bist" = "Загрузки ждут подключения к Wi-Fi";
-
-/* Leerzustaende der Raster — Wortlaut aus dem Katalog, nicht neu erfunden. */
 "Noch nichts gemerkt" = "В избранном пока ничего нет";
 "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier." = "На странице каждого фильма и сериала в ряду кнопок есть «Избранное». Всё, что вы там отметите, собирается здесь.";
 "Nichts in diesem Genre" = "В этом жанре ничего нет";
@@ -324,8 +296,6 @@
 "Staffel laden" = "Загрузить сезон";
 "%d Folgen werden geladen." = "Загружается эпизодов: %d.";
 "Staffeln wählen" = "Выберите сезоны";
-
-/* Stufe 4: Spurwahl und Uebernahmeauswahl */
 "Erzwungen" = "Принудительные";
 "Hörgeschädigt" = "Для слабослышащих";
 "Datei" = "Файл";
@@ -336,8 +306,6 @@
 "Fragen stellen und sagen, was fehlt" = "Задать вопрос и рассказать, чего не хватает";
 "Fehler melden" = "Сообщить об ошибке";
 "Auf GitHub, deine App-Version ist schon eingetragen" = "На GitHub, версия приложения уже указана";
-
-/* Aktualisierung (nur Windows) */
 "Nach Updates suchen" = "Проверить обновления";
 "Swiftly fragt bei GitHub, ob es eine neuere Version gibt" = "Swiftly спрашивает у GitHub, есть ли новая версия";
 "Wird gesucht …" = "Проверка…";
@@ -353,7 +321,6 @@
 "Der Installer ließ sich nicht starten." = "Не удалось запустить установщик.";
 "Das Herunterladen ist abgebrochen." = "Загрузка прервалась.";
 "VLC lädt noch" = "VLC ещё загружается";
-
 "%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?" = "%@ не отвечает. Он ещё работает, или завис Wi-Fi?";
 "Aktualisieren" = "Обновить";
 "Der Server" = "Сервер";
@@ -363,9 +330,7 @@
 "Sobald in dieser Bibliothek etwas liegt, taucht es hier auf." = "Как только в этой медиатеке что-то появится, оно будет здесь.";
 "Unter „%@“ liegt gerade nichts. Nimm einen anderen Filter." = "В «%@» сейчас ничего нет. Выберите другой фильтр.";
 "Zurück" = "Назад";
-
 "Lad was runter, bevor der Zug ins Funkloch fährt." = "Загрузите что-нибудь, пока поезд не въехал в зону без связи.";
-
 "%@ laden" = "Загрузить %@";
 "1 Folge" = "1 эпизод";
 "Danach %@ frei" = "После этого свободно %@";
@@ -377,8 +342,6 @@
 "Nur ungesehene" = "Только непросмотренное";
 "alles da" = "всё есть";
 "wird gelesen …" = "чтение…";
-
-/* Eigene Header (Issue #4) */
 "Erweitert" = "Дополнительно";
 "Header-Name" = "Имя заголовка";
 "Wert" = "Значение";
@@ -402,17 +365,12 @@
 "geladen" = "загружено";
 "gesehen" = "просмотрено";
 "lädt" = "загружается";
-
-/* Downloads: Ladeauswahl und Serienseite (Mac 89299260, cc4e6e75) */
 "%@ von %@" = "%@ из %@";
 "Download entfernen" = "Удалить загрузку";
 "Swiftly hat einen Discord" = "У Swiftly есть Discord";
 "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst." = "Там можно задавать вопросы и сообщать об ошибках. Новые сборки тоже появляются там первыми.";
-
 "Kleinere Fassungen gibt der Server für dieses Konto nicht frei." = "Сервер не разрешает этой учётной записи версии меньшего размера.";
 "Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt." = "Сервер перекодирует файл при загрузке. Размер приблизительный.";
-
-/* Bedienhilfe: Namen für Bildschirmleser, Tastenkürzel. */
 "Gesehen" = "Просмотрено";
 "Nach oben" = "Вверх";
 "Nach unten" = "Вниз";
@@ -421,7 +379,6 @@
 "Zu %@ wechseln" = "Переключиться на %@";
 "%lld Prozent gesehen" = "Просмотрено %lld %%";
 "Strg+%@" = "Ctrl+%@";
-/* Player: subtitle and audio delay */
 "Verzögerung" = "Задержка";
 "Zurücksetzen" = "Сбросить";
 "Früher" = "Раньше";
@@ -429,7 +386,6 @@
 "Untertitelverzögerung %@" = "Задержка субтитров %@";
 "Tonverzögerung %@" = "Задержка звука %@";
 "Ohne Grafikbeschleunigung" = "Без графического ускорения";
-/* Watch together (SyncPlay) — wording from the Xcode catalog. */
 "Gemeinsam schauen" = "Совместный просмотр";
 "Filmabend" = "Кино с друзьями";
 "Name der Gruppe" = "Название группы";
@@ -448,16 +404,12 @@
 "mit %@" = "с %@";
 "Gemeinsam · %@" = "Вместе · %@";
 "Gruppe verlassen" = "Выйти из группы";
-
-/* Einzahl (UX-Audit 27.09.) */
 "1 Titel" = "1 тайтл";
 "1 Staffel anfragen" = "Запросить 1 сезон";
 "1 Serie" = "1 сериал";
 "1 Film" = "1 фильм";
 "1 Folge wird geladen." = "Загружается 1 эпизод.";
 "1 Titel auf diesem Rechner" = "1 тайтл на этом компьютере";
-
-/* 1.0.5: Neuerungen vom iPhone */
 "Endet um %@" = "Закончится в %@";
 "Restzeit" = "Осталось";
 "Wechselt zwischen Restzeit und Ende" = "Переключает между оставшимся временем и временем окончания";
@@ -549,8 +501,6 @@
 "19,99 €" = "19,99 €";
 "4,99 €" = "4,99 €";
 "9,99 €" = "9,99 €";
-
-/* Unterstützer-Seiten wie am Mac */
 "Violett" = "Фиолетовый";
 "Koralle" = "Коралл";
 "Türkis" = "Бирюзовый";
@@ -572,15 +522,9 @@
 "Dieser Schlüssel gehört zu einer anderen App." = "Этот ключ от другого приложения.";
 "Unterstützer im Monatsabo" = "Спонсор, ежемесячная подписка";
 "Seit %@. Gilt bis %@ und verlängert sich von selbst, solange das Abo läuft." = "С %@. Действует до %@ и продлевается автоматически, пока действует подписка.";
-
-/* Merkliste abschaltbar */
 "Seite, Filter und Knopf auf Film- und Serienseiten" = "Раздел, фильтр и кнопка на страницах фильмов и сериалов";
-
-/* Buchstabenleiste neben „Nach Name“ */
 "Alphabetische Suche in Listen" = "Алфавитный указатель в списках";
 "Alphabet" = "Алфавит";
-
-/* Auswahl am Abspielen-Knopf, wenn ein Titel mehrere Fassungen hat */
 "Fassung wählen" = "Выберите версию";
 "Übergeben an …" = "Передать на…";
 "Senden" = "Отправить";
@@ -594,9 +538,7 @@
 "Der Server legt die Datei beim Laden mit nur einer Tonspur an. Die Größe ist geschätzt." = "Сервер создаёт файл только с одной звуковой дорожкой. Размер приблизительный.";
 "Konto" = "Учётная запись";
 "Einstellungen auf allen Geräten gleich halten" = "Одинаковые настройки на всех устройствах";
-"Sprachen, Überspringen und Startseite liegen auf deinem Server" = "Языки, пропуск и главная страница хранятся на твоём сервере";
-
-/* Subtitle appearance */
+"Sprachen, Überspringen und Startseite liegen auf deinem Server" = "Языки, пропуск и главная страница хранятся на вашем сервере";
 "Auch ASS und SSA sehen dann aus wie oben. Schilder rutschen als Zeile nach unten." = "ASS и SSA тогда выглядят так же, как выше. Надписи переходят в строку внизу.";
 "Aufwendige Untertitel" = "Сложные субтитры";
 "Aussehen" = "Внешний вид";
@@ -637,24 +579,24 @@
 "ohne Rand" = "без контура";
 "ohne Schatten" = "без тени";
 "unten" = "внизу";
-
-/* Server kinds: Plex, Emby */
 "Adresse rein und anmelden, oder per Quick Connect ganz ohne Passwort." = "Вводишь адрес и входишь, или через Quick Connect вообще без пароля.";
-"Adresse von deinem Server rein, dann Name und Passwort." = "Адрес твоего сервера, потом имя и пароль.";
+"Adresse von deinem Server rein, dann Name und Passwort." = "Адрес вашего сервера, потом имя и пароль.";
 "Als %@" = "Как %@";
 "Anderes Plex-Konto" = "Другой аккаунт Plex";
 "Anmeldung hat nicht geklappt" = "Войти не получилось";
-"Antwortet gerade nicht. Klick für einen neuen Versuch." = "Сейчас не отвечает. Нажми, чтобы попробовать ещё раз.";
-"Dein Server" = "Твой сервер";
-"Deine Server" = "Твои серверы";
-"Der Code war zu lange offen. Hol dir einfach einen neuen." = "Код был открыт слишком долго. Просто возьми новый.";
+"Antwortet gerade nicht. Klick für einen neuen Versuch." = "Сейчас не отвечает. Нажмите, чтобы попробовать ещё раз.";
+"Dein Server" = "Ваш сервер";
+"Deine Server" = "Ваши серверы";
+"Der Code war zu lange offen. Hol dir einfach einen neuen." = "Код был открыт слишком долго. Просто получите новый.";
 "Die Anmeldung ist abgelaufen" = "Время входа истекло";
-"Die Anmeldung läuft auf der Seite von Plex. Dein Passwort bekommt Swiftly Player nie zu sehen." = "Вход идёт на странице Plex. Swiftly Player твой пароль никогда не видит.";
-"Die PIN passt nicht. Versuchs noch mal." = "PIN-код не подходит. Попробуй ещё раз.";
-"Dieses Profil hat eine PIN. Gib sie hier ein." = "У этого профиля есть PIN-код. Введи его здесь.";
-"Du bleibst bei allen angemeldet und wechselst auf der Profilseite zwischen ihnen." = "Ты остаёшься в каждом из них и переключаешься между ними на странице профиля.";
+"Die Anmeldung läuft auf der Seite von Plex. Dein Passwort bekommt Swiftly Player nie zu sehen." = "Вход идёт на странице Plex. Swiftly Player никогда не видит ваш пароль.";
+"Die PIN passt nicht. Versuchs noch mal." = "PIN-код не подходит. Попробуйте ещё раз.";
+"Dieses Profil hat eine PIN. Gib sie hier ein." = "У этого профиля есть PIN-код. Введите его здесь.";
+"Du bleibst bei allen angemeldet und wechselst auf der Profilseite zwischen ihnen." = "Вы остаётесь в каждом из них и переключаетесь между ними на странице профиля.";
 "Ein weiterer %@-Server mit eigenen Konten. Beide bleiben angemeldet; auf der Profilseite wechselst du zwischen ihnen." = "Ещё один сервер %@ со своими аккаунтами. Оба остаются в системе; переключаться между ними можно на странице профиля.";
-"Einmal bei Plex anmelden, deine Server sucht die App dann selbst raus." = "Один раз входишь в Plex, а серверы приложение найдёт само.";
+"Einmal bei Plex anmelden, die App findet deine Server." = "Один раз входишь в Plex, а приложение найдёт твои серверы.";
+"Mit Jellyfin anmelden" = "Войти через Jellyfin";
+"https:// kannst du weglassen. Du bleibst auch beim anderen Server angemeldet." = "https:// можно не писать. На другом сервере ты тоже остаёшься в аккаунте.";
 "Gleich bekommst du einen Code. Den gibst du am Handy oder Computer auf plex.tv/link ein." = "Сейчас вы получите код. Введите его на телефоне или компьютере на plex.tv/link.";
 "Jedes Profil hat seinen eigenen Fortschritt." = "У каждого профиля свой прогресс.";
 "Jellyfin, Plex oder Emby, eigene Konten" = "Jellyfin, Plex или Emby, свои аккаунты";
@@ -666,17 +608,17 @@
 "Noch mal suchen" = "Поискать ещё раз";
 "Ohne plex.tv klappt die Anmeldung nicht. Hängt vielleicht das WLAN?" = "Без plex.tv войти не получится. Может, завис Wi-Fi?";
 "PIN" = "PIN-код";
-"Richte Plex Media Server ein oder lass dir einen freigeben. Danach hier noch mal suchen." = "Установи Plex Media Server или попроси открыть тебе доступ к серверу. Потом поищи здесь ещё раз.";
+"Richte Plex Media Server ein oder lass dir einen freigeben. Danach hier noch mal suchen." = "Установите Plex Media Server или попросите открыть вам доступ к серверу. Потом поищите здесь ещё раз.";
 "Seite noch mal öffnen" = "Открыть страницу ещё раз";
 "Unter der Adresse läuft %@, kein Emby." = "По этому адресу работает %@, а не Emby.";
 "Verbinden …" = "Подключение …";
 "Von %@ freigegeben" = "Открыт пользователем %@";
 "Warte auf Plex · noch %@" = "Ждём Plex · осталось %@";
-"Was läuft bei dir?" = "Что у тебя стоит?";
+"Was läuft bei dir?" = "Какой у вас сервер?";
 "Weitere Server kannst du später dazunehmen, auch gemischt." = "Другие серверы можно добавить позже, хоть разных видов.";
 "Wer schaut?" = "Кто смотрит?";
 "Wird geöffnet …" = "Открывается …";
-"Wo steht dein Emby-Server?" = "Где стоит твой сервер Emby?";
+"Wo steht dein Emby-Server?" = "Где находится ваш сервер Emby?";
 "Zurück zu den Profilen" = "Назад к профилям";
 "einem anderen Konto" = "другого аккаунта";
 "emby.beispiel.de" = "emby.example.com";
@@ -689,3 +631,25 @@
 "Ausprobieren" = "Попробовать";
 "Verstanden" = "Понятно";
 "Geschenk, bleibt für immer in deiner Sammlung" = "Подарок, останется в вашей коллекции навсегда";
+"Qualität, Sprache, Player" = "Качество, язык, плеер";
+"Jellyfin, Emby oder Plex, auch gemischt" = "Jellyfin, Emby или Plex, можно вперемешку";
+"Dein aktueller Look" = "Ваша текущая тема";
+"Downloads, Server, Sync" = "Загрузки, сервер, синхронизация";
+"Server und Dienste" = "Сервер и службы";
+"Synchronisierung" = "Синхронизация";
+"Auf allen Geräten gleich" = "Одинаково на всех устройствах";
+"Liegt auf deinem Server" = "Хранится на вашем сервере";
+"Titel offline schauen" = "Смотреть без сети";
+"Mit einem Kaffee Danke sagen" = "Сказать спасибо чашкой кофе";
+"Über Seerr anfragen" = "Запросить через Seerr";
+"Weiteres" = "Прочее";
+"Pause" = "Пауза";
+"ab %@" = "от %@";
+"Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal." = "Не удалось загрузить версии. Попробуйте ещё раз чуть позже.";
+"Geh auf %@ und gib diesen Code ein." = "Откройте %@ и введите этот код.";
+"Im Netzwerk gefunden" = "Найдено в сети";
+"Gesehen von" = "Просмотрели";
+"Zeigt auf Titelseiten, wer einen Titel gesehen hat" = "Показывает на страницах, кто смотрел фильм или сериал";
+"heute" = "сегодня";
+"gestern" = "вчера";
+"vor %@ Tagen" = "%@ дн. назад";

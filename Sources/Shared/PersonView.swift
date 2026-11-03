@@ -141,7 +141,7 @@ struct PersonView: View {
 
     /// Wide screens get a larger head: the same shape, at arm's length instead of in
     /// the hand.
-    private var headerSize: CGFloat { wide ? 104 : 76 }
+    private var headerSize: CGFloat { wide ? 104 : Theme.castSize }
 
     private var birthRow: String? {
         guard let tag = inquiry?.daysDate, let date = Calendar.current.date(from: tag) else { return nil }
@@ -159,7 +159,7 @@ struct PersonView: View {
             Text("\(role) in \(origin)")
                 // 13 Medium is `Theme.tile`; the number stood here.
                 .font(Theme.tile)
-                .foregroundStyle(Theme.accent)
+                .foregroundStyle(Theme.fontQuiet)
                 .lineLimit(2)
         }
     }
@@ -184,7 +184,7 @@ struct PersonView: View {
                 // The same "More" as in `CollapsibleText`, so the same level: 13 Medium. Semibold at
                 // 13 is on no scale.
                 .font(Theme.tile)
-                .foregroundStyle(Theme.font)
+                .foregroundStyle(Theme.accent)
             }
             .padding(.top, 14)
             .transition(.opacity)
