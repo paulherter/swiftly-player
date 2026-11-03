@@ -380,6 +380,29 @@ struct TimeAssumptionTests {
         #expect(TimeAssumption.position(reported: 5, untilFrom: 1200, sinceStart: forward(2)) == nil)
         #expect(TimeAssumption.position(reported: 5, untilFrom: 1200, sinceStart: forward(20)) == 5)
     }
+
+    /// **A clock that falls behind the film is a rebuild, not a seek.** VLC 4 does
+    /// this around the paused start: on an iPhone (VLCKit 4.0.0-a23) a resume at
+    /// 570 s reported `Start 570 s` and ten seconds later `Progress 10 s`, while the
+    /// picture stood at the resume point. The film keeps its position by carrying the
+    /// difference.
+    @Test("Eine Uhr, die hinter den Film zurueckfaellt, wird als Neuaufbau erkannt")
+    func clockRebuild() {
+        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 5, sinceLastJump: 30,
+                                           jumpPending: false) == 570)
+        // A seek the app commanded is no rebuild, nor is one still on its way.
+        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 5, sinceLastJump: 2,
+                                           jumpPending: false) == nil)
+        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 5, sinceLastJump: 30,
+                                           jumpPending: true) == nil)
+        // Normal playback, a small drift and the start of a film are none either.
+        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 574, sinceLastJump: 30,
+                                           jumpPending: false) == nil)
+        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 550, sinceLastJump: 30,
+                                           jumpPending: false) == nil)
+        #expect(TimeAssumption.clockOffset(lastGood: 40, reported: 0.2, sinceLastJump: 30,
+                                           jumpPending: false) == nil)
+    }
 }
 
 @Suite("Folgenende")

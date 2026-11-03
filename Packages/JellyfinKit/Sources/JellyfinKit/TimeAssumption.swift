@@ -103,4 +103,43 @@ public enum TimeAssumption {
     /// How far ahead of the wall clock the new episode's clock may be: buffer
     /// already read before `sinceStart`, and tick offset.
     public static let switchPlaySpace: TimeInterval = 5
+
+    // MARK: The engine rebuilt its clock
+
+    /// **The engine's clock no longer matches the film: how far behind it now is.**
+    ///
+    /// VLC 4 rebuilds its clock context around the paused start — deferred pause,
+    /// seek, resume — and afterwards reports `0 + elapsed` while the picture stands at
+    /// the resume point. Measured on an iPhone with VLCKit 4.0.0-a23, resume at 570 s:
+    /// `[Melden] Start 570 s`, ten seconds later `[Melden] Progress 10 s`. The bar falls
+    /// to zero and the server is told a position near zero, so "continue watching"
+    /// loses the place, while the picture is where it should be.
+    ///
+    /// Such a jump back is never the viewer: every seek goes through the player's own
+    /// seek paths and records when it was commanded. So the clock is what is broken,
+    /// and the film keeps its position by carrying the difference.
+    ///
+    /// - Parameters:
+    ///   - lastGood: the last position at which the picture demonstrably ran.
+    ///   - reported: what the engine says now (film position, offset included).
+    ///   - sinceLastJump: seconds since the app last commanded a seek.
+    ///   - jumpPending: a supplied seek the engine has not confirmed yet.
+    /// - Returns: what to add to the engine's clock, or `nil` for "nothing changed".
+    public static func clockOffset(lastGood: Double, reported: Double,
+                                   sinceLastJump: TimeInterval,
+                                   jumpPending: Bool) -> Double? {
+        guard !jumpPending, sinceLastJump > jumpGrace else { return nil }
+        // Early in a film the difference is not yet meaningful; the start itself
+        // moves the clock by more than `rebuildGap` without anything being broken.
+        guard lastGood > rebuildNotBefore else { return nil }
+        guard reported > 0, lastGood - reported > rebuildGap else { return nil }
+        return lastGood - reported
+    }
+
+    /// How long after a commanded seek the clock may still be settling.
+    public static let jumpGrace: TimeInterval = 5
+    /// A drop larger than this cannot be a seek the app commanded.
+    public static let rebuildGap: Double = 30
+    /// Below this position a rebuild cannot be told from the start of a film.
+    public static let rebuildNotBefore: Double = 60
 }
