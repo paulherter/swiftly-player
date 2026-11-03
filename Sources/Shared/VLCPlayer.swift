@@ -713,6 +713,19 @@ final class VLCPlayerView: BaseView {
     /// while the picture really moves forward.
     var lastGoodPosition: Double = 0
 
+    /// **What the engine's clock is behind the film.** Zero on a healthy stream.
+    ///
+    /// VLC 4 rebuilds its clock context around the paused start and afterwards reports
+    /// `0 + elapsed` while the picture stands at the resume point (measured on an
+    /// iPhone with VLCKit 4.0.0-a23: `[Melden] Start 570 s`, ten seconds later
+    /// `[Melden] Progress 10 s`). Without this the bar falls to 0 and the reports carry
+    /// a position near zero, so "continue watching" loses the place.
+    ///
+    /// `checkStandstill` notices the jump (``TimeAssumption/clockOffset(lastGood:reported:sinceLastJump:jumpPending:)``)
+    /// and sets this; `positionSeconds` and every seek the app commands take it into
+    /// account. Reset for each new media in `open`.
+    private var clockOffset: Double = 0
+
     private var lengthSeconds: Double { durationSeconds }
 
     /// When switching Wi-Fi <-> cellular the device gets a different source
@@ -962,6 +975,18 @@ final class VLCPlayerView: BaseView {
 
         if now != lastKnownTime {
             if firstFrameCheck(now: now) { return }
+            // **Did the engine rebuild its clock?** Then the film keeps its position:
+            // VLC 4 reports `0 + elapsed` after the paused start while the picture
+            // stands at the resume point, and without the offset the bar and the
+            // reports would start over at zero.
+            if let offset = TimeAssumption.clockOffset(
+                lastGood: lastGoodPosition,
+                reported: spot + clockOffset,
+                sinceLastJump: Date().timeIntervalSince(lastJumpCommand),
+                jumpPending: openTarget != nil || startJump != nil) {
+                clockOffset += offset
+                AppLog.writeOut("[VLC] Uhr neu aufgebaut: \(Int(spot + clockOffset - offset)) s gemeldet, Film bei \(Int(lastGoodPosition)) s — Versatz \(Int(clockOffset)) s")
+            }
             imageFlow(now: now)
             lastKnownTime = now
             standsSince = nil
@@ -986,7 +1011,7 @@ final class VLCPlayerView: BaseView {
             // Only record what is plausible: after a drop, the movie end would
             // otherwise be stored here.
             if spot > 0, length <= 0 || spot < length - 1 {
-                lastGoodPosition = spot
+                lastGoodPosition = spot + clockOffset
             }
             return
         }
@@ -1484,6 +1509,8 @@ final class VLCPlayerView: BaseView {
         currentSubtitle = nil
         trackIndicesReport(TrackIndices())
         lastGoodPosition = offSeconds
+        // **A new media, a fresh clock.** The offset belongs to the previous one.
+        clockOffset = 0
         intentionalEnded = false
         openTarget = nil
         openSince = nil
@@ -1849,7 +1876,7 @@ final class VLCPlayerView: BaseView {
             if Date().timeIntervalSince(lastStartJumpCommand) > 0.25,
                condition != .stopped, condition != .error {
                 lastStartJumpCommand = Date()
-                player.time = VLCTime(int: Int32(clamping: Int(target * 1000)))
+                player.time = VLCTime(int: Int32(clamping: Int((target - clockOffset) * 1000)))
                 AppLog.writeOut("[Start] Sprung auf \(Int(target)) s angestossen (\(occasion), Zustand \(VLCMediaPlayerStateToString(condition)), Uhr \(Int(spot)) s)")
             }
             return
@@ -2581,7 +2608,7 @@ final class VLCPlayerView: BaseView {
     /// Current position in seconds.
     var positionSeconds: Double {
         if let avEngine { return avEngine.position }
-        return Double(player.time.intValue) / 1000
+        return Double(player.time.intValue) / 1000 + clockOffset
     }
 
     /// Total length in seconds. 0 while VLC is still reading the file.
@@ -2644,7 +2671,9 @@ final class VLCPlayerView: BaseView {
     private func jumpTrigger(on seconds: Double, overTime: Bool) {
         if overTime {
             AppLog.writeOut("[VLC] Sprung auf \(Int(seconds)) s ueber die Zeit (von \(Int(positionSeconds)) s)")
-            player.time = VLCTime(int: Int32(clamping: Int(seconds * 1000)))
+            // **In the engine's time base.** After a rebuilt clock (see `clockOffset`)
+            // VLC's time runs behind the film; an absolute set has to account for it.
+            player.time = VLCTime(int: Int32(clamping: Int((seconds - clockOffset) * 1000)))
         } else {
             let spacing = seconds - positionSeconds
             AppLog.writeOut("[VLC] Sprung auf \(Int(seconds)) s ueber den Abstand \(Int(spacing)) s")
