@@ -170,3 +170,8 @@
 "Immer AVPlayer" = "Always AVPlayer";
 
 "Immer VLC" = "Always VLC";
+
+/* "Gesehen von" (Jelly Twiggy): the line beside an avatar. */
+"heute" = "today";
+"gestern" = "yesterday";
+"Folgen: %lld von %lld" = "Episodes: %1$lld of %2$lld";

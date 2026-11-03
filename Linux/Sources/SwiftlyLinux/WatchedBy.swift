@@ -2,8 +2,8 @@ import CGtk
 import Foundation
 import JellyfinKit
 
-/// **"Gesehen von"** on movie and series pages (Jelly Twiggy plugin): one row of round
-/// avatars, each with an accent ring filled by ``Watcher/ring``. Name and "2 × · yesterday"
+/// **Who has watched a title** on movie and series pages (Jelly Twiggy plugin): one row of
+/// round avatars without a heading, each with an accent ring filled by ``Watcher/ring``. Name and "2 × · yesterday"
 /// are the tooltip and the accessible label.
 ///
 /// Absent without a trace when the server has no plugin, the answer is empty, or the
@@ -54,13 +54,10 @@ extension App {
         }
     }
 
-    /// Heading like "Besetzung", then one row of avatars at the page edge.
+    /// One row of avatars at the page edge, without a heading, as on the other platforms; name and
+    /// "2 × · gestern" are the tooltip.
     private func watchedByRail(_ list: [Watcher]) -> Widget? {
         let block = stack(GTK_ORIENTATION_VERTICAL, spacing: 14)
-        let title = label(translated("Gesehen von"), style: "swiftly-listentitel")
-        gtk_label_set_xalign(OpaquePointer(title), 0)
-        gtk_widget_set_margin_start(title, Int32(Theme.edgeSpacing))
-        append(block, title)
 
         let scroller = gtk_scrolled_window_new()
         gtk_scrolled_window_set_policy(OpaquePointer(scroller), GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER)
@@ -115,28 +112,11 @@ extension App {
         return outer
     }
 
-    /// "Name\n2 × · gestern"; the second line only as far as the plugin gave data.
+    /// "Name\n2 × · gestern": the name, then ``Watcher/caption(now:calendar:)`` from the package,
+    /// the same words as on every other platform; the second line only as far as the plugin gave data.
     private func watchedByText(_ watcher: Watcher) -> String {
-        var parts: [String] = []
-        if watcher.playCount > 0 { parts.append("\(watcher.playCount) ×") }
-        if let date = watcher.lastWatched { parts.append(watchedByDay(date)) }
         let name = watcher.name.isEmpty ? "?" : watcher.name
-        return parts.isEmpty ? name : name + "\n" + parts.joined(separator: " · ")
-    }
-
-    private func watchedByDay(_ date: Date) -> String {
-        let calendar = Calendar.current
-        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date),
-                                           to: calendar.startOfDay(for: Date())).day ?? 0
-        switch days {
-        case ..<1: return translated("heute")
-        case 1: return translated("gestern")
-        case 2..<7: return String(format: translated("vor %@ Tagen"), String(days))
-        default:
-            let f = DateFormatter()
-            f.dateStyle = .medium
-            f.timeStyle = .none
-            return f.string(from: date)
-        }
+        let caption = watcher.caption()
+        return caption.isEmpty ? name : name + "\n" + caption
     }
 }

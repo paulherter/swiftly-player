@@ -149,9 +149,6 @@ struct SeriesView: View {
                 }
                 .opacity(inFade ? 1 : 0)
 
-                WatchersStrip(model: model, item: series)
-                    .opacity(inFade ? 1 : 0)
-
                 if !actors.isEmpty {
                     railsSection {
                         RailTitle(text: "Besetzung")
@@ -384,6 +381,8 @@ struct SeriesView: View {
                 MoreButton(opened: $moreOpen)
                     .focused($atMoreButton)
                     .panelTrigger("mehr")
+
+                WatcherDots(model: model, item: current)
             }
             .opacity(inFade ? 1 : 0)
         }
