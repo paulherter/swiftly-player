@@ -277,6 +277,7 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                     } else {
                         TvButton(null, Glyph.More, description = translated("Mehr")) {}
                     }
+                    TvWatcherDots(watchers)
                 }
 
                 Column(Modifier.tvSection(a, "folgen").padding(top = TvTheme.railsSpacing - TvTheme.railsPadding).tvInFade(fadeInAlpha)) {
@@ -326,7 +327,6 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                 if (folks.isNotEmpty()) TvStrip(translated("Besetzung"), Modifier.tvInFade(fadeInAlpha).tvSection(a, "besetzung")) {
                     items(folks, key = { it.id }) { p -> TvCast(p) { open(Destination(p.id, p.name, "Person", p.role, name)) } }
                 }
-                TvWatchedBy(watchers, Modifier.tvInFade(fadeInAlpha).tvSection(a, "gesehenvon"))
                 if (similar.isNotEmpty()) TvStrip(translated("Ähnliches"), Modifier.tvInFade(fadeInAlpha).tvSection(a, "aehnliche")) {
                     items(similar, key = { it.id }) { k -> TvTile(k.poster, k.title, k.subline) { open(Destination(k.id, k.title, k.type)) } }
                 }

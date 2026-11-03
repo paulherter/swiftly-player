@@ -102,5 +102,25 @@
 			<string>%lld сезона</string>
 		</dict>
 	</dict>
+	<key>vor %lld Tagen</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld день назад</string>
+			<key>few</key>
+			<string>%lld дня назад</string>
+			<key>many</key>
+			<string>%lld дней назад</string>
+			<key>other</key>
+			<string>%lld дня назад</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

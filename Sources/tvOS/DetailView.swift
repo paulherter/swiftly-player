@@ -232,8 +232,6 @@ struct DetailView: View {
                 // last. Now the page waits for all and fades them in together.
                 if bottomPresent {
                     VStack(alignment: .leading, spacing: 0) {
-                        WatchersStrip(model: model, item: item)
-
                         // Above "Ähnliche Filme": the collection is the closer relation. Only for
                         // titles that belong to one.
                         CollectionRail(model: model, title: item, rails: collectionRails)
@@ -433,6 +431,8 @@ struct DetailView: View {
                 MoreButton(opened: $moreOpen)
                     .focused($atMoreButton)
                     .panelTrigger("mehr")
+
+                WatcherDots(model: model, item: current)
             }
         }
     }

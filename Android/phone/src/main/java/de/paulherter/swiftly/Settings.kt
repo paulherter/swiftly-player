@@ -85,11 +85,21 @@ class Settings(store: Store) {
     var watchersShow by RememberValue(a, "gesehenVon", bool("gesehenVon", true), yesNo)
     private val pluginState = mutableIntStateOf(0)
     private fun pluginKey() = "gesehenVonPlugin|" + serverKey()
-    /** `"1"`: this server has the Jelly Twiggy plugin, `"0"`: it has none (never asked again), `""`: not known yet. */
-    val watchersPlugin: String get() { pluginState.intValue; return a.rememberValue(pluginKey()).orEmpty() }
+    /** Servers that answered "no plugin" since the app started. **Only in memory**: a plugin
+        installed later is found again on the next start, as on Apple and Linux. */
+    private val pluginAbsent = mutableSetOf<String>()
+    /** `"1"`: this server has the Jelly Twiggy plugin (stored, it offers the setting), `"0"`: it has none
+        this session (not asked again until the next start), `""`: not known yet. */
+    val watchersPlugin: String get() {
+        pluginState.intValue
+        if (serverKey() in pluginAbsent) return "0"
+        return if (a.rememberValue(pluginKey()) == "1") "1" else ""
+    }
     fun watchersPluginSet(there: Boolean) {
         if (watchersPlugin == (if (there) "1" else "0")) return
-        a.remember(pluginKey(), if (there) "1" else "0"); pluginState.intValue++
+        if (there) { pluginAbsent.remove(serverKey()); a.remember(pluginKey(), "1") }
+        else pluginAbsent.add(serverKey())
+        pluginState.intValue++
     }
     /** The letter strip beside "By name" grids (mirrors `alphabetShown`). */
     var alphabet by RememberValue(a, "alphabetAn", bool("alphabetAn", true), yesNo)

@@ -1,10 +1,11 @@
 import JellyfinKit
 import SwiftUI
 
-/// **"Gesehen von"** on movie and series pages: one row of round avatars, each with a ring
-/// that fills with how far that person got (full ring = watched). Completely absent when the
-/// server has no Jelly Twiggy plugin, the switch is off, or nobody has watched the title.
-/// A tap shows the name and "2 × · gestern" under the row.
+/// **Who has watched a title** on movie and series pages: one row of round avatars, each with a
+/// ring that fills with how far that person got (full ring = watched), without a heading, as on
+/// Apple TV. A tap on an avatar names it: who, how often, when last, to the right of the row, or
+/// under it when the row leaves no room. Completely absent when the server has no Jelly Twiggy
+/// plugin, the switch is off, or nobody has watched the title.
 struct WatchersRow: View {
     @Environment(\.wide) private var wide
     let model: AppModel
@@ -13,36 +14,62 @@ struct WatchersRow: View {
     @State private var picked: String?
 
     var body: some View {
-        Group {
+        // **A stack, not a `Group`, carries the request.** A `Group` around an empty `if` is no
+        // view at all, so its `.task` never ran and the row never asked anyone; an empty stack
+        // is a view of zero height that appears like any other.
+        VStack(spacing: 0) {
             if !list.isEmpty {
-                Segment(title: "Gesehen von") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 14) {
-                            ForEach(list) { watcher in
-                                Button {
-                                    withAnimation(Theme.reveal) { picked = picked == watcher.id ? nil : watcher.id }
-                                } label: {
-                                    WatcherAvatar(watcher: watcher, image: model.watcherImageURL(watcher), size: 60)
-                                }
-                                .buttonStyle(Theme.PressButton())
-                                .accessibilityLabel(Text(verbatim: watcher.spoken))
-                            }
-                        }
-                        if let shown = list.first(where: { $0.id == picked }) {
-                            Text(verbatim: shown.spoken)
-                                .font(Theme.small)
-                                .foregroundStyle(Theme.fontQuiet)
-                                .transition(.opacity)
-                        }
-                    }
-                    .padding(.horizontal, Theme.margin(wide: wide))
+                // Beside the avatars where they leave room, otherwise below them.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 16) { avatars; shownLine }
+                    VStack(alignment: .leading, spacing: 8) { avatars; shownLine }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Theme.margin(wide: wide))
+                // The rhythm "row to row" of the page (`Segment`), now without the heading.
+                .padding(.top, Theme.railsSpacing)
                 .transition(.opacity)
             }
         }
         .task(id: "\(item.id)\(model.watchersShown)") {
             let found = await model.watchers(of: item)
             withAnimation(Theme.reveal) { list = found }
+        }
+    }
+
+    private var avatars: some View {
+        HStack(spacing: 14) {
+            ForEach(list) { watcher in
+                Button {
+                    withAnimation(Theme.reveal) { picked = picked == watcher.id ? nil : watcher.id }
+                } label: {
+                    WatcherAvatar(watcher: watcher, image: model.watcherImageURL(watcher), size: 60)
+                }
+                .buttonStyle(Theme.PressButton())
+                .accessibilityLabel(Text(verbatim: watcher.spoken()))
+            }
+        }
+        .fixedSize()
+    }
+
+    /// Name and caption of the tapped avatar; nothing before a tap.
+    @ViewBuilder private var shownLine: some View {
+        if let shown = list.first(where: { $0.id == picked }) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: shown.name.isEmpty ? "?" : shown.name)
+                    .font(Theme.small.weight(.semibold))
+                    .foregroundStyle(Theme.font)
+                let caption = shown.caption()
+                if !caption.isEmpty {
+                    Text(verbatim: caption)
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.fontQuiet)
+                }
+            }
+            .lineLimit(1)
+            .fixedSize()
+            .transition(.opacity)
+            .accessibilityHidden(true)
         }
     }
 }

@@ -170,3 +170,8 @@
 "Immer AVPlayer" = "Всегда AVPlayer";
 
 "Immer VLC" = "Всегда VLC";
+
+/* "Gesehen von" (Jelly Twiggy): the line beside an avatar. */
+"heute" = "сегодня";
+"gestern" = "вчера";
+"Folgen: %lld von %lld" = "Серии: %1$lld из %2$lld";
