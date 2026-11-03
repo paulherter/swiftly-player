@@ -122,13 +122,15 @@ public enum TimeAssumption {
     /// - Parameters:
     ///   - lastGood: the last position at which the picture demonstrably ran.
     ///   - reported: what the engine says now (film position, offset included).
-    ///   - sinceLastJump: seconds since the app last commanded a seek.
+    ///   - quietSinceLastGood: no seek was commanded since that reading. A drop that
+    ///     follows a commanded seek is that seek (failed, slow, or still on its way),
+    ///     not a rebuild — and treating it as one made skipping impossible.
     ///   - jumpPending: a supplied seek the engine has not confirmed yet.
     /// - Returns: what to add to the engine's clock, or `nil` for "nothing changed".
     public static func clockOffset(lastGood: Double, reported: Double,
-                                   sinceLastJump: TimeInterval,
+                                   quietSinceLastGood: Bool,
                                    jumpPending: Bool) -> Double? {
-        guard !jumpPending, sinceLastJump > jumpGrace else { return nil }
+        guard !jumpPending, quietSinceLastGood else { return nil }
         // Early in a film the difference is not yet meaningful; the start itself
         // moves the clock by more than `rebuildGap` without anything being broken.
         guard lastGood > rebuildNotBefore else { return nil }
@@ -136,8 +138,6 @@ public enum TimeAssumption {
         return lastGood - reported
     }
 
-    /// How long after a commanded seek the clock may still be settling.
-    public static let jumpGrace: TimeInterval = 5
     /// A drop larger than this cannot be a seek the app commanded.
     public static let rebuildGap: Double = 30
     /// Below this position a rebuild cannot be told from the start of a film.

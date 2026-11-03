@@ -388,19 +388,21 @@ struct TimeAssumptionTests {
     /// difference.
     @Test("Eine Uhr, die hinter den Film zurueckfaellt, wird als Neuaufbau erkannt")
     func clockRebuild() {
-        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 5, sinceLastJump: 30,
+        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 5, quietSinceLastGood: true,
                                            jumpPending: false) == 570)
-        // A seek the app commanded is no rebuild, nor is one still on its way.
-        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 5, sinceLastJump: 2,
+        // **A seek explains the drop.** Whatever it did — land late, fail, or still be
+        // on its way — it is not the engine rebuilding its clock. Taking it for one
+        // made skipping impossible: the film was pulled back to where it had been.
+        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 5, quietSinceLastGood: false,
                                            jumpPending: false) == nil)
-        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 5, sinceLastJump: 30,
+        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 5, quietSinceLastGood: true,
                                            jumpPending: true) == nil)
         // Normal playback, a small drift and the start of a film are none either.
-        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 574, sinceLastJump: 30,
+        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 574, quietSinceLastGood: true,
                                            jumpPending: false) == nil)
-        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 550, sinceLastJump: 30,
+        #expect(TimeAssumption.clockOffset(lastGood: 575, reported: 550, quietSinceLastGood: true,
                                            jumpPending: false) == nil)
-        #expect(TimeAssumption.clockOffset(lastGood: 40, reported: 0.2, sinceLastJump: 30,
+        #expect(TimeAssumption.clockOffset(lastGood: 40, reported: 0.2, quietSinceLastGood: true,
                                            jumpPending: false) == nil)
     }
 }

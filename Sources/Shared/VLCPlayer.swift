@@ -713,6 +713,12 @@ final class VLCPlayerView: BaseView {
     /// while the picture really moves forward.
     var lastGoodPosition: Double = 0
 
+    /// When `lastGoodPosition` was last written.
+    ///
+    /// A clock drop only counts as a rebuilt clock if the app commanded **no seek**
+    /// since then (see `clockOffset`): after a seek the drop is the seek itself.
+    private var lastGoodAt = Date.distantPast
+
     /// **What the engine's clock is behind the film.** Zero on a healthy stream.
     ///
     /// VLC 4 rebuilds its clock context around the paused start and afterwards reports
@@ -721,7 +727,7 @@ final class VLCPlayerView: BaseView {
     /// `[Melden] Progress 10 s`). Without this the bar falls to 0 and the reports carry
     /// a position near zero, so "continue watching" loses the place.
     ///
-    /// `checkStandstill` notices the jump (``TimeAssumption/clockOffset(lastGood:reported:sinceLastJump:jumpPending:)``)
+    /// `checkStandstill` notices the jump (``TimeAssumption/clockOffset(lastGood:reported:quietSinceLastGood:jumpPending:)``)
     /// and sets this; `positionSeconds` and every seek the app commands take it into
     /// account. Reset for each new media in `open`.
     private var clockOffset: Double = 0
@@ -982,7 +988,7 @@ final class VLCPlayerView: BaseView {
             if let offset = TimeAssumption.clockOffset(
                 lastGood: lastGoodPosition,
                 reported: spot + clockOffset,
-                sinceLastJump: Date().timeIntervalSince(lastJumpCommand),
+                quietSinceLastGood: lastGoodAt > lastJumpCommand,
                 jumpPending: openTarget != nil || startJump != nil) {
                 clockOffset += offset
                 AppLog.writeOut("[VLC] Uhr neu aufgebaut: \(Int(spot + clockOffset - offset)) s gemeldet, Film bei \(Int(lastGoodPosition)) s — Versatz \(Int(clockOffset)) s")
@@ -1012,6 +1018,7 @@ final class VLCPlayerView: BaseView {
             // otherwise be stored here.
             if spot > 0, length <= 0 || spot < length - 1 {
                 lastGoodPosition = spot + clockOffset
+                lastGoodAt = Date()
             }
             return
         }
@@ -1226,6 +1233,21 @@ final class VLCPlayerView: BaseView {
         // The offset stays: the same address delivers from the same position again,
         // only the rest is seeked.
         open(url: address, offSeconds: max(since, 0), container: lastContainer)
+    }
+
+    /// **A seek in front of the engine's zero point**: the stream is opened again at
+    /// the target.
+    ///
+    /// Only reached when VLC rebuilt its clock (see `clockOffset`); the same address
+    /// then delivers from `seconds` again. Track choices are carried over, and the
+    /// display stays on the target because the view holds it (`PlaybackTick.Jump`).
+    private func reopen(at seconds: Double) {
+        guard let address = lastAddress else { return }
+        standsSince = nil
+        lastKnownTime = -1
+        tracksPostLayout = reportedTracks
+        AppLog.writeOut("[VLC] Ziel \(Int(seconds)) s liegt vor dem Anfang der Uhr (\(Int(clockOffset)) s) — Strom neu öffnen")
+        open(url: address, offSeconds: max(seconds, 0), container: lastContainer)
     }
 
 
@@ -1509,6 +1531,7 @@ final class VLCPlayerView: BaseView {
         currentSubtitle = nil
         trackIndicesReport(TrackIndices())
         lastGoodPosition = offSeconds
+        lastGoodAt = Date()
         // **A new media, a fresh clock.** The offset belongs to the previous one.
         clockOffset = 0
         intentionalEnded = false
@@ -2669,6 +2692,21 @@ final class VLCPlayerView: BaseView {
     }
 
     private func jumpTrigger(on seconds: Double, overTime: Bool) {
+        // **A commanded seek explains a clock drop.** `clockOffset` uses this to tell a
+        // rebuilt clock from a seek that lands late or fails.
+        lastJumpCommand = Date()
+        // **In front of the engine's zero point there is nothing to seek to.**
+        //
+        // When VLC rebuilt its clock (see `clockOffset`) its timeline starts at the
+        // resume point: a target in front of it does not exist in this stream, and
+        // both seek paths clamp to its beginning — the bar moves, the film does not.
+        // The stream is opened again at the target instead, with the track selection
+        // carried over. The display holds the target meanwhile (`PlaybackTick.Jump`
+        // from the view), so nothing flickers back.
+        if clockOffset > 0, seconds < clockOffset {
+            reopen(at: seconds)
+            return
+        }
         if overTime {
             AppLog.writeOut("[VLC] Sprung auf \(Int(seconds)) s ueber die Zeit (von \(Int(positionSeconds)) s)")
             // **In the engine's time base.** After a rebuilt clock (see `clockOffset`)
@@ -2720,7 +2758,11 @@ final class VLCPlayerView: BaseView {
         let row = "[VLC] Sprung um \(seconds) s von \(Int(positionSeconds)) s"
         Self.log.info("\(row, privacy: .public)")
         let target = positionSeconds + Double(seconds)
-        player.jump(withOffset: seconds * 1000, completion: {})
+        // **Through `jumpTrigger`**, like every other seek: it is where a clock that
+        // was rebuilt is accounted for (and where a target in front of it reopens the
+        // stream). A raw `player.jump` clamps at zero and the film would not move.
+        jumpTrigger(on: target, overTime: false)
+        jumpObserve(target: target)
         refreshPiPState()
         jumpReported?(target)
     }
