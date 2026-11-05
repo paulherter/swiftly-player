@@ -347,6 +347,11 @@ private fun Subpage(app: SwiftlyApplication, target: Destination, open: (Destina
         "BoxSet" -> CollectionPage(app, target, open, back)
         "Playlist" -> PlaylistPage(app, target, open, back)
         "QuickConnect" -> QuickConnectPage(app, back)
+        "Serververwaltung" -> ServerDashboardPage(app, open, back)
+        "Serverprotokolle" -> ServerLogsPage(app, open, back)
+        "Serverprotokoll" -> ServerLogPage(app, target.id, back)
+        // `id` is the session, `name` the title, `role` who watches.
+        "WiedergabeStoppen" -> StopStreamPage(app, target.id, target.name, target.role.orEmpty(), back)
         "Wiedergabeeinstellungen" -> PlaybackSettingsPage(app, back, open)
         "Untertitelaussehen" -> SubtitleLookPage(app, back)
         "Darstellung" -> PresentationPage(app, open, back)

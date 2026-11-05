@@ -334,13 +334,18 @@ public struct AccountPreGift: Sendable, Equatable, Decodable {
     /// needs both, see
     /// ``Downloadqualitaet/waehlbar(videoConvert:audioConvert:)``.
     public let audioConvertAllowed: Bool?
+    /// `Policy.IsAdministrator`: the account may see and run the server
+    /// (``ServerDashboard``). `nil` and `false` both hide that page.
+    public let isAdministrator: Bool?
 
     public init(nextEpisodeAutomatic: Bool?, downloadsAllowed: Bool? = nil,
-                convertAllowed: Bool? = nil, audioConvertAllowed: Bool? = nil) {
+                convertAllowed: Bool? = nil, audioConvertAllowed: Bool? = nil,
+                isAdministrator: Bool? = nil) {
         self.nextEpisodeAutomatic = nextEpisodeAutomatic
         self.downloadsAllowed = downloadsAllowed
         self.convertAllowed = convertAllowed
         self.audioConvertAllowed = audioConvertAllowed
+        self.isAdministrator = isAdministrator
     }
 
     /// Whether a smaller quality is offered when downloading.
@@ -361,6 +366,7 @@ public struct AccountPreGift: Sendable, Equatable, Decodable {
         case download = "EnableContentDownloading"
         case convert = "EnableVideoPlaybackTranscoding"
         case audioConvert = "EnableAudioPlaybackTranscoding"
+        case administrator = "IsAdministrator"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -379,10 +385,12 @@ public struct AccountPreGift: Sendable, Equatable, Decodable {
             downloadsAllowed = try p.decodeIfPresent(Bool.self, forKey: .download)
             convertAllowed = try p.decodeIfPresent(Bool.self, forKey: .convert)
             audioConvertAllowed = try p.decodeIfPresent(Bool.self, forKey: .audioConvert)
+            isAdministrator = try? p.decodeIfPresent(Bool.self, forKey: .administrator)
         } else {
             downloadsAllowed = nil
             convertAllowed = nil
             audioConvertAllowed = nil
+            isAdministrator = nil
         }
     }
 }

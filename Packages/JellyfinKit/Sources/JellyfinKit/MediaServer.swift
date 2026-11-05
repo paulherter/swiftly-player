@@ -60,6 +60,9 @@ public enum ServerCapability: String, Sendable, CaseIterable {
     case genres
     case seerr
     case downloads
+    /// The administrator's view of the server (``ServerDashboard``); shown only to an
+    /// account with `Policy.IsAdministrator`.
+    case administration
 }
 
 /// **What the user interface needs from a media server.**
@@ -289,6 +292,24 @@ public protocol RemoteSessionServer: MediaServer {
     func handoffHint(an session: String, device: String) async throws
     func foreignCommand(_ command: ForeignCommand, an session: String) async throws
     func playOn(session: String, order: PlayOrder) async throws
+}
+
+/// The server as its administrator sees it (`.administration`, ``ServerDashboard``).
+///
+/// **Two speeds.** ``dashboardOnce()`` is what changes rarely and costs the server a count over
+/// the whole library: asked once when the page opens. ``dashboardLive()`` is cheap and changes
+/// by the second: load, disks, tasks, streams.
+public protocol ServerAdministration: MediaServer {
+    func dashboardOnce() async throws -> (system: ServerSystem, counts: ServerCounts, resolutions: ResolutionCounts?)
+    func dashboardLive() async -> ServerLive
+    func restartServer() async throws
+    func scanLibraries() async throws
+    func stopTask(id: String) async throws
+    /// Stops what a session plays and shows the viewer `message` (nothing when empty).
+    func stopPlayback(sessionID: String, message: String) async throws
+    func logFiles() async throws -> [ServerLogFile]
+    /// The end of one log file, at most `limit` bytes.
+    func logText(name: String, limit: Int) async throws -> String
 }
 
 /// Display preferences kept on the server (`.settingsSync`).

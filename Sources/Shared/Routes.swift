@@ -37,6 +37,13 @@ struct WatchlistRoute: Hashable {}
 /// page must also come from the right, not a sheet in disguise.
 struct QuickConnectRoute: Hashable {}
 
+/// The administrator's server page and its log files (iPhone and iPad only).
+struct ServerDashboardRoute: Hashable {}
+struct ServerLogsRoute: Hashable {}
+struct ServerLogRoute: Hashable { let name: String }
+/// Stopping one session's playback, with a message to the viewer.
+struct StopStreamRoute: Hashable { let sessionID: String; let title: String; let user: String }
+
 /// **Adding a server: as a page, not a sheet.**
 ///
 /// It came as a `fullScreenCover` from the bottom, while Quick Connect,
