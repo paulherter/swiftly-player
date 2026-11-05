@@ -1373,8 +1373,8 @@ public actor JellyfinClient {
     /// `SubtitleStreamIndex: -1` for the same reason as in ``airplayPlan(for:source:)``;
     /// text subtitles are drawn by the app from the server's file.
     public func avPlayerPlan(for itemID: String, source: MediaSource, audioIndex: Int?,
-                             av1: Bool) async throws -> PlaybackPlan? {
-        let profile = DeviceProfile.airplay(av1: av1)
+                             av1: Bool, dolbyVision: Bool) async throws -> PlaybackPlan? {
+        let profile = DeviceProfile.airplay(av1: av1, dolbyVision: dolbyVision)
         let info = try await playbackInfo(itemID: itemID, profile: profile,
                                           audioStreamIndex: audioIndex, subtitleStreamIndex: -1,
                                           mediaSourceID: source.id)

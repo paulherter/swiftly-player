@@ -14,9 +14,11 @@ extension AppModel {
             server: server, key: key, keyName: EmbyPaths.tokenName(for: session.kind),
             serverExtracts: fileStyleAdjustable)
         let av1 = EngineProbe.device.av1
+        let dolbyVision = EngineProbe.device.dolbyVision
         let ending = client as? any ActiveEncodingServer
         return EngineRequest(itemID: itemID, source: source, subtitleFiles: files, plan: { audio in
-            try? await client.avPlayerPlan(for: itemID, source: source, audioIndex: audio, av1: av1)
+            try? await client.avPlayerPlan(for: itemID, source: source, audioIndex: audio, av1: av1,
+                                          dolbyVision: dolbyVision)
         }, release: { plan in
             // A file played as it is has no job.
             guard plan.method != .directPlay, let id = plan.playSessionID else { return }
