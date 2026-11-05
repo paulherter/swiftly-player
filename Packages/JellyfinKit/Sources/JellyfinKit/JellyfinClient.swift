@@ -354,10 +354,10 @@ public actor JellyfinClient {
         return data
     }
 
-    /// A `POST` without a body whose answer is only the status.
-    internal func post(_ path: String) async throws {
+    /// A call whose answer is only the status (`POST`, `DELETE`), with an optional JSON body.
+    internal func call(_ path: String, method: String = "POST", body: (any Encodable)? = nil) async throws {
         _ = try requireSession()
-        try await sendIgnoringBody(request(path, method: "POST"))
+        try await sendIgnoringBody(request(path, method: method, body: body))
     }
 
     /// The decoder every answer goes through, for callers that decode leniently themselves.

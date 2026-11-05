@@ -17,8 +17,8 @@ Android	DashboardLiveResponse	codable	disks,load,streams,tasks
 Android	DashboardLoadResponse	codable	cpu,cpuShare,diskText,memory,memoryShare
 Android	DashboardLogResponse	codable	modified,name,size
 Android	DashboardOnceResponse	codable	episodes,hd,movies,name,pendingRestart,sd,series,uhd,version
-Android	DashboardStreamResponse	codable	audio,badges,delivery,deliveryGood,device,id,paused,poster,share,square,subtitle,timeLine,title,titleAddition,user,userImage
-Android	DashboardTaskResponse	codable	category,id,name,progress,progressText
+Android	DashboardStreamResponse	codable	audio,badges,delivery,deliveryGood,device,id,paused,poster,session,share,square,subtitle,timeLine,title,titleAddition,user,userImage
+Android	DashboardTaskResponse	codable	category,id,name,progress,progressText,stoppable
 Android	DelayResponse	codable	amAnfang,amEnde,istNull,millisekunden,text
 Android	DelayResponse.CodingKeys	codingkey	amAnfang,amEnde,istNull,millisekunden,text
 Android	DownloadGroupsResponse	codable	bytes,folgen,id,serienId,titel
@@ -363,6 +363,8 @@ Kit	ServerStream.Transcoding.CodingKeys	codingkey	Bitrate,IsAudioDirect,IsVideoD
 Kit	ServerSystem.CodingKeys	codingkey	HasPendingRestart,ServerName,Version
 Kit	ServerTask.CodingKeys	codingkey	Category,CurrentProgressPercentage,Id,Name,State
 Kit	Session.CodingKeys	codingkey	accessToken,kind,plex,serverURL,userID,userName
+Kit	SessionMessage	codable	Header,Text
+Kit	SessionMessage.CodingKeys	codingkey	Header,Text
 Kit	Sorting	raw	bewertung,erscheinung,name,neueste
 Kit	StartLibraries.Record.Keys	codingkey	id,name,sammlung
 Kit	StartLibrary	codable	id,name,sammlung

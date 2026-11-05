@@ -26,10 +26,29 @@ extension JellyfinClient {
                                 streams: streams)
     }
 
-    public func restartServer() async throws { try await post("System/Restart") }
+    public func restartServer() async throws { try await call("System/Restart") }
 
     /// Every library, as "Scan all libraries" on the server's dashboard does.
-    public func scanLibraries() async throws { try await post("Library/Refresh") }
+    public func scanLibraries() async throws { try await call("Library/Refresh") }
+
+    /// Cancels a running scheduled task; the server sets it to `Cancelling`, then `Idle`.
+    public func stopTask(id: String) async throws {
+        try await call("ScheduledTasks/Running/\(id)", method: "DELETE")
+    }
+
+    /// **Stops a session's playback, then tells the viewer why.**
+    ///
+    /// Stop first: a message sent while the player is open sits behind it on some clients and
+    /// goes with it when it closes. Without a timeout Jellyfin's clients show the message as a
+    /// dialog the viewer confirms, so it cannot pass unseen. A failed message does not undo
+    /// the stop and is not reported; the stop is what was asked for.
+    public func stopPlayback(sessionID: String, message: String) async throws {
+        try await call("Sessions/\(sessionID)/Playing/Stop")
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        try? await call("Sessions/\(sessionID)/Message",
+                        body: SessionMessage(header: translated("Nachricht vom Administrator"), text: text))
+    }
 
     public func logFiles() async throws -> [ServerLogFile] {
         ServerLogFile.newestFirst(try await fetch("System/Logs", as: [ServerLogFile].self))
@@ -92,6 +111,13 @@ extension JellyfinClient {
         else { return [] }
         return (try? ServerStream.playing(data, decoder: answerDecoder)) ?? []
     }
+}
+
+/// `POST /Sessions/{id}/Message`. No `TimeoutMs`: the clients then show a dialog to confirm.
+struct SessionMessage: Encodable {
+    let header: String
+    let text: String
+    enum CodingKeys: String, CodingKey { case header = "Header", text = "Text" }
 }
 
 /// `TotalRecordCount` of an item query with `Limit=0`.

@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -14,14 +15,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
@@ -70,7 +74,7 @@ fun ServerDashboardPage(app: SwiftlyApplication, open: (Destination) -> Unit, ba
     fun action(perform: suspend () -> String, done: String) {
         run.launch {
             val reason = withContext(Dispatchers.IO) { perform() }
-            notice = if (reason.isEmpty()) done else errorString(reason)
+            notice = if (reason.isEmpty()) done.ifEmpty { null } else errorString(reason)
         }
     }
 
@@ -106,7 +110,15 @@ fun ServerDashboardPage(app: SwiftlyApplication, open: (Destination) -> Unit, ba
                 for (i in 0 until tasks.length()) {
                     val t = tasks.getJSONObject(i)
                     if (i > 0) SeparatorLine()
-                    MeterRow(t.optString("name"), value = t.optString("progressText"), share = t.optDouble("progress", 0.0) / 100)
+                    MeterRow(t.optString("name"), value = t.optString("progressText"), share = t.optDouble("progress", 0.0) / 100,
+                             stop = if (t.optBoolean("stoppable")) ({
+                                 // Asks first, as the iPhone's action sheet does.
+                                 app.sheet.value = SheetRequest(translated("„%@“ stoppen?", t.optString("name")),
+                                     listOf(Choice("stop", translated("Stoppen"))), null, mapOf("stop" to Glyph.CrossCircle),
+                                     cautionary = setOf("stop")) {
+                                     action({ app.kern.taskStop(t.optString("id")).await() }, "")
+                                 }
+                             }) else null)
                 }
             }
         }
@@ -119,8 +131,11 @@ fun ServerDashboardPage(app: SwiftlyApplication, open: (Destination) -> Unit, ba
         }
         for (i in 0 until streams.length()) {
             val s = streams.getJSONObject(i)
+            // A tap on a card leads to stopping it, with a message to the viewer.
             key(s.optString("id")) {
-                StreamCard(s, Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 10.dp))
+                StreamCard(s, Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 10.dp)) {
+                    open(Destination(s.optString("session"), s.optString("title"), "WiedergabeStoppen", role = s.optString("user")))
+                }
             }
         }
 
@@ -195,7 +210,7 @@ private fun NumberRow(entries: List<Pair<String, Int>>) {
 
 /** A name, a value on the right and, where there is a share, a bar below. */
 @Composable
-private fun MeterRow(title: String, value: String, share: Double?, warn: Boolean = false) {
+private fun MeterRow(title: String, value: String, share: Double?, warn: Boolean = false, stop: (() -> Unit)? = null) {
     Column(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing, vertical = 12.dp),
            verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -203,6 +218,12 @@ private fun MeterRow(title: String, value: String, share: Double?, warn: Boolean
                  color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(8.dp))
             Text(value, style = Theme.tile, color = if (warn) Theme.warning else Theme.fontQuiet, maxLines = 1)
+            stop?.let {
+                Box(Modifier.size(44.dp, 32.dp).clip(CircleShape).pressRow(it)
+                        .semantics { contentDescription = translated("Stoppen") }, contentAlignment = Alignment.Center) {
+                    Symbol(Glyph.CrossCircle, 20.dp, color = Theme.fontQuiet)
+                }
+            }
         }
         share?.let { Bar(it, if (warn) Theme.warning else Theme.accent) }
     }
@@ -249,11 +270,11 @@ private fun LoadRing(share: Double, value: String, label: String) {
 /** Mirrors `StreamCard`: the poster down the whole left edge; title and who watches, badges, device; bar, time and delivery with rate. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StreamCard(s: JSONObject, modifier: Modifier) {
+private fun StreamCard(s: JSONObject, modifier: Modifier, perform: () -> Unit) {
     val posterWidth = 84.dp
     val tone = if (s.optBoolean("deliveryGood")) Theme.accent else Theme.warning
     Row(modifier.fillMaxWidth().height(IntrinsicSize.Min).heightIn(min = posterWidth * 1.5f)
-            .clip(RoundedCornerShape(Theme.cornerCard)).background(Theme.groupsArea)) {
+            .clip(RoundedCornerShape(Theme.cornerCard)).background(Theme.groupsArea).pressRow(perform)) {
         Box(Modifier.width(posterWidth).fillMaxHeight().background(Theme.raised)) {
             s.optString("poster").takeIf { it.isNotEmpty() && s.has("poster") }?.let {
                 AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -358,6 +379,45 @@ fun ServerLogPage(app: SwiftlyApplication, name: String, back: () -> Unit) {
                     .navigationBarsPadding().padding(horizontal = Theme.edgeSpacing, vertical = 12.dp)) {
                 SelectionContainer {
                     Text(text.orEmpty(), style = Theme.small.copy(fontFamily = FontFamily.Monospace), color = Theme.fontQuiet, softWrap = false)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Mirrors `StopStreamView`: stop someone's playback and say why. Built like Quick Connect; the
+ * message comes prefilled, an empty field stops without one.
+ */
+@Composable
+fun StopStreamPage(app: SwiftlyApplication, session: String, title: String, user: String, back: () -> Unit) {
+    var message by remember { mutableStateOf(translated("Die Wiedergabe wurde vom Administrator beendet.")) }
+    var running by remember { mutableStateOf(false) }
+    var failure by remember { mutableStateOf<String?>(null) }
+    val run = rememberCoroutineScope()
+    SettingPage(translated("Wiedergabe stoppen"), back) {
+        Column(Modifier.padding(horizontal = Theme.edgeSpacing).widthIn(max = Theme.formWidth)) {
+            Text(translated("„%@“ bei %@ wird gestoppt. Die Nachricht erscheint auf dem Gerät.", title, user),
+                 style = Theme.body.copy(lineHeight = 21.sp), color = Theme.fontQuiet, modifier = Modifier.padding(top = 10.dp))
+            BasicTextField(value = message, onValueChange = { message = it }, minLines = 3, maxLines = 6,
+                textStyle = Theme.body.copy(color = Theme.font), cursorBrush = SolidColor(Theme.accent),
+                modifier = Modifier.fillMaxWidth().padding(top = 22.dp).clip(RoundedCornerShape(Theme.cornerField))
+                    .background(Theme.area).padding(14.dp),
+                decorationBox = { inner ->
+                    Box {
+                        if (message.isEmpty()) Text(translated("Nachricht (optional)"), style = Theme.body, color = Theme.fontVeryQuiet)
+                        inner()
+                    }
+                })
+            failure?.let { Text(it, style = Theme.tile, color = Theme.error, modifier = Modifier.padding(top = 12.dp)) }
+            de.paulherter.swiftly.shared.PrimaryButton(translated(if (running) "Moment…" else "Stoppen"),
+                    released = !running, modifier = Modifier.padding(top = 22.dp)) {
+                running = true
+                failure = null
+                run.launch {
+                    val reason = withContext(Dispatchers.IO) { app.kern.playbackStop(session, message).await() }
+                    running = false
+                    if (reason.isEmpty()) back() else failure = errorString(reason)
                 }
             }
         }

@@ -192,12 +192,15 @@ struct ServerDashboardTests {
     final class Stub: URLProtocol, @unchecked Sendable {
         nonisolated(unsafe) static var answers: [String: (Int, String)] = [:]
         nonisolated(unsafe) static var paths: [String] = []
+        /// "METHOD /path" and the JSON body, in order.
+        nonisolated(unsafe) static var calls: [(String, String)] = []
 
         override class func canInit(with request: URLRequest) -> Bool { true }
         override class func canonicalRequest(for r: URLRequest) -> URLRequest { r }
         override func startLoading() {
             let path = request.url?.path ?? ""
             Self.paths.append(path)
+            Self.calls.append(("\(request.httpMethod ?? "") \(path)", Self.body(of: request)))
             let (status, body) = Self.answers[path] ?? (404, "")
             let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -205,10 +208,26 @@ struct ServerDashboardTests {
             client?.urlProtocolDidFinishLoading(self)
         }
         override func stopLoading() {}
+
+        /// `URLSession` hands the body to a protocol as a stream.
+        static func body(of request: URLRequest) -> String {
+            if let data = request.httpBody { return String(decoding: data, as: UTF8.self) }
+            guard let stream = request.httpBodyStream else { return "" }
+            stream.open(); defer { stream.close() }
+            var data = Data()
+            var buffer = [UInt8](repeating: 0, count: 1024)
+            while stream.hasBytesAvailable {
+                let n = stream.read(&buffer, maxLength: buffer.count)
+                if n <= 0 { break }
+                data.append(buffer, count: n)
+            }
+            return String(decoding: data, as: UTF8.self)
+        }
     }
 
     private func client() async -> JellyfinClient {
         Stub.paths = []
+        Stub.calls = []
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [Stub.self]
         let c = JellyfinClient(baseURL: URL(string: "https://tv.example.de")!, deviceID: "d", deviceName: "P",
@@ -254,5 +273,44 @@ struct ServerDashboardTests {
         let live = await c.dashboardLive()
         #expect(live.load?.cpuPercent == 12.5 && live.load?.memoryPercent == 40)
         #expect(ServerLoad.percent(12.5) == "13%" && ServerLoad.percent(140) == "100%")
+    }
+
+    @Test("Eine Aufgabe anhalten ist DELETE auf die laufende Aufgabe")
+    func stopTask() async throws {
+        Stub.answers = ["/ScheduledTasks/Running/scan": (204, "")]
+        let c = await client()
+        try await c.stopTask(id: "scan")
+        #expect(Stub.calls.map(\.0) == ["DELETE /ScheduledTasks/Running/scan"])
+    }
+
+    @Test("Wiedergabe anhalten: erst Stop, dann die Nachricht als Dialog ohne Zeitlimit")
+    func stopPlayback() async throws {
+        Stub.answers = ["/Sessions/s1/Playing/Stop": (204, ""), "/Sessions/s1/Message": (204, "")]
+        let c = await client()
+        try await c.stopPlayback(sessionID: "s1", message: "  Server wird gewartet.  ")
+        #expect(Stub.calls.map(\.0) == ["POST /Sessions/s1/Playing/Stop", "POST /Sessions/s1/Message"])
+        let body = try JSONSerialization.jsonObject(with: Data(Stub.calls[1].1.utf8)) as? [String: String]
+        #expect(body?["Text"] == "Server wird gewartet." && body?["Header"]?.isEmpty == false)
+        #expect(body?["TimeoutMs"] == nil)
+    }
+
+    @Test("Ohne Text keine Nachricht; scheitert sie, bleibt der Stop gültig")
+    func stopWithoutMessage() async throws {
+        Stub.answers = ["/Sessions/s1/Playing/Stop": (204, "")]
+        let c = await client()
+        try await c.stopPlayback(sessionID: "s1", message: " ")
+        #expect(Stub.calls.map(\.0) == ["POST /Sessions/s1/Playing/Stop"])
+        Stub.calls = []
+        // The message route answers 404 here: no error, the stop went through.
+        try await c.stopPlayback(sessionID: "s1", message: "Hallo")
+        #expect(Stub.calls.count == 2)
+    }
+
+    @Test("Scheitert der Stop, geht keine Nachricht raus")
+    func stopFails() async {
+        Stub.answers = [:]
+        let c = await client()
+        await #expect(throws: JellyfinError.self) { try await c.stopPlayback(sessionID: "s1", message: "Hallo") }
+        #expect(Stub.calls.count == 1)
     }
 }

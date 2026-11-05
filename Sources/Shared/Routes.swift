@@ -41,6 +41,8 @@ struct QuickConnectRoute: Hashable {}
 struct ServerDashboardRoute: Hashable {}
 struct ServerLogsRoute: Hashable {}
 struct ServerLogRoute: Hashable { let name: String }
+/// Stopping one session's playback, with a message to the viewer.
+struct StopStreamRoute: Hashable { let sessionID: String; let title: String; let user: String }
 
 /// **Adding a server: as a page, not a sheet.**
 ///

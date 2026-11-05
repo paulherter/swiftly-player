@@ -304,6 +304,9 @@ public protocol ServerAdministration: MediaServer {
     func dashboardLive() async -> ServerLive
     func restartServer() async throws
     func scanLibraries() async throws
+    func stopTask(id: String) async throws
+    /// Stops what a session plays and shows the viewer `message` (nothing when empty).
+    func stopPlayback(sessionID: String, message: String) async throws
     func logFiles() async throws -> [ServerLogFile]
     /// The end of one log file, at most `limit` bytes.
     func logText(name: String, limit: Int) async throws -> String

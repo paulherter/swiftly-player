@@ -568,6 +568,9 @@ extension View {
             .navigationDestination(for: ServerLogRoute.self) { route in
                 ServerLogView(model: model, name: route.name)
             }
+            .navigationDestination(for: StopStreamRoute.self) { route in
+                StopStreamView(model: model, route: route)
+            }
             .navigationDestination(for: SettingsRoute.self) { _ in
                 SettingsView(model: model)
             }

@@ -20,6 +20,9 @@ struct ServerDashboardView: View {
     @State private var live = ServerLive()
     @State private var failure: String?
     @State private var restartSheet = false
+    /// The task whose stop is being asked about.
+    @State private var stopTarget: ServerTask?
+    @State private var stopSheet = false
     @State private var notice: String?
 
     var body: some View {
@@ -35,6 +38,15 @@ struct ServerDashboardView: View {
                         actions: [
                 TitleAction(symbol: "arrow.clockwise", text: "Neu starten", cautionary: true) { restart() },
             ], note: "Wer gerade schaut, wird für eine Minute unterbrochen.")
+        }
+        .overlay(alignment: .topTrailing) {
+            ActionSheet(opened: $stopSheet,
+                        title: String(localized: "„\(stopTarget?.name ?? "")“ stoppen?"),
+                        actions: [
+                TitleAction(symbol: "xmark.circle", text: "Stoppen", cautionary: true) {
+                    if let task = stopTarget { stop(task) }
+                },
+            ])
         }
         .toolbar(.hidden, for: .navigationBar)
         .background(SwipeBack())
@@ -70,6 +82,13 @@ struct ServerDashboardView: View {
         }
     }
 
+    private func stop(_ task: ServerTask) {
+        guard let admin = model.administration else { return }
+        Task {
+            do { try await admin.stopTask(id: task.id) } catch { notice = model.readable(error) }
+        }
+    }
+
     private func scan() {
         guard let admin = model.administration else { return }
         Task {
@@ -100,7 +119,7 @@ struct ServerDashboardView: View {
             if !live.tasks.isEmpty {
                 SettingGroup(title: "Aufgaben") {
                     ForEach(Array(live.tasks.enumerated()), id: \.element.id) { i, task in
-                        TaskRow(task: task)
+                        TaskRow(task: task) { stopTarget = task; stopSheet = true }
                         if i < live.tasks.count - 1 { SheetLine() }
                     }
                 }
@@ -191,10 +210,17 @@ struct ServerDashboardView: View {
                     .padding(.horizontal, Theme.margin(wide: wide))
                     .padding(.top, 6)
             }
+            // **A tap on a card leads to stopping it**, with a message to the viewer: the one
+            // thing an administrator does about someone else's stream.
             ForEach(live.streams) { stream in
-                StreamCard(model: model, stream: stream)
-                    .padding(.horizontal, Theme.margin(wide: wide))
-                    .padding(.top, 10)
+                NavigationLink(value: StopStreamRoute(sessionID: stream.sessionID, title: stream.title,
+                                                      user: stream.userName)) {
+                    StreamCard(model: model, stream: stream)
+                }
+                .buttonStyle(Theme.PressButton())
+                .accessibilityHint(Text("Wiedergabe stoppen"))
+                .padding(.horizontal, Theme.margin(wide: wide))
+                .padding(.top, 10)
             }
         }
         .animation(Theme.reveal, value: live.streams.map(\.id))
@@ -315,6 +341,7 @@ private struct LoadRing: View {
 
 private struct TaskRow: View {
     let task: ServerTask
+    let stop: () -> Void
     @Environment(\.wide) private var wide
 
     var body: some View {
@@ -332,12 +359,23 @@ private struct TaskRow: View {
                 if let p = task.progressText {
                     Text(verbatim: p).font(Theme.tile).monospacedDigit().foregroundStyle(Theme.fontQuiet)
                 }
+                // Gone while the server is already cancelling it.
+                if task.state == "Running" {
+                    Button(action: stop) {
+                        Image(icon: "xmark.circle", size: 20)
+                            .font(.app(size: 20))
+                            .foregroundStyle(Theme.fontQuiet)
+                            .frame(width: 44, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(Theme.PressText())
+                    .accessibilityLabel(Text("Stoppen"))
+                }
             }
             Bar(share: (task.progress ?? 0) / 100, tint: Theme.accent)
         }
         .padding(.horizontal, Theme.margin(wide: wide))
         .padding(.vertical, 12)
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -626,6 +664,83 @@ struct ServerLogView: View {
             guard let admin = model.administration else { return }
             do { text = try await admin.logText(name: name, limit: ServerDashboard.logLimit) }
             catch { failure = model.readable(error) }
+        }
+    }
+}
+
+// MARK: - Stopping a stream
+
+/// **Stop someone's playback and say why.** Built like Quick Connect: a sentence what will
+/// happen, the field, one button. The message comes prefilled, so a stop is one tap; an empty
+/// field stops without a message.
+struct StopStreamView: View {
+    let model: AppModel
+    let route: StopStreamRoute
+
+    @Environment(\.dismiss) private var back
+    @Environment(\.wide) private var wide
+    @State private var message = String(localized: "Die Wiedergabe wurde vom Administrator beendet.")
+    @State private var running = false
+    @State private var failure: String?
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Theme.reason.ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 0) {
+                SubpageHeader(title: String(localized: "Wiedergabe stoppen")) { back() }
+                    .padding(.horizontal, -Theme.margin(wide: wide))
+
+                Text("„\(route.title)“ bei \(route.user) wird gestoppt. Die Nachricht erscheint auf dem Gerät.")
+                    .growing(15)
+                    .lineSpacing(3)
+                    .foregroundStyle(Theme.fontQuiet)
+                    .padding(.top, 10)
+
+                TextField("", text: $message, prompt: Text("Nachricht (optional)").foregroundColor(Theme.fontVeryQuiet),
+                          axis: .vertical)
+                    .font(Theme.body)
+                    .lineLimit(3...6)
+                    .foregroundStyle(Theme.font)
+                    .padding(14)
+                    .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
+                    .padding(.top, 22)
+
+                if let failure {
+                    Text(failure)
+                        .font(Theme.tile)
+                        .foregroundStyle(Theme.error)
+                        .padding(.top, 12)
+                }
+
+                Button(running ? "Moment…" : "Stoppen") { stop() }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(running)
+                    .padding(.top, 22)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Theme.margin(wide: wide))
+            .padding(.top, 8)
+            .frame(maxWidth: Theme.formWidth)
+            .frame(maxWidth: .infinity)
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .background(SwipeBack())
+    }
+
+    private func stop() {
+        guard let admin = model.administration else { return }
+        running = true
+        failure = nil
+        Task {
+            defer { running = false }
+            do {
+                try await admin.stopPlayback(sessionID: route.sessionID, message: message)
+                Theme.jerk(.medium)
+                back()
+            } catch {
+                failure = model.readable(error)
+            }
         }
     }
 }

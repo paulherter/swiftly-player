@@ -30,6 +30,8 @@ struct DashboardTaskResponse: Encodable {
     let id, name: String
     let category, progressText: String?
     let progress: Double?
+    /// `false` once the server is already cancelling it.
+    let stoppable: Bool
 }
 
 struct DashboardBadgeResponse: Encodable { let kind, text: String }
@@ -37,7 +39,7 @@ struct DashboardBadgeResponse: Encodable { let kind, text: String }
 /// One stream card. `id` changes only with a new session or title: Kotlin keys the card by it,
 /// so the poster is not loaded again every second.
 struct DashboardStreamResponse: Encodable {
-    let id, title, user, device, timeLine, delivery: String
+    let id, session, title, user, device, timeLine, delivery: String
     let titleAddition, subtitle, poster, userImage: String?
     let square, audio, paused, deliveryGood: Bool
     let share: Double
@@ -93,11 +95,12 @@ extension Kern {
             },
             tasks: live.tasks.map {
                 DashboardTaskResponse(id: $0.id, name: $0.name, category: $0.category,
-                                      progressText: $0.progressText, progress: $0.progress)
+                                      progressText: $0.progressText, progress: $0.progress,
+                                      stoppable: $0.state == "Running")
             },
             streams: live.streams.map { s in
                 DashboardStreamResponse(
-                    id: s.id, title: s.title, user: s.userName, device: s.deviceLine, timeLine: s.timeLine,
+                    id: s.id, session: s.sessionID, title: s.title, user: s.userName, device: s.deviceLine, timeLine: s.timeLine,
                     delivery: s.deliveryLine, titleAddition: s.titleAddition, subtitle: s.subtitle,
                     poster: a?.construct(itemID: s.posterID, mark: s.posterTag, mass: .atMostHigh(300))?.absoluteString,
                     userImage: s.userImageTag != nil ? s.userID.flatMap { a?.user($0, mark: s.userImageTag, border: 60)?.absoluteString } : nil,
@@ -116,6 +119,19 @@ extension Kern {
     public func librariesScan() async -> String {
         guard let admin = administration else { return coreErrorText(CoreError.notConnected) }
         do { try await admin.scanLibraries(); return "" } catch { return coreErrorText(error) }
+    }
+
+    /// Cancels a running task. Empty when done, otherwise the readable error.
+    public func taskStop(id: String) async -> String {
+        guard let admin = administration else { return coreErrorText(CoreError.notConnected) }
+        do { try await admin.stopTask(id: id); return "" } catch { return coreErrorText(error) }
+    }
+
+    /// Stops a session's playback and shows `message` there (nothing when empty).
+    public func playbackStop(session: String, message: String) async -> String {
+        guard let admin = administration else { return coreErrorText(CoreError.notConnected) }
+        do { try await admin.stopPlayback(sessionID: session, message: message); return "" }
+        catch { return coreErrorText(error) }
     }
 
     /// The log files, newest first; `modified` in milliseconds since 1970.
