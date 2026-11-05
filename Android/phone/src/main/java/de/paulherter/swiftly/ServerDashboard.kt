@@ -306,14 +306,15 @@ private fun StreamCard(s: JSONObject, modifier: Modifier, perform: () -> Unit) {
             }
             Text(s.optString("device"), style = Theme.small, color = Theme.fontVeryQuiet, maxLines = 2)
             Spacer(Modifier.weight(1f))
-            Bar(s.optDouble("share", 0.0), Theme.fontQuiet)
+            // One line: play or pause, the time, the bar filling the rest; under it how the server delivers it.
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Symbol(if (s.optBoolean("paused")) Glyph.Pause else Glyph.Play, 11.dp, color = Theme.fontQuiet)
                 Text(s.optString("timeLine"), style = Theme.small.copy(fontFeatureSettings = "tnum"),
-                     color = Theme.fontQuiet, maxLines = 1, modifier = Modifier.weight(1f))
-                Text(s.optString("delivery"), style = Theme.small.copy(fontWeight = FontWeight.SemiBold), color = tone, maxLines = 1,
-                     modifier = Modifier.clip(CircleShape).background(tone.copy(alpha = 0.16f)).padding(horizontal = 7.dp, vertical = 2.dp))
+                     color = Theme.fontQuiet, maxLines = 1)
+                Box(Modifier.weight(1f).padding(start = 4.dp)) { Bar(s.optDouble("share", 0.0), Theme.fontQuiet) }
             }
+            Text(s.optString("delivery"), style = Theme.small.copy(fontWeight = FontWeight.SemiBold), color = tone, maxLines = 1,
+                 modifier = Modifier.clip(CircleShape).background(tone.copy(alpha = 0.16f)).padding(horizontal = 7.dp, vertical = 2.dp))
         }
     }
 }

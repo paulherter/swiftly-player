@@ -476,10 +476,11 @@ struct StreamCard: View {
         }
     }
 
+    /// One line: play or pause, the time, and the bar filling the rest (time first, so it stands
+    /// in the same place on every card); under it how the server delivers it.
     private var progress: some View {
         let tone = TechDetails.weight(stream.delivery) == .good ? Theme.accent : Theme.warning
-        return VStack(alignment: .leading, spacing: 6) {
-            Bar(share: stream.share, tint: Theme.fontQuiet)
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(icon: stream.paused ? "pause.fill" : "play.fill", size: 11)
                     .font(.app(size: 11))
@@ -489,17 +490,18 @@ struct StreamCard: View {
                     .monospacedDigit()
                     .foregroundStyle(Theme.fontQuiet)
                     .lineLimit(1)
-                    .layoutPriority(1)
-                Spacer(minLength: 4)
-                Text(verbatim: stream.deliveryLine)
-                    .font(Theme.small.weight(.semibold))
-                    .foregroundStyle(tone)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(tone.opacity(0.16), in: Capsule())
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .fixedSize()
+                Bar(share: stream.share, tint: Theme.fontQuiet)
+                    .padding(.leading, 4)
             }
+            Text(verbatim: stream.deliveryLine)
+                .font(Theme.small.weight(.semibold))
+                .foregroundStyle(tone)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(tone.opacity(0.16), in: Capsule())
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
     }
 }
