@@ -558,6 +558,9 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     /** Whether the current server can do this (`ServerCapability`, e.g. "quickConnect"); the screens show only what it can. */
     fun can(capability: String): Boolean = if (::kern.isInitialized) kern.can(capability) else true
 
+    /** The server page for the server's administrator only (mirrors `AppModel.administration`). */
+    val administers: Boolean get() = settings.administratorAccount == "1" && can("administration")
+
     /** The current account's kind: "jellyfin", "emby" or "plex". */
     fun kind(): String = if (::kern.isInitialized) kern.kind().ifEmpty { "jellyfin" } else "jellyfin"
 
@@ -573,6 +576,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         settings.downloadRightAccount = ""
         settings.convertAllowedAccount = ""
         settings.downloadQualityAccount = ""
+        settings.administratorAccount = ""
         run.launch {
             val parts = runCatching {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.accountDefaults().await() }
@@ -581,6 +585,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
             settings.downloadRightAccount = parts.getOrElse(1) { "" }
             settings.convertAllowedAccount = parts.getOrElse(2) { "" }
             settings.downloadQualityAccount = parts.getOrElse(3) { "" }
+            settings.administratorAccount = parts.getOrElse(4) { "" }
         }
     }
 

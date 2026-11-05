@@ -174,3 +174,7 @@
 "Zu diesem Titel gibt es keine Datei." = "Zu diesem Titel gibt es keine Datei.";
 "Das kann ein Plex-Server nicht." = "Das kann ein Plex-Server nicht.";
 "Kapitel %lld" = "Kapitel %lld";
+
+/* Server dashboard */
+"Transkodierung" = "Transkodierung";
+

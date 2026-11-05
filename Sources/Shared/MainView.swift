@@ -559,6 +559,15 @@ extension View {
             .navigationDestination(for: QuickConnectRoute.self) { _ in
                 QuickConnectView(model: model)
             }
+            .navigationDestination(for: ServerDashboardRoute.self) { _ in
+                ServerDashboardView(model: model)
+            }
+            .navigationDestination(for: ServerLogsRoute.self) { _ in
+                ServerLogsView(model: model)
+            }
+            .navigationDestination(for: ServerLogRoute.self) { route in
+                ServerLogView(model: model, name: route.name)
+            }
             .navigationDestination(for: SettingsRoute.self) { _ in
                 SettingsView(model: model)
             }

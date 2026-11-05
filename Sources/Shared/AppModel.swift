@@ -206,6 +206,10 @@ final class AppModel {
     /// picture and audio), decided in the package (`DownloadQuality.waehlbar`).
     /// Allowed without an answer, as with the player.
     private(set) var downloadQualitySelectable = true
+    /// The account's `Policy.IsAdministrator`. Not persisted, like the download right: it
+    /// arrives fresh with every account, and a lost answer hides the page rather than
+    /// showing one whose every request would end in 403.
+    private(set) var isAdministrator = false
 
     /// **Whether a download button appears at all**: the switch above *and* the
     /// account's right, decided in the package.
@@ -527,6 +531,15 @@ final class AppModel {
     /// without any session, Jellyfin's set applies.
     func can(_ capability: ServerCapability) -> Bool {
         (client?.capabilities ?? (session?.kind ?? .jellyfin).capabilities).contains(capability)
+    }
+    /// **The server page, for its administrator only** (`ServerDashboardView`): a Jellyfin
+    /// server and an account with `IsAdministrator`. `nil` otherwise, and the row is absent.
+    var administration: (any ServerAdministration)? {
+        isAdministrator && can(.administration) ? client as? any ServerAdministration : nil
+    }
+    /// A user's profile picture on the current server, for the stream cards.
+    func userImageURL(userID: String, tag: String?, edge: Int = 96) -> URL? {
+        images?.user(userID, mark: tag, border: edge)
     }
     /// The client as the Jellyfin-only parts see it, `nil` if the server cannot do them.
     var remoteServer: (any RemoteSessionServer)? {
@@ -1438,6 +1451,7 @@ final class AppModel {
             // Without an answer: allowed, so the quality choice stays in the player.
             convertAllowed = guidelines?.convertAllowed ?? true
             downloadQualitySelectable = guidelines?.downloadQualitySelectable ?? true
+            isAdministrator = guidelines?.isAdministrator ?? false
             AppLog.writeOut("[Konto] Nächste Folge automatisch: \(String(describing: nextAutomaticAccount)), Downloads: \(downloadPermission.rawValue)")
         }
         do {

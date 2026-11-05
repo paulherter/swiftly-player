@@ -185,7 +185,7 @@ public final class Kern: @unchecked Sendable {
     /// Where images come from. **A Plex client moves between addresses** (home network, relay)
     /// while the stored session keeps the one it started with, so those come from the client
     /// (`AppModel.liveAddress`); for the others it is what was set.
-    private var addresses: ImageAddress? {
+    var addresses: ImageAddress? {
         get {
             barrier.lock(); defer { barrier.unlock() }
             if let plex = _client as? PlexClient, !plex.accessToken.isEmpty {
@@ -1821,12 +1821,13 @@ public final class Kern: @unchecked Sendable {
     /// audio right). The others are `EnableNextEpisodeAutoPlay`, `EnableContentDownloading` and
     /// `EnableVideoPlaybackTranscoding`, each `"1"`, `"0"` or empty if the server says nothing.
     /// Never throws; without an answer it returns `"||"`, and then the own choice or "on" stays,
-    /// and the right stays `unknown`, i.e. allowed.
+    /// and the right stays `unknown`, i.e. allowed. The fifth part is `IsAdministrator`, which
+    /// opens the server page (`ServerDashboardPage`); empty or `"0"` keeps it hidden.
     public func accountDefaults() async -> String {
         func text(_ value: Bool?) -> String { value.map { $0 ? "1" : "0" } ?? "" }
         guard let c = client, let v = await c.accountDefaults() else { return "|||1" }
         log("Konto: Naechste Folge automatisch \(text(v.nextEpisodeAutomatic)), Downloads \(v.downloadPermission.rawValue)")
-        return "\(text(v.nextEpisodeAutomatic))|\(text(v.downloadsAllowed))|\(text(v.convertAllowed))|\(v.downloadQualitySelectable ? "1" : "0")"
+        return "\(text(v.nextEpisodeAutomatic))|\(text(v.downloadsAllowed))|\(text(v.convertAllowed))|\(v.downloadQualitySelectable ? "1" : "0")|\(text(v.isAdministrator))"
     }
 
     /// **Whether a download button appears:** the switch and the account's right. The decision

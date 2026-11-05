@@ -150,6 +150,9 @@ public actor JellyfinClient {
     /// The server answered that it has no Jelly Twiggy plugin (``watchers(itemID:)``).
     private var watchersAbsent = false
     private var watchersNotFound = Set<String>()
+    /// The administrator's page asked the Jelly Twiggy plugin for the load and got "no such
+    /// route"; it asks every second, and a missing plugin does not appear by itself.
+    internal var dashboardPluginAbsent = false
     /// Jellyfin, or Emby, which this client also speaks with a few different paths and
     /// spellings (``EmbyPaths``). Plex has its own client; a `.plex` here counts as Jellyfin.
     public nonisolated let serverKind: ServerKind
@@ -329,6 +332,36 @@ public actor JellyfinClient {
         try request(path, method: method, query: query)
     }
     internal var rawSession: URLSession { urlSession }
+
+    /// For extensions in other files: a signed-in request through the usual path and decoder.
+    internal func fetch<T: Decodable>(_ path: String, query: [URLQueryItem] = [],
+                                      as type: T.Type) async throws -> T {
+        _ = try requireSession()
+        return try await send(request(path, query: query), as: T.self)
+    }
+
+    /// The same, for an answer that is not JSON (a log file) or decoded by the caller.
+    internal func fetchData(_ path: String, query: [URLQueryItem] = []) async throws -> Data {
+        _ = try requireSession()
+        let req = try request(path, query: query)
+        let (data, response): (Data, URLResponse)
+        do { (data, response) = try await urlSession.data(for: req) }
+        catch { throw JellyfinError(petition: error) }
+        guard let http = response as? HTTPURLResponse else { throw JellyfinError.transport("Keine HTTP-Antwort.") }
+        guard (200..<300).contains(http.statusCode) else {
+            throw JellyfinError.http(status: http.statusCode, body: String(data: data.prefix(300), encoding: .utf8))
+        }
+        return data
+    }
+
+    /// A `POST` without a body whose answer is only the status.
+    internal func post(_ path: String) async throws {
+        _ = try requireSession()
+        try await sendIgnoringBody(request(path, method: "POST"))
+    }
+
+    /// The decoder every answer goes through, for callers that decode leniently themselves.
+    internal var answerDecoder: JSONDecoder { decoder }
     /// For remote control: the socket carries the ID as a query value.
     internal var devicesId: String { deviceID }
 

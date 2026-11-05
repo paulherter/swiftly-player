@@ -226,6 +226,15 @@ enum Theme {
     /// in one colour is exactly the confusion that five semantic colours are meant
     /// to avoid. Computed on `reason`: 6.30:1.
     static let error  = Color(red: 0.937, green: 0.396, blue: 0.404)   // #EF6567
+
+    /// **The badges of a stream on the server page** (`ServerStream.Badge.Kind`): one hue
+    /// per kind, so the row reads at a glance as "what size, which range, which codecs"
+    /// without reading. Dark fills under white text (all above 4.5:1); the
+    /// audio badge stays neutral, since audio is rarely what an administrator looks for.
+    static let badgeResolution = Color(red: 0.494, green: 0.231, blue: 0.718)  // #7E3BB7
+    static let badgeRange      = Color(red: 0.471, green: 0.298, blue: 0.157)  // #784C28
+    static let badgeVideo      = Color(red: 0.247, green: 0.298, blue: 0.616)  // #3F4C9D
+    static let badgeAudio      = Color(red: 0.231, green: 0.231, blue: 0.251)  // #3B3B40
 }
 
 // MARK: - Colour from the image

@@ -118,6 +118,14 @@ struct ProfileView: View {
                                         characterAccent: true,
                                         target: QuickConnectRoute())
                         }
+                        // **Only for the server's administrator** (`AppModel.administration`):
+                        // anyone else would get 403 on every part of the page.
+                        if model.administration != nil {
+                            ProfileRow(symbol: "speedometer",
+                                       title: "Serververwaltung",
+                                       under: "Auslastung, Wiedergaben, Neustart",
+                                       target: ServerDashboardRoute())
+                        }
                         // **Affects only the active account.** If others exist, the app switches to
                         // the next; only the last one returns to sign-in. That logic is in the state
                         // holder, not here.

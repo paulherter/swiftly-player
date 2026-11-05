@@ -170,3 +170,7 @@
 "Immer AVPlayer" = "Always AVPlayer";
 
 "Immer VLC" = "Always VLC";
+
+/* Server dashboard */
+"Transkodierung" = "Transcoding";
+
