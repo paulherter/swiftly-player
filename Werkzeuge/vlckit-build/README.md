@@ -26,10 +26,12 @@ libVLC, applied by `git am` on top of `2cd8705589` after VLCKit's own patches
 4. `0032-input_clock-raise-CR_MAX_GAP-back-to-60-seconds.patch`
 5. `0033-avcodec-pad-direct-rendered-MPEG-pictures-for-motion-compensation.patch`
 6. `0034-input-cancel-a-deferred-pause-when-a-resume-arrives.patch`
+7. `0040-contrib-ffmpeg-build-the-TrueHD-MLP-decoder-on-iOS-a.patch` (rebuilds the FFmpeg contrib with the TrueHD decoder; see `../vlckit-patches/README.md`)
+8. `0041-audio_output-avsamplebuffer-gather-short-blocks-befo.patch` (iOS/tvOS/macOS `avsamplebuffer` output)
 
 VLCKit itself, applied with `git apply` to the VLCKit checkout:
 
-7. `VLCKit-pause-without-queue.patch` (`Sources/Playback/VLCMediaPlayer.m`)
+9. `VLCKit-pause-without-queue.patch` (`Sources/Playback/VLCMediaPlayer.m`)
 
 **`0035` and `0036` to `0038` are not part of any shipped build.** They are kept
 in the directory for reference only; `build.sh` deliberately does not copy
@@ -121,6 +123,8 @@ strings -a VLCKit | grep -c 'cues parsed but empty'        # 0028
 strings -a VLCKit | grep -c 'sample renderer started'      # 0037 (iOS/tvOS/macOS avsamplebuffer)
 strings -a VLCKit | grep -c 'watchTimebaseLocked'          # 0038
 strings -a VLCKit | grep -c 'GL_INVALID_ENUM'              # Release: 1 per architecture, Debug: 2
+nm -U VLCKit | grep -c ' _ff_truehd_decoder$'              # 0040: 1
+nm VLCKit | grep -c dequeueBlock                          # 0041: non-zero
 nm -u VLCKit | grep UIApplicationWillResignActive          # 0031: must be empty (iOS/tvOS)
 ```
 
