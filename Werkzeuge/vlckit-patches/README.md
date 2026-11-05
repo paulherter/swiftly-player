@@ -6,7 +6,7 @@ Swiftly ships a **modified** VLCKit. The LGPL requires the changes to be public,
 |---|---|
 | Base | VLCKit **4.0.0-a23** |
 | VLC revision | the `TESTEDHASH` pinned by VLCKit |
-| Patches | `0028-mkv-…`, `0030-vout-clock-…`, `0031-ios-…`, `0032-input_clock-…`, `0033-avcodec-…`, `0034-input-…`, `0035-demux-mkv-…`, `0036-avsamplebuffer-…`, `0037-avsamplebuffer-…`, `0038-avsamplebuffer-…`, `VLCKit-pause-without-queue.patch` |
+| Patches | `0028-mkv-…`, `0030-vout-clock-…`, `0031-ios-…`, `0032-input_clock-…`, `0033-avcodec-…`, `0034-input-…`, `0035-demux-mkv-…`, `0036-avsamplebuffer-…`, `0037-avsamplebuffer-…`, `0038-avsamplebuffer-…`, `0040-contrib-ffmpeg-…`, `0041-audio_output-avsamplebuffer-…`, `VLCKit-pause-without-queue.patch` |
 
 ## 0028: seeking in Matroska over HTTP
 
@@ -136,3 +136,20 @@ When resuming playback, the picture ran for about half a second, stalled once, t
 ## 0039: clip subtitle glyphs to the picture
 
 A glyph can reach past the box the subtitle region was sized from, and the blend functions do not clip. Its top row was read and written above the picture, which corrupts the heap and crashes in `BlendGlyphToARGB` when the picture sits at the start of a malloc region. Not part of a shipped build yet: until then the app avoids the overflow with `--freetype-background-opacity=1` (see `SubtitleStyle` in `VLCPlayer.swift`).
+
+## 0040 and 0041: TrueHD on iPhone and Apple TV
+
+TrueHD tracks were silent on iOS and tvOS (#50). Two separate causes, and both patches are needed.
+
+**0040: the decoder was missing.** VLCKit's own patch `0007-contrib-ffmpeg-use-audiotoolbox-on-iOS-for-AC-3` builds FFmpeg with `--disable-decoder=mlp --disable-demuxer=mlp --disable-parser=mlp` for `HAVE_IOS`, which covers tvOS too, citing the App Store terms. That also removes FFmpeg's TrueHD decoder: the iOS and tvOS slices of VideoLAN's 4.0.0-a23 had no `ff_truehd_decoder` or `ff_mlp_decoder`, while the macOS slice has both. VLC then logged `Codec 'mlpa' (TrueHD Audio) is not supported` and played the track as silence. `0040` removes the hunk again. Other players on the App Store decode TrueHD on the device with FFmpeg's decoder, so the terms do not seem to forbid it, but VideoLAN's reason was never spelled out.
+
+**0041: the decoded audio did not reach the speakers.** With the decoder in place, VLC decoded all eight channels correctly (written to a file with the `afile` output, every channel had sound), but tvOS still played silence. A TrueHD access unit is 40 samples, 0.83 ms at 48 kHz, and `avsamplebuffer` wrapped each decoded block into its own `CMSampleBuffer`. `AVSampleBufferAudioRenderer` played those sub-millisecond buffers as silence. Forcing a 5.1 downmix did not help, so it was not the channel count. `0041` gathers consecutive short blocks into one buffer of at least 1024 frames (waiting at most 40 ms for more). Blocks that are long enough on their own are enqueued unchanged; DTS (512 samples) is gathered too.
+
+Tested on an Apple TV 4K (3rd generation), tvOS 27.2, HDMI to a TV with eARC to a 5.1 soundbar:
+
+- **TrueHD Atmos 7.1:** plays in surround (eight channels out); pause, resume and seeking keep sound and lip sync.
+- **DTS-HD MA 7.1 and DTS 5.1:** unchanged, with sound and lip sync, through the gathering path.
+- **AC-3 5.1:** unchanged.
+
+`0041` is a candidate for VideoLAN upstream; the problem is in VLC's tvOS output, not in Swiftly.
+
