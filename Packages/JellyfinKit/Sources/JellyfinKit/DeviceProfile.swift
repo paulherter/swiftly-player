@@ -288,7 +288,11 @@ public extension DeviceProfile {
     /// - Parameter av1: also copy AV1 (fragmented MP4 carries it). Only for the AVPlayer
     ///   engine on a chip with a hardware AV1 decoder; AirPlay itself never gets it,
     ///   the receiver's decoder is not known.
-    static func airplay(maxBitrate: Int = 1_000_000_000, av1: Bool = false) -> DeviceProfile {
+    /// - Parameter dolbyVision: keep Dolby Vision when the server repackages HEVC. Only for
+    ///   the AVPlayer engine on a device that shows Dolby Vision; AirPlay itself never gets
+    ///   it, the receiver's display is not known. See ``dolbyVisionRanges``.
+    static func airplay(maxBitrate: Int = 1_000_000_000, av1: Bool = false,
+                        dolbyVision: Bool = false) -> DeviceProfile {
         let videoCodecs = av1 ? "h264,hevc,av1" : "h264,hevc"
         // If the file already fits, the server does nothing. The case is rarer than
         // it sounds, but allowing it costs nothing.
@@ -331,11 +335,13 @@ public extension DeviceProfile {
         // 10.11). The picture is copied, not re-encoded. Matroska carries no tag
         // (`CodecTag` empty) and is therefore unaffected with `IsRequired: false`; it
         // is repackaged anyway. jellyfin-web uses the same list for Safari.
-        let hevcId = CodecProfile(
-            type: "Video", codec: "hevc",
-            conditions: [ProfileCondition(condition: "EqualsAny", property: "VideoCodecTag",
-                                          value: "hvc1|dvh1", isRequired: false)]
-        )
+        var hevcConditions = [ProfileCondition(condition: "EqualsAny", property: "VideoCodecTag",
+                                               value: "hvc1|dvh1", isRequired: false)]
+        if dolbyVision {
+            hevcConditions.append(ProfileCondition(condition: "EqualsAny", property: "VideoRangeType",
+                                                   value: dolbyVisionRanges, isRequired: false))
+        }
+        let hevcId = CodecProfile(type: "Video", codec: "hevc", conditions: hevcConditions)
 
         return DeviceProfile(
             name: "Swiftly (AirPlay)",
@@ -347,5 +353,27 @@ public extension DeviceProfile {
             codecProfiles: [hevcId]
         )
     }
+
+    /// The HEVC ranges the AVPlayer engine declares on a Dolby Vision device.
+    ///
+    /// **Without `DOVI` in this list the server strips Dolby Vision while copying.**
+    /// Jellyfin keeps the Dolby Vision configuration (`-tag:v:0 dvh1`) only if the
+    /// requested range types contain `DOVI` (DynamicHlsController, Jellyfin 12.4).
+    /// Otherwise it tags `hvc1` and drops the configuration record. For profile 8 that
+    /// leaves a correct HDR10 picture; profile 5 has no HDR10 base layer, so AVPlayer
+    /// shows its raw IPTPQc2 signal as pink and green.
+    ///
+    /// **The list is a whitelist, so it has to be complete.** A range missing here is a
+    /// transcode reason (`VideoRangeTypeNotSupported`). It therefore names every range
+    /// the engine choice sends to AVPlayer: SDR, the HDR formats and Dolby Vision
+    /// profiles 5 and 8 with each base layer. `DOVIInvalid` is in it so the server
+    /// strips a broken configuration and copies the picture, as it does without the
+    /// list. The two enhancement layer ranges are left out on purpose: profile 7 stays
+    /// with VLC, and declaring it would make the server tag it `dvh1`.
+    static let dolbyVisionRanges = [
+        "SDR", "HDR10", "HDR10Plus", "HLG",
+        "DOVI", "DOVIWithHDR10", "DOVIWithHDR10Plus", "DOVIWithHLG", "DOVIWithSDR",
+        "DOVIInvalid",
+    ].joined(separator: "|")
 
 }

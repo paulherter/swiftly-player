@@ -192,4 +192,42 @@ struct AVPlayerProfileTests {
         #expect(on.transcodingProfiles.allSatisfy { $0.videoCodec.contains("av1") })
         #expect(on.transcodingProfiles.allSatisfy { $0.videoCodec.contains("hevc") })
     }
+
+    private func rangeCondition(_ profile: DeviceProfile) -> DeviceProfile.ProfileCondition? {
+        profile.codecProfiles.first { $0.codec == "hevc" }?
+            .conditions.first { $0.property == "VideoRangeType" }
+    }
+
+    @Test("Dolby Vision is declared only when asked for")
+    func dolbyVisionOnlyWhenAsked() throws {
+        #expect(rangeCondition(DeviceProfile.airplay()) == nil)
+        #expect(rangeCondition(DeviceProfile.airplay(av1: true)) == nil)
+        let on = DeviceProfile.airplay(dolbyVision: true)
+        let range = try #require(rangeCondition(on))
+        #expect(range.condition == "EqualsAny")
+        // A file without a known range must still be copied.
+        #expect(range.isRequired == false)
+        // The codec tag condition stays.
+        let hevc = try #require(on.codecProfiles.first { $0.codec == "hevc" })
+        #expect(hevc.conditions.contains { $0.property == "VideoCodecTag" && $0.value == "hvc1|dvh1" })
+        let json = String(decoding: try JSONEncoder().encode(on), as: UTF8.self)
+        #expect(json.contains(#""Property":"VideoRangeType""#))
+    }
+
+    /// The server keeps the Dolby Vision configuration only if `DOVI` is requested, and a
+    /// range missing from the list would be a transcode reason.
+    @Test("Dolby Vision ranges keep every range the engine sends to AVPlayer")
+    func dolbyVisionRanges() throws {
+        let range = try #require(rangeCondition(DeviceProfile.airplay(dolbyVision: true)))
+        let values = Set(range.value.split(separator: "|").map(String.init))
+        #expect(values.contains("DOVI"))
+        for needed in ["SDR", "HDR10", "HDR10Plus", "HLG", "DOVIWithHDR10", "DOVIWithHDR10Plus",
+                       "DOVIWithHLG", "DOVIWithSDR", "DOVIInvalid"] {
+            #expect(values.contains(needed), "missing \(needed)")
+        }
+        // Profile 7 stays with VLC; declaring it would make the server tag it dvh1.
+        #expect(!values.contains("DOVIWithEL"))
+        #expect(!values.contains("DOVIWithELHDR10Plus"))
+        #expect(!range.value.contains(" "))
+    }
 }
