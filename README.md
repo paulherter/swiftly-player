@@ -1,6 +1,6 @@
 <div align="center">
 
-<a href="https://swiftlyplayer.com"><img src=".github/images/banner.webp" alt="Swiftly Player: a free, native client for Jellyfin, Plex and Emby" width="100%"></a>
+<a href="https://swiftlyplayer.com"><img src=".github/images/banner.webp" alt="Swiftly Player: your player for Jellyfin. Plex and Emby in beta." width="100%"></a>
 
 <p>
 For iPhone, iPad, Apple TV, Mac, Android, Android TV, Linux and Windows.<br>
@@ -43,22 +43,22 @@ a running film that follows you from one device to the next.
 
 <table>
 <tr>
-<td width="25%"><img src=".github/images/home.png" alt="Home"></td>
-<td width="25%"><img src=".github/images/detail.png" alt="Detail"></td>
-<td width="25%"><img src=".github/images/seerr.png" alt="Requests through Seerr"></td>
-<td width="25%"><img src=".github/images/picture-in-picture.png" alt="Picture in Picture"></td>
+<td width="25%"><img src=".github/images/screens-home.webp" alt="Home"></td>
+<td width="25%"><img src=".github/images/screens-movie.webp" alt="Film page"></td>
+<td width="25%"><img src=".github/images/screens-look.webp" alt="Choose your look"></td>
+<td width="25%"><img src=".github/images/screens-profile.webp" alt="Profile and servers"></td>
 </tr>
 <tr>
 <td align="center"><sub>Home</sub></td>
-<td align="center"><sub>Detail</sub></td>
-<td align="center"><sub>Requests</sub></td>
-<td align="center"><sub>Picture in Picture</sub></td>
+<td align="center"><sub>Film page</sub></td>
+<td align="center"><sub>Looks</sub></td>
+<td align="center"><sub>Profile and servers</sub></td>
 </tr>
 </table>
 
-<img src=".github/images/player-landscape.png" alt="Player">
+<img src=".github/images/screens-mac.webp" alt="Swiftly Player on the Mac, with the subtitle settings on the iPhone">
 
-<sub>The player, landscape.</sub>
+<sub>The Mac app, and the subtitle look on the iPhone.</sub>
 
 <br>
 
