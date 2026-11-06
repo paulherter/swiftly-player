@@ -186,21 +186,19 @@ extension App {
         append(page, hero)
 
         // The words.
-        let words = stack(GTK_ORIENTATION_VERTICAL, spacing: 8)
+        let words = stack(GTK_ORIENTATION_VERTICAL, spacing: 6)
         gtk_widget_set_margin_top(words, 22)
         gtk_widget_set_margin_start(words, 20)
         gtk_widget_set_margin_end(words, 20)
-        let titleRow = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 6)
-        gtk_widget_set_halign(titleRow, GTK_ALIGN_CENTER)
-        append(titleRow, label(translated("Hilf Swiftly zu wachsen"), style: "swiftly-s28-titel"))
-        let sprout = label("🌱", style: "swiftly-s17")
-        gtk_widget_set_valign(sprout, GTK_ALIGN_CENTER)
-        append(titleRow, sprout)
-        append(words, titleRow)
-        append(words, supportText(translated("Dein Beitrag hält Swiftly am Laufen."), "swiftly-s17-hell",
-                                  wrap: true, centred: true))
-        append(words, supportText(translated("Open Source, keine Werbung, alles zum Schauen bleibt kostenlos."),
-                                  "swiftly-s13-sehrleise", wrap: true, centred: true))
+        // iPhone 0d96ed14: 22 bold, one calm line below, left aligned; the "Open Source" line is gone.
+        gtk_widget_set_margin_start(words, 24)
+        gtk_widget_set_margin_end(words, 24)
+        let heading = label(translated("Hilf Swiftly zu wachsen"), style: "swiftly-s22-titel")
+        gtk_label_set_xalign(OpaquePointer(heading), 0)
+        gtk_widget_set_halign(heading, GTK_ALIGN_START)
+        append(words, heading)
+        append(words, supportText(translated("Dein Beitrag hält Swiftly am Laufen."), "swiftly-s15-leise",
+                                  wrap: true))
         append(page, words)
 
         // The choice. Nothing is preselected (as on Apple); the button says what it does.
@@ -228,25 +226,27 @@ extension App {
             gtk_widget_set_sensitive(action, 1)
         }
 
-        let plans = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
+        let plans = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 10)
         gtk_box_set_homogeneous(asBox(plans), 1)
         gtk_widget_set_margin_top(plans, 18)
         gtk_widget_set_margin_start(plans, 16)
         gtk_widget_set_margin_end(plans, 16)
         let planList: [(id: String, title: String, price: String, detail: String, badge: String, light: Bool)] = [
             ("monthly", translated("Monatlich"), translated("1,99 €"),
-             translated("im Monat · jederzeit kündbar"), translated("Beliebt"), true),
+             translated("im Monat"), translated("Beliebt"), true),
             ("lifetime", translated("Für immer"), translated("19,99 €"),
-             translated("einmal zahlen · wie 10 Monate"), translated("Guter Deal"), false),
+             translated("einmalig"), "", false),
         ]
         for plan in planList {
             let tile: Widget! = gtk_button_new()
             gtk_widget_add_css_class(tile, "swiftly-plankachel")
             let inside: Widget! = gtk_overlay_new()
             let column = stack(GTK_ORIENTATION_VERTICAL, spacing: 2)
-            let title = supportText(plan.title, "swiftly-s13-leise")
-            gtk_widget_set_margin_top(title, 6)
-            append(column, title)
+            let titleRow = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 6)
+            gtk_widget_set_margin_top(titleRow, 6)
+            append(titleRow, supportText(plan.title, "swiftly-s13-mittel"))
+            if !plan.badge.isEmpty { append(titleRow, supportText(plan.badge, "swiftly-s13-akzent")) }
+            append(column, titleRow)
             let price = supportText(plan.price, "swiftly-s22-fett")
             gtk_widget_set_margin_top(price, 4)
             append(column, price)
@@ -280,16 +280,7 @@ extension App {
             signal(tile, "clicked") { choose(id) }
             marks.append((id, tile, indicator))
 
-            // The badge sits on the upper edge, so the tile and the badge share an overlay.
-            let holder: Widget! = gtk_overlay_new()
-            gtk_overlay_set_child(OpaquePointer(holder), tile)
-            let badge = label(plan.badge.uppercased(), style: "swiftly-plakette")
-            if !plan.light { gtk_widget_add_css_class(badge, "swiftly-plakette-dunkel") }
-            gtk_widget_set_halign(badge, GTK_ALIGN_START)
-            gtk_widget_set_valign(badge, GTK_ALIGN_START)
-            gtk_widget_set_margin_start(badge, 14)
-            gtk_widget_set_can_target(badge, 0)
-            gtk_overlay_add_overlay(OpaquePointer(holder), badge)
+            let holder: Widget! = tile
             append(plans, holder)
         }
         append(page, plans)
@@ -298,7 +289,7 @@ extension App {
         gtk_widget_set_margin_top(tips, 12)
         gtk_widget_set_margin_start(tips, 16)
         gtk_widget_set_margin_end(tips, 16)
-        let thanks = label(translated("Einfach Danke ☕"), style: "swiftly-s12-sehrleise")
+        let thanks = label(translated("Danke ☕"), style: "swiftly-s13-sehrleise")
         gtk_widget_set_margin_end(thanks, 4)
         append(tips, thanks)
         let chips = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 6)

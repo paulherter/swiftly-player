@@ -10,6 +10,8 @@ enum class Glyph(val outline: Int, val fillRes: Int?, val filled: Boolean) {
     House(R.drawable.ph_house, R.drawable.ph_house_fill, false),
     Film(R.drawable.ph_film_strip, R.drawable.ph_film_strip_fill, false),
     Tv(R.drawable.ph_television, R.drawable.ph_television_fill, false),
+    // Tab bar "Serien" (iPhone: cards-three fill); added by hand, not in the generator map yet.
+    CardsThree(R.drawable.ph_cards_three_fill, R.drawable.ph_cards_three_fill, true),
     Magnifier(R.drawable.ph_magnifying_glass, R.drawable.ph_magnifying_glass_fill, false),
     LoadCircle(R.drawable.ph_arrow_circle_down, R.drawable.ph_arrow_circle_down_fill, false),
     LoadCircleFilled(R.drawable.ph_arrow_circle_down, R.drawable.ph_arrow_circle_down_fill, true),

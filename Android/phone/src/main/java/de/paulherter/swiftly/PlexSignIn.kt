@@ -375,7 +375,7 @@ private fun PlexServerRow(server: PlexServer, busy: Boolean, failed: Boolean, lo
             }
         }
         // Running now: a spinner where the arrow stands, so the tap visibly did something.
-        if (busy) CircularProgressIndicator(Modifier.size(16.dp), color = Theme.fontQuiet, strokeWidth = 2.dp)
+        if (busy) de.paulherter.swiftly.Spinner(16.dp)
         else Symbol(Glyph.AngleRight, 13.dp, color = Theme.font, strength = Strength.Semibold)
     }
 }

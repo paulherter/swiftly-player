@@ -104,7 +104,13 @@ struct WatchlistView: View {
             .toTop(order: state.identifier, anotherTime: anotherTime, active: sectionActive)
             // The finger's path, not the offset adjusted for the edge; why is
             // explained in `HeaderScrollDistance` in the package.
-            .scrollDistance(active: sectionActive) { offset = $0 }
+            // Stored clamped to the range the header's hairline and the value row use
+            // (0...44): a write per scroll tick would re-evaluate this whole page, the grid
+            // included. Past 44 pt the value no longer changes, so nothing is written.
+            .scrollDistance(active: sectionActive) {
+                let clamped = min(max($0, 0), Theme.valueRailsDistance)
+                if clamped != offset { offset = clamped }
+            }
             // **The draw-in on section switch was missing here.**
             //
             // Movies and series have carried it since the rework; the watchlist was
@@ -167,7 +173,7 @@ struct WatchlistView: View {
                             .tracking(Theme.lockTitle)
                             .foregroundStyle(Theme.font)
                         Spacer(minLength: 0)
-                        if state.total > 0 { CountMark(count: state.total) }
+                        if state.total > 0, !wide { CountMark(count: state.total) }
                     }
                 } else {
                     // **The count badge sits with the pills, not in the header.**
@@ -199,41 +205,17 @@ struct WatchlistView: View {
 
     @ViewBuilder
     private var pillsRow: some View {
-        if wide {
-            values.padding(.top, 14)
-        } else {
-            ValueRail(offset: offset) { values }
-        }
+        ValueRail(offset: offset) { values }
     }
 
     private var values: some View {
                 HStack(spacing: 8) {
-                    if wide {
-                        ForEach(RememberGenre.allCases) { fall in
-                            SelectionChip(text: fall.label, an: genre == fall) {
-                                genre = fall
-                                state.genre = fall.art
-                            }
-                        }
-                        // Far right as in the library and on the Mac.
-                        Spacer(minLength: 12)
-                        ForEach(Sorting.allCases) { fall in
-                            SelectionChip(text: fall.label,
-                                     symbol: fall == state.sorting
-                                             ? "line.3.horizontal.decrease" : nil,
-                                     an: state.sorting == fall) {
-                                state.sorting = fall
-                            }
-                        }
-                    } else {
-                        ValuePill(symbol: "line.3.horizontal.decrease",
-                                  text: genre.label) { genreListOpen = true }
-                        ValuePill(symbol: "arrow.up.arrow.down",
-                                  text: state.sorting.label) { sortListOpen = true }
-
-                        Spacer(minLength: 12)
-                        if state.total > 0 { CountMark(count: state.total) }
-                    }
+                    ValuePill(symbol: "line.3.horizontal.decrease",
+                              text: genre.label) { genreListOpen = true }
+                    ValuePill(symbol: "arrow.up.arrow.down",
+                              text: state.sorting.label) { sortListOpen = true }
+                    Spacer(minLength: 12)
+                    if state.total > 0, !wide { CountMark(count: state.total) }
                 }
     }
 

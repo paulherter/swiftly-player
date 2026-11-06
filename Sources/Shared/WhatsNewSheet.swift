@@ -55,7 +55,7 @@ struct WhatsNewSheet: View {
                     Spacer(minLength: 0)
                 }
                 .padding(14)
-                .background(Theme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous))
                 .padding(.top, 24)
             }
 

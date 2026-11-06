@@ -168,11 +168,12 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
 
     var frameRateAdapt by remember { mutableStateOf(app.store.rememberValue("bildrateAnpassen") != "0") }
     val bitrates = remember { selectionRead(Kern.bitrateLevels()) }
-    // The same three values as `Settings.playerEngine`.
-    val engines = remember { listOf(
-        Choice("dolbyVision", translated("VLC, Dolby Vision mit ExoPlayer")),
-        Choice("exoplayer", translated("Immer ExoPlayer")),
-        Choice("vlc", translated("Immer VLC"))) }
+    val passthrough = remember { listOf(
+        Choice("auto", translated("Automatisch")),
+        Choice("off", translated("Aus (nur PCM)")),
+        Choice("ac3", translated("Nur Dolby Digital")),
+        Choice("all", translated("Alle erzwingen (auch DTS, TrueHD)"))) }
+    val dv7 = remember { listOf(Choice("auto", translated("Automatisch")), Choice("off", translated("Aus (spielt als HDR10)"))) }
     val buffer = remember { JSONArray(Kern.bufferLevels()).let { a -> (0 until a.length()).map { a.getJSONObject(it).let { o -> Choice(o.getString("wert"), o.getString("text")) } } } }
     val seconds = remember { JSONArray(Kern.span()).let { a -> (0 until a.length()).map { a.getInt(it) } } }
     val audioChoice = remember { selectionRead(Kern.languages("")) }
@@ -328,8 +329,13 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                 TvValueRow(translated("Puffer"), Glyph.WlanDisruption, buffer.firstOrNull { it.value == e.bufferLevel }?.text,
                                            opened, setOpened, reportRow, buffer, e.bufferLevel) { e.bufferLevel = it }
                                 SeparatorLine()
-                                TvValueRow(translated("Player"), Glyph.PlayRectangle, engines.firstOrNull { it.value == e.playerEngine }?.text,
-                                           opened, setOpened, reportRow, engines, e.playerEngine) { e.playerEngine = it }
+                                TvValueRow(translated("Surround-Ton durchreichen"), Glyph.PlayRectangle, passthrough.firstOrNull { it.value == e.passthrough }?.text,
+                                           opened, setOpened, reportRow, passthrough, e.passthrough) { e.passthrough = it }
+                                SeparatorLine()
+                                TvValueRow(translated("Dolby Vision Profil 7"), Glyph.PlayRectangle, dv7.firstOrNull { it.value == e.dolbyVision7 }?.text,
+                                           opened, setOpened, reportRow, dv7, e.dolbyVision7) { e.dolbyVision7 = it }
+                                SeparatorLine()
+                                TvToggleRow(translated("Dolby Vision mit HDR10+ als HDR10+ spielen"), e.dolbyAsHdr10Plus, Glyph.Film) { e.dolbyAsHdr10Plus = !e.dolbyAsHdr10Plus }
                                 SeparatorLine()
                                 // Shared setting (`PlayerEndTime` on Apple): the player shows "Endet um ..." instead of the remaining time.
                                 TvToggleRow(translated("Endzeit im Player"), e.endTimeInPlayer, Glyph.Clock) { e.endTimeInPlayer = !e.endTimeInPlayer }

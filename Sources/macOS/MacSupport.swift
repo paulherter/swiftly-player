@@ -55,31 +55,6 @@ private struct SupportButtonStyle: ButtonStyle {
 
 // MARK: - Entry points
 
-/// **The heart in the home header.** White like the other bar buttons: it is a
-/// destination, not a state.
-/// White like the bookmark: a destination, not a state, and the accent belongs to state.
-struct MacSupportHeart: View {
-
-    var body: some View {
-        // Supporters have said thank you already; the heart goes away for them.
-        if !SupportModel.shared.isSupporter { button }
-    }
-
-    private var button: some View {
-        Button {
-            SupportModel.shared.open()
-        } label: {
-            Image(icon: "heart.fill")
-                .font(.app(size: 17))
-                .foregroundStyle(Theme.font)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(Theme.PressButton())
-        .accessibilityLabel(Text(SupportCopy.supportSwiftly.localized))
-    }
-}
-
 /// Heart and "Supporter" next to the version, supporters only. The heart carries the
 /// accent: being a supporter is a state.
 struct MacSupporterMark: View {

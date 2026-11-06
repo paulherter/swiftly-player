@@ -176,7 +176,7 @@ struct FilmView: View {
             // not the page: it scrolls with the header, otherwise an edge would show while
             // scrolling.
             .background(alignment: .top) {
-                MoodReason(url: model.headerImageURL(for: film), since: DetailPageMetric.heroImage)
+                StretchedMood(url: model.headerImageURL(for: film), state: headerState)
             }
             // Translucent instead of solid surfaces on top; see `Theme.flaecheDurchsichtig`.
             .environment(\.onImageTint, true)
@@ -208,7 +208,8 @@ struct FilmView: View {
             headerState.offset = new
         }
         .overlay(alignment: .top) {
-            DetailHeader(title: film.name, state: headerState, back: back)
+            DetailHeader(title: film.name, state: headerState, back: back,
+                         mood: model.headerImageURL(for: film))
         }
         .task {
             async let a = model.extras(film)
@@ -225,6 +226,26 @@ struct FilmView: View {
             collectionRails = newCollections
             withAnimation(Theme.reveal) { bottomPresent = true }
         }
+    }
+}
+
+/// **`MoodReason` that stretches with the hero image on overscroll.**
+///
+/// The mood is a background of the scroll content, so when the page is pulled past the top
+/// it moves down with the content and the plain page colour shows above it as a hard line.
+/// The hero image avoids that by scaling up from its bottom edge (`DetailHero`, `pull`).
+/// This does the same: it scales around the hero's bottom line by the same factor, so its
+/// top stays glued to the image top. Only this small view observes the offset.
+struct StretchedMood: View {
+    let url: URL?
+    let state: HeaderState
+
+    var body: some View {
+        let pull = min(max(0, -state.offset), 200)
+        let total = DetailPageMetric.heroImage + MoodReason.runOut
+        MoodReason(url: url, since: DetailPageMetric.heroImage)
+            .scaleEffect(y: 1 + pull / DetailPageMetric.heroImage,
+                         anchor: UnitPoint(x: 0.5, y: DetailPageMetric.heroImage / total))
     }
 }
 

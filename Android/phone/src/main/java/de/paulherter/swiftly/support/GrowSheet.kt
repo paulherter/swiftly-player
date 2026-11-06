@@ -104,38 +104,33 @@ fun GrowSheetBody(app: SwiftlyApplication, close: () -> Unit) {
                     close()
                     Handler(Looper.getMainLooper()).postDelayed({ openLooksOnHome(app) }, 450)
                 }
-                Column(Modifier.padding(horizontal = 20.dp).padding(top = 22.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(buildAnnotatedString {
-                        append(translated("Hilf Swiftly zu wachsen"))
-                        append("  ")
-                        withStyle(SpanStyle(fontSize = 17.sp, fontWeight = FontWeight.Normal, letterSpacing = 0.sp)) { append("🌱") }
-                    }, style = giftFont(28f, FontWeight.Bold).copy(letterSpacing = (-0.56).sp), color = Theme.font,
-                         modifier = Modifier.semantics { heading() })
-                    Text(translated("Dein Beitrag hält Swiftly am Laufen."), style = giftFont(17f), color = Theme.font.copy(alpha = 0.9f))
-                    Text(translated("Open Source, keine Werbung, alles zum Schauen bleibt kostenlos."), style = giftFont(13f),
-                         color = Theme.fontVeryQuiet)
+                // The calmer sheet (iOS `SupportGrowSheet`): 22 bold title, one quiet line.
+                Column(Modifier.padding(horizontal = 20.dp).padding(top = 22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(translated("Hilf Swiftly zu wachsen"), style = giftFont(22f, FontWeight.Bold).copy(letterSpacing = (-0.44).sp),
+                         color = Theme.font, modifier = Modifier.semantics { heading() })
+                    Text(translated("Dein Beitrag hält Swiftly am Laufen."), style = giftFont(15f), color = Theme.fontQuiet)
                 }
 
                 if (support.channel.pricesUnavailable.value) {
                     PricesUnavailableCard(onRetry = { support.channel.connect(); support.channel.refresh() })
                 }
                 if (monthly != null || lifetime != null) {
-                    Row(Modifier.padding(horizontal = 16.dp).padding(top = 18.dp).height(IntrinsicSize.Max),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.padding(horizontal = 16.dp).padding(top = 20.dp).height(IntrinsicSize.Max),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         monthly?.let {
-                            PlanTile(translated("Beliebt"), true, translated("Monatlich"), it.price, translated("im Monat · jederzeit kündbar"),
+                            PlanTile(translated("Beliebt"), translated("Monatlich"), it.price, translated("im Monat"),
                                      chosen == it.productId, Modifier.weight(1f)) { chosen = it.productId }
                         }
                         lifetime?.let {
-                            PlanTile(translated("Guter Deal"), false, translated("Für immer"), it.price, translated("einmal zahlen · wie 10 Monate"),
+                            PlanTile(null, translated("Für immer"), it.price, translated("einmalig"),
                                      chosen == it.productId, Modifier.weight(1f)) { chosen = it.productId }
                         }
                     }
                 }
                 if (offers.isNotEmpty()) {
-                    Row(Modifier.padding(horizontal = 16.dp).padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(translated("Einfach Danke ☕"), style = giftFont(12f), color = Theme.fontVeryQuiet, maxLines = 1,
+                    Row(Modifier.padding(horizontal = 16.dp).padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(translated("Danke ☕"), style = giftFont(13f), color = Theme.fontVeryQuiet, maxLines = 1,
                              modifier = Modifier.padding(end = 4.dp))
                         support.tips.forEach { tip ->
                             val offer = offers.firstOrNull { it.productId == tip.productId } ?: return@forEach
@@ -202,7 +197,7 @@ internal fun LegalLink(text: String, action: () -> Unit) {
  * Choosing is state, hence the accent ring and the check that pops in.
  */
 @Composable
-private fun PlanTile(badge: String, loud: Boolean, title: String, price: String, detail: String, chosen: Boolean,
+private fun PlanTile(badge: String?, title: String, price: String, detail: String, chosen: Boolean,
                      modifier: Modifier, choose: () -> Unit) {
     val shape = RoundedCornerShape(Theme.cornerField)
     val calm = motionReduced()
@@ -213,14 +208,17 @@ private fun PlanTile(badge: String, loud: Boolean, title: String, price: String,
         else pop.animateTo(1f, spring(dampingRatio = 0.62f, stiffness = 273f))
     }
     Box(modifier.fillMaxWidth().fillMaxHeight()) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight().clip(shape).background(Theme.area)
+        Column(Modifier.fillMaxWidth().fillMaxHeight().clip(shape).background(Theme.groupsArea)
                 .border(2.dp, if (chosen) Theme.accent else Color.Transparent, shape)
                 .pressRow(choose).semantics(mergeDescendants = true) { role = Role.RadioButton; selected = chosen }
                 .padding(14.dp).heightIn(min = 84.dp)) {
-            Text(title, style = giftFont(13f), color = Theme.fontQuiet, modifier = Modifier.padding(top = 6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(title, style = giftFont(13f, FontWeight.Medium), color = Theme.fontQuiet, maxLines = 1)
+                if (badge != null) Text(badge, style = giftFont(13f, FontWeight.Medium), color = Theme.accent, maxLines = 1)
+            }
             Text(price, style = giftFont(22f, FontWeight.Bold).copy(letterSpacing = (-0.22).sp, fontFeatureSettings = "tnum"),
-                 color = Theme.font, modifier = Modifier.padding(top = 4.dp))
-            Text(detail, style = giftFont(12f), color = Theme.fontVeryQuiet)
+                 color = Theme.font, modifier = Modifier.padding(top = 8.dp))
+            Text(detail, style = giftFont(12f), color = Theme.fontVeryQuiet, modifier = Modifier.padding(top = 1.dp))
         }
         Box(Modifier.align(Alignment.TopEnd).padding(12.dp).size(20.dp), contentAlignment = Alignment.Center) {
             if (chosen) {
@@ -231,12 +229,6 @@ private fun PlanTile(badge: String, loud: Boolean, title: String, price: String,
             } else {
                 Box(Modifier.size(20.dp).border(1.5.dp, Theme.font.copy(alpha = 0.25f), CircleShape))
             }
-        }
-        Box(Modifier.align(Alignment.TopStart).offset(x = 14.dp, y = (-9).dp).height(20.dp)
-                .background(if (loud) Theme.font else Theme.pressedArea, CircleShape).padding(horizontal = 8.dp),
-            contentAlignment = Alignment.Center) {
-            Text(badge.uppercase(), style = giftFont(10f, FontWeight.Bold).copy(letterSpacing = 0.4.sp),
-                 color = if (loud) Color(0xFF0A0A0A) else Theme.font, maxLines = 1)
         }
     }
 }
@@ -278,8 +270,7 @@ fun GrowThanksBody(app: SwiftlyApplication, close: () -> Unit, home: () -> Unit)
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 26.dp).padding(top = 100.dp - Handle),
                horizontalAlignment = Alignment.CenterHorizontally) {
-            LookTileView(looks.tileIcon(look), 104.dp, Modifier.graphicsLayer { translationY = -4f * bobbing.value * density }
-                .shadow(16.dp, RoundedCornerShape(23.4.dp), ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f)))
+            LookTileView(looks.tileIcon(look), 104.dp, Modifier.graphicsLayer { translationY = -4f * bobbing.value * density })
             Text(if (name.isNotEmpty()) translated("Danke, %@ 🫶", name) else translated("Danke 🫶"),
                  style = giftFont(30f, FontWeight.Bold).copy(letterSpacing = (-0.6).sp, textAlign = TextAlign.Center), color = Theme.font,
                  modifier = Modifier.padding(top = 26.dp, bottom = 8.dp).semantics { heading() })

@@ -344,8 +344,8 @@ object Theme {
     val title = titleLarge
     /** 28 Bold: a subpage, i.e. one with a way back. */
     val subpageTitle = TextStyle(fontFamily = Inter, fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
-    /** 22 Bold: rail title on Start, group title. */
-    val section = TextStyle(fontFamily = Inter, fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.308).sp)
+    /** 22 Bold, -0.022 em: rail title on Start, group title. */
+    val section = TextStyle(fontFamily = Inter, fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.484).sp)
     /** 20 Semibold: row heading, group title, header of an empty state. */
     val rail = TextStyle(fontFamily = Inter, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.24).sp)
     /** 17 Semibold: sheet heading, detail bar, main button. */

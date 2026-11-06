@@ -1,95 +1,38 @@
 import AVFoundation
 import JellyfinKit
-import VLCKit
 
-/// What VLC needs to take a title over from AVPlayer: the unchanged address and its options.
-struct AVOriginal {
-    let url: URL
-    let container: String?
-    let subtitle: [SubtitleFile]
-}
-
-/// **The choice between the two engines, and the way back.**
+/// **Starting the Aether engine and what it reports back.**
 ///
-/// `play` lands in ``startEngine(url:offSeconds:container:subtitle:softwareDecoder:)``. The
-/// decision itself is the package's ``PlayerEngineChoice``; this file only gathers its inputs,
-/// asks the server for the copy-only address and wires the result into the facade. Any
-/// trouble hands the title to VLC at the position where AVPlayer stopped
-/// (``avFailed(_:)``, ``avHandOver(audio:subtitle:reason:failed:)``).
+/// `play` lands in ``startEngine(url:offSeconds:container:subtitle:)``. There is no second engine:
+/// when Aether cannot create or load, the screen's start-error display shows the reason
+/// (``avFailed(_:)``, log line `[Aether] Fehler: ...`).
 extension VLCPlayerView {
 
-    /// Titles AVPlayer could not play in this session: VLC takes them for good.
-    static var avFailedItems: Set<String> = []
-
-    func startEngine(url: URL, offSeconds: Double, container: String?,
-                     subtitle: [SubtitleFile], softwareDecoder: Bool) {
+    func startEngine(url: URL, offSeconds: Double, container: String?, subtitle: [SubtitleFile]) {
         avCall += 1
-        let call = avCall
-        avEngine?.stop()
+        avEngine?.stop(resetDisplay: false)
         avEngine = nil
-        avOriginal = AVOriginal(url: url, container: container, subtitle: subtitle)
         let start = JumpTarget.seconds(offSeconds) ?? 0
-
-        func vlc(_ reason: String) {
-            AppLog.writeOut("[Engine] VLC: \(reason)")
-            playVLC(url: url, offSeconds: start, container: container, subtitle: subtitle,
-                    softwareDecoder: softwareDecoder)
-        }
-
-        // Own headers (a gateway in front of the server) reach VLC through the forwarder;
-        // AVPlayer would not send them.
-        if !url.isFileURL, !OwnHeaders.of(url).isEmpty {
-            vlc("Eigene Header, nur VLC kann sie senden")
-            return
-        }
-        guard let wish = trackRequest, let request = wish.engine, !url.isFileURL else {
-            vlc(url.isFileURL ? "Datei auf dem Gerät" : "kein Weg für AVPlayer bei diesem Server")
-            return
-        }
+        let wish = trackRequest
+        // A download has no server description: the engine plays the file with the tracks it finds.
+        let request = wish?.engine ?? EngineRequest(itemID: "", source: Self.emptySource,
+                                                    subtitleFiles: subtitle)
         let streams = request.source.mediaStreams ?? []
         let memory = TrackMemory()
         let audio = TrackRule.audio(streams: streams,
-                                    remembered: wish.title.flatMap { memory.audio(for: $0) },
-                                    preferredLanguage: wish.audio,
+                                    remembered: wish?.title.flatMap { memory.audio(for: $0) },
+                                    preferredLanguage: wish?.audio ?? "",
                                     serverPreGift: request.source.defaultAudioStreamIndex,
-                                    ordered: wish.ordered?.audio)
+                                    ordered: wish?.ordered?.audio)
         let choice = TrackRule.subtitle(streams: streams,
-                                        remembered: wish.title.flatMap { memory.subtitle(for: $0) },
+                                        remembered: wish?.title.flatMap { memory.subtitle(for: $0) },
                                         serverPreGift: request.source.defaultSubtitleStreamIndex,
-                                        automatic: wish.automatic, audioIndex: audio,
-                                        tonwunsch: wish.audio, preferredLanguage: wish.subtitle,
-                                        ordered: wish.ordered?.subtitle)
+                                        automatic: wish?.automatic ?? false, audioIndex: audio,
+                                        tonwunsch: wish?.audio ?? "", preferredLanguage: wish?.subtitle ?? "",
+                                        ordered: wish?.ordered?.subtitle)
         var subtitleIndex = -1
         if case .feed(let index) = choice { subtitleIndex = index }
-        let setting = PlayerEngineSetting(stored: UserDefaults.standard.string(forKey: PlayerEngineSetting.storageKey))
-        let decision = PlayerEngineChoice.decide(
-            setting: setting, softwareDecoder: softwareDecoder,
-            avFailed: Self.avFailedItems.contains(request.itemID), source: request.source,
-            audioIndex: audio, subtitleIndex: subtitleIndex >= 0 ? subtitleIndex : nil,
-            device: EngineProbe.device)
-        AppLog.writeOut(decision.logLine)
-        guard decision.engine == .avPlayer else {
-            playVLC(url: url, offSeconds: start, container: container, subtitle: subtitle,
-                    softwareDecoder: softwareDecoder)
-            return
-        }
-        // A text track without a file the app can draw (Plex, inside the file) is VLC's.
-        if subtitleIndex >= 0, !request.subtitleFiles.contains(where: { $0.index == subtitleIndex }) {
-            vlc("Untertitel \(subtitleIndex) ohne Textdatei")
-            return
-        }
 
-        // The previous title may still play in VLC while the address is fetched: stop it now.
-        if player.media != nil {
-            intentionalEnded = true
-            watchdog?.invalidate()
-            watchdog = nil
-            startGuards?.invalidate()
-            startGuards = nil
-            startJump = nil
-            holdBackAudio(false)
-            player.stop()
-        }
         pausedSince = nil
         trackSource = nil
         trackOriginal = nil
@@ -99,28 +42,28 @@ extension VLCPlayerView {
 
         let effectiveAudio = audio ?? request.source.defaultAudioStreamIndex
             ?? streams.first(where: { $0.type == "Audio" })?.index
-        Task { @MainActor [weak self] in
-            let plan = await request.plan(audio)
-            guard let self, self.avCall == call, !self.finallyStopped else { return }
-            guard let plan else {
-                // Let a just-stopped VLC finish its stop event before it is started again.
-                try? await Task.sleep(for: .milliseconds(250))
-                guard self.avCall == call, !self.finallyStopped else { return }
-                vlc("Server liefert keinen Kopierstrom")
-                return
-            }
-            let engine = AVPlayerEngine(host: self, request: request, audioIndex: effectiveAudio,
-                                        subtitleIndex: -1)
-            self.avEngine = engine
-            engine.subtitleDelay = self.subtitleDelay
-            engine.fill(self.fillWish)
-            if let volume = self.requestVolume { engine.volume(Int(volume)) }
-            if self.tempoWish != 1 { engine.tempo = self.tempoWish }
-            engine.selectSubtitle(subtitleIndex)
-            engine.load(plan, start: start)
-            AppLog.writeOut("[Engine] AVPlayer: \(plan.method) \(plan.container ?? "?") ab \(Int(start)) s")
+        do {
+            let engine = try AetherPlayerEngine(host: self, request: request, url: url,
+                                                audioIndex: effectiveAudio, subtitleIndex: subtitleIndex)
+            avEngine = engine
+            engine.subtitleDelay = subtitleDelay
+            engine.audioDelay = audioDelay
+            engine.fill(fillWish)
+            if let volume = requestVolume { engine.volume(Int(volume)) }
+            if tempoWish != 1 { engine.tempo = tempoWish }
+            engine.load(start: start)
+            AppLog.writeOut("[Engine] Aether: ab \(Int(start)) s\(url.isFileURL ? " · Datei auf dem Gerät" : "")")
+        } catch {
+            AppLog.writeOut("[Aether] Fehler: nicht startbar: \(error.localizedDescription)")
+            startErrorReported?("Aether: \(error.localizedDescription)")
         }
     }
+
+    /// A source without streams, for files on the device.
+    static let emptySource: MediaSource = {
+        // swiftlint:disable:next force_try
+        try! JSONDecoder().decode(MediaSource.self, from: Data("{}".utf8))
+    }()
 
     // MARK: Events from the engine
 
@@ -130,38 +73,23 @@ extension VLCPlayerView {
         runsReported?(go)
     }
 
-    /// AVPlayer cannot play this title: VLC takes it, here and for the rest of the session.
+    /// The engine cannot play this title. There is no other player to fall back on: the screen
+    /// shows its start-error message while no picture has been shown.
     func avFailed(_ reason: String) {
-        guard let engine = avEngine else { return }
-        Self.avFailedItems.insert(engine.request.itemID)
-        avHandOver(audio: nil, subtitle: nil, reason: "AVPlayer gescheitert (\(reason))", failed: true)
+        AppLog.writeOut("[Aether] Fehler gemeldet: \(reason)")
+        startErrorReported?(reason)
     }
 
-    /// Plays the title with VLC from where AVPlayer is, with the tracks now chosen.
+    /// The engine could not apply a track after the start: say which tracks play.
     func avHandOver(audio: Int?, subtitle: Int?, reason: String, failed: Bool = false) {
-        guard let engine = avEngine, let original = avOriginal else { return }
-        let spot = max(engine.position, engine.lastGood)
-        let engineAudio = engine.audioIndex
-        let engineSubtitle = engine.subtitleIndex
-        trackRequest?.ordered = TrackIndices(audio: audio ?? engine.audioIndex,
-                                             subtitle: subtitle ?? engine.subtitleIndex)
-        let kept = (trackTitle, trackSource, trackOriginal)
-        avCall += 1
-        engine.stop()
-        avEngine = nil
-        AppLog.writeOut("[Engine] VLC: \(reason) bei \(Int(spot)) s")
-        playVLC(url: original.url, offSeconds: spot, container: original.container,
-                subtitle: original.subtitle, softwareDecoder: false)
-        // The screen has its tracks set already and will not ask again; VLC's start options pick
-        // the right ones, the source is only needed to name and map them.
-        (trackTitle, trackSource, trackOriginal) = kept
-        // `playVLC` reported no tracks; the screen will not ask again, so say which ones play.
-        trackIndicesReport(TrackIndices(audio: audio ?? engineAudio, subtitle: subtitle ?? engineSubtitle))
+        guard let engine = avEngine else { return }
+        AppLog.writeOut("[Spuren] \(reason)")
+        trackIndicesReport(TrackIndices(audio: audio ?? engine.audioIndex, subtitle: -1))
     }
 
     // MARK: Tracks
 
-    func avAudioTracks(_ engine: AVPlayerEngine) -> [SurfaceTrack] {
+    func avAudioTracks(_ engine: any PlaybackBackend) -> [SurfaceTrack] {
         let streams = (engine.request.source.mediaStreams ?? []).filter { $0.type == "Audio" }
         return streams.map { stream in
             let name = TrackLabel.audio(language: stream.language,
@@ -172,7 +100,7 @@ extension VLCPlayerView {
         }
     }
 
-    func avSubtitleTracks(_ engine: AVPlayerEngine) -> [SurfaceTrack] {
+    func avSubtitleTracks(_ engine: any PlaybackBackend) -> [SurfaceTrack] {
         let streams = (engine.request.source.mediaStreams ?? []).filter { $0.type == "Subtitle" }
         return streams.map { stream in
             SurfaceTrack(stream: stream, name: TrackLabel.subtitle(stream) ?? stream.displayTitle ?? "—",
@@ -180,7 +108,7 @@ extension VLCPlayerView {
         }
     }
 
-    func avSubtitleNames(_ engine: AVPlayerEngine) -> [String: String] {
+    func avSubtitleNames(_ engine: any PlaybackBackend) -> [String: String] {
         let tracks = avSubtitleTracks(engine)
         return Dictionary(zip(tracks.map(\.trackId), TrackLabel.distinct(tracks.map(\.trackName))),
                           uniquingKeysWith: { first, _ in first })
@@ -189,7 +117,7 @@ extension VLCPlayerView {
     /// The start choice of ``wendeLanguagesAn(audio:subtitle:automatic:source:title:originalLanguage:)``
     /// while AVPlayer plays: the rule's answer is applied once more, which matters only where
     /// it changed since `play` (a choice made on another device, the server's source).
-    func avTracksApply(_ engine: AVPlayerEngine, audio: String, subtitle: String, automatic: Bool,
+    func avTracksApply(_ engine: any PlaybackBackend, audio: String, subtitle: String, automatic: Bool,
                        source: MediaSource?, title: String?, originalLanguage: String?) {
         trackTitle = title
         trackSource = source
@@ -209,24 +137,18 @@ extension VLCPlayerView {
                                         ordered: trackRequest?.ordered?.subtitle)
         var wantedSubtitle = -1
         if case .feed(let index) = choice { wantedSubtitle = index }
-        AppLog.writeOut("[Spuren] AVPlayer: Ton \(audioIndex.map(String.init) ?? "Datei") · Untertitel \(choice)")
-        if let audioIndex, audioIndex != engine.audioIndex {
-            if PlayerEngineChoice.audioTrack(of: engine.request.source, index: audioIndex) != nil {
-                engine.switchAudio(to: audioIndex)
-            } else {
-                avHandOver(audio: audioIndex, subtitle: wantedSubtitle, reason: "Tonspur \(audioIndex) nur mit VLC")
-                return
-            }
-        }
+        AppLog.writeOut("[Spuren] \(engine.label): Ton \(audioIndex.map(String.init) ?? "Datei") · Untertitel \(choice)")
+        if let audioIndex, audioIndex != engine.audioIndex { engine.switchAudio(to: audioIndex) }
+        var shownSubtitle = wantedSubtitle
         if wantedSubtitle != engine.subtitleIndex, !engine.selectSubtitle(wantedSubtitle) {
-            avHandOver(audio: audioIndex, subtitle: wantedSubtitle, reason: "Untertitel \(wantedSubtitle) nur mit VLC")
-            return
+            AppLog.writeOut("[Spuren] Untertitel \(wantedSubtitle) nicht darstellbar, bleibt aus")
+            shownSubtitle = -1
         }
-        trackIndicesReport(TrackIndices(audio: audioIndex, subtitle: wantedSubtitle))
+        trackIndicesReport(TrackIndices(audio: audioIndex, subtitle: shownSubtitle))
     }
 
-    /// A hand choice in the panel: remembered for the series, like with VLC.
-    func avAudioChosen(_ engine: AVPlayerEngine, _ surface: SurfaceTrack) {
+    /// A hand choice in the panel: remembered for the series.
+    func avAudioChosen(_ engine: any PlaybackBackend, _ surface: SurfaceTrack) {
         guard let stream = surface.stream, let index = stream.index else { return }
         if let trackTitle {
             let streams = engine.request.source.mediaStreams ?? []
@@ -234,15 +156,11 @@ extension VLCPlayerView {
                                         for: trackTitle)
             AppLog.writeOut("[Spuren] Ton von Hand: \(index)")
         }
-        if PlayerEngineChoice.audioTrack(of: engine.request.source, index: index) != nil {
-            engine.switchAudio(to: index)
-            trackIndicesReport(TrackIndices(audio: index, subtitle: reportedTracks.subtitle))
-        } else {
-            avHandOver(audio: index, subtitle: nil, reason: "Tonspur \(index) nur mit VLC")
-        }
+        engine.switchAudio(to: index)
+        trackIndicesReport(TrackIndices(audio: index, subtitle: reportedTracks.subtitle))
     }
 
-    func avSubtitleChosen(_ engine: AVPlayerEngine, _ surface: SurfaceTrack?) {
+    func avSubtitleChosen(_ engine: any PlaybackBackend, _ surface: SurfaceTrack?) {
         guard let stream = surface?.stream, let index = stream.index else {
             if let trackTitle { TrackMemory().rememberSubtitle(.off, for: trackTitle) }
             engine.selectSubtitle(-1)
@@ -259,7 +177,8 @@ extension VLCPlayerView {
         if engine.selectSubtitle(index) {
             trackIndicesReport(TrackIndices(audio: reportedTracks.audio, subtitle: index))
         } else {
-            avHandOver(audio: nil, subtitle: index, reason: "Untertitel \(index) nur mit VLC")
+            AppLog.writeOut("[Spuren] Untertitel \(index) nicht darstellbar, bleibt aus")
+            trackIndicesReport(TrackIndices(audio: reportedTracks.audio, subtitle: -1))
         }
     }
 }

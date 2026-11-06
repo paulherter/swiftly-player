@@ -218,6 +218,9 @@ extension Theme {
     static let separatorInsetCard: CGFloat = 52
     /// Settings row symbol and its column, the same as on iPhone.
     static let rowSymbolSize: CGFloat = 20
+    /// Same row title and chevron sizes as on iPhone.
+    static let rowTitleSize: CGFloat = 17
+    static let chevronSize: CGFloat = 13
     static let rowIconWidth: CGFloat = 26
     static let tileSpacing: CGFloat = 16
     static let railsSpacing: CGFloat = 40
@@ -319,7 +322,7 @@ extension Theme {
     static let lockSubpage = -0.6
     /// 20 · -0.012 em
     static let lockRail      = -0.24
-    static let lockSection = -0.308
+    static let lockSection = -0.484
     /// 17 · -0.008 em
     static let lockCategory     = -0.136
     /// 11 · +0.14 em

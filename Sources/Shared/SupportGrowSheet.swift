@@ -60,7 +60,7 @@ struct SupportGrowSheet: View {
                 .font(.app(size: 12, weight: .bold))
                 .foregroundStyle(Theme.font)
                 .frame(width: 30, height: 30)
-                .background(Color.black.opacity(0.4), in: Circle())
+                .background(Theme.scrimButton, in: Circle())
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
@@ -78,28 +78,18 @@ struct SupportGrowSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     LooksHero { flow.openLooks() }
-                        .padding(.top, 36)
+                        .padding(.top, 44)
                         .disabled(support.purchasing != nil)
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        // The sprout at the size of the text beside it, not of the heading.
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text("Hilf Swiftly zu wachsen")
-                                .growing(28, .bold)
-                                .tracking(-0.56)
-                                .foregroundStyle(Theme.font)
-                                .accessibilityAddTraits(.isHeader)
-                            Text(verbatim: "🌱")
-                                .growing(17)
-                                .accessibilityHidden(true)
-                        }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Hilf Swiftly zu wachsen")
+                            .growing(22, .bold)
+                            .tracking(-0.44)
+                            .foregroundStyle(Theme.font)
+                            .accessibilityAddTraits(.isHeader)
                         Text("Dein Beitrag hält Swiftly am Laufen.")
-                            .growing(17)
-                            .foregroundStyle(Theme.font.opacity(0.9))
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text("Open Source, keine Werbung, alles zum Schauen bleibt kostenlos.")
-                            .growing(13)
-                            .foregroundStyle(Theme.fontVeryQuiet)
+                            .growing(15)
+                            .foregroundStyle(Theme.fontQuiet)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.top, 22)
@@ -113,10 +103,10 @@ struct SupportGrowSheet: View {
                     }
 
                     plans
-                        .padding(.top, 18)
+                        .padding(.top, 20)
                         .padding(.horizontal, 16)
                     tips
-                        .padding(.top, 12)
+                        .padding(.top, 10)
                         .padding(.horizontal, 16)
                 }
                 .padding(.bottom, 12)
@@ -132,12 +122,12 @@ struct SupportGrowSheet: View {
     /// The two plans side by side. A radio group: one choice at most, none at the start.
     private var plans: some View {
         // Both tiles as tall as the taller one, whatever the text wraps to.
-        HStack(alignment: .top, spacing: 12) {
-            PlanTile(choice: .monthly, badge: Text("Beliebt"), badgeLoud: true,
-                     title: Text("Monatlich"), detail: Text("im Monat · jederzeit kündbar"),
+        HStack(alignment: .top, spacing: 10) {
+            PlanTile(choice: .monthly, badge: Text("Beliebt"),
+                     title: Text("Monatlich"), detail: Text("im Monat"),
                      chosen: $chosen, pricesShown: pricesShown)
-            PlanTile(choice: .lifetime, badge: Text("Guter Deal"), badgeLoud: false,
-                     title: Text("Für immer"), detail: Text("einmal zahlen · wie 10 Monate"),
+            PlanTile(choice: .lifetime, badge: nil,
+                     title: Text("Für immer"), detail: Text("einmalig"),
                      chosen: $chosen, pricesShown: pricesShown)
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -147,13 +137,15 @@ struct SupportGrowSheet: View {
     }
 
     private var tips: some View {
-        HStack(spacing: 6) {
-            Text("Einfach Danke ☕")
-                .growing(12)
+        HStack(spacing: 8) {
+            Text("Danke ☕")
+                .growing(13)
                 .foregroundStyle(Theme.fontVeryQuiet)
                 .lineLimit(1)
                 .fixedSize()
+                .padding(.leading, 2)
                 .padding(.trailing, 4)
+                .accessibilityHidden(true)
             ForEach(SupportTip.ordered, id: \.self) { tip in
                 TipChip(choice: .tip(tip), chosen: $chosen, pricesShown: pricesShown)
             }
@@ -166,7 +158,7 @@ struct SupportGrowSheet: View {
         VStack(spacing: 8) {
             if let notice = support.notice {
                 Text(notice.text)
-                    .growing(12)
+                    .growing(13)
                     .foregroundStyle(Theme.fontQuiet)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
@@ -178,38 +170,39 @@ struct SupportGrowSheet: View {
             } label: {
                 buyLabel
             }
-            .buttonStyle(PrimaryButtonStyle(lockedArea: Theme.raised))
+            .buttonStyle(PlayButtonStyle())
             .disabled(chosen == nil || support.purchasing != nil || !pricesShown)
             .accessibilityAddTraits(support.purchasing != nil ? .updatesFrequently : [])
+            .accessibilityHint(Text("Das Monatsabo verlängert sich, bis du in den Einstellungen deines Apple Accounts kündigst. Für immer ist eine einmalige Zahlung. Trinkgelder sind nur ein Dankeschön."))
 
             // No "Not now" here: the sheet closes with the X at the top or by pulling it
             // down, and a second button under the purchase only made the footer heavier.
 
             VStack(spacing: 0) {
-                Text("Das Monatsabo verlängert sich, bis du in den Einstellungen deines Apple Accounts kündigst. Für immer ist eine einmalige Zahlung. Trinkgelder sind nur ein Dankeschön.")
+                Text("Abo monatlich kündbar im Apple Account")
                     .growing(11)
                     .foregroundStyle(Theme.fontVeryQuiet)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 4) {
-                    legalLink(Text("Nutzungsbedingungen")) { openURL(SupportLinks.termsURL) }
+                    legalLink(Text("Wiederherstellen")) { restore() }
+                    Text(verbatim: "·").foregroundStyle(Theme.fontVeryQuiet).accessibilityHidden(true)
+                    legalLink(Text("Bedingungen"), label: Text("Nutzungsbedingungen")) { openURL(SupportLinks.termsURL) }
                     Text(verbatim: "·").foregroundStyle(Theme.fontVeryQuiet).accessibilityHidden(true)
                     legalLink(Text("Datenschutz")) { openURL(SupportLinks.privacyURL) }
-                    Text(verbatim: "·").foregroundStyle(Theme.fontVeryQuiet).accessibilityHidden(true)
-                    legalLink(Text("Wiederherstellen")) { restore() }
                 }
                 .growing(11, .medium)
             }
             .padding(.top, 2)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 14)
         .padding(.bottom, 10)
         .animation(Theme.reveal, value: support.notice)
         .animation(Theme.reveal, value: chosen)
     }
 
-    private func legalLink(_ title: Text, action: @escaping () -> Void) -> some View {
+    private func legalLink(_ title: Text, label: Text? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             title
                 .underline(color: Theme.font.opacity(0.25))
@@ -218,6 +211,7 @@ struct SupportGrowSheet: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(Theme.PressText())
+        .accessibilityLabel(label ?? title)
     }
 
     @ViewBuilder private var buyLabel: some View {
@@ -267,9 +261,8 @@ struct SupportGrowSheet: View {
 /// accent, as a ring and a check that pops in.
 private struct PlanTile: View {
     let choice: SupportChoice
-    let badge: Text
-    /// White badge for the popular plan, a quiet one for the other.
-    let badgeLoud: Bool
+    /// "Popular": small, in the accent, beside the plan's name.
+    let badge: Text?
     let title: Text
     let detail: Text
     @Binding var chosen: SupportChoice?
@@ -284,49 +277,45 @@ private struct PlanTile: View {
                 chosen = choice
             }
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                title
-                    .growing(13)
-                    .foregroundStyle(Theme.fontQuiet)
-                    .padding(.top, 6)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 6) {
+                    title
+                        .growing(13, .medium)
+                        .foregroundStyle(Theme.fontQuiet)
+                    if let badge {
+                        badge
+                            .growing(13, .medium)
+                            .foregroundStyle(Theme.accent)
+                    }
+                }
+                .lineLimit(1)
                 if pricesShown {
                     Text(verbatim: SupportModel.shared.price(choice) ?? "")
                         .growing(22, .bold)
                         .monospacedDigit()
                         .tracking(-0.22)
                         .foregroundStyle(Theme.font)
-                        .padding(.top, 4)
+                        .padding(.top, 8)
                         .transition(.opacity)
                     detail
                         .growing(12)
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 1)
                         .transition(.opacity)
                 } else {
                     SkeletonBar(width: 64, height: 22).padding(.top, 10)
                     SkeletonBar(width: 48, height: 10).padding(.top, 8)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 112 - 28, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 92 - 28, maxHeight: .infinity, alignment: .topLeading)
             .padding(14)
-            .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
+            .background(Theme.groupsArea, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(Theme.accent, lineWidth: isChosen ? 2 : 0)
             }
             .overlay(alignment: .topTrailing) { indicator.padding(12) }
-            .overlay(alignment: .topLeading) {
-                badge
-                    .font(.app(size: 10, weight: .bold))
-                    .tracking(0.4)
-                    .textCase(.uppercase)
-                    .foregroundStyle(badgeLoud ? Color(white: 0.04) : Theme.font)
-                    .lineLimit(1)
-                    .padding(.horizontal, 8)
-                    .frame(height: 20)
-                    .background(badgeLoud ? Theme.font : Theme.pressedArea, in: Capsule())
-                    .offset(x: 14, y: -9)
-            }
             .contentShape(Rectangle())
         }
         .buttonStyle(Theme.PressButton())
@@ -381,7 +370,7 @@ private struct TipChip: View {
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 40)
-            .background(Theme.area, in: Capsule())
+            .background(Theme.groupsArea, in: Capsule())
             .overlay { Capsule().strokeBorder(Theme.accent, lineWidth: isChosen ? 2 : 0) }
             .contentShape(Capsule())
         }
@@ -434,38 +423,38 @@ private struct PricesUnavailableCard: View {
     let retry: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(icon: "icloud.slash", size: 18)
-                .font(.app(size: 18))
-                .foregroundStyle(Theme.font)
-                .frame(width: 40, height: 40)
-                .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
+        HStack(spacing: 12) {
+            Image(icon: "icloud.slash", size: 20)
+                .font(.app(size: 20))
+                .foregroundStyle(Theme.fontQuiet)
+                .frame(width: 22, height: 22)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Preise sind gerade nicht verfügbar")
+            VStack(alignment: .leading, spacing: 2) {
+                Text("App Store antwortet nicht")
                     .growing(15, .semibold)
                     .foregroundStyle(Theme.font)
-                Text("Der App Store hat nicht geantwortet. Das passiert ohne Internet oder wenn Käufe in der Bildschirmzeit aus sind. Nichts geht verloren, und Swiftly läuft wie immer.")
+                Text("Swiftly läuft wie immer.")
                     .growing(13)
-                    .foregroundStyle(Theme.fontQuiet)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button(action: retry) {
-                    Label("App Store erneut fragen", icon: "arrow.clockwise")
-                        .growing(14, .semibold)
-                        .foregroundStyle(Theme.font)
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 36)
-                        .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(Theme.PressButton())
-                .padding(.top, 4)
+                    .foregroundStyle(Theme.fontVeryQuiet)
             }
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: retry) {
+                Text("Erneut")
+                    .growing(13, .semibold)
+                    .foregroundStyle(Theme.font)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 36)
+                    .background(Theme.raised, in: Capsule())
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(Theme.PressButton())
+            .accessibilityLabel(Text("App Store erneut fragen"))
         }
-        .padding(16)
-        .background(Theme.groupsArea, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
+        .padding(.vertical, 8)
+        .padding(.leading, 14)
+        .padding(.trailing, 8)
+        .background(Theme.groupsArea, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .contain)
     }
 }
@@ -485,7 +474,9 @@ struct LooksHero: View {
     ]
 
     var body: some View {
-        ZStack(alignment: .top) {
+        VStack(spacing: 2) {
+            // Calm: the phones stand on the normal background, no shadow, no bobbing, and
+            // end softly above the pill.
             ZStack(alignment: .top) {
                 ForEach(Self.phones.indices, id: \.self) { index in
                     let phone = Self.phones[index]
@@ -495,37 +486,32 @@ struct LooksHero: View {
                         .zIndex(index == 2 ? 2 : 1)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            // **The phones end softly** above the pill instead of running under it.
+            .frame(maxWidth: .infinity, alignment: .top)
+            .frame(height: 250, alignment: .top)
             .mask {
                 LinearGradient(stops: [.init(color: .black, location: 0),
-                                       .init(color: .black, location: 0.62),
-                                       .init(color: .clear, location: 0.9)],
+                                       .init(color: .black, location: 0.58),
+                                       .init(color: .clear, location: 0.88)],
                                startPoint: .top, endPoint: .bottom)
-                    .padding(.top, -40)
             }
             Button(action: tryLooks) {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
+                    PlayTriangle(width: 8, height: 9)
+                        .foregroundStyle(Theme.accent)
                     Text("Look ausprobieren")
-                    Image(icon: "chevron.right", size: 11)
-                        .font(.app(size: 11, weight: .bold))
-                        .accessibilityHidden(true)
                 }
                 .growing(13, .semibold)
-                .foregroundStyle(Theme.font)
-                .padding(.horizontal, 14)
-                .frame(height: 30)
-                .glassPill()
+                .foregroundStyle(Theme.fontQuiet)
+                .padding(.leading, 12)
+                .padding(.trailing, 14)
+                .frame(height: 32)
+                .background(Theme.groupsArea, in: Capsule())
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
             }
             .buttonStyle(Theme.PressButton())
-            .frame(maxHeight: .infinity, alignment: .bottom)
-            .padding(.bottom, -7)
-            .zIndex(3)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 252)
     }
 }
 
@@ -534,8 +520,6 @@ struct LooksHero: View {
 struct LookMiniPhone: View {
     let palette: LookPalette
     var delay: Double = 0
-    @State private var up = false
-
     var body: some View {
         let accent = palette.accent.mainColor
         ZStack(alignment: .topLeading) {
@@ -564,16 +548,10 @@ struct LookMiniPhone: View {
                 .frame(maxHeight: .infinity, alignment: .bottom)
         }
         .frame(width: 104, height: 208)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous)
                 .strokeBorder(Theme.font.opacity(0.1), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.5), radius: 20, y: 18)
-        .offset(y: up ? -6 : 0)
-        .onAppear {
-            guard !Theme.motionReduced else { return }
-            withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true).delay(delay)) { up = true }
         }
         .accessibilityHidden(true)
     }
@@ -673,7 +651,7 @@ struct SupportGrowThanks: View {
 
             VStack(spacing: 8) {
                 Button { home() } label: { Text("Zeig mir meine Startseite") }
-                    .buttonStyle(PrimaryButtonStyle())
+                    .buttonStyle(PlayButtonStyle())
                 Button(SupportCopy.done.localized, action: done)
                     .buttonStyle(SecondaryButtonStyle())
             }

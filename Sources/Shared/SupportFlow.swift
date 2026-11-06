@@ -130,19 +130,6 @@ final class SupportFlow {
         GiftFlow.shared.goHome()
     }
 
-    /// A supporter picks directly in Settings → Appearance. Returns false for everyone
-    /// else, who gets the support sheet instead.
-    @discardableResult
-    func choose(_ selection: LookSelection) -> Bool {
-        guard Motion.recolor({ LookStore.shared.choose(selection) }) else {
-            SupportModel.shared.open()
-            return false
-        }
-        let icon = selection.palette.iconName
-        Task { await LookIcon.apply(icon) }
-        return true
-    }
-
     #if DEBUG
     /// Back to a fresh install, with "Reset support state".
     func reset() {

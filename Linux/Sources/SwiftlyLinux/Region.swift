@@ -96,15 +96,15 @@ enum Region: CaseIterable {
 
     var symbol: String {
         switch self {
-        case .start:  "user-home-symbolic"
-        case .movies:  "video-x-generic-symbolic"
-        case .seriesList: "tv-symbolic"
+        case .start:  "swiftly-home-fill-symbolic"
+        case .movies:  "swiftly-film-fill-symbolic"
+        case .seriesList: "swiftly-cards-fill-symbolic"
         // `bookmark.fill` on the Mac; in the Adwaita set that is the bookmark.
         case .watchlist: "bookmark-new-symbolic"
         // `arrow.down.circle` on the Mac. Adwaita has no downward arrow in a circle
         // that does not mean "refresh"; the download folder is the closest and is
         // used for the same thing everywhere else.
-        case .downloads: "folder-download-symbolic"
+        case .downloads: "swiftly-download-fill-symbolic"
         case .search:  "system-search-symbolic"
         case .collection: "folder-symbolic"
         // Never in the sidebar; the icon is only used for the header.

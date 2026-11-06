@@ -14,6 +14,10 @@ options:
 packages:
   JellyfinKit:
     path: Packages/JellyfinKit
+  # The third playback engine (FFmpeg demuxes, the system decodes). A wrapper package,
+  # because AetherEngine's optional parts are package traits and XcodeGen cannot set them.
+  SwiftlyAether:
+    path: Packages/SwiftlyAether
   # For the launch animation. The source asset is a Lottie export from After
   # Effects; the keyframes carry individual bezier easing, which is error-prone
   # to rebuild by hand. Airbnb's implementation is the standard one.
@@ -36,7 +40,7 @@ settings:
     # The counter applies per version, so it restarts at 1 for a new version.
     # Before resetting it, check the highest build number already uploaded for
     # that version on all platforms in App Store Connect.
-    CURRENT_PROJECT_VERSION: "42"
+    CURRENT_PROJECT_VERSION: "45"
     # Same identifier as in the free-account days: Apple converted the personal
     # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9
@@ -64,17 +68,8 @@ targets:
         type: folder
     dependencies:
       - package: JellyfinKit
+      - package: SwiftlyAether
       - package: Lottie
-      # VLCKit 4 provides Picture-in-Picture (VLCPictureInPictureDrawable), the
-      # reason for this app. Included locally instead of via SwiftPM because
-      # VideoLAN throttles the download to ~40 KB/s. Fetch with:
-      # Werkzeuge/vlckit-fetch.sh
-      # **Self-built version** - see Werkzeuge/vlckit-patches/README.md. VLC 4
-      # cannot seek forward in a Matroska with partly unreadable cues over HTTP;
-      # patch 0028 restores the VLC 3 behavior.
-      - framework: Vendor/VLCKit-gepatcht.xcframework
-        embed: true
-        codeSign: true
     info:
       path: Sources/iOS/Info.plist
       properties:
@@ -316,7 +311,9 @@ targets:
       - path: Sources/Shared/BaseView.swift
       - path: Sources/Shared/VLCPlayer.swift
       - path: Sources/Shared/VLCPlayerView+Engine.swift
-      - path: Sources/Shared/AVPlayerEngine.swift
+      - path: Sources/Shared/SubtitleOverlay.swift
+      - path: Sources/Shared/AetherPlayerEngine.swift
+      - path: Sources/Shared/PlaybackBackend.swift
       - path: Sources/Shared/AppModel+Engine.swift
       # The subtitle look page: the preview picture and the words every platform shares.
       - path: Sources/Shared/SubtitlePreview.swift
@@ -356,26 +353,10 @@ targets:
         type: folder
     dependencies:
       - package: JellyfinKit
+      - package: SwiftlyAether
       - package: Lottie
       # The Top Shelf is a separate target and is embedded.
       - target: Swiftly-TopShelf
-      # VLCKit 4 ships tvOS slices (tvos-arm64 and simulator, checked in the
-      # XCFramework). No Picture-in-Picture here, but the player is used, and
-      # with it the `mkv_trusted` trick.
-      # **Self-built version with a patch to the mkv seeker.**
-      #
-      # VLC 4 ties `index_range()` to `b_fastseekable`, which is never true over
-      # HTTP. A Matroska whose cues cannot be evaluated then has no way to seek
-      # forward: every seek lands at the file start and the demuxer reads
-      # forward, 30 to 90 seconds in the test episode. VLC 3 calls the same line
-      # without that condition, which is why other clients seek instantly in the
-      # same file.
-      #
-      # Built from VLCKit 4.0.0-a23 plus this one patch. Revert to
-      # `VLCKit.xcframework` if it does not hold up.
-      - framework: Vendor/VLCKit-gepatcht.xcframework
-        embed: true
-        codeSign: true
     info:
       path: Sources/tvOS/Info.plist
       properties:
@@ -594,6 +575,7 @@ targets:
       - path: Sources/Shared/SupportFlow.swift
       - path: Sources/Shared/SupportGrowSheet.swift
       - path: Sources/Shared/SupportProfileParts.swift
+      - path: Sources/Shared/PlayButton.swift
       - path: Sources/Shared/LookAccentDots.swift
       - path: Sources/Shared/Motion.swift
       # Name, sentence and mark of each server kind, and the state of the Plex/Emby sign-in;
@@ -636,7 +618,9 @@ targets:
       # with `#if os(iOS)`; on the Mac it does not work anyway.
       - path: Sources/Shared/VLCPlayer.swift
       - path: Sources/Shared/VLCPlayerView+Engine.swift
-      - path: Sources/Shared/AVPlayerEngine.swift
+      - path: Sources/Shared/SubtitleOverlay.swift
+      - path: Sources/Shared/AetherPlayerEngine.swift
+      - path: Sources/Shared/PlaybackBackend.swift
       - path: Sources/Shared/AppModel+Engine.swift
       # The subtitle look page: the preview picture and the words every platform shares.
       - path: Sources/Shared/SubtitlePreview.swift
@@ -685,13 +669,10 @@ targets:
         type: folder
     dependencies:
       - package: JellyfinKit
+      - package: SwiftlyAether
       # For the launch animation - same asset as iPhone and TV. Without it the
       # Mac would start without the animation.
       - package: Lottie
-      # Self-built version - see Werkzeuge/vlckit-patches/README.md.
-      - framework: Vendor/VLCKit-gepatcht.xcframework
-        embed: true
-        codeSign: true
     info:
       path: Sources/macOS/Info.plist
       properties:

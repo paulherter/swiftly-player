@@ -169,9 +169,14 @@ class Looks(private val app: SwiftlyApplication) {
         applyIcon(context)
     }
 
+    /** The panel was closed because a preview started; `panelClosed` then keeps the preview. */
+    var previewKeeps = false
+
     /** The panel went away: a preview ends, the icon follows what is worn. */
     fun panelClosed(context: Context) {
         if (supportOpening) { supportOpening = false; return }
+        // A preview hides the panel and the try-on bar takes over (iOS `showsPreviewBar`): it stays.
+        if (previewKeeps) { previewKeeps = false; return }
         if (previewing.value) run("end")
         applyIcon(context)
     }

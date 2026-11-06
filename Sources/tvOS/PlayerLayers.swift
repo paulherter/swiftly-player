@@ -1,6 +1,5 @@
 import JellyfinKit
 import SwiftUI
-import VLCKit
 
 /// Player dimensions on the TV, in one place so the title of the episode layer
 /// sits exactly where it sat on the picture. Rounded to the TV type steps; the

@@ -273,8 +273,8 @@ struct EpisodesStrip: View {
                     // `imageTags["Primary"]`.
                     TileContent(image: model.imageURL(for: episode, maxHeight: 360)
                                        ?? model.landscapeImageURL(for: episode, width: 640),
-                                 title: headerLine(episode),
-                                 subline: durationRow(episode),
+                                 title: episode.stripHeaderLine,
+                                 subline: episode.stripDurationLine,
                                  landscape: true,
                                  // A full bar **and** a check mark would give the same information twice.
                                  progress: episode.isWatched ? nil : episode.watchedShare,
@@ -324,26 +324,6 @@ struct EpisodesStrip: View {
         // Superseded (a newer state arrived): its run scrolls, not this one.
         guard !Task.isCancelled, !alreadyShown, ahead != target else { return }
         ahead = target
-    }
-
-    private func headerLine(_ episode: Item) -> String {
-        // Localized: German "F" for Folge, English "E" for episode. It used to be a
-        // fixed "F", also in English.
-        guard let number = episode.indexNumber else { return episode.name }
-        return String(localized: "F\(number)") + " · " + episode.name
-    }
-
-    /// "52 Min", and where something is started, the remainder behind it.
-    private func durationRow(_ episode: Item) -> String? {
-        var parts: [String] = []
-        // The rule from the package, not a separate check next to it.
-        if DisplayRules.runtimeShow(seconds: episode.runtimeSeconds),
-           let seconds = episode.runtimeSeconds {
-            parts.append(String(localized: "\(Int(seconds / 60)) Min."))
-        }
-        // "Watched" shows as a check mark in the image, not as a word.
-        if let rest = episode.remainingTimeText { parts.append(rest) }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 

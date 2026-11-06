@@ -156,7 +156,10 @@ struct GenreView: View {
         .scrollIndicators(.hidden)
         .onScrollGeometryChange(for: CGFloat.self) {
             $0.contentOffset.y + $0.contentInsets.top
-        } action: { _, new in offset = new }
+        } action: { _, new in
+            let clamped = min(max(new, 0), 30)
+            if clamped != offset { offset = clamped }
+        }
         // The header sits as a safe-area inset, not as an overlay; the reasoning is in
         // `MainView`. In short: its top inset otherwise came from a measurement of its
         // own that feeds back into the same area.

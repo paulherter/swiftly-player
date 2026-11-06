@@ -38,6 +38,17 @@ enum Region: String, Hashable, CaseIterable {
         }
     }
 
+    /// Filled Phosphor asset, the same as the iPhone tab bar.
+    var filledAsset: String? {
+        switch self {
+        case .start:      "icon.house.fill"
+        case .movies:     "icon.film-strip.fill"
+        case .seriesList: "icon.cards-three.fill"
+        case .downloads:  "icon.arrow-circle-down.fill"
+        case .search, .watchlist: nil
+        }
+    }
+
     var label: LocalizedStringKey {
         switch self {
         case .start:     "Start"
@@ -894,7 +905,7 @@ struct Sidebar: View {
 
             VStack(spacing: 2) {
                 ForEach(Region.topGroup, id: \.self) { fall in
-                    SidebarRow(symbol: fall.symbol,
+                    SidebarRow(symbol: fall.symbol, filled: fall.filledAsset,
                                        label: fall.label,
                                        active: section == fall && !inAccount,
                                        shortcut: shortcut(fall)) {
@@ -913,7 +924,7 @@ struct Sidebar: View {
 
                 VStack(spacing: 2) {
                     ForEach(mine, id: \.self) { fall in
-                        SidebarRow(symbol: fall.symbol,
+                        SidebarRow(symbol: fall.symbol, filled: fall.filledAsset,
                                            label: fall.label,
                                            active: section == fall && !inAccount) {
                             sectionSelect(fall)

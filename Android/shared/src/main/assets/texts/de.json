@@ -169,6 +169,9 @@
  "Beim Start fragen, wer schaut": "Beim Start fragen, wer schaut",
  "Beitreten": "Beitreten",
  "Beliebt": "Beliebt",
+ "im Monat": "im Monat",
+ "einmalig": "einmalig",
+ "Danke ☕": "Danke ☕",
  "Benutzername": "Benutzername",
  "Benutzername oder Passwort stimmt nicht.": "Benutzername oder Passwort stimmt nicht.",
  "Bereiche": "Bereiche",
@@ -793,6 +796,9 @@
  "Von vorn abspielen": "Von vorn abspielen",
  "Vorrat": "Vorrat",
  "Vorschau": "Vorschau",
+ "Voriger Look": "Voriger Look",
+ "Nächster Look": "Nächster Look",
+ "Freischalten": "Freischalten",
  "Vorschau beenden": "Vorschau beenden",
  "Vorspulen": "Vorspulen",
  "Wann du magst: übers Herz auf der Startseite oder in den Einstellungen.": "Wann du magst: übers Herz auf der Startseite oder in den Einstellungen.",
@@ -938,5 +944,6 @@
  "Übersicht öffnen": "Übersicht öffnen",
  "über das Internet": "über das Internet",
  "„%s“ ist nicht mehr erreichbar.": "„%s“ ist nicht mehr erreichbar.",
- "−%d s": "−%d s"
+ "−%d s": "−%d s",
+ "Alle ›": "Alle ›"
 }

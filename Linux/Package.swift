@@ -30,18 +30,14 @@ let package = Package(
             pkgConfig: "gtk4",
             providers: [.apt(["libgtk-4-dev"])]
         ),
-        // **System libVLC, not VLCKit.** On Apple, VLCKit ships as an XCFramework;
-        // on Linux libVLC is a system library. Whether to transcode is decided by the
-        // DeviceProfile in the package, which is the same on all platforms.
+        // **libmpv** (Stage 1 of the player rebuild): system library, linked dynamically,
+        // nothing shipped (LGPL). `CMPVBridge` joins its render API to a GtkGLArea.
         .systemLibrary(
-            name: "CVLC",
-            pkgConfig: "libvlc",
-            providers: [.apt(["libvlc-dev"])]
+            name: "CMPV",
+            pkgConfig: "mpv",
+            providers: [.apt(["libmpv-dev"])]
         ),
-        // The thread-critical part in C: VLC's callbacks run on the decoder thread
-        // and share a buffer with GTK's main thread. Rationale in imagebridge.h.
-        // libepoxy for the HDR shader (`hdrimage.c`); GTK ships it anyway.
-        .target(name: "CImageBridge", dependencies: ["CVLC"],
+        .target(name: "CMPVBridge", dependencies: ["CMPV", "CGtk"],
                 linkerSettings: [.linkedLibrary("epoxy")]),
         // Keyboard media keys. Empty on Linux (MPRIS handles them there); on Windows
         // a custom window procedure is needed.
@@ -67,8 +63,8 @@ let package = Package(
             name: "SwiftlyLinux",
             dependencies: [
                 "CGtk",
-                "CVLC",
-                "CImageBridge",
+                "CMPV",
+                "CMPVBridge",
                 "CMediaKeys",
                 "CFonts",
                 "CRlottie",

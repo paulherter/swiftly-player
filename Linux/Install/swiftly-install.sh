@@ -92,7 +92,7 @@ for candidate in $ID ${ID_LIKE:-}; do
     esac
 done
 [ -n "$sippe" ] || complain "Unbekannte Distribution: ${PRETTY_NAME:-$ID}
-Gebraucht werden GTK 4, libVLC, git, ein C++-Uebersetzer und pkg-config.
+Gebraucht werden GTK 4, libmpv, git, ein C++-Uebersetzer und pkg-config.
 Sind die da, laeuft der Rest dieses Skripts mit SWIFTLY_PAKETE_UEBERSPRINGEN=1."
 
 say "Swiftly Player — Installation"
@@ -104,7 +104,7 @@ fi
 
 # --------------------------------------------------------------- Packages
 #
-# Two kinds in one list: what the app needs to run (GTK, VLC) and what
+# Two kinds in one list: what the app needs to run (GTK, mpv) and what
 # Swift needs to compile (curl, ncurses, sqlite ...). Splitting them gains
 # nothing, since building needs both.
 
@@ -213,36 +213,36 @@ packages_set() {
     case "$sippe" in
         arch)
             $sudo_call pacman -S --needed --noconfirm \
-                gtk4 vlc git gcc pkgconf curl unzip which
+                gtk4 mpv git gcc pkgconf curl unzip which
             ;;
         debian)
             $sudo_call apt-get update
             $sudo_call apt-get install -y --no-install-recommends \
-                libgtk-4-dev libvlc-dev vlc-plugin-base \
+                libgtk-4-dev libmpv-dev \
                 git g++ pkg-config curl ca-certificates \
                 binutils libcurl4-openssl-dev libedit2 libncurses-dev \
                 libpython3-dev libsqlite3-0 libxml2-dev libz3-dev zlib1g-dev tzdata
             ;;
         fedora)
-            # On Fedora, VLC is not in the distribution's own repos but in RPM Fusion.
+            # On Fedora, mpv is not in the distribution's own repos but in RPM Fusion.
             # Without it the install fails on exactly one package, so it is offered
             # first.
-            if ! $sudo_call dnf list --available vlc-devel >/dev/null 2>&1 &&
-               ! rpm -q vlc-devel >/dev/null 2>&1; then
-                quiet "libVLC liegt bei Fedora in RPM Fusion. Wird jetzt eingerichtet."
+            if ! $sudo_call dnf list --available mpv-devel >/dev/null 2>&1 &&
+               ! rpm -q mpv-devel >/dev/null 2>&1; then
+                quiet "libmpv liegt bei Fedora in RPM Fusion. Wird jetzt eingerichtet."
                 $sudo_call dnf install -y --nogpgcheck \
                     "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" || true
             fi
             $sudo_call dnf install -y \
-                gtk4-devel vlc-devel git gcc-c++ pkgconf-pkg-config curl \
+                gtk4-devel mpv-devel git gcc-c++ pkgconf-pkg-config curl \
                 libcurl-devel libedit-devel libicu-devel libuuid-devel \
                 libxml2-devel python3-devel sqlite ncurses-devel
             ;;
         suse)
             $sudo_call zypper --non-interactive install \
-                gtk4-devel vlc-devel git gcc-c++ pkg-config curl \
+                gtk4-devel libmpv-devel git gcc-c++ pkg-config curl \
                 libcurl-devel libxml2-devel sqlite3 ncurses-devel || {
-                    complain "Bei openSUSE liegt VLC im Packman-Verzeichnis.
+                    complain "Bei openSUSE liegt mpv ggf. im Packman-Verzeichnis.
 Einmal einrichten, dann das Skript nochmal:
   sudo zypper ar -cfp 90 https://ftp.gwdg.de/pub/linux/misc/packman/suse/openSUSE_Tumbleweed/ packman
   sudo zypper dup --from packman --allow-vendor-change"

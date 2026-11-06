@@ -1,7 +1,5 @@
-import CImageBridge
 import CGtk
 import Foundation
-import CVLC
 import JellyfinKit
 import SupportKeyKit
 
@@ -112,6 +110,10 @@ final class App: @unchecked Sendable {
     /// The episodes of the open season and the "Load season" chip above them.
     var seasonEpisodes: [Item] = []
     var seasonLoadButton: Widget?
+    /// The series page's first tab shows the selected season (label, chevron) and opens the list.
+    var firstTabText: Widget?
+    var firstTabAngle: Widget?
+    var firstTabTap: (() -> Void)?
     // MARK: Stream watchdog (see `Spieler.streamCheck`)
     var streamStandsSince: Date?
     var streamLastPoint: Double = -1
@@ -186,7 +188,7 @@ final class App: @unchecked Sendable {
                 var large: Int32 = 0, small: Int32 = 0
                 gdk_gl_context_get_version(context, &large, &small)
                 let art = gdk_gl_context_get_api(context) == GDK_GL_API_GLES ? "GLES" : "GL"
-                row += ", \(art) \(large).\(small): " + String(cString: hdr_image_unstretch_info())
+                row += ", \(art) \(large).\(small)"
                 gdk_gl_context_clear_current()
             }
             g_object_unref(UnsafeMutableRawPointer(context))
@@ -381,6 +383,17 @@ final class App: @unchecked Sendable {
                 onMainThread { self.startAnimation?.complete() }
             }
         }
+        // One shared gradient over the top of the page area; opacity follows the scroll position.
+        let edge = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
+        gtk_widget_add_css_class(edge, "swiftly-kopfkante")
+        gtk_widget_set_halign(edge, GTK_ALIGN_FILL)
+        gtk_widget_set_valign(edge, GTK_ALIGN_START)
+        gtk_widget_set_size_request(edge, -1, 98)
+        gtk_widget_set_margin_start(edge, Int32(Theme.sidebarWidth))
+        gtk_widget_set_can_target(edge, 0)
+        gtk_widget_set_opacity(edge, 0)
+        gtk_overlay_add_overlay(OpaquePointer(cover), edge)
+        pageEdge = edge
         gtk_window_set_child(asWindow(window), Scaling.wrapped(cover))
         windowCover = cover
         supportStart()
@@ -415,7 +428,7 @@ final class App: @unchecked Sendable {
         mediaBar = MediaBar { [self] grip in
             onMainThread { self.mediaHandle(grip) }
         }
-        VLCVersion.text = String(cString: libvlc_get_version())
+        VLCVersion.text = Player.engineVersion
         // **The home screen reloads its rows when the app returns to the
         // foreground**, with a deadline so that switching back and forth does not
         // reload every time. The deadline is defined in the package, not here.
@@ -1809,7 +1822,14 @@ final class App: @unchecked Sendable {
     /// The look the window wears and the try-on rules (``LookModel``), in the same file.
     lazy var looks = LookModel(storage: supportStore.storage, supporter: supportStore.status.isSupporter)
     /// Brings the open looks panel up to date after a change; `nil` while it is closed.
+    /// The shared dark edge under the title bar and its last strength.
+    var pageEdge: Widget?
+    var pageEdgeValue = 0.0
+    /// The page stack, for the frame-time probe.
+    var pagesWidget: Widget? { pages }
     var lookPanelSync: (() -> Void)?
+    /// The slim bar of a look preview (``lookPreviewBarSync()``).
+    var lookPreviewBar: Widget?
     /// True while the looks panel hands its try-on over to the purchase page.
     var lookKeepHeld = false
     var supportCounter = WatchTimeCounter()
@@ -2574,6 +2594,13 @@ final class App: @unchecked Sendable {
             // **With a layer open the keys belong to it**, the same rule as on the Mac
             // (`PlayerScreen.escapeKey` environment): space and arrows must not control
             // playback while a fullscreen layer is open. Escape is unaffected; see below.
+            // The episode strip pages by one card with the arrow keys (Mac `PlayerEpisodeStrip`).
+            case 0xFF51 where openLayerArt == .episodes:
+                episodesStripPage(-1)
+                return true
+            case 0xFF53 where openLayerArt == .episodes:
+                episodesStripPage(1)
+                return true
             case 0x020 where openLayer == nil:           // Space
                 playToggle()
                 return true
@@ -2699,8 +2726,43 @@ final class App: @unchecked Sendable {
         gtk_widget_set_valign(arrows, GTK_ALIGN_CENTER)
         gtk_widget_set_margin_start(arrows, Int32(Theme.sidebarWidth) + 20)
         gtk_header_bar_pack_start(OpaquePointer(headerLine), arrows)
+        #if os(Windows)
+        windowButtonsBuild()
+        #endif
         headerRowShow(false)
     }
+
+    #if os(Windows)
+    /// **Our own window buttons at the top right** instead of the system theme's: three
+    /// round dots like the Mac's traffic lights (minimize, maximize/restore, close). The
+    /// bar is GTK's header bar with its window handle, so dragging, double click to
+    /// maximize and Snap stay the system's; only the buttons are ours.
+    private func windowButtonsBuild() {
+        gtk_header_bar_set_show_title_buttons(OpaquePointer(headerLine), 0)
+        let row = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 0)
+        gtk_widget_set_valign(row, GTK_ALIGN_CENTER)
+        gtk_widget_set_margin_end(row, 12)
+        let w = asWindow(window)
+        let dots: [(String, () -> Void)] = [
+            ("swiftly-ampel-gelb", { gtk_window_minimize(w) }),
+            ("swiftly-ampel-gruen", {
+                if gtk_window_is_maximized(w) != 0 { gtk_window_unmaximize(w) } else { gtk_window_maximize(w) }
+            }),
+            ("swiftly-ampel-rot", { gtk_window_close(w) }),
+        ]
+        for (name, action) in dots {
+            let dot = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 0)
+            gtk_widget_add_css_class(dot, "swiftly-ampel")
+            gtk_widget_add_css_class(dot, name)
+            gtk_widget_set_size_request(dot, 12, 12)
+            gtk_widget_set_valign(dot, GTK_ALIGN_CENTER)
+            gtk_widget_set_halign(dot, GTK_ALIGN_CENTER)
+            onClick(dot, keyboard: false, action)
+            append(row, dot)
+        }
+        gtk_header_bar_pack_end(OpaquePointer(headerLine), row)
+    }
+    #endif
 
     private func headerRowShow(_ visible: Bool) {
         gtk_widget_set_visible(titleLine, visible ? 1 : 0)
@@ -3248,6 +3310,8 @@ final class App: @unchecked Sendable {
     /// The swap hangs on a deadline, not on the end of the fade: the frame clock stops when the window is not drawing, and the page should switch anyway. A second switch in the middle of the first wins.
     func switchStack(_ stackW: Widget!, toward identifier: String) {
         guard let stackW else { return }
+        // A new page starts at the top: no edge until it scrolls.
+        if stackW == pages { pageEdgeSet(0) }
         let st = OpaquePointer(stackW)
         gtk_stack_set_transition_type(st, GTK_STACK_TRANSITION_TYPE_NONE)
         let key = UnsafeMutableRawPointer(stackW)
@@ -4138,8 +4202,25 @@ final class App: @unchecked Sendable {
     /// Nobody needs the vertical bar; scrolling is done with the wheel, and a bar over the content is the same nuisance as the horizontal one in the rows. `EXTERNAL` means: scroll yes, bar no.
     ///
     /// `softScroll` provides the smooth motion; otherwise GTK jumps from detent to detent on the wheel.
-    func pagesScroller() -> Widget! {
+    /// Strength 0...1 from the scroll offset (`min(1, offset / 24)`); written only when it moved.
+    func pageEdgeSet(_ offset: Double) {
+        let strength = min(max(offset / 24, 0), 1)
+        guard abs(strength - pageEdgeValue) > 0.02 || (strength == 0) != (pageEdgeValue == 0) else { return }
+        pageEdgeValue = strength
+        if let edge = pageEdge { gtk_widget_set_opacity(edge, strength) }
+    }
+
+    func pagesScroller(edge: Bool = true) -> Widget! {
         let scroller = gtk_scrolled_window_new()
+        // **The dark header edge** (Mac `HeaderBackdrop`): driven by the scroll position, a
+        // gradient only. Pages with their own header bar (detail, person) pass `edge: false`.
+        if edge, let adjustment = gtk_scrolled_window_get_vadjustment(OpaquePointer(scroller)) {
+            signalRaw(UnsafeMutableRawPointer(adjustment), "value-changed") { [weak self] in
+                self?.pageEdgeSet(gtk_adjustment_get_value(adjustment))
+            }
+        } else if !edge {
+            pageEdgeSet(0)
+        }
         gtk_scrolled_window_set_policy(OpaquePointer(scroller),
                                        GTK_POLICY_NEVER, GTK_POLICY_EXTERNAL)
         gtk_widget_set_hexpand(scroller, 1)
@@ -5153,7 +5234,9 @@ final class App: @unchecked Sendable {
             || (sectionSelection(was) != .collections && sectionSelection(was) != .playlists)
         // Only the index of the order on screen: right after switching, the old one would
         // point at the wrong titles.
+        // Long lists only (40 titles and more), as on the Mac's `shownAlphabet`.
         let on = selection.alphabetShown && gridAlphabet[was]?.sorting == sortingFrom(was) && titles
+            && (gridAlphabet[was]?.count ?? 0) >= 40
         let height = gridScrollers[was].map { Double(gtk_widget_get_height($0)) } ?? 0
         strip.show(on ? gridAlphabet[was] : nil, height: height - Double(Theme.contentTop + 96 + Theme.edgeSpacing))
         alphabetTopUpdate(was)
@@ -5681,7 +5764,7 @@ final class App: @unchecked Sendable {
             // **"Alle" at the end of the line** (Mac 1.1 `Rail`): the row's way to its full page, 13 semibold, quietest ink.
             let all = gtk_button_new()
             gtk_widget_add_css_class(all, "swiftly-reihenkopf")
-            gtk_button_set_child(asButton(all), label(translated("Alle"), style: "swiftly-alle"))
+            gtk_button_set_child(asButton(all), label(translated("Alle") + " \u{203A}", style: "swiftly-alle"))
             gtk_widget_set_valign(all, GTK_ALIGN_CENTER)
             signal(all, "clicked", header)
             let headLine = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 12)
@@ -5718,7 +5801,7 @@ final class App: @unchecked Sendable {
     /// **The paging arrows over a horizontal surface.**
     ///
     /// They used to be built into `railBuild(title:imageHeight:piece:rand:tiles:)` and therefore existed **only** there; the genre chips at the top of the home page were a bare scroller without arrows, the only horizontal row in the app. On macOS `Blätterreihe` builds both (`HomeView.swift:248`).
-    private func sheetsArea(_ scroller: Widget!, imageHeight: Int,
+    func sheetsArea(_ scroller: Widget!, imageHeight: Int,
                                  piece: Int) -> Widget! {
         let over: Widget! = gtk_overlay_new()
         gtk_overlay_set_child(OpaquePointer(over), scroller)

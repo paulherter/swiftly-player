@@ -29,6 +29,8 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.heading
+import coil3.compose.AsyncImage
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.zIndex
@@ -138,10 +140,6 @@ import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
-import org.videolan.libvlc.LibVLC
-import org.videolan.libvlc.Media
-import org.videolan.libvlc.interfaces.IMedia
-import org.videolan.libvlc.util.VLCVideoLayout
 import java.text.NumberFormat
 import android.content.Intent
 import androidx.core.content.ContextCompat
@@ -155,6 +153,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.layout.Layout
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.platform.LocalConfiguration
@@ -295,91 +294,38 @@ class PlayItem(
     private val run: CoroutineScope,
     private val jerk: (Jerk) -> Unit = {},
 ) {
-    // User-supplied certificate authorities: GnuTLS otherwise reads only the system store (`Certificates`).
-    // **`--stereo-mode=1`: decoded audio as stereo while `multiChannelAudio` is off.** If the HDMI output
-    // reports bitstream formats, libVLC's AudioTrack output (device `encoded:`/`pcm`) opens multichannel
-    // PCM with up to eight channels. AAC 5.1 went out as a 6-channel stream, and some boxes (Mi Box S)
-    // play it silent instead of downmixing. The option only affects linear PCM in libVLC
-    // (`aout_OutputNew`); AC3/E-AC3/DTS/TrueHD still pass through raw (`digitalAudioApply`).
-    //
-    // **Subtitles from the stored look** (`SubtitleLook` in the package, "Aussehen der Untertitel"): size,
-    // colour, outline, shadow, background and position come from `Kern.subtitleLookVlcOptions`, the same table
-    // the Apple apps use (`SubtitleLook.vlcOptions`, engine VLC 3). Base scale 0.82 on the phone, 0.88 on TV;
-    // "Higher" lifts by 7 % of the picture height, which here is the short side of the screen in pixels.
-    // libVLC reads the freetype options when it is created, which is per player page, so a changed look
-    // applies from the next video. The font stays Roboto: libVLC 3 on Android only reads
-    // `/system/etc/fonts.xml`, which lists only weights 400 and 700, so a bundled font or Roboto Medium
-    // is not picked up. ASS with its own style and bitmap subtitles are left alone (unless the look asks for
-    // "keep the file's style" off, then the server's SRT is loaded instead, see `Kern.subtitleFilesFor`).
+    /** The subtitle look is read when the player page is created; a changed look applies from the next video. */
     val look = app.settings.subtitleLook
-    val subtitleOptions = runCatching {
-        val dm = context.resources.displayMetrics
-        JSONArray(Kern.subtitleLookVlcOptions(look, SubtitleBase.of(app.isTv), minOf(dm.widthPixels, dm.heightPixels).toLong()))
-            .let { j -> (0 until j.length()).map { j.getString(it) } }
-    }.getOrDefault(emptyList())
-    val vlc = LibVLC(context, ArrayList(listOf("--no-drop-late-frames", "--no-skip-frames") + subtitleOptions +
-        listOfNotNull("--stereo-mode=1".takeUnless { app.settings.multiChannelAudio }) +
-        listOfNotNull(Certificates.folder?.let { "--gnutls-dir-trust=$it" })))
-    /** VLC for everything, Media3 for Dolby Vision (`PlayerEngine`). */
-    val player = PlayerEngine(context, vlc, app.isTv, look)
+    /** Media3 (ExoPlayer) is the only engine (`PlayerEngine`). */
+    val player = PlayerEngine(context, app.isTv, look)
     val session = MediaSession(context, "Swiftly")
 
-    // MARK: VLC thread: `stop`, `setMedia`, `play` and `release` do not run on the main thread.
-    //
-    // **`MediaPlayer.stop()` waits in libVLC for the input thread to end** (`input_Close` -> `vlc_join`).
-    // If it hangs on a dead stream, the caller blocks too; on the main thread this was the app's largest
-    // ANR (Play Vitals: `vlc_cond_wait` under `PlayItem.newConnect`, phone and TV; less often under
-    // `finish`). So every call that can block goes to a dedicated thread, in order. While anything is
-    // queued there, the main thread asks VLC nothing that needs the same lock (`time`, `pause`, `play`);
-    // `vlcFree` says when it may again, and calls in the meantime queue up behind (`vlcNowOrAfter`).
-    // After `aufraeumen` the thread accepts nothing: release happens exactly once, and nobody touches
-    // the player afterwards.
-    private val vlcThread = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "Swiftly-VLC") }
-    private val vlcJobs = java.util.concurrent.atomic.AtomicInteger(0)
+    // MARK: Threads: `PlayerEngine` posts every call to the main thread itself; these helpers only keep the names.
+
     @Volatile private var removed = false
-    /**
-     * Nothing is queued on the VLC thread and the player is not released. Ask only on the main thread.
-     * While Media3 plays, VLC's queue does not matter: Media3 has its own lock-free main thread.
-     */
-    val vlcFree: Boolean get() = !removed && (player.usesMedia3 || vlcJobs.get() == 0)
+    /** The player is there and accepts calls. */
+    val playerFree: Boolean get() = !removed
 
-    /** Queue at the back of the VLC thread. `false` if the player is already torn down; then nothing runs. */
-    private fun inVlcThread(was: String, block: () -> Unit): Boolean {
+    /** Runs the block (the engine marshals to the main thread). `false` if the player is already torn down. */
+    private fun onPlayer(was: String, block: () -> Unit): Boolean {
         if (removed) return false
-        vlcJobs.incrementAndGet()
-        return try {
-            vlcThread.execute {
-                val beginning = SystemClock.elapsedRealtime()
-                try { block() } catch (e: Exception) { AppLog.writeOut("[VLC] $was gescheitert: ${e.javaClass.simpleName}") }
-                finally {
-                    vlcJobs.decrementAndGet()
-                    val ms = SystemClock.elapsedRealtime() - beginning
-                    if (ms >= 1000) AppLog.writeOut("[VLC] $was dauerte $ms ms (im VLC-Faden)")
-                }
-            }
-            true
-        } catch (_: java.util.concurrent.RejectedExecutionException) {
-            vlcJobs.decrementAndGet()
-            false
-        }
+        try { block() } catch (e: Exception) { AppLog.writeOut("[Player] $was gescheitert: ${e.javaClass.simpleName}") }
+        return true
     }
 
-    /** Immediately if the VLC thread is idle, otherwise behind whatever is queued. */
-    private fun vlcNowOrAfter(was: String, block: () -> Unit) {
-        if (vlcFree) block() else inVlcThread(was, block)
-    }
+    /** Same as `onPlayer`; kept for the many call sites that ran behind a queue before. */
+    private fun nowOrAfter(was: String, block: () -> Unit) { onPlayer(was, block) }
 
-    /** Stop the stream without waiting for libVLC. */
+    /** Stop the stream. */
     private fun stopNow(reason: String) {
         player.stopMedia3()
-        inVlcThread("Stopp ($reason)") { player.stopVlc() }
     }
 
     /** Stop from outside (TV: Home, sleep timer) without waiting for a running stop. */
-    fun halt() = vlcNowOrAfter("Pause") { player.pause() }
+    fun halt() = nowOrAfter("Pause") { player.pause() }
 
     /** Play on exactly here (no step back), e.g. after a held-key seek has jumped. */
-    fun playOn() = vlcNowOrAfter("Weiter") { player.play() }
+    fun playOn() = nowOrAfter("Weiter") { player.play() }
 
     var plan by mutableStateOf<PlayPlan?>(null); private set
     var running by mutableStateOf(false); private set
@@ -472,23 +418,12 @@ class PlayItem(
     }
 
     /**
-     * **libVLC forgets the delay with every new media.** It is tied to the input, as in VLCKit 4 (see
+     * **The delay is applied again whenever Media3 plays something else** (see
      * `Delay` in the package), also after a rebuild. So it is not set once but re-applied whenever
      * VLC reads something else: on change, on "playing" and on the tick.
      */
     private fun delayCatchUp() {
-        // Media3 has no delay: it stays put until VLC plays again.
-        if (!vlcFree || player.usesMedia3 || !player.hasMedia()) return
-        val ut = subtitleDelay.toLong()
-        if (Kern.delaySoftFrom(ut, player.spuDelay)) {
-            player.spuDelaySet(Kern.delayMicroseconds(ut))
-            AppLog.writeOut("[Verzögerung] Untertitel $ut ms gesetzt, VLC liest ${player.spuDelay} µs")
-        }
-        val audio = audioDelay.toLong()
-        if (Kern.delaySoftFrom(audio, player.audioDelay)) {
-            player.audioDelaySet(Kern.delayMicroseconds(audio))
-            AppLog.writeOut("[Verzögerung] Ton $audio ms gesetzt, VLC liest ${player.audioDelay} µs")
-        }
+        if (playerFree) player.delaysMedia3Set(audioDelay, subtitleDelay)
     }
 
     // MARK: Watch together: mirrors `sharedAn`/`inGroup` in `Sources/iOS/PlayerScreen.swift`.
@@ -567,7 +502,7 @@ class PlayItem(
 
     private val showsImage = booleanArrayOf(false)
     private val end = booleanArrayOf(false)
-    /** The video surface (`VLCVideoLayout`); its still frame goes out as the card on a handover. */
+    /** The video surface (`android.widget.FrameLayout`); its still frame goes out as the card on a handover. */
     var videoArea: android.view.View? = null
     /**
      * **This playback comes from a handover** (`VLCPlayerView.handoffFadeIn`): it starts muted
@@ -597,7 +532,7 @@ class PlayItem(
                 // Whoever resumes by hand takes focus back (after a permanent loss).
                 PlayerEngine.Event.Playing -> {
                     running = true; focusFetch(); app.kern.runStateReported(true, pointNow()); delayCatchUp()
-                    if (handoffFadeIn) vlcNowOrAfter("stumm") { player.volume = 0 }
+                    if (handoffFadeIn) nowOrAfter("stumm") { player.volume = 0 }
                 }
                 PlayerEngine.Event.Paused -> { running = false; app.kern.runStateReported(false, pointNow()) }
                 PlayerEngine.Event.Stopped -> running = false
@@ -607,34 +542,33 @@ class PlayItem(
                 // good position is well before the end, it was a dead stream, not the end.
                 PlayerEngine.Event.Ended -> { running = false; if (!teardown("Ende")) end[0] = true }
                 PlayerEngine.Event.Error -> {
-                    // **Media3 fails: the same file with VLC**, the base layer then. The flag is set whenever it
-                    // fails, before or after the first frame, so a title never goes back and forth between the engines.
-                    val wasMedia3 = player.usesMedia3
-                    if (wasMedia3) {
-                        media3Failed = true
-                        if (!imageFree) { run.launch { media3GiveUp() }; return@onEvents }
+                    val code = player.lastError
+                    // A sound-output error with a bitstream mode: once more with PCM only (decoded by the device or
+                    // the FFmpeg extension) before telling the viewer.
+                    if (code != null && code.soundOutput && (retryPassthrough ?: app.settings.passthrough) != "off") {
+                        retryPassthrough = "off"
+                        AppLog.writeOut("[Media3] Ton-Ausgabe ${code.name}: neuer Versuch ohne Durchreichen")
+                        val spot = if (imageFree) pointNow() else position
+                        plan?.let { run.launch { mediaOpen(it.url, spot) } }
+                        return@onEvents
                     }
-                    // Before the first frame the UI keeps showing "loading"; at least the log should say so.
-                    if (!imageFree) AppLog.writeOut("[VLC] Fehler vor dem ersten Bild")
-                    // A dead stream is rebuilt (`teardown`), and `mediaOpen` then picks VLC. Otherwise there is
-                    // nothing to rebuild: with Media3 VLC takes over at once, with VLC the viewer is told.
-                    if (!teardown("Fehler")) {
-                        if (wasMedia3) run.launch { media3GiveUp() }
-                        else hint = translated("Die Folge konnte nicht geladen werden.")
-                    }
+                    AppLog.writeOut("[Media3] Fehler ${code?.name ?: "?"}${if (imageFree) "" else " vor dem ersten Bild"}")
+                    // A dead stream is rebuilt (`teardown`); otherwise the viewer is told.
+                    if (!teardown("Fehler")) hint = translated(
+                        if (code?.decoder == true) "Dieses Videoformat wird auf diesem Gerät nicht unterstützt."
+                        else "Die Folge konnte nicht geladen werden.")
                 }
-                is PlayerEngine.Event.TextTrackNew -> subtitleTrackNew(e.id)
             }
         }
     }
 
-    private fun pointNow(): Double = if (!vlcFree) position else (player.time / 1000.0).takeIf { it > 0 } ?: position
+    private fun pointNow(): Double = if (!playerFree) position else (player.time / 1000.0).takeIf { it > 0 } ?: position
 
     /**
      * **The activity goes to the background**: report the state immediately with the real play state,
      * since Android does not pause playback then (picture-in-picture, service).
      */
-    fun backgroundReport() = app.kern.backgroundReport(pointNow(), !vlcFree || !player.isPlaying)
+    fun backgroundReport() = app.kern.backgroundReport(pointNow(), !playerFree || !player.isPlaying)
 
     /** Tear down VLC and the drawing surface; counterpart to `installEventListener`. */
     fun cleanUp() {
@@ -650,13 +584,7 @@ class PlayItem(
         player.onEvents(null)
         player.detach()
         player.media3Down()
-        inVlcThread("Abbau") {
-            player.stopVlc()
-            player.releaseVlc()
-            vlc.release()
-        }
         removed = true
-        vlcThread.shutdown()
     }
 
     fun installSession() {
@@ -753,14 +681,13 @@ class PlayItem(
         // XviD/DivX straight to software: libVLC 3 otherwise hands MPEG-4 Part 2 to MediaCodec (log:
         // "using c2.android.mpeg4.decoder"), like VLC 4 on Apple with VideoToolbox.
         softwareDecoder = new.softwareDecoder
-        media3Failed = false
         firstFrameHint = null
         restoring = false
         waitsNetwork = false
         lastGoodPoint = since ?: 0.0
         handoffFadeIn = Handoff.receives(new.itemId)
         mediaOpen(new.url, since)
-        if (handoffFadeIn) { inVlcThread("stumm") { player.volume = 0 }; AppLog.writeOut("[Ton] stumm unter der Übergabe-Karte") }
+        if (handoffFadeIn) { onPlayer("stumm") { player.volume = 0 }; AppLog.writeOut("[Ton] stumm unter der Übergabe-Karte") }
         lookUp(new)
     }
 
@@ -783,165 +710,39 @@ class PlayItem(
     /** Build the media and play it, at start and on rebuild after a drop (`newConnect`). */
     private fun mediaOpen(url: String, since: Double?) {
         filesPrepare()
-        // Behind a proxy, the forwarder (OkHttp) fetches the stream with the user's own headers; libVLC
-        // cannot send any. Without headers the URL stays as it is.
-        val vlcAddress = StreamForwarder.gemeinsam.address(url)
-        if (vlcAddress != url) AppLog.writeOut("[VLC] Strom ueber den Weiterleiter")
+        // Behind a proxy, the forwarder (OkHttp) fetches the stream with the user's own headers.
+        // Without headers the URL stays as it is.
+        val address = StreamForwarder.gemeinsam.address(url)
+        if (address != url) AppLog.writeOut("[Player] Strom ueber den Weiterleiter")
         // On the side, without waiting: how the device reaches the server. Log only (`NetworkProbe`).
         NetworkProbe.start(context, url)
-        // **Media3** (`PlayerEngine`) for Dolby Vision when file and device can, or for everything if set
-        // so (`playerEngine`). Not after a rescue with the software decoder, and not once Media3 has failed
-        // for this title.
         val dv = plan?.dolbyVision
-        val choice = app.settings.playerEngine
-        // Without a decoder extension Media3 drops a sound it cannot play without an error: the title goes to
-        // Media3 only if it can play the default sound track (`EngineChoice`). An unknown file (from disk) counts as no.
-        val audioPlayable = plan?.audioCodec?.let { PlayerEngine.audioPlayable(context, it) } ?: false
-        val media3 = EngineChoice.decide(choice, softwareDecoder, media3Failed, dv, dolbyVisionHere, audioPlayable) == EngineChoice.Engine.MEDIA3
-        if (media3) {
-            AppLog.writeOut("[Media3] " + (dv?.let { "Dolby Vision (Profil $it)" } ?: "ohne Dolby Vision") + ", Einstellung $choice → Media3")
-            val subtitles = files.map { it.index to StreamForwarder.gemeinsam.address(it.address) }
-            files.clear()
-            openGeneration++
-            // VLC lets go of the previous media on its own thread; Media3 starts at once on this one.
-            inVlcThread("Stopp (Media3)") { player.stopVlc() }
-            player.openMedia3(vlcAddress, since, subtitles)
-            player.play()
-            return
-        }
-        if (dv != null || choice == "exoplayer") AppLog.writeOut("[Media3] bleibt bei VLC: " +
-            EngineChoice.reasonVlc(choice, softwareDecoder, media3Failed, audioPlayable) + " (Ton ${plan?.audioCodec ?: "unbekannt"})")
-        player.media3Down()
-        // Main thread, before the open is queued: VLC gets its views back here, not on the VLC thread.
-        player.vlcViewsAttach()
-        val generation = ++openGeneration
-        val media = Media(vlc, Uri.parse(vlcAddress))
-        // If the connection drops briefly, VLC recovers instead of reporting the end.
-        media.addOption(":http-reconnect")
-        // **Join with `:start-time`.** Dropped on iOS because VLCKit 4 shifted the timeline with it and
-        // reported a false end; libVLC 3 does not have that, and `rampUpIdle` from `EpisodeEnd` filters a
-        // false end in the first seconds anyway.
-        since?.takeIf { it > 1 }?.let { media.addOption(":start-time=$it") }
-        // **Software decoder after the second first-frame rescue**, or from the start for MPEG-4
-        // Part 2 (`FirstFrame.softwareOption`, `FirstFrame.softwareFromStart`).
-        if (softwareDecoder) {
-            media.setHWDecoderEnabled(false, false)
-            media.addOption(Kern.firstFrameSoftwareOption())
-            AppLog.writeOut("[Bild] Dekoderwahl ${Kern.firstFrameSoftwareOption()}")
-        }
-        // Buffer from settings; "Normal" keeps VLC's default.
-        JSONArray(Kern.bufferLevels()).let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
-            .firstOrNull { it.getString("wert") == app.settings.bufferLevel }
-            ?.takeIf { !it.isNull("netz") }?.let { media.addOption(":network-caching=${it.getInt("netz")}") }
-        // `setMedia` closes a still-open stream like `stop`, so it runs on the VLC thread behind the stop.
-        val placed = inVlcThread("Oeffnen") {
-            // A newer open (VLC or Media3) came after this one while it waited: it replaces this one anyway.
-            if (generation != openGeneration) { media.release(); return@inVlcThread }
-            player.openVlc(media)
-            media.release()
-            digitalAudioApply()
-            player.play()
-            // A fallback from Media3 starts VLC at 1x; the speed the viewer set (shown in the UI) goes on now.
-            VlcHandover.rateAfterOpen(tempo)?.let { player.rateSet(it) }
-        }
-        if (!placed) media.release()
+        // MPEG-4 Part 2 (XviD/DivX): Media3 uses whatever MediaCodec offers (Android's own software decoder included);
+        // if there is none, the error handler says so.
+        val audioCodec = plan?.audioCodec
+        if (audioCodec != null && !PlayerEngine.audioPlayable(context, audioCodec))
+            AppLog.writeOut("[Player] Ton $audioCodec: weder Gerät noch FFmpeg-Erweiterung dekodieren ihn, der Titel bleibt womöglich stumm")
+        AppLog.writeOut("[Media3] " + (dv?.let { "Dolby Vision (Profil $it)" } ?: "ohne Dolby Vision") + ", Ton ${audioCodec ?: "unbekannt"}")
+        val subtitles = files.map { it.index to StreamForwarder.gemeinsam.address(it.address) }
+        files.clear()
+        val fireTv = android.os.Build.MANUFACTURER.equals("Amazon", ignoreCase = true)
+        val dv7NoDecoder = dv == 7 && !PlayerEngine.dolbyVision7Decodable()
+        val dvOff = (dv == 7 && app.settings.dolbyVision7 == "off") || dv7NoDecoder || dvFirstFrameFailed ||
+            (dv != null && dv != 5 && fireTv && app.settings.dolbyAsHdr10Plus)
+        if (dvOff) AppLog.writeOut("[Media3] Dolby Vision aus für diesen Titel (Profil $dv): Basisschicht als HDR10" +
+            (if (dv7NoDecoder) " · das Gerät hat keinen Profil-7-Dekoder" else if (dvFirstFrameFailed) " · kein Bild mit Dolby Vision" else ""))
+        player.media3Configure(retryPassthrough ?: app.settings.passthrough, dvOff)
+        player.openMedia3(address, since, subtitles)
+        player.play()
+        // The speed the viewer set (shown in the UI) goes on now.
+        if (tempo != 1f) player.rateSet(tempo)
     }
 
-    /**
-     * **Bitstream passthrough when the output reports it.** Mirrors the excerpt in
-     * `Sources/Shared/VLCPlayer.swift` (`session.currentRoute.outputs`, `maximumOutputNumberOfChannels`),
-     * which only logs the channel count because `AVAudioSession` routes to HDMI/AirPlay by itself.
-     * libVLC on Android does not: `forceAudioDigitalEncodings` must name which formats the connected
-     * TV or AVR can pass through raw (`AudioDeviceInfo.encodings`), otherwise VLC downmixes AC3/DTS/TrueHD
-     * to PCM on the client although the sink could take them.
-     *
-     * Without a matching output (phone speaker, most Bluetooth headphones) the device list has none of
-     * the wanted encodings; then the previous downmix stays and phone behavior does not change.
-     */
-    private fun digitalAudioApply() {
-        val manager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        val known = buildSet {
-            add(AudioFormat.ENCODING_AC3); add(AudioFormat.ENCODING_E_AC3)
-            add(AudioFormat.ENCODING_DTS); add(AudioFormat.ENCODING_DTS_HD)
-            if (android.os.Build.VERSION.SDK_INT >= 32) add(AudioFormat.ENCODING_DOLBY_TRUEHD)
-        }
-        val digitalOutputs = buildSet {
-            add(AudioDeviceInfo.TYPE_HDMI); add(AudioDeviceInfo.TYPE_HDMI_ARC); add(AudioDeviceInfo.TYPE_LINE_DIGITAL)
-            if (android.os.Build.VERSION.SDK_INT >= 33) add(AudioDeviceInfo.TYPE_HDMI_EARC)
-        }
-        val outputs = manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).filter { it.type in digitalOutputs }
-        // For the log: the PCM channels the output reports (empty means "any").
-        outputs.forEach { AppLog.writeOut("[VLC] Ausgang ${it.type}: Kanaele ${it.channelCounts.toList()}, " +
-            "Kodierungen ${it.encodings.map(::encodingName)}, " +
-            "Mehrkanal-Ton ${if (app.settings.multiChannelAudio) "an" else "aus"}") }
-        val reported = outputs.flatMap { it.encodings.toList() }.filter { it in known }.distinct()
-        // **Reported does not mean accepted.** `AudioDeviceInfo.encodings` is what the device believes about
-        // the output; some boxes list every encoding their audio HAL knows even if the TV behind them takes
-        // only stereo PCM (plezy#2442: DTS arrived as 2.0; jellyfin-androidtv#5785: E-AC3 stuttered). Only the
-        // direct path says whether a bitstream goes through **now**: from Android 13 the profiles of the
-        // current route, from 10 `isDirectPlaybackSupported`. Whatever fails there, VLC decodes itself:
-        // better PCM than silence. Below 10 it stays with what is reported.
-        val encoding = reported.filter { directPossible(manager, it) }
-        passedOn = encoding.toSet()
-        if (reported.isNotEmpty()) AppLog.writeOut("[VLC] Durchreichen: ${encoding.map(::encodingName)}" +
-            (reported - encoding.toSet()).takeIf { it.isNotEmpty() }?.let { r -> ", abgelehnt ${r.map(::encodingName)}" }.orEmpty())
-        if (encoding.isEmpty()) return
-        player.audioDigitalOutputSet(true)
-        player.audioDigitalEncodingsForce(encoding.toIntArray())
-    }
+    /** After a sound-output error: the sound mode for this title only (`off` = PCM), `null` = the setting. */
+    private var retryPassthrough: String? = null
 
-    /** The encodings `digitalAudioApply` last gave to VLC; for `audioReport`. */
-    @Volatile private var passedOn: Set<Int> = emptySet()
-
-    private val filmAudio: AudioAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MOVIE).build()
-
-    /** Does the current route accept this bitstream directly? Model: ExoPlayer's `AudioCapabilities`. */
-    private fun directPossible(manager: AudioManager, encoding: Int): Boolean = when {
-        android.os.Build.VERSION.SDK_INT >= 33 ->
-            manager.getDirectProfilesForAttributes(filmAudio).any { it.format == encoding }
-        android.os.Build.VERSION.SDK_INT >= 29 -> AudioTrack.isDirectPlaybackSupported(
-            AudioFormat.Builder().setEncoding(encoding).setSampleRate(48_000)
-                .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build(), filmAudio)
-        else -> true
-    }
-
-    private fun encodingName(k: Int): String = when (k) {
-        AudioFormat.ENCODING_AC3 -> "AC3"; AudioFormat.ENCODING_E_AC3 -> "E-AC3"
-        AudioFormat.ENCODING_E_AC3_JOC -> "E-AC3-JOC"; AudioFormat.ENCODING_DTS -> "DTS"
-        AudioFormat.ENCODING_DTS_HD -> "DTS-HD"; AudioFormat.ENCODING_DOLBY_TRUEHD -> "TrueHD"
-        AudioFormat.ENCODING_PCM_16BIT -> "PCM16"; AudioFormat.ENCODING_PCM_FLOAT -> "PCMf"
-        else -> "#$k"
-    }
-
-    /**
-     * **Does the track pass through raw, or does VLC decode?** Counterpart to `channelsPostMeasure` on Apple:
-     * a silent downmix (plezy#2442) should show in the log, not only at the receiver. libVLC does not say
-     * what the output actually opens, so the evidence is what is selected, how many channels the file has
-     * and whether its format is on the passthrough list. Decoded with `multiChannelAudio` off means stereo:
-     * that is intended, not an error.
-     */
-    private fun audioReport() {
-        val id = player.audioTrack
-        val track = player.trackDetails()[id]?.takeIf { it.audio } ?: return
-        // The identifier (`i_codec`), not `codec`, which is a description depending on the libVLC version.
-        // libVLC 3 reports TrueHD as `trhd`, libVLC 4 as `mlpa`.
-        val codec = (0..3).map { ((track.fourcc shr (8 * it)) and 0xFF).toChar() }.joinToString("").trim().lowercase()
-        val format = when (codec) {
-            "a52" -> AudioFormat.ENCODING_AC3; "eac3" -> AudioFormat.ENCODING_E_AC3
-            "dts" -> AudioFormat.ENCODING_DTS; "mlp", "mlpa", "trhd" -> AudioFormat.ENCODING_DOLBY_TRUEHD
-            else -> null
-        }
-        val raw = format != null && (format in passedOn ||
-            (format == AudioFormat.ENCODING_DTS && AudioFormat.ENCODING_DTS_HD in passedOn))
-        val distance = when {
-            raw -> "durchgereicht"
-            player.usesMedia3 -> "Media3"
-            app.settings.multiChannelAudio -> "dekodiert, bis ${track.channels} Kanaele"
-            else -> "dekodiert, Stereo"
-        }
-        AppLog.writeOut("[Audio] beim Oeffnen: $codec ${track.channels}ch ${track.rate} Hz · $distance")
-    }
+    /** The Dolby Vision decoder gave no picture for this title: the next try plays the HDR10 base layer. */
+    private var dvFirstFrameFailed = false
 
     /**
      * **The position for "stopped"**, read before stopping because VLC resets its clock then. Before the
@@ -952,7 +753,7 @@ class PlayItem(
     private fun endPoint(): Double = when {
         !imageFree -> position
         restoring -> lastGoodPoint
-        !vlcFree -> position
+        !playerFree -> position
         else -> (player.time / 1000.0).coerceAtLeast(0.0)
     }
 
@@ -968,7 +769,7 @@ class PlayItem(
         ended[0] = true
         app.doneWatch(spot, duration)
         app.playbackEnd(spot)
-        vlcNowOrAfter("Pause") { if (player.isPlaying) player.pause() }
+        nowOrAfter("Pause") { if (player.isPlaying) player.pause() }
         val ok = Handoff.handIn(app, context, videoArea, target, plan, Motion.reduced(context)) {
             stopNow("Abgabe")
             close()
@@ -986,9 +787,9 @@ class PlayItem(
         if (givesOff) return
         val spot = pointNow()
         val wasRunning = player.isPlaying
-        vlcNowOrAfter("Pause") { if (player.isPlaying) player.pause() }
+        nowOrAfter("Pause") { if (player.isPlaying) player.pause() }
         if (!app.playOnHandOver(target, spot)) {
-            if (wasRunning) vlcNowOrAfter("Weiter") { if (!player.isPlaying) player.play() }
+            if (wasRunning) nowOrAfter("Weiter") { if (!player.isPlaying) player.play() }
             return
         }
         if (!handIn(target.name, close)) finish(close)
@@ -1062,7 +863,7 @@ class PlayItem(
     suspend fun qualitySwitch() {
         if (switches || ended[0]) return
         switches = true
-        val spot = (if (vlcFree) player.time / 1000.0 else position).coerceAtLeast(0.0)
+        val spot = (if (playerFree) player.time / 1000.0 else position).coerceAtLeast(0.0)
         try {
             val answer = JSONObject(withContext(Dispatchers.IO) { app.kern.qualitySwitch(spot).await() })
             app.toStop(answer.fieldText("nachmeldung"))
@@ -1115,7 +916,7 @@ class PlayItem(
         val swapOff = if (zooms) SystemClock.elapsedRealtime() + (cardsMetrics.swap * 1000).toLong() else 0L
         offeringArt = "keiner"
         overlay = "nichts"
-        val spot = (if (vlcFree) player.time / 1000.0 else position).coerceAtLeast(0.0)
+        val spot = (if (playerFree) player.time / 1000.0 else position).coerceAtLeast(0.0)
         app.doneWatch(spot, duration)
         try {
             val answer = JSONObject(withContext(Dispatchers.IO) { app.kern.episodeSwitch(id, spot).await() })
@@ -1190,29 +991,11 @@ class PlayItem(
     private var firstFrameWatched = false
     /** After the second rescue the title stays on the software decoder, also across a network rebuild. */
     private var softwareDecoder = false
-    /** Media3 has failed for this title: it keeps playing with VLC (`media3GiveUp`). */
-    private var media3Failed = false
-    /** Incremented per open; a queued VLC open from before is dropped (read on the VLC thread). */
-    @Volatile private var openGeneration = 0
     /** A Dolby Vision decoder and a display with Dolby Vision, asked once per player. */
     private val dolbyVisionHere: Boolean by lazy {
         PlayerEngine.dolbyVisionPossible(context).also { AppLog.writeOut("[Media3] Gerät kann Dolby Vision: $it") }
     }
 
-    /**
-     * Media3 failed, before the first frame or later: the same spot with VLC (the base layer there instead of
-     * nothing). `media3Failed` stays set for the title, across every later rebuild (`mediaOpen`).
-     */
-    private fun media3GiveUp() {
-        val p = plan ?: return
-        if (ended[0] || !player.usesMedia3) return
-        media3Failed = true
-        val spot = if (imageFree) pointNow() else position
-        AppLog.writeOut("[Media3] gescheitert${if (imageFree) " nach dem ersten Bild" else ""} → VLC bei ${spot.toInt()} s")
-        powerGuardBackSet()
-        end[0] = false
-        mediaOpen(p.url, spot)
-    }
     /** Picture-in-picture: a missing frame is not the rule's business there. Set by `PlayerPage`. */
     var smallWindow = false
     /** For the tech overlay; `null` as long as no intervention happened. */
@@ -1238,6 +1021,7 @@ class PlayItem(
         AppLog.writeOut("[Bild] kein erstes Bild nach ${firstFrameRun.toInt()} s Laufzeit bei ${spot.toInt()} s · Server $codec" +
             " · dekodiert ${values.decodedVideo}, gezeigt $shown, verloren ${values.lostPictures} · Ton gespielt ${values.playedAbuffers}" +
             " · Dekoder ${if (softwareDecoder) "Software" else "frei"} → $rat")
+        if (plan?.dolbyVision != null && plan?.dolbyVision != 5 && !dvFirstFrameFailed) dvFirstFrameFailed = true
         firstFrameLevel = Kern.firstFrameNext(rat, firstFrameLevel.toLong()).toInt()
         firstFrameHint = Kern.firstFrameHint(firstFrameLevel.toLong()).ifEmpty { null }
         if (rat == "aufgeben") return false
@@ -1277,6 +1061,9 @@ class PlayItem(
     /** Only a focus loss paused; then regaining resumes, otherwise never. */
     private var focusPause = false
 
+    private val filmAudio: AudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MOVIE).build()
+
     private fun focusFetch() {
         val manager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
         val petition = focusRequest ?: android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
@@ -1284,9 +1071,9 @@ class PlayItem(
             .setWillPauseWhenDucked(false)
             .setOnAudioFocusChangeListener { art ->
                 when (art) {
-                    AudioManager.AUDIOFOCUS_LOSS -> { focusPause = false; vlcNowOrAfter("Pause") { if (player.isPlaying) player.pause() } }
-                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> if (vlcFree && player.isPlaying) { focusPause = true; player.pause() }
-                    AudioManager.AUDIOFOCUS_GAIN -> if (focusPause) { focusPause = false; vlcNowOrAfter("Weiter") { if (!player.isPlaying) player.play() } }
+                    AudioManager.AUDIOFOCUS_LOSS -> { focusPause = false; nowOrAfter("Pause") { if (player.isPlaying) player.pause() } }
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> if (playerFree && player.isPlaying) { focusPause = true; player.pause() }
+                    AudioManager.AUDIOFOCUS_GAIN -> if (focusPause) { focusPause = false; nowOrAfter("Weiter") { if (!player.isPlaying) player.play() } }
                 }
                 AppLog.writeOut("[Ton] Audiofokus ${focusName(art)}")
             }.build().also { focusRequest = it }
@@ -1310,7 +1097,7 @@ class PlayItem(
             if (i?.action != AudioManager.ACTION_AUDIO_BECOMING_NOISY) return
             AppLog.writeOut("[Ton] Ausgang weg, angehalten")
             focusPause = false
-            vlcNowOrAfter("Pause") { if (player.isPlaying) player.pause() }
+            nowOrAfter("Pause") { if (player.isPlaying) player.pause() }
         }
     }
     private var headerListenerSignedIn = false
@@ -1494,7 +1281,7 @@ class PlayItem(
     private fun jumpReally(target: Double) {
         lastJump = SystemClock.elapsedRealtime()
         val z = if (duration > 0) target.coerceIn(0.0, duration) else target.coerceAtLeast(0.0)
-        vlcNowOrAfter("Sprung") { player.time = (z * 1000).toLong() }
+        nowOrAfter("Sprung") { player.time = (z * 1000).toLong() }
         position = z
         // Immediately with the target position, queued and not awaited; also "seek to" from the dashboard.
         // The core holds the target until VLC is there, and the offer follows it at once.
@@ -1522,7 +1309,7 @@ class PlayItem(
         // In a group the button only flips when the command comes back, then for everyone at the same time.
         if (inGroup) { app.kern.syncPlayPleaseToggle(running); return }
         // Reported from VLC's `Playing`/`Paused` (`installEventListener`).
-        if (!vlcFree) { if (running) halt() else vlcNowOrAfter("Weiter") { player.play() }; return }
+        if (!playerFree) { if (running) halt() else nowOrAfter("Weiter") { player.play() }; return }
         if (player.isPlaying) player.pause() else resume()
     }
 
@@ -1537,7 +1324,7 @@ class PlayItem(
             val target = app.kern.resumeTarget(pointNow(), inGroup || sharedAn)
             if (target >= 0) jumpReally(target)
         }
-        vlcNowOrAfter("Weiter") { player.play() }
+        nowOrAfter("Weiter") { player.play() }
     }
 
     fun tempoSet(new: Float) {
@@ -1598,42 +1385,6 @@ class PlayItem(
         }
     }
 
-    /**
-     * **External subtitles as slaves**, one after another, only after the file's tracks are chosen, so the
-     * new track is clearly the attached file's. `select = false`: whether it is on is decided by
-     * `TrackRule`. On Apple they are attached before opening (VLCKit 4 knows the MD5).
-     */
-    private fun nextFile() {
-        val d = files.removeFirstOrNull()
-        fileLoads = d
-        if (d == null) return
-        tracksPreFile = player.spuTracks?.map { it.id }?.toSet().orEmpty()
-        fileSince = SystemClock.elapsedRealtime()
-        val attached = player.slaveAdd(IMedia.Slave.Type.Subtitle, Uri.parse(StreamForwarder.gemeinsam.address(d.address)), false)
-        AppLog.writeOut("[Spuren] Datei ${d.index} angehaengt $attached, Merkmal ${d.attribute}")
-        if (!attached) nextFile()
-    }
-
-    private fun subtitleTrackNew(id: Int) {
-        val d = fileLoads
-        if (d != null && id >= 0 && id !in tracksPreFile && id !in fileTracks) {
-            fileTracks[id] = "${d.attribute}/spu/${fileTracks.values.count { it.startsWith(d.attribute) }}"
-            AppLog.writeOut("[Spuren] Datei ${d.index} ist Spur $id")
-            nextFile()
-        }
-        if (!tracksSelected) return
-        val selected = app.kern.openSubtitle(tracksJson(false)).toInt()
-        if (selected >= 0) player.spuTrack = selected
-        app.logWrite()
-    }
-
-    /** If a file's track does not show up (broken file, server gone), try the next one. */
-    private fun fileDeadline() {
-        if (fileLoads != null && SystemClock.elapsedRealtime() - fileSince > 8000) {
-            AppLog.writeOut("[Spuren] Datei ${fileLoads?.index} kam nicht")
-            nextFile()
-        }
-    }
 
     /** The tracks of one kind as JSON for the core, with language, codec and channels from the media where known. */
     private fun tracksJson(audio: Boolean): String {
@@ -1669,9 +1420,7 @@ class PlayItem(
         // Actively turn off: the file often brings its own preselection.
         player.spuTrack = answer.optInt("untertitel", -1)
         tracksSelected = true
-        audioReport()
         app.logWrite()
-        nextFile()
     }
 
     /** Chosen by hand: applies at once and to the whole series. */
@@ -1709,7 +1458,7 @@ class PlayItem(
         }
         while (true) {
             // VLC counts in `int`, which overflows past 2 GB; `PlayerEngine.counters` reads it unsigned.
-            val values = if (vlcFree) player.counters() else null
+            val values = if (playerFree) player.counters() else null
             if (values != null) {
                 techLive = JSONObject(app.kern.techTick(
                     values.readBytes, values.demuxReadBytes, values.displayedPictures, values.lostPictures,
@@ -1742,7 +1491,7 @@ class PlayItem(
             val o = JSONObject(raw)
             when (o.optString("art")) {
                 // libVLC: `play()` and `pause()` set the state, they do not toggle.
-                "weiter" -> vlcNowOrAfter("Weiter") { player.play() }
+                "weiter" -> nowOrAfter("Weiter") { player.play() }
                 "anhalten" -> halt()
                 "springen" -> jumpReally(o.optDouble("wert", position))
                 // The group watches something else: switch in the open player, from the group's position.
@@ -1789,7 +1538,7 @@ class PlayItem(
             // Account switch or sign-out: this player first, with the stop for the old account.
             if (app.playerClose.intValue != closeState) { finish(close); return }
             // If a stop or open is still queued on the VLC thread, every question to VLC would wait here.
-            if (!vlcFree) continue
+            if (!playerFree) continue
             // **Only the time in between** (mirrors iOS `observe`): in the half-second tick it started late
             // after playing and counted unevenly.
             onlyTime = !onlyTime
@@ -1846,7 +1595,7 @@ class PlayItem(
                 Handoff.imagePresent(app, plan?.itemId ?: wish.id)
                 if (handoffFadeIn) {
                     handoffFadeIn = false
-                    run.launch { for (i in 1..12) { delay(50); vlcNowOrAfter("Aufblenden") { player.volume = i * 100 / 12 } } }
+                    run.launch { for (i in 1..12) { delay(50); nowOrAfter("Aufblenden") { player.volume = i * 100 / 12 } } }
                     AppLog.writeOut("[Ton] blendet auf (Übergabe)")
                 }
                 // The new episode's first frame is up: the card's preview image may fade out.
@@ -1857,7 +1606,6 @@ class PlayItem(
                 }
             }
             if (answer.optBoolean("spurenAnwenden")) languagesApply()
-            fileDeadline()
             // After a seek the core returns the target position until VLC is there.
             if (!atPush && answer.has("position")) position = answer.getDouble("position")
             if (!restoring || length > 0) duration = length
@@ -1912,7 +1660,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
     LaunchedEffect(Unit) { app.playTargetsRefresh() }
     // **Re-attach the video surface** if Android tore it down on moving to the background; otherwise
     // audio kept playing and the picture stayed black until restart.
-    val area = remember { arrayOfNulls<VLCVideoLayout>(1) }
+    val area = remember { arrayOfNulls<android.widget.FrameLayout>(1) }
     @Suppress("DEPRECATION")
     val lifeRun = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifeRun) {
@@ -1980,7 +1728,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
     LaunchedEffect(wish) {
         while (true) {
             delay(1000)
-            if (mediaWork.vlcFree && mediaWork.imageFree) mediaWork.player.displayRateKeep(
+            if (mediaWork.playerFree && mediaWork.imageFree) mediaWork.player.displayRateKeep(
                 if (android.os.Build.VERSION.SDK_INT >= 30) runCatching { context.display }.getOrNull() else null)
         }
     }
@@ -2060,7 +1808,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
     val footBottom = (margin.bottom + PlayerMetric.bottom).coerceAtLeast(0.dp)
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        AndroidView(factory = { ctx -> VLCVideoLayout(ctx).also { area[0] = it; mediaWork.videoArea = it; mediaWork.player.attach(it) } },
+        AndroidView(factory = { ctx -> android.widget.FrameLayout(ctx).also { area[0] = it; mediaWork.videoArea = it; mediaWork.player.attach(it) } },
                     modifier = Modifier.fillMaxSize())
 
         // **Tap areas**, above the picture, below the controls. Mirrors `tapAreas` + `tippen(bearing:)`:
@@ -3048,22 +2796,54 @@ private fun EpisodesLayer(app: SwiftlyApplication, seriesIdentifier: String, run
                     }
                 }
             }
-            LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 12.dp + margin.bottom),
-                       modifier = Modifier.weight(1f).padding(top = 10.dp).graphicsLayer { alpha = reveal.value }) {
-                itemsIndexed(episodes, key = { _, f -> f.id }) { i, f ->
-                    // No separator and no surface, as on iOS: the running episode only carries a larger picture
-                    // (`EpisodesRow.ongoing`); a surface would run across the full width.
-                    Box(Modifier.semantics { this.selected = f.id == runningId }) {
-                        // Long press: the tile menu, in the player only with the watch state
-                        // (`TileMenuRequest.inPlayer`); the row itself already starts the episode.
+            // The same strip as on Apple TV: landscape tiles side by side, the running episode larger and
+            // centred (iOS `EpisodeStripTile`). A tap on the empty ground only closes the season list; the layer
+            // closes via the X, like every other player layer.
+            Box(Modifier.weight(1f).fillMaxWidth().padding(top = 24.dp).pointerInput(Unit) { detectTapGestures { if (seasonListOpen) seasonListOpen = false } }
+                    .graphicsLayer { alpha = reveal.value }, contentAlignment = Alignment.Center) {
+                LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+                        contentPadding = PaddingValues(bottom = margin.bottom)) {
+                    itemsIndexed(episodes, key = { _, f -> f.id }) { _, f ->
                         val menu = LocalTileMenu.current
                         val lengthy: (() -> Unit)? = menu?.let { m -> {
                             m(TileMenuRequest(f.id, f.title, "Episode", f.image, landscape = true, f.subline,
                                                  inPlayer = true, afterwards = { run.launch { episodesRefresh() } }))
                         } }
-                        EpisodesRow(f, lengthy = lengthy, ongoing = f.id == runningId) { start(f.id) }
+                        EpisodeStripTile(f, ongoing = f.id == runningId, lengthy = lengthy) { start(f.id) }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * One episode in the player's strip (iOS `EpisodeStripTile`): landscape still with progress bar and watched mark,
+ * "F3 - Name" and the runtime below. The running episode is 1.2 times larger, without an outline; the layout
+ * grows with it so its neighbours move aside.
+ */
+@Composable
+private fun EpisodeStripTile(f: Episode, ongoing: Boolean, lengthy: (() -> Unit)?, perform: () -> Unit) {
+    val width = Theme.heroRowWidth
+    val height = Theme.heroRowHeight
+    // Picture, 8 gap, header line 16, gap 2, duration line 15.
+    val tileHeight = height + 8.dp + 16.dp + 2.dp + 15.dp
+    val grow = if (ongoing) 1.2f else 1f
+    val header = f.number?.let { "${translated("F%d", it)} · ${f.name.ifEmpty { f.title }}" } ?: f.title
+    Box(Modifier.size(width * grow, tileHeight * grow)
+            .then(if (lengthy != null) Modifier.pressRowLong(lengthy, perform) else Modifier.pressRow(perform))
+            .semantics { selected = ongoing }) {
+        Column(Modifier.requiredSize(width, tileHeight).graphicsLayer { scaleX = grow; scaleY = grow; transformOrigin = TransformOrigin(0f, 0f) },
+               verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(width, height).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
+                AsyncImage(model = f.image, contentDescription = null, contentScale = ContentScale.Crop,
+                           colorFilter = if (f.watched) WATCHED_DIM else null, modifier = Modifier.fillMaxSize())
+                if (!f.watched) f.progress?.takeIf { it > 0 }?.let { ProgressBar(it, Modifier.align(Alignment.BottomStart)) }
+                if (f.watched) WatchedCheckmark()
+            }
+            Column(Modifier.width(width), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(header, style = Theme.tile, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.height(16.dp))
+                f.subline?.let { Text(it, style = Theme.small, color = Theme.fontVeryQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.height(15.dp)) }
             }
         }
     }

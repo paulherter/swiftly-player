@@ -32,10 +32,6 @@ struct WatchlistView: View {
     /// whole body. Reasoning at `HeaderState`.
     @State private var headerState = HeaderState()
 
-    private var pullGait: Double {
-        Double(min(max(headerState.offset / Theme.valueRailsDistance, 0), 1))
-    }
-
     private var columns: [GridItem] {
         [GridItem(.adaptive(minimum: Theme.tileWidth, maximum: Theme.tileWidth),
                   spacing: Theme.tileSpacing, alignment: .topLeading)]
@@ -74,7 +70,7 @@ struct WatchlistView: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.top, 14)
-                .opacity(1 - pullGait)
+                .modifier(PullFade(state: headerState))
                 .zIndex(20)
 
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 20) {

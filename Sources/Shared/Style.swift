@@ -245,6 +245,7 @@ static var progressTravel: Animation? {
     static let rowHeight: CGFloat = 60
     static let rowIconWidth: CGFloat = 26
     static let rowTitleSize: CGFloat = 17
+    static let chevronSize: CGFloat = 13
     static let rowSymbolSize: CGFloat = 20
     static let rowPadV: CGFloat = 10
     static let gridRowGap: CGFloat = 32
@@ -253,6 +254,10 @@ static var progressTravel: Animation? {
     static let cardGap: CGFloat = 32
     static let backInset: CGFloat = 2
     static let actionSymbol: CGFloat = 22
+    /// Player overlay controls: one weight everywhere, and one size for the large
+    /// centered symbols (skip, hint). Small controls use the device's `mass.symbol`.
+    static let overlayWeight: Font.Weight = .medium
+    static let overlaySymbolLarge: CGFloat = 32
     static let actionGap: CGFloat = 16
     static let blockGap: CGFloat = 20
     static let heroRowWidth: CGFloat = 280
@@ -341,13 +346,6 @@ static var progressTravel: Animation? {
     /// This formula yields the same relation on iPad: measured in the simulator, text
     /// at 167, line at 184.
     static func separatorInset(wide: Bool) -> CGFloat { margin(wide: wide) + 34 }
-
-    /// The same inset **inside a card**.
-    ///
-    /// The card is already indented by `rand`; taking the full inset there pushes the
-    /// hairline too far right by exactly that margin. `SeparatorLine` brings its own 18
-    /// along, hence 34 and not 52.
-    static func separatorInsetCard(wide: Bool) -> CGFloat { 34 }
 
     /// How far below the safe area a page header starts.
     ///
@@ -492,7 +490,7 @@ static var progressTravel: Animation? {
     static let lockSubpage = -0.4
     /// 20 · −0,012 em
     static let lockRail      = -0.24
-    static let lockSection = -0.308
+    static let lockSection = -0.484
     /// 17 · −0,008 em
     static let lockCategory     = -0.136
     /// 11 · +0,14 em
@@ -1357,20 +1355,53 @@ extension View {
     /// the libraries. With the header stacked above the scroll area the page ended in a
     /// hard edge right below the title.
     func fadingUnderSubpageHeader(title: String, back: @escaping () -> Void) -> some View {
-        mask {
-            VStack(spacing: 0) {
-                LinearGradient(stops: [.init(color: .black.opacity(0.35), location: 0),
-                                       .init(color: .black.opacity(0.35), location: 0.62),
-                                       .init(color: .black, location: 1)],
-                               startPoint: .top, endPoint: .bottom)
-                    .frame(height: 118)
-                Color.black
+        modifier(FadingUnderSubpageHeader(title: title, back: back))
+    }
+}
+
+/// The modifier behind `fadingUnderSubpageHeader`. The scroll distance lives in an observed
+/// object that only the header backdrop reads, so the page itself is never rebuilt.
+private struct FadingUnderSubpageHeader: ViewModifier {
+    let title: String
+    let back: () -> Void
+    @State private var distance = ScrollDistance()
+
+    func body(content: Content) -> some View {
+        content
+            .mask {
+                VStack(spacing: 0) {
+                    LinearGradient(stops: [.init(color: .black.opacity(0.35), location: 0),
+                                           .init(color: .black.opacity(0.35), location: 0.62),
+                                           .init(color: .black, location: 1)],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: 118)
+                    Color.black
+                }
+                .ignoresSafeArea()
             }
-            .ignoresSafeArea()
+            // 0...30 pt of travel: the value changes only inside that range.
+            .onScrollGeometryChange(for: CGFloat.self) {
+                min(max($0.contentOffset.y + $0.contentInsets.top, 0), 30)
+            } action: { _, new in
+                distance.value = new
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                SubpageHeader(title: title, back: back)
+                    .background { SubpageBackdrop(distance: distance) }
+            }
+    }
+}
+
+private struct SubpageBackdrop: View {
+    let distance: ScrollDistance
+
+    var body: some View {
+        let amount = Double(distance.value / 30)
+        ZStack {
+            HeaderBlur(strength: amount)
+            HeaderHistory().opacity(amount)
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            SubpageHeader(title: title, back: back)
-        }
+        .ignoresSafeArea(edges: .top)
     }
 }
 
@@ -1421,11 +1452,14 @@ struct ActionButton: View {
                 // 48, not 44: 44 is the hit area, 48 the dimension. And square when it stands
                 // alone: a button without a label is square, the spec says. With a caption
                 // the icon field is shorter so row and caption add up to about 52.
-                .frame(width: stretches ? nil : 48, height: caption != nil && stretches ? 36 : 48)
+                // With a caption the field is the iPhone's (icon over word, no surface), also
+                // when it does not stretch: iPad shows the same row, not boxed buttons.
+                .frame(width: stretches ? nil : (caption != nil ? 62 : 48),
+                       height: caption != nil ? 36 : 48)
                 // **Surface without border.** With a border every field had an edge, and four
                 // fields side by side formed a grid. Feedback: "better without". The surface
                 // alone is enough: it says "you can press here" without drawing.
-                .background(stretches ? Color.clear : Theme.buttonArea(onImage: onImage),
+                .background(stretches || caption != nil ? Color.clear : Theme.buttonArea(onImage: onImage),
                             in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                 .contentShape(Rectangle())
             if let caption {
@@ -1449,15 +1483,34 @@ struct ActionButton: View {
 struct PageTab: View {
     let title: [LocalizedStringKey]
     @Binding var selected: Int
+    /// Optional verbatim label for the first tab (e.g. a season name from the server).
+    var firstLabel: String? = nil
+    /// Small chevron after the first tab's label; points up while `chevronOpen`.
+    var firstChevron = false
+    var chevronOpen = false
+    /// Called when a tab is tapped that is already selected.
+    var onReselect: ((Int) -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 28) {
             ForEach(Array(title.enumerated()), id: \.offset) { pair in
                 let active = pair.offset == selected
                 Button {
-                    withAnimation(Theme.toggle) { selected = pair.offset }
+                    if pair.offset == selected { onReselect?(pair.offset) }
+                    else { withAnimation(Theme.toggle) { selected = pair.offset } }
                 } label: {
-                    Text(pair.element)
+                    HStack(spacing: 5) {
+                        if pair.offset == 0, let firstLabel {
+                            Text(verbatim: firstLabel)
+                        } else {
+                            Text(pair.element)
+                        }
+                        if pair.offset == 0, firstChevron {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 11, weight: .semibold))
+                                .rotationEffect(.degrees(chevronOpen ? 180 : 0))
+                        }
+                    }
                         // **One weight.** `active ? .semibold : .regular` in a horizontal row shifts the
                         // neighbors to its right when switching, since semibold is wider. Which tab is
                         // open is told by tone and line, and neither changes a width.
@@ -1481,6 +1534,7 @@ struct PageTab: View {
                 // for VoiceOver all three were the same. Found on tvOS too: wherever a state
                 // depends only on color, it is not spoken.
                 .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
+                .accessibilityHint(pair.offset == 0 && firstChevron ? Text("Staffel wählen") : Text(verbatim: ""))
             }
             Spacer(minLength: 0)
         }
@@ -1530,9 +1584,9 @@ struct CastTile: View {
     var body: some View {
         VStack(spacing: 8) {
             Picture(url: image, width: Theme.castSize, height: Theme.castSize, corner: Theme.castSize / 2)
-            VStack(spacing: 1) {
+            VStack(spacing: 2) {
                 Text(name)
-                    .font(.app(size: 12, weight: .medium))
+                    .font(Theme.tile)
                     .foregroundStyle(Theme.font)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
@@ -1747,6 +1801,27 @@ struct ExpandList<Record: Identifiable>: View {
         return (window?.bounds.height ?? 0) - (window?.safeAreaInsets.bottom ?? 0)
     }
     #endif
+}
+
+/// The one loading spinner of the app: system ring, small, in the text color.
+extension View {
+    /// A light selection tick whenever `trigger` changes (iPhone only).
+    @ViewBuilder func selectionHaptic<T: Equatable>(_ trigger: T) -> some View {
+        #if os(iOS)
+        sensoryFeedback(.selection, trigger: trigger)
+        #else
+        self
+        #endif
+    }
+}
+
+struct LoadingSpinner: View {
+    var body: some View {
+        ProgressView()
+            .controlSize(.small)
+            .tint(Theme.font)
+            .accessibilityHidden(true)
+    }
 }
 
 /// Spinning ring for waiting times.
@@ -2087,6 +2162,17 @@ enum Region: Int, CaseIterable, Identifiable {
         case .watchlist: "bookmark.fill"
         }
     }
+
+    /// Filled Phosphor asset for the bottom bar (`Sources/iOS/Icons.xcassets`).
+    var tabAsset: String? {
+        switch self {
+        case .start:      "icon.house.fill"
+        case .movies:     "icon.film-strip.fill"
+        case .seriesList: "icon.cards-three.fill"
+        case .downloads:  "icon.arrow-circle-down.fill"
+        case .search, .watchlist: nil
+        }
+    }
 }
 
 /// An area in the bar: at the bottom on iPhone, on the left on iPad.
@@ -2124,9 +2210,16 @@ private struct SectionButton: View {
     }
 
     @ViewBuilder private var content: some View {
-        let kern = VStack(spacing: 4) {
-            Image(icon: section.symbol, size: iconOnly ? 25 : 20)
-                .font(.app(size: iconOnly ? 25 : 20, weight: active ? .semibold : .regular))
+        let kern = VStack(spacing: iconOnly ? 4 : 3) {
+            // Bottom bar: our **filled** Phosphor symbols (Paul 2026-11-05); search keeps
+            // the outline glass, as Apple's bar does.
+            Group {
+                if !iconOnly, let filled = section.tabAsset { Image(filled) }
+                else { Image(icon: section.symbol, size: iconOnly ? 25 : 20) }
+            }
+                // 24: our Phosphor glyph sits smaller in its box than Apple's, so at 20 the
+                // filled icons read small next to the labels.
+                .font(.app(size: iconOnly ? 25 : 24, weight: active ? .semibold : .regular))
                 .frame(height: iconOnly ? nil : Theme.tabIconHeight)
                 .overlay(alignment: .topTrailing) {
                     if runningCount > 0 {
@@ -2146,7 +2239,8 @@ private struct SectionButton: View {
                 }
             if !iconOnly {
                 Text(section.name)
-                    .font(.app(size: 10, weight: active ? .semibold : .medium))
+                    // Same weight in every state, as in Apple's bar: no width jump on a tab change.
+                    .font(.app(size: 10, weight: .medium))
             }
         }
         // **The one exception: here the accent carries the selection.**
@@ -2178,7 +2272,7 @@ private struct SectionButton: View {
 ///
 /// On iOS 26 Apple's bar brings its own glass material, plus its own height,
 /// icon sizes and a selection color that can only be partly set. This one belongs
-/// to us: blurred background in our tone, hairline on top, 22 pt icons.
+/// to us: blurred background in our tone, hairline on top, filled icons.
 struct NavBar: View {
     @Binding var selected: Region
     /// without the setting the fifth slot does not exist.
@@ -2264,7 +2358,10 @@ struct HeaderTargets<Front: View>: View {
     }
 
     private var row: some View {
-        HStack(spacing: 0) {
+        // **Every item is laid out at its visible glyph width**, so the spacing is the visible
+        // gap: exactly 16 between every pair. The 44 pt hit areas reach beyond the layout
+        // frame (`headerSlot`), they take no room.
+        HStack(spacing: 16) {
             // **Left of the permanent destinations**: it comes and goes and
             // would shift watchlist and profile if placed between them.
             // Together with "Watch Together": **one** badge, with a counter for both
@@ -2287,8 +2384,7 @@ struct HeaderTargets<Front: View>: View {
                     Image(icon: "bookmark.fill", size: Theme.actionSymbol)
                         .font(.app(size: Theme.actionSymbol))
                         .foregroundStyle(Theme.font)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+                        .headerSlot(width: 14)
                 }
                 .buttonStyle(Theme.PressButton())
                 .accessibilityLabel(Text("Merkliste"))
@@ -2296,8 +2392,26 @@ struct HeaderTargets<Front: View>: View {
 
             ProfileTarget(name: name, image: image)
         }
+        .environment(\.compactHeaderRow, true)
         .animation(Theme.leap, value: takeover?.offering?.id)
         .animation(Theme.leap, value: SharedModel.shared.offerings.map(\.id))
+    }
+}
+
+/// Set by `HeaderTargets`: its items are laid out at glyph width (see `headerSlot`).
+private struct CompactHeaderRowKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var compactHeaderRow: Bool {
+        get { self[CompactHeaderRowKey.self] }
+        set { self[CompactHeaderRowKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Lays the view out at `width` (the visible glyph width) but keeps a 44 pt tap target.
+    func headerSlot(width: CGFloat) -> some View {
+        frame(width: width, height: 44)
+            .contentShape(Rectangle().inset(by: -max(44 - width, 0) / 2))
     }
 }
 
@@ -2334,14 +2448,14 @@ struct ProfileTarget: View {
                 .id(image)
                 // While the new profile picture flies in here, there is none yet.
                 .opacity(AccountSwitchTransition.shared.transition.map { $0.replaced } ?? true ? 1 : 0)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+                .frame(width: 34, height: 34)
+                // The landing spot is the picture itself.
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameRect in
+                    AccountSwitchTransition.shared.targetReport(frameRect)
+                }
+                .headerSlot(width: 34)
         }
         .buttonStyle(Theme.PressButton())
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameRect in
-            AccountSwitchTransition.shared.targetReport(frameRect)
-        }
-        .padding(.trailing, -7)
     }
 }
 
@@ -2693,7 +2807,7 @@ struct Blur: UIViewRepresentable {
 
     final class HostView: UIVisualEffectView {
         let history = CAGradientLayer()
-        var withHistory = false
+        var appliedStyle: UIBlurEffect.Style?
 
         override func layoutSubviews() {
             super.layoutSubviews()
@@ -2710,6 +2824,12 @@ struct Blur: UIViewRepresentable {
         viewRef.isUserInteractionEnabled = false
         viewRef.history.startPoint = CGPoint(x: 0.5, y: 0)
         viewRef.history.endPoint = CGPoint(x: 0.5, y: 1)
+        viewRef.appliedStyle = style
+        // **The mask is installed once and never removed.** It used to be added and dropped
+        // at `strength == 1` (no-gradient branch), which re-creates the blur's offscreen
+        // pass at that threshold: one visible frame of flash while scrolling a little up and
+        // down near the top.
+        viewRef.layer.mask = viewRef.history
         assign(viewRef)
         return viewRef
     }
@@ -2717,27 +2837,34 @@ struct Blur: UIViewRepresentable {
     func updateUIView(_ viewRef: HostView, context: Context) { assign(viewRef) }
 
     private func assign(_ viewRef: HostView) {
-        viewRef.effect = UIBlurEffect(style: style)
+        // **Only when the style really changed.** Assigning `effect` on a
+        // `UIVisualEffectView` rebuilds the effect (and animates inside a running SwiftUI
+        // transaction); `updateUIView` runs on every scroll tick, so it flickered on every
+        // tick. The style is constant in practice.
+        if viewRef.appliedStyle != style {
+            viewRef.effect = UIBlurEffect(style: style)
+            viewRef.appliedStyle = style
+        }
         let a = CGFloat(min(max(strength, 0), 1))
+        // **No implicit animations**: every layer property change on a mask layer is
+        // animated by Core Animation over 0.25 s unless switched off, and that fights the
+        // scroll tick that sets the next value.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
 
         guard let fullUntil else {
-            // Without a gradient: the strength then sits in a uniform mask.
             viewRef.history.colors = [UIColor.black.withAlphaComponent(a).cgColor,
                                       UIColor.black.withAlphaComponent(a).cgColor]
             viewRef.history.locations = [0, 1]
-            viewRef.layer.mask = a < 1 ? viewRef.history : nil
             return
         }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
         viewRef.history.colors = [UIColor.black.withAlphaComponent(a).cgColor,
                                   UIColor.black.withAlphaComponent(a).cgColor,
                                   UIColor.black.withAlphaComponent(a * 0.45).cgColor,
                                   UIColor.clear.cgColor]
         viewRef.history.locations = [0, NSNumber(value: Double(fullUntil)),
                                      NSNumber(value: Double((fullUntil + 1) / 2)), 1]
-        viewRef.layer.mask = viewRef.history
-        CATransaction.commit()
     }
 }
 
@@ -2840,6 +2967,7 @@ struct BlurHeader<ContentBody: View>: View {
                 // which is exactly what disturbs on the home page.
                 //
                 // One build, both kinds of page, no blur.
+                HeaderBlur(strength: offset == nil ? historyStrength : border)
                 HeaderHistory()
                     // Without offset the call site sets the strength (the home page lets it come up
                     // with the hero image); with offset it grows over the same 30 points over which
@@ -2923,7 +3051,7 @@ struct HeaderHistory: View {
     /// tint the content below.
     ///
     /// Calculated for the tightest page, the home page. The header ends there at about
-    /// 101 pt (safe area 59 + wordmark 30 + spacing 12), the first row, "Continue
+    /// 115 pt (safe area 59 + header row 44 + spacing 12), the first row, "Continue
     /// Watching", starts at 117. Between them lie 16 pt, and the fade-out just fits
     /// into those. With 60 it lay 44 pt above the row, with 88 it was 72; both visibly
     /// darkened the text.
@@ -2949,9 +3077,9 @@ struct HeaderHistory: View {
     /// instead of 0.80.
     var body: some View {
         LinearGradient(stops: [
-            .init(color: Theme.reason.opacity(0.98), location: 0),
-            .init(color: Theme.reason.opacity(0.94), location: 0.30),
-            .init(color: Theme.reason.opacity(0.85), location: 0.48),
+            .init(color: Theme.reason.opacity(1.0), location: 0),
+            .init(color: Theme.reason.opacity(0.96), location: 0.30),
+            .init(color: Theme.reason.opacity(0.86), location: 0.48),
             .init(color: Theme.reason.opacity(0.70), location: 0.62),
             .init(color: Theme.reason.opacity(0.52), location: 0.73),
             .init(color: Theme.reason.opacity(0.34), location: 0.82),
@@ -2965,6 +3093,40 @@ struct HeaderHistory: View {
     }
 }
 
+
+/// **One soft blur behind a scrolling header**: strongest at the top edge (status bar),
+/// gone toward the bottom of the header area. No glass, no hairline. It sits below
+/// `HeaderHistory` and takes the same strength, so it only shows once content runs under it.
+struct HeaderBlur: View {
+    /// 0 to 1, the same value that drives the gradient next to it.
+    var strength: Double
+    var gift: CGFloat = 17
+
+    var body: some View {
+        // **Dark on top of the blur, not the blur alone** (Paul 2026-11-05): every system
+        // material carries a light layer, so the blur on its own brightened the header to
+        // light grey. Our ground tone over it, almost opaque at the top and fading out,
+        // makes the edge darker and glassy instead.
+        //
+        // **The dark tone leads, the blur follows** (Paul 2026-11-05: "the first millimetre
+        // flashes bright"). With both on the same ramp, the blur's light layer showed at
+        // once while the tone did not cover yet. Now the tone is full after a third of the
+        // ramp and the blur grows quadratically, so the edge can never be brighter than
+        // before scrolling.
+        ZStack {
+            Blur(fullUntil: 0.3, strength: strength * strength)
+            // Darker at the top (Paul 2026-11-05: "noch ein Stück zu hell").
+            LinearGradient(stops: [.init(color: Theme.reason.opacity(0.97), location: 0),
+                                   .init(color: Theme.reason.opacity(0.78), location: 0.45),
+                                   .init(color: Theme.reason.opacity(0), location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+                .opacity(min(1, strength * 3))
+        }
+            .padding(.bottom, -gift)
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+    }
+}
 
 /// Search field in the house style. No `.searchable`, which brings system height,
 /// system gray and system corners.
@@ -3250,10 +3412,14 @@ struct DetailHeader: View {
     /// A button on the right, such as Edit. Without it, an empty field of 44 keeps the
     /// title centered between the edges.
     var right: AnyView? = nil
-
+    /// The header image whose colour lies behind the page (movie/series pages). With it the
+    /// top edge takes the page's background colour instead of grey/black.
+    var mood: URL? = nil
     private var strength: Double {
         guard since > 0 else { return 1 }
-        return Double(min(max((offset - since) / 70, 0), 1))
+        // **Ramp of 40, not 70.** `ScrollDistance` stops at 240 and `since` is 200: over 70 the
+        // strength topped out at 0.57, so the title stayed half transparent and read grey.
+        return Double(min(max((offset - since) / 40, 0), 1))
     }
 
     var body: some View {
@@ -3297,31 +3463,91 @@ struct DetailHeader: View {
         .padding(.trailing, Theme.edgeSpacing)
         .padding(.top, (windowButtons ? WindowButtons.height : 0) + (duoColumn ? Theme.duoTop : 0))
         .padding(.bottom, 6)
-        .background(alignment: .bottom) {
-            Rectangle().fill(Theme.line).frame(height: 1).opacity(strength)
-        }
         .background {
-            ZStack {
-                // **At rest a gradient, when scrolling glass.**
-                //
-                // On the root pages the blur is gone: tiles run through there, and a gradient
-                // against pure black ends without an edge. Here the situation differs, and so
-                // does the answer: the bar carries a **title**, and episode images and text run
-                // through underneath it. Something that has to keep text readable over text needs
-                // more than a gradient. Feedback: "on the detail pages I would make the glass
-                // element come in at the top when scrolling down, I found that more sensible
-                // there."
-                //
-                // As long as the hero image is at the top, only the gradient: it keeps the way
-                // back readable on a light image without claiming a bar that doesn't exist yet.
-                HeaderHistory().opacity(0.7 * (1 - strength))
-                // `BarGlass` and not `.ultraThinMaterial`: the material inside a SwiftUI
-                // `background` blurs nothing because it sits in a layer of its own; only its own
-                // color remains, a gray strip. The measurement is documented at `BarGlass`.
-                BarGlass(strength: strength, depth: 0.28)
+            // **Mood pages: the edge is the page's own background colour**, sampled from the
+            // same mesh at the scroll position, darker toward the top (Paul 2026-11-05: grey
+            // clashed with the colour). No blur: a blur over a coloured page reads grey.
+            // Other pages keep the dark fade with the soft blur.
+            if let mood {
+                MoodEdge(url: mood, offset: offset, fade: 0.7 + 0.3 * strength)
+            } else {
+                ZStack {
+                    HeaderBlur(strength: strength)
+                    HeaderHistory()
+                        .opacity(0.7 + 0.3 * strength)
+                }
+                .ignoresSafeArea(edges: .top)
             }
-            .ignoresSafeArea(edges: .top)
         }
+    }
+}
+
+/// The top edge of a detail page in the page's background colour.
+///
+/// Samples `ImageTone` at the content position that currently sits at the top of the
+/// screen (the page's mesh scrolls with the content), at three x positions, and
+/// fades them out downward with the `HeaderHistory` curve. Continuous in `offset`;
+/// nothing is inserted or removed while scrolling (only once when the tones arrive).
+private struct MoodEdge: View {
+    @Environment(\.wide) private var wide
+    let url: URL
+    let offset: CGFloat
+    /// Overall opacity (0...1), continuous.
+    let fade: Double
+    @State private var tones: [Double]
+
+    init(url: URL, offset: CGFloat, fade: Double) {
+        self.url = url
+        self.offset = offset
+        self.fade = fade
+        _tones = State(initialValue: ImageTone.shared.remembered(for: url) ?? [])
+    }
+
+    var body: some View {
+        ZStack {
+            if tones.isEmpty {
+                HeaderHistory().opacity(fade)
+            } else {
+                edge.transition(.opacity)
+            }
+        }
+        .task(id: url) {
+            if let known = ImageTone.shared.remembered(for: url) { tones = known; return }
+            let new = await ImageTone.shared.tones(for: url)
+            guard !Task.isCancelled else { return }
+            withAnimation(Theme.motionReduced ? Theme.fadeReduced : .smooth(duration: 0.55)) { tones = new }
+        }
+    }
+
+    private var edge: some View {
+        let since = Theme.heroHeightValue
+        let y = Double(offset)
+        let f = AvComputation.decay(y: y, since: Double(since), runOut: Double(MoodReason.runOut))
+        let row = min(1, y / Double(since + MoodReason.colorHeight))
+        let colors = [0.0, 0.5, 1.0].map { ImageTone.color(tones, x: $0, y: row, decay: f) }
+        // The same fall-off as `HeaderHistory`.
+        let curve = Gradient(stops: [
+            .init(color: .black.opacity(1.0), location: 0),
+            .init(color: .black.opacity(0.96), location: 0.30),
+            .init(color: .black.opacity(0.86), location: 0.48),
+            .init(color: .black.opacity(0.70), location: 0.62),
+            .init(color: .black.opacity(0.52), location: 0.73),
+            .init(color: .black.opacity(0.34), location: 0.82),
+            .init(color: .black.opacity(0.19), location: 0.89),
+            .init(color: .black.opacity(0.09), location: 0.95),
+            .init(color: .black.opacity(0), location: 1),
+        ])
+        return ZStack {
+            LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+            // Darker toward the top, same hue family: black over a dark tint.
+            LinearGradient(colors: [.black.opacity(0.35), .black.opacity(0)],
+                           startPoint: .top, endPoint: .bottom)
+        }
+        .mask { LinearGradient(gradient: curve, startPoint: .top, endPoint: .bottom) }
+        .opacity(fade)
+        .padding(.bottom, -17)
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
     }
 }
 
@@ -3646,6 +3872,31 @@ struct CountMark: View {
 ///
 /// For filters and short value ranges. A list would be more effort than benefit
 /// here, since you see everything at once anyway.
+/// Chip surface. iPhone/iPad: glass (blur + 8 % white + hairline), selected = accent fill.
+/// Other platforms keep the old flat fills.
+struct ChipSurface: ViewModifier {
+    let an: Bool
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.background {
+            if an {
+                Capsule().fill(Theme.accent)
+            } else {
+                ZStack {
+                    Blur(style: .systemUltraThinMaterialDark)
+                    Theme.surfaceTranslucent
+                }
+                .clipShape(Capsule())
+                .overlay(Capsule().strokeBorder(Theme.margin, lineWidth: 1))
+                .allowsHitTesting(false)
+            }
+        }
+        #else
+        content.background(an ? Theme.raised : Theme.area, in: Capsule())
+        #endif
+    }
+}
+
 struct SelectionChip: View {
     let text: String
     /// An icon before the word: the funnel at the selected sort value, as on the Mac.
@@ -3653,6 +3904,14 @@ struct SelectionChip: View {
     var symbol: String?
     let an: Bool
     let action: () -> Void
+
+    private var chipLabel: Color {
+        #if os(iOS)
+        an ? Theme.onAccent : Theme.font
+        #else
+        an ? Theme.font : Theme.fontQuiet
+        #endif
+    }
 
     var body: some View {
         Button(action: action) {
@@ -3676,7 +3935,7 @@ struct SelectionChip: View {
                     // width. 13 Medium is the step in between, and it applies in both states.
                     .font(.app(size: 13, weight: .medium))
             }
-                .foregroundStyle(an ? Theme.font : Theme.fontQuiet)
+                .foregroundStyle(chipLabel)
                 .padding(.horizontal, 12)
                 // `minHeight`: a fixed height plus text is the trap that already struck at
                 // `Schalter`.
@@ -3699,7 +3958,7 @@ struct SelectionChip: View {
                 //
                 // Now one step up the ladder and full text: two signs that both go in the right
                 // direction, and none changes a dimension.
-                .background(an ? Theme.raised : Theme.area, in: Capsule())
+                .modifier(ChipSurface(an: an))
                 .padding(.vertical, 7)
                 .contentShape(Rectangle())
                 .padding(.vertical, -7)
@@ -3845,6 +4104,13 @@ struct SheetModifier<SheetContent: View>: ViewModifier {
                     }
                     .clipShape(UnevenRoundedRectangle(topLeadingRadius: Theme.cornerSheet,
                                                       topTrailingRadius: Theme.cornerSheet))
+                    // Hairline (UI kit 2026-11-05). **No shadow:** the card is 400 pt taller than the
+                    // screen, and a 30 pt blur on it was redrawn every frame of the slide-in (choppy).
+                    .overlay {
+                        UnevenRoundedRectangle(topLeadingRadius: Theme.cornerSheet,
+                                               topTrailingRadius: Theme.cornerSheet)
+                            .strokeBorder(Theme.margin, lineWidth: 1)
+                    }
                     .padding(.bottom, -400)
                     .ignoresSafeArea(edges: .bottom)
             }

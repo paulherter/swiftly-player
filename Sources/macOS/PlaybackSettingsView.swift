@@ -16,7 +16,7 @@ struct PlaybackSettingsView: View {
     @Environment(Navigator.self) private var navigator
     @Environment(\.section) private var section
 
-    enum ListKind { case bitrate, audio, subtitle, back, forward, buffer, engine }
+    enum ListKind { case bitrate, audio, subtitle, back, forward }
 
     var body: some View {
         ScrollView {
@@ -156,30 +156,6 @@ struct PlaybackSettingsView: View {
                 ValuesList(entries: Span.levels, label: { "\($0.value) s" },
                            isSelected: { $0.value == model.forwardSeconds },
                            select: { model.forwardSeconds = $0.value; close() })
-            }
-            SheetLine().padding(.leading, Theme.separatorInsetCard)
-            // **Lives under "Verhalten", not under quality.** It does not change the picture,
-            // only how much buffer the player keeps before a flaky connection shows through.
-            // Same place as on iPhone.
-            ValuesRow(symbol: "wifi.exclamationmark", title: Text("Puffer"),
-                       value: model.bufferLevel.name, arrow: true,
-                       action: { toggle(.buffer) })
-            if openList == .buffer {
-                ValuesList(entries: BufferLevel.allCases,
-                           label: { $0.name },
-                           isSelected: { $0 == model.bufferLevel },
-                           select: { model.bufferLevel = $0; close() })
-            }
-            SheetLine().padding(.leading, Theme.separatorInsetCard)
-            // Same place and words as on iPhone. Applies from the next title.
-            ValuesRow(symbol: "play.rectangle", title: Text("Player"),
-                       value: model.playerEngine.name, arrow: true,
-                       action: { toggle(.engine) })
-            if openList == .engine {
-                ValuesList(entries: PlayerEngineSetting.allCases,
-                           label: { $0.name },
-                           isSelected: { $0 == model.playerEngine },
-                           select: { model.playerEngine = $0; close() })
             }
         }
     }

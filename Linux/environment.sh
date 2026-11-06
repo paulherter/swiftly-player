@@ -99,12 +99,12 @@ environment_check() {
         error=1
     fi
 
-    for piece in gtk4 rlottie libvlc; do
+    for piece in gtk4 rlottie mpv; do
         if ! pkg-config --exists "$piece" 2>/dev/null; then
             case "$piece" in
                 rlottie) echo "FEHLT: rlottie. → Werkzeuge/rlottie-build.sh" ;;
                 gtk4)    echo "FEHLT: gtk4. → pacman -S gtk4  (bzw. libgtk-4-dev)" ;;
-                libvlc)  echo "FEHLT: libvlc. → pacman -S vlc  (bzw. libvlc-dev)" ;;
+                mpv)     echo "FEHLT: libmpv. → pacman -S mpv  (bzw. libmpv-dev)" ;;
             esac
             error=1
         fi

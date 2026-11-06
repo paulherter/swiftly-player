@@ -1,5 +1,8 @@
 package de.paulherter.swiftly.support
 
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.scrollBy
@@ -94,6 +97,8 @@ private fun LooksPanel(app: SwiftlyApplication, tryLook: String?, close: () -> U
     val context = LocalContext.current
     DisposableEffect(Unit) { onDispose { looks.panelClosed(context) } }
     LaunchedEffect(tryLook) { if (tryLook != null) looks.pick(looks.switching(tryLook)) }
+    // A look this person may not wear: the panel gives way to the try-on bar, the preview stays.
+    LaunchedEffect(looks.previewing.value) { if (looks.previewing.value) { looks.previewKeeps = true; close() } }
 
     val shown = JSONObject(looks.shown.value)
     val look = looks.info(shown.optString("look", "original"))
@@ -316,7 +321,7 @@ private fun WhatsNewBody(app: SwiftlyApplication, entry: JSONObject, close: () -
             }
         }
         if (gift != null) {
-            Row(Modifier.fillMaxWidth().padding(top = 24.dp).clip(RoundedCornerShape(14.dp)).background(Theme.raised.copy(alpha = 0.6f)).padding(14.dp),
+            Row(Modifier.fillMaxWidth().padding(top = 24.dp).clip(RoundedCornerShape(Theme.cornerCard)).background(Theme.raised.copy(alpha = 0.6f)).padding(14.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 LookTileView(looks.tileIcon(gift), 44.dp)
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -421,4 +426,53 @@ fun HomeGlow(app: SwiftlyApplication, modifier: Modifier = Modifier) {
                                           center = Offset(w * 0.95f, 0f), radius = w * 0.7f))
         }
     })
+}
+
+
+/**
+ * The try-on bar (iOS `LookPreviewBar`): a capsule over the tab bar with the look's icon, its name and "Vorschau",
+ * ‹ › to step through the looks (also by swiping sideways) and the primary button. Fill `#1E1E1E` at 96 %, hairline
+ * of the font colour at 12 %, no shadow.
+ */
+@Composable
+fun LookPreviewBar(app: SwiftlyApplication, modifier: Modifier = Modifier) {
+    val looks = app.looks
+    val look = looks.info(JSONObject(looks.shown.value).optString("look", "original"))
+    val owned = looks.owned.value
+    fun move(step: Int) {
+        val list = looks.catalog.filter { !(it.isGift && it.id !in owned) }
+        val index = list.indexOfFirst { it.id == look.id }
+        if (list.size < 2 || index < 0) return
+        looks.pick(looks.switching(list[(index + step + list.size) % list.size].id))
+        // Landed on a look that may be worn: the preview is over and the panel comes back.
+        if (!looks.previewing.value) looksPanelShow(app)
+    }
+    val shape = RoundedCornerShape(50)
+    val drag = remember { floatArrayOf(0f) }
+    Row(modifier.padding(horizontal = 20.dp).fillMaxWidth().height(60.dp).clip(shape)
+            .background(Color(0xFF1E1E1E).copy(alpha = 0.96f)).border(1.dp, Theme.font.copy(alpha = 0.12f), shape)
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(onDragStart = { drag[0] = 0f }, onDragEnd = { if (kotlin.math.abs(drag[0]) > 24.dp.toPx()) move(if (drag[0] < 0) 1 else -1) }) { _, d -> drag[0] += d }
+            }.padding(start = 2.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        BarChevron(Glyph.AngleLeft, translated("Voriger Look")) { move(-1) }
+        LookTileView(looks.tileIcon(look), 40.dp)
+        Column(Modifier.weight(1f).padding(start = 8.dp)) {
+            Text(look.name.let { translated(it) }, style = giftFont(15f, FontWeight.SemiBold), color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(translated("Vorschau"), style = giftFont(12f), color = Theme.fontVeryQuiet, maxLines = 1)
+        }
+        BarChevron(Glyph.AngleRight, translated("Nächster Look")) { move(1) }
+        Box(Modifier.padding(start = 2.dp).height(36.dp).clip(RoundedCornerShape(Theme.cornerField)).background(Color.White)
+                .tapOn { if (looks.keep()) { looks.supportOpening = true; supportSheetShow(app, fromLooks = true) } }.padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center) {
+            Text(translated("Freischalten"), style = giftFont(15f, FontWeight.SemiBold), color = Theme.reason, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun BarChevron(glyph: Glyph, label: String, action: () -> Unit) {
+    Box(Modifier.size(30.dp, 44.dp).tapOn(action).semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
+        Symbol(glyph, 13.dp, color = Theme.fontQuiet, strength = Strength.Bold)
+    }
 }

@@ -174,6 +174,9 @@
  "Beim Start fragen, wer schaut": "Ask who is watching at launch",
  "Beitreten": "Join",
  "Beliebt": "Popular",
+ "im Monat": "per month",
+ "einmalig": "one-time",
+ "Danke ☕": "Thanks ☕",
  "Benutzername": "Username",
  "Benutzername oder Passwort stimmt nicht.": "That username or password is wrong.",
  "Bereiche": "Sections",
@@ -817,6 +820,9 @@
  "Von vorn abspielen": "Play from the start",
  "Vorrat": "Buffer",
  "Vorschau": "Preview",
+ "Voriger Look": "Previous look",
+ "Nächster Look": "Next look",
+ "Freischalten": "Unlock",
  "Vorschau beenden": "End preview",
  "Vorspulen": "Skip forward",
  "Wann du magst: übers Herz auf der Startseite oder in den Einstellungen.": "Whenever you like: the heart on Home, or Settings.",
@@ -967,5 +973,6 @@
  "über das Internet": "over the internet",
  "„%s“ ist nicht mehr erreichbar.": "“%s” is no longer reachable.",
  "…": "…",
- "−%d s": "−%d s"
+ "−%d s": "−%d s",
+ "Alle ›": "All ›"
 }

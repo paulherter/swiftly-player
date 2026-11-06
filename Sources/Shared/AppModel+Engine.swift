@@ -1,26 +1,17 @@
 import JellyfinKit
 
-/// What the AVPlayer engine needs from the signed-in server, built when a title opens.
+/// What the Aether engine needs from the signed-in server, built when a title opens.
 extension AppModel {
 
-    /// `nil` for downloads (a file on the device is VLC's) and when nobody is signed in.
-    /// The plan closure asks the server for the copy-only address of one audio track; a server
-    /// without one answers `nil` and VLC plays.
+    /// `nil` for downloads (the engine then plays the file with the tracks it finds itself)
+    /// and when nobody is signed in.
     func engineRequest(for itemID: String, plan: PlaybackPlan) -> EngineRequest? {
-        guard !plan.url.isFileURL, let session, let client, let source = plan.source else { return nil }
+        guard !plan.url.isFileURL, let session, let source = plan.source else { return nil }
         let (server, key) = liveAddress(session)
         let files = SubtitleFile.forAVPlayer(
             streams: source.mediaStreams ?? [], itemID: itemID, source: plan.mediaSourceID,
             server: server, key: key, keyName: EmbyPaths.tokenName(for: session.kind),
             serverExtracts: fileStyleAdjustable)
-        let av1 = EngineProbe.device.av1
-        let ending = client as? any ActiveEncodingServer
-        return EngineRequest(itemID: itemID, source: source, subtitleFiles: files, plan: { audio in
-            try? await client.avPlayerPlan(for: itemID, source: source, audioIndex: audio, av1: av1)
-        }, release: { plan in
-            // A file played as it is has no job.
-            guard plan.method != .directPlay, let id = plan.playSessionID else { return }
-            await ending?.stopEncoding(playSessionID: id)
-        })
+        return EngineRequest(itemID: itemID, source: source, subtitleFiles: files)
     }
 }

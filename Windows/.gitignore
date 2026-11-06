@@ -3,7 +3,6 @@
 # belong in the repo, since they already exist there.
 Sources/SwiftlyWindows/
 Resources/
-Sources/CImageBridge/
 Sources/CMediaKeys/
 Sources/CFonts/
 
@@ -11,3 +10,4 @@ Sources/CFonts/
 Output/
 Assets/*.res
 bau.log
+Sources/CMPVBridge/

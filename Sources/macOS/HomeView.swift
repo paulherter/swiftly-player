@@ -422,9 +422,7 @@ struct HomeView: View {
             ForEach(model.startGenres, id: \.self) { name in
                 Button { navigator.openIt(.genre(name), in: section) } label: {
                     // From the server, so not translated.
-                    // Same as on iPhone: 13 medium, `area`, continuous corner, **no border**. 14 is
-                    // not on the type scale, and a border would say a second time what the surface
-                    // already says.
+                    // Same as on iPhone: 13 medium on the glass chip (`ChipSurface`).
                     Text(verbatim: name)
                         .font(Theme.tile)
                         .foregroundStyle(Theme.font)
@@ -433,9 +431,7 @@ struct HomeView: View {
                         .lineLimit(1)
                         .padding(.horizontal, 14)
                         .frame(height: 34)
-                        .background(Theme.area,
-                                    in: RoundedRectangle(cornerRadius: Theme.corner,
-                                                         style: .continuous))
+                        .modifier(ChipSurface(an: false))
                 }
                 .buttonStyle(Theme.PressButton())
             }
@@ -543,18 +539,10 @@ struct Rail<ContentBody: View>: View {
             // without it the title slides to the center.
             Group {
                 if let header {
-                    // **"Alle" at the end of the line** (design): the rail's way to its full page.
-                    HStack(alignment: .firstTextBaseline) {
-                        Button(action: header) { RailTitle(text: title, name: name) }
-                            .buttonStyle(Theme.PressButton())
-                        Spacer(minLength: 12)
-                        Button(action: header) {
-                            Text("Alle")
-                                .font(.app(size: 13, weight: .semibold))
-                                .foregroundStyle(Theme.fontVeryQuiet)
-                        }
+                    // **"Alle ›" at the end of the line** (design): the rail's way to its full
+                    // page. One button, the whole title row is the click area.
+                    Button(action: header) { RailTitle(text: title, name: name, all: true) }
                         .buttonStyle(Theme.PressButton())
-                    }
                 } else {
                     RailTitle(text: title, name: name)
                 }

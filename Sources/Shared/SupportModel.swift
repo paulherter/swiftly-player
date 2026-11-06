@@ -545,22 +545,6 @@ final class SupportModel {
 
     // MARK: App icon
 
-    /// Switches the icon. Only for supporters; the picker shows the others a preview.
-    /// The way back to the original stays open to everyone: after a refund the
-    /// supporter icon must not be stuck.
-    func choose(_ icon: SupporterIcon?) async {
-        guard canChoose(icon) else { return }
-        if await SupporterIcon.apply(icon) { appIcon = icon }
-    }
-
-    func canChoose(_ icon: SupporterIcon?) -> Bool {
-        isSupporter || (icon == nil && appIcon != nil)
-    }
-
-    /// The icon the app shows now; for everyone else nothing is marked.
-    func isChosen(_ icon: SupporterIcon?) -> Bool {
-        appIcon == icon && (isSupporter || appIcon != nil)
-    }
 }
 
 #if DEBUG
@@ -654,14 +638,6 @@ enum SupporterIcon: String, CaseIterable, Identifiable, Sendable {
         case .coffee: String(localized: "Kaffee")
         }
     }
-
-    /// Small image for the picker. An alternate icon cannot be loaded as an image,
-    /// hence a copy in the catalog (iPhone, iPad, Apple TV).
-    var previewAsset: String {
-        "AppIconPreview-" + rawValue.replacingOccurrences(of: "AppIcon-", with: "")
-    }
-
-    static let standardPreviewAsset = "AppIconPreview-Standard"
 
     /// Remembered on the Mac only: iOS and tvOS keep the choice themselves.
     private static let macChoiceKey = "support.appIcon"

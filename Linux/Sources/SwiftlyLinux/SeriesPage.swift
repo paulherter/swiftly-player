@@ -40,14 +40,29 @@ extension App {
         gtk_widget_set_margin_start(row, Int32(Theme.edgeSpacing))
         gtk_widget_set_margin_end(row, Int32(Theme.edgeSpacing))
         for fall in PageTab.allCases {
-            let button = tabButton(fall.label, active: fall == selected)
+            let button = tabButton(fall.label, active: fall == selected, chevron: fall == .episodes)
             tabButtons.append(button)
+            if fall == .episodes, let line = gtk_widget_get_first_child(gtk_widget_get_first_child(
+                gtk_button_get_child(asButton(button)))) , let angle = gtk_widget_get_last_child(line) {
+                // The season choice lives in the first tab (Mac 1.1): name + chevron; a click
+                // on the open tab opens the list (see ``seasonsShow``).
+                firstTabText = gtk_widget_get_first_child(line)
+                firstTabAngle = angle
+                // Dropped with the tab, so a late season answer never touches freed widgets.
+                signal(button, "destroy") { [weak self] in
+                    self?.firstTabText = nil
+                    self?.firstTabAngle = nil
+                    self?.firstTabTap = nil
+                }
+            }
             // **Only toggle, do not paint it yourself.** The highlight used to be set here and
             // so followed only the click; anyone switching the tab another way (the remote
             // panel, later a key) saw the content change while the underline stayed under
             // "Episodes". It belongs where the switching happens.
             signal(button, "clicked") { [weak self] in
-                self?.tabShow?(fall)
+                guard let self else { return }
+                if fall == .episodes, selected == .episodes, let tap = self.firstTabTap { tap(); return }
+                self.tabShow?(fall)
             }
             // **"Extras" only once the server provides some** (Mac `SeriesView`,
             // `TabRail`): until then, and without any, the tab does not exist.
@@ -319,8 +334,14 @@ extension App {
         // leaving it greyed out looks like a stuck button.
         // The label stays even with one season; only the chevron is dropped, since there
         // is nothing to choose.
-        gtk_widget_set_visible(pill, seasons.isEmpty ? 0 : 1)
         gtk_image_set_pixel_size(OpaquePointer(pillsAngle), 11)
+        // **The pill has no place of its own any more:** the first tab carries the selected
+        // season and the chevron (Mac 1.1 `showsPill: false`); the pill stays as the
+        // control behind it.
+        gtk_widget_set_visible(pill, 0)
+        if let text = firstTabText { gtk_label_set_text(OpaquePointer(text), choice.now?.name ?? translated("Staffel")) }
+        if let angle = firstTabAngle { gtk_widget_set_visible(angle, seasons.count > 1 ? 1 : 0) }
+        firstTabTap = seasons.count > 1 ? { gtk_widget_activate(pill) } : nil
 
         let episodesSpace = stack(GTK_ORIENTATION_VERTICAL, spacing: 6) // Mac 1.1: 6 between rows
 
@@ -384,6 +405,8 @@ extension App {
                 self.openSeason = season
                 self.detailTouched = true
                 gtk_label_set_text(OpaquePointer(pillsText), season.name)
+                if let text = self.firstTabText { gtk_label_set_text(OpaquePointer(text), season.name) }
+                if let angle = self.firstTabAngle { gtk_image_set_from_icon_name(OpaquePointer(angle), "pan-down-symbolic") }
                 for (identifier, w) in rows {
                     self.seasonRowDraw(w, selected: identifier == season.id)
                 }
@@ -396,7 +419,7 @@ extension App {
             append(list, row)
         }
 
-        signal(pill, "clicked") {
+        signal(pill, "clicked") { [weak self] in
             // It opens even with a single season: the chip says which season is shown.
             let opened = gtk_revealer_get_reveal_child(asExpand(expand)) == 0
             if opened { gtk_widget_set_visible(expand, 1) }
@@ -406,6 +429,9 @@ extension App {
             gtk_revealer_set_reveal_child(asExpand(expand), opened ? 1 : 0)
             gtk_image_set_from_icon_name(OpaquePointer(pillsAngle),
                                          opened ? "pan-up-symbolic" : "pan-down-symbolic")
+            if let angle = self?.firstTabAngle {
+                gtk_image_set_from_icon_name(OpaquePointer(angle), opened ? "pan-up-symbolic" : "pan-down-symbolic")
+            }
         }
 
         // **The season picker stands alone and left-aligned**: the "Download season" chip

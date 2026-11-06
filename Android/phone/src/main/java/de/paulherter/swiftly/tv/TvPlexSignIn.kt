@@ -348,7 +348,7 @@ private fun ServerRow(model: PlexSignInModel, server: PlexServer, modifier: Modi
                 }
             }
             // Running now: a spinner where the arrow stands, so the press visibly did something.
-            if (busy) CircularProgressIndicator(Modifier.size(TvSpec.valueIcon), color = Theme.fontQuiet, strokeWidth = TvSpec.hairline * 2)
+            if (busy) de.paulherter.swiftly.Spinner(TvSpec.valueIcon)
             else Symbol(Glyph.AngleRight, TvSpec.valueIcon, color = Theme.fontVeryQuiet, strength = Strength.Semibold)
         }
     }

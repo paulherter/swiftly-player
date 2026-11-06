@@ -857,7 +857,12 @@ struct LibraryView: View {
                         .padding(.top, 20)
                 }
             }
-            .scrollIndicators(.hidden)
+            // **iPhone: Apple's own scroll indicator instead of a strip** (Paul 2026-11-05).
+            // It can be grabbed and dragged, sticks to the finger and is as smooth as the
+            // scroll itself; three tries at an own grip trembled against the jump logic.
+            // Only for long lists: on a short one iOS draws a huge bar that cannot be grabbed.
+            .scrollIndicators(phoneIndicator && (state.alphabet?.count ?? state.items.count) >= 40
+                              ? .visible : .hidden)
             .animation(Theme.reveal, value: state.items.isEmpty)
             // On account switch like the home page: old content disappears at once,
             // the new one fades in staggered.
@@ -882,17 +887,17 @@ struct LibraryView: View {
                 }
             }
             .overlay(alignment: .trailing) {
-                if let alphabet = shownAlphabet {
+                if let alphabet = shownAlphabet, !phoneIndicator {
                     // **Appears at once, with the margin and the columns.** An animated relayout
                     // of a long grid is what pushed it sideways.
-                    AlphabetRail(index: alphabet, current: topLetter) { letter in
+                    AlphabetRail(index: alphabet, current: topLetter, jump: { letter in
                         Task {
                             guard let source,
                                   let id = await state.jumpTarget(letter, model: model, from: source)
                             else { return }
                             jump = ScrollJump(id: id, serial: (jump?.serial ?? 0) + 1)
                         }
-                    }
+                    }, compactRow: 17)
                     .padding(.trailing, (trailingLane - AlphabetRail.width) / 2)
                     .padding(.top, 8)
                     .padding(.bottom, wide ? 24 : Theme.stripHeight + 12)
@@ -904,7 +909,13 @@ struct LibraryView: View {
             }
             // The finger's path, not the offset adjusted for the edge; why is
             // explained in `HeaderScrollDistance` in the package.
-            .scrollDistance(active: sectionActive) { offset = $0 }
+            // Stored clamped to the range the header's hairline and the value row use
+            // (0...44): a write per scroll tick would re-evaluate this whole page, the grid
+            // included. Past 44 pt the value no longer changes, so nothing is written.
+            .scrollDistance(active: sectionActive) {
+                let clamped = min(max($0, 0), Theme.valueRailsDistance)
+                if clamped != offset { offset = clamped }
+            }
             .contentMargins(.bottom, wide ? 24 : Theme.stripHeight + 12,
                             for: .scrollContent)
             // Only the scroll area draws in on the switch; the header above sits
@@ -1040,10 +1051,7 @@ struct LibraryView: View {
                 }
                 .foregroundStyle(Theme.font)
 
-                // **Wide, it stays open.** There they are chips instead of pills, they
-                // sit in a sidebar composition with plenty of room, and the header does
-                // not take half a row of tiles. Collapsing solves a problem that does not
-                // exist wide.
+                // The same pills as on iPhone, also wide.
                 ShelfControls(state: state, filter: offeredFilter,
                                filterOpen: $filterListOpen,
                                sortingOpen: $sortListOpen,
@@ -1136,7 +1144,9 @@ struct LibraryView: View {
     /// than one entry for the order on screen (letters, years or ratings).
     private var shownAlphabet: AlphabetIndex? {
         guard model.alphabetShown, !listChoice,
-              let alphabet = state.currentAlphabet else { return nil }
+              let alphabet = state.currentAlphabet,
+              // Long lists only, as on the Mac: a strip for eight titles is noise.
+              alphabet.count >= 40 else { return nil }
         return alphabet
     }
 
@@ -1152,9 +1162,18 @@ struct LibraryView: View {
     /// screen edge and the gap to the posters are the same. On iPhone the margin grows
     /// from 18 to the strip's width; on iPad the wide margin already fits it. Without the
     /// strip (not "By name", or switched off) the margin is the usual one again.
+    /// Narrow iPhone: no strip, the system scroll indicator does the fast scrolling.
+    private var phoneIndicator: Bool {
+        #if os(iOS)
+        return !wide
+        #else
+        return false
+        #endif
+    }
+
     private var trailingLane: CGFloat {
         let margin = Theme.margin(wide: wide)
-        return shownAlphabet == nil ? margin : max(margin, AlphabetRail.width)
+        return shownAlphabet == nil || phoneIndicator ? margin : max(margin, AlphabetRail.width)
     }
 
     /// The letter of the first loaded title on screen (the grid keeps a row or so beyond

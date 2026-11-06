@@ -35,6 +35,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -410,7 +413,7 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
         }
         }
 
-        DetailHeader(name, { ((scroll.value / density - 150f) / 70f).coerceIn(0f, 1f) }, back)
+        DetailHeader(name, { detailStrength(scroll.value.toFloat(), density) }, back, mood = mood, scrollPx = { scroll.value.toFloat() })
         HintStrip(message, Modifier.align(Alignment.BottomCenter)) { message = null }
     }
 }
@@ -681,23 +684,40 @@ private fun FileExcerpt(d: FileInfo) {
     }
 }
 
+/** `DetailHeader.strength`: the small title comes in over a ramp of 40 once the large one has left (`since` 200). */
+internal fun detailStrength(scrollPx: Float, density: Float): Float =
+    ((scrollPx / density - (Theme.heroHeightValue.value - 150f)) / 40f).coerceIn(0f, 1f)
+
+/** The falloff of `MoodEdge` / `HeaderHistory`: opaque at the top, nothing at the bottom. */
+private val EdgeLevels = listOf(0f to 1f, 0.30f to 0.96f, 0.48f to 0.86f, 0.62f to 0.70f, 0.73f to 0.52f,
+                                0.82f to 0.34f, 0.89f to 0.19f, 0.95f to 0.09f, 1f to 0f)
+
 /**
- * Mirrors `DetailHeader`: back on the left, the title fades in from 150 over 70 points, the
- * gradient over the image turns into the background meanwhile, and the hairline comes along. The
- * strength is only read in the draw phase, so scrolling does not redraw the page.
+ * Mirrors `DetailHeader` and `MoodEdge`: back on the left, the small white title fades in once the large
+ * one has left. No bar and no hairline: the edge is the page's own background colour (sampled from the same
+ * mesh at the scroll position, darker toward the top), or the dark `headerGradient` on pages without a
+ * mood. Everything is read in the draw phase only, so scrolling does not recompose anything.
  */
 @Composable
 internal fun DetailHeader(title: String, strength: () -> Float, back: () -> Unit,
                         /** A button on the right, e.g. Edit; without it an empty 44 field keeps the title centred. */
-                        right: (@Composable () -> Unit)? = null) {
-    Box(Modifier.fillMaxWidth()
-            // Over the hero image the header gradient at 70 %, which yields with the bar.
-            .drawBehind { headerGradient(0.7f * (1f - strength())) }) {
-        // Glass on iPhone, solid background here (platform): Compose cannot blur what lies behind a
-        // view (`RenderEffect` only affects its own layer). A background that fades in with the bar
-        // carries the title just as well.
-        Box(Modifier.matchParentSize().graphicsLayer { alpha = strength() }.background(Theme.reason))
-        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(1.dp).graphicsLayer { alpha = strength() }.background(Theme.line))
+                        right: (@Composable () -> Unit)? = null,
+                        /** The header image colours behind the page and the scroll position in px; with them the edge takes the page colour. */
+                        mood: AvState? = null, scrollPx: () -> Float = { 0f }) {
+    val area = remember(mood?.tones) { mood?.let { Mood.area(it.tones, Theme.heroHeightValue.value.toDouble()) } }
+    Box(Modifier.fillMaxWidth().drawBehind {
+        val fade = 0.7f + 0.3f * strength()
+        if (area == null) { headerGradient(fade); return@drawBehind }
+        val extra = 17.dp.toPx()
+        val h = size.height + extra
+        drawContext.canvas.saveLayer(androidx.compose.ui.geometry.Rect(Offset.Zero, Size(size.width, h)), androidx.compose.ui.graphics.Paint())
+        drawRect(Theme.reason)
+        area.draw(this, size.width, (Theme.heroHeightValue.toPx() + Mood.RunOut.toFloat() * density), top = -scrollPx(), coverage = mood!!.coverage.value)
+        drawRect(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.35f), 1f to Color.Transparent, endY = h))
+        drawRect(Brush.verticalGradient(*EdgeLevels.map { (at, a) -> at to Color.Black.copy(alpha = a) }.toTypedArray(), endY = h),
+                 size = Size(size.width, h), blendMode = BlendMode.DstIn)
+        drawContext.canvas.restore()
+    }) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 8.dp, end = Theme.edgeSpacing, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).tapOn(back), contentAlignment = Alignment.Center) {

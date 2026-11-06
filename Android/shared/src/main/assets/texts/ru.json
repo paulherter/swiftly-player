@@ -197,6 +197,9 @@
  "Beim Start fragen, wer schaut": "При запуске спрашивать, кто смотрит",
  "Beitreten": "Присоединиться",
  "Beliebt": "Популярно",
+ "im Monat": "в месяц",
+ "einmalig": "разово",
+ "Danke ☕": "Спасибо ☕",
  "Benutzername": "Имя пользователя",
  "Benutzername oder Passwort stimmt nicht.": "Неверное имя пользователя или пароль.",
  "Bereiche": "Разделы",
@@ -844,6 +847,9 @@
  "Von vorn abspielen": "Смотреть с начала",
  "Vorrat": "Запас",
  "Vorschau": "Предпросмотр",
+ "Voriger Look": "Предыдущая тема",
+ "Nächster Look": "Следующая тема",
+ "Freischalten": "Открыть",
  "Vorschau beenden": "Завершить предпросмотр",
  "Vorspulen": "Перемотать вперёд",
  "Wann du magst: übers Herz auf der Startseite oder in den Einstellungen.": "Когда захотите: через сердечко на главном экране или в настройках.",
@@ -995,5 +1001,6 @@
  "über das Internet": "через интернет",
  "„%s“ ist nicht mehr erreichbar.": "Устройство «%s» недоступно.",
  "…": "…",
- "−%d s": "−%d с"
+ "−%d s": "−%d с",
+ "Alle ›": "Все ›"
 }

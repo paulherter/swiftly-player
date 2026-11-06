@@ -38,51 +38,47 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.exoplayer.audio.AudioCapabilities
 import java.util.concurrent.atomic.AtomicLong
 import de.paulherter.swiftly.core.Kern
-import org.videolan.libvlc.LibVLC
-import org.videolan.libvlc.Media
-import org.videolan.libvlc.MediaPlayer
-import org.videolan.libvlc.interfaces.IMedia
-import org.videolan.libvlc.util.VLCVideoLayout
 
 /**
- * **Two engines behind one handle.** libVLC plays everything; only Dolby Vision goes to Media3.
+ * **Media3 (ExoPlayer) is the only engine on Android.** `PlayItem` talks only to this class; the names still follow
+ * the old libVLC `MediaPlayer` so the player code above could stay as it was.
  *
- * libVLC 3 never asks MediaCodec for `video/dolby-vision`, only for `video/hevc`: the decoder drops the
- * Dolby Vision layer and the TV switches to the base layer (HDR10 or HDR10+). Media3 uses the device's
- * Dolby Vision decoder if it has one. `PlayItem` talks only to this class; the names follow libVLC's
- * `MediaPlayer`, so the rest of the player could stay as it was.
+ * Media3 does not draw subtitles into the picture; it hands them out as text or bitmaps, and the `SubtitleView`
+ * above the video shows them in our look. Audio delay and subtitle delay live in `Media3Delays.kt`. Sound the
+ * device cannot decode comes from the FFmpeg extension (`:ffmpeg`, LGPL, `Werkzeuge/media3-ffmpeg-bauen.sh`).
  *
- * Media3 lacks what only VLC can do: audio and subtitle delay. **Media3 does not draw subtitles into the
- * picture** like VLC; it hands them out as text or bitmaps, and the `SubtitleView` above the video shows
- * them in VLC's look here (white, black outline, no box).
- *
- * **Threads.** `PlayItem` runs everything that can block in libVLC on its own thread (`Swiftly-VLC`).
- * Media3 may only be touched on the main thread, so every Media3 call made from another thread is posted
- * to the main thread, and reads from another thread return the last known value. Media3 itself is
- * created, opened and released on the main thread only.
- *
- * **Without FFmpeg decoders from Jellyfin's Media3 build** (it is published under the GPL-3.0): sound the
- * device cannot decode or pass through (often DTS and TrueHD) stays with libVLC, see `EngineChoice`.
- * */
+ * **Threads.** Media3 may only be touched on the main thread, so every call made from another thread is posted to
+ * the main thread, and reads from another thread return the last known value.
+ */
 @OptIn(UnstableApi::class)
-class PlayerEngine(private val context: Context, val vlc: LibVLC, private val isTv: Boolean, private val look: String = "") {
-    val vlcPlayer = MediaPlayer(vlc)
+class PlayerEngine(private val context: Context, private val isTv: Boolean, private val look: String = "") {
     private var exo: ExoPlayer? = null
-    /** Is Media3 playing instead of VLC? Readable from any thread. */
-    @Volatile var usesMedia3: Boolean = false
-        private set
+    private val audioDelayProcessor = DelayAudioProcessor()
+    private var passthroughBuilt = "auto"
+    @Volatile private var dvOff = false
+
+    /**
+     * Settings that are fixed when Media3 is built (main thread, before `openMedia3`): the sound output mode
+     * (`Settings.passthrough`) and whether the Dolby Vision decoder is skipped for this title. A changed output mode
+     * takes the player down so the next open builds it again.
+     */
+    fun media3Configure(passthrough: String, dolbyVisionOff: Boolean) {
+        dvOff = dolbyVisionOff
+        if (passthrough != passthroughBuilt) { media3Down(); passthroughBuilt = passthrough }
+    }
+    private var renderers: SwiftlyRenderersFactory? = null
 
     private val main = Handler(Looper.getMainLooper())
     private fun onMainThread() = Looper.myLooper() == Looper.getMainLooper()
     private fun onMain(block: () -> Unit) { if (onMainThread()) block() else main.post(block) }
 
-    /** A track like libVLC's `TrackDescription`: id and name. */
+    /** A track: id and name. */
     class Track(val id: Int, val name: String?)
-    /** What is known about a track; `fourcc` in libVLC's identifier so the core reads it the same way. */
+    /** What is known about a track; `fourcc` in the four-letter identifier the core reads. */
     class TrackDetail(val id: Int, val audio: Boolean, val language: String?, val fourcc: Int, val channels: Int, val rate: Int,
                       /** Jellyfin index of an attached subtitle file (Media3 only). */
                       val file: Long?)
-    /** libVLC's `Media.Stats`, read unsigned. */
+    /** Playback counters for the stall watch. */
     class Counters(val readBytes: Long, val demuxReadBytes: Long, val displayedPictures: Long, val lostPictures: Long,
                    val decodedVideo: Long, val decodedAudio: Long, val playedAbuffers: Long, val lostAbuffers: Long,
                    val demuxCorrupted: Long, val demuxDiscontinuity: Long)
@@ -95,57 +91,39 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
         data class Buffering(val percent: Float) : Event
         data object Ended : Event
         data object Error : Event
-        data class TextTrackNew(val id: Int) : Event
     }
+
+    /** Why the last playback error happened, for the message and the retry. */
+    class ErrorKind(val name: String, val soundOutput: Boolean, val decoder: Boolean)
+    @Volatile var lastError: ErrorKind? = null
+        private set
 
     private var listener: ((Event) -> Unit)? = null
 
-    fun onEvents(h: ((Event) -> Unit)?) {
-        listener = h
-        if (h == null) { vlcPlayer.setEventListener(null); return }
-        vlcPlayer.setEventListener { e ->
-            if (usesMedia3) return@setEventListener
-            when (e.type) {
-                MediaPlayer.Event.Playing -> h(Event.Playing)
-                MediaPlayer.Event.Paused -> h(Event.Paused)
-                MediaPlayer.Event.Stopped -> h(Event.Stopped)
-                MediaPlayer.Event.Vout -> if (e.voutCount > 0) h(Event.Frame)
-                MediaPlayer.Event.Buffering -> h(Event.Buffering(e.buffering))
-                MediaPlayer.Event.EndReached -> h(Event.Ended)
-                MediaPlayer.Event.EncounteredError -> h(Event.Error)
-                MediaPlayer.Event.ESAdded -> if (e.esChangedType == IMedia.Track.Type.Text) h(Event.TextTrackNew(e.esChangedID))
-            }
-        }
-    }
+    fun onEvents(h: ((Event) -> Unit)?) { listener = h }
 
     private fun emit(e: Event) { listener?.invoke(e) }
 
     // MARK: Picture
 
-    private var layout: VLCVideoLayout? = null
+    private var layout: FrameLayout? = null
     private var frame: AspectRatioFrameLayout? = null
     private var subtitleView: SubtitleView? = null
     private var fillFrame = false
 
-    /** Attach the video surface: VLC to its `VLCVideoLayout`, Media3 to a `SurfaceView` of its own inside it. */
-    fun attach(l: VLCVideoLayout) {
+    /** Attach the video surface: a `SurfaceView` of Media3's own inside `l`. */
+    fun attach(l: FrameLayout) {
         layout = l
-        if (usesMedia3) attachMedia3() else if (!vlcPlayer.vlcVout.areViewsAttached()) vlcPlayer.attachViews(l, null, true, false)
+        attachMedia3()
     }
 
-    fun isAttached(): Boolean = if (usesMedia3) frame?.parent != null else vlcPlayer.vlcVout.areViewsAttached()
+    fun isAttached(): Boolean = frame?.parent != null
 
-    fun detach() {
-        if (vlcPlayer.vlcVout.areViewsAttached()) vlcPlayer.detachViews()
-        removeFrame()
-    }
+    fun detach() { removeFrame() }
 
     private fun attachMedia3() {
         val l = layout ?: return
         val e = exo ?: return
-        if (vlcPlayer.vlcVout.areViewsAttached()) vlcPlayer.detachViews()
-        // Hide VLC's own surfaces: two SurfaceViews on top of each other have no fixed order.
-        for (i in 0 until l.childCount) l.getChildAt(i).visibility = View.GONE
         val r = frame ?: AspectRatioFrameLayout(context).also { neu ->
             neu.addView(SurfaceView(context), FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             // Above the picture, inside the video frame, as `PlayerView` does it.
@@ -196,35 +174,17 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
         (r.parent as? FrameLayout)?.removeView(r)
         frame = null
         subtitleView = null
-        layout?.let { l -> for (i in 0 until l.childCount) l.getChildAt(i).visibility = View.VISIBLE }
     }
 
     fun fillFrameSet(new: Boolean) {
         fillFrame = new
-        vlcPlayer.videoScale = if (new) MediaPlayer.ScaleType.SURFACE_FIT_SCREEN else MediaPlayer.ScaleType.SURFACE_BEST_FIT
         frame?.resizeMode = if (new) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
     }
 
     // MARK: Open
 
     /**
-     * Give VLC its views back (main thread, before `openVlc` is queued): Media3 took them away in `attachMedia3`,
-     * and view and surface callbacks belong on the main thread. Only an attach, no blocking libVLC call.
-     */
-    fun vlcViewsAttach() {
-        displayRateReset()
-        val l = layout
-        if (VlcHandover.attachNeeded(l != null, vlcPlayer.vlcVout.areViewsAttached())) vlcPlayer.attachViews(l!!, null, true, false)
-    }
-
-    /** Hand the media to VLC. Runs on the VLC thread; Media3 is down and the views are attached beforehand (main thread). */
-    fun openVlc(media: Media) {
-        vlcPlayer.media = media
-        vlcPlayer.videoScale = if (fillFrame) MediaPlayer.ScaleType.SURFACE_FIT_SCREEN else MediaPlayer.ScaleType.SURFACE_BEST_FIT
-    }
-
-    /**
-     * Bytes read, for the stream watch: VLC counts them itself, Media3 reports them here. Written on
+     * Bytes read, for the stream watch: Media3 reports them here. Written on
      * Media3's loader thread, read on the main thread: an `AtomicLong`, a plain `Long` can tear on 32-bit devices.
      */
     private val bytesRead = AtomicLong(0)
@@ -235,14 +195,14 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
         override fun onTransferEnd(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}
     }
 
+
     /**
      * **Media3 plays the address from `since` seconds** (main thread). External subtitles go in right away
-     * (`subtitles`: Jellyfin index and address); Media3 cannot attach them afterwards like VLC.
+     * (`subtitles`: Jellyfin index and address).
      */
     fun openMedia3(address: String, since: Double?, subtitles: List<Pair<Long, String>>) {
         val e = exo ?: buildMedia3().also { exo = it }
         displayRateReset()
-        usesMedia3 = true
         attachMedia3()
         val configs = subtitles.mapNotNull { (index, url) ->
             val kind = subtitleKind(url) ?: return@mapNotNull null
@@ -256,13 +216,20 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
     }
 
     private fun buildMedia3(): ExoPlayer {
-        val factory = DefaultRenderersFactory(context)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+        val factory = SwiftlyRenderersFactory(context, audioDelayProcessor, passthroughBuilt)
+            .also { renderers = it }
+            // Dolby Vision off (profile 7 setting, Fire TV HDR10+ switch): without the DV decoder Media3 takes the HEVC
+            // base layer (HDR10) of profile 4/7/8; profile 5 has none, so it is never switched off.
+            .setMediaCodecSelector { mime, secure, tunneling ->
+                if (dvOff && mime == MimeTypes.VIDEO_DOLBY_VISION) emptyList()
+                else androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT.getDecoderInfos(mime, secure, tunneling)
+            }
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             .setEnableDecoderFallback(true)
         val sources = DefaultDataSource.Factory(context, DefaultHttpDataSource.Factory().setUserAgent("Swiftly")
             .setAllowCrossProtocolRedirects(true)).setTransferListener(byteCounter)
         return ExoPlayer.Builder(context, factory)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(sources))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(sources, DolbyVisionBaseLayerExtractors { dvOff }))
             // `PlayItem` manages audio focus itself, as with VLC.
             .setAudioAttributes(androidx.media3.common.AudioAttributes.Builder().setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), false)
@@ -277,8 +244,7 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
 
     /** Take Media3 down (main thread), if it was running. */
     fun media3Down() {
-        val e = exo ?: run { usesMedia3 = false; return }
-        usesMedia3 = false
+        val e = exo ?: return
         removeFrame()
         e.removeListener(media3Listener)
         e.release()
@@ -324,6 +290,15 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
 
         override fun onPlayerError(error: PlaybackException) {
             AppLog.writeOut("[Media3] Fehler ${error.errorCodeName}: ${error.message}")
+            lastError = ErrorKind(error.errorCodeName,
+                soundOutput = error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED ||
+                    error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED ||
+                    error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED ||
+                    error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED,
+                decoder = error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
+                    error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ||
+                    error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ||
+                    error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED)
             emit(Event.Error)
         }
 
@@ -333,57 +308,44 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
         }
 
         override fun onTracksChanged(tracks: Tracks) {
-            for (s in tracksOf(C.TRACK_TYPE_TEXT)) if (seen.add(s.first)) emit(Event.TextTrackNew(s.first))
             exo?.videoFormat?.let { AppLog.writeOut("[Media3] Video ${it.sampleMimeType} ${it.codecs.orEmpty()} ${it.width}×${it.height}") }
         }
     }
 
     // MARK: Control: the same names as libVLC's `MediaPlayer`.
 
-    val isPlaying: Boolean get() = if (usesMedia3) exoPlaying else vlcPlayer.isPlaying
+    val isPlaying: Boolean get() = exoPlaying
 
     /** Milliseconds. */
     var time: Long
-        get() = if (!usesMedia3) vlcPlayer.time else exo?.takeIf { onMainThread() }?.currentPosition?.also { exoTime = it } ?: exoTime
-        set(value) { if (usesMedia3) onMain { exo?.seekTo(value.coerceAtLeast(0)) } else vlcPlayer.time = value }
+        get() = exo?.takeIf { onMainThread() }?.currentPosition?.also { exoTime = it } ?: exoTime
+        set(value) { onMain { exo?.seekTo(value.coerceAtLeast(0)) } }
 
     /** Milliseconds, 0 while unknown. */
-    val length: Long get() = if (!usesMedia3) vlcPlayer.length
-        else exo?.takeIf { onMainThread() }?.duration?.let { if (it == C.TIME_UNSET) 0L else it } ?: 0L
+    val length: Long get() = exo?.takeIf { onMainThread() }?.duration?.let { if (it == C.TIME_UNSET) 0L else it } ?: 0L
 
-    fun play() { if (usesMedia3) onMain { exo?.playWhenReady = true } else vlcPlayer.play() }
-    fun pause() { if (usesMedia3) onMain { exo?.playWhenReady = false } else vlcPlayer.pause() }
+    fun play() { onMain { exo?.playWhenReady = true } }
+    fun pause() { onMain { exo?.playWhenReady = false } }
 
-    /** Stop VLC (VLC thread; it can block). Does not touch Media3. */
-    fun stopVlc() { vlcPlayer.stop() }
     /** Stop Media3 (main thread). */
     fun stopMedia3() { onMain { exo?.stop() } }
 
     /** 0…100 as with VLC. */
     var volume: Int
-        get() = if (!usesMedia3) vlcPlayer.volume else exo?.takeIf { onMainThread() }?.let { (it.volume * 100).toInt() } ?: 100
-        set(value) { if (usesMedia3) onMain { exo?.volume = value.coerceIn(0, 100) / 100f } else vlcPlayer.volume = value }
+        get() = exo?.takeIf { onMainThread() }?.let { (it.volume * 100).toInt() } ?: 100
+        set(value) { onMain { exo?.volume = value.coerceIn(0, 100) / 100f } }
 
-    fun rateSet(value: Float) { if (usesMedia3) onMain { exo?.setPlaybackSpeed(value) } else vlcPlayer.rate = value }
+    fun rateSet(value: Float) { onMain { exo?.setPlaybackSpeed(value) } }
 
-    fun hasMedia(): Boolean = if (usesMedia3) exo?.takeIf { onMainThread() }?.let { it.mediaItemCount > 0 } ?: true else vlcPlayer.hasMedia()
+    fun hasMedia(): Boolean = exo?.takeIf { onMainThread() }?.let { it.mediaItemCount > 0 } ?: true
 
-    /** Release VLC's player (VLC thread). Media3 has been released beforehand (`media3Down`, main thread). */
-    fun releaseVlc() { vlcPlayer.release() }
+    // MARK: Delay (Media3Delays.kt)
 
-    // MARK: Sound for VLC: Media3 passes through by itself what the output reports.
-
-    fun audioDigitalOutputSet(on: Boolean) { if (!usesMedia3) vlcPlayer.setAudioDigitalOutputEnabled(on) }
-    fun audioDigitalEncodingsForce(k: IntArray) { if (!usesMedia3) vlcPlayer.forceAudioDigitalEncodings(k) }
-
-    // MARK: Delay: VLC only.
-
-    val spuDelay: Long get() = if (usesMedia3) 0 else vlcPlayer.spuDelay
-    val audioDelay: Long get() = if (usesMedia3) 0 else vlcPlayer.audioDelay
-    fun spuDelaySet(us: Long) { if (!usesMedia3) vlcPlayer.setSpuDelay(us) }
-    fun audioDelaySet(us: Long) { if (!usesMedia3) vlcPlayer.setAudioDelay(us) }
-
-    fun slaveAdd(kind: Int, uri: Uri, select: Boolean): Boolean = if (usesMedia3) false else vlcPlayer.addSlave(kind, uri, select)
+    /** Media3: audio delay (silence in the sink) and subtitle delay (late clock for the text renderer), in ms. */
+    fun delaysMedia3Set(audioMs: Int, subtitleMs: Int) {
+        audioDelayProcessor.wantedMs = audioMs
+        renderers?.subtitleDelayMs = subtitleMs
+    }
 
     // MARK: Tracks: Media3 ids are group × 100 + track; -1 means off, as with VLC.
 
@@ -420,51 +382,34 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
         if (kind == C.TRACK_TYPE_TEXT && id < 0) subtitleView?.setCues(emptyList())
     }
 
-    val audioTracks: List<Track>? get() = if (usesMedia3) tracksOf(C.TRACK_TYPE_AUDIO).map { Track(it.first, it.second.label) }
-        else vlcPlayer.audioTracks?.map { Track(it.id, it.name) }
-    val spuTracks: List<Track>? get() = if (usesMedia3) tracksOf(C.TRACK_TYPE_TEXT).map { Track(it.first, it.second.label) }
-        else vlcPlayer.spuTracks?.map { Track(it.id, it.name) }
-    val audioTracksCount: Int get() = if (usesMedia3) tracksOf(C.TRACK_TYPE_AUDIO).size else vlcPlayer.audioTracksCount
+    val audioTracks: List<Track>? get() = tracksOf(C.TRACK_TYPE_AUDIO).map { Track(it.first, it.second.label) }
+    val spuTracks: List<Track>? get() = tracksOf(C.TRACK_TYPE_TEXT).map { Track(it.first, it.second.label) }
+    val audioTracksCount: Int get() = tracksOf(C.TRACK_TYPE_AUDIO).size
 
     var audioTrack: Int
-        get() = if (usesMedia3) selectedOf(C.TRACK_TYPE_AUDIO) else vlcPlayer.audioTrack
-        set(id) { if (usesMedia3) choose(C.TRACK_TYPE_AUDIO, id) else vlcPlayer.audioTrack = id }
+        get() = selectedOf(C.TRACK_TYPE_AUDIO)
+        set(id) { choose(C.TRACK_TYPE_AUDIO, id) }
     var spuTrack: Int
-        get() = if (usesMedia3) selectedOf(C.TRACK_TYPE_TEXT) else vlcPlayer.spuTrack
-        set(id) { if (usesMedia3) choose(C.TRACK_TYPE_TEXT, id) else vlcPlayer.spuTrack = id }
+        get() = selectedOf(C.TRACK_TYPE_TEXT)
+        set(id) { choose(C.TRACK_TYPE_TEXT, id) }
 
-    /** Language, codec and channels per track id; with VLC from the media. */
-    fun trackDetails(): Map<Int, TrackDetail> {
-        if (usesMedia3) {
-            return (tracksOf(C.TRACK_TYPE_AUDIO).map { it to true } + tracksOf(C.TRACK_TYPE_TEXT).map { it to false })
-                .associate { (s, audio) ->
-                    val f = s.second
-                    s.first to TrackDetail(s.first, audio, f.language?.takeIf { it != C.LANGUAGE_UNDETERMINED }, fourccOf(f),
-                        f.channelCount.coerceAtLeast(0), f.sampleRate.coerceAtLeast(0),
-                        // Media3 may put something in front of the id when merging.
-                        f.id?.substringAfter("datei:", "")?.takeWhile { it.isDigit() }?.toLongOrNull())
-                }
-        }
-        val m = vlcPlayer.media ?: return emptyMap()
-        try {
-            return (0 until m.trackCount).mapNotNull { m.getTrack(it) }.associate { t ->
-                val audio = t as? IMedia.AudioTrack
-                t.id to TrackDetail(t.id, audio != null, t.language, t.fourcc, audio?.channels ?: 0, audio?.rate ?: 0, null)
+    /** Language, codec and channels per track id. */
+    fun trackDetails(): Map<Int, TrackDetail> =
+        (tracksOf(C.TRACK_TYPE_AUDIO).map { it to true } + tracksOf(C.TRACK_TYPE_TEXT).map { it to false })
+            .associate { (s, audio) ->
+                val f = s.second
+                s.first to TrackDetail(s.first, audio, f.language?.takeIf { it != C.LANGUAGE_UNDETERMINED }, fourccOf(f),
+                    f.channelCount.coerceAtLeast(0), f.sampleRate.coerceAtLeast(0),
+                    // Media3 may put something in front of the id when merging.
+                    f.id?.substringAfter("datei:", "")?.takeWhile { it.isDigit() }?.toLongOrNull())
             }
-        } finally { m.release() }
-    }
 
     /** The file's frame rate once known, for `TvImageTick`. */
-    fun frameRate(): Double? {
-        if (usesMedia3) return exo?.takeIf { onMainThread() }?.videoFormat?.frameRate?.takeIf { it > 0 }?.toDouble()
-        val s = vlcPlayer.currentVideoTrack ?: return null
-        if (s.frameRateDen <= 0) return null
-        return s.frameRateNum.toDouble() / s.frameRateDen.toDouble()
-    }
+    fun frameRate(): Double? = exo?.takeIf { onMainThread() }?.videoFormat?.frameRate?.takeIf { it > 0 }?.toDouble()
 
     // MARK: Display rate (phone)
 
-    /** The film's frame rate, measured once per opening (`frameRate()` builds a new VLC track object on every call). */
+    /** The film's frame rate, measured once per opening . */
     private var filmRate: Double? = null
     private var rateTries = 0
     /** The layers already given a vote, by identity: a SurfaceView gets a new `SurfaceControl` after it was rebuilt. */
@@ -524,46 +469,38 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
         }
     }
 
-    /** The visible video surfaces: Media3's own SurfaceView, or VLC's inside its layout. */
-    private fun videoSurfaces(): List<SurfaceView> {
-        if (usesMedia3) return listOfNotNull(frame?.getChildAt(0) as? SurfaceView)
-        val found = ArrayList<SurfaceView>()
-        fun search(v: View) {
-            if (v.visibility != View.VISIBLE) return
-            if (v is SurfaceView) found.add(v)
-            else if (v is android.view.ViewGroup) for (i in 0 until v.childCount) search(v.getChildAt(i))
-        }
-        layout?.let(::search)
-        return found
-    }
+    /** The visible video surface: Media3's own SurfaceView. */
+    private fun videoSurfaces(): List<SurfaceView> = listOfNotNull(frame?.getChildAt(0) as? SurfaceView)
 
-    /** Counters like VLC's `Media.Stats`; with Media3 from the decoder counters and the bytes read. */
+    /** Counters from the decoder counters and the bytes read. */
     fun counters(): Counters? {
-        if (usesMedia3) {
-            val e = exo?.takeIf { onMainThread() } ?: return null
-            val v = e.videoDecoderCounters?.also { it.ensureUpdated() }
-            val a = e.audioDecoderCounters?.also { it.ensureUpdated() }
-            val shown = (v?.renderedOutputBufferCount ?: 0).toLong()
-            val read = bytesRead.get()
-            return Counters(read, read, shown, (v?.droppedBufferCount ?: 0).toLong(),
-                shown + (v?.droppedBufferCount ?: 0) + (v?.skippedOutputBufferCount ?: 0),
-                (a?.renderedOutputBufferCount ?: 0).toLong(), (a?.renderedOutputBufferCount ?: 0).toLong(), 0, 0, 0)
-        }
-        val m = vlcPlayer.media ?: return null
-        val w = m.stats
-        m.release()
-        w ?: return null
-        fun raw(x: Int) = x.toLong() and 0xFFFFFFFFL
-        return Counters(raw(w.readBytes), raw(w.demuxReadBytes), raw(w.displayedPictures), raw(w.lostPictures),
-            raw(w.decodedVideo), raw(w.decodedAudio), raw(w.playedAbuffers), raw(w.lostAbuffers),
-            raw(w.demuxCorrupted), raw(w.demuxDiscontinuity))
+        val e = exo?.takeIf { onMainThread() } ?: return null
+        val v = e.videoDecoderCounters?.also { it.ensureUpdated() }
+        val a = e.audioDecoderCounters?.also { it.ensureUpdated() }
+        val shown = (v?.renderedOutputBufferCount ?: 0).toLong()
+        val read = bytesRead.get()
+        return Counters(read, read, shown, (v?.droppedBufferCount ?: 0).toLong(),
+            shown + (v?.droppedBufferCount ?: 0) + (v?.skippedOutputBufferCount ?: 0),
+            (a?.renderedOutputBufferCount ?: 0).toLong(), (a?.renderedOutputBufferCount ?: 0).toLong(), 0, 0, 0)
     }
 
     companion object {
         /**
          * **Can this device show Dolby Vision?** A Dolby Vision decoder and a display that reports Dolby
-         * Vision; otherwise Media3 gains nothing and VLC stays (it plays the same base layer).
+         * Vision.
          */
+        /**
+         * **Does any Dolby Vision decoder on this device take profile 7 (dual layer)?** Many do not (Pixel: no frames at
+         * all, only sound); without one the HEVC base layer (HDR10) is the way, as with the setting "off".
+         */
+        fun dolbyVision7Decodable(): Boolean = runCatching {
+            MediaCodecUtil.getDecoderInfos(MimeTypes.VIDEO_DOLBY_VISION, false, false).any { info ->
+                info.capabilities?.profileLevels?.any {
+                    it.profile == android.media.MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheDtb
+                } == true
+            }
+        }.getOrDefault(false)
+
         fun dolbyVisionPossible(context: Context): Boolean {
             val decoder = runCatching { MediaCodecUtil.getDecoderInfos(MimeTypes.VIDEO_DOLBY_VISION, false, false).isNotEmpty() }
                 .getOrDefault(false)
@@ -577,7 +514,7 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
         }
 
         /**
-         * **Can Media3 play this sound without a decoder extension?** The device decodes it (MediaCodec) or can
+         * **Can Media3 play this sound (device decoder, passthrough or the FFmpeg extension)?** The device decodes it (MediaCodec) or can
          * pass it through to the output. `codec` is the Jellyfin name of the default track (`""`: no sound).
          */
         fun audioPlayable(context: Context, codec: String): Boolean {
@@ -586,6 +523,9 @@ class PlayerEngine(private val context: Context, val vlc: LibVLC, private val is
             if (mime == MimeTypes.AUDIO_RAW) return true
             val decodes = runCatching { MediaCodecUtil.getDecoderInfos(mime, false, false).isNotEmpty() }.getOrDefault(false)
             if (decodes) return true
+            // The LGPL FFmpeg extension (`:ffmpeg`, libs from Werkzeuge/media3-ffmpeg-bauen.sh) decodes AC-3, E-AC-3,
+            // TrueHD/MLP, DTS (incl. HD core), FLAC, Opus, Vorbis, AAC, MP3 and ALAC in software.
+            if (runCatching { androidx.media3.decoder.ffmpeg.FfmpegLibrary.supportsFormat(mime) }.getOrDefault(false)) return true
             return runCatching {
                 val format = Format.Builder().setSampleMimeType(mime).setChannelCount(6).setSampleRate(48_000).build()
                 AudioCapabilities.getCapabilities(context, AudioAttributes.DEFAULT, null)

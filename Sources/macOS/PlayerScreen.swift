@@ -173,9 +173,49 @@ struct PlayerScreen: View {
     /// Prevents a single pinch from toggling several times.
     @State private var zoomAlreadySwitched = false
 
-    private var mass: PlayerMetric { PlayerMetric() }
+    /// Where the window is heading, set at the START of the full-screen transition so the
+    /// title block and icons move with the system animation instead of snapping at its end.
+    /// nil until the first transition; then `holder.isFullscreen` is the truth.
+    @State private var fullScreenTarget: Bool?
+
+    private var mass: PlayerMetric { PlayerMetric(fullScreen: fullScreenTarget ?? holder.isFullscreen) }
+
+    private func fullScreenTransition(_ note: Notification, target: Bool?, animated: Bool) {
+        // The player's own window if known; otherwise the window that sent it (the app has one
+        // main window). The strict identity check silently dropped every notification.
+        guard let window = note.object as? NSWindow else { return }
+        if let own = holder.window, own !== window { return }
+        let value = target ?? window.styleMask.contains(.fullScreen)
+        guard fullScreenTarget != value else { return }
+        if animated {
+            withAnimation(.easeInOut(duration: 0.5)) { fullScreenTarget = value }
+        } else {
+            fullScreenTarget = value
+        }
+    }
 
     var body: some View {
+        screen
+            // The titlebar inset (about 28 pt) disappears only when the full-screen transition
+            // ends; a layout that respected it jumped up at that moment (and down on leaving).
+            // The player positions everything from `PlayerMetric` alone.
+            .ignoresSafeArea(.container, edges: .top)
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) {
+                fullScreenTransition($0, target: true, animated: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) {
+                fullScreenTransition($0, target: false, animated: true)
+            }
+            // Safety nets: settle on the real state without animating.
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) {
+                fullScreenTransition($0, target: nil, animated: false)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) {
+                fullScreenTransition($0, target: nil, animated: false)
+            }
+    }
+
+    private var screen: some View {
         ZStack {
             Color.black
 
@@ -270,7 +310,7 @@ struct PlayerScreen: View {
             // film is paused.
             if inGroup, let event = gemeinsam.event {
                 GroupsEvent(symbol: event.symbol, text: event.text)
-                    .padding(.top, mass.top + mass.button + 8)
+                    .padding(.top, mass.iconTop + mass.button + 8)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .allowsHitTesting(false)
                     .transition(.opacity)
@@ -316,8 +356,8 @@ struct PlayerScreen: View {
             if techBadge {
                 TechBadge(plan: plan, values: playValues, area: area)
                     .padding(.leading, mass.titleLeft)
-                    .padding(.top, mass.top + mass.button + Theme.tileSpacing)
-                    .offset(y: controlsPresent && openLayer == nil ? 0 : -(mass.button + Theme.tileSpacing))
+                    .padding(.top, mass.titleTop + mass.titleBlock + Theme.tileSpacing)
+                    .offset(y: controlsPresent && openLayer == nil ? 0 : -(mass.titleTop + mass.titleBlock + Theme.tileSpacing))
                     .animation(Theme.motionReduced ? nil
                                : controlsPresent ? .easeOut(duration: 0.18) : .easeInOut(duration: 0.34),
                                value: controlsPresent && openLayer == nil)
@@ -647,9 +687,9 @@ struct PlayerScreen: View {
             }
             IconButton(symbol: "slider.horizontal.3", label: "Einstellungen",
                         mass: mass) { unfoldLayer(.settings) }
-            IconButton(symbol: holder.isFullscreen ? "arrow.down.right.and.arrow.up.left"
+            IconButton(symbol: mass.fullScreen ? "arrow.down.right.and.arrow.up.left"
                                                     : "arrow.up.left.and.arrow.down.right",
-                        label: holder.isFullscreen ? "Vollbild verlassen" : "Vollbild",
+                        label: mass.fullScreen ? "Vollbild verlassen" : "Vollbild",
                         mass: mass, key: "F") { holder.fullscreenToggle() }
             handOverMenu
             IconButton(symbol: "xmark", label: "Player schließen",
@@ -721,6 +761,7 @@ struct PlayerScreen: View {
                 .font(.app(size: mass.title, weight: .bold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
+                .padding(.top, mass.titleInset)
             Spacer(minLength: 0)
             iconRail
                 .hidden()
@@ -728,7 +769,7 @@ struct PlayerScreen: View {
         }
         .padding(.leading, mass.titleLeft)
         .padding(.trailing, mass.page)
-        .padding(.top, mass.top)
+        .padding(.top, mass.iconTop)
         .frame(maxHeight: .infinity, alignment: .top)
         .allowsHitTesting(false)
         .opacity(present ? 1 : 0)
@@ -762,6 +803,7 @@ struct PlayerScreen: View {
                 .lineLimit(1)
             }
             .foregroundStyle(.white)
+            .padding(.top, mass.titleInset)
 
             Spacer(minLength: 0)
 
@@ -771,7 +813,7 @@ struct PlayerScreen: View {
         }
         .padding(.leading, mass.titleLeft)
         .padding(.trailing, mass.page)
-        .padding(.top, mass.top)
+        .padding(.top, mass.iconTop)
         .overlay(alignment: .bottom) {
             // Below the header row, centered: there it gets in the way of neither the
             // scrubber nor the skip button.

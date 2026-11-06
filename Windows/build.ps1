@@ -13,8 +13,7 @@ param(
     [switch]$Starten,
     [string]$Konfiguration = 'debug',
     [string]$Gtk = 'C:\Werkzeuge\gtk4',
-    [string]$Vlc = 'C:\Werkzeuge\vlcsdk',
-    [string]$VlcLaufzeit = 'C:\Werkzeuge\vlc\vlc-3.0.21',
+    [string]$Mpv = 'C:\Werkzeuge\libmpv',
     [string]$SwiftLaufzeit = "$env:LOCALAPPDATA\Programs\Swift\Runtimes\6.3.3\usr\bin",
     [string]$Rlottie = 'C:\Werkzeuge\rlottie',
     # **Symbols for looking up crashes.** Without them no PDB is produced, and an
@@ -42,22 +41,16 @@ Copy-Item -Path (Join-Path $quelle '*.swift') -Destination $ziel
 Copy-Item -Path (Join-Path $quelle 'Resources') -Destination $ziel -Recurse
 Write-Host ("    " + (Get-ChildItem $ziel -Filter *.swift).Count + " Dateien")
 
-# The bridge to VLC is the same C file; only the module maps differ, because
-# the binding names differ.
-$bruecke = Join-Path $hier 'Sources\CImageBridge'
-if (Test-Path $bruecke) { Remove-Item -Recurse -Force $bruecke }
-New-Item -ItemType Directory -Force -Path (Join-Path $bruecke 'include') | Out-Null
-Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CImageBridge\*.c') $bruecke
-Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CImageBridge\include\*.h') (Join-Path $bruecke 'include')
-# When a header is added, SwiftPM does not notice in the old build folder: the
-# remembered build plan and module description stay as before, and Swift does
-# not find the new names. So the build plan and folder of this one module are
-# regenerated; everything else stays in the cache.
-if (Test-Path (Join-Path $hier '.build')) {
-    Get-ChildItem (Join-Path $hier '.build') -Recurse -Directory -Filter 'CImageBridge.build' -ErrorAction SilentlyContinue |
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    Get-ChildItem (Join-Path $hier '.build') -Recurse -File -Include 'debug.yaml','release.yaml','description.json' -ErrorAction SilentlyContinue |
-        Remove-Item -Force -ErrorAction SilentlyContinue
+# libmpv bridge: the same C file, with the Windows branches inside.
+$mpvB = Join-Path $hier 'Sources\CMPVBridge'
+if (Test-Path $mpvB) { Remove-Item -Recurse -Force $mpvB }
+New-Item -ItemType Directory -Force -Path (Join-Path $mpvB 'include') | Out-Null
+Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CMPVBridge\*.c') $mpvB
+Copy-Item (Join-Path (Split-Path -Parent $hier) 'Linux\Sources\CMPVBridge\include\*.h') (Join-Path $mpvB 'include')
+# The MinGW import library is linked under the name the module map asks for.
+if (-not (Test-Path "$Mpv\lib\mpv.lib")) {
+    New-Item -ItemType Directory -Force -Path "$Mpv\lib" | Out-Null
+    Copy-Item "$Mpv\libmpv.dll.a" "$Mpv\lib\mpv.lib"
 }
 
 # The media keys are also the same C code.
@@ -82,7 +75,7 @@ Copy-Item -Path $mittel -Destination $mittelZiel -Recurse
 
 # The license texts (LICENSES\ in the repo, the single source) go next to the
 # program under Resources\Licenses; the app reads components.json and the full
-# texts there. libVLC is LGPL, so nothing may ship without these files.
+# texts there. libmpv is LGPL, so nothing may ship without these files.
 $lizenzen = Join-Path (Split-Path -Parent $hier) 'LICENSES'
 if (-not (Test-Path (Join-Path $lizenzen 'components.json'))) { throw "LICENSES\components.json fehlt: $lizenzen" }
 Copy-Item -Path $lizenzen -Destination (Join-Path $mittelZiel 'Licenses') -Recurse
@@ -110,7 +103,7 @@ $einschluesse = @(
     "$Gtk\include\pixman-1"
     "$Gtk\include\freetype2"
     "$Gtk\include"
-    "$Vlc\include"
+    "$Mpv\include"
     "$Rlottie\include"
 )
 $ccFlaggen = @()
@@ -130,7 +123,7 @@ $res = Join-Path $hier 'Assets\swiftly.res'
 # **List first, then append.** The `.res` used to be appended *before* this
 # assignment, which threw it away every time, so no build contained the
 # program icon.
-$binderFlaggen = @('-Xlinker', "/LIBPATH:$Gtk\lib", '-Xlinker', "/LIBPATH:$Vlc\lib",
+$binderFlaggen = @('-Xlinker', "/LIBPATH:$Gtk\lib", '-Xlinker', "/LIBPATH:$Mpv\lib",
                    '-Xlinker', "/LIBPATH:$Rlottie\lib")
 if (Test-Path $res) { $binderFlaggen += @('-Xlinker', $res) }
 
@@ -262,10 +255,9 @@ Sag 'Starter schreiben'
 $starter = @"
 @echo off
 rem Erzeugt von build.ps1 — nicht von Hand aendern.
-set "PATH=$Gtk\bin;$SwiftLaufzeit;$VlcLaufzeit;%PATH%"
+set "PATH=$Gtk\bin;$SwiftLaufzeit;$Mpv;%PATH%"
 set "GSETTINGS_SCHEMA_DIR=$Gtk\share\glib-2.0\schemas"
 set "XDG_DATA_DIRS=$Gtk\share"
-set "VLC_PLUGIN_PATH=$VlcLaufzeit\plugins"
 start "" "%~dp0SwiftlyWindows.exe" %*
 "@
 Set-Content -Path (Join-Path $bau 'Swiftly.cmd') -Value $starter -Encoding ascii

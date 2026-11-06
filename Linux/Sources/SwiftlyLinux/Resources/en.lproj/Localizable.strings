@@ -656,3 +656,6 @@
 "heute" = "today";
 "gestern" = "yesterday";
 "vor %@ Tagen" = "%@ days ago";
+"im Monat" = "per month";
+"einmalig" = "one-time";
+"Danke ☕" = "Thanks ☕";

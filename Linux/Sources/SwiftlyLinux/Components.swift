@@ -398,13 +398,25 @@ func badge(_ text: String) -> Widget! {
 
 /// A tab: 15, active semibold with a 2-point accent line underneath. The
 /// hairline beneath runs the full width and is drawn by the caller, not the button.
-func tabButton(_ text: String, active: Bool) -> Widget! {
+func tabButton(_ text: String, active: Bool, chevron: Bool = false) -> Widget! {
     let button: Widget! = gtk_button_new()
     gtk_widget_add_css_class(button, "swiftly-reiter")
     if active { gtk_widget_add_css_class(button, "swiftly-aktiv") }
     help(button, selected: active)
     let smallStack = stack(GTK_ORIENTATION_VERTICAL, spacing: 8)
-    append(smallStack, label(text))
+    if chevron {
+        // Label first, chevron last (the series page's first tab shows the season).
+        let line = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 5)
+        gtk_widget_set_halign(line, GTK_ALIGN_START)
+        append(line, label(text))
+        let angle: Widget! = gtk_image_new_from_icon_name("pan-down-symbolic")
+        gtk_image_set_pixel_size(OpaquePointer(angle), 11)
+        gtk_widget_set_visible(angle, 0)
+        append(line, angle)
+        append(smallStack, line)
+    } else {
+        append(smallStack, label(text))
+    }
     let stroke: Widget! = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0)
     gtk_widget_add_css_class(stroke, "swiftly-reiterstrich")
     gtk_widget_set_size_request(stroke, -1, 2)

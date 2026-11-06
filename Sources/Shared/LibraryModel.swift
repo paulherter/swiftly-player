@@ -110,12 +110,6 @@ final class LibraryModel {
         alphabet.flatMap { $0.sorting == sorting && $0.isUseful ? $0 : nil }
     }
 
-    /// The same for a library page that knows its kind, not its source.
-    func loadAlphabet(_ model: AppModel, art: String?, library: Item?) async {
-        let bib = await source(model, art: art, library: library)
-        await loadAlphabet(model, from: bib.map { ShelfSource(parent: $0.id, art: art ?? $0.collectionType) })
-    }
-
     @ObservationIgnored private var jumpAsked = 0
 
     /// **The title to scroll to for a letter**, loading until it is there. Loads in steps
@@ -147,13 +141,6 @@ final class LibraryModel {
         return items.last?.id
     }
 
-    /// The same for a library page that knows its kind, not its source.
-    func jumpTarget(_ letter: String, model: AppModel, art: String?, library: Item?) async -> String? {
-        guard let bib = await source(model, art: art, library: library) else { return nil }
-        return await jumpTarget(letter, model: model,
-                                from: ShelfSource(parent: bib.id, art: art ?? bib.collectionType))
-    }
-
     /// Whether there is more beyond what is already shown.
     /// **Loading more failed** (tunnel, server briefly down). Without this the
     /// skeleton row stayed forever as if more were coming; the view now shows a
@@ -181,24 +168,6 @@ final class LibraryModel {
     /// What `items` was loaded for: library, sort, filter, account.
     /// Same means refresh only; different means replace.
     private var loadedFor: String?
-
-    /// Which library is meant: named, or looked up by type.
-    ///
-    /// **No longer `views.first`.** If the server had two libraries of the same
-    /// type, the second was unreachable. Now the remembered choice applies and
-    /// the first is only the fallback.
-    private func source(_ model: AppModel, art: String?, library: Item?) async -> Item? {
-        if let library { return library }
-        if model.views.isEmpty { await model.loadViews() }
-        guard let art else { return nil }
-        return model.selectedLibrary(art: art)
-    }
-
-    func load(_ model: AppModel, art: String? = nil, library: Item? = nil) async {
-        loads = items.isEmpty
-        let bib = await source(model, art: art, library: library)
-        await load(model, from: bib.map { ShelfSource(parent: $0.id, art: art ?? $0.collectionType) })
-    }
 
     /// The same with a ready-made source: "All" across libraries, or a
     /// collection. `nil` means there is nothing in this area.
@@ -263,12 +232,6 @@ final class LibraryModel {
             disrupted = items.isEmpty
         }
         loads = false
-    }
-
-    func loadMore(_ model: AppModel, art: String? = nil, library: Item? = nil) async {
-        guard !outdated(model), stillMorePresent, !loadsPost, !loads else { return }
-        guard let bib = await source(model, art: art, library: library) else { return }
-        await loadMore(model, from: ShelfSource(parent: bib.id, art: art ?? bib.collectionType))
     }
 
     /// - Parameter count: How many to fetch; a jump in the alphabet strip asks for more than

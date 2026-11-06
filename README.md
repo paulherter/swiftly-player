@@ -67,9 +67,10 @@ a running film that follows you from one device to the next.
 - **Plex and Emby (beta).** Sign in to a Plex or Emby server the same way as to
   Jellyfin, on all eight platforms. Plex uses a short code or a QR code, Emby
   the usual login.
-- **A second player on Apple devices.** Next to VLC, iPhone, iPad, Apple TV and
-  Mac can play through Apple's own player, which handles Dolby Vision, HDR and
-  AV1 files the way the device was built for.
+- **One player engine per system.** Apple devices play with AetherEngine,
+  Android with Media3 and its own FFmpeg audio decoder, Windows and Linux with
+  libmpv. [Players](Documentation/Players.md) lists what each one is and which
+  licenses apply.
 - **Pick the version.** If a title exists in several versions, Play asks which
   one, on every platform. The next episode keeps your choice.
 - **Subtitle look.** One simple page for font, size, colours and background,
@@ -178,7 +179,7 @@ is usually five specific things, not "have a look around".
 ## Android
 
 For phones and Android TV, Android 9 or newer. Same app as on the iPhone:
-Direct Play through libVLC, downloads, continue on this device, several
+Direct Play through Media3, downloads, continue on this device, several
 accounts, Seerr, skip intro, Picture in Picture and Quick Connect. Android TV
 follows the Apple TV app screen by screen.
 
@@ -314,15 +315,14 @@ before the build runs instead of after.
 The packages are signed; the key's fingerprint is
 `705D 676A 71BF 0121 804A  90BA C858 9885 A042 FB8B`.
 
-**Requirements: GTK 4.14 and libVLC.** That is what rules out the older
+**Requirements: GTK 4.14 and libmpv.** That is what rules out the older
 releases — Debian 12 ships GTK 4.8 and could not draw the app at all. The
 packages are built against Ubuntu 24.04 for glibc, which is the same floor
 GTK already sets, so it costs nothing.
 
 **Why packages and not a Flatpak.** Measured, not assumed: the GNOME 48
-runtime carries GTK 4 but not a single libVLC library. A Flatpak would have
-to compile VLC itself — and VLC's demuxers are exactly what "never
-transcodes" rests on.
+runtime carries GTK 4 but not a single libmpv library. A Flatpak would have
+to build mpv and its FFmpeg itself.
 
 <br>
 
@@ -344,14 +344,15 @@ says. Jellyfin's own desktop app is in the same position. The checksum is
 listed with each release so you can verify the download.
 
 It is the same program as on Linux: the same interface code, mirrored into the
-Windows build. GTK 4, libVLC and the Swift runtime ship inside the installer.
+Windows build. GTK 4, libmpv and the Swift runtime ship inside the installer.
 
 <br>
 
 ## Documentation
 
-- [Building](Documentation/Building.md): clone, fetch VLCKit, generate the project, run the tests
-- [VLCKit](Documentation/VLCKit.md): why this app ships a patched build, with the measurements
+- [Building](Documentation/Building.md): clone, generate the project, run the tests
+- [Players](Documentation/Players.md): which player engine runs on which system, and where its source is
+- [VLCKit](Documentation/VLCKit.md): why the VLCKit build used so far is patched, with the measurements
 - [Device profile](Packages/JellyfinKit/Sources/JellyfinKit/DeviceProfile.swift): the file that decides whether your server transcodes, with the reasoning in its comments
 
 <br>
@@ -361,7 +362,7 @@ Windows build. GTK 4, libVLC and the Swift runtime ship inside the installer.
 - Your own server: Jellyfin **10.8 or newer**, or Plex or Emby (beta). Swiftly
   Player hosts nothing and has no account of its own.
 - iOS 18, tvOS 18, macOS 15, Android 9, Windows 10, or a Linux desktop with GTK
-  4.14 and libVLC, which the installer takes care of.
+  4.14 and libmpv, which the installer takes care of.
 
 <br>
 
@@ -419,15 +420,24 @@ The code is licensed under the **Mozilla Public License 2.0** — see
 you change these files you publish your changes too.
 
 **The name and the artwork are not covered by that license.** "Swiftly
-Player" (formerly "Swiftly for Jellyfin"), the wordmark and the app icon remain the author's. You are welcome
-to fork the code; please do not ship the result under this name or with this
-icon.
+Player" (formerly "Swiftly for Jellyfin"), the wordmark and the app icon remain the author's, all rights reserved; the license grants no rights to
+them (MPL-2.0 section 2.3). A version you change and ship needs its own name,
+icon and look, and must not be presented as Swiftly Player or as made by its
+author.
 
 Playback uses [VLCKit](https://code.videolan.org/videolan/VLCKit) under the
-**LGPL-2.1-or-later** — see [Documentation/VLCKit.md](Documentation/VLCKit.md).
+**LGPL-2.1-or-later** — see [Documentation/VLCKit.md](Documentation/VLCKit.md) —
+and, in the versions with the new player engines,
+[AetherEngine](https://github.com/superuser404notfound/AetherEngine)
+(LGPL-3.0 with an App Store exception) with FFmpeg from
+[FFmpegBuild](https://github.com/superuser404notfound/FFmpegBuild)
+(LGPL-2.1-or-later), libdovi (MIT) and LibTrueHD (MIT, Apache-2.0) on Apple
+devices, Media3 (Apache-2.0) with an FFmpeg audio decoder (LGPL) on Android, and
+libmpv (LGPL) on Windows and Linux. Details and source locations are in
+[Documentation/Players.md](Documentation/Players.md).
 
-The libraries bundled with the apps keep their own licenses (LGPL for VLCKit
-and libVLC and several others, plus BSD, MIT, Apache-2.0 and the SIL OFL for
+The libraries bundled with the apps keep their own licenses (LGPL for VLCKit,
+libVLC, FFmpeg, libmpv and several others, plus BSD, MIT, Apache-2.0 and the SIL OFL for
 the Inter font). The list, the license texts and the source offer for the LGPL
 parts are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and
 [LICENSES/](LICENSES/).
