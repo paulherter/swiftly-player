@@ -107,6 +107,7 @@ final class SettingsSyncRun: @unchecked Sendable {
         if let chosen = s.nextAutomaticSelected { v["naechsteAuto"] = .bool(chosen) }
         if !s.startRails.isEmpty { v["startReihen"] = .list(s.startRails) }
         if !s.startLibraries.isEmpty, let data = StartLibraries.data(s.startLibraries) { v["startBibliotheken"] = .json(data) }
+        if !s.startOrder.isEmpty { v["startReihenfolge"] = .list(s.startOrder) }
         return v
     }
 
@@ -248,6 +249,7 @@ final class SettingsSyncRun: @unchecked Sendable {
             case ("genreChips", .bool(let b)): s.genreChips = b
             case ("startGenres", .list(let l)): s.startGenres = l
             case ("startBibliotheken", .json(let d)): s.startLibraries = StartLibraries.read(d)
+            case ("startReihenfolge", .list(let l)): s.startOrder = l
             default: break
             }
         }

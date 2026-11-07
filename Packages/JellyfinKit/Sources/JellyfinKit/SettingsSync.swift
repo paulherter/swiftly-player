@@ -77,6 +77,7 @@ public enum SettingsSync {
         .init(name: "genreChips", kind: .bool, perServer: false),
         .init(name: "startGenres", kind: .list, perServer: false),
         .init(name: "startBibliotheken", kind: .json, perServer: true),
+        .init(name: "startReihenfolge", kind: .list, perServer: true),
     ]
 
     /// The entry for a name as `UserDefaults` knows it. A server suffix is ignored.

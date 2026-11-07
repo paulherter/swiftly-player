@@ -710,10 +710,12 @@ public final class Kern: @unchecked Sendable {
     // MARK: Home
 
     /// Finished rows in the configured order. `stored`/`aus` are the names from the settings
-    /// (like `startRails`/`startOut` on Apple).
+    /// (like `startRails`/`startOut` on Apple), `order` the pattern that places the libraries
+    /// between them (``StartOrder``).
     public func home(disconnected: Bool, stored: [String], from: [String],
                            filmLibrary: String, seriesLibrary: String,
-                           genres: [String], asChips: Bool, libraries: String) async throws -> String {
+                           genres: [String], asChips: Bool, libraries: String,
+                           order: [String]) async throws -> String {
         return try await throwReadable { () async throws -> String in
             guard let c = client, let a = addresses else { throw CoreError.notConnected }
             // The chosen libraries and collections (`StartLibraries`, tolerant reader), fetched
@@ -740,22 +742,27 @@ public final class Kern: @unchecked Sendable {
                 .newMovies: (false, true, true, state.newMovies ?? []),
                 .newSeries: (false, true, true, state.newSeries ?? []),
             ]
-            var rails: [RailsResponse] = StartRailsEpisode
-                .visible(stored: stored, from: Set(from), disconnected: disconnected)
-                .compactMap { r in
+            // **Fixed rows, libraries and collections in the configured order** (``StartOrder``), as
+            // on Apple; the genre rows after all of them.
+            let je = Dictionary((await libraryState).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            let entries = StartOrder.shown(
+                StartOrder.applicable(stored: order, rails: StartRailsEpisode.applicable(stored: stored),
+                                      libraries: choice),
+                out: Set(from.compactMap(StartRail.init(rawValue:))), disconnected: disconnected)
+            var rails: [RailsResponse] = entries.compactMap { entry in
+                switch entry {
+                case .rail(let r):
                     guard let (landscape, new, mark, items) = content[r], !items.isEmpty else { return nil }
                     return RailsResponse(titleKey: r.railsTitle, name: nil, landscape: landscape,
                                          tiles: items.map { tile($0, newAccess: new, withMark: mark, a) },
                                          jumpArt: r.libraryJump?.art,
                                          jumpSorting: r.libraryJump?.sorting.rawValue)
+                case .library(let id):
+                    guard let w = choice.first(where: { $0.id == id }), let r = je[id] else { return nil }
+                    return RailsResponse(titleKey: nil, name: w.name, landscape: false,
+                                         tiles: r.items.map { tile($0, newAccess: false, withMark: true, a) },
+                                         library: w.id, collection: w.collection)
                 }
-            // Between the fixed rows and the genre rows, in the order of the choice.
-            let je = Dictionary((await libraryState).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-            rails += choice.compactMap { w in
-                guard let r = je[w.id] else { return nil }
-                return RailsResponse(titleKey: nil, name: w.name, landscape: false,
-                                     tiles: r.items.map { tile($0, newAccess: false, withMark: true, a) },
-                                     library: w.id, collection: w.collection)
             }
             rails += state.genreRails.map {
                 RailsResponse(titleKey: nil, name: $0.name, landscape: false,
@@ -1172,6 +1179,47 @@ public final class Kern: @unchecked Sendable {
     public static func startRailShifted(was: String, um: Int, stored: [String], disconnected: Bool) -> String {
         guard let rail = StartRail(rawValue: was) else { return encoded(stored) }
         return encoded(StartRailsEpisode.shifted(rail, um: um, stored: stored, disconnected: disconnected))
+    }
+
+    /// **The home page list of the settings**: fixed rows and chosen libraries in one order
+    /// (``StartOrder/listed(_:disconnected:)``). `value` is the stored form of the entry,
+    /// `text` the German list name of a row (Kotlin translates it) or a library's name.
+    public static func startEntries(order: [String], stored: [String], libraries: String,
+                                    disconnected: Bool) -> String {
+        let choice = StartLibraries.read(Data(libraries.utf8))
+        let listed = StartOrder.listed(
+            StartOrder.applicable(stored: order, rails: StartRailsEpisode.applicable(stored: stored),
+                                  libraries: choice),
+            disconnected: disconnected)
+        return encoded(listed.map { entry -> StartEntryResponse in
+            switch entry {
+            case .rail(let r):
+                return StartEntryResponse(value: entry.stored, text: r.listsName, library: false, collection: false)
+            case .library(let id):
+                let l = choice.first { $0.id == id }
+                return StartEntryResponse(value: entry.stored, text: l?.name ?? "", library: true,
+                                          collection: l?.collection ?? false)
+            }
+        })
+    }
+
+    /// One entry of that list a step up or down. Answers the three new values: `order`, `rails`
+    /// (`startReihen`) and `libraries` (`startBibliotheken` JSON); unchanged at either end.
+    public static func startEntryShifted(was: String, um: Int, order: [String], stored: [String],
+                                         libraries: String, disconnected: Bool) -> String {
+        let choice = StartLibraries.read(Data(libraries.utf8))
+        let rails = StartRailsEpisode.applicable(stored: stored)
+        let listed = StartOrder.listed(
+            StartOrder.applicable(stored: order, rails: rails, libraries: choice), disconnected: disconnected)
+        guard let entry = StartEntry(stored: was),
+              let moved = StartOrder.shifted(entry, by: um, in: listed) else {
+            return encoded(StartArrangeResponse(order: order, rails: stored, libraries: libraries))
+        }
+        let result = StartOrder.split(moved, hidden: rails.filter { !$0.fits(disconnected: disconnected) },
+                                      libraries: choice)
+        let json = StartLibraries.data(result.libraries).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        return encoded(StartArrangeResponse(order: result.stored, rails: result.rails.map(\.rawValue),
+                                            libraries: json))
     }
 
     /// With sorted keys, so the same bundle is always the same string.
@@ -4662,6 +4710,18 @@ struct SearchKeyResponse: Encodable {
     let span: Int
 }
 
+struct StartEntryResponse: Encodable {
+    enum CodingKeys: String, CodingKey {
+        case value = "wert"
+        case text, library = "bibliothek", collection = "sammlung"
+    }
+    let value, text: String
+    let library, collection: Bool
+}
+struct StartArrangeResponse: Encodable {
+    let order, rails: [String]
+    let libraries: String
+}
 struct SelectionResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case value = "wert"

@@ -303,51 +303,44 @@ fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit, open: (Desti
 fun PresentationPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -> Unit) {
     val e = app.settings
     SettingPage(translated("Darstellung"), back) {
-        // Order of `PresentationView` (narrow): Startseite, Bibliotheken, Genres, Filme und Serien, Looks.
+        // Order of `PresentationView` (narrow): Startseite (with libraries and collections), Genres, Filme und Serien, Looks.
+        // **Fixed rows, libraries and collections in one list** (`StartOrder`): a library can stand above
+        // "Weiterschauen" or between two fixed rows. A fixed row is switched off, a library removed with its cross;
+        // "+" adds one at the end.
         SettingGroup(translated("Startseite")) {
-            val rails = remember(e.startRails, e.newAccessDisconnected) {
-                selectionRead(Kern.startRails(e.startRails.toTypedArray(), e.newAccessDisconnected))
-            }
-            SortBar(rails, { it.value }, move = { r, step ->
-                e.startRails = JSONArray(Kern.startRailShifted(r.value, step.toLong(), e.startRails.toTypedArray(), e.newAccessDisconnected))
-                    .let { a -> (0 until a.length()).map { a.getString(it) } }
-            }) { r ->
-                // Each row with its own icon (`StartRail.symbol`).
-                val symbolText = when (r.value) {
-                    "weiterschauen" -> Glyph.PlayCircle
-                    "naechsteFolge" -> Glyph.SkipOutline
-                    "neueFilme" -> Glyph.Film
-                    "neueSerien" -> Glyph.Tv
-                    else -> Glyph.Funkeln
-                }
-                ChoiceRow(symbolText, translated(r.text), an = r.value !in e.startOut) { an ->
-                    e.startOut = if (an) e.startOut - r.value else e.startOut + r.value
+            val entries = e.startEntries()
+            SortBar(entries, { it.value }, move = { r, step -> e.startEntryShift(r.value, step) }) { r ->
+                if (r.library) {
+                    Row(Modifier.fillMaxWidth().padding(start = Theme.edgeSpacing).heightIn(min = 52.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Box(Modifier.width(Theme.characterColumn), contentAlignment = Alignment.Center) {
+                            Symbol(if (r.collection) Glyph.Pile else Glyph.Grid, 17.dp, color = Theme.font)
+                        }
+                        // The name comes from the server, not translated.
+                        Text(r.text, style = Theme.body, color = Theme.font, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val id = r.value.removePrefix("bibliothek:")
+                        Box(Modifier.size(44.dp).tapOn { e.startLibraries = e.startLibraries.filter { it.id != id } }, contentAlignment = Alignment.Center) {
+                            Symbol(Glyph.CrossCircle, 17.dp, color = Theme.fontVeryQuiet, description = translated("Löschen"))
+                        }
+                    }
+                } else {
+                    // Each row with its own icon (`StartRail.symbol`).
+                    val symbolText = when (r.value) {
+                        "weiterschauen" -> Glyph.PlayCircle
+                        "naechsteFolge" -> Glyph.SkipOutline
+                        "neueFilme" -> Glyph.Film
+                        "neueSerien" -> Glyph.Tv
+                        else -> Glyph.Funkeln
+                    }
+                    ChoiceRow(symbolText, translated(r.text), an = r.value !in e.startOut) { an ->
+                        e.startOut = if (an) e.startOut - r.value else e.startOut + r.value
+                    }
                 }
             }
             SeparatorLine()
             ChoiceRow(Glyph.Shared, translated("Neuzugänge getrennt"), translated("Als eigene Reihen"),
                       e.newAccessDisconnected) { e.newAccessDisconnected = it }
-        }
-        Footer(translated("Zum Umsortieren an den Griffen rechts ziehen."))
-
-        // Mirrors `libraryRails` in `PresentationView`: custom rows from the server's libraries and
-        // collections, after the fixed rows, sortable among themselves.
-        SettingGroup(translated("Bibliotheken und Sammlungen")) {
-            SortBar(e.startLibraries, { it.id }, move = { b, step ->
-                val list = e.startLibraries.toMutableList()
-                val from = list.indexOfFirst { it.id == b.id }
-                val to = (from + step).coerceIn(0, list.lastIndex)
-                if (from >= 0 && from != to) { list.removeAt(from); list.add(to, b); e.startLibraries = list }
-            }) { b ->
-                Row(Modifier.fillMaxWidth().padding(start = Theme.edgeSpacing).heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
-                    // The name comes from the server, not translated.
-                    Text(b.name, style = Theme.body, color = Theme.font, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Box(Modifier.size(44.dp).tapOn { e.startLibraries = e.startLibraries.filter { it.id != b.id } }, contentAlignment = Alignment.Center) {
-                        Symbol(Glyph.CrossCircle, 17.dp, color = Theme.fontVeryQuiet, description = translated("Löschen"))
-                    }
-                }
-            }
-            if (e.startLibraries.isNotEmpty()) SeparatorLine()
+            SeparatorLine()
             Row(Modifier.fillMaxWidth().pressRow { open(Destination("bibliothekswahl", translated("Bibliothek hinzufügen"), "Bibliothekswahl")) }
                     .padding(horizontal = Theme.edgeSpacing, vertical = 15.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -355,6 +348,7 @@ fun PresentationPage(app: SwiftlyApplication, open: (Destination) -> Unit, back:
                 Text(translated("Bibliothek hinzufügen"), style = Theme.listTitle, color = Theme.accent)
             }
         }
+        Footer(translated("Zum Umsortieren an den Griffen rechts ziehen."))
 
         SettingGroup(translated("Genres")) {
             // One list, two forms.

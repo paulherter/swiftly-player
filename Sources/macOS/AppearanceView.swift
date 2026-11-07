@@ -37,7 +37,7 @@ struct PresentationView: View {
                 HStack(alignment: .top, spacing: Theme.edgeSpacing * 2) {
                     VStack(alignment: .leading, spacing: 0) { general; looks; rails }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 0) { libraryRails; genres }
+                    VStack(alignment: .leading, spacing: 0) { genres }
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -116,25 +116,43 @@ struct PresentationView: View {
 
     // MARK: Rows
 
-    private var visibleRails: [StartRail] {
-        model.startRails.filter { $0.fits(disconnected: model.newAccessDisconnected) }
-    }
-
+    /// **Fixed rows, libraries and collections in one list** (``StartOrder``): a library
+    /// can stand above "Weiterschauen" or between two fixed rows. A fixed row is switched
+    /// off, a library removed with its cross; "+" adds one at the end.
     private var rails: some View {
         VStack(alignment: .leading, spacing: 0) {
             SettingGroup(title: "Reihen") {
-                ForEach(Array(visibleRails.enumerated()), id: \.element) { spot, rail in
+                ForEach(Array(model.startListed.enumerated()), id: \.element) { spot, entry in
                     if spot > 0 { SheetLine().padding(.leading, Theme.separatorInsetCard) }
-                    ChoiceRow(symbol: rail.symbol, title: Text(rail.name),
-                              an: Binding(get: { !model.startOut.contains(rail) },
-                                          set: { an in
-                                              if an { model.startOut.remove(rail) }
-                                              else { model.startOut.insert(rail) }
-                                          }))
-                        .dragBar(rail.rawValue, over: $over) { source in
-                            railStore(source, on: rail)
+                    Group {
+                        switch entry {
+                        case .rail(let rail):
+                            ChoiceRow(symbol: rail.symbol, title: Text(rail.name),
+                                      an: Binding(get: { !model.startOut.contains(rail) },
+                                                  set: { an in
+                                                      if an { model.startOut.remove(rail) }
+                                                      else { model.startOut.insert(rail) }
+                                                  }))
+                        case .library(let id):
+                            let library = model.startLibraries.first { $0.id == id }
+                            GenreRow(name: library?.name ?? "",
+                                     symbol: library?.collection == true ? "square.stack" : "rectangle.stack") {
+                                withAnimation(Theme.reveal) {
+                                    model.startLibraries.removeAll { $0.id == id }
+                                }
+                            }
                         }
+                    }
+                    .dragBar(entry.stored, over: $over) { source in
+                        railStore(source, on: entry)
+                    }
                 }
+                SheetLine()
+                Button { navigator.openIt(.librarySelection, in: section) } label: {
+                    ValuesRow(symbol: "plus", title: Text("Bibliothek hinzufügen"),
+                               accent: true, arrow: true, hoverable: true)
+                }
+                .buttonStyle(Theme.PressRow())
             }
             Footer(text: "Zum Umsortieren eine Zeile ziehen.")
 
@@ -156,55 +174,15 @@ struct PresentationView: View {
     /// was dropped on: A onto C gave B · C · A instead of B · A · C. Upward it was
     /// fine because nothing before the target shifts, which is why this kind of
     /// bug is easy to miss when trying it out.
-    private func railStore(_ source: String, on target: StartRail) {
-        guard let moved = StartRail(rawValue: source), moved != target else { return }
-        var visible = visibleRails
+    private func railStore(_ source: String, on target: StartEntry) {
+        guard let moved = StartEntry(stored: source), moved != target else { return }
+        var visible = model.startListed
         guard let from = visible.firstIndex(of: moved) else { return }
         withAnimation(Theme.reveal) {
             visible.remove(at: from)
             let spot = visible.firstIndex(of: target) ?? visible.endIndex
             visible.insert(moved, at: spot)
-            model.startRails = visible + model.startRails.filter { !visible.contains($0) }
-        }
-    }
-
-
-    // MARK: Libraries and collections
-
-    /// Custom rows from the server, in the order of this list, after the fixed
-    /// rows. As with genres: drag the handle, cross to remove.
-    private var libraryRails: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SettingGroup(title: "Bibliotheken und Sammlungen") {
-                ForEach(model.startLibraries) { entryRecord in
-                    GenreRow(name: entryRecord.name, symbol: entryRecord.collection ? "square.stack" : "rectangle.stack") {
-                        withAnimation(Theme.reveal) {
-                            model.startLibraries.removeAll { $0.id == entryRecord.id }
-                        }
-                    }
-                    .dragBar("bibliothek:" + entryRecord.id, over: $over) { source in
-                        libraryStore(source, on: entryRecord.id)
-                    }
-                    SheetLine().padding(.leading, Theme.separatorInsetCard)
-                }
-                Button { navigator.openIt(.librarySelection, in: section) } label: {
-                    ValuesRow(symbol: "plus", title: Text("Bibliothek hinzufügen"),
-                               accent: true, arrow: true, hoverable: true)
-                }
-                .buttonStyle(Theme.PressRow())
-            }
-        }
-        .padding(.bottom, 22)
-    }
-
-    private func libraryStore(_ source: String, on target: String) {
-        let moved = String(source.dropFirst("bibliothek:".count))
-        guard moved != target,
-              let from = model.startLibraries.firstIndex(where: { $0.id == moved }),
-              let to = model.startLibraries.firstIndex(where: { $0.id == target }) else { return }
-        withAnimation(Theme.reveal) {
-            let entryRecord = model.startLibraries.remove(at: from)
-            model.startLibraries.insert(entryRecord, at: to)
+            model.startArrange(visible)
         }
     }
 

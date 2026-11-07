@@ -213,6 +213,40 @@ struct Choices: Codable {
         }
     }
 
+    /// **Where libraries stand between the fixed rows**, per server like the libraries: a
+    /// pattern of places (``StartOrder``). Rows and libraries stay in `startRails` and
+    /// `startLibraries`; read the result through `startEntries`.
+    var startOrderPerServer: [String: [String]] = [:]
+    var startOrder: [String] {
+        get { startOrderPerServer[activeServer] ?? [] }
+        set {
+            guard !activeServer.isEmpty else { return }
+            startOrderPerServer[activeServer] = newValue.isEmpty ? nil : newValue
+        }
+    }
+
+    /// Fixed rows and chosen libraries in one order, as the home page shows them.
+    var startEntries: [StartEntry] {
+        StartOrder.applicable(stored: startOrder, rails: StartRailsEpisode.applicable(stored: startRails),
+                              libraries: startLibraries)
+    }
+
+    /// What the settings list shows (``StartOrder/listed(_:disconnected:)``).
+    var startListed: [StartEntry] {
+        StartOrder.listed(startEntries, disconnected: newArrivalsDisconnected)
+    }
+
+    /// Takes a new order of the settings list; the rows it does not show keep their place
+    /// at the end.
+    mutating func startArrange(_ listed: [StartEntry]) {
+        let hidden = StartRailsEpisode.applicable(stored: startRails)
+            .filter { !$0.fits(disconnected: newArrivalsDisconnected) }
+        let result = StartOrder.split(listed, hidden: hidden, libraries: startLibraries)
+        startRails = result.rails.map(\.rawValue)
+        startLibraries = result.libraries
+        startOrder = result.stored
+    }
+
     // MARK: What is remembered per place
 
     /// **Sorting and filters survive a restart**.
@@ -304,6 +338,7 @@ struct Choices: Codable {
         startGenres            = w(.startGenres, [])
         genreChips             = w(.genreChips, false)
         startLibrariesPerServer = w(.startLibrariesPerServer, [String: String]())
+        startOrderPerServer    = w(.startOrderPerServer, [String: [String]]())
         sortingPerPlace        = w(.sortingPerPlace, [:])
         filterPerPlace            = w(.filterPerPlace, [:])
         libraryPerGenre    = w(.libraryPerGenre, [:])
@@ -336,6 +371,7 @@ struct Choices: Codable {
              searchHistoryPerAccount = "suchverlaufJeKonto", doneWatch = "fertigGeschaut",
              discordHintShown = "discordHinweisGezeigt", savedGenre = "merkgattung", startRails = "startReihen",
              startOut = "startAus", startGenres, genreChips, startLibrariesPerServer = "startBibliothekenJeServer",
+             startOrderPerServer = "startReihenfolgeJeServer",
              sortingPerPlace = "sortierungJeOrt", filterPerPlace = "filterJeOrt", libraryPerGenre = "bibliothekJeGattung",
              windowWidth = "fensterBreite", windowHeight = "fensterHoehe", windowMaximized = "fensterMaximiert",
              surface = "oberflaeche"
@@ -385,6 +421,7 @@ struct Choices: Codable {
         try c.encode(startGenres, forKey: .startGenres)
         try c.encode(genreChips, forKey: .genreChips)
         try c.encode(startLibrariesPerServer, forKey: .startLibrariesPerServer)
+        try c.encode(startOrderPerServer, forKey: .startOrderPerServer)
         try c.encode(sortingPerPlace, forKey: .sortingPerPlace)
         try c.encode(filterPerPlace, forKey: .filterPerPlace)
         try c.encode(libraryPerGenre, forKey: .libraryPerGenre)

@@ -32,10 +32,10 @@ struct PresentationView: View {
                 if wide {
                     HStack(alignment: .top, spacing: 0) {
                         list { rails; general; looks }
-                        list { libraryRails; genres }
+                        list { genres }
                     }
                 } else {
-                    list { rails; libraryRails; genres; general; looks }
+                    list { rails; genres; general; looks }
                 }
             }
             .fadingUnderSubpageHeader(title: String(localized: "Darstellung")) { back() }
@@ -165,23 +165,39 @@ struct PresentationView: View {
 
     // MARK: Rows
 
-    private var visibleRails: [StartRail] {
-        model.startRails.filter { $0.fits(disconnected: model.newAccessDisconnected) }
-    }
+    private var visibleEntries: [StartEntry] { model.startListed }
 
+    /// **Fixed rows, libraries and collections in one list.** Each gets a handle, so a
+    /// library can stand above "Weiterschauen" or between two fixed rows. A fixed row is
+    /// switched off, a library removed by swiping; "+" adds one at the end.
     private var rails: some View {
         KitSection {
-            ForEach(visibleRails) { rail in
-                ChoiceRow(symbol: rail.symbol, title: Text(rail.name),
-                          an: Binding(get: { !model.startOut.contains(rail) },
-                                      set: { an in
-                                          if an { model.startOut.remove(rail) }
-                                          else { model.startOut.insert(rail) }
-                                      }))
+            ForEach(visibleEntries) { entry in
+                switch entry {
+                case .rail(let rail):
+                    ChoiceRow(symbol: rail.symbol, title: Text(rail.name),
+                              an: Binding(get: { !model.startOut.contains(rail) },
+                                          set: { an in
+                                              if an { model.startOut.remove(rail) }
+                                              else { model.startOut.insert(rail) }
+                                          }))
+                        .row(handle: true)
+                        .deleteDisabled(true)
+                case .library(let id):
+                    let library = model.startLibraries.first { $0.id == id }
+                    // From the server, so not translated.
+                    RowsLayout(symbol: library?.collection == true ? "square.stack" : "rectangle.stack",
+                               title: Text(verbatim: library?.name ?? ""), under: nil, dimmedDown: false) {
+                        EmptyView()
+                    }
                     .row(handle: true)
+                }
             }
             .onMove { from, to in move(from: from, to: to) }
-            .deleteDisabled(true)
+            .onDelete { offsets in
+                let gone = Set(offsets.map { visibleEntries[$0] })
+                model.startLibraries.removeAll { gone.contains(.library($0.id)) }
+            }
 
             ChoiceRow(symbol: "square.split.2x1",
                       title: Text("Neuzugänge getrennt"),
@@ -189,40 +205,9 @@ struct PresentationView: View {
                       an: Binding(get: { model.newAccessDisconnected },
                                   set: { model.newAccessDisconnected = $0 }))
                 .row(handleSpace: true)
-        } header: {
-            Category(text: "Startseite")
-        } footer: {
-            Footer("Zum Umsortieren an den Griffen rechts ziehen.")
-        }
-    }
+                .deleteDisabled(true)
 
-    /// Moving happens in the visible list. What is not visible right now (the shared
-    /// row when separate, or vice versa) is appended at the end and reappears there on
-    /// toggling.
-    private func move(from: IndexSet, to: Int) {
-        var visible = visibleRails
-        visible.move(fromOffsets: from, toOffset: to)
-        model.startRails = visible + model.startRails.filter { !visible.contains($0) }
-    }
-
-    // MARK: Libraries and collections
-
-    /// **Own rows from the server**: a library or collection added to the home page
-    /// with "+", in the order of this list, after the fixed rows. Remove by swiping or
-    /// in edit mode.
-    private var libraryRails: some View {
-        KitSection {
-            ForEach(model.startLibraries) { entryRecord in
-                // From the server, so not translated.
-                Text(verbatim: entryRecord.name)
-                    .growing(Theme.rowTitleSize, .medium)
-                    .foregroundStyle(Theme.font)
-                    .plainRow()
-                    .row()
-            }
-            .onMove { model.startLibraries.move(fromOffsets: $0, toOffset: $1) }
-            .onDelete { model.startLibraries.remove(atOffsets: $0) }
-
+            // A button, not a link: in edit mode a link in a list leads nowhere.
             Button { librarySelection = true } label: {
                 HStack(spacing: 14) {
                     Image(icon: "plus", size: Theme.rowSymbolSize)
@@ -239,8 +224,16 @@ struct PresentationView: View {
             .row()
             .deleteDisabled(true)
         } header: {
-            Category(text: "Bibliotheken und Sammlungen")
+            Category(text: "Startseite")
+        } footer: {
+            Footer("Zum Umsortieren an den Griffen rechts ziehen.")
         }
+    }
+
+    private func move(from: IndexSet, to: Int) {
+        var visible = visibleEntries
+        visible.move(fromOffsets: from, toOffset: to)
+        model.startArrange(visible)
     }
 
     // MARK: Genres

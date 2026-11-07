@@ -361,35 +361,26 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                 TvToggleRow(translated("Gesehen von"), e.watchersShow, Glyph.Person) { e.watchersShow = !e.watchersShow }
                             }
                             }
+                            // **Fixed rows, libraries and collections in one list** (`StartOrder`, as in `ProfileView` on
+                            // tvOS): moved with the arrows, a row switched off, a library removed.
                             TvGroup(translated("Startseite")) {
-                            val rails = remember(e.startRails, e.newAccessDisconnected) { selectionRead(Kern.startRails(e.startRails.toTypedArray(), e.newAccessDisconnected)) }
-                            fun move(r: Choice, step: Int) {
-                                e.startRails = JSONArray(Kern.startRailShifted(r.value, step.toLong(), e.startRails.toTypedArray(), e.newAccessDisconnected))
-                                    .let { a -> (0 until a.length()).map { a.getString(it) } }
-                            }
-                            rails.forEachIndexed { index, r ->
-                                TvRailsRow(translated(r.text), an = r.value !in e.startOut,
-                                              canHigh = index != 0, canGoDown = index != rails.lastIndex,
-                                              toggle = { e.startOut = if (r.value in e.startOut) e.startOut - r.value else e.startOut + r.value },
-                                              shove = { step -> move(r, step) })
+                            val entries = e.startEntries()
+                            entries.forEachIndexed { index, r ->
+                                if (r.library) {
+                                    val id = r.value.removePrefix("bibliothek:")
+                                    TvLibraryRow(r.text, canHigh = index != 0, canGoDown = index != entries.lastIndex,
+                                        remove = { e.startLibraries = e.startLibraries.filter { it.id != id } },
+                                        shove = { step -> e.startEntryShift(r.value, step) })
+                                } else {
+                                    TvRailsRow(translated(r.text), an = r.value !in e.startOut,
+                                                  canHigh = index != 0, canGoDown = index != entries.lastIndex,
+                                                  toggle = { e.startOut = if (r.value in e.startOut) e.startOut - r.value else e.startOut + r.value },
+                                                  shove = { step -> e.startEntryShift(r.value, step) })
+                                }
                                 SeparatorLine()
                             }
                             TvToggleRow(translated("Neuzugänge getrennt"), e.newAccessDisconnected, Glyph.Shared) { e.newAccessDisconnected = !e.newAccessDisconnected }
-                            }
-                            TvGroup(translated("Bibliotheken und Sammlungen")) {
-                            // Own rows from the server, after the fixed ones (as in `ProfileView` on tvOS).
-                            val libraries = e.startLibraries
-                            libraries.forEachIndexed { index, b ->
-                                TvLibraryRow(b.name, canHigh = index != 0, canGoDown = index != libraries.lastIndex,
-                                    remove = { e.startLibraries = e.startLibraries.filter { it.id != b.id } },
-                                    shove = { step ->
-                                        val list = e.startLibraries.toMutableList()
-                                        val from = list.indexOfFirst { it.id == b.id }
-                                        val to = from + step
-                                        if (from >= 0 && to in list.indices) { list.removeAt(from); list.add(to, b); e.startLibraries = list }
-                                    })
-                                SeparatorLine()
-                            }
+                            SeparatorLine()
                             TvValueRow(translated("Bibliothek hinzufügen"), Glyph.Plus, if (freeLibraries.isEmpty()) translated("Keins offen") else "",
                                        opened, setOpened, reportRow, freeLibraries.map { Choice(it.id, it.name) }, "") { id ->
                                 freeLibraries.firstOrNull { it.id == id }?.let { e.startLibraries = e.startLibraries + it }

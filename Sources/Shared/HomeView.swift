@@ -290,32 +290,34 @@ struct HomeView: View {
                 if model.genreChips, !model.startGenres.isEmpty {
                     genreChips.railEntrance(0, present: showItem)
                 }
-                // **The fixed rows in the configured order**, without the hidden ones;
-                // Settings → Appearance → Home.
-                ForEach(Array(fixedRails.enumerated()), id: \.element.id) { i, rail in
-                    pinned(rail)
-                        .railEntrance(i + 1, present: showItem)
-                }
-                // The chosen genres as their own rows, after the fixed ones.
+                // **Fixed rows, libraries and collections in one configured order**,
+                // without the hidden rows; Settings → Appearance → Home. A library's title is
+                // its name, the header opens it. One that has not loaded (yet) is skipped.
                 //
-                // **They fade in instead of appearing.** They arrive one network round trip
-                // after the fixed rows; without a transition there was first nothing and then
-                // everything at once.
-                // **Before them, the chosen libraries and collections** (Appearance → Home →
-                // "+"): the title is their name, the header opens them. With no selection the
-                // list is empty and this line costs nothing.
-                ForEach(Array(libraries.enumerated()), id: \.element.id) { j, r in
-                    Rail(model: model, title: "", name: r.name, items: r.items,
-                          target: CollectionRoute(collection: model.startLibraries.first { $0.id == r.id }?.item
-                                                ?? Item(id: r.id, name: r.name), art: nil),
-                          allLink: true)
-                        .transition(.opacity)
-                        .railEntrance(fixedRails.count + 1 + j, present: showItem)
+                // **Libraries fade in instead of appearing.** They arrive one network round
+                // trip after the fixed rows; without a transition there was first nothing and
+                // then everything at once.
+                ForEach(Array(entries.enumerated()), id: \.element.id) { i, entry in
+                    switch entry {
+                    case .rail(let rail):
+                        pinned(rail)
+                            .railEntrance(i + 1, present: showItem)
+                    case .library(let id):
+                        if let r = libraries.first(where: { $0.id == id }) {
+                            Rail(model: model, title: "", name: r.name, items: r.items,
+                                  target: CollectionRoute(collection: model.startLibraries.first { $0.id == r.id }?.item
+                                                        ?? Item(id: r.id, name: r.name), art: nil),
+                                  allLink: true)
+                                .transition(.opacity)
+                                .railEntrance(i + 1, present: showItem)
+                        }
+                    }
                 }
+                // The chosen genres as their own rows, after all the others.
                 ForEach(Array(state.genreRails.enumerated()), id: \.element.id) { j, r in
                     Rail(model: model, title: "", name: r.name, items: r.items)
                         .transition(.opacity)
-                        .railEntrance(fixedRails.count + libraries.count + 1 + j, present: showItem)
+                        .railEntrance(entries.count + 1 + j, present: showItem)
                 }
                 // **At the very end, after the last row.** Never above content: whoever
                 // came to watch sees the rows first. Rules in `SupportPrompt`.
@@ -465,11 +467,8 @@ struct HomeView: View {
         state.libraryRails(for: model.startLibraries)
     }
 
-    private var fixedRails: [StartRail] {
-        model.startRails.filter {
-            !model.startOut.contains($0) && $0.fits(disconnected: model.newAccessDisconnected)
-        }
-    }
+    /// The configured order without the switched-off rows (``StartOrder``).
+    private var entries: [StartEntry] { model.startShown }
 
     /// Build first (invisible), show in the next pass; otherwise newly inserted rows
     /// would stand at their destination immediately, without the stagger.
