@@ -306,6 +306,7 @@ extension AppModel {
             case ("startAus", .list(let l)): startOut = Set(l.compactMap(StartRail.init(rawValue:)))
             case ("startGenres", .list(let l)): startGenres = l
             case ("startBibliotheken", .json(let d)): startLibraries = StartLibraries.read(d)
+            case ("startReihenfolge", .list(let l)): startOrder = l
             // The ones the views keep with `@AppStorage` (intro skip, remaining time as
             // end time, title as logo): the stored value is the setting.
             case (let name, .bool(let b)): store.set(b, forKey: name)

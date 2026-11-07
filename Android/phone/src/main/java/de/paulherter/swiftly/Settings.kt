@@ -128,7 +128,29 @@ class Settings(store: Store) {
     private var librariesLoaded = false
     private fun librariesKey() = "startBibliotheken|" + serverKey()
     /** After an account or server switch: read the new server's choice. */
-    fun librariesNewRead() { librariesLoaded = false; librariesState.intValue++ }
+    fun librariesNewRead() { librariesLoaded = false; orderLoaded = false; librariesState.intValue++ }
+    private var orderRaw: String? = null
+    private var orderLoaded = false
+    private fun orderKey() = "startReihenfolge|" + serverKey()
+    /**
+     * **Where libraries stand between the fixed rows**, per server like the libraries: a pattern
+     * of places (`StartOrder` in the package). Rows and libraries stay in `startRails` and
+     * `startLibraries`; the core reads all three (`Kern.startEntries`, `Kern.home`).
+     */
+    var startOrder: List<String>
+        get() {
+            librariesState.intValue
+            if (!orderLoaded) { orderRaw = a.rememberValue(orderKey()); orderLoaded = true }
+            return orderRaw?.let { raw ->
+                runCatching { JSONArray(raw) }.getOrNull()?.let { j -> (0 until j.length()).map { j.optString(it) } }
+            } ?: emptyList()
+        }
+        set(value) {
+            val raw = JSONArray(value).toString()
+            orderRaw = raw; orderLoaded = true
+            a.remember(orderKey(), raw)
+            librariesState.intValue++
+        }
     /**
          * Libraries and collections as their own home rows, in the chosen order, per server
          * (`startLibraries|<server>`), as on Apple. Reading is tolerant: a missing key or a broken
@@ -159,6 +181,32 @@ class Settings(store: Store) {
     /** The stored choice as JSON for the core. */
     fun startLibrariesJson(): String = JSONArray(startLibraries.map {
         org.json.JSONObject().put("id", it.id).put("name", it.name).put("sammlung", it.collection) }).toString()
+    /**
+     * **Fixed rows, libraries and collections in one list** for the settings (`StartOrder.listed` in
+     * the package, via `Kern.startEntries`). Reads all four values so Compose redraws on any change.
+     */
+    fun startEntries(): List<StartEntryItem> {
+        val json = Kern.startEntries(startOrder.toTypedArray(), startRails.toTypedArray(), startLibrariesJson(), newAccessDisconnected)
+        return JSONArray(json).let { j ->
+            (0 until j.length()).map { i -> j.getJSONObject(i).let {
+                StartEntryItem(it.getString("wert"), it.getString("text"), it.optBoolean("bibliothek"), it.optBoolean("sammlung"))
+            } }
+        }
+    }
+
+    /** One entry of that list a step up or down; the core answers the order, the rows and the libraries. */
+    fun startEntryShift(value: String, step: Int) {
+        val o = org.json.JSONObject(Kern.startEntryShifted(value, step.toLong(), startOrder.toTypedArray(),
+            startRails.toTypedArray(), startLibrariesJson(), newAccessDisconnected))
+        val rails = o.getJSONArray("rails"); val order = o.getJSONArray("order")
+        val libraries = JSONArray(o.getString("libraries"))
+        startRails = (0 until rails.length()).map { rails.getString(it) }
+        startLibraries = (0 until libraries.length()).mapNotNull { i ->
+            val l = libraries.optJSONObject(i) ?: return@mapNotNull null
+            StartLibraryItem(l.optString("id"), l.optString("name"), l.optBoolean("sammlung", false))
+        }
+        startOrder = (0 until order.length()).map { order.getString(it) }
+    }
     /** Genres as chips above the rows instead of as rows of their own; never both. */
     var genreChips by RememberValue(a, "genreChips", bool("genreChips", false), yesNo)
     /** Title as logo on movie and series pages (`titleAsLogo`); off by default. */
@@ -231,6 +279,7 @@ class Settings(store: Store) {
                 }
             }
         }
+        lst("startReihenfolge")?.let { startOrder = it }
     }
     /** "Load next episode": off by default; the next episode of a watched download is loaded and the watched one removed (`naechsteFolgeLaden`). */
     var loadNextEpisode by RememberValue(a, "naechsteFolgeLaden", bool("naechsteFolgeLaden", false), yesNo)
@@ -268,6 +317,9 @@ class Settings(store: Store) {
 }
 
 /** Reads a choice list from the facade: `[{"wert","text"}]`. */
+/** One line of the home page list: `value` is the stored form (`StartEntry.stored`), `text` a row's German list name or a library's name. */
+data class StartEntryItem(val value: String, val text: String, val library: Boolean, val collection: Boolean)
+
 fun selectionRead(json: String): List<Choice> = JSONArray(json).let { a ->
     (0 until a.length()).map { a.getJSONObject(it).let { o -> Choice(o.getString("wert"), o.getString("text")) } }
 }

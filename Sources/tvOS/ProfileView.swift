@@ -70,35 +70,8 @@ struct ProfileView: View {
         allLibraries.filter { b in !model.startLibraries.contains { $0.id == b.id } }
     }
 
-    /// Moves a selected library by one position.
-    private func move(_ entryRecord: StartLibrary, um step: Int) {
-        guard let from = model.startLibraries.firstIndex(of: entryRecord) else { return }
-        let to = from + step
-        guard model.startLibraries.indices.contains(to) else { return }
-        withAnimation(Theme.reveal) { model.startLibraries.swapAt(from, to) }
-    }
-
     private var freeGenres: [String] {
         allGenres.filter { !model.startGenres.contains($0) }
-    }
-
-    /// Which fixed rows exist: new movies and shows separately, or the combined one.
-    private var visibleRails: [StartRail] {
-        model.startRails.filter { $0.fits(disconnected: model.newAccessDisconnected) }
-    }
-
-    /// Moving happens in the visible list. What is not shown at the moment (the
-    /// combined row when separate, or the reverse) is appended at the end and comes
-    /// back there when toggled.
-    private func move(_ rail: StartRail, um step: Int) {
-        var visible = visibleRails
-        guard let from = visible.firstIndex(of: rail) else { return }
-        let to = from + step
-        guard visible.indices.contains(to) else { return }
-        withAnimation(Theme.reveal) {
-            visible.swapAt(from, to)
-            model.startRails = visible + model.startRails.filter { !visible.contains($0) }
-        }
     }
 
     enum SectionSelection: String, CaseIterable, Identifiable {
@@ -516,43 +489,42 @@ struct ProfileView: View {
             ToggleRow(icon: "textformat", title: "Titel als Logo", an: titleAsLogo) { titleAsLogo.toggle() }
             }
 
-            // **Which rows are on the home page, and in which order.** They are moved with
-            // the arrows on the right: dragging a row by a handle is a pointer gesture, and
-            // the remote has none. Focus goes right to the arrows and a press moves the row.
+            // **Which rows are on the home page, and in which order**: fixed rows, libraries
+            // and collections in one list (``StartOrder``). They are moved with the arrows on
+            // the right: dragging a row by a handle is a pointer gesture, and the remote has
+            // none. Focus goes right to the arrows and a press moves the row.
             TVGroup(title: "Startseite") {
-            ForEach(visibleRails) { rail in
-                RailsRow(name: rail.name,
-                            an: !model.startOut.contains(rail),
-                            canHigh: visibleRails.first != rail,
-                            canGoDown: visibleRails.last != rail,
-                            toggle: {
-                                if model.startOut.contains(rail) { model.startOut.remove(rail) }
-                                else { model.startOut.insert(rail) }
-                            },
-                            shove: { step in move(rail, um: step) })
+            let listed = model.startListed
+            ForEach(listed) { entry in
+                switch entry {
+                case .rail(let rail):
+                    RailsRow(name: rail.name,
+                                an: !model.startOut.contains(rail),
+                                canHigh: listed.first != entry,
+                                canGoDown: listed.last != entry,
+                                toggle: {
+                                    if model.startOut.contains(rail) { model.startOut.remove(rail) }
+                                    else { model.startOut.insert(rail) }
+                                },
+                                shove: { step in withAnimation(Theme.reveal) { model.startShift(entry, by: step) } })
+                case .library(let id):
+                    StartLibraryRow(
+                        name: model.startLibraries.first { $0.id == id }?.name ?? "",
+                        canHigh: listed.first != entry,
+                        canGoDown: listed.last != entry,
+                        remove: {
+                            withAnimation(Theme.reveal) {
+                                model.startLibraries.removeAll { $0.id == id }
+                            }
+                        },
+                        shove: { step in withAnimation(Theme.reveal) { model.startShift(entry, by: step) } })
+                }
                 SeparatorLine()
             }
             ToggleRow(icon: "square.split.2x1", title: "Neuzugänge getrennt", an: model.newAccessDisconnected) {
                 model.newAccessDisconnected.toggle()
             }
-            }
-
-            // **Own rows from the server**: libraries and collections, in the order of this
-            // list, after the fixed rows.
-            TVGroup(title: "Bibliotheken und Sammlungen") {
-            ForEach(model.startLibraries) { entryRecord in
-                StartLibraryRow(
-                    name: entryRecord.name,
-                    canHigh: model.startLibraries.first != entryRecord,
-                    canGoDown: model.startLibraries.last != entryRecord,
-                    remove: {
-                        withAnimation(Theme.reveal) {
-                            model.startLibraries.removeAll { $0.id == entryRecord.id }
-                        }
-                    },
-                    shove: { step in move(entryRecord, um: step) })
-                SeparatorLine()
-            }
+            SeparatorLine()
             valueRow("Bibliothek hinzufügen", icon: "plus",
                       value: freeLibraries.isEmpty ? String(localized: "Keins offen") : "",
                       entries: freeLibraries,

@@ -153,6 +153,41 @@ final class AppModel {
             remember(StartLibraries.data(startLibraries) ?? Data(), "startBibliotheken" + serverKey)
         }
     }
+    /// **Where libraries stand between the fixed rows**: a pattern of places
+    /// (``StartOrder``), per server like the libraries themselves. The rows and libraries
+    /// stay in `startRails` and `startLibraries`; read the result through `startEntries`.
+    var startOrder: [String] { didSet { remember(startOrder, "startReihenfolge" + serverKey) } }
+
+    /// Fixed rows and chosen libraries in one order, as the home page shows them.
+    var startEntries: [StartEntry] {
+        StartOrder.applicable(stored: startOrder, rails: startRails, libraries: startLibraries)
+    }
+
+    /// What the settings list shows (``StartOrder/listed(_:disconnected:)``).
+    var startListed: [StartEntry] {
+        StartOrder.listed(startEntries, disconnected: newAccessDisconnected)
+    }
+
+    /// What the home page shows (``StartOrder/shown(_:out:disconnected:)``).
+    var startShown: [StartEntry] {
+        StartOrder.shown(startEntries, out: startOut, disconnected: newAccessDisconnected)
+    }
+
+    /// Takes a new order of the settings list. The rows the list does not show right now
+    /// keep their place at the end and come back there when "Neuzugänge getrennt" flips.
+    func startArrange(_ listed: [StartEntry]) {
+        let hidden = startRails.filter { !$0.fits(disconnected: newAccessDisconnected) }
+        let result = StartOrder.split(listed, hidden: hidden, libraries: startLibraries)
+        startRails = result.rails
+        startLibraries = result.libraries
+        startOrder = result.stored
+    }
+
+    /// One step up or down in the settings list (TV arrows, Mac buttons).
+    func startShift(_ entry: StartEntry, by step: Int) {
+        guard let moved = StartOrder.shifted(entry, by: step, in: startListed) else { return }
+        startArrange(moved)
+    }
     /// How much buffer the player holds. See ``BufferLevel`` in the package.
     var bufferLevel: BufferLevel { didSet { remember(bufferLevel.rawValue, "pufferstufe") } }
     /// **Shows on Discord what is playing, and is off until enabled.**
@@ -241,6 +276,7 @@ final class AppModel {
         bitratesLimit = store.object(forKey: "bitratenGrenze" + k) as? Int
             ?? store.integer(forKey: "bitratenGrenze")
         startLibraries = StartLibraries.read(store.data(forKey: "startBibliotheken" + k))
+        startOrder = store.stringArray(forKey: "startReihenfolge" + k) ?? []
     }
 
     private func remember(_ value: Any, _ name: String) {
@@ -714,6 +750,7 @@ final class AppModel {
         genreChips = store.object(forKey: "genreChips") as? Bool ?? false
         startGenres = store.stringArray(forKey: "startGenres") ?? []
         startLibraries = StartLibraries.read(store.data(forKey: "startBibliotheken"))
+        startOrder = store.stringArray(forKey: "startReihenfolge") ?? []
         bufferLevel = (store.string(forKey: "pufferstufe")
                        .flatMap(BufferLevel.init(rawValue:))) ?? .normal
         discordShow = store.object(forKey: "discordAnzeigen") as? Bool ?? false

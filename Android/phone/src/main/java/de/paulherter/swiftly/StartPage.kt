@@ -133,7 +133,7 @@ internal fun railsRead(json: String): List<Rail> {
 
 /** What the home rows depend on in the settings; the same key on the phone and the TV. */
 internal fun startKey(e: Settings): String =
-    listOf(e.newAccessDisconnected, e.startRails, e.startOut, e.startGenres, e.genreChips, e.startLibraries.map { it.id }).joinToString("|")
+    listOf(e.newAccessDisconnected, e.startRails, e.startOut, e.startGenres, e.genreChips, e.startLibraries.map { it.id }, e.startOrder).joinToString("|")
 
 /**
  * **Coming back to the home page** (section change, a page closing): fetch only when what is on hand is
@@ -188,7 +188,8 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
             val json = withContext(Dispatchers.IO) {
                 app.kern.home(e.newAccessDisconnected, e.startRails.toTypedArray(), e.startOut.toTypedArray(),
                                     app.store.rememberValue("bibliothek-movies").orEmpty(), app.store.rememberValue("bibliothek-tvshows").orEmpty(),
-                                    e.startGenres.toTypedArray(), e.genreChips, e.startLibrariesJson()).await()
+                                    e.startGenres.toTypedArray(), e.genreChips, e.startLibrariesJson(),
+                                    e.startOrder.toTypedArray()).await()
             }
             rails = railsRead(json).also { app.startRails = it }
             app.startLoaded = System.currentTimeMillis()

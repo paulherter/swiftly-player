@@ -182,13 +182,9 @@ struct HomeView: View {
         }
     }
 
-    /// Which fixed rows exist right now; order and selection come from settings
-    /// (Profile, Appearance).
-    private var fixedRails: [StartRail] {
-        model.startRails.filter {
-            !model.startOut.contains($0) && $0.fits(disconnected: model.newAccessDisconnected)
-        }
-    }
+    /// Fixed rows, libraries and collections in the configured order, without the
+    /// switched-off rows (Profile, Appearance, Home; ``StartOrder``).
+    private var entries: [StartEntry] { model.startShown }
 
     /// The chosen libraries and collections that currently have titles.
     private var libraries: [Home.LibraryRail] {
@@ -220,8 +216,11 @@ struct HomeView: View {
     private var startMark: TileMark? {
         // The first row that exists, not "Continue Watching": whoever reorders or hides a row
         // expects focus at the top, and something else is there then.
-        for rail in fixedRails {
-            let k = identifier(rail)
+        for entry in entries {
+            let k: RailsId = switch entry {
+            case .rail(let rail): identifier(rail)
+            case .library(let id): .library(id)
+            }
             if let t = list(k).first { return .init(rail: k, title: t.id) }
         }
         for g in state.genreRails where !g.items.isEmpty {
@@ -366,23 +365,28 @@ struct HomeView: View {
                     genreChips.railEntrance(1, present: showItem)
                 }
 
-                // The fixed rows in the configured order, without hidden ones (Profile, Appearance,
-                // Home). Staggered after an account switch (``Reihenauftritt``).
-                ForEach(Array(fixedRails.enumerated()), id: \.element) { i, rail in
-                    pinned(rail).railEntrance(i + 2, present: showItem)
+                // Fixed rows, libraries and collections in the configured order, without hidden
+                // rows (Profile, Appearance, Home). A library that has no titles (yet) is
+                // skipped. Staggered after an account switch (``Reihenauftritt``).
+                ForEach(Array(entries.enumerated()), id: \.element.id) { i, entry in
+                    switch entry {
+                    case .rail(let rail):
+                        pinned(rail).railEntrance(i + 2, present: showItem)
+                    case .library(let id):
+                        if let bib = libraries.first(where: { $0.id == id }) {
+                            railsSection {
+                                RailTitle(name: bib.name)
+                            } content: {
+                                Strip(model: model, items: bib.items,
+                                         rail: .library(bib.id),
+                                         atTitle: $atTitle, frontmost: frontmost)
+                            }
+                            .railEntrance(i + 2, present: showItem)
+                        }
+                    }
                 }
 
-                // The chosen libraries and collections, then the genres.
-                ForEach(Array(libraries.enumerated()), id: \.element.id) { j, bib in
-                    railsSection {
-                        RailTitle(name: bib.name)
-                    } content: {
-                        Strip(model: model, items: bib.items,
-                                 rail: .library(bib.id),
-                                 atTitle: $atTitle, frontmost: frontmost)
-                    }
-                    .railEntrance(fixedRails.count + 2 + j, present: showItem)
-                }
+                // The genres after all of them.
                 ForEach(Array(state.genreRails.enumerated()), id: \.element.id) { j, genre in
                     if !genre.items.isEmpty {
                         railsSection {
@@ -392,7 +396,7 @@ struct HomeView: View {
                                      rail: .genre(genre.name),
                                      atTitle: $atTitle, frontmost: frontmost)
                         }
-                        .railEntrance(fixedRails.count + libraries.count + 2 + j, present: showItem)
+                        .railEntrance(entries.count + 2 + j, present: showItem)
                     }
                 }
                 // Only after the last row, and only when it is due.

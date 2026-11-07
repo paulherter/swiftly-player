@@ -1111,13 +1111,28 @@ extension App {
         // **Reordering uses what the input method offers**: handles on iPhone, two arrows
         // per row here. Dragging with the mouse over a list that can also hide entries
         // would put two gestures on one row.
+        // **Fixed rows, libraries and collections in one list** (``StartOrder``): a library can
+        // stand above "Weiterschauen" or between two fixed rows. "+" adds one at the end.
         let g0 = settingGroup(translated("Reihen"))
-        let visible = StartRailsEpisode.applicable(stored: selection.startRails)
-            .filter { $0.fits(disconnected: selection.newArrivalsDisconnected) }
-        for (spot, rail) in visible.enumerated() {
+        let visible = selection.startListed
+        for (spot, entry) in visible.enumerated() {
             if spot > 0 { append(g0.space, rowsLine()) }
-            append(g0.space, railsRow(rail, spot: spot, from: visible.count))
+            switch entry {
+            case .rail(let rail):
+                append(g0.space, railsRow(rail, spot: spot, from: visible.count))
+            case .library(let id):
+                if let entryRecord = selection.startLibraries.first(where: { $0.id == id }) {
+                    append(g0.space, libraryRow(entryRecord, spot: spot, from: visible.count))
+                }
+            }
         }
+        append(g0.space, divider())
+        append(g0.space, valuesRow(symbol: "list-add-symbolic",
+                                      title: translated("Bibliothek hinzufügen"),
+                                      accent: true,
+                                      arrow: true) { [weak self] in
+            self?.subpageOpen(.librarySelection)
+        })
         append(left, g0.outer)
 
         let gn = settingGroup(translated("Neuzugänge"))
@@ -1146,24 +1161,6 @@ extension App {
         // **Two forms of the same selection**, not two sets. Like the other rows in the
         // card: an icon showing the form, no selection circle; the checkmark is on the
         // right.
-        // **Between the fixed rows and the genres**, as on Apple: custom rows from the
-        // server, reorderable only among themselves.
-        let gb = settingGroup(translated("Bibliotheken und Sammlungen"))
-        let choice = selection.startLibraries
-        for (spot, entryRecord) in choice.enumerated() {
-            if spot > 0 { append(gb.space, rowsLine()) }
-            append(gb.space, libraryRow(entryRecord, spot: spot, from: choice.count))
-        }
-        if !choice.isEmpty { append(gb.space, divider()) }
-        append(gb.space, valuesRow(symbol: "list-add-symbolic",
-                                      title: translated("Bibliothek hinzufügen"),
-                                      accent: true,
-                                      arrow: true) { [weak self] in
-            self?.subpageOpen(.librarySelection)
-        })
-        append(right, gb.outer)
-        append(right, paddingHigh(26))
-
         let g2 = settingGroup(translated("Genres"))
         append(g2.space, valuesRow(symbol: "view-grid-symbolic",
                                       title: translated("Als eigene Reihen"),
@@ -1226,11 +1223,11 @@ extension App {
         append(row, name)
 
         let up = listArrow("go-up-symbolic", name: translated("Nach oben"), an: spot > 0) { [weak self] in
-            self?.railMove(rail, um: -1)
+            self?.entryMove(.rail(rail), um: -1)
         }
         append(row, up)
         let down = listArrow("go-down-symbolic", name: translated("Nach unten"), an: spot < from - 1) { [weak self] in
-            self?.railMove(rail, um: 1)
+            self?.entryMove(.rail(rail), um: 1)
         }
         append(row, down)
 
@@ -1245,10 +1242,10 @@ extension App {
         return row
     }
 
-    private func railMove(_ rail: StartRail, um step: Int) {
-        selection.startRails = StartRailsEpisode.shifted(rail, um: step,
-                                                         stored: selection.startRails,
-                                                         disconnected: selection.newArrivalsDisconnected)
+    /// One step up or down in the list of rows and libraries (``StartOrder/shifted``).
+    private func entryMove(_ entry: StartEntry, um step: Int) {
+        guard let moved = StartOrder.shifted(entry, by: step, in: selection.startListed) else { return }
+        selection.startArrange(moved)
         selection.secure()
         loaded.remove(.start)
         subpageOpen(.presentation)
@@ -1317,10 +1314,10 @@ extension App {
         gtk_widget_set_hexpand(l, 1)
         append(row, l)
         append(row, listArrow("go-up-symbolic", name: translated("Nach oben"), an: spot > 0) { [weak self] in
-            self?.libraryMove(entryRecord.id, um: -1)
+            self?.entryMove(.library(entryRecord.id), um: -1)
         })
         append(row, listArrow("go-down-symbolic", name: translated("Nach unten"), an: spot < from - 1) { [weak self] in
-            self?.libraryMove(entryRecord.id, um: 1)
+            self?.entryMove(.library(entryRecord.id), um: 1)
         })
         append(row, listArrow("list-remove-symbolic", name: translated("Entfernen"), an: true) { [weak self] in
             guard let self else { return }
@@ -1330,19 +1327,6 @@ extension App {
             self.subpageOpen(.presentation, push: .without)
         })
         return row
-    }
-
-    private func libraryMove(_ id: String, um step: Int) {
-        var list = selection.startLibraries
-        guard let from = list.firstIndex(where: { $0.id == id }) else { return }
-        let to = from + step
-        guard to >= 0, to < list.count else { return }
-        let e = list.remove(at: from)
-        list.insert(e, at: to)
-        selection.startLibraries = list
-        selection.secure()
-        loaded.remove(.start)
-        subpageOpen(.presentation, push: .without)
     }
 
     /// What can be chosen as a custom start row: the account's libraries and its
