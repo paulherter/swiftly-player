@@ -211,38 +211,47 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                     val alt = series
                     if (alt != null) {
                         val selectedSeason = alt.seasons.firstOrNull { it.id == season }
-                        // `TitleActions.forSeries`: "Watched" first (from the button row, see `gesehenHandlung`),
-                        // then episode/season actions, metadata last.
+                        // **Watched, "Shuffle" and "Watch together" sit in the row**, as symbols before "…" (tvOS
+                        // `SeriesView` header); the menu leaves them out. Watched mirrors `TitleAction.watchState`:
+                        // toggle immediately, roll back on error and report.
+                        TvButton(null, if (alt.watched) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle,
+                                description = translated("Gesehen"), active = alt.watched) {
+                            s = alt.copy(watched = !alt.watched)
+                            run.launch {
+                                val reason = withContext(Dispatchers.IO) { app.kern.watched(alt.id, !alt.watched).await() }
+                                if (reason.isNotEmpty()) { s = alt.copy(watched = alt.watched); message = errorString(reason) }
+                            }
+                        }
+                        // Same as the phone: mixes all episodes once (`ShuffleRun` in the package).
+                        TvButton(null, Glyph.Shuffle, description = translated("Zufällig abspielen")) {
+                            run.launch {
+                                val first = withContext(Dispatchers.IO) { app.kern.shuffleStart(alt.id).await() }
+                                if (first.isNotEmpty()) de.paulherter.swiftly.playAsking(app, first, 0.0)
+                                else message = translated("Die Folge konnte nicht geladen werden.")
+                            }
+                        }
+                        // The episode where playback continues, only with permission (`TitleActions.forSeries`).
+                        val state = alt.state
+                        if (state != null && app.gemeinsam.value.mayCreate) {
+                            TvButton(null, Glyph.Cluster, description = translated("Gemeinsam schauen")) {
+                                tvCreateOpen(app, state.id,
+                                    if (state.season != null && state.episode != null) sharedTitleRow("", alt.name, state.season, state.episode) else alt.name)
+                            }
+                        }
+                        // `TitleActions.forSeries` without the three above: episode/season actions, metadata last.
                         val entries = buildList {
-                            add(Choice("gesehen", translated(if (alt.watched) "Als ungesehen merken" else "Als gesehen merken")))
                             alt.state?.let {
                                 add(Choice("vonvorn", translated("Folge von vorn abspielen")))
-                                // **"Next episode" gives way to "Watch together"**.
-                                if (app.gemeinsam.value.mayCreate) add(Choice("gemeinsam", translated("Gemeinsam schauen")))
-                                else add(Choice("naechste", translated("Nächste Folge abspielen")))
+                                add(Choice("naechste", translated("Nächste Folge abspielen")))
                             }
-                            add(Choice("zufaellig", translated("Zufällig abspielen")))
                             selectedSeason?.let { add(Choice("staffel", translated("%@ als gesehen", it.name))) }
                             add(Choice("metadaten", translated("Metadaten neu einlesen")))
                         }
                         TvMoreButton(entries,
-                            mapOf("gesehen" to Glyph.CheckmarkCircleFilled, "vonvorn" to Glyph.Rewind,
-                                  "naechste" to Glyph.Skip, "zufaellig" to Glyph.Shuffle, "staffel" to Glyph.CheckmarkCircle,
-                                  "gemeinsam" to Glyph.Cluster, "metadaten" to Glyph.Reload)) { choice ->
-                            if (choice == "gemeinsam") {
-                                alt.state?.let { st -> tvCreateOpen(app, st.id,
-                                    if (st.season != null && st.episode != null) sharedTitleRow("", alt.name, st.season, st.episode) else alt.name) }
-                                return@TvMoreButton
-                            }
+                            mapOf("vonvorn" to Glyph.Rewind, "naechste" to Glyph.Skip,
+                                  "staffel" to Glyph.CheckmarkCircle, "metadaten" to Glyph.Reload)) { choice ->
                             run.launch {
                                 when (choice) {
-                                    // Mirrors `gesehenHandlung`/`DetailView.swift:189-194`: toggle immediately, roll back on error
-                                    // and report.
-                                    "gesehen" -> {
-                                        s = alt.copy(watched = !alt.watched)
-                                        val reason = withContext(Dispatchers.IO) { app.kern.watched(alt.id, !alt.watched).await() }
-                                        if (reason.isNotEmpty()) { s = alt.copy(watched = alt.watched); message = errorString(reason) }
-                                    }
                                     "vonvorn" -> alt.state?.let { st ->
                                         if (series?.planPresent == true) de.paulherter.swiftly.playAsking(app, st.id, null)
                                         else message = translated("Der Server hat keine Datei zu dieser Folge.")
@@ -252,12 +261,6 @@ fun TvSeries(app: SwiftlyApplication, target: Destination, open: (Destination) -
                                         val afterThat = withContext(Dispatchers.IO) { app.kern.episodeAfter(st.id, alt.id).await() }
                                         if (afterThat.isNotEmpty()) de.paulherter.swiftly.playAsking(app, afterThat, null)
                                         else message = translated("Danach kommt nichts mehr.")
-                                    }
-                                    // Same as the phone: mixes all episodes once (`ShuffleRun` in the package).
-                                    "zufaellig" -> {
-                                        val first = withContext(Dispatchers.IO) { app.kern.shuffleStart(alt.id).await() }
-                                        if (first.isNotEmpty()) de.paulherter.swiftly.playAsking(app, first, 0.0)
-                                        else message = translated("Die Folge konnte nicht geladen werden.")
                                     }
                                     "staffel" -> selectedSeason?.let { st ->
                                         val reason = withContext(Dispatchers.IO) { app.kern.watched(st.id, true).await() }

@@ -167,12 +167,14 @@ enum TitleActions {
     /// For a series.
     ///
     /// `state` is the episode at which the server sees the viewer;
-    /// `season` the currently selected season.
+    /// `season` the currently selected season. `shuffles: false` where the page
+    /// already has "Zufällig abspielen" as its own button (tvOS).
     static func forSeries(_ series: Item, state: Item?, season: Item?, model: AppModel,
                           episodeStart: @escaping (Item, Double) -> Void,
                           report: @escaping (String) -> Void,
                           refresh: (() async -> Void)? = nil,
-                          gemeinsam: ((Item) -> Void)? = nil) -> [TitleAction] {
+                          gemeinsam: ((Item) -> Void)? = nil,
+                          shuffles: Bool = true) -> [TitleAction] {
         var list: [TitleAction] = []
         if let state {
             list.append(.init(symbol: "gobackward", text: "Folge von vorn abspielen") {
@@ -195,15 +197,9 @@ enum TitleActions {
             })
             }
         }
-        list.append(.init(symbol: "shuffle", text: "Zufällig abspielen") {
-            Task {
-                guard let first = await model.shuffleStart(series) else {
-                    report(AppModel.episodeNotLoaded)
-                    return
-                }
-                episodeStart(first, 0)
-            }
-        })
+        if shuffles {
+            list.append(shuffle(series, model: model, episodeStart: episodeStart, report: report))
+        }
         if let season {
             list.append(.init(symbol: "checkmark.circle",
                                text: "\(season.name) als gesehen") {
@@ -221,7 +217,22 @@ enum TitleActions {
         return list
     }
 
-    private static func sharedWatch(_ perform: @escaping () -> Void) -> TitleAction {
+    /// "Zufällig abspielen": every episode of the series mixed once (``ShuffleRun``).
+    static func shuffle(_ series: Item, model: AppModel,
+                        episodeStart: @escaping (Item, Double) -> Void,
+                        report: @escaping (String) -> Void) -> TitleAction {
+        .init(symbol: "shuffle", text: "Zufällig abspielen") {
+            Task {
+                guard let first = await model.shuffleStart(series) else {
+                    report(AppModel.episodeNotLoaded)
+                    return
+                }
+                episodeStart(first, 0)
+            }
+        }
+    }
+
+    static func sharedWatch(_ perform: @escaping () -> Void) -> TitleAction {
         .init(symbol: "person.2", text: "Gemeinsam schauen", perform: perform)
     }
 

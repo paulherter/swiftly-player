@@ -368,33 +368,37 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                     // a panel on the right edge. See its doc comment.
                     val tt = title
                     if (tt != null) {
+                        // **Watched and "Watch together" sit in the row**, as symbols before "…" (tvOS `StateButtons`,
+                        // `DetailView.togetherAction`); the menu leaves them out. Watched mirrors
+                        // `TitleAction.watchState`: toggle immediately, revert and report on failure.
                         val watchedNow = tt.watched
-                        // `TitleActions.forMovie`: "Watched" first (reachable from the button row, see
-                        // `gesehenHandlung`), "Restart"/"Reset" only with progress.
+                        TvButton(null, if (watchedNow) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle,
+                                description = translated("Gesehen"), active = watchedNow) {
+                            t = tt.copy(watched = !watchedNow)
+                            run.launch {
+                                val reason = withContext(Dispatchers.IO) { app.kern.watched(target.id, !watchedNow).await() }
+                                if (reason.isNotEmpty()) { t = tt.copy(watched = watchedNow); message = errorString(reason) }
+                            }
+                        }
+                        // Only with a file and permission (`TitleActions.forMovie`, `gemeinsam`).
+                        if (tt.planPresent && app.gemeinsam.value.mayCreate) {
+                            TvButton(null, Glyph.Cluster, description = translated("Gemeinsam schauen")) {
+                                tvCreateOpen(app, target.id, tt.name)
+                            }
+                        }
+                        // `TitleActions.forMovie`: "Restart"/"Reset" only with progress.
                         val entries = buildList {
-                            add(Choice("gesehen", translated(if (watchedNow) "Als ungesehen merken" else "Als gesehen merken")))
                             if (tt.planPresent && tt.resumeFrom != null) {
                                 add(Choice("vonvorn", translated("Von vorn abspielen")))
                                 add(Choice("zuruecksetzen", translated("Fortschritt zurücksetzen")))
                             }
-                            // Only with a file and permission (`TitleActions.forMovie`, `gemeinsam`).
-                            if (tt.planPresent && app.gemeinsam.value.mayCreate) add(Choice("gemeinsam", translated("Gemeinsam schauen")))
                             add(Choice("metadaten", translated("Metadaten neu einlesen")))
                         }
                         TvMoreButton(entries,
-                            mapOf("gesehen" to Glyph.CheckmarkCircleFilled, "vonvorn" to Glyph.Rewind,
-                                  "zuruecksetzen" to Glyph.ResetCircle, "gemeinsam" to Glyph.Cluster,
+                            mapOf("vonvorn" to Glyph.Rewind, "zuruecksetzen" to Glyph.ResetCircle,
                                   "metadaten" to Glyph.Reload)) { choice ->
-                            if (choice == "gemeinsam") { tvCreateOpen(app, target.id, tt.name); return@TvMoreButton }
                             run.launch {
                                 when (choice) {
-                                    // Mirrors `gesehenHandlung` in `DetailView.swift`: toggle immediately, revert and report on
-                                    // failure.
-                                    "gesehen" -> {
-                                        t = tt.copy(watched = !watchedNow)
-                                        val reason = withContext(Dispatchers.IO) { app.kern.watched(target.id, !watchedNow).await() }
-                                        if (reason.isNotEmpty()) { t = tt.copy(watched = watchedNow); message = errorString(reason) }
-                                    }
                                     "vonvorn" -> de.paulherter.swiftly.playAsking(app, target.id, null, title)
                                     "zuruecksetzen" -> {
                                         val reason = withContext(Dispatchers.IO) { app.kern.watched(target.id, false).await() }

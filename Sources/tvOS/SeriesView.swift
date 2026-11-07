@@ -381,6 +381,14 @@ struct SeriesView: View {
                                 remembered: $remembered, watched: $watched,
                                 message: $message)
 
+                ActionSymbolButton(action: TitleActions.shuffle(
+                    current, model: model, episodeStart: { episodeStart($0, since: $1) },
+                    report: { message = $0 }))
+
+                if let together = togetherAction {
+                    ActionSymbolButton(action: together)
+                }
+
                 MoreButton(opened: $moreOpen)
                     .focused($atMoreButton)
                     .panelTrigger("mehr")
@@ -627,17 +635,21 @@ struct SeriesView: View {
         }
     }
 
+    /// Watched, "Zufällig abspielen" and "Gemeinsam schauen" are buttons in the row, so the
+    /// panel leaves them out; without "Gemeinsam schauen" it offers "Nächste Folge abspielen".
     private var moreActions: [TitleAction] {
-        // Watched sits first, as on the movie page, one level deeper than the
-        // button row. See `TitleAction.watchState`.
-        [TitleAction.watchState(current, model: model, watched: $watched,
-                                 report: { message = $0 })]
-        + TitleActions.forSeries(current, state: nextWith, season: selectedSeason,
-                                  model: model,
-                                  episodeStart: { episodeStart($0, since: $1) },
-                                  report: { message = $0 },
-                                  gemeinsam: SharedModel.shared.mayCreate
-                                      ? { SharedModel.shared.createFor = $0 } : nil)
+        TitleActions.forSeries(current, state: nextWith, season: selectedSeason,
+                               model: model,
+                               episodeStart: { episodeStart($0, since: $1) },
+                               report: { message = $0 },
+                               shuffles: false)
+    }
+
+    /// "Gemeinsam schauen" as in `TitleActions.forSeries`: the episode where playback
+    /// continues, and only with the right to create a group.
+    private var togetherAction: TitleAction? {
+        guard let state = nextWith, SharedModel.shared.mayCreate else { return nil }
+        return TitleActions.sharedWatch { SharedModel.shared.createFor = state }
     }
 
     private func episodeStart(_ episode: Item, since: Double) {
