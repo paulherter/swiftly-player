@@ -1,0 +1,2186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swiftly Music: a music player for Jellyfin and Navidrome</title>
+<meta name="description" content="Swiftly Music plays your own Jellyfin or Navidrome music library on iPhone: albums, playlists, synced lyrics, Sonos and original quality.">
+<link rel="canonical" href="https://swiftlyplayer.com/music/">
+<meta property="og:title" content="Swiftly Music">
+<meta property="og:description" content="Your own music library, on your phone. For Jellyfin and Navidrome.">
+<meta property="og:url" content="https://swiftlyplayer.com/music/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Swiftly Player">
+<meta property="og:image" content="https://swiftlyplayer.com/vorschau.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#101010">
+<link rel="preload" as="font" type="font/woff2" href="/schrift/figtree-latin.woff2" crossorigin>
+<link rel="icon" href="icon-music.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<style>
+/* ---------------------------------------------------------------
+   Figtree, selbst ausgeliefert. Eine variable Datei traegt alle
+   Staerken von 400 bis 800: latin 20 KB, latin-ext 10 KB. Kein
+   fremder Server, also kein zweiter Verbindungsaufbau und keine
+   Datenschutzfrage. SIL Open Font License 1.1, Text in
+   schrift/OFL.txt. Vorher stand Figtree zwar in der Schriftliste,
+   geladen wurde sie aber nirgends: die Seite lief in der
+   Systemschrift.
+   --------------------------------------------------------------- */
+@font-face {
+  font-family: "Figtree";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(/schrift/figtree-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                 U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                 U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Figtree";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(/schrift/figtree-latin-ext.woff2) format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+                 U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
+                 U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* ---------------------------------------------------------------
+   Farben woertlich aus Sources/Shared/Farben.swift. Der Akzent
+   traegt Zustand, nie eine Flaeche: der einzige gefuellte Knopf
+   der Seite ist deshalb weiss.
+   --------------------------------------------------------------- */
+:root {
+  /* Tokens wortgleich aus Sources/Shared/Farben.swift. Die Seite hat genau
+     EINEN Akzent. --kuehl, --warm und --marke sind gestrichen; die Namen
+     bleiben nur als Alias, damit keine alte Regel ins Leere greift. */
+  --grund:   #101010;
+  --tief:    #101010;
+  --gruppe:  #1E1E1E;   /* Karte, ruhiger Block */
+  --flaeche: #262626;   /* alles, was man anfassen kann */
+  --erhoeht: #303030;   /* gewaehlt, aufgelegt */
+  --gedrueckt: #3A3A3A;
+
+  --akzent:  #50D5DA;
+  --akzent-leise: #113435;
+  --auf-akzent:   #061212;
+  --kuehl:   var(--akzent);
+  --warm:    var(--akzent);
+  --marke:   var(--akzent);
+
+  --schrift:     #FFFFFF;
+  --leise:       #CCCCCC;
+  --sehr-leise:  #989898;
+  --linie:       rgba(255,255,255,.07);
+  --rand:        rgba(255,255,255,.12);
+  --schwebe:     rgba(255,255,255,.06);
+
+  --schriftart: "Figtree", ui-sans-serif, system-ui, -apple-system,
+                "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+
+  /* Entwurf 72:2: jede Ueberschrift steht 76 unter der Etagenkante,
+     unten bleiben 70 bis 110. Vorher 160 nach Bevel: jede Etage war rund
+     150 hoeher als im Entwurf, zwischen den Kapiteln stand zu viel Schwarz. */
+  --etage: clamp(56px, 5.3vw, 76px);
+  --bahn: 1240px;
+  --seitenrand: clamp(24px, 4vw, 40px);
+
+  /* Emil Kowalski: die eingebauten Kurven sind zu weich. */
+  --raus: cubic-bezier(.23, 1, .32, 1);
+  --rein-raus: cubic-bezier(.77, 0, .175, 1);
+  /* Apples Schubladenkurve: weich anlaufen, sauber ankommen. */
+  --feder: cubic-bezier(.32, .72, 0, 1);
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  background: var(--grund);
+  color: var(--schrift);
+  font-family: var(--schriftart);
+  font-size: 18px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+/* Kein overflow-x am body. Gemessen von 360 bis 1920: nichts ragt
+   seitlich heraus, jeder Ueberstand sitzt in einem Kasten, der selbst
+   klemmt. Ein hidden hier haette nur overflow-y still auf auto gesetzt
+   und damit position: sticky gebrochen. */
+
+img, video { max-width: 100%; display: block; }
+a { color: inherit; text-decoration: none; }
+
+/* Ueberschriften: Zeilenhoehe 1, enge Laufweite, halbfett.
+   Grosse Schrift laeuft sonst optisch auseinander. */
+h1, h2, h3 {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -.014em;
+}
+/* Sperrung haengt an der Stufe (Designsystem): Seitentitel -0,021 em, Bold
+   genau hier und nirgends sonst. */
+h1 { font-size: clamp(38px, 5.55vw, 80px); font-weight: 700; letter-spacing: -.021em; }
+h2 { font-size: clamp(32px, 4.44vw, 64px); }
+h3 { font-size: clamp(22px, 2.2vw, 32px); line-height: 1.15; letter-spacing: -.012em; }
+
+p { margin: 0; }
+
+.bahn {
+  width: 100%;
+  /* Der Inhalt ist 1240 breit wie im Entwurf, der Innenrand kommt dazu.
+     Vorher schloss max-width ihn ein, und alles war 80 px schmaler. */
+  max-width: calc(var(--bahn) + 2 * var(--seitenrand));
+  margin-inline: auto;
+  padding-inline: var(--seitenrand);
+}
+
+.etage {
+  position: relative;
+  padding-block: var(--etage);
+}
+
+/* Der Kopf einer Etage steht mittig. Abweichung von GESTALTUNG.md,
+   die fuer die App linksbuendig vorschreibt: im Web traegt die
+   Mitte den Wechsel zwischen den Kapiteln besser. */
+.etagenkopf { text-align: center; }
+.etagenkopf p {
+  max-width: 680px;
+  margin: 16px auto 0;
+  color: var(--leise);
+  font-size: clamp(16px, 1.25vw, 18px);
+  text-wrap: balance;
+}
+
+.nur-fuer-leser {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ================= Leiste ================= */
+
+/* Am Desktop steht die Leiste oben an der Seite und scrollt mit dem Inhalt
+   weg. Mobil laeuft sie mit, dort ist der Weg nach oben sonst zu weit. */
+.leiste {
+  position: absolute;
+  top: 10px; left: 0; right: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding-inline: var(--seitenrand);
+  pointer-events: none;
+}
+.leiste__kapsel {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 24px;
+  border-radius: 999px;
+  background: var(--gruppe);
+}
+.leiste__marke { display: flex; align-items: center; min-height: 44px; margin-right: 6px; }
+.leiste__marke img { height: 21px; width: auto; }
+
+.leiste__punkt {
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--leise);
+  transition: color 160ms var(--raus), background-color 160ms var(--raus);
+}
+
+.knopf {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: var(--schrift);
+  color: var(--auf-akzent);
+  font-family: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: transform 160ms var(--raus), background-color 160ms var(--raus);
+}
+/* Der Knopf antwortet auf den Druck, nicht auf das Loslassen. Wie, steht
+   weiter unten unter "Verhalten": eine Regel fuer alles. */
+.knopf { position: relative; }
+.knopf--leiste { min-height: 40px; padding: 0 18px; font-size: 14.5px; }
+.knopf--gross  { min-height: 48px; padding: 0 28px; font-size: 17px; }
+
+.leiste__burger { display: none; }
+
+/* ================= Hero ================= */
+
+.auftakt { position: relative; }
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding-top: clamp(104px, 8.1vw, 116px);
+  padding-bottom: 0;
+  min-height: min(900px, 100svh);
+}
+
+.hero__rahmen {
+  position: relative;
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+}
+
+/* Die Aurora ist gerechnet, nicht fotografiert: vier radiale Verlaeufe in
+   den Akzentfarben. Sie liegt ueber der VOLLEN Breite des Kopfes, nicht im
+   1440er Rahmen: auf breiteren Schirmen stand sonst links und rechts die
+   Kante des Kastens im Licht. Verlaeufe statt blur(), siehe DESIGN.md 11.4. */
+.aurora {
+  position: absolute;
+  left: 0; right: 0; top: -24px;
+  height: 780px;
+  z-index: 0;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
+  /* Ein Akzent, als Verlauf: oben fast schwarz, nach unten in die
+     Akzentfarbe, an den unteren Ecken am kraeftigsten. */
+  background:
+    radial-gradient(ellipse 44% 66% at 2% 68%, rgba(80,213,218,.52), rgba(80,213,218,.24) 50%, rgba(80,213,218,0) 100%),
+    radial-gradient(ellipse 44% 66% at 98% 68%, rgba(80,213,218,.52), rgba(80,213,218,.24) 50%, rgba(80,213,218,0) 100%),
+    radial-gradient(ellipse 46% 48% at 50% 84%, rgba(80,213,218,.26), rgba(80,213,218,0) 100%);
+}
+
+
+.hero__text { position: relative; z-index: 6; text-align: center; }
+.hero__text h1 { margin-bottom: 24px; }
+.hero__text p {
+  max-width: 620px;
+  margin-inline: auto;
+  color: var(--leise);
+  font-size: clamp(16px, 1.25vw, 18px);
+  text-wrap: balance;
+}
+.hero__knopf { margin-top: 26px; }
+
+/* Die Plaketten schweben neben dem Titel. Sie stehen absolut auf der
+   1440er Buehne, damit sie beim Verkleinern mitwandern statt zu
+   ueberlappen. */
+.plakette {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 16px 13px 14px;
+  border-radius: 16px;
+  background: var(--flaeche);
+}
+.plakette b  { display: block; font-size: 14px; font-weight: 600; line-height: 1.3; }
+.plakette em { display: block; font-size: 12.5px; font-style: normal; color: var(--sehr-leise); line-height: 1.3; }
+.plakette__zeichen {
+  flex: none;
+  width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: 10px;
+  background: var(--akzent-leise);
+  color: var(--akzent);
+}
+.plakette__zeichen svg { width: 20px; height: 20px; }
+.plakette--direkt { left: 11.0%; top: 29.1%; }
+.plakette--resume { left: 72.2%; top: 35.4%; }
+.plakette--pip    { left:  8.2%; top: 50.7%; }
+
+/* Die Plaketten fliegen einmal von der Seite herein und schweben dann, jede
+   in ihrem Takt. Einfliegen und Schweben liegen auf transform; der Zeiger
+   und das Scrollen verschieben ueber die eigene Eigenschaft translate, die
+   sich mit transform addiert statt sie zu ersetzen. */
+@media (prefers-reduced-motion: no-preference) {
+  .plakette {
+    animation: einfliegen 1000ms var(--raus) both;
+  }
+  .plakette--direkt { --von: -56px; --hub: -9px; --kipp: -1.2deg; --schwebe: 6.4s; animation-delay: 200ms; }
+  .plakette--resume { --von: 56px;  --hub: 8px;  --kipp: 1deg;    --schwebe: 7.6s; animation-delay: 360ms; }
+  .plakette--pip    { --von: -56px; --hub: -7px; --kipp: .8deg;   --schwebe: 8.8s; animation-delay: 520ms; }
+}
+@keyframes einfliegen {
+  from { opacity: 0; transform: translate3d(var(--von, -48px), 14px, 0) scale(.94); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes schweben {
+  0%, 100% { transform: none; }
+  50%      { transform: translate3d(0, var(--hub, -8px), 0) rotate(var(--kipp, 0deg)); }
+}
+
+/* ---- Geraete: ein Rahmenbild, ein Schirm dahinter ----
+   Die Prozentwerte sind am Alphakanal der Rahmenbilder gemessen, an
+   der Kante der vollen Deckkraft. Der Radius steht in cqw, damit er
+   beim Verkleinern mitwaechst. */
+.geraet { position: relative; container-type: inline-size; }
+.geraet__rahmen { position: relative; z-index: 2; width: 100%; height: auto; }
+.geraet__schirm {
+  position: absolute; z-index: 1;
+  object-fit: cover;
+  background: #000;
+}
+.geraet--fon .geraet__schirm { left: 5.16%;  top: 2.36%;  width: 89.6%; height: 95.3%; border-radius: 12.4cqw; }
+.geraet--tv  .geraet__schirm { left: 2.27%;  top: 4.14%;  width: 89.5%; height: 78.0%; border-radius: .35cqw; }
+.geraet--mac .geraet__schirm { left: 10.70%; top: 11.20%; width: 78.6%; height: 77.6%; border-radius: .2cqw; }
+.geraet--pad .geraet__schirm { left: 4.17%;  top: 5.64%;  width: 91.67%; height: 88.72%; border-radius: 1.4cqw; }
+/* Das iPhone im Querformat: dasselbe Geraet, um 90 Grad gedreht aufgenommen.
+   Der Rahmen zeichnet die Dynamic Island selbst, deshalb reicht das Loch
+   ueber die volle Schirmbreite. */
+.geraet--fonquer .geraet__schirm { left: 2.50%;  top: 5.33%;  width: 95.0%;  height: 89.33%; border-radius: 6.74cqw; }
+
+.hero__buehne {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  aspect-ratio: 1440 / 460;
+  margin-top: 8px;
+  /* Clip und Ausklang schnitten an derselben gebrochenen Kante (907,14);
+     dort blieb ein Pixel Geraet als helle Linie stehen. Die Buehne endet
+     14 px vorher, im deckenden Teil des Ausklangs. Oben und seitlich
+     bleibt sie offen, damit Telefonkopf und Schatten nicht beschnitten
+     werden. */
+  clip-path: inset(-100vh -100vw 14px -100vw);
+}
+.hero__buehne .geraet { position: absolute; }
+.hero__buehne .geraet--mac { left: 10.00%; top: 26.1%; width: 37.85%; transform: rotate(-3deg); }
+.hero__buehne .geraet--tv  { left: 55.97%; top: 26.1%; width: 37.85%; transform: rotate(3deg); }
+.hero__buehne .geraet--fon { left: 39.24%; top:  5.6%; width: 21.53%; z-index: 3;
+  filter: drop-shadow(0 40px 60px rgba(0,0,0,.55)); }
+
+.hero__ausklang {
+  position: absolute;
+  left: 0; right: 0; bottom: -4px;
+  height: 330px;
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(16,16,16,0), rgba(16,16,16,.75) 42%, var(--grund) 72%);
+}
+
+/* ================= Codecs ================= */
+
+.chip {
+  display: inline-flex; align-items: center;
+  padding: 6px 10px 5px;
+  border-radius: 8px;
+  background: var(--flaeche); color: var(--leise);
+  font-size: 11px; font-weight: 600; letter-spacing: .10em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.chip--beleg { background: var(--akzent-leise); color: var(--akzent); }
+
+/* ================= Bento: Mobil, TV, Desktop ================= */
+/* Drei Kacheln, alle gleichzeitig. Die Flaeche ist die Karte des Designsystems
+   (Gruppe, Ecke 16, kein Rand); der Akzent kommt als einfarbiger Verlauf in
+   je einer Ecke. Die Geraete sind Bilder, die unten aus der Kachel laufen. */
+.bento {
+  display: grid;
+  grid-template-columns: 5fr 7fr;
+  grid-template-rows: 320px 400px;
+  gap: 14px;
+  margin-top: 56px;
+}
+.kachel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--gruppe);
+}
+.kachel--mobil { grid-row: 1 / span 2;
+  background: radial-gradient(ellipse 80% 46% at 100% 100%, rgba(80,213,218,.24), rgba(80,213,218,0) 70%), var(--gruppe); }
+.kachel--tv { background: var(--gruppe); }
+.kachel--desktop { background: var(--gruppe); }
+.kachel__text { position: relative; z-index: 3; padding: 32px 32px 0; max-width: 360px; }
+.kachel__text p { margin-top: 12px; color: var(--leise); font-size: 16px; line-height: 1.45; }
+.kachel__chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.kachel__bild { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.kachel__bild .geraet { position: absolute; }
+.kachel--mobil .geraet--pad { left: -14%; bottom: -2%; width: 124%; }
+.kachel--mobil .geraet--fon { right: 4%; bottom: -9%; width: 52%; z-index: 2; }
+/* Ein Fernseher an der Wand: Rahmen ohne Fuss, ohne Zubehoer, fuer jede Plattform. */
+.wandtv {
+  position: absolute; right: 5%; top: 50%; translate: 0 -50%; width: 52%;
+  padding: 5px; border-radius: 10px;
+  background: var(--tief);
+  box-shadow: inset 0 0 0 1px var(--rand);
+}
+.wandtv img { width: 100%; height: auto; border-radius: 5px; }
+.kachel--desktop .geraet--mac { right: 2%; top: 50%; translate: 0 -47%; width: 62%; }
+@media (min-width: 901px) {
+  .kachel--tv .kachel__text { max-width: 280px; }
+  .kachel--desktop .kachel__text { max-width: 235px; }
+}
+@media (max-width: 900px) {
+  .bento { grid-template-columns: 1fr; grid-template-rows: none; margin-top: 34px; }
+  .kachel--mobil { grid-row: auto; }
+  .kachel__text { padding: 26px 24px 0; max-width: none; }
+  .kachel__bild { position: relative; inset: auto; height: clamp(230px, 64vw, 360px); margin-top: 22px; }
+  .kachel--mobil .geraet--pad { left: 0; bottom: -8%; width: 78%; }
+  .kachel--mobil .geraet--fon { right: 4%; bottom: -14%; width: 34%; }
+  .wandtv { left: 50%; right: auto; top: auto; bottom: 8%; translate: -50% 0; width: 86%; }
+  .kachel--desktop .geraet--mac { left: 50%; right: auto; top: auto; translate: -50% 0; bottom: -3%; width: 90%; }
+}
+
+/* ================= Farbeigenschaften fuer die Merkmale ================= */
+
+@property --farbe {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #50D5DA;
+}
+@property --schein {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: rgba(80,213,218,.30);
+}
+/* Verlauf statt blur(): der verwischte Fleck brach an seiner eigenen Kante
+   ab, senkrecht quer durch die Karte (DESIGN.md 11.4). Die Farbe wechselt
+   ueber --schein und blendet, weil die Eigenschaft registriert ist. */
+
+/* ================= Merkmale ================= */
+
+.merkmale__raster {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(0,640px);
+  gap: 60px;
+  align-items: start;
+  min-height: 670px;
+}
+.merkmale__raster > div:first-child { align-self: center;
+  /* Der erste Eintrag beginnt im Entwurf 33 unter der Ueberschrift, sein
+     Innenrand ist 43: die Spur faengt also 10 ueber der Ueberschriftkante
+     an. Die Aufnahme steht 60 darunter. */
+  margin-top: -10px;
+}
+
+/* Jedes Merkmal hat seine eigene Farbe; Bild im Bild bleibt orange wie die
+   Plakette im Kopf. Fuenf Eintraege auf drei Akzentfarben: zwei wiederholen
+   sich. */
+.spur { position: relative; padding-left: 44px; margin-left: 40px; }
+.merkmal:nth-of-type(1) { --farbe: var(--warm); }
+.merkmal:nth-of-type(2) { --farbe: var(--akzent); }
+.merkmal:nth-of-type(3) { --farbe: var(--kuehl); }
+.merkmal:nth-of-type(4) { --farbe: var(--warm); }
+.merkmal:nth-of-type(5) { --farbe: var(--akzent); }
+.merkmal:nth-of-type(6) { --farbe: var(--kuehl); }
+.spur::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 80px; bottom: 24px;
+  width: 2px;
+  background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,.12) 10%,
+                              rgba(255,255,255,.12) 90%, rgba(255,255,255,0));
+}
+/* EINE Linie, die nie neu anfaengt. Vorher lagen zwei Balken uebereinander:
+   der blaue lief zum naechsten Punkt, verschwand dort, und der Verlauf
+   deckte sich von oben neu auf. Das waren zwei Bewegungen fuer einen
+   Vorgang, und die zweite kam aus dem Nichts. Den Verlauf setzt das Skript,
+   damit die Farbwechsel genau auf den Punkten sitzen. */
+.spur__linie {
+  position: absolute;
+  left: -.5px; width: 3px; height: 0;
+  border-radius: 2px;
+  clip-path: inset(0 0 100% 0);
+}
+/* Nur beim Klick gleitet sie; im Lauf setzt sie jeder Takt selbst. */
+.spur__linie.gleitet { transition: clip-path 620ms var(--rein-raus); }
+
+.merkmal {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 41px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* Jeder Punkt ist 15 gross und wird inaktiv auf 9 verkleinert (0,6); der
+   Ring ist deshalb 3,4 dick, damit er verkleinert 2 px misst wie im Entwurf. */
+.merkmal__punkt {
+  position: absolute;
+  left: -50.5px; top: 48.5px;
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  background: var(--grund);
+  box-shadow: inset 0 0 0 3.4px var(--rand);
+  transform: scale(.6);
+  transition: transform 480ms var(--raus), background-color 320ms var(--raus), box-shadow 320ms var(--raus);
+}
+/* Alle Titel stehen in 24 und werden inaktiv auf 21 verkleinert (0,875).
+   Schriftgroesse selbst zu animieren rechnet jedes Mal das Layout neu und
+   ruckelt; transform laeuft auf der Grafikkarte. */
+.merkmal__titel {
+  display: block;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -.02em;
+  color: var(--leise);
+  transform: scale(.875);
+  transform-origin: left center;
+  transition: transform 480ms var(--raus), color 320ms var(--raus), font-weight 320ms var(--raus);
+}
+/* Die Beschreibung faehrt ueber die Rasterzeile auf, nicht ueber
+   max-height: so muss keine Hoehe geraten werden. */
+/* Im Entwurf behaelt die Liste ihren Takt von 112, auch mit Beschreibung:
+   die Zeile liegt im Luftraum unter dem Titel und schiebt nichts weg. */
+.merkmal__mehr {
+  position: absolute;
+  left: 0; right: 0;
+  top: 71px;
+  opacity: 0;
+  transform: translate3d(0,-4px,0);
+  transition: opacity 280ms var(--raus), transform 460ms var(--raus);
+  pointer-events: none;
+}
+.merkmal__mehr > span {
+  overflow: hidden;
+  display: block;
+  color: var(--leise);
+  font-size: 16px;
+  line-height: 1.5;
+}
+.merkmal[aria-current="true"] .merkmal__titel { transform: none; font-weight: 600; color: var(--schrift); }
+/* Antwort beim Druecken, nicht erst beim Loslassen. */
+.merkmal { -webkit-tap-highlight-color: transparent; }
+.merkmal:active .merkmal__titel { color: var(--schrift); }
+.merkmal[data-erledigt] .merkmal__punkt { background: var(--farbe); box-shadow: inset 0 0 0 0 var(--rand); }
+.merkmal[aria-current="true"] .merkmal__punkt { transform: none; background: var(--farbe); box-shadow: inset 0 0 0 0 var(--rand); }
+.merkmal[aria-current="true"] .merkmal__mehr  { opacity: 1; transform: none; transition-delay: 90ms; }
+.merkmal[aria-current="true"] .merkmal__mehr > span { padding-top: 6px; }
+
+/* Kein Kasten: das Geraet steht auf seiner Farbe, nicht in einer Karte. */
+.aufnahme {
+  position: relative;
+  /* Die Zeile ist so hoch wie die Merkmalsliste links, also 672. Ein
+     fester Seitenverhaeltnis-Kasten liess davon 164 Pixel ungenutzt und
+     die Geraete darin waren unnoetig klein. Jetzt nimmt der Kasten die
+     ganze Zeile; die Etage wird dadurch nicht hoeher. */
+  align-self: stretch;
+  --farbe: var(--warm);
+  transition: --farbe 480ms var(--raus);
+}
+/* Der Schein ragt 14 Prozent ueber seinen Kasten hinaus. Auf dem Handy
+   ist das ueber den Bildschirmrand: die Seite wurde 25 px breiter und liess
+   sich seitlich wischen. Die Etage klemmt ihn deshalb selbst, wie es die
+   Regel oben fuer jeden Ueberstand verlangt. clip statt hidden: kein
+   Scrollkasten, overflow-y bleibt sichtbar, sticky bleibt heil. */
+#merkmale { overflow-x: clip; }
+.aufnahme__schein {
+  position: absolute;
+  inset: 0;
+  inset: -12% -14%;
+  background: radial-gradient(ellipse 46% 44% at 50% 52%,
+              color-mix(in srgb, var(--farbe) 32%, transparent), transparent 100%);
+}
+/* Jedes Merkmal zeigt das Geraet, auf dem es zu sehen ist. Die Mockups
+   blenden ineinander; das alte bleibt, bis das neue steht. */
+.aufnahme .geraet {
+  position: absolute;
+  /* Ohne Kasten haelt nichts mehr die Mitte: das Geraet steht jetzt
+     mittig in seiner Flaeche statt von oben gemessen. */
+  left: 50%; top: 50%;
+  opacity: 0;
+  translate: -50% -50%;
+  transform: scale(.97);
+  transition: opacity 520ms var(--feder), transform 640ms var(--feder);
+}
+.aufnahme .geraet[data-an] { opacity: 1; transform: none; }
+.aufnahme .geraet--fon   { width: 47%; }
+.aufnahme .geraet--fonquer { width: 98%; }
+.aufnahme .geraet--mac   { width: 98%; }
+/* Wie in der Geraetekarte: Ellipse statt drop-shadow. Hier faellt es
+   am meisten auf, weil im Mockup ein Film laeuft. */
+.aufnahme .geraet::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: -14%; right: -14%; bottom: -7%; height: 26%;
+  background: radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.5), rgba(0,0,0,0) 70%);
+}
+.aufnahme .geraet--flach::after { content: none; }
+.aufnahme .geraet--flach { width: 90%; border-radius: 12px; overflow: hidden; }
+.aufnahme .geraet--flach img { display: block; width: 100%; height: auto; }
+
+/* ================= Resume ================= */
+
+/* Im Entwurf laeuft die Buehne bis an die Etagenkante. */
+.resume { position: relative; overflow: hidden; padding-bottom: 0; }
+.resume__buehne {
+  position: relative;
+  width: 100%;
+  max-width: 1440px;
+  margin: 92px auto 0;
+  aspect-ratio: 1440 / 600;
+  /* Wie im Kopf: Ausklang und Etage enden an derselben Kante, also endet
+     die Buehne 14 px vorher im deckenden Teil (DESIGN.md 11.3). */
+  clip-path: inset(-100vh -100vw 14px -100vw);
+}
+.resume__licht {
+  position: absolute;
+  inset: -12% 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 24% 36% at 26% 52%, rgba(80,213,218,.22), rgba(80,213,218,0) 100%),
+    radial-gradient(ellipse 28% 40% at 70% 46%, rgba(80,213,218,.24), rgba(80,213,218,0) 100%);
+}
+
+.resume__bogen { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.resume__ausklang {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 300px;
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(16,16,16,0), rgba(16,16,16,.85) 55%, var(--grund) 85%);
+}
+.resume__bogen path { fill: none; stroke-width: 3; stroke-linecap: round; }
+
+.resume__buehne .geraet { position: absolute; }
+/* Das Standbild liegt zusaetzlich als Hintergrund auf dem Schirm. Ein
+   poster-Attribut haengt daran, dass der Browser es laedt und zeigt;
+   ein Hintergrund steht ab dem ersten Zeichnen. Sobald der Film Bilder
+   liefert, deckt er ihn zu. So ist die Flaeche nie leer. */
+#video-tv  { background: #000 url(/aufnahmen/weiter-tv.webp)  center / cover no-repeat; }
+#video-fon { background: #000 url(/aufnahmen/weiter-fon.webp) center / cover no-repeat; }
+.resume__buehne .geraet--tv  { left: 32.6%; top:  2.5%; width: 55.6%; }
+.resume__buehne .geraet--fon { left: 15.3%; top: 11.7%; width: 21.5%; z-index: 3;
+  transform: rotate(7deg); filter: drop-shadow(0 30px 60px rgba(0,0,0,.55)); }
+
+/* ================= Fragen ================= */
+
+/* 50 statt 60, und unten 92 statt 110: mit Figtree wuchs die Etage auf
+   905 und passte damit nicht mehr auf einen 900er Schirm. Die 28 Pixel
+   holt das Polster zurueck, ohne dass eine Antwort kuerzer wird. */
+.fragen__blatt {
+  margin-top: 50px;
+  border-radius: 16px;
+  background: var(--gruppe);
+  overflow: hidden;
+}
+#fragen { padding-bottom: 92px; }
+.frage + .frage { border-top: 1px solid var(--linie); }
+.frage__knopf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  padding: 24px 32px;
+  border: 0;
+  background: none;
+  color: var(--schrift);
+  font-family: inherit;
+  font-size: clamp(16px, 1.4vw, 19px);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -.014em;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 160ms var(--raus);
+}
+.frage__pfeil {
+  flex: none;
+  width: 20px; height: 20px;
+  color: var(--sehr-leise);
+  transition: transform 280ms var(--raus), color 160ms var(--raus);
+}
+.frage__knopf[aria-expanded="true"] .frage__pfeil { transform: rotate(90deg); color: var(--leise); }
+.frage__antwort {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms var(--raus);
+}
+.frage__antwort > div { overflow: hidden; }
+.frage__knopf[aria-expanded="true"] + .frage__antwort { grid-template-rows: 1fr; }
+.frage__antwort p {
+  padding: 0 32px 27px;
+  color: var(--leise);
+  font-size: clamp(15px, 1.2vw, 16.5px);
+  line-height: 1.55;
+}
+
+/* ================= Downloads ================= */
+
+/* ---------------------------------------------------------------
+   Downloads, neu am 17.09. Paul: "Fuenf Knoepfe auf einem Haufen,
+   sieht nicht clean aus." Vorher lagen fuenf gleich grosse Kapseln
+   in zwei Spalten, jede in einer anderen Plattformfarbe, die letzte
+   allein in der Mitte. Das ist jetzt eine Hierarchie:
+
+     eine grosse, weisse Kapsel  -- der Weg fuer dieses Geraet
+     darunter eine ruhige Reihe  -- die uebrigen vier
+
+   Keine Plattformfarben mehr, nur Weiss und eine Haarlinie: die Logos
+   tragen den Unterschied, nicht vier Toenungen. Alle Zeichen stehen im
+   gleich grossen Kreis, damit kein Logo optisch groesser wirkt.
+   Jeder Knopf fuehrt auf die eigene Download-Seite, nicht nach aussen.
+   --------------------------------------------------------------- */
+.ladenblock { max-width: 620px; margin: 52px auto 0; }
+.laden__haupt { display: grid; }
+/* Paul, 17.09. spaeter: "Der grosse App-Store-Knopf ist zu schwer." Eine
+   vollflaechig weisse Kapsel neben sonst zurueckhaltendem Inhalt sticht
+   heraus wie ein Scheinwerfer. Der Hauptweg liegt jetzt auf derselben
+   ruhigen Flaeche wie die uebrigen, nur eine Stufe betonter: getoent mit
+   dem Akzent, Ring in Akzent, Zeichen in Akzent, groesser und mit
+   Unterzeile. Damit kommt auch die Farbe der App zurueck
+   (--akzent, woertlich aus Sources/Shared/Farben.swift). */
+.weg-gross {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 74px;
+  padding: 16px 28px 16px 18px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--akzent) 12%, var(--flaeche));
+  color: var(--schrift);
+}
+/* Alle Zeichen sind gleich gebaut: ein Kreis, keine Kontur, das Logo
+   einfarbig darin, Durchmesser zur Zeichengroesse immer 2 zu 1. Vorher
+   lagen beim Apple-Zeichen Logo, schwarze Kontur und weisse Flaeche
+   uebereinander, drei Lagen fuer ein Symbol ("zu viel Gefriekel"). */
+.weg-gross .weg__zeichen {
+  flex: none;
+  width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--akzent) 20%, transparent);
+  color: var(--akzent);
+}
+.weg-gross .weg__zeichen svg { width: 19px; height: 19px; }
+.weg-gross b  { display: block; font-size: 17px; font-weight: 600; line-height: 1.25; letter-spacing: -.014em; }
+.weg-gross em { display: block; font-size: 13.5px; font-style: normal; color: var(--leise); line-height: 1.3; }
+
+.laden__rest {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+/* Die ruhige Reihe: keine Fuellung, eine Haarlinie, gleiche Hoehe. */
+.weg-klein {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 84px;
+  padding: 14px 10px;
+  border-radius: 14px;
+  background: var(--flaeche);
+  color: var(--leise);
+  text-align: center;
+}
+.weg-klein .weg__zeichen {
+  flex: none;
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: rgba(255,255,255,.06);
+  color: var(--schrift);
+}
+.weg-klein .weg__zeichen svg { width: 16px; height: 16px; }
+.weg-klein b  { display: block; font-size: 14.5px; font-weight: 600; line-height: 1.2; letter-spacing: -.01em; color: var(--schrift); }
+/* Die Unterzeile traegt die grosse Kapsel; in der Reihe waere sie Kleingedrucktes. */
+.weg-klein em { display: none; }
+
+/* Das Stillleben ist eine Aufnahme von oben. Alles liegt gerade.
+   Die beiden Schirme liegen hinter dem Bild und scheinen durch die
+   ausgestanzten Loecher. */
+/* Bis an den Rand: das Bild ist keine Spalte, es ist der Boden der Seite. */
+.stillleben {
+  position: relative;
+  width: 100%;
+  margin: clamp(40px, 5vw, 70px) auto 0;
+  aspect-ratio: 1440 / 613;
+}
+.stillleben__innen { position: relative; width: 100%; }
+.stillleben__schirm { position: absolute; z-index: 1; object-fit: cover; background: #000; }
+.stillleben__schirm--ipad { left:  6.39%; top: 12.40%; width: 28.89%; height: 46.82%; border-radius: .7%; }
+.stillleben__schirm--fon  { left: 43.40%; top: 18.19%; width: 13.19%; height: 67.54%; border-radius: 1.6%; }
+/* Ohne drop-shadow: das Bild bringt seinen eigenen Schatten schon mit,
+   und der Filter rechnete zusaetzlich die eckigen Schirme mit ein. */
+.stillleben__aufbau {
+  position: relative; z-index: 2;
+  width: 100%; height: auto;
+}
+
+/* ================= Fuss ================= */
+
+.fuss { padding-block: 0 43px; }
+.fuss__linie { height: 1px; background: var(--linie); }
+.fuss__raster {
+  display: grid;
+  /* Entwurf: Spalten bei 0, 440, 720, 1000. */
+  grid-template-columns: minmax(0,440px) minmax(0,280px) minmax(0,280px) minmax(0,240px);
+  column-gap: 0; row-gap: 40px;
+  padding-block: 64px 73px;
+}
+@media (min-width: 901px) {
+  .fuss__raster--fuenf { grid-template-columns: minmax(0,360px) minmax(0,220px) minmax(0,220px) minmax(0,220px) minmax(0,200px); }
+}
+.fuss__marke { max-width: 360px; }
+.fuss__marke img { height: 21px; width: auto; }
+.fuss__marke p {
+  margin-top: 14px;
+  color: var(--leise);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.fuss__spalte h2 {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: .13em;
+  color: var(--sehr-leise);
+  text-transform: uppercase;
+}
+/* Schrift an der Liste, nicht nur am Verweis: die Zeilenhoehe eines
+   Listenpunkts richtet sich nach seinem eigenen Strut (sonst 18/1.45 vom
+   body, 26 statt 21 je Zeile), nicht nach dem Kind (DESIGN.md 11.5). */
+.fuss__spalte ul { margin: 16px 0 0; padding: 0; list-style: none; font-size: 15px; line-height: 1.4; }
+.fuss__spalte li + li { margin-top: 11px; }
+.fuss__spalte a {
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--leise);
+  transition: color 160ms var(--raus);
+}
+.fuss__klein {
+  padding-top: 28px;
+  max-width: 880px;
+  color: var(--sehr-leise);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+
+
+/* Hover nur mit echtem Zeiger: auf einem Schirm zum Tippen bleibt der
+   Zustand nach dem Tippen kleben. */
+@media (hover: hover) and (pointer: fine) {
+  .merkmal:hover .merkmal__titel { color: var(--schrift); }
+}
+
+/* Reduzierte Bewegung heisst weniger und sanfter, nicht gar nichts: Farbe
+   und Deckkraft bleiben, alles was sich bewegt, haelt an. */
+@media (prefers-reduced-motion: reduce) {
+  .merkmal__titel, .merkmal__punkt, .aufnahme .geraet, .geraetekarte__bild > *,
+  .weg, .knopf, .menue, .frage__pfeil, .spur__linie {
+    transition-property: opacity, color, background-color, box-shadow;
+  }
+  .aufnahme .geraet, .geraetekarte__bild > *, .menue { transform: none; }
+  .frage__pfeil { transition: none; }
+}
+
+/* Flaechen, die der Browser sonst selbst faerbt. */
+::selection { background: rgba(80,213,218,.32); color: var(--schrift); }
+:focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; border-radius: 4px; }
+html { scrollbar-color: #303030 var(--grund); }
+
+/* =====================================================================
+   Mobil. Die Seite ist bei 390 entworfen; 900 ist die Stelle, an der
+   das zweispaltige Raster nicht mehr traegt.
+   ===================================================================== */
+
+.merkmale__ansage { display: none; }
+.nur-mobil, .nur-mobil-inline { display: none; }
+
+@media (max-width: 900px) {
+  :root { --etage: clamp(56px, 9vw, 88px); }
+
+  .leiste { position: absolute; top: 12px; padding-inline: 20px; }
+  .leiste__kapsel {
+    width: 100%;
+    justify-content: space-between;
+    padding: 8px 8px 8px 20px;
+  }
+  .leiste__punkt, .knopf--leiste { display: none; }
+  .leiste__burger {
+    display: grid;
+    align-content: center;
+    justify-items: start;
+    width: 44px; height: 44px;
+    border: 0; padding: 0 0 0 12px;
+    background: none;
+    cursor: pointer;
+  }
+  .leiste__burger span {
+    display: block;
+    width: 20px; height: 2px;
+    border-radius: 1px;
+    background: var(--schrift);
+    transition: transform 280ms var(--raus), opacity 180ms var(--raus);
+  }
+  .leiste__burger span + span { margin-top: 5px; }
+  /* Der kurze Strich entsteht aus scaleX, nicht aus width: Breite rechnet
+     das Layout neu, transform laeuft auf der Grafikkarte. */
+  .leiste__burger span { transform-origin: left center; }
+  .leiste__burger span:nth-child(3) { transform: scaleX(.65); }
+
+  /* Die drei Striche werden zum Kreuz, an derselben Stelle: man weiss,
+     wo man wieder zumacht. */
+  .leiste__burger[aria-expanded="true"] span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  .leiste__burger[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+  .leiste__burger[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+  .hero {
+    min-height: 0;
+    padding-top: 120px;
+    padding-bottom: 96px;
+    text-align: center;
+  }
+  .hero__buehne, .plakette, .hero__ausklang { display: none; }
+  .aurora { top: 38px; height: 520px;
+    -webkit-mask-image: linear-gradient(to bottom, #000 30%, transparent 82%);
+    mask-image: linear-gradient(to bottom, #000 30%, transparent 82%); }
+
+
+
+  /* Paul: die Merkmale sollen mobil von links nach rechts laufen,
+     nicht von oben nach unten. Die Spur legt sich also flach. */
+  .merkmale__raster { grid-template-columns: 1fr; gap: 44px; margin-top: 48px; }
+  .spur {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-left: 0;
+    margin-left: -13.5px; margin-right: -13.5px;
+    padding-top: 18px;
+  }
+  .spur::before { left: 22px; right: 22px; top: 10.5px; bottom: auto; width: auto; height: 2px;
+    background: linear-gradient(to right, rgba(255,255,255,0), rgba(255,255,255,.12) 8%,
+                                rgba(255,255,255,.12) 92%, rgba(255,255,255,0)); }
+  /* Laenge null, bis das Skript sie setzt; sonst steht links ein Punkt. */
+  .spur__linie { top: 10px; height: 3px; width: 0; }
+  /* 44 hoch, damit der Punkt mit dem Daumen zu treffen ist. Der Punkt
+     sitzt weiter oben am Kasten, die Reihe waechst nur nach unten. */
+  .merkmal { width: auto; flex: 0 0 44px; padding: 0; height: 44px; }
+  .merkmal__punkt { left: 50%; top: -14px; transform: translateX(-50%) scale(.6); }
+  .merkmal[aria-current="true"] .merkmal__punkt { transform: translateX(-50%); }
+  .merkmal__mehr { display: none; }
+  /* Dots only on small screens; the title stays as the button's name for screen readers. */
+  .merkmal__titel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  .merkmale__ansage { display: block; text-align: center; margin-top: 22px; }
+  .merkmale__ansage h3 { font-size: 24px; }
+  .merkmale__ansage p { margin: 8px auto 0; max-width: 326px; color: var(--leise); font-size: 16px; }
+
+  /* Mobil wird nicht gerastet, das Band darf seine Luft behalten. */
+  .aufnahme { aspect-ratio: 342/380; align-self: center; }
+  .aufnahme .geraet--fon   { width: 44%; }
+  .aufnahme .geraet--fonquer { width: 96%; }
+  .aufnahme .geraet--mac   { width: 96%; }
+  .aufnahme .geraet--flach { width: 94%; }
+
+  /* Werte aus dem Entwurf (73:2): Telefon 150 breit bei 22/258, Fernseher
+     296 breit bei 78/300, Buehne ab y 250. Kein Ausklang: das Telefon
+     steht mobil ganz im Bild. */
+  .resume__buehne { aspect-ratio: 390 / 320; margin-top: 56px; }
+  .resume__ausklang { display: none; }
+  .resume__buehne .geraet--tv  { left: 20%;    top: 15.6%; width: 75.9%; }
+  .resume__buehne .geraet--fon { left: 5.64%;  top: 2.5%;  width: 38.46%; transform: none; }
+  .resume__licht {
+    background:
+      radial-gradient(ellipse 30% 45% at 31% 50%, rgba(80,213,218,.24), rgba(80,213,218,0) 100%),
+      radial-gradient(ellipse 34% 44% at 64% 55%, rgba(80,213,218,.26), rgba(80,213,218,0) 100%);
+  }
+
+  .fragen__blatt { border-radius: 16px; margin-top: 28px; }
+  .frage__knopf { padding: 20px 18px; }
+  .frage__antwort p { padding: 0 18px 22px; }
+
+  /* Mobil zuerst: die grosse Kapsel ueber die ganze Breite, die Reihe
+     darunter zweispaltig. Vier Kacheln nebeneinander waeren auf 375
+     je 80 breit, da passt kein Wort hinein. */
+  .ladenblock { max-width: none; margin-top: 30px; }
+  .weg-gross { min-height: 68px; padding: 14px 22px 14px 16px; }
+  .weg-gross b { font-size: 16px; }
+  .weg-gross em { font-size: 13px; }
+  .laden__rest { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+
+  /* Herangezoomtes Stillleben: derselbe Aufbau, nur der Ausschnitt
+     um iPad und iPhone. */
+  .stillleben {
+    aspect-ratio: 390 / 386;
+    overflow: hidden;
+    margin-top: 14px;
+  }
+  .stillleben__innen {
+    position: absolute;
+    left: -5%; top: 11.7%;
+    width: 178%;
+    aspect-ratio: 1440 / 613;
+  }
+
+  /* Entwurf 73:2: Marke, dann je Gruppe Beschriftung und eine Zeile
+     Verweise (Abstand 18, Umbruch 8), Gruppen 76 auseinander. */
+  .fuss { padding-block: 0 32px; }
+  .fuss__raster {
+    grid-template-columns: 1fr;
+    gap: 34px;
+    padding-block: 44px;
+  }
+  .fuss__marke p { margin-top: 10px; }
+  .fuss__spalte ul { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 8px; }
+  .fuss__spalte li + li { margin-top: 0; }
+  .fuss__klein { font-size: 12px; padding-top: 20px; }
+
+  .nur-mobil { display: block; }
+  .nur-mobil-inline { display: inline; }
+  .nur-desktop { display: none; }
+}
+
+
+/* Mobile Schrift und Abstaende, gemessen im Entwurf 73:2. Steht mit
+   Absicht hinter allen Basisregeln: gleiche Spezifitaet, die spaetere
+   gewinnt (DESIGN.md 11.1). */
+@media (max-width: 900px) {
+  h1 { font-size: 46px; line-height: 1; }
+  h2 { line-height: 1.05; }
+  .hero { padding-top: 118px; padding-bottom: 146px; }
+  .hero__text h1 { margin-bottom: 15px; }
+  .hero__text p { font-size: 18px; }
+  .hero__knopf { margin-top: 29px; }
+  .knopf--gross { font-size: 17px; }
+  .etagenkopf p { margin-top: 24px; font-size: 16px; }
+  .merkmale__ansage h3 { line-height: 1.2; }
+  .merkmale__ansage p { line-height: 1.55; text-wrap: balance; }
+  .fragen__blatt { margin-top: 42px; }
+  .frage__knopf { padding: 18px; font-size: 15.5px; font-weight: 600; line-height: 1.3; }
+  .frage__antwort p { font-size: 16px; line-height: 1.55; padding: 0 18px 20px; }
+  .fuss__marke p { font-size: 14px; line-height: 1.55; }
+  .fuss__spalte h2 { font-size: 11px; }
+  .fuss__spalte a { font-size: 14px; line-height: 1.4; }
+  .fuss__spalte ul { font-size: 14px; }
+  .fuss__marke { margin-bottom: -3px; }
+  .fuss__klein { font-size: 11.5px; }
+  .aufnahme { margin-top: 0; }
+  .resume__buehne { clip-path: none; }
+  .fuss__spalte h2 { line-height: 1.3; }
+  .fuss { padding-bottom: 18px; }
+  /* Etagenboeden aus dem Entwurf 73:2 */
+  #geraete { padding-bottom: 32px; }
+  #merkmale { padding-bottom: 50px; }
+  #resume { padding-bottom: 35px; }
+  #fragen { padding-bottom: 84px; }
+  #downloads { padding-bottom: 0; }
+}
+
+/* ================= Menue ================= */
+
+.menue {
+  display: none;
+  position: fixed;
+  z-index: 55;
+  left: 20px; right: 20px;
+  top: 12px;
+  padding: 78px 0 22px;
+  border-radius: 16px;
+  background: var(--gruppe);
+  transform-origin: top center;
+  opacity: 0;
+  transform: scaleY(.86) translateY(-10px);
+  pointer-events: none;
+  transition: opacity 220ms var(--raus), transform 320ms var(--raus);
+}
+.menue[data-offen] { opacity: 1; transform: none; pointer-events: auto; }
+.menue a {
+  display: block;
+  padding: 15px 20px;
+  color: var(--leise);
+  font-size: 19px;
+  font-weight: 500;
+}
+.menue a:active { color: var(--schrift); }
+/* .menue a ist genauer als .knopf und faerbte den Knopf grau-weiss auf
+   weissem Grund: ein leerer weisser Balken. Farbe und Zentrierung muessen
+   hier ausdruecklich zurueck, auch fuer :active. */
+.menue .knopf { display: flex; width: calc(100% - 40px); margin: 14px 20px 0; color: var(--auf-akzent); }
+.menue .knopf:active { color: var(--grund); }
+/* Muss NACH der Basisregel stehen: gleiche Spezifitaet, die spaetere
+   gewinnt. Stand sie im grossen Mobilblock weiter oben, blieb das Menue
+   auf display: none und ging nie auf. */
+@media (max-width: 900px) { .menue { display: block; } }
+
+/* ================= Inhalt 17.09. ================= */
+.hero__frei {
+  margin-top: 14px;
+  color: var(--schrift);
+  font-size: clamp(15px, 1.1vw, 16.5px);
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+.hero__text p.hero__frei { color: var(--schrift); margin-top: 14px; }
+/* Verweise im Text tragen den Akzent, wie im Blog. Tuerkis auf dem
+   Kartengrund misst 9,9:1, weit ueber den geforderten 4,5:1. */
+.frage__link {
+  color: var(--akzent);
+  text-decoration: underline;
+  text-decoration-color: rgba(80,213,218,.35);
+  text-underline-offset: 3px;
+}
+
+/* =====================================================================
+   Verhalten, 17.09. Paul: "Jeder Knopf hat eine andere Animation ...
+   such dir die beste aus und mach bei allen dieselbe."
+
+   Vorbild ist die ruhigste der vorhandenen Varianten, der Kartenhover:
+   zwei Pixel anheben, ein Schatten dahinter, fertig. Raus sind der harte
+   Sprung auf 104,5 Prozent am Download-Knopf, die Welle nach aussen und
+   das Huepfen per Skript. Eine Flaeche, die beim Zeigen groesser wird,
+   verrueckt den Text darin, und drei Varianten nebeneinander sehen nach
+   Zufall aus statt nach System.
+
+   Alles steht in Variablen: eine Dauer, eine Kurve, eine Hebung, ein
+   Druck, eine Aufhellung, ein Fokusring. Keine Komponente erfindet
+   eigene Werte. Zwei Staerken, weil eine Zeile im Fuss sich nicht wie
+   ein Knopf anheben darf: Flaechen heben sich, Zeilen hellen auf.
+   ===================================================================== */
+:root {
+  --dauer: 170ms;
+  --kurve: cubic-bezier(.23, 1, .32, 1);
+  --hebung: -2px;
+  --druck: .985;
+  --aufhellen: rgba(255,255,255,.06);
+  --schatten-hoch: 0 0 0 0 rgba(0,0,0,0);
+}
+.knopf, .weg-gross, .weg-klein, .karte, .kopieren, .laden, .weg,
+.reiter button, .frage__knopf, .mitmachen__liste a, .leiste__punkt, .leiste__marke,
+.menue a, .fuss__spalte a, .pfad a, .zurueck, .alle-wege, .text a, .frage__link,
+.schritt .knopf, .hilfe .knopf, .download .knopf {
+  transition: transform var(--dauer) var(--kurve), background-color var(--dauer) var(--kurve),
+              box-shadow var(--dauer) var(--kurve), color var(--dauer) var(--kurve),
+              border-color var(--dauer) var(--kurve), text-decoration-color var(--dauer) var(--kurve);
+}
+@media (hover: hover) and (pointer: fine) {
+  /* Flaechen: anheben. */
+  .knopf:hover, .weg-gross:hover, .karte:hover, .kopieren:hover, .laden:hover, .weg:hover,
+  .schritt .knopf:hover, .hilfe .knopf:hover, .download .knopf:hover {
+    transform: translateY(var(--hebung));
+    box-shadow: var(--schatten-hoch);
+  }
+  .weg-klein:hover {
+    transform: translateY(var(--hebung));
+    box-shadow: inset 0 0 0 1px var(--rand), var(--schatten-hoch);
+  }
+  /* Der Hauptweg behaelt seinen Akzentring, sonst blinkt er beim Zeigen weg. */
+  .weg-gross:hover, .knoepfe > :first-child:hover {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 55%, transparent), var(--schatten-hoch);
+  }
+  .laden:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 40%, transparent), var(--schatten-hoch); }
+  .karte:hover { border-color: var(--rand); }
+  .kopieren:hover { color: var(--schrift); box-shadow: inset 0 0 0 1px var(--rand), var(--schatten-hoch); }
+  /* Zeilen und Verweise: aufhellen. */
+  .reiter button:hover, .frage__knopf:hover, .mitmachen__liste a:hover, .leiste__punkt:hover {
+    background: var(--aufhellen);
+    color: var(--schrift);
+  }
+  .menue a:hover, .fuss__spalte a:hover, .pfad a:hover, .zurueck:hover, .alle-wege:hover { color: var(--schrift); }
+  .text a:hover, .frage__link:hover, .hinweis a:hover, .abschnitt a:not(.knopf):hover,
+  .frage__antwort a:hover { text-decoration-color: currentColor; }
+}
+/* Der Druck: ein Wert fuer jedes anfassbare Element. */
+.knopf:active, .weg-gross:active, .weg-klein:active, .karte:active, .kopieren:active,
+.reiter button:active, .laden:active, .weg:active { transform: scale(var(--druck)); }
+.mitmachen__liste a:active, .frage__knopf:active { background: rgba(255,255,255,.09); }
+/* Ein Fokusring fuer alles. */
+:focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; border-radius: 6px; }
+.knopf:focus-visible, .weg-gross:focus-visible, .weg-klein:focus-visible, .laden:focus-visible,
+.weg:focus-visible, .reiter button:focus-visible, .kopieren:focus-visible { border-radius: inherit; }
+@media (prefers-reduced-motion: reduce) {
+  /* Weniger, nicht nichts: Farbe bleibt, Bewegung geht. */
+  .knopf, .weg-gross, .weg-klein, .karte, .kopieren, .laden, .weg, .reiter button,
+  .frage__knopf, .mitmachen__liste a, .leiste__punkt, .menue a, .fuss__spalte a, .pfad a, .text a {
+    transition-property: color, background-color, box-shadow, border-color, text-decoration-color;
+  }
+  .knopf:hover, .weg-gross:hover, .weg-klein:hover, .karte:hover, .kopieren:hover, .laden:hover,
+  .weg:hover, .knopf:active, .weg-gross:active, .weg-klein:active, .karte:active,
+  .kopieren:active, .laden:active, .weg:active, .reiter button:active { transform: none; }
+}
+
+/* ================= Download: Kacheln wie im Bento, ruhig ================= */
+/* Eine Flaeche je Weg, kein Ring, kein Anheben, kein Schatten. Gezeigt wird
+   der Druck (Designsystem): Flaeche wird dunkler, Maßstab .98. */
+.ladenblock { max-width: 760px; margin-top: 48px; }
+.weg-gross, .weg-klein {
+  border-radius: 14px; box-shadow: none;
+  transition: background-color 120ms ease-out, transform 120ms ease-out;
+}
+.weg-gross {
+  min-height: 92px; padding: 18px 26px 18px 20px; gap: 18px;
+  background: color-mix(in srgb, var(--akzent) 34%, var(--grund));
+}
+.weg-gross .weg__zeichen { width: 46px; height: 46px; background: rgba(255,255,255,.12); color: var(--schrift); }
+.weg-gross .weg__zeichen svg { width: 22px; height: 22px; }
+.weg-gross b { font-size: 19px; }
+.weg-klein { min-height: 100px; gap: 6px; padding: 16px 10px; background: var(--flaeche); }
+.weg-klein em { display: block; font-size: 12.5px; font-style: normal; line-height: 1.3; color: var(--sehr-leise); }
+@media (hover: hover) and (pointer: fine) {
+  .knopf:hover, .weg-gross:hover, .weg-klein:hover { transform: none; box-shadow: none; }
+  .weg-klein:hover { background: var(--erhoeht); }
+  .weg-gross:hover { background: color-mix(in srgb, var(--akzent) 42%, var(--grund)); }
+}
+.knopf:active { background: rgba(255,255,255,.75); }
+.weg-klein:active { background: var(--gedrueckt); transform: scale(.98); }
+.weg-gross:active { background: color-mix(in srgb, var(--akzent) 26%, var(--grund)); transform: scale(.985); }
+@media (max-width: 900px) {
+  .ladenblock { margin-top: 32px; }
+  .weg-gross { min-height: 80px; padding: 16px 20px 16px 16px; }
+  .laden__rest { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* =====================================================================
+   Feinschliff 27.09. Steht zuletzt und gewinnt damit gegen alles oben.
+   Die Identitaet bleibt: ein Akzent, Karten ohne Schatten, Ecken aus der
+   App. Geaendert werden Rhythmus, Kopf und Bewegung.
+   ===================================================================== */
+
+/* Ueberschriften: eine Stufe ruhiger. Mit 64 px war jede Etage ein
+   Paukenschlag, dadurch keiner. Der Kopf der Seite bleibt der groesste. */
+h2 { font-size: clamp(32px, 3.9vw, 56px); letter-spacing: -.021em; }
+.etagenkopf h2 { text-wrap: balance; }
+.etagenkopf p { max-width: 600px; }
+.etagenkopf .frage__link { color: var(--akzent); }
+
+/* Aurora: dieselben Verlaeufe, weicher. Das harte Band quer ueber den
+   Kopf war zu schwer und nahm den Geraeten das Licht. */
+.aurora {
+  background:
+    radial-gradient(ellipse 38% 58% at -2% 86%, rgba(80,213,218,.36), rgba(80,213,218,.12) 52%, rgba(80,213,218,0) 100%),
+    radial-gradient(ellipse 38% 58% at 102% 86%, rgba(80,213,218,.36), rgba(80,213,218,.12) 52%, rgba(80,213,218,0) 100%),
+    radial-gradient(ellipse 34% 30% at 50% 96%, rgba(80,213,218,.22), rgba(80,213,218,0) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,.6) 22%, #000 48%, #000 62%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,.6) 22%, #000 48%, #000 62%, transparent 100%);
+}
+
+/* Die Buehne tritt groesser auf: die App ist der Beweis, nicht die Zeile
+   darueber. Alle Werte bleiben Prozent der 1440er Buehne. */
+@media (min-width: 901px) {
+  .hero__buehne { aspect-ratio: 1440 / 500; }
+  .hero__buehne .geraet--mac { left: 6.4%;  top: 25%; width: 41.5%; }
+  .hero__buehne .geraet--tv  { left: 52.1%; top: 25%; width: 41.5%; }
+  .hero__buehne .geraet--fon { left: 38.2%; top: 4.6%; width: 23.6%; }
+  .plakette--direkt { left: 8.4%; top: 28.6%; }
+  .plakette--resume { left: 73.6%; top: 33.8%; }
+  .plakette--pip    { left: 6.2%; top: 47.5%; }
+}
+
+/* Unter den Knoepfen nur noch eine leise Zeile (27.09.): Plattformen stehen
+   im Bento, der Kopf traegt Titel, einen Satz und zwei Knoepfe. */
+.hero__text p.hero__frei { margin-top: 18px; color: var(--sehr-leise); font-size: 14px; font-weight: 500; letter-spacing: 0; }
+@media (max-width: 900px) { .hero__text p.hero__frei { font-size: 13.5px; margin-top: 16px; } }
+/* Plattformen unter dem Knopf: leise, aber sofort lesbar. */
+.hero__plattformen {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 0;
+  margin: 18px auto 0; max-width: 560px;
+  color: var(--sehr-leise); font-size: 14px; font-weight: 500; letter-spacing: .005em;
+}
+.hero__text p.hero__plattformen { font-size: 14px; color: var(--sehr-leise); margin-top: 18px; }
+.hero__plattformen span + span::before { content: "·"; margin: 0 9px; color: #5a5a5a; }
+
+/* Leiste: der Punkt reagiert unter dem Zeiger wie ein Knopf in der App. */
+@media (hover: hover) and (pointer: fine) {
+  .leiste__punkt:hover { color: var(--schrift); background: var(--flaeche); }
+}
+
+/* ---------- Auftritt: einmal beim Laden, dann steht alles. ----------
+   Text zuerst, dann die Geraete von unten, zuletzt die Plaketten. Nur
+   Deckkraft und translate, nie Layout. `translate` ist eine eigene
+   Eigenschaft und laeuft damit neben dem rotate() von Mac und TV. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes auftritt { from { opacity: 0; translate: 0 14px; } }
+  @keyframes aufstieg { from { opacity: 0; translate: 0 48px; } }
+  @keyframes erscheinen { from { opacity: 0; } }
+  .hero__text > * { animation: auftritt 720ms var(--raus) both; }
+  .hero__text > :nth-child(2) { animation-delay: 70ms; }
+  .hero__text > :nth-child(3) { animation-delay: 140ms; }
+  .hero__text > :nth-child(4) { animation-delay: 200ms; }
+  .hero__text > :nth-child(5) { animation-delay: 260ms; }
+  .hero__buehne .geraet { animation: aufstieg 1100ms var(--feder) both; }
+  .hero__buehne .geraet--fon { animation-delay: 180ms; }
+  .hero__buehne .geraet--mac, .hero__buehne .geraet--tv { animation-delay: 300ms; }
+  .plakette { animation: erscheinen 600ms var(--raus) 700ms both; }
+
+  /* Das Einblenden beim Scrollen macht js/effekte.js (einmal, dann steht es). */
+}
+
+/* ---------- Mobil: der Kopf zeigt die App, nicht nur Text ----------
+   Vorher war die Buehne unter 900 px ausgeblendet: der erste Eindruck auf
+   dem Telefon war eine Ueberschrift ohne Produkt. Jetzt Telefon vorn,
+   Fernseher dahinter, beide aus denselben Bildern wie am Desktop. */
+@media (max-width: 900px) {
+  .hero { padding-bottom: 40px; }
+  .hero__plattformen { font-size: 13px; max-width: 330px; }
+  .hero__text p.hero__plattformen { font-size: 13px; }
+  .hero__plattformen span + span::before { margin: 0 7px; }
+  .hero__buehne {
+    display: block;
+    aspect-ratio: 390 / 300;
+    margin-top: 36px;
+    clip-path: inset(-100vh -100vw 0 -100vw);
+  }
+  .hero__buehne .geraet--mac { display: none; }
+  .hero__buehne .geraet--tv  { left: 24%; top: 26%; width: 72%; transform: rotate(2deg); }
+  .hero__buehne .geraet--fon { left: 7%; top: 2%; width: 34%; }
+  .hero__ausklang { display: block; height: 140px; bottom: -2px; }
+  .etagenkopf p { margin-top: 14px; }
+}
+
+/* Zweiter Knopf im Kopf: Swiftly Music neben Download. Gleiche Groesse,
+   ruhige Flaeche, damit Download der erste bleibt. */
+.hero__knoepfe { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 26px; }
+.hero__knoepfe .hero__knopf { margin-top: 0; }
+.knopf--zweit { background: var(--flaeche); color: var(--schrift); }
+.knopf--zweit:active { background: var(--gedrueckt); }
+@media (max-width: 900px) { .hero__knoepfe { margin-top: 29px; } }
+
+/* =====================================================================
+   Drei Momente mit Technik (27.09.), gezeichnet von js/effekte.js.
+   Ohne Skript, ohne WebGL oder bei reduzierter Bewegung gilt alles oben.
+   ===================================================================== */
+
+/* ---------- Die Linse ---------- */
+.linse__figur { margin: 48px 0 0; }
+.linse__buehne {
+  position: relative; overflow: hidden;
+  aspect-ratio: 2.39 / 1; border-radius: 16px; background: #000;
+  touch-action: pan-y;
+}
+.linse__ersatz, .linse__leinwand { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.linse__ersatz { object-fit: cover; }
+.linse__leinwand { opacity: 0; transition: opacity 500ms var(--raus); }
+.linse--an .linse__leinwand { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .linse--an { cursor: none; } }
+.linse__marke {
+  position: absolute; z-index: 2; opacity: 0;
+  padding: 6px 11px; border-radius: 8px;
+  font-size: 12.5px; font-weight: 600; letter-spacing: .01em; white-space: nowrap;
+  transition: opacity 400ms var(--raus);
+  pointer-events: none;
+}
+.linse--an .linse__marke { opacity: 1; }
+.linse__marke--kopie { left: 18px; top: 18px; background: rgba(16,16,16,.72); color: var(--leise);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.linse__marke--original { left: 0; top: 0; transform: translate(-50%, -100%); background: var(--akzent-leise); color: var(--akzent); }
+.linse__figur figcaption { margin-top: 14px; text-align: center; color: var(--sehr-leise); font-size: 13px; line-height: 1.5; }
+@media (max-width: 900px) {
+  .linse__buehne { aspect-ratio: 4 / 3; border-radius: 14px; }
+  .linse__figur { margin-top: 32px; }
+  .linse__marke--kopie { left: 12px; top: 12px; }
+}
+
+/* ---------- Continue here: zum Anklicken, wie in der App ----------
+   Eines spielt, das andere zeigt seinen Startbildschirm mit dem Knopf.
+   Ein Druck, und der Film laeuft dort weiter, dieselbe Sekunde. */
+.weiter { margin-top: 56px; }
+.weiter__bahn {
+  display: flex; align-items: center; justify-content: center; gap: 5%;
+  width: min(1120px, 100%); margin-inline: auto; padding-inline: var(--seitenrand);
+}
+.weiter__fon { width: 20%; flex: none; }
+.weiter .weiter__tv { position: relative; inset: auto; translate: none; width: 66%; flex: none; }
+.weiter__schirm { position: relative; overflow: hidden; background: #000; }
+.weiter__tv .weiter__schirm { border-radius: 5px; aspect-ratio: 16 / 9; }
+.weiter__fon .weiter__schirm { position: absolute; }
+.weiter__heim { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* Welcher Schirm spielt, sagt data-spielt; den Wechsel zeichnet
+   js/effekte.js wie die App (Uebergabekarte). Ohne Skript spielt das iPhone. */
+.weiter__spiel { position: absolute; inset: 0; background: #000; visibility: hidden; }
+.weiter__schirm[data-spielt] .weiter__spiel,
+.weiter:not([data-bereit]) .weiter__fon .weiter__spiel { visibility: visible; }
+.weiter__uebergang { position: absolute; inset: 0; z-index: 2; display: none; overflow: hidden; pointer-events: none; }
+.weiter__grund { position: absolute; inset: 0; background: #101010; opacity: 0; }
+.weiter__karte { position: absolute; left: 0; top: 0; display: block; background: #000; opacity: 0; will-change: translate, width, height; }
+.weiter__zeilen { position: absolute; left: 0; right: 0; top: 0; display: grid; justify-items: center; gap: .15em;
+  color: #fff; font-weight: 600; line-height: 1.2; letter-spacing: -.01em; opacity: 0; }
+.weiter__zeilen span { font-weight: 400; color: #989898; letter-spacing: 0; }
+.weiter__bild { position: absolute; left: 0; right: 0; top: 50%; translate: 0 -50%; aspect-ratio: 2.39 / 1; overflow: hidden; }
+.weiter__bild video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.weiter__tv .weiter__bild { aspect-ratio: auto; top: 0; bottom: 0; translate: none; }
+.weiter__tv .weiter__bild video { object-fit: contain; }
+.weiter__titel { position: absolute; left: 7%; top: 7%; font-weight: 600; color: #fff; font-size: 5.2cqw; }
+.weiter__leiste { position: absolute; left: 7%; right: 7%; bottom: 4.5%; display: grid; gap: 2cqw; }
+.weiter__spur { display: block; height: 1.1cqw; border-radius: 1cqw; background: rgba(255,255,255,.3); overflow: hidden; }
+.weiter__spur i { display: block; height: 100%; width: 58%; background: #fff; border-radius: inherit; }
+.weiter__zeiten { display: flex; justify-content: space-between; font-size: 3.4cqw; color: rgba(255,255,255,.75); font-variant-numeric: tabular-nums; }
+.weiter__zeiten b { font-weight: 500; }
+/* Fernseher: tvOS zeigt Titel und Leiste unten, kurz nach dem Wechsel. */
+.weiter__tv .weiter__schirm { container-type: inline-size; }
+.weiter__tv .weiter__leiste { left: 4%; right: 4%; bottom: 7%; gap: .9cqw; transition: opacity 600ms var(--raus); }
+.weiter__tv .weiter__titel { position: static; font-size: 1.9cqw; }
+.weiter__tv .weiter__spur { height: .5cqw; }
+.weiter__tv .weiter__zeiten { font-size: 1.3cqw; }
+.weiter__tv .weiter__spiel::after { content: ""; position: absolute; inset: auto 0 0; height: 30%; background: linear-gradient(to top, rgba(0,0,0,.7), rgba(0,0,0,0)); z-index: 0; transition: opacity 600ms var(--raus); }
+.weiter__tv .weiter__leiste { z-index: 1; }
+.weiter__tv[data-ruhig] .weiter__leiste, .weiter__tv[data-ruhig] .weiter__spiel::after { opacity: 0; }
+
+/* Der Knopf liegt genau auf dem Knopf im Bildschirmfoto. Nur auf dem
+   Geraet, das gerade nicht spielt, ist er da. */
+.weiter__knopf {
+  position: absolute; z-index: 3; display: none;
+  border: 0; padding: 0; background: transparent; cursor: pointer; border-radius: 999px;
+}
+.weiter[data-laeuft="fon"]:not([data-wechselt]) .weiter__tv .weiter__knopf,
+.weiter[data-laeuft="tv"]:not([data-wechselt]) .weiter__fon .weiter__knopf { display: block; }
+.weiter__tv .weiter__knopf { left: 76.2%; top: 5.2%; width: 15.9%; height: 6.9%; }
+/* Genau um das Symbol neben dem Profil, in dessen Form. */
+.weiter__fon .weiter__knopf { left: 68.4%; top: 7.55%; width: 8.4%; height: auto; aspect-ratio: 3 / 2; border-radius: 2.2cqw; }
+/* Der Rahmen liegt als Bild ueber dem Schirm und nahm echte Klicks weg. */
+.weiter .geraet__rahmen { pointer-events: none; }
+.weiter__knopf::after {
+  content: ""; position: absolute; inset: -4px; border-radius: inherit;
+  box-shadow: 0 0 0 2px rgba(80,213,218,.9);
+  opacity: 0; transition: opacity 200ms var(--raus);
+}
+.weiter__knopf:focus-visible { outline: none; }
+/* Groessere Trefferflaeche als das Symbol selbst, unsichtbar. */
+.weiter__knopf::before { content: ""; position: absolute; inset: -14px; }
+.weiter__knopf:focus-visible::after, .weiter__knopf:hover::after { opacity: 1; }
+.weiter__knopf:active { transform: scale(.96); }
+/* Zweimal leise pulsieren, dann still: man soll ihn finden, nicht ertragen. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes rufen { 0%, 100% { opacity: 0; transform: scale(1); } 45% { opacity: .9; transform: scale(1.06); } }
+  .weiter[data-bereit] .weiter__knopf::after { animation: rufen 1600ms var(--raus) 2; }
+}
+.weiter__hinweis { margin: 28px auto 0; text-align: center; color: var(--sehr-leise); font-size: 15px; min-height: 1.5em; }
+.weiter__hinweis b { color: var(--akzent); font-weight: 600; }
+@media (max-width: 900px) {
+  .weiter { margin-top: 36px; }
+  .weiter__bahn { flex-direction: column-reverse; gap: 28px; }
+  .weiter__fon { width: 40%; }
+  .weiter .weiter__tv { width: 100%; }
+  .weiter__hinweis { font-size: 14px; }
+}
+/* Links im Kleingedruckten der Fusszeile (Lizenzseite). */
+.fuss__klein a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+/* supporter:start */
+.pg { --grund:#101010; --flaeche:#1A1A1C; --erhoeht:#262626; --druck:#303030; --akzent:#50D5DA;
+  --auf:#061212; --schrift:#fff; --leise:#CCCCCC; --sehr:#989898; --linie:rgba(255,255,255,.07);
+  --rand:rgba(255,255,255,.12); --gruen:#8FD99A; --seitenrand:clamp(24px,4vw,40px); --raus:cubic-bezier(.23,1,.32,1);
+  --abschnitt:72px; --kopfabstand:32px;
+  position:relative; overflow:hidden; background:var(--grund); color:var(--schrift);
+  font-family:"Figtree",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:17px; line-height:1.45; -webkit-font-smoothing:antialiased; container-type:inline-size; }
+.pg *, .pg *::before, .pg *::after { box-sizing:border-box; }
+.pg p, .pg h1, .pg h2, .pg h3 { margin:0; }
+.pg a { color:inherit; text-decoration:none; }
+.pg img { display:block; max-width:100%; }
+.pg :focus-visible { outline:2px solid var(--akzent); outline-offset:3px; border-radius:4px; }
+.pg .bahn { width:100%; max-width:calc(1240px + 2 * var(--seitenrand)); margin-inline:auto; padding-inline:var(--seitenrand); position:relative; }
+.pg .knopf { white-space:nowrap; display:inline-flex; align-items:center; justify-content:center; gap:8px; border:0; border-radius:10px; background:#fff;
+  color:var(--auf); font:inherit; font-weight:600; line-height:1.2; cursor:pointer; min-height:50px; padding:0 32px; font-size:17px; }
+.pg .knopf--leise { background:rgba(255,255,255,.1); color:#fff; }
+.pg .knopf[disabled] { background:var(--erhoeht); color:var(--sehr); cursor:default; }
+.pg .spross { display:inline-block; width:.62em; height:.62em; margin-left:.28em; color:var(--gruen); vertical-align:.04em; }
+.pg .mini { --a:#50D5DA; position:relative; width:132px; height:264px; border-radius:22px; overflow:hidden; background:#101010; flex:none;
+  box-shadow:0 18px 40px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.1); transform:rotate(var(--r,0deg)); animation:schweben 4s ease-in-out infinite; }
+.pg .mini__schein { position:absolute; left:0; right:0; top:0; height:96px; background:radial-gradient(90% 100% at 50% 0%, color-mix(in srgb, var(--a) 40%, transparent), transparent 75%); }
+.pg .mini__logo { position:absolute; left:12px; top:20px; width:42px; height:auto; }
+.pg .mini__herz { position:absolute; right:12px; top:19px; width:12px; height:12px; color:#fff; }
+.pg .mini__t { position:absolute; left:12px; top:44px; font-size:9px; font-weight:600; white-space:nowrap; }
+.pg .mini__quer { position:absolute; left:12px; top:58px; width:108px; height:61px; border-radius:6px; overflow:hidden; }
+.pg .mini__quer img, .pg .mini__hoch img { width:100%; height:100%; object-fit:cover; }
+.pg .mini__quer i { position:absolute; left:0; right:0; bottom:0; height:3px; background:rgba(255,255,255,.3); }
+.pg .mini__quer i::after { content:""; position:absolute; left:0; top:0; bottom:0; width:46%; background:var(--a); }
+.pg .mini__hoch { position:absolute; top:130px; width:50px; height:75px; border-radius:5px; overflow:hidden; }
+.pg .mini__hoch--1 { left:12px; }
+.pg .mini__hoch--2 { left:68px; }
+.pg .mini__tabs { position:absolute; left:0; right:0; bottom:0; height:30px; border-top:1px solid rgba(255,255,255,.07); display:flex; justify-content:space-around; align-items:center; }
+.pg .mini__tabs i { width:9px; height:9px; border-radius:3px; background:#555; display:block; }
+.pg .mini__tabs i.an { background:var(--a); }
+@keyframes schweben { 0%,100% { transform:translateY(0) rotate(var(--r,0deg)); } 50% { transform:translateY(-6px) rotate(var(--r,0deg)); } }
+.pg .drei { display:flex; justify-content:center; align-items:flex-start; }
+.pg .drei .platz { margin:0 -16px; padding-top:40px; }
+.pg .drei .platz:nth-child(2) { position:relative; z-index:2; padding-top:8px; }
+.pg .nb { white-space:nowrap; }
+.pg .held__wege { display:flex; flex-wrap:wrap; gap:8px; margin-top:24px; }
+.pg .startteil { position:relative; background:var(--flaeche); border-radius:24px; display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr); align-items:center; gap:32px; padding:40px 48px; overflow:hidden; }
+.pg .startteil__licht { position:absolute; inset:0; pointer-events:none;
+  background: radial-gradient(40% 70% at 12% 0%, rgba(255,140,107,.36), transparent 72%), radial-gradient(40% 70% at 55% -10%, rgba(176,140,255,.34), transparent 72%), radial-gradient(34% 60% at 96% 0%, rgba(90,211,232,.26), transparent 72%); }
+.pg .startteil__text, .pg .startteil .drei { position:relative; }
+.pg .startteil h2 { font-size:clamp(30px,2.8vw,40px); font-weight:700; letter-spacing:-.018em; line-height:1.1; }
+.pg .startteil p { margin-top:8px; color:#E6E6E6; font-size:17px; line-height:1.5; max-width:440px; }
+.pg .startteil__punkte { list-style:none; margin:16px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:8px; }
+.pg .startteil__punkte li { display:inline-flex; align-items:center; height:32px; padding:0 14px; border-radius:999px; background:rgba(255,255,255,.1); font-size:14px; font-weight:500; }
+.pg .startteil .startteil__regel { margin-top:16px; font-size:14px; color:var(--leise); }
+.pg .startteil .drei { height:272px; overflow:hidden; }
+.pg .startteil .drei .mini { zoom:1; }
+@container (max-width: 900px) {
+.pg { --abschnitt:48px; --kopfabstand:24px; font-size:16px; }
+.pg .startteil { grid-template-columns:minmax(0,1fr); padding:24px 20px 0; gap:16px; border-radius:20px; }
+.pg .startteil .held__wege .knopf { flex:1; padding:0 16px; }
+.pg .startteil .drei { height:176px; }
+.pg .startteil .drei .mini { zoom:.7; }
+.pg .startteil .drei .platz { margin:0 -12px; padding-top:28px; }
+.pg .startteil .drei .platz:nth-child(2) { padding-top:8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+.pg *, .pg *::before, .pg *::after { animation:none !important; }
+}
+.pg.startseite { padding-top:var(--abschnitt); background:transparent; }
+/* Donate next to Download, styled like the second button it replaces. */
+.knopf--spenden { gap: 8px; }
+.knopf--spenden svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--akzent); stroke-width: 2; stroke-linejoin: round; }
+/* supporter:end */
+
+/* ================= /music/ only =================
+   Everything else comes unchanged from the home page. */
+.knopf--zweit { background: var(--flaeche); color: var(--schrift); }
+.knopf--zweit:active { background: var(--gedrueckt); }
+.hero__knoepfe { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 26px; }
+.hero__knoepfe .hero__knopf { margin-top: 0; }
+
+/* Three iPhones on the stage: left and right tilted like Mac and TV
+   on the home page, the middle one in front. */
+.hero__buehne .geraet--links  { left: 21.5%; top: 16%; width: 17.2%; transform: rotate(-5deg); }
+.hero__buehne .geraet--mitte  { left: 39.24%; top: 5.6%; width: 21.53%; z-index: 3;
+  filter: drop-shadow(0 40px 60px rgba(0,0,0,.55)); }
+.hero__buehne .geraet--rechts { left: 61.3%; top: 16%; width: 17.2%; transform: rotate(5deg); }
+
+/* ---------- Mock-up screens. Everything in cqw: 1cqw = 1 % of the device width,
+   so the content scales with the frame like a real image. ---------- */
+div.geraet__schirm { background: var(--grund); overflow: hidden; }
+.schirm { position: absolute; inset: 0; padding: 15cqw 6.5cqw 6cqw; display: flex; flex-direction: column; gap: 3cqw;
+  font-family: var(--schriftart); color: var(--schrift); }
+.schirm__griff { width: 9cqw; height: 1cqw; border-radius: 1cqw; background: rgba(255,255,255,.25); margin: -5cqw auto 2cqw; }
+.schirm__kopf { font-size: 7.4cqw; font-weight: 700; letter-spacing: -.021em; }
+.schirm__reihe { font-size: 5.2cqw; font-weight: 600; margin-top: 2cqw; }
+.schirm__klein { font-size: 3.4cqw; color: var(--sehr-leise); }
+.huelle { aspect-ratio: 1; border-radius: 2.6cqw; }
+.schirm__raster { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3cqw; }
+.schirm__raster .huelle { border-radius: 2.6cqw; }
+.schirm__titel { display: flex; justify-content: space-between; align-items: end; gap: 2cqw; margin-top: 3cqw; }
+.schirm__titel b { display: block; font-size: 6.2cqw; font-weight: 600; letter-spacing: -.014em; }
+.schirm__titel span { font-size: 4.6cqw; color: var(--leise); font-weight: 600; }
+.schirm__plakette { font-size: 3.2cqw; font-weight: 600; color: var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 15%, transparent); padding: 1.2cqw 2.2cqw; border-radius: 2cqw; }
+.schirm__spur { height: 1.3cqw; border-radius: 1cqw; background: rgba(255,255,255,.3); position: relative; margin-top: 3cqw; }
+.schirm__spur::before { content: ""; position: absolute; inset: 0 58% 0 0; border-radius: inherit; background: var(--akzent); }
+.schirm__zeiten { display: flex; justify-content: space-between; font-size: 3.2cqw; color: var(--sehr-leise); font-variant-numeric: tabular-nums; }
+.schirm__steuer { display: flex; justify-content: space-between; align-items: center; margin-top: 1cqw; }
+.schirm__steuer svg { width: 7cqw; height: 7cqw; fill: var(--schrift); }
+.schirm__steuer .an { fill: var(--akzent); }
+.schirm__spiel { width: 19cqw; height: 19cqw; border-radius: 50%; background: var(--schrift); display: grid; place-items: center; }
+.schirm__spiel svg { width: 7.5cqw; height: 7.5cqw; fill: var(--auf-akzent); }
+.schirm__aktionen { display: flex; justify-content: space-around; margin-top: auto; font-size: 3.2cqw; color: var(--leise); }
+.schirm__aktionen span { display: grid; justify-items: center; gap: 1.2cqw; }
+.schirm__aktionen svg { width: 5.4cqw; height: 5.4cqw; fill: none; stroke: var(--leise); stroke-width: 2; }
+.schirm__lied { display: flex; gap: 3cqw; align-items: center; }
+.schirm__lied .huelle { width: 13cqw; flex: none; border-radius: 2cqw; }
+.schirm__lied b { display: block; font-size: 4.4cqw; font-weight: 600; }
+.schirm__lied span { font-size: 3.6cqw; color: var(--sehr-leise); }
+.schirm__liedtext { display: grid; gap: 3.6cqw; margin-top: 4cqw; font-size: 8cqw; font-weight: 700; line-height: 1.16; letter-spacing: -.021em; }
+.schirm__liedtext .vorbei { color: #5C5C5C; }
+.schirm__liedtext .kommt { color: var(--sehr-leise); }
+.schirm__zeile { display: flex; gap: 3cqw; align-items: center; padding-block: 1.6cqw; border-bottom: 1px solid var(--linie); }
+.schirm__zeile .huelle { width: 12cqw; flex: none; border-radius: 2cqw; }
+.schirm__zeile b { display: block; font-size: 4.2cqw; font-weight: 600; }
+.schirm__zeile span { font-size: 3.4cqw; color: var(--sehr-leise); }
+.schirm__mini { margin-top: auto; display: flex; gap: 3cqw; align-items: center; background: var(--flaeche);
+  border-radius: 4cqw; padding: 2.4cqw; }
+.schirm__mini .huelle { width: 11cqw; border-radius: 2cqw; flex: none; }
+.schirm__mini b { font-size: 4cqw; font-weight: 600; display: block; }
+.schirm__mini span { font-size: 3.2cqw; color: var(--leise); }
+
+/* Covers: generated record sleeves until real screens exist. */
+.h1 { background: radial-gradient(circle at 30% 30%, #5fd6db 0 12%, transparent 12.5%), repeating-linear-gradient(115deg, #143b3d 0 5%, #0f2c2e 5% 10%); }
+.h2 { background: linear-gradient(160deg, #3a2a1c, #d9864a 60%, #f1c27d); }
+.h3 { background: radial-gradient(circle at 50% 50%, #111 0 18%, #e8e8e8 18.5% 22%, #111 22.5%); }
+.h4 { background: linear-gradient(0deg, #1d1d3a 0 50%, #6c5ce7 50%); }
+.h5 { background: repeating-radial-gradient(circle at 20% 80%, #2b2b2b 0 4%, #3a3a3a 4% 8%); }
+.h6 { background: linear-gradient(135deg, #0e3b2c, #2fbf88); }
+.h7 { background: radial-gradient(circle at 70% 30%, #f5f5f5 0 14%, transparent 14.5%), #b23a3a; }
+.h8 { background: linear-gradient(90deg, #222 0 33%, #50D5DA 33% 66%, #eee 66%); }
+.h9 { background: conic-gradient(from 45deg, #412b5e, #c17bd6, #412b5e); }
+
+/* ---------- Bento: the same three tiles as the home page ---------- */
+.kachel--mobil .geraet--hinten { right: 6%; bottom: -24%; width: 40%; transform: rotate(6deg); z-index: 1; opacity: .9; }
+.kachel--mobil .geraet--vorn { left: 8%; bottom: -12%; width: 48%; z-index: 2; }
+.lautsprecher {
+  position: absolute; right: 6%; top: 50%; translate: 0 -50%; width: 50%;
+  background: var(--flaeche); border-radius: 16px; padding: 18px 18px 8px;
+  display: grid; gap: 4px;
+}
+.lautsprecher__kopf { font-size: 13px; color: var(--sehr-leise); font-weight: 600; margin-bottom: 6px; }
+.lautsprecher__zeile { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; padding-block: 8px; }
+.lautsprecher__zeile + .lautsprecher__zeile { border-top: 1px solid var(--linie); }
+.lautsprecher__zeichen { width: 32px; height: 32px; border-radius: 10px; background: var(--erhoeht); display: grid; place-items: center; grid-row: span 2; }
+.lautsprecher__zeichen svg { width: 16px; height: 16px; fill: none; stroke: var(--leise); stroke-width: 1.8; }
+.lautsprecher__zeile--an .lautsprecher__zeichen { background: var(--akzent-leise); }
+.lautsprecher__zeile--an .lautsprecher__zeichen svg { stroke: var(--akzent); }
+.lautsprecher__zeile b { font-size: 14px; font-weight: 600; }
+.regler { height: 4px; border-radius: 2px; background: rgba(255,255,255,.18); position: relative; }
+.regler i { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--schrift); }
+.lautsprecher__zeile--an .regler i { background: var(--akzent); }
+
+.qualitaet { position: absolute; right: 6%; top: 50%; translate: 0 -50%; width: 46%;
+  background: var(--flaeche); border-radius: 16px; padding: 8px 18px; }
+.qualitaet__kopf { font-size: 13px; color: var(--sehr-leise); font-weight: 600; padding: 10px 0 4px; }
+.qualitaet__zeile { display: flex; justify-content: space-between; align-items: center; padding-block: 11px; font-size: 15px; font-weight: 500; color: var(--leise); }
+.qualitaet__zeile + .qualitaet__zeile { border-top: 1px solid var(--linie); }
+.qualitaet__zeile--an { color: var(--schrift); font-weight: 600; }
+.qualitaet__zeile--an svg { width: 18px; height: 18px; fill: none; stroke: var(--akzent); stroke-width: 2.4; }
+
+/* ---------- Three quiet cards below the bento ---------- */
+.dreier { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+.dreier .kachel { padding: 28px 32px 30px; }
+.dreier h3 { font-size: clamp(19px, 1.6vw, 22px); }
+.dreier p { margin-top: 10px; color: var(--leise); font-size: 16px; line-height: 1.45; }
+
+/* ---------- Interactive cards: speaker and quality ---------- */
+.lautsprecher, .qualitaet { pointer-events: auto; }
+.kachel__bild:has(.lautsprecher), .kachel__bild:has(.qualitaet) { pointer-events: auto; }
+.lautsprecher__zeile { grid-template-columns: minmax(0, 1fr); gap: 8px; padding-block: 10px; }
+.lautsprecher__wahl { display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none;
+  color: var(--leise); font: inherit; text-align: left; cursor: pointer; }
+.lautsprecher__zeile--an .lautsprecher__wahl { color: var(--schrift); }
+.lautsprecher__zeichen { grid-row: auto; transition: background-color 200ms var(--raus); }
+.lautsprecher__zeichen svg { transition: stroke 200ms var(--raus); }
+.regler { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; margin: 0; background: transparent; cursor: pointer; --stand: 50%; }
+.regler::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--farbe, #fff) var(--stand), rgba(255,255,255,.18) var(--stand)); }
+.regler::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(255,255,255,.18); }
+.regler::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--farbe, #fff); }
+.regler::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%; background: #fff; border: 0; }
+.regler::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 0; }
+.lautsprecher__zeile--an .regler { --farbe: var(--akzent); }
+.lautsprecher__zeile:not(.lautsprecher__zeile--an) .regler { opacity: .35; }
+.lautsprecher__wahl:focus-visible, .qualitaet__zeile:focus-visible, .regler:focus-visible,
+.spektrum__wahl button:focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; border-radius: 8px; }
+.qualitaet__zeile { width: 100%; border: 0; background: none; font: inherit; cursor: pointer; text-align: left; }
+.qualitaet__zeile svg { width: 18px; height: 18px; fill: none; stroke: var(--akzent); stroke-width: 2.4; opacity: 0; transition: opacity 180ms var(--raus); }
+.qualitaet__zeile[aria-checked="true"] { color: var(--schrift); font-weight: 600; }
+.qualitaet__zeile[aria-checked="true"] svg { opacity: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .qualitaet__zeile:hover, .lautsprecher__wahl:hover { color: var(--schrift); }
+}
+
+/* ---------- Each of the three cards gets an icon ---------- */
+.kachel__zeichen { display: grid; place-items: center; width: 40px; height: 40px; margin-bottom: 14px;
+  border-radius: 10px; background: var(--flaeche); color: var(--akzent); }
+.kachel__zeichen svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- Every bit of the song ---------- */
+.spektrum { margin: 48px 0 0; }
+.spektrum__bild { position: relative; overflow: hidden; border-radius: 16px; background: #101010; aspect-ratio: 5 / 2; }
+.spektrum__bild img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.spektrum { --anteil: .274; }
+.spektrum[data-stufe="320"] { --anteil: .093; }
+.spektrum[data-stufe="flac"] { --anteil: 0; }
+/* What is missing is covered by a surface from above; it moves on a spring. */
+.spektrum__schnitt {
+  position: absolute; left: 0; right: 0; top: 0; height: calc(var(--anteil) * 100%);
+  background: rgba(16,16,16,.94);
+  box-shadow: inset 0 -1.5px 0 rgba(80,213,218,.9);
+  transition: height 900ms cubic-bezier(.32,.72,0,1), box-shadow 300ms var(--raus);
+}
+.spektrum[data-stufe="flac"] .spektrum__schnitt { box-shadow: inset 0 0 0 rgba(80,213,218,0); }
+.spektrum__marke { position: absolute; right: 16px; bottom: 10px; padding: 5px 10px; border-radius: 8px;
+  background: var(--akzent-leise); color: var(--akzent); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  transition: opacity 300ms var(--raus); }
+.spektrum[data-stufe="flac"] .spektrum__marke { opacity: 0; }
+.spektrum__wahl { display: flex; justify-content: center; gap: 6px; margin: 22px auto 0; padding: 5px; width: fit-content;
+  border-radius: 999px; background: var(--gruppe, #1E1E1E); }
+.spektrum__wahl button { display: grid; justify-items: center; gap: 1px; min-width: 124px; padding: 9px 18px; border: 0; border-radius: 999px;
+  background: none; color: var(--leise); font: 600 15px var(--schriftart); cursor: pointer;
+  transition: background-color 200ms var(--raus), color 200ms var(--raus); }
+.spektrum__wahl button small { font-size: 12px; font-weight: 500; color: var(--sehr-leise); }
+.spektrum__wahl button[aria-checked="true"] { background: var(--erhoeht); color: var(--schrift); }
+.spektrum__wahl button[aria-checked="true"] small { color: var(--akzent); }
+.spektrum figcaption { margin-top: 14px; text-align: center; color: var(--sehr-leise); font-size: 13px; }
+@media (max-width: 900px) {
+  .spektrum__bild { aspect-ratio: 4 / 3; border-radius: 14px; }
+  .spektrum__wahl button { min-width: 0; padding: 8px 12px; font-size: 14px; }
+}
+.skala { position: absolute; left: 14px; top: 14px; bottom: 14px; z-index: 2; pointer-events: none; }
+.skala i { position: absolute; left: 0; translate: 0 50%; font-style: normal; font-size: 12px; font-weight: 600;
+  color: rgba(255,255,255,.7); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.skala i:first-child { translate: 0 100%; }
+.skala i:last-child { translate: 0 0; }
+.linse__buehne--spektrum .linse__marke--kopie { left: auto; right: 18px; }
+
+/* Two quiet options below the large one, same width as on the home page. */
+.weg__app { flex: none; width: 32px; height: 32px; border-radius: 8px; display: block; }
+.laden__rest--zwei { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+
+@media (max-width: 900px) {
+  .hero__knoepfe { margin-top: 29px; }
+  /* Sonos and quality: the card sits directly under the text, no gap. */
+  .kachel--tv .kachel__bild, .kachel--desktop .kachel__bild { height: auto; padding: 0 24px 26px; }
+  .lautsprecher, .qualitaet { position: static; translate: none; width: 100%; }
+  /* Mobile: three phones side by side, the middle one in front and larger. */
+  .hero__buehne { aspect-ratio: 390 / 330; }
+  .hero__buehne .geraet--mitte  { left: 31%; top: 3%; width: 38%; }
+  .hero__buehne .geraet--links  { left: 5%; top: 15%; width: 29%; }
+  .hero__buehne .geraet--rechts { left: 66%; top: 15%; width: 29%; }
+  .kachel--mobil .geraet--vorn { left: 6%; width: 44%; bottom: -20%; }
+  .kachel--mobil .geraet--hinten { right: 8%; width: 36%; bottom: -30%; }
+  .dreier { grid-template-columns: 1fr; }
+}
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Swiftly Music",
+  "applicationCategory": "MultimediaApplication",
+  "operatingSystem": "iOS",
+  "url": "https://swiftlyplayer.com/music/",
+  "description": "A music player for your own Jellyfin or Navidrome server: albums, playlists, synced lyrics, Sonos, original quality.",
+  "author": {
+    "@type": "Person",
+    "name": "Paul Herter"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is this Swiftly Player with music?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. It is its own app, built only for music, with the same look and the same buttons as Swiftly Player."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which servers work?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Jellyfin and Navidrome, and other servers that speak OpenSubsonic. You sign in with the account you already have on your server."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need Swiftly Player too?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Each app works on its own. If you use both, they share nothing but the look."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which devices does it run on?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "iPhone. It is in beta on TestFlight."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What data leaves my phone?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Only what your own server needs: what you played. There is no account with me and no analytics."
+      }
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "Swiftly Player",
+      "item": "https://swiftlyplayer.com/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "Swiftly Music",
+      "item": "https://swiftlyplayer.com/music/"
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<a class="nur-fuer-leser" href="#inhalt">Skip to content</a>
+
+<header class="leiste">
+  <div class="leiste__kapsel">
+    <a class="leiste__marke" href="/music/" aria-label="Swiftly Music, to the top">
+      <img src="wortmarke-music.svg" alt="Swiftly Music" width="62" height="21">
+    </a>
+    <a class="leiste__punkt nur-desktop" href="/">Player</a>
+    <a class="leiste__punkt nur-desktop" href="/blog/">Blog</a>
+    <a class="leiste__punkt nur-desktop" href="https://github.com/paulherter/swiftly-player" target="_blank" rel="noopener">GitHub</a>
+    <button class="leiste__burger" type="button" aria-expanded="false" aria-controls="menue" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</header>
+
+<nav class="menue" id="menue" aria-label="Menu">
+  <a href="/">Swiftly Player</a>
+  <a href="/blog/">Blog</a>
+  <a href="https://discord.gg/MeGwfv3UwN" target="_blank" rel="noopener">Discord</a>
+  <a href="https://github.com/paulherter/swiftly-player" target="_blank" rel="noopener">GitHub</a>
+  <a href="/supporter/">Donate</a>
+  <a class="knopf knopf--gross" href="#downloads">Download</a>
+</nav>
+
+<main id="inhalt">
+
+<div class="auftakt">
+<section class="hero" data-plaketten>
+  <div class="aurora" aria-hidden="true"></div>
+  <div class="hero__rahmen">
+
+    <div class="bahn hero__text">
+      <h1>Your player<br>for your music</h1>
+      <p>A music player for the Jellyfin or Navidrome server you run yourself.</p>
+      <div class="hero__knoepfe">
+        <a class="knopf knopf--gross hero__knopf" href="#downloads">Download</a>
+        <a class="knopf knopf--gross knopf--zweit knopf--spenden hero__knopf" href="/supporter/"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/></svg>Donate</a>
+      </div>
+      <p class="hero__frei">Free beta on TestFlight. No account, no ads.</p>
+    </div>
+
+    <div class="plakette plakette--direkt nur-desktop" aria-hidden="true">
+      <span class="plakette__zeichen">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 5h12M4 10h8M4 15h10"/></svg>
+      </span>
+      <span><b>Synced lyrics</b><em>Line by line, as it is sung</em></span>
+    </div>
+
+    <div class="plakette plakette--resume nur-desktop" aria-hidden="true">
+      <span class="plakette__zeichen">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2.5" width="10" height="15" rx="2.5"/><circle cx="10" cy="11.5" r="2.6"/><path d="M10 6h.01"/></svg>
+      </span>
+      <span><b>Sonos and AirPlay</b><em>Plays on without your phone</em></span>
+    </div>
+
+    <div class="plakette plakette--pip nur-desktop" aria-hidden="true">
+      <span class="plakette__zeichen">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10h2.5l2.5-6 3.5 12 2.5-6H18"/></svg>
+      </span>
+      <span><b>Original quality</b><em>FLAC, streamed as stored</em></span>
+    </div>
+
+    <div class="hero__buehne" aria-hidden="true">
+      <div class="geraet geraet--fon geraet--links">
+        <img class="geraet__schirm" src="/bilder/music-start.webp" alt="" loading="lazy">
+        <img class="geraet__rahmen" src="/bilder/rahmen-iphone.webp" alt="" width="700" height="1431">
+      </div>
+      <div class="geraet geraet--fon geraet--rechts">
+        <img class="geraet__schirm" src="/bilder/music-album.webp" alt="" loading="lazy">
+        <img class="geraet__rahmen" src="/bilder/rahmen-iphone.webp" alt="" width="700" height="1431">
+      </div>
+      <div class="geraet geraet--fon geraet--mitte">
+        <img class="geraet__schirm" src="/bilder/music-wiedergabe.webp" alt="" loading="lazy">
+        <img class="geraet__rahmen" src="/bilder/rahmen-iphone.webp" alt="" width="700" height="1431">
+      </div>
+    </div>
+  </div>
+  <div class="hero__ausklang" aria-hidden="true"></div>
+</section>
+</div>
+
+<section class="etage" id="merkmale">
+  <div class="bahn">
+    <div class="etagenkopf"><h2>Made for music</h2>
+      <p>The look and the buttons of Swiftly Player, arranged around albums, playlists and the song that is playing.</p></div>
+
+    <div class="bento">
+      <article class="kachel kachel--mobil">
+        <div class="kachel__text">
+          <h3>Lyrics that follow the song</h3>
+          <p>Synced lyrics from your server scroll with the music. The line being sung stands out, the ones behind it fade.</p>
+        </div>
+        <div class="kachel__bild" aria-hidden="true">
+          <div class="geraet geraet--fon geraet--hinten">
+        <img class="geraet__schirm" src="/bilder/music-wiedergabe.webp" alt="" loading="lazy">
+        <img class="geraet__rahmen" src="/bilder/rahmen-iphone.webp" alt="" width="700" height="1431">
+      </div>
+          <div class="geraet geraet--fon geraet--vorn">
+        <div class="geraet__schirm"><div class="schirm">
+          <div class="schirm__lied"><div class="huelle h1"></div><div><b>Northern Lines</b><span>Harbour Lights</span></div></div>
+          <div class="schirm__liedtext">
+            <span class="vorbei">The ferry's gone and the lights are low</span>
+            <span>Every line I never said out loud</span>
+            <span class="kommt">rolls in with the tide for me</span>
+            <span class="kommt">So leave the window open wide</span>
+          </div>
+        </div></div>
+        <img class="geraet__rahmen" src="/bilder/rahmen-iphone.webp" alt="" width="700" height="1431">
+      </div>
+        </div>
+      </article>
+
+      <article class="kachel kachel--tv">
+        <div class="kachel__text">
+          <h3>Sonos and AirPlay</h3>
+          <p>Send the queue to a Sonos speaker. It keeps playing when your phone leaves the room.</p>
+        </div>
+        <div class="kachel__bild" aria-hidden="true">
+          <div class="lautsprecher" data-lautsprecher>
+            <div class="lautsprecher__kopf">Play on</div>
+            <div class="lautsprecher__zeile lautsprecher__zeile--an" data-ziel="lautsprecher">
+              <button class="lautsprecher__wahl" type="button" aria-pressed="true">
+                <span class="lautsprecher__zeichen"><svg viewBox="0 0 20 20"><rect x="5" y="2.5" width="10" height="15" rx="2.5"/><circle cx="10" cy="11.5" r="2.6"/></svg></span>
+                <b>Living room</b>
+              </button>
+              <input class="regler" type="range" min="0" max="100" value="62" aria-label="Volume, Living room">
+            </div>
+            <div class="lautsprecher__zeile lautsprecher__zeile--an" data-ziel="lautsprecher">
+              <button class="lautsprecher__wahl" type="button" aria-pressed="true">
+                <span class="lautsprecher__zeichen"><svg viewBox="0 0 20 20"><rect x="5" y="2.5" width="10" height="15" rx="2.5"/><circle cx="10" cy="11.5" r="2.6"/></svg></span>
+                <b>Kitchen</b>
+              </button>
+              <input class="regler" type="range" min="0" max="100" value="40" aria-label="Volume, Kitchen">
+            </div>
+            <div class="lautsprecher__zeile" data-ziel="telefon">
+              <button class="lautsprecher__wahl" type="button" aria-pressed="false">
+                <span class="lautsprecher__zeichen"><svg viewBox="0 0 20 20"><rect x="4" y="2" width="12" height="16" rx="3"/><path d="M8.5 15h3"/></svg></span>
+                <b>This iPhone</b>
+              </button>
+              <input class="regler" type="range" min="0" max="100" value="70" aria-label="Volume, this iPhone">
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="kachel kachel--desktop">
+        <div class="kachel__text">
+          <h3>Original quality</h3>
+          <p>FLAC and everything else stream as stored. On mobile data you choose how much.</p>
+        </div>
+        <div class="kachel__bild" aria-hidden="true">
+          <div class="qualitaet" role="radiogroup" aria-label="Streaming on mobile data" data-qualitaet>
+            <div class="qualitaet__kopf">Streaming on mobile data</div>
+            <button class="qualitaet__zeile" type="button" role="radio" aria-checked="true">Original<svg viewBox="0 0 20 20"><path d="m4.5 10.5 3.5 3.5 7.5-8"/></svg></button>
+            <button class="qualitaet__zeile" type="button" role="radio" aria-checked="false">320 kbit/s<svg viewBox="0 0 20 20"><path d="m4.5 10.5 3.5 3.5 7.5-8"/></svg></button>
+            <button class="qualitaet__zeile" type="button" role="radio" aria-checked="false">128 kbit/s<svg viewBox="0 0 20 20"><path d="m4.5 10.5 3.5 3.5 7.5-8"/></svg></button>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <div class="dreier">
+      <article class="kachel"><span class="kachel__zeichen" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v10m0 0-4-4m4 4 4-4M5 19h14"/></svg></span><h3>Downloads</h3><p>Keep albums and playlists on the phone, over Wi-Fi only if you like.</p></article>
+      <article class="kachel"><span class="kachel__zeichen" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 9v6M9.5 6v12M14 8v8M18.5 10v4"/></svg></span><h3>Even volume</h3><p>Loud and quiet albums play at the same level, one after the other.</p></article>
+      <article class="kachel"><span class="kachel__zeichen" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h10M4 12h10M4 17h6"/><path d="m16 14 5 3-5 3z" fill="currentColor" stroke="none"/></svg></span><h3>It keeps going</h3><p>When the album ends, similar songs follow. Switch it off if you want silence.</p></article>
+    </div>
+  </div>
+</section>
+
+<section class="etage" id="original">
+  <div class="bahn">
+    <div class="etagenkopf"><h2>Every bit of the song</h2>
+      <p>Pick a quality and see what stays. A lossy copy cuts off the top of the sound; FLAC keeps all of it, and Swiftly Music plays it as stored.</p></div>
+    <figure class="spektrum" data-spektrum data-stufe="128">
+      <div class="spektrum__bild">
+        <img src="/bilder/spektrum.webp" alt="A spectrogram of a song: time runs to the right, pitch goes up to 22 kHz" width="1600" height="640" loading="lazy">
+        <div class="spektrum__schnitt"><span class="spektrum__marke">Nothing above 16 kHz</span></div>
+        <span class="skala" aria-hidden="true"><i style="bottom:100%">22 kHz</i><i style="bottom:72.6%">16 kHz</i><i style="bottom:45.4%">10 kHz</i><i style="bottom:0%">0</i></span>
+      </div>
+      <div class="spektrum__wahl" role="radiogroup" aria-label="Quality">
+        <button type="button" role="radio" aria-checked="true" data-wahl="128" data-khz="16">128 kbit/s<small>MP3</small></button>
+        <button type="button" role="radio" aria-checked="false" data-wahl="320" data-khz="20">320 kbit/s<small>MP3</small></button>
+        <button type="button" role="radio" aria-checked="false" data-wahl="flac" data-khz="22.05">Original<small>FLAC</small></button>
+      </div>
+      <figcaption>An illustration: where an MP3 stops depends on the encoder, 16 and 20 kHz are typical for these bitrates.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="etage" id="fragen">
+  <div class="bahn">
+    <div class="etagenkopf"><h2>Common questions</h2></div>
+    <div class="fragen__blatt">
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="true" aria-controls="antwort-0">
+          <span>Is this Swiftly Player with music?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-0"><div><p>No. It is its own app, built only for music, with the same look and the same buttons as <a class="frage__link" href="/">Swiftly Player</a>.</p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-1">
+          <span>Which servers work?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-1"><div><p>Jellyfin and Navidrome, and other servers that speak OpenSubsonic. You sign in with the account you already have on your server.</p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-2">
+          <span>Do I need Swiftly Player too?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-2"><div><p>No. Each app works on its own. If you use both, they share nothing but the look.</p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-3">
+          <span>Which devices does it run on?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-3"><div><p>iPhone. It is in beta on TestFlight.</p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-4">
+          <span>What data leaves my phone?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-4"><div><p>Only what your own server needs: what you played. There is no account with me and no analytics.</p></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="etage" id="downloads">
+  <div class="bahn">
+    <div class="etagenkopf">
+      <h2>Get Swiftly Music</h2>
+      <p>For iPhone, in beta on TestFlight. Your films and shows live in Swiftly Player.</p>
+    </div>
+    <div class="ladenblock">
+      <div class="laden__haupt">
+      <a class="weg-gross" href="https://testflight.apple.com/join/Ws5snXzX" target="_blank" rel="noopener">
+        <span class="weg__zeichen" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.6 1.2h2.8M5 1.2v3.3L2.4 9.3a1 1 0 0 0 .9 1.5h5.4a1 1 0 0 0 .9-1.5L7 4.5V1.2M3.4 7.6h5.2"/></svg></span>
+        <span><b>TestFlight</b><em>iPhone, free beta</em></span>
+      </a>
+      </div>
+      <ul class="laden__rest laden__rest--zwei">
+        <li>
+      <a class="weg-klein" href="/">
+        <img class="weg__app" src="/symbol.svg" alt="" width="32" height="32">
+        <span><b>Swiftly Player</b><em>Films and shows</em></span>
+      </a>
+        </li>
+        <li>
+      <a class="weg-klein" href="https://discord.gg/MeGwfv3UwN" target="_blank" rel="noopener">
+        <span class="weg__zeichen" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M2 3.2a1.2 1.2 0 0 1 1.2-1.2h5.6A1.2 1.2 0 0 1 10 3.2v4a1.2 1.2 0 0 1-1.2 1.2H5.4L3 10.4V8.4h.2A1.2 1.2 0 0 1 2 7.2z"/></svg></span>
+        <span><b>Discord</b><em>Feedback and news</em></span>
+      </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="fuss">
+  <div class="bahn">
+    <div class="fuss__linie"></div>
+
+    <div class="fuss__raster fuss__raster--fuenf">
+      <div class="fuss__marke">
+        <img src="wortmarke-music.svg" alt="Swiftly Music" width="62" height="21">
+        <p>A music player for your own Jellyfin or Navidrome server. Built by one person.</p>
+      </div>
+
+      <div class="fuss__spalte">
+        <h2>Download</h2>
+        <ul>
+          <li><a href="/download/app-store/">App Store</a></li>
+          <li><a href="/download/testflight/">TestFlight</a></li>
+          <li><a href="/android/">Android</a></li>
+          <li><a href="/download/windows/">Windows</a></li>
+          <li><a href="/download/linux/">Linux</a></li>
+          <li><a href="/music/">Swiftly Music</a></li>
+        </ul>
+      </div>
+
+      <!-- seiten:anfang (blog-bauen.py) -->
+      <div class="fuss__spalte">
+        <h2>Guides</h2>
+        <ul>
+          <li><a href="/blog/best-jellyfin-client/">Best Jellyfin client</a></li>
+          <li><a href="/blog/best-jellyfin-client-apple-tv/">Apple TV</a></li>
+          <li><a href="/blog/best-jellyfin-client-iphone/">iPhone</a></li>
+          <li><a href="/blog/jellyfin-android-tv-clients-compared/">Android TV</a></li>
+          <li><a href="/blog/best-jellyfin-client-mac/">Mac</a></li>
+          <li><a href="/blog/why-is-jellyfin-transcoding/">Why it transcodes</a></li>
+        </ul>
+      </div>
+      <!-- seiten:ende -->
+
+      <div class="fuss__spalte">
+        <h2>Elsewhere</h2>
+        <ul>
+          <li><a href="/about/">About</a></li>
+          <li><a href="/blog/">Blog</a></li>
+          <li><a href="https://github.com/paulherter/swiftly-player" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://discord.gg/MeGwfv3UwN" target="_blank" rel="noopener">Discord</a></li>
+          <li><a href="/supporter/">Donate</a></li> <!-- supporter -->
+          <li><a href="/support.html">Support</a></li>
+          <li><a href="https://jellyfin.org" target="_blank" rel="noopener">Jellyfin</a></li>
+        </ul>
+      </div>
+
+      <div class="fuss__spalte">
+        <h2>Legal</h2>
+        <ul>
+          <li><a href="/impressum.html">Impressum</a></li>
+          <li><a href="/privacy.html">Privacy</a></li>
+          <li><a href="/datenschutz.html">Datenschutz</a></li>
+          <li><a href="/terms/">Terms</a></li>
+          <li><a href="/licenses/">Open-source licenses</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="fuss__linie"></div>
+    <p class="fuss__klein">
+      Swiftly Player is not part of the Jellyfin project and hosts nothing itself. The code is
+      under the MPL-2.0<span class="nur-desktop">; the name, the wordmark and the app icon are not</span>. Playback uses VLCKit and libVLC by VideoLAN
+      under the LGPL-2.1-or-later: <a href="/licenses/">licenses and source</a>.<span class="nur-desktop"> The films in the screenshots are by the Blender Foundation,
+      released under Creative Commons Attribution.</span> App Store is a service mark of Apple Inc. The Android robot is
+      reproduced or modified from work created and shared by Google and used according to terms described in the
+      Creative Commons 3.0 Attribution License.
+    </p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var burger = document.querySelector(".leiste__burger");
+  var menue = document.getElementById("menue");
+  if (burger && menue) {
+    var setzen = function (offen) {
+      burger.setAttribute("aria-expanded", offen ? "true" : "false");
+      if (offen) { menue.setAttribute("data-offen", ""); } else { menue.removeAttribute("data-offen"); }
+    };
+    burger.addEventListener("click", function () { setzen(burger.getAttribute("aria-expanded") !== "true"); });
+    menue.addEventListener("click", function (e) { if (e.target.closest("a")) setzen(false); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") setzen(false); });
+  }
+  var knoepfe = document.querySelectorAll(".frage__knopf");
+  for (var f = 0; f < knoepfe.length; f++) {
+    knoepfe[f].addEventListener("click", function (e) {
+      var k = e.currentTarget, offen = k.getAttribute("aria-expanded") === "true";
+      for (var q = 0; q < knoepfe.length; q++) { knoepfe[q].setAttribute("aria-expanded", "false"); }
+      k.setAttribute("aria-expanded", offen ? "false" : "true");
+    });
+  }
+})();
+</script>
+<script src="/js/effekte.js" defer></script>
+</body>
+</html>

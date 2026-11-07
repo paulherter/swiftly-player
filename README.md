@@ -34,8 +34,9 @@ it works to **never make your server transcode**, so the picture stays
 untouched and your server stays cool.
 
 It is one app for iPhone, iPad, Apple TV, Mac, Android, Android TV, Linux and
-Windows: Direct Play, Picture in Picture, several accounts on one server, and
-a running film that follows you from one device to the next.
+Windows, with the same look on every one of them: Direct Play, Picture in
+Picture, several accounts on one server, and a running film that follows you
+from one device to the next.
 
 <br>
 
@@ -64,6 +65,9 @@ a running film that follows you from one device to the next.
 
 ## What is new in 1.1.0
 
+- **New design, one look on every device.** Home, film pages, player and
+  settings look the same on iPhone, iPad, Mac, Apple TV, Android, Android TV,
+  Linux and Windows, sized for each screen.
 - **Plex and Emby (beta).** Sign in to a Plex or Emby server the same way as to
   Jellyfin, on all eight platforms. Plex uses a short code or a QR code, Emby
   the usual login.
@@ -85,6 +89,10 @@ a running film that follows you from one device to the next.
 - **Trailers** try every available source in order before giving up.
 - **Continue on this device** checks the playback plan first and only then
   stops the other device.
+- **What's new moved to the website.** Every version has its own page at
+  [swiftlyplayer.com/whats-new](https://swiftlyplayer.com/whats-new/).
+- **New website.** [swiftlyplayer.com](https://swiftlyplayer.com) has
+  downloads for every platform, the looks and a blog.
 
 <br>
 

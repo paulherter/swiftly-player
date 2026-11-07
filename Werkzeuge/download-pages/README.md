@@ -1,3 +1,5 @@
+> **Since 07.11. (kit design):** page_*.py are thin wrappers around `Werkzeuge/web_build.py`. Head lines, content and page scripts of each page live in `Werkzeuge/web-vorlagen/<path>`; bar, nav, footer come from `Werkzeuge/web_shell.py`. Edit page text in the vorlage, shell changes only in web_shell.py. `parts.py` stays for the SUPPORTER switch (website-upload.py, blog-build.py); the old CSS files here are no longer used.
+
 # Download pages
 
 Generates the standalone pages under `Website/download/` and `Website/android/`. The website sits on plain web space, so there is **no build step on deploy**: the finished HTML files are in the repo and uploaded as they are.

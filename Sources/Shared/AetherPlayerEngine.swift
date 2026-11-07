@@ -43,6 +43,9 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
     /// select the same track twice.
     private var audioApplied: Int?
     private var subtitleApplied: Int?
+    /// The server's number of an external subtitle file -> the engine's track id for it
+    /// (`externalSubtitleTrackIDBase` + position in the list handed over at load).
+    private var externalTrackIDs: [Int: Int] = [:]
     private var tracksChecked = false
 
     private var bag = Set<AnyCancellable>()
@@ -130,6 +133,21 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
             options.applySwiftlyAudioPolicy()
             // The fonts of ASS subtitles are not used (the app draws its own look): do not read them.
             options.skipsContainerAttachments = true
+            // **External subtitle files** (next to the film on the server) are not in the container:
+            // the engine only knows them when they are handed over at load. Without this they
+            // never showed (reported from the beta: "no subtitles in any language").
+            let external = self.request.subtitleFiles.filter { file in
+                (self.request.source.mediaStreams ?? []).contains { $0.index == file.index && $0.isExternal == true }
+            }
+            self.externalTrackIDs = Dictionary(uniqueKeysWithValues: external.enumerated().map {
+                ($0.element.index, AetherEngine.externalSubtitleTrackIDBase + $0.offset)
+            })
+            options.externalSubtitles = external.map { file in
+                let stream = (self.request.source.mediaStreams ?? []).first { $0.index == file.index }
+                return ExternalSubtitleTrack(url: file.address, name: stream?.displayTitle,
+                                             language: stream?.language, isForced: stream?.isForced ?? false,
+                                             formatHint: file.address.pathExtension.isEmpty ? "srt" : nil)
+            }
             // The wanted audio track goes in with the load: a selection afterwards reloads the session.
             var firstAudio: Int?
             if let want = self.audioIndex, (self.request.source.mediaStreams ?? [])
@@ -397,8 +415,9 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
         if subtitleIndex >= 0 {
             guard subtitleApplied != subtitleIndex else { return }
             subtitleApplied = subtitleIndex
-            if subtitles.contains(where: { $0.id == subtitleIndex }) {
-                engine.selectSubtitleTrack(index: subtitleIndex)
+            let wanted = externalTrackIDs[subtitleIndex] ?? subtitleIndex
+            if subtitles.contains(where: { $0.id == wanted }) {
+                engine.selectSubtitleTrack(index: wanted)
             } else {
                 host?.avHandOver(audio: nil, subtitle: subtitleIndex, reason: "Untertitel \(subtitleIndex) nicht in der Engine")
             }
