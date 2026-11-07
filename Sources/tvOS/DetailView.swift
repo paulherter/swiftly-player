@@ -111,12 +111,13 @@ struct DetailHeader<Buttons: View>: View {
 
 // MARK: - Watchlist and watched
 
-/// The watchlist button: **symbol only, no label.**
-/// The bookmark is one of the few symbols that stand alone, and filled versus
-/// empty states the status. Five labeled pills were too many for a row.
-/// "Gesehen" is out of the row entirely and sits in the action panel; see
-/// `TitleAction.watchState`. That leaves four targets: Continue, From start,
-/// Watchlist, More.
+/// Watchlist and watched: **symbols only, no label.**
+/// Bookmark and check mark are among the few symbols that stand alone, and filled
+/// versus empty states the status. Five labeled pills were too many for a row;
+/// five squares next to one labeled pill are not.
+/// **"Gesehen" sits in the row, not in the action panel**: marking a title (or
+/// undoing it) is what the panel was opened for most often, one press is better
+/// than three. The toggle itself is the shared `TitleAction.watchState`.
 /// **Without a label, the label is mandatory.** For VoiceOver a symbol button
 /// is otherwise nameless, hence the explicit name.
 struct StateButtons: View {
@@ -152,16 +153,34 @@ struct StateButtons: View {
                 // read "Merkliste".
                 .accessibilityAddTraits(remembered ? [.isButton, .isSelected] : .isButton)
             }
+
+            Button {
+                TitleAction.watchState(item, model: model, watched: $watched,
+                                       report: { message = $0 }).perform()
+            } label: {
+                Image(icon: watched ? "checkmark.circle.fill" : "checkmark.circle")
+                    .font(Theme.button)
+            }
+            .buttonStyle(ThemedButtonStyle(onlySymbol: true, active: watched))
+            .accessibilityLabel(Text("Gesehen"))
+            .accessibilityAddTraits(watched ? [.isButton, .isSelected] : .isButton)
         }
     }
 }
 
-// "Gesehen" is not a pill in the button row but in the action panel:
-// **placement, not behavior**. The toggle rule requires that it toggles
-// at once and the state is the answer; it still does, one level deeper. On a
-// TV every focus target in the row counts, and five side by side were too
-// many. The entry itself comes from the shared component
-// `TitleAction.watchState` in `Sources/Shared/TileMenu.swift`.
+/// **A panel entry as a symbol button in the row** ("Zufällig abspielen", "Gemeinsam
+/// schauen"): the same `TitleAction`, its wording as the VoiceOver name.
+struct ActionSymbolButton: View {
+    let action: TitleAction
+
+    var body: some View {
+        Button(action: action.perform) {
+            Image(icon: action.symbol).font(Theme.button)
+        }
+        .buttonStyle(ThemedButtonStyle(onlySymbol: true))
+        .accessibilityLabel(action.label)
+    }
+}
 
 // MARK: - Movie page
 
@@ -393,7 +412,7 @@ struct DetailView: View {
     /// button per page, read more strictly: what is not the main button need not
     /// spread like one. Five labeled pills were about 1400 pt wide and read as
     /// five equal offers. Now "Fortsetzen" or "Abspielen" carries the text, next
-    /// to three square symbols: back, watchlist, more. Each names itself
+    /// to square symbols: from start, watchlist, watched, watch together, more. Each names itself
     /// explicitly for VoiceOver, since a symbol button inherits no label.
     /// **Long press on the main button: the title's tile menu**, the same as on
     /// its tile (``TileMenu``).
@@ -430,6 +449,10 @@ struct DetailView: View {
                 StateButtons(model: model, item: current,
                                 remembered: $remembered, watched: $watched, message: $message)
 
+                if let together = togetherAction {
+                    ActionSymbolButton(action: together)
+                }
+
                 MoreButton(opened: $moreOpen)
                     .focused($atMoreButton)
                     .panelTrigger("mehr")
@@ -447,16 +470,18 @@ struct DetailView: View {
         }
     }
 
+    /// Watched and "Gemeinsam schauen" are buttons in the row, so the panel leaves them out.
     private var moreActions: [TitleAction] {
-        // Watched sits first, as it is what the panel is now opened for most often.
-        // The shared list stays untouched.
-        [TitleAction.watchState(current, model: model, watched: $watched,
-                                 report: { message = $0 })]
-        + TitleActions.forMovie(current, plan: plan, model: model,
-                                   start: { launch(since: $0, asking: true) },
-                                   report: { message = $0 },
-                                   gemeinsam: SharedModel.shared.mayCreate
-                                       ? { [current] in SharedModel.shared.createFor = current } : nil)
+        TitleActions.forMovie(current, plan: plan, model: model,
+                              start: { launch(since: $0, asking: true) },
+                              report: { message = $0 })
+    }
+
+    /// "Gemeinsam schauen" as in `TitleActions.forMovie`: only with a file and the right to
+    /// create a group.
+    private var togetherAction: TitleAction? {
+        guard plan != nil, SharedModel.shared.mayCreate else { return nil }
+        return TitleActions.sharedWatch { [current] in SharedModel.shared.createFor = current }
     }
 
     private func refresh() async {
