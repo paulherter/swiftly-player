@@ -196,6 +196,12 @@ object Theme {
     /** Something went wrong: **not the same as "waiting".** Carries no text on `erhoeht` (4.23). */
     val error = Color(0xFFEF6567)
 
+    /** The badges of a stream on the server page, one hue per kind (mirrors `Theme.badge…` in `Colors.swift`). */
+    val badgeResolution = Color(0xFF7E3BB7)
+    val badgeRange = Color(0xFF784C28)
+    val badgeVideo = Color(0xFF3F4C9D)
+    val badgeAudio = Color(0xFF3B3B40)
+
     /**
      * **The eight tones of the profile glyphs**: eight hues 45 degrees apart, the first is the
      * accent's, all with the same lightness and saturation (OKLCH L 0.52 / C 0.105 top, L 0.36 /

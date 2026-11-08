@@ -183,6 +183,11 @@ class Settings(store: Store) {
          * stored; fetched fresh at each start and account switch (`SwiftlyApplication.accountPreGiftFetch`).
          */
     var convertAllowedAccount by mutableStateOf("")
+    /**
+         * `Policy.IsAdministrator` of the current account, `"1"`/`"0"`/empty. Not stored; only
+         * `"1"` shows the server page (`ServerDashboardPage`), like `AppModel.isAdministrator`.
+         */
+    var administratorAccount by mutableStateOf("")
     /** Without a server answer: allowed, so the quality choice stays in the player. */
     val convertAllowed: Boolean
         get() = convertAllowedAccount != "0"

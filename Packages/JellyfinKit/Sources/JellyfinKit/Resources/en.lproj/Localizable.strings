@@ -171,3 +171,8 @@
 
 "Immer VLC" = "Always VLC";
 "Aether, bei Problemen VLC" = "Aether, VLC if there are problems";
+
+/* Server dashboard */
+"Transkodierung" = "Transcoding";
+
+"Nachricht vom Administrator" = "Message from the administrator";

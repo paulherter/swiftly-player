@@ -171,3 +171,8 @@
 
 "Immer VLC" = "Всегда VLC";
 "Aether, bei Problemen VLC" = "Aether, при проблемах VLC";
+
+/* Server dashboard */
+"Transkodierung" = "Перекодирование";
+
+"Nachricht vom Administrator" = "Сообщение от администратора";

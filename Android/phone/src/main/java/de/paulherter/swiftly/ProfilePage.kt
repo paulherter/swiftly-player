@@ -109,6 +109,13 @@ fun ProfilePage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -
                 }
                 SeparatorLine()
             }
+            // Only for the server's administrator; anyone else would get 403 on every part of the page.
+            if (!app.isTv && app.administers) {
+                ProfileRow(Glyph.Gauge, translated("Serververwaltung"), translated("Auslastung, Wiedergaben, Neustart")) {
+                    open(Destination("serververwaltung", translated("Serververwaltung"), "Serververwaltung"))
+                }
+                SeparatorLine()
+            }
             // Affects only the current account; if others remain, the next one becomes current.
             ProfileRow(Glyph.SignOut, translated("Abmelden"), trailing = Trailing.None) {
                 // Asks first, as the iPhone's action sheet does ("Von <Name> abmelden?" + a note).

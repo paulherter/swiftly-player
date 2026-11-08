@@ -10,3 +10,4 @@ extension JellyfinClient: QuickSignIn {}
 extension JellyfinClient: RemoteSessionServer {}
 extension JellyfinClient: DisplayPreferencesServer {}
 extension JellyfinClient: ActiveEncodingServer {}
+extension JellyfinClient: ServerAdministration {}
