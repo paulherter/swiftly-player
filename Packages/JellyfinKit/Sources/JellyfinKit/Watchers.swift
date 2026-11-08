@@ -48,12 +48,62 @@ public struct Watcher: Sendable, Equatable, Identifiable, Decodable {
         totalCount = try? c.decodeIfPresent(Int.self, forKey: .totalCount)
     }
 
-    /// How much of the ring is drawn, 0...1: a series by episodes, otherwise by progress; a
-    /// title that was watched at least once without a progress value is a full ring.
+    /// **How much of the ring is drawn, 0...1.** A series or season by its episodes. A film
+    /// watched to the end at least once is a full ring, also while it is being watched again:
+    /// the ring says "has seen it", the caption says how often. Only a film nobody finished
+    /// shows how far it got.
     public var ring: Double {
         if let w = watchedCount, let t = totalCount, t > 0 { return min(max(Double(w) / Double(t), 0), 1) }
+        if playCount > 0 { return 1 }
         if let p = progressPercent { return min(max(p / 100, 0), 1) }
-        return playCount > 0 ? 1 : 0
+        return 0
+    }
+
+    /// **The words beside an avatar, the same on every platform**: "2 × · yesterday".
+    ///
+    /// How often only from the second time on (once is what the ring already says); for a
+    /// series how many episodes, as long as not all; for an unfinished film how far; then
+    /// when it was last watched. Parts without data drop out, so the line can be empty.
+    public func caption(now: Date = Date(), calendar: Calendar = .current) -> String {
+        var parts: [String] = []
+        if playCount > 1 { parts.append("\(playCount) ×") }
+        if let w = watchedCount, let t = totalCount, t > 0, w < t {
+            parts.append(translated("Folgen: \(w) von \(t)"))
+        } else if watchedCount == nil, playCount == 0, let p = progressPercent, p > 0, p < 100 {
+            parts.append("\(Int(p.rounded())) %")
+        }
+        if let lastWatched {
+            parts.append(Self.day(of: lastWatched, now: now, calendar: calendar))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Name and caption as one line, for VoiceOver, a tooltip or the TV's focus line.
+    public func spoken(now: Date = Date(), calendar: Calendar = .current) -> String {
+        let label = caption(now: now, calendar: calendar)
+        let shown = name.isEmpty ? "?" : name
+        return label.isEmpty ? shown : "\(shown), \(label)"
+    }
+
+    /// The letter on an avatar without a picture.
+    public var initial: String { name.first.map { String($0).uppercased() } ?? "?" }
+
+    /// **"Today", "yesterday", "3 days ago", then the date.** Counted in calendar days, so a
+    /// title watched late last night reads "yesterday" this morning.
+    static func day(of date: Date, now: Date, calendar: Calendar) -> String {
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date),
+                                           to: calendar.startOfDay(for: now)).day ?? 0
+        switch days {
+        case ..<1: return translated("heute")
+        case 1: return translated("gestern")
+        case 2..<7: return translated("vor \(days) Tagen")
+        default:
+            let f = DateFormatter()
+            f.calendar = calendar
+            f.dateStyle = .medium
+            f.timeStyle = .none
+            return f.string(from: date)
+        }
     }
 }
 

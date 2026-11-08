@@ -171,3 +171,8 @@
 
 "Immer VLC" = "Всегда VLC";
 "Aether, bei Problemen VLC" = "Aether, при проблемах VLC";
+
+/* "Gesehen von" (Jelly Twiggy): the line beside an avatar. */
+"heute" = "сегодня";
+"gestern" = "вчера";
+"Folgen: %lld von %lld" = "Серии: %1$lld из %2$lld";

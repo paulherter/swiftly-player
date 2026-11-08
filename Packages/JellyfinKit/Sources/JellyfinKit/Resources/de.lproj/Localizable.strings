@@ -175,3 +175,8 @@
 "Zu diesem Titel gibt es keine Datei." = "Zu diesem Titel gibt es keine Datei.";
 "Das kann ein Plex-Server nicht." = "Das kann ein Plex-Server nicht.";
 "Kapitel %lld" = "Kapitel %lld";
+
+/* "Gesehen von" (Jelly Twiggy): the line beside an avatar. */
+"heute" = "heute";
+"gestern" = "gestern";
+"Folgen: %lld von %lld" = "Folgen: %1$lld von %2$lld";

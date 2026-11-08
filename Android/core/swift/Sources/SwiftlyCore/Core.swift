@@ -3703,7 +3703,7 @@ public final class Kern: @unchecked Sendable {
     }
 
     /// **Who has watched a title** (Jelly Twiggy plugin). `"absent"`: the server has no plugin (or is not
-    /// Jellyfin): Kotlin remembers that per server and shows nothing. `""`: no answer this time, ask again later. Otherwise a JSON
+    /// Jellyfin): Kotlin stops asking it for the rest of the session and shows nothing. `""`: no answer this time, ask again later. Otherwise a JSON
     /// array (possibly `[]`) of `WatcherResponse`. The ring value and the image address are decided here.
     public func watchers(id: String) async -> String {
         guard let c = client, let a = addresses else { return "" }
@@ -3717,7 +3717,7 @@ public final class Kern: @unchecked Sendable {
                             image: w.imageTag.flatMap { _ in a.user(w.userID, mark: w.imageTag, border: 96)?.absoluteString },
                             plays: w.playCount,
                             last: w.lastWatched.map { Int64($0.timeIntervalSince1970 * 1000) },
-                            ring: w.ring)
+                            ring: w.ring, caption: w.caption())
         })
     }
 
@@ -4929,7 +4929,9 @@ struct FieldResponse: Encodable {
  let similar: [GridTileResponse]; let extras: [ExtraResponse] }
 /// One entry of `Kern.watchers`: `last` in milliseconds since 1970, `ring` 0...1 (`Watcher.ring`).
 struct WatcherResponse: Encodable {
-    let id, name: String; let image: String?; let plays: Int; let last: Int64?; let ring: Double }
+    let id, name: String; let image: String?; let plays: Int; let last: Int64?; let ring: Double
+    /// "2 × · gestern", already translated (`Watcher.caption`), the same as on every platform.
+    let caption: String }
 struct ExtraResponse: Encodable {
     enum CodingKeys: String, CodingKey {
         case id

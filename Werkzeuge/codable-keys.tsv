@@ -167,7 +167,7 @@ Android	TrickplayReply.CodingKeys	codingkey	anzahl,breite,hoehe,intervall,kachel
 Android	TryOnAnswer	codable	accepted,palette,result,shown,state
 Android	TryOnState	codable	owned,pending,preview,saved,supporter
 Android	VersionResponse	codable	id,label
-Android	WatcherResponse	codable	id,image,last,name,plays,ring
+Android	WatcherResponse	codable	caption,id,image,last,name,plays,ring
 Apple	AppCommand	raw	downloads,einstellungen,filme,lauter,leiser,merkliste,serien,spielPause,spielUmschalten,spielVollbild,spielVor,spielZurueck,start,stumm,suche,zurueck
 Apple	CommunityTarget	raw	bewerten,discord,fehler
 Apple	LicenseComponent	codable	gruppe,id,name,notiz,plattformen,quelle,spdx,texte,urheber,version

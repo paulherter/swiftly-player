@@ -1,11 +1,8 @@
 package de.paulherter.swiftly
 
-import android.text.format.DateUtils
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -25,23 +22,23 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import de.paulherter.swiftly.shared.Theme
-import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
-import java.util.Locale
 
 /**
  * **Who has watched a title** (Jelly Twiggy plugin; mirrors `Watchers.swift` in the package).
  * `ring` is 0...1 and decided in the core (`Watcher.ring`); `last` is in milliseconds.
  */
-data class Watcher(val id: String, val name: String, val image: String?, val plays: Int, val last: Long?, val ring: Float)
+data class Watcher(val id: String, val name: String, val image: String?, val plays: Int, val last: Long?, val ring: Float,
+                   /** "2 × · gestern", already translated in the core (`Watcher.caption`); may be empty. */
+                   val caption: String = "")
 
 /**
  * Asks the core once per title page. Nothing is requested when the setting is off or the server
- * is known to have no plugin; the first "no plugin" answer is remembered for the server for good.
+ * has answered "no plugin" since the app started; the next start asks again.
  * A failed request gives an empty list and is asked again next time. An empty list hides the section.
  */
 suspend fun watchersLoad(app: SwiftlyApplication, id: String): List<Watcher> {
@@ -58,25 +55,19 @@ suspend fun watchersLoad(app: SwiftlyApplication, id: String): List<Watcher> {
                 (0 until j.length()).map { i ->
                     val o = j.getJSONObject(i)
                     Watcher(o.getString("id"), o.optString("name"), o.fieldText("image"), o.optInt("plays"),
-                            if (o.has("last")) o.getLong("last") else null, o.optDouble("ring", 0.0).toFloat().coerceIn(0f, 1f))
+                            if (o.has("last")) o.getLong("last") else null, o.optDouble("ring", 0.0).toFloat().coerceIn(0f, 1f),
+                            o.optString("caption"))
                 }
             }
         }
     } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
 }
 
-/** "2 × · yesterday": count and, if known, when. The only text a viewer reads besides the name. */
-fun Watcher.detail(): String {
-    val count = "${maxOf(plays, 1)} ×"
-    val whenText = last?.let {
-        DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.DAY_IN_MILLIS).toString()
-            .replaceFirstChar { c -> c.lowercase(Locale.getDefault()) }
-    }
-    return if (whenText == null) count else "$count · $whenText"
+/** Name and caption as one line (`Watcher.spoken` in the package): what VoiceOver/TalkBack and the tap read. */
+fun Watcher.spoken(): String {
+    val shown = name.ifBlank { "?" }
+    return if (caption.isEmpty()) shown else "$shown, $caption"
 }
-
-/** Name and detail as one spoken line. */
-fun Watcher.spoken(): String = "$name, ${detail()}"
 
 /**
  * **Round avatar with the progress ring** (3 dp, track white 18 %, fill in accent, from the top):
@@ -103,25 +94,30 @@ fun WatcherAvatar(w: Watcher, size: Dp, modifier: Modifier = Modifier) {
 }
 
 /**
- * The phone section "Gesehen von": one quiet row of avatars; a tap shows name, count and date as a
- * small caption under the row. Absent for an empty list, so a server without the plugin shows nothing.
+ * **Who has watched a title** on the phone: one row of avatars without a heading, as on iPhone and
+ * the TV. A tap names the avatar (who, how often, when last) to the right of the row, or under it when
+ * the row leaves no room. Absent for an empty list, so a server without the plugin shows nothing.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WatchedBy(watchers: List<Watcher>) {
     if (watchers.isEmpty()) return
     var chosen by remember(watchers) { mutableStateOf<String?>(null) }
-    Column(Modifier.padding(top = Theme.railsSpacing), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(translated("Gesehen von"), style = Theme.section, color = Theme.font,
-             modifier = Modifier.padding(horizontal = Theme.edgeSpacing))
-        LazyRow(contentPadding = PaddingValues(horizontal = Theme.edgeSpacing), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(watchers, key = { it.id }) { w ->
+    // Avatars first, then the line: beside them while it fits, otherwise wrapped below.
+    FlowRow(Modifier.fillMaxWidth().padding(top = Theme.railsSpacing).padding(horizontal = Theme.edgeSpacing),
+            horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            for (w in watchers) {
                 WatcherAvatar(w, 56.dp, Modifier.tapOn { chosen = if (chosen == w.id) null else w.id }
                     .semantics { contentDescription = w.spoken() })
             }
         }
         watchers.firstOrNull { it.id == chosen }?.let { w ->
-            Text(w.spoken(), style = Theme.small, color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                 modifier = Modifier.padding(horizontal = Theme.edgeSpacing))
+            Column(Modifier.align(Alignment.CenterVertically).clearAndSetSemantics {}) {
+                Text(w.name.ifBlank { "?" }, style = Theme.small, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (w.caption.isNotEmpty())
+                    Text(w.caption, style = Theme.small, color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }

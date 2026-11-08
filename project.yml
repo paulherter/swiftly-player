@@ -216,7 +216,6 @@ targets:
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
       - path: Sources/Shared/AppModel+Servers.swift
-      - path: Sources/Shared/WatchersText.swift
       - path: Sources/Shared/SettingsSyncRun.swift
       # **Only the management, not the views.** Downloads exist only on iPhone
       # and iPad, but `AppModel` holds them and `AppModel` is shared. The class
@@ -522,7 +521,6 @@ targets:
         buildPhase: resources
       - path: Sources/Shared/AppModel.swift
       - path: Sources/Shared/AppModel+Servers.swift
-      - path: Sources/Shared/WatchersText.swift
       - path: Sources/Shared/SettingsSyncRun.swift
       # **Only the management, not the views.** Downloads exist only on iPhone
       # and iPad, but `AppModel` holds them and `AppModel` is shared. The class

@@ -411,6 +411,7 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                     } else {
                         TvButton(null, Glyph.More, description = translated("Mehr")) {}
                     }
+                    TvWatcherDots(watchers)
                 }
                 // Above "Similar movies": the collection is the closer relation. Only for titles that belong to
                 // one (`Sammlungsreihe` in `TitleRails.swift`).
@@ -427,7 +428,6 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                     if (folks.isNotEmpty()) TvStrip(translated("Besetzung"), Modifier.tvInFade(bottomAlpha).tvSection(a, "besetzung")) {
                         items(folks, key = { it.id }) { p -> TvCast(p) { open(Destination(p.id, p.name, "Person", p.role, name)) } }
                     }
-                    TvWatchedBy(watchers, Modifier.tvInFade(bottomAlpha).tvSection(a, "gesehenvon"))
                 }
                 Spacer(Modifier.height(40.dp))
         }
