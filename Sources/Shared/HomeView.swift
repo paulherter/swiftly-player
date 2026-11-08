@@ -25,6 +25,8 @@ struct HomeView: View {
     /// version.
     @State private var state = HomeModel()
     @State private var play: PlayRequest?
+    /// Counts finished pull-to-refreshes; drives the selection haptic.
+    @State private var refreshTicks = 0
     @State private var prepares = false
     @State private var message: String?
     /// A title with several versions waiting for the pick.
@@ -199,7 +201,9 @@ struct HomeView: View {
         // layout anyway.
         HeaderReader(distance: distance) {
             HStack(alignment: .center, spacing: 0) {
-                Wordmark(height: 30)
+                // 36, not 30 (Paul 2026-11-05): the letters now match the 34 pt bold page
+                // titles of Movies, Series and Downloads. The row stays 44 high (header targets).
+                Wordmark(height: 36)
                 Spacer(minLength: 0)
 
                 // **Three symbols, one language.**
@@ -303,7 +307,8 @@ struct HomeView: View {
                 ForEach(Array(libraries.enumerated()), id: \.element.id) { j, r in
                     Rail(model: model, title: "", name: r.name, items: r.items,
                           target: CollectionRoute(collection: model.startLibraries.first { $0.id == r.id }?.item
-                                                ?? Item(id: r.id, name: r.name), art: nil))
+                                                ?? Item(id: r.id, name: r.name), art: nil),
+                          allLink: true)
                         .transition(.opacity)
                         .railEntrance(fixedRails.count + 1 + j, present: showItem)
                 }
@@ -355,7 +360,11 @@ struct HomeView: View {
             let value = min(max(new, 0), 240)
             if abs(value - distance.value) >= 0.5 { distance.value = value }
         }
-        .refreshable { await load() }
+        .refreshable {
+            await load()
+            refreshTicks += 1
+        }
+        .selectionHaptic(refreshTicks)
     }
 
     /// From the continue rows straight into the episode, without an intermediate
@@ -403,12 +412,12 @@ struct HomeView: View {
         case .newMovies:
             if !state.newMovies.isEmpty {
                 Rail(model: model, title: "Zuletzt hinzugefügte Filme",
-                      items: state.newMovies, jump: rail.libraryJump, newAccess: true)
+                      items: state.newMovies, jump: rail.libraryJump, allLink: true, newAccess: true)
             }
         case .newSeries:
             if !state.newSeries.isEmpty {
                 Rail(model: model, title: "Zuletzt hinzugefügte Serien",
-                      items: state.newSeries, jump: rail.libraryJump, newAccess: true)
+                      items: state.newSeries, jump: rail.libraryJump, allLink: true, newAccess: true)
             }
         case .newArrivals:
             if !state.recent.isEmpty {
@@ -434,7 +443,7 @@ struct HomeView: View {
                             // `minHeight`: a fixed height would clip the genre name once the system font
                             // grows.
                             .frame(minHeight: 34)
-                            .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
+                            .modifier(ChipSurface(an: false))
                     }
                     .buttonStyle(Theme.PressButton())
                 }
@@ -492,6 +501,8 @@ private struct Rail: View {
     var target: CollectionRoute? = nil
     /// Set means: the heading opens a library area in this order (``StartRail/libraryJump``).
     var jump: LibraryJump? = nil
+    /// Long rail: shows "Alle ›" at the right (needs `target` or `jump`).
+    var allLink = false
     /// Landscape tiles instead of portrait, only for "Continue Watching".
     var landscape = false
     /// Shows *what* was newly added instead of the episode number.
@@ -517,7 +528,7 @@ private struct Rail: View {
     private var railsHeightValue: CGFloat {
         let image = landscape ? Theme.railsLandscapeHeight(wide: wide)
                         : Theme.railsHeight(wide: wide)
-        return 28 + 12 + image + 8 + (landscape ? 36 : 32)
+        return 28 + 12 + image + 8 + 34
     }
 
     var body: some View {
@@ -533,10 +544,10 @@ private struct Rail: View {
             // extraction.
             Group {
                 if let target {
-                    NavigationLink(value: target) { RailTitle(text: title, name: name) }
+                    NavigationLink(value: target) { RailTitle(text: title, name: name, all: allLink) }
                         .buttonStyle(Theme.PressButton())
                 } else if let jump {
-                    Button { model.openLibrary(jump) } label: { RailTitle(text: title, name: name) }
+                    Button { model.openLibrary(jump) } label: { RailTitle(text: title, name: name, all: allLink) }
                         .buttonStyle(Theme.PressButton())
                 } else {
                     RailTitle(text: title, name: name)
@@ -558,7 +569,7 @@ private struct Rail: View {
                                     .opacity(loads == item.id ? 0.5 : 1)
                                     .overlay {
                                         if loads == item.id {
-                                            ProgressView().tint(Theme.font)
+                                            LoadingSpinner()
                                         }
                                     }
                             }
@@ -636,15 +647,17 @@ private struct Tile: View {
             }
             #endif
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(item.seriesName ?? item.name)
-                    .font(landscape ? Theme.listTitle : Theme.tile)
+                    .font(Theme.tile)
+                    .frame(height: 16, alignment: .leading)
                     .foregroundStyle(Theme.font)
                     .lineLimit(1)
                 if let abbreviation = subline {
                     Text(abbreviation)
                         .font(Theme.small)
                         .monospacedDigit()
+                        .frame(height: 15, alignment: .leading)
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .lineLimit(1)
                 }
@@ -705,18 +718,20 @@ struct DetailHeaderReader<Right: View>: View {
     let title: String
     let distance: ScrollDistance
     let back: () -> Void
+    /// Header image of a mood-coloured page; the top edge then takes its background colour.
+    var mood: URL? = nil
     /// What sits on the right in the bar; on most pages nothing.
     @ViewBuilder var right: () -> Right
 
     var body: some View {
         DetailHeader(title: title, offset: distance.value, back: back,
-                   right: AnyView(right()))
+                   right: AnyView(right()), mood: mood)
     }
 }
 
 extension DetailHeaderReader where Right == EmptyView {
-    init(title: String, distance: ScrollDistance, back: @escaping () -> Void) {
-        self.init(title: title, distance: distance, back: back) { EmptyView() }
+    init(title: String, distance: ScrollDistance, mood: URL? = nil, back: @escaping () -> Void) {
+        self.init(title: title, distance: distance, back: back, mood: mood) { EmptyView() }
     }
 }
 

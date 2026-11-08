@@ -8,7 +8,7 @@ swift_version="6.3.3"
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     build-essential git curl pkg-config binutils gnupg2 unzip tzdata \
-    libgtk-4-dev libvlc-dev vlc libcurl4-openssl-dev libxml2-dev libncurses-dev \
+    libgtk-4-dev libmpv-dev libcurl4-openssl-dev libxml2-dev libncurses-dev \
     libsqlite3-dev libedit-dev libpython3-dev zlib1g-dev libstdc++-13-dev libz3-dev
 
 if [ ! -x "$HOME/.local/swift/usr/bin/swift" ]; then

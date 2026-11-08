@@ -64,7 +64,7 @@ import kotlinx.coroutines.withContext
 enum class Region(val title: String, val symbol: Glyph) {
     Start("Start", Glyph.House),
     Movies("Filme", Glyph.Film),
-    Series("Serien", Glyph.Tv),
+    Series("Serien", Glyph.CardsThree),
     Downloads("Downloads", Glyph.LoadCircle),
     Search("Suche", Glyph.Magnifier),
 }
@@ -296,6 +296,9 @@ fun MainScreen(app: SwiftlyApplication) {
                 .padding(bottom = if (top.isEmpty()) Theme.stripHeight else 0.dp)) { app.sharedError.value = null }
             // While the player runs, the sheet belongs to it.
             if (play == null) SheetStatus(app)
+            // Try-on bar while a look is only previewed and no sheet is open.
+            if (play == null && app.looks.previewing.value && app.sheet.value == null) de.paulherter.swiftly.support.LookPreviewBar(app,
+                Modifier.align(Alignment.BottomCenter).padding(bottom = (if (top.isEmpty()) Theme.stripHeight else 0.dp) + 12.dp))
             // "Where to continue watching?": the card grows out of the badge.
             if (play == null) TakeoverStatus(app)
             // The tile menu above everything (`TileMenu`), and what it reports.
@@ -366,7 +369,7 @@ private fun Subpage(app: SwiftlyApplication, target: Destination, open: (Destina
 
 /**
  * Mirrors `NavBar` + `SectionButton` in `Style.swift`: 54 high, opaque in `reason`, hairline
- * on top, 8 space above the icons, 4 between icon and label.
+ * on top, 8 space above the icons, 3 between icon and label, filled icons 24, label 10 medium.
  */
 @Composable
 private fun Bar(active: Region, downloads: Boolean, runningCount: Int, select: (Region) -> Unit) {
@@ -386,17 +389,20 @@ private fun Bar(active: Region, downloads: Boolean, runningCount: Int, select: (
                     if (pressed) snap() else Motion.release(), label = "druck")
                 Column(
                     Modifier.weight(1f).selectable(an, source, null,
-                        role = androidx.compose.ui.semantics.Role.Tab) { select(b) }
+                        role = androidx.compose.ui.semantics.Role.Tab) {
+                            select(b)
+                        }
                         .graphicsLayer { val m = 1f - 0.03f * press; scaleX = m; scaleY = m; alpha = 1f - 0.15f * press },
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Box(Modifier.height(26.dp), contentAlignment = Alignment.Center) {
                         // Icon 20 pt means a 24 dp box here. SF Symbols at size 20 are about 20 pt tall; a Material
                         // icon has 2 dp padding all round in its 24 grid, so in a 20 box the glyph kept barely 17.
                         // That is the "looks smaller" effect at pixel level. Cause: different symbol set, not a
                         // different size.
-                        Symbol(b.symbol, 20.dp, color = color, strength = if (an) Strength.Semibold else Strength.Normal)
+                        // Icon 24 (was 20), filled except Search which stays outline.
+                        Symbol(b.symbol, 24.dp, color = color, filled = b != Region.Search)
                         if (b == Region.Downloads && runningCount > 0) {
                             // The count of running ones, not finished ones; offset outwards, otherwise it covers the icon.
                             Text(runningCount.toString(), style = Theme.badge.copy(letterSpacing = 0.sp), color = Theme.reason,
@@ -406,7 +412,7 @@ private fun Bar(active: Region, downloads: Boolean, runningCount: Int, select: (
                     }
                     // Label 10, semibold when selected, otherwise medium; as in `SectionButton`.
                     Text(translated(b.title), color = color,
-                         style = Theme.badge.copy(letterSpacing = 0.sp, fontWeight = if (an) FontWeight.SemiBold else FontWeight.Medium))
+                         style = Theme.badge.copy(letterSpacing = 0.sp, fontWeight = FontWeight.Medium))
                 }
             }
         }

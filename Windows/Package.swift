@@ -26,13 +26,14 @@ let package = Package(
         // line in the script but one less thing that can behave differently on another
         // machine.
         .systemLibrary(name: "CGtk"),
-        .systemLibrary(name: "CVLC"),
+        // libmpv, LGPL build (`C:\Werkzeuge\libmpv`), linked dynamically. `CMPVBridge` is
+        // mirrored from Linux by `build.ps1`.
+        .systemLibrary(name: "CMPV"),
+        .target(name: "CMPVBridge", dependencies: ["CMPV"],
+                linkerSettings: [.linkedLibrary("epoxy"), .linkedLibrary("opengl32")]),
         // rlottie for the start animation. `Werkzeuge/rlottie-build.ps1` compiles the
         // same sources as on Linux, only with MSVC and as a static library.
         .systemLibrary(name: "CRlottie"),
-        // libepoxy for the HDR shader (`hdrimage.c`); GTK brings it anyway.
-        .target(name: "CImageBridge", dependencies: ["CVLC"],
-                linkerSettings: [.linkedLibrary("epoxy")]),
         // The keyboard's media keys. Empty on Linux, where MPRIS handles this; on
         // Windows it needs its own window procedure.
         .target(name: "CMediaKeys"),
@@ -44,8 +45,8 @@ let package = Package(
             name: "SwiftlyWindows",
             dependencies: [
                 "CGtk",
-                "CVLC",
-                "CImageBridge",
+                "CMPV",
+                "CMPVBridge",
                 "CMediaKeys",
                 "CFonts",
                 "CRlottie",

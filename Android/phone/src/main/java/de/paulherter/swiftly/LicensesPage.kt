@@ -44,7 +44,7 @@ fun LicensesPage(open: (Destination) -> Unit, back: () -> Unit, app: SwiftlyAppl
             }
         }
         Spacer(Modifier.height(22.dp))
-        for ((title, list) in listOf("libVLC" to inventory.group("player"), translated("Weitere Bausteine") to inventory.group("app"))) {
+        for ((title, list) in listOf(translated("Player") to inventory.group("player"), translated("Weitere Bausteine") to inventory.group("app"))) {
             if (list.isEmpty()) continue
             GroupsTitle(title)
             CardView {

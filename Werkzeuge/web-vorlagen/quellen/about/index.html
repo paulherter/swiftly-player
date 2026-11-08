@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About Swiftly Player</title>
+<meta name="description" content="Swiftly Player and Swiftly Music are free Jellyfin clients built by one developer. Why they exist, how they are made, and how the guides on this site are checked.">
+<link rel="canonical" href="https://swiftlyplayer.com/about/">
+<meta property="og:title" content="About Swiftly Player">
+<meta property="og:description" content="Two free Jellyfin clients, built by one person.">
+<meta property="og:url" content="https://swiftlyplayer.com/about/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Swiftly Player">
+<meta property="og:image" content="https://swiftlyplayer.com/vorschau.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="iPad, iPhone and an Apple TV, all showing Swiftly Player">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="About Swiftly Player">
+<meta name="twitter:description" content="Two free Jellyfin clients, built by one person.">
+<meta name="theme-color" content="#101010">
+<link rel="preload" as="font" type="font/woff2" href="/schrift/figtree-latin.woff2" crossorigin>
+<link rel="icon" href="/symbol.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<style>
+
+
+@font-face { font-family: "Figtree"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url(/schrift/figtree-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Figtree"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url(/schrift/figtree-latin-ext.woff2) format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+/* Colors and bar as in index.html. The home page is dark only,
+   so the blog is too. */
+:root {
+  --grund: #101010; --tief: #101010; --flaeche: #1E1E1E; --erhoeht: #262626; --akzent-leise: #113435; --auf-akzent: #061212;
+  --akzent: #50D5DA; --kuehl: var(--akzent); --warm: var(--akzent); --marke: var(--akzent);
+  --schrift: #FFFFFF; --leise: #CCCCCC; --sehr-leise: #989898;
+  --linie: rgba(255,255,255,.07); --rand: rgba(255,255,255,.12);
+  --schriftart: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --bahn: 1240px; --lesen: 700px; --seitenrand: clamp(24px, 4vw, 40px);
+  --raus: cubic-bezier(.23, 1, .32, 1);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scrollbar-color: #303030 var(--grund); }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--grund); color: var(--schrift); font-family: var(--schriftart);
+  font-size: 18px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+img { max-width: 100%; height: auto; }
+a { color: inherit; text-decoration: none; }
+p { margin: 0; }
+::selection { background: rgba(80,213,218,.32); color: var(--schrift); }
+:focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; border-radius: 4px; }
+.nur-fuer-leser { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.bahn { width: 100%; max-width: calc(var(--bahn) + 2 * var(--seitenrand)); margin-inline: auto; padding-inline: var(--seitenrand); }
+.lesebahn { width: 100%; max-width: calc(var(--lesen) + 2 * var(--seitenrand)); margin-inline: auto; padding-inline: var(--seitenrand); }
+
+/* Bar */
+.leiste { position: absolute; top: 10px; left: 0; right: 0; z-index: 60; display: flex; justify-content: center;
+  padding-inline: var(--seitenrand); pointer-events: none; }
+.leiste__kapsel { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 24px;
+  border-radius: 999px; background: var(--flaeche); }
+.leiste__marke { display: flex; align-items: center; min-height: 44px; margin-right: 6px; }
+.leiste__marke img { height: 21px; width: auto; }
+.leiste__punkt { padding: 10px 16px; border-radius: 10px; font-size: 14.5px; font-weight: 500; color: var(--leise);
+  transition: color 160ms var(--raus), background-color 160ms var(--raus); }
+.leiste__punkt[aria-current] { color: var(--schrift); }
+.knopf { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 10px;
+  background: var(--schrift); color: var(--auf-akzent); font-family: inherit; font-weight: 600; line-height: 1.2;
+  cursor: pointer; transition: transform 160ms var(--raus), background-color 160ms var(--raus); }
+/* Press, hover and focus are defined at the end under "Behavior": one rule for everything. */
+.knopf--leiste { min-height: 40px; padding: 0 18px; font-size: 14.5px; }
+.knopf--gross { min-height: 48px; padding: 0 28px; font-size: 17px; }
+.knopf--leise { padding: 10px 21px; font-size: 14.5px; background: transparent; color: var(--schrift);
+  box-shadow: inset 0 0 0 1px var(--rand); }
+.leiste__burger { display: none; }
+.menue { display: none; position: fixed; z-index: 55; left: 20px; right: 20px; top: 12px; padding: 78px 0 22px;
+  border-radius: 16px; background: var(--flaeche); transform-origin: top center; opacity: 0;
+  transform: scaleY(.86) translateY(-10px); pointer-events: none;
+  transition: opacity 220ms var(--raus), transform 320ms var(--raus); }
+.menue[data-offen] { opacity: 1; transform: none; pointer-events: auto; }
+.menue a { display: block; padding: 15px 20px; color: var(--leise); font-size: 19px; font-weight: 500; }
+.menue a[aria-current] { color: var(--schrift); }
+.menue .knopf { display: flex; width: calc(100% - 40px); margin: 14px 20px 0; color: var(--auf-akzent); }
+
+/* Page header. Light like the home page aurora, but weaker:
+   this page is for reading. Sits below the text. */
+main { position: relative; padding: 140px 0 110px; }
+.schein { position: absolute; left: 0; right: 0; top: -10px; height: 560px; z-index: 0; pointer-events: none; opacity: .8;
+  -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent 100%); mask-image: linear-gradient(to bottom, #000 40%, transparent 100%);
+  background:
+    radial-gradient(ellipse 46% 70% at 0% 100%, rgba(80,213,218,.42), rgba(80,213,218,.16) 55%, rgba(80,213,218,0) 100%),
+    radial-gradient(ellipse 46% 70% at 100% 100%, rgba(80,213,218,.34), rgba(80,213,218,.13) 55%, rgba(80,213,218,0) 100%); }
+main > :not(.schein) { position: relative; z-index: 6; }
+.pfad { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 22px; padding: 0; list-style: none;
+  font-size: 14.5px; color: var(--sehr-leise); }
+.pfad a { color: var(--leise); transition: color 160ms var(--raus); }
+.pfad li + li::before { content: "/"; margin-right: 8px; color: var(--sehr-leise); }
+.seitenkopf h1 { font-size: clamp(36px, 4.4vw, 60px); font-weight: 700; line-height: 1.04; letter-spacing: -.021em;
+  margin: 0; text-wrap: balance; }
+.seitenkopf .unter { margin-top: 18px; color: var(--leise); font-size: clamp(17px, 1.4vw, 20px); line-height: 1.5; text-wrap: pretty; }
+.seitenkopf--mitte { text-align: center; }
+.seitenkopf--mitte .pfad { justify-content: center; }
+.seitenkopf--mitte h1 { font-size: clamp(38px, 5.55vw, 80px); line-height: 1.02; }
+.seitenkopf--mitte .unter { max-width: 620px; margin-inline: auto; text-wrap: balance; }
+.angaben { margin-top: 22px; color: var(--sehr-leise); font-size: 14.5px; }
+.angaben span + span::before { content: "·"; margin: 0 8px; }
+.geplant { display: inline-block; margin: 0 0 18px; padding: 6px 14px; border-radius: 999px; font-size: 13px;
+  font-weight: 600; color: var(--warm); background: color-mix(in srgb, var(--warm) 10%, var(--flaeche));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warm) 30%, transparent); }
+
+/* FAQ: like "Common questions" on the home page, built as details so it works
+   without script. The first answer is open. */
+.fragen__blatt { margin-top: 28px; border-radius: 16px; background: var(--flaeche); overflow: hidden; }
+.frage + .frage { border-top: 1px solid var(--linie); }
+.frage__knopf { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 32px;
+  cursor: pointer; list-style: none; transition: background-color 160ms var(--raus); }
+.frage__knopf::-webkit-details-marker { display: none; }
+.text .frage__knopf h3 { margin: 0; font-size: clamp(16px, 1.4vw, 19px); line-height: 1.3; letter-spacing: -.014em; }
+.frage__pfeil { flex: none; width: 20px; height: 20px; color: var(--sehr-leise); transition: transform 280ms var(--raus), color 160ms var(--raus); }
+.frage[open] .frage__pfeil { transform: rotate(90deg); color: var(--leise); }
+.frage__antwort { padding: 0 32px 27px; font-size: clamp(15px, 1.2vw, 16.5px); line-height: 1.55; }
+.frage__antwort > * + * { margin-top: 12px; }
+
+/* Footer as in index.html */
+.fuss { padding-block: 0 43px; }
+.fuss__linie { height: 1px; background: var(--linie); }
+.fuss__raster { display: grid; grid-template-columns: minmax(0,440px) minmax(0,280px) minmax(0,280px) minmax(0,240px);
+  row-gap: 40px; padding-block: 64px 73px; }
+.fuss__marke { max-width: 360px; }
+.fuss__marke img { height: 21px; width: auto; }
+.fuss__marke p { margin-top: 14px; color: var(--leise); font-size: 15px; line-height: 1.55; }
+.fuss__spalte h2 { margin: 0; font-size: 12px; font-weight: 600; line-height: 1.3; letter-spacing: .13em;
+  color: var(--sehr-leise); text-transform: uppercase; }
+.fuss__spalte ul { margin: 16px 0 0; padding: 0; list-style: none; font-size: 15px; line-height: 1.4; }
+.fuss__spalte li + li { margin-top: 11px; }
+.fuss__spalte a { color: var(--leise); transition: color 160ms var(--raus); }
+.fuss__klein { padding-top: 28px; max-width: 880px; color: var(--sehr-leise); font-size: 13px; line-height: 1.6; }
+
+@media (hover: hover) and (pointer: fine) {
+  .leiste__punkt:hover { color: var(--schrift); background: rgba(255,255,255,.06); }
+  .knopf--leise:hover { background: rgba(255,255,255,.06); }
+  .fuss__spalte a:hover, .pfad a:hover, .zurueck:hover { color: var(--schrift); }
+  .text a:hover { text-decoration-color: currentColor; }
+  .frage__knopf:hover { background: rgba(255,255,255,.03); }
+  .text .weg + .weg:hover { background: color-mix(in srgb, var(--farbe) 17%, var(--erhoeht));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--farbe) 45%, transparent), 0 14px 30px rgba(0,0,0,.5); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .knopf, .menue, .karte, .weg { transition-property: opacity, color, background-color, border-color, box-shadow; }
+  .menue { transform: none; }
+  .frage__pfeil { transition: none; }
+}
+
+@media (max-width: 900px) {
+  .leiste { position: fixed; top: 12px; padding-inline: 20px; }
+  .leiste__kapsel { width: 100%; justify-content: space-between; padding: 8px 8px 8px 20px; }
+  .leiste__punkt, .knopf--leiste.nur-desktop { display: none; }
+  .leiste__burger { display: grid; align-content: center; justify-items: start; width: 44px; height: 44px;
+    border: 0; padding: 0 0 0 12px; background: none; cursor: pointer; }
+  .leiste__burger span { display: block; width: 20px; height: 2px; border-radius: 1px; background: var(--schrift);
+    transform-origin: left center; transition: transform 280ms var(--raus), opacity 180ms var(--raus); }
+  .leiste__burger span + span { margin-top: 5px; }
+  .leiste__burger span:nth-child(3) { transform: scaleX(.65); }
+  .leiste__burger[aria-expanded="true"] span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  .leiste__burger[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+  .leiste__burger[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+  .menue { display: block; }
+  main { padding: 112px 0 84px; }
+  .schein { top: 38px; height: 420px; }
+  .seitenkopf h1 { font-size: 36px; line-height: 1.06; }
+  .seitenkopf--mitte h1 { font-size: 46px; line-height: 1; }
+  .seitenkopf .unter { font-size: 17px; }
+  .text { margin-top: 36px; font-size: 17px; line-height: 1.65; }
+  .text h2 { margin-top: 52px; font-size: 27px; line-height: 1.1; }
+  .text h3 { font-size: 20px; }
+  .text pre { font-size: 14px; }
+  .tabelle table { font-size: 14px; }
+  .tabelle th, .tabelle td { padding: 11px 14px; }
+  .kurz { padding: 22px; border-radius: 16px; }
+  .fragen__blatt { border-radius: 16px; }
+  .frage__knopf { padding: 18px; }
+  .text .frage__knopf h3 { font-size: 15.5px; }
+  .frage__antwort { padding: 0 18px 20px; font-size: 16px; }
+  .swiftly { padding: 22px 20px 20px; border-radius: 16px; }
+  .wege { grid-template-columns: 1fr; }
+  .wege > :last-child:nth-child(odd) { width: auto; justify-self: stretch; }
+  .karten--raster { grid-template-columns: 1fr; margin-top: 40px; }
+  .karte { padding: 22px 22px 24px; border-radius: 16px; }
+  .fuss__raster { grid-template-columns: 1fr 1fr; padding-block: 48px 40px; }
+  .fuss__marke { grid-column: 1 / -1; }
+  .fuss__spalte:last-child { grid-column: 1 / -1; }
+  .fuss__klein { font-size: 11.5px; padding-top: 20px; }
+  .fuss { padding-bottom: 18px; }
+}
+/* ---------------------------------------------------------------
+   Android page. Mobile first: most visitors come from a phone.
+   Steps as cards, each with a white full-width button (tap target
+   58 high). All three alike, because readers often join midway
+   (group already joined).
+   --------------------------------------------------------------- */
+.seite { width: 100%; max-width: calc(760px + 2 * var(--seitenrand)); margin-inline: auto; padding-inline: var(--seitenrand); }
+.schritte { display: grid; gap: 14px; margin: 44px 0 0; padding: 0; list-style: none; }
+.schritt { display: grid; grid-template-columns: auto 1fr; column-gap: 18px; padding: 24px 22px 22px;
+  border-radius: 16px; background: var(--flaeche); }
+.schritt__zahl { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%;
+  font-size: 20px; font-weight: 600; color: var(--akzent);
+  background: color-mix(in srgb, var(--akzent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 32%, transparent); }
+.schritt h2 { margin: 8px 0 0; font-size: 22px; font-weight: 600; line-height: 1.2; letter-spacing: -.012em; }
+.schritt p { grid-column: 1 / -1; margin-top: 12px; color: var(--leise); font-size: 16.5px; line-height: 1.5; }
+.schritt p strong { color: var(--schrift); font-weight: 600; }
+.schritt .knopf { grid-column: 1 / -1; margin-top: 18px; min-height: 58px; width: 100%; padding: 16px 24px; font-size: 17px; }
+.hinweis { margin-top: 28px; padding: 22px 22px 24px; border-radius: 16px; color: var(--leise); font-size: 16px; line-height: 1.55;
+  background: color-mix(in srgb, var(--warm) 8%, var(--flaeche));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warm) 28%, transparent); }
+.hinweis h2 { margin: 0; font-size: 12px; font-weight: 600; line-height: 1.3; letter-spacing: .13em; text-transform: uppercase; color: var(--warm); }
+.hinweis ul { margin: 14px 0 0; padding-left: 1.2em; }
+.hinweis li + li { margin-top: 10px; }
+.hinweis li::marker { color: var(--sehr-leise); }
+.hinweis strong { color: var(--schrift); font-weight: 600; }
+.abschnitt { margin-top: 64px; }
+.abschnitt > h2 { margin: 0; font-size: 27px; font-weight: 600; line-height: 1.1; letter-spacing: -.014em; }
+.abschnitt > p { margin-top: 14px; color: var(--leise); font-size: 17px; line-height: 1.6; }
+.abschnitt a:not(.knopf), .frage__antwort a { color: var(--akzent); text-decoration: underline;
+  text-decoration-color: rgba(80,213,218,.35); text-underline-offset: 3px; }
+.frage__knopf h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; letter-spacing: -.014em; }
+.frage__antwort { color: var(--leise); }
+.hilfe { margin-top: 64px; text-align: center; }
+.hilfe p { color: var(--leise); font-size: 17px; }
+.hilfe .knopf { margin-top: 18px; min-height: 52px; padding-inline: 26px; }
+@media (min-width: 901px) {
+  .schritt { padding: 30px 32px 30px; border-radius: 16px; column-gap: 22px; }
+  .schritt h2 { font-size: 26px; margin-top: 6px; }
+  .schritt p { grid-column: 2; font-size: 17px; }
+  .schritt .knopf { grid-column: 2; width: auto; justify-self: start; }
+  .hinweis { padding: 28px 32px; border-radius: 16px; }
+  .abschnitt > h2 { font-size: 34px; }
+  .frage__knopf h3 { font-size: 18px; }
+}
+
+/* Notice about VLCKit/libVLC on the download pages and links in the footer's small print. */
+.lizenzhinweis { margin-top: 56px; color: var(--leise); font-size: 15px; line-height: 1.55; }
+.lizenzhinweis a, .fuss__klein a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------------------------------------------------------------
+   Sketches. Drawn by hand, not screenshots: reproducing third-party
+   interfaces is not allowed, and a simplified drawing shows more
+   clearly where to click anyway. Always the same structure: a window
+   frame, grey placeholders instead of text, and exactly ONE target in
+   teal where the pointer rests. No third-party logo in the drawing.
+   --------------------------------------------------------------- */
+.skizze { grid-column: 1 / -1; margin: 18px 0 0; padding: 10px; border-radius: 14px;
+  background: var(--tief); border: 1px solid var(--linie); }
+.skizze svg { display: block; width: 100%; height: auto; }
+.skizze text { font-family: var(--schriftart); font-size: 11px; fill: var(--leise); }
+.skizze .titel { font-size: 12.5px; font-weight: 600; fill: var(--schrift); }
+.skizze .ziel { font-size: 11.5px; font-weight: 600; fill: var(--schrift); }
+.skizze figcaption { margin: 10px 4px 2px; color: var(--sehr-leise); font-size: 13.5px; line-height: 1.45; }
+@media (min-width: 901px) { .skizze { grid-column: 2; } }
+
+/* The box at the top holds the page's one action. It sits before the
+   steps: anyone who knows what they want clicks and reads no further. */
+.download { margin-top: 34px; padding: 24px 22px 22px; border-radius: 16px; text-align: center;
+  background: color-mix(in srgb, var(--akzent) 8%, var(--flaeche));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 28%, transparent); }
+.download p { font-size: 17px; line-height: 1.5; }
+.download__klein { margin-top: 14px; color: var(--sehr-leise); font-size: 14.5px; }
+.download .knopf { margin-top: 16px; min-height: 52px; padding-inline: 28px; }
+@media (min-width: 901px) { .download { padding: 28px 32px 26px; border-radius: 16px; } }
+
+/* One quiet line to the supporter page, below the help box. */
+.kaffeehinweis { margin-top: 18px; text-align: center; color: var(--sehr-leise); font-size: 15px; line-height: 1.55; }
+.kaffeehinweis a { color: var(--leise); text-decoration: underline; text-underline-offset: 3px; }
+
+/* Get involved: one card with short lines, never the large download buttons
+   (otherwise it looks like a copied category). */
+.mitmachen__karte { margin-top: 64px; padding: 26px 22px 20px; border-radius: 16px;
+  background: var(--flaeche); }
+.mitmachen__karte h2 { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.15; letter-spacing: -.02em; }
+.mitmachen__karte > p { margin-top: 10px; color: var(--leise); font-size: 15.5px; line-height: 1.5; }
+.mitmachen__liste { display: grid; gap: 0; margin: 16px 0 0; padding: 0; list-style: none; }
+.mitmachen__liste a { display: flex; align-items: center; gap: 12px; min-height: 48px;
+  padding: 8px 10px 8px 8px; margin-inline: -8px; border-radius: 14px;
+  transition: background-color 160ms var(--raus); }
+.mitmachen__zeichen { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 10px; }
+.mitmachen__zeichen svg { width: 15px; height: 15px; }
+.mitmachen__zeichen--akzent { background: rgba(80,213,218,.14); color: var(--akzent); }
+.mitmachen__zeichen--kuehl { background: rgba(80,213,218,.14); color: var(--kuehl); }
+.mitmachen__zeichen--warm { background: rgba(80,213,218,.14); color: var(--warm); }
+.mitmachen__wort { flex: 1 1 auto; min-width: 0; }
+.mitmachen__wort b { display: block; font-size: 15px; font-weight: 600; line-height: 1.25; letter-spacing: -.01em; }
+.mitmachen__wort em { display: block; font-size: 13px; font-style: normal; line-height: 1.3; color: var(--sehr-leise); }
+.mitmachen__pfeil { flex: none; width: 12px; height: 12px; color: var(--sehr-leise); }
+.mitmachen__liste a:active { background: rgba(255,255,255,.07); }
+@media (min-width: 901px) {
+  .mitmachen__karte { padding: 30px 32px 24px; border-radius: 16px; }
+  .mitmachen__karte h2 { font-size: 26px; }
+  .mitmachen__liste { grid-template-columns: repeat(2, minmax(0,1fr)); column-gap: 20px; }
+}
+@media (hover: hover) and (pointer: fine) {
+  .mitmachen__liste a:hover { background: rgba(255,255,255,.05); }
+  .mitmachen__liste a:hover .mitmachen__pfeil { color: var(--leise); }
+}
+
+/* Command with copy button, as in the blog (Werkzeuge/blog-bauen.py). */
+.codeblock { position: relative; margin-top: 18px; }
+.codeblock pre { margin: 0; padding: 20px 22px; overflow-x: auto; border-radius: 14px; background: var(--tief);
+  border: 1px solid var(--linie); font-size: 15px; line-height: 1.55; }
+.codeblock code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.kopieren { position: absolute; top: 10px; right: 12px; display: inline-flex; align-items: center;
+  min-height: 36px; padding: 8px 14px; border: 0; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--rand);
+  background: var(--erhoeht); color: var(--leise); font-family: inherit; font-size: 13.5px; font-weight: 600;
+  line-height: 1; cursor: pointer; transition: color 160ms var(--raus), box-shadow 160ms var(--raus); }
+.kopieren[data-kopiert] { color: var(--akzent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 45%, transparent); }
+.befehlszeile { margin-top: 10px; color: var(--sehr-leise); font-size: 14.5px; line-height: 1.5; }
+@media (max-width: 700px) {
+  .kopieren { position: static; margin-top: 10px; min-height: 44px; width: 100%; justify-content: center; }
+}
+.paketliste { margin: 14px 0 0; padding: 0; list-style: none; }
+.paketliste li { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--linie);
+  color: var(--leise); font-size: 16px; line-height: 1.45; }
+.paketliste b { flex: none; min-width: 96px; color: var(--schrift); font-weight: 600; }
+
+/* =====================================================================
+   Behavior. Every button uses the same animation, modeled on the
+   calmest existing variant, the card hover: lift two pixels, add a
+   shadow behind, done. No hard jump to 104.5 percent on the download
+   button, no outward ripple, no scripted bounce. A surface that grows
+   on hover shifts the text inside it, and three different variants
+   side by side look random instead of systematic.
+
+   Everything is a variable: one duration, one curve, one lift, one
+   press, one brighten, one focus ring. No component invents its own
+   values. Two strengths, because a row in the footer must not lift
+   like a button: surfaces lift, rows brighten.
+   ===================================================================== */
+:root {
+  --dauer: 170ms;
+  --kurve: cubic-bezier(.23, 1, .32, 1);
+  --hebung: -2px;
+  --druck: .985;
+  --aufhellen: rgba(255,255,255,.06);
+  --schatten-hoch: 0 12px 26px rgba(0,0,0,.45);
+}
+.knopf, .weg-gross, .weg-klein, .karte, .kopieren, .laden, .weg,
+.reiter button, .frage__knopf, .mitmachen__liste a, .leiste__punkt, .leiste__marke,
+.menue a, .fuss__spalte a, .pfad a, .zurueck, .alle-wege, .text a, .frage__link,
+.schritt .knopf, .hilfe .knopf, .download .knopf {
+  transition: transform var(--dauer) var(--kurve), background-color var(--dauer) var(--kurve),
+              box-shadow var(--dauer) var(--kurve), color var(--dauer) var(--kurve),
+              border-color var(--dauer) var(--kurve), text-decoration-color var(--dauer) var(--kurve);
+}
+@media (hover: hover) and (pointer: fine) {
+  /* Surfaces: lift. */
+  .knopf:hover, .weg-gross:hover, .karte:hover, .kopieren:hover, .laden:hover, .weg:hover,
+  .schritt .knopf:hover, .hilfe .knopf:hover, .download .knopf:hover {
+    transform: translateY(var(--hebung));
+    box-shadow: var(--schatten-hoch);
+  }
+  .weg-klein:hover {
+    transform: translateY(var(--hebung));
+    box-shadow: inset 0 0 0 1px var(--rand), var(--schatten-hoch);
+  }
+  /* The main path keeps its accent ring, otherwise it flickers away on hover. */
+  .weg-gross:hover, .knoepfe > :first-child:hover {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 55%, transparent), var(--schatten-hoch);
+  }
+  .laden:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 40%, transparent), var(--schatten-hoch); }
+  .karte:hover { border-color: var(--rand); }
+  .kopieren:hover { color: var(--schrift); box-shadow: inset 0 0 0 1px var(--rand), var(--schatten-hoch); }
+  /* Rows and links: brighten. */
+  .reiter button:hover, .frage__knopf:hover, .mitmachen__liste a:hover, .leiste__punkt:hover {
+    background: var(--aufhellen);
+    color: var(--schrift);
+  }
+  .menue a:hover, .fuss__spalte a:hover, .pfad a:hover, .zurueck:hover, .alle-wege:hover { color: var(--schrift); }
+  .text a:hover, .frage__link:hover, .hinweis a:hover, .abschnitt a:not(.knopf):hover,
+  .frage__antwort a:hover { text-decoration-color: currentColor; }
+}
+/* Press: one value for every touchable element. */
+.knopf:active, .weg-gross:active, .weg-klein:active, .karte:active, .kopieren:active,
+.reiter button:active, .laden:active, .weg:active { transform: scale(var(--druck)); }
+.mitmachen__liste a:active, .frage__knopf:active { background: rgba(255,255,255,.09); }
+/* One focus ring for everything. */
+:focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; border-radius: 6px; }
+.knopf:focus-visible, .weg-gross:focus-visible, .weg-klein:focus-visible, .laden:focus-visible,
+.weg:focus-visible, .reiter button:focus-visible, .kopieren:focus-visible { border-radius: inherit; }
+@media (prefers-reduced-motion: reduce) {
+  /* Less, not nothing: color stays, motion goes. */
+  .knopf, .weg-gross, .weg-klein, .karte, .kopieren, .laden, .weg, .reiter button,
+  .frage__knopf, .mitmachen__liste a, .leiste__punkt, .menue a, .fuss__spalte a, .pfad a, .text a {
+    transition-property: color, background-color, box-shadow, border-color, text-decoration-color;
+  }
+  .knopf:hover, .weg-gross:hover, .weg-klein:hover, .karte:hover, .kopieren:hover, .laden:hover,
+  .weg:hover, .knopf:active, .weg-gross:active, .weg-klein:active, .karte:active,
+  .kopieren:active, .laden:active, .weg:active, .reiter button:active { transform: none; }
+}
+
+/* ---- Like the home page (design system): one surface per path, no ring, no
+   lift, no shadow. Press: the surface darkens, scale .98. ---- */
+.laden { border-radius: 14px; box-shadow: none; background: #262626; min-height: 56px; }
+.knoepfe > :first-child { background: color-mix(in srgb, var(--akzent) 34%, #101010); box-shadow: none; }
+.knoepfe > :first-child .laden__zeichen { background: rgba(255,255,255,.12); color: var(--schrift); }
+.leistenkasten { border: 0; }
+@media (hover: hover) and (pointer: fine) {
+  .knopf:hover, .weg-gross:hover, .weg-klein:hover, .karte:hover, .kopieren:hover, .laden:hover, .weg:hover,
+  .schritt .knopf:hover, .hilfe .knopf:hover, .download .knopf:hover { transform: none; box-shadow: none; }
+  .laden:hover { background: #303030; }
+  .knoepfe > :first-child:hover { background: color-mix(in srgb, var(--akzent) 42%, #101010); }
+  .karte:hover { background: #262626; }
+}
+.knopf:active { background: rgba(255,255,255,.75); }
+.laden:active { background: #3A3A3A; }
+.knoepfe > :first-child:active { background: color-mix(in srgb, var(--akzent) 26%, #101010); }
+.karte:active { background: #303030; }
+
+/* Bar: the item reacts to the pointer like a button in the app. */
+@media (hover: hover) and (pointer: fine) {
+  .leiste__punkt:hover { color: var(--schrift); background: var(--flaeche); }
+}
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "AboutPage",
+  "url": "https://swiftlyplayer.com/about/",
+  "name": "About Swiftly Player",
+  "mainEntity": {
+    "@type": "Person",
+    "name": "Paul Herter",
+    "url": "https://swiftlyplayer.com/about/",
+    "sameAs": [
+      "https://github.com/paulherter"
+    ],
+    "knowsAbout": [
+      "Jellyfin",
+      "Navidrome",
+      "Video playback",
+      "iOS",
+      "tvOS",
+      "macOS"
+    ]
+  },
+  "about": {
+    "@type": "Organization",
+    "name": "Swiftly Player",
+    "url": "https://swiftlyplayer.com/"
+  }
+}
+</script>
+</head>
+<body>
+
+<a class="nur-fuer-leser" href="#inhalt">Skip to content</a>
+
+<header class="leiste">
+  <div class="leiste__kapsel">
+    <a class="leiste__marke" href="/" aria-label="Swiftly Player, home">
+      <img src="/wortmarke.svg" alt="Swiftly" width="61" height="21">
+    </a>
+    <a class="leiste__punkt" href="/music/">Music</a>
+    <a class="leiste__punkt" href="/blog/">Blog</a>
+    <a class="leiste__punkt" href="https://github.com/paulherter/swiftly-player" target="_blank" rel="noopener">GitHub</a>
+    <button class="leiste__burger" type="button" aria-expanded="false" aria-controls="menue" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</header>
+
+<nav class="menue" id="menue" aria-label="Menu">
+  <a href="/music/">Music</a>
+  <a href="/blog/">Blog</a>
+  <a href="https://discord.gg/MeGwfv3UwN" target="_blank" rel="noopener">Discord</a>
+  <a href="https://github.com/paulherter/swiftly-player" target="_blank" rel="noopener">GitHub</a>
+  <a href="/supporter/">Donate</a>
+  <a class="knopf knopf--gross" href="/#downloads">Download</a>
+</nav>
+
+<main id="inhalt">
+<div class="schein" aria-hidden="true"></div>
+<div class="seite">
+  <header class="seitenkopf seitenkopf--mitte">
+    <ol class="pfad"><li><a href="/">Swiftly Player</a></li><li>About</li></ol>
+    <h1>Built by one person</h1>
+    <p class="unter">I'm Paul Herter. I build Swiftly Player and Swiftly Music on my own, in Germany: free apps for the Jellyfin server you run yourself.</p>
+  </header>
+
+  <section class="abschnitt" aria-labelledby="warum">
+    <h2 id="warum">Why it exists</h2>
+    <p>I run Jellyfin at home. I wanted a client that plays the original file instead of asking the server for a converted copy, and Picture in Picture on the iPhone. That second one is what sent me looking in the first place, and I ended up building my own.</p>
+    <p>Swiftly Player now runs on iPhone, iPad, Mac, Apple TV, Android, Android TV, Windows and Linux. <a href="/music/">Swiftly Music</a> does the same for music, on iPhone for now, with Jellyfin and Navidrome.</p>
+  </section>
+
+  <section class="abschnitt" aria-labelledby="wie">
+    <h2 id="wie">How it is made</h2>
+    <p>There is no company behind it, no account, no ads and no tracking. What you watch goes to your own server and nowhere else. The code is open source under the MPL-2.0 and lives <a href="https://github.com/paulherter/swiftly-player" target="_blank" rel="noopener">on GitHub</a>. Bugs and wishes come in through <a href="https://discord.gg/MeGwfv3UwN" target="_blank" rel="noopener">Discord</a> and GitHub issues, and most releases start there.</p>
+  </section>
+
+  <section class="abschnitt" aria-labelledby="anleitungen">
+    <h2 id="anleitungen">About the guides</h2>
+    <p>The <a href="/blog/">guides</a> compare Jellyfin clients, the ones that compete with Swiftly included. Every version number, price and feature links to the project's own page, and each guide says when it was checked. Where another app does something better, the guide says so, and every guide that mentions Swiftly says that I build it.</p>
+  </section>
+
+  <section class="abschnitt" aria-labelledby="kontakt">
+    <h2 id="kontakt">Contact</h2>
+    <p>Email <a href="mailto:info@swiftlyplayer.com">info@swiftlyplayer.com</a>, or find me on <a href="https://discord.gg/MeGwfv3UwN" target="_blank" rel="noopener">Discord</a>. The legal details are in the <a href="/impressum.html">Impressum</a>.</p>
+  </section>
+
+  <div class="hilfe">
+    <p>Stuck somewhere? Ask on Discord.</p>
+    <a class="knopf knopf--leise" href="https://discord.gg/MeGwfv3UwN" target="_blank" rel="noopener">Get help on Discord</a>
+  </div>
+  <p class="kaffeehinweis">All the features you need are free. If it helps you, <a href="/supporter/">buy us a coffee</a>.</p>
+</div>
+</main>
+
+<footer class="fuss">
+  <div class="bahn">
+    <div class="fuss__linie"></div>
+    <div class="fuss__raster">
+      <div class="fuss__marke">
+        <img src="/wortmarke.svg" alt="Swiftly" width="61" height="21">
+        <p>A video player for your own Jellyfin server. Built by one person.</p>
+      </div>
+      <div class="fuss__spalte">
+        <h2>Download</h2>
+        <ul>
+          <li><a href="/download/app-store/">App Store</a></li>
+          <li><a href="/download/testflight/">TestFlight</a></li>
+          <li><a href="/android/">Android</a></li>
+          <li><a href="/download/windows/">Windows</a></li>
+          <li><a href="/download/linux/">Linux</a></li>
+        </ul>
+      </div>
+      <div class="fuss__spalte">
+        <h2>Elsewhere</h2>
+        <ul>
+          <li><a href="/about/">About</a></li>
+          <li><a href="/blog/">Blog</a></li>
+          <li><a href="https://github.com/paulherter/swiftly-player" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://discord.gg/MeGwfv3UwN" target="_blank" rel="noopener">Discord</a></li>
+          <li><a href="/supporter/">Donate</a></li>
+          <li><a href="/support.html">Support</a></li>
+          <li><a href="https://jellyfin.org" target="_blank" rel="noopener">Jellyfin</a></li>
+        </ul>
+      </div>
+      <div class="fuss__spalte">
+        <h2>Legal</h2>
+        <ul>
+          <li><a href="/impressum.html">Impressum</a></li>
+          <li><a href="/privacy.html">Privacy</a></li>
+          <li><a href="/datenschutz.html">Datenschutz</a></li>
+          <li><a href="/terms/">Terms</a></li>
+          <li><a href="/licenses/">Open-source licenses</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="fuss__linie"></div>
+    <p class="fuss__klein">
+      Swiftly Player is not part of the Jellyfin project and hosts nothing itself. App Store is a
+      service mark of Apple Inc. Google Play and Android are trademarks of Google LLC. Windows is a
+      trademark of Microsoft Corporation. The drawings on this page are our own and show no material
+      from those companies. The code is under the MPL-2.0; the name, the wordmark and the app icon
+      are not. Playback uses VLCKit and libVLC by VideoLAN under the LGPL-2.1-or-later:
+      <a href="/licenses/">licenses and source</a>.
+    </p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var burger = document.querySelector(".leiste__burger");
+  var menue = document.getElementById("menue");
+  if (burger && menue) {
+    var setzen = function (offen) {
+      burger.setAttribute("aria-expanded", offen ? "true" : "false");
+      if (offen) { menue.setAttribute("data-offen", ""); } else { menue.removeAttribute("data-offen"); }
+    };
+    burger.addEventListener("click", function () { setzen(burger.getAttribute("aria-expanded") !== "true"); });
+    menue.addEventListener("click", function (e) { if (e.target.closest("a")) setzen(false); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") setzen(false); });
+  }
+})();
+</script>
+</body>
+</html>

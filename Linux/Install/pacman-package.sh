@@ -58,7 +58,7 @@ cp -r "$source/Linux/Resources" "$work/inhalt/Resources"
 cp "$source/LICENSE" "$work/inhalt/LICENSE"
 # **Licenses from a single source.** `LICENSES/` holds the full texts and
 # `components.json`; `THIRD-PARTY-NOTICES.md` holds the written offer for
-# libVLC (LGPL-2.1-or-later). If either is missing, no package is built.
+# libmpv (LGPL-2.1-or-later). If either is missing, no package is built.
 [ -f "$source/LICENSES/components.json" ] && [ -f "$source/THIRD-PARTY-NOTICES.md" ] ||
     { echo "LICENSES/ oder THIRD-PARTY-NOTICES.md fehlt in $source" >&2; exit 1; }
 cp -r "$source/LICENSES" "$work/inhalt/LICENSES"
@@ -72,7 +72,7 @@ pkgdesc="Jellyfin client that never transcodes"
 arch=('x86_64')
 url="https://github.com/paulherter/swiftly-player"
 license=('MPL-2.0')
-depends=('gtk4' 'vlc' 'glibc' 'gcc-libs')
+depends=('gtk4' 'mpv' 'glibc' 'gcc-libs')
 options=('!strip' '!debug')
 
 package() {

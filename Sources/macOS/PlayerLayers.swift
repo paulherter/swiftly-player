@@ -1,6 +1,5 @@
 import JellyfinKit
 import SwiftUI
-import VLCKit
 
 /// Player dimensions on the Mac, in one place, so that the close button of a layer
 /// sits exactly where the player's close button sat.
@@ -12,11 +11,29 @@ struct PlayerMetric {
     /// Right margin of the icon row and of the bar; the skip pill and the next-episode
     /// card share it (design: 28).
     let page: CGFloat = 28
-    /// Left edge of the title: past the window's traffic lights (design: 80).
-    let titleLeft: CGFloat = 80
-    /// Top inset of title row and icon row (design: 14); the traffic lights sit left of
-    /// the title, so nothing collides.
+    /// Left edge of the title block: the normal player margin. The title no longer makes room
+    /// for the traffic lights beside it; it sits in the row below them.
+    let titleLeft: CGFloat = 28
+    /// Top inset of the icon row (design: 14); in windowed mode the traffic lights share this row.
     let top: CGFloat = 14
+    /// The window is in full screen: no traffic lights, the title block moves up to the icon row.
+    var fullScreen = false
+    /// Top inset of the title block: below the traffic lights in a window, level with the icon
+    /// row in full screen.
+    /// **The same place in a window and in full screen** (Paul 2026-11-05). macOS shows only
+    /// a snapshot during its full-screen animation, so anything that moves with the mode
+    /// appears to jump when the animation ends. Nothing moves now: in full screen the
+    /// traffic-light row simply stays free.
+    var titleTop: CGFloat { top + 30 }
+    /// Line height of the 22 pt title; the icon row is centered on this first line.
+    let titleLine: CGFloat = 27
+    /// Top inset of the icon row (and of every header row): the 44 pt buttons are vertically
+    /// centered on the title's first line, in a window and in full screen alike.
+    var iconTop: CGFloat { titleTop - (button - titleLine) / 2 }
+    /// Gap between the row top and the title text inside a header row.
+    var titleInset: CGFloat { titleTop - iconTop }
+    /// Height of the title block (22 pt title, 3 gap, one 13 pt meta line).
+    let titleBlock: CGFloat = 46
     let bottom: CGFloat = 20
     /// Hit area of the icon buttons (design: 44 with a 22 pt glyph).
     let button: CGFloat = 44
@@ -49,6 +66,8 @@ struct IconButton: View {
     let mass: PlayerMetric
     /// The keyboard shortcut shown in the tooltip, or `nil` for the system tooltip.
     var key: String?
+    /// Draws a diagonal slash over the glyph (muted speaker), in the glyph's stroke.
+    var slashed = false
     let action: () -> Void
 
     @State private var hovers = false
@@ -59,6 +78,15 @@ struct IconButton: View {
             Image(icon: symbol)
                 .font(.app(size: mass.symbol, weight: .medium))
                 .foregroundStyle(.white)
+                .overlay {
+                    if slashed {
+                        Path { p in
+                            p.move(to: CGPoint(x: 4, y: 3)); p.addLine(to: CGPoint(x: 18, y: 19))
+                        }
+                        .stroke(.white, style: StrokeStyle(lineWidth: 2.1, lineCap: .round))
+                        .frame(width: 22, height: 22)
+                    }
+                }
                 .frame(width: mass.button, height: mass.button)
                 .background(hovers ? Theme.hoverArea : .clear,
                             in: RoundedRectangle(cornerRadius: Theme.cornerField,
@@ -129,13 +157,13 @@ private struct LayersHeader<Left: View>: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            left
+            left.padding(.top, mass.titleInset)
             Spacer(minLength: 0)
             IconButton(symbol: "xmark", label: "Schließen", mass: mass, action: close)
         }
         .padding(.leading, mass.titleLeft)
         .padding(.trailing, mass.page)
-        .padding(.top, mass.top)
+        .padding(.top, mass.iconTop)
     }
 }
 
@@ -226,7 +254,7 @@ private struct ColumnsRail<ContentBody: View>: View {
         HStack(alignment: .top, spacing: 45) { content }
             .frame(maxWidth: .infinity)
             // Below the close button's row, so no heading runs past it.
-            .padding(.top, mass.top + mass.button + 6)
+            .padding(.top, mass.iconTop + mass.button + 6)
     }
 }
 
@@ -572,38 +600,15 @@ struct EpisodesLayer: View {
                 // The expanded season list lies over the episodes.
                 .zIndex(1)
 
-                ScrollViewReader { reader in
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            ForEach(episodes) { episode in
-                                // `action:` is spelled out, not a trailing closure. That was needed once because
-                                // `EpisodesRow` carried `ringtipp` before it, and Swift's rule for trailing
-                                // closures would have bound it there. The ring is gone, but the explicit label
-                                // stays: it says what the closure does.
-                                EpisodesRow(model: model, episode: episode,
-                                            action: { selectedEpisode in start(selectedEpisode) })
-                                // `selected` is exactly this value: white at eight percent, the fill of a playing
-                                // row.
-                                .background(episode.id == item.id ? Theme.selected : .clear)
-                                // Right click: the tile menu, in the player only with the watched state
-                                // (`TileMenu.inPlayer`).
-                                .tileMenu(episode, model: model, inPlayer: true,
-                                             afterwards: { await episodesLoad() })
-                                .accessibilityAddTraits(episode.id == item.id ? .isSelected : [])
-                                .id(episode.id)
-                                .transition(.opacity)
-                            }
-                        }
-                        .padding(.vertical, 12)
-                    }
-                    .scrollIndicators(.hidden)
-                    // Bring the playing episode into view once the list is ready.
-                    .onChange(of: episodes.map(\.id), initial: true) { _, ids in
-                        guard ids.contains(item.id) else { return }
-                        reader.scrollTo(item.id, anchor: .center)
-                    }
-                }
-                .padding(.top, 10)
+                // Same strip as on the TV: horizontal cards, running episode in the middle.
+                PlayerEpisodeStrip(model: model, episodes: episodes, currentID: item.id,
+                                   afterwards: { await episodesLoad() },
+                                   start: start,
+                                   leading: mass.titleLeft, trailing: mass.page)
+                    .padding(.top, 24)
+                    .transition(.opacity)
+
+                Spacer(minLength: 0)
             }
         }
         .accessibilityAction(.escape, close)

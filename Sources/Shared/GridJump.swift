@@ -15,6 +15,8 @@ struct ScrollJump: Equatable {
 /// scroll, and only the letter derived from it is state.
 final class OnScreenTiles {
     var ids: Set<String> = []
+    /// A top-letter update is already scheduled (see macOS `LibraryView.updateTopLetter`).
+    var letterPending = false
 }
 
 extension ScrollJump {

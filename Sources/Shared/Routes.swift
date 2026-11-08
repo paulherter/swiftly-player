@@ -54,12 +54,6 @@ struct ServerRoute: Hashable {
     var kind: ServerKind?
 }
 
-/// **Another account on the same server, also as a page.**
-///
-/// It came as a `fullScreenCover` from the bottom, like adding a server
-/// before. Feedback: "I don't want anything from the bottom anymore".
-struct AccountRoute: Hashable {}
-
 struct SettingsRoute: Hashable {}
 
 struct PlaybackRoute: Hashable {}

@@ -66,8 +66,8 @@ struct AdvancedSection: View {
                         Button {
                             withAnimation(Theme.reveal) { rows.removeAll { $0.id == row.id } }
                         } label: {
-                            Image(icon: "minus.circle", size: 17)
-                                .font(.app(size: 17))
+                            Image(icon: "minus.circle", size: Theme.rowTitleSize)
+                                .font(.app(size: Theme.rowTitleSize))
                                 .foregroundStyle(Theme.font)
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())

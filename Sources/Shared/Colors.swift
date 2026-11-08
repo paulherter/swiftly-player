@@ -265,6 +265,16 @@ extension Theme {
 extension Theme {
     /// Button or highlighted row over image colour: white 8%.
     static let surfaceTranslucent = Color.white.opacity(0.08)
+    /// Light track of the download ring: white 30%.
+    static let ringTrack = Color.white.opacity(0.30)
+    /// Hairline around a tile in the look picker: white 8%.
+    static let tileBorder = Color.white.opacity(0.08)
+    /// Progress ring on episode cards: white 18%.
+    static let ringProgress = Color.white.opacity(0.18)
+    /// Corner web line on season decor: white 42%.
+    static let cornerWeb = Color.white.opacity(0.42)
+    /// Dark round button over an image: black 40%.
+    static let scrimButton = Color.black.opacity(0.4)
     // Active carries no surface of its own: the state is in the glyph
     // (accent), the surface stays like its neighbours (a full turquoise surface
     // did not fit the row).

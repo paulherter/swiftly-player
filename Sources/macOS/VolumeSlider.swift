@@ -24,10 +24,10 @@ struct VolumeSlider: View {
 
     private var opened: Bool { atop || pulls || expanded }
 
-    private var symbol: String {
-        if value <= 0 { return "speaker.slash" }
-        return value < 0.5 ? "speaker.wave.1" : "speaker.wave.3"
-    }
+    /// Only `speaker.wave.2` has a Phosphor asset (`IconMap`); `speaker.wave.1`, `.wave.3` and
+    /// `.slash` fell back to the thinner SF Symbol. All levels use the mapped one; muted adds a
+    /// slash drawn in the same stroke (`IconButton.slashed`).
+    private let symbol = "speaker.wave.2"
 
     var body: some View {
         HStack(spacing: 0) {
@@ -54,7 +54,7 @@ struct VolumeSlider: View {
                 .animation(Theme.motionReduced ? nil : .easeOut(duration: 0.12), value: pulls || expanded)
             IconButton(symbol: symbol,
                         label: value <= 0 ? "Ton an" : "Ton aus",
-                        mass: mass, action: mutedToggle)
+                        mass: mass, slashed: value <= 0, action: mutedToggle)
         }
         .onHover { inner in
             atop = inner

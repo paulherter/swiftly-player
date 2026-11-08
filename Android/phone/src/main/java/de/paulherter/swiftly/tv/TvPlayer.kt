@@ -146,7 +146,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
     LaunchedEffect(Unit) { FocusRemember.lastOne = null }
 
     val mediaWork = remember { PlayItem(app, context, run) }
-    val area = remember { arrayOfNulls<org.videolan.libvlc.util.VLCVideoLayout>(1) }
+    val area = remember { arrayOfNulls<android.widget.FrameLayout>(1) }
     @Suppress("DEPRECATION")
     val lifeRun = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifeRun) {
@@ -189,7 +189,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
     val frameRateAllowed = remember { app.store.rememberValue("bildrateAnpassen") != "0" }
     LaunchedEffect(Unit) {
         while (isActive && TvImageTick.stillPostMeasure()) {
-            if (mediaWork.vlcFree) activity?.let { TvImageTick.adapt(it, mediaWork.player, frameRateAllowed) }
+            if (mediaWork.playerFree) activity?.let { TvImageTick.adapt(it, mediaWork.player, frameRateAllowed) }
             delay(300)
         }
     }
@@ -475,7 +475,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.Black).onPreviewKeyEvent { playbackKey(it) }) {
     Box(Modifier.fillMaxSize()
             .focusRequester(remoteHandset).onFocusChanged { barFocus = it.isFocused }.focusable().onKeyEvent { keyButton(it) }) {
-        AndroidView(factory = { ctx -> org.videolan.libvlc.util.VLCVideoLayout(ctx).also { area[0] = it; mediaWork.videoArea = it; mediaWork.player.attach(it) } },
+        AndroidView(factory = { ctx -> android.widget.FrameLayout(ctx).also { area[0] = it; mediaWork.videoArea = it; mediaWork.player.attach(it) } },
                     modifier = Modifier.fillMaxSize())
 
         if (!mediaWork.imageFree && mediaWork.cardsSwitch == null) {
@@ -716,7 +716,7 @@ private object TvPlayerMetric {
 /** Loading ring for the TV picture: larger than on the phone, read from three meters. */
 @Composable
 private fun TvLoader(size: androidx.compose.ui.unit.Dp) {
-    androidx.compose.material3.CircularProgressIndicator(color = Theme.font, strokeWidth = 3.dp, modifier = Modifier.size(size))
+    de.paulherter.swiftly.Spinner(size, Theme.font)
 }
 
 /** One of the icon buttons top right: at rest only the glyph, focused the white surface (`IconButtonStyle`). */

@@ -85,11 +85,7 @@ struct PlaylistView: View {
                     if wide, !shown.isEmpty { CountMark(count: shown.count) }
                 }
                 .padding(.horizontal, -Theme.margin(wide: wide))
-                if wide {
-                    controls.padding(.top, 14)
-                } else {
-                    ValueRail(offset: offset) { controls }
-                }
+                ValueRail(offset: offset) { controls }
             }
         }
     }
@@ -143,7 +139,10 @@ struct PlaylistView: View {
         }
         .scrollIndicators(.hidden)
         .animation(Theme.reveal, value: shown.isEmpty)
-        .scrollDistance { offset = $0 }
+        .scrollDistance {
+            let clamped = min(max($0, 0), Theme.valueRailsDistance)
+            if clamped != offset { offset = clamped }
+        }
         .safeAreaInset(edge: .top, spacing: 0) { header }
     }
 }

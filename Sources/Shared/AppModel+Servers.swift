@@ -34,9 +34,6 @@ private final class PlexHeld {
 
 extension AppModel {
 
-    /// Where plex.tv sends the browser back to; the app answers to the scheme.
-    private static let plexForward = URL(string: "swiftly://plex-auth")!
-
     /// A new account of any kind: the first one starts the app, a further one switches to it.
     func accountAdd(_ s: Session) {
         let first = session == nil

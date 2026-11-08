@@ -19,7 +19,7 @@ arch=('x86_64' 'aarch64')
 # alive; the README explains how to migrate.
 url="https://github.com/paulherter/swiftly-player"
 license=('MPL-2.0')
-depends=('gtk4' 'vlc' 'glibc' 'gcc-libs')
+depends=('gtk4' 'mpv' 'glibc' 'gcc-libs')
 makedepends=('git' 'gcc' 'pkgconf' 'swift-bin')
 source=("git+$url.git#branch=main"
         "git+https://github.com/Samsung/rlottie.git")
@@ -87,7 +87,7 @@ package() {
             "$pkgdir/usr/share/icons/hicolor/${grad}x${grad}/apps/de.paulherter.swiftly.png"
     done
 
-    # **Licenses: no `|| true`.** libVLC is LGPL; the package must not be built
+    # **Licenses: no `|| true`.** libmpv is LGPL; the package must not be built
     # without the license text and the written offer.
     install -Dm644 "$q/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     install -Dm644 "$q/THIRD-PARTY-NOTICES.md" \

@@ -255,12 +255,14 @@ class Settings(store: Store) {
     var multiChannelAudio by RememberValue(a, "mehrkanalTon", bool("mehrkanalTon", false), yesNo)
     var bufferLevel by RememberValue(a, "pufferstufe", a.rememberValue("pufferstufe") ?: "normal") { it }
     /**
-     * **Which engine plays** (`PlayerEngine`): `dolbyVision` is VLC, with Dolby Vision files on ExoPlayer
-     * (default); `exoplayer` is everything on ExoPlayer; `vlc` is everything on VLC, Dolby Vision then as the
-     * base layer. Takes effect the next time something opens. Media3 is used only if it can play
-     * the picture and the default sound itself (`EngineChoice`); if it fails, VLC takes over.
+     * Sound as a bitstream to the receiver (Media3 `AudioCapabilities`): `auto` (what the output reports), `off` (PCM
+     * only), `ac3` (Dolby Digital and Digital Plus), `all` (also DTS and TrueHD, whether the probe finds them or not).
      */
-    var playerEngine by RememberValue(a, "playerEngine", a.rememberValue("playerEngine") ?: "dolbyVision") { it }
+    var passthrough by RememberValue(a, "durchreichen", a.rememberValue("durchreichen") ?: "auto") { it }
+    /** Dolby Vision profile 7 (dual layer): `auto` (the device decides) or `off` (plays the HDR10 base layer). */
+    var dolbyVision7 by RememberValue(a, "dolbyVision7", a.rememberValue("dolbyVision7") ?: "auto") { it }
+    /** Fire TV: Dolby Vision files with HDR10+ play as HDR10+ (the Dolby Vision decoder is skipped). Off by default. */
+    var dolbyAsHdr10Plus by RememberValue(a, "dolbyAlsHdr10Plus", bool("dolbyAlsHdr10Plus", false), yesNo)
     var backSeconds by RememberValue(a, "zurueckSek", figure("zurueckSek", 10)) { it.toString() }
     var forwardSeconds by RememberValue(a, "vorSek", figure("vorSek", 30)) { it.toString() }
     /** Off until someone looks for it: it changes nothing about playback, it only shows what it does. */

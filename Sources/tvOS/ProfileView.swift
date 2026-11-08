@@ -476,16 +476,6 @@ struct ProfileView: View {
                       select: { model.forwardSeconds = $0.value })
             SeparatorLine()
             // Applies from the next title; the same place and words as on iPhone.
-            valueRow("Puffer", icon: "wifi.exclamationmark", value: model.bufferLevel.name,
-                      entries: BufferLevel.allCases, label: \.name,
-                      an: { $0 == model.bufferLevel },
-                      select: { model.bufferLevel = $0 })
-            SeparatorLine()
-            valueRow("Player", icon: "play.rectangle", value: model.playerEngine.name,
-                      entries: PlayerEngineSetting.allCases, label: \.name,
-                      an: { $0 == model.playerEngine },
-                      select: { model.playerEngine = $0 })
-            SeparatorLine()
             // Shared setting (`PlayerEndTime`): the player shows "Endet um …" instead of the
             // remaining time. tvOS has no "Technische Daten" row, so it sits under "Player".
             ToggleRow(icon: "clock", title: "Endzeit im Player", an: showsEnd) {

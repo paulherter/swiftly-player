@@ -103,13 +103,6 @@ final class Orientierung {
         setDown(.portrait, demand: demand)
     }
 
-    /// Is the scene currently landscape? Only relevant on iPhone.
-    static var sceneLandscape: Bool {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }.first?
-            .interfaceOrientation.isLandscape ?? false
-    }
-
     /// Whether the lock can be offered at all. Not on iPad, where a switch with
     /// no effect is worse than none.
     ///
@@ -187,9 +180,7 @@ final class SwiftlyAppDelegate: NSObject, UIApplicationDelegate {
         -> Bool {
         growImageCache()
         #if DEBUG
-        if FirstFrameRun.an { FirstFrameRun.start() }
         if CardsRun.an { CardsRun.start() }
-        if SpeedRun.an { SpeedRun.start() }
         if BatteryRun.an { BatteryRun.start() }
         #endif
 

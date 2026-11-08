@@ -1,7 +1,6 @@
 import GameController
 import JellyfinKit
 import SwiftUI
-import VLCKit
 
 /// The player, modeled on the iPhone version.
 ///
@@ -1846,11 +1845,6 @@ struct PlayerScreen: View {
                     leap = state.leap
                 }
                 continue
-            }
-
-            // **Only while something is open.** The call reads the track list, which VLCKit rebuilds each time; at half-second intervals that is no longer a look but a constant grip into a running medium. Once the rate is measured, VLC is left alone.
-            if FrameTick.stillPostMeasure {
-                FrameTick.adapt(an: area.player)
             }
 
             // **Arrived means arrived.** Whether VLC is at a seek's target is decided by `PlaybackTick` from `state.sprung`. The latch before it fell after 1.2 or 2 s even when VLC was not there yet, and the bar jumped back.

@@ -655,13 +655,6 @@ final class DownloadManager {
         tick()
     }
 
-    func remove(_ id: String) {
-        removeWithoutSafe(id)
-        secure()
-        spaceMeasure()
-        tick()
-    }
-
     private func removeWithoutSafe(_ id: String) {
         newGeneration(id)
         if let task = tasks[id] { task.cancel(); tasks[id] = nil }

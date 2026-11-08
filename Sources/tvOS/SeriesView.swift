@@ -667,25 +667,3 @@ struct SeriesView: View {
                               play: { play.wrappedValue = $0 })
     }
 }
-
-/// Focus on a row: a calm surface in the player's layers. Unlike tiles,
-/// where only size speaks, a row is no image and cannot get brighter. Same
-/// surface as a resting chip.
-struct EpisodesStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        ContentBody(configuration: configuration)
-    }
-
-    private struct ContentBody: View {
-        let configuration: ButtonStyleConfiguration
-        @Environment(\.isFocused) private var focus
-
-        var body: some View {
-            configuration.label
-                .foregroundStyle(Theme.font)
-                .background(focus ? Color.white.opacity(0.12) : .clear,
-                            in: RoundedRectangle(cornerRadius: Theme.cornerTile, style: .continuous))
-                .animation(Theme.focusAnimation, value: focus)
-        }
-    }
-}

@@ -3,7 +3,6 @@ import CoreMedia
 import OSLog
 import UIKit
 import JellyfinKit
-import VLCKit
 
 /// Tells the TV which frame rate the film runs at.
 ///
@@ -99,28 +98,6 @@ enum FrameTick {
         return Date().timeIntervalSince(switchSince) < 8
     }
 
-    /// Adopt the frame rate of the running file.
-    ///
-    /// Returns the detected rate if something was set, otherwise `nil`. VLC knows the tracks
-    /// once the stream is open, well before the first frame, so the switch happens behind the
-    /// loading screen and is not seen.
-    /// The running file's frame rate, as soon as VLC knows the tracks.
-    ///
-    /// Also for the tech info: it is the line that explains "it stutters but nothing is missing".
-    static func rate(from player: VLCMediaPlayer) -> Double? {
-        if let measured { return measured }
-        guard attempts < 40 else { return nil }
-        attempts += 1
-        guard let image = player.media?.videoTracks.first?.video,
-              image.frameRateDenominator > 0
-        else { return nil }
-        let rate = Double(image.frameRate) / Double(image.frameRateDenominator)
-        // Nonsense values occur while the stream is still sorting itself out.
-        guard rate > 1, rate < 250 else { return nil }
-        measured = rate
-        return rate
-    }
-
     /// Whether anything is left to measure. If not, the tick may leave the medium alone.
     static var stillPostMeasure: Bool { measured == nil && attempts < 40 }
 
@@ -148,19 +125,6 @@ enum FrameTick {
                                                   primaries: detail.colorPrimaries))
     }
 
-    @discardableResult
-    static func adapt(an player: VLCMediaPlayer) -> Double? {
-        guard stillPostMeasure, let rate = rate(from: player) else { return nil }
-        guard let track = player.media?.videoTracks.first, let image = track.video
-        else { return nil }
-        // VLC does not expose the color range, so only the frame rate is re-measured here. The
-        // server already set the range if it knew it.
-        return setDown(rate: rate,
-                      width: Int32(image.width),
-                      height: Int32(image.height),
-                      codec: identifier(track.codec),
-                      reach: .unknown)
-    }
 
     /// Whether we may switch at all.
     ///

@@ -60,8 +60,13 @@ public enum StartLibraries {
         })
     }
 
+    /// **Sorted keys:** equal choices must give equal text. Without it the key order
+    /// differs from call to call, and the desktop sync took every snapshot for a new
+    /// local change (a write to the server every 0.4 s).
     public static func data(_ choice: [StartLibrary]) -> Data? {
-        try? JSONEncoder().encode(clean(choice))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try? encoder.encode(clean(choice))
     }
 
     private struct Record: Decodable {

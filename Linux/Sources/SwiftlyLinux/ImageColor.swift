@@ -177,6 +177,14 @@ enum AudioSheet {
         // position, with 8 % white on top (iOS/Mac `SeriesView`,
         // `ImageTone.farbe(tones, at: (0,2, 0,55))`).
         let f = AvComputation.color(tones, x: 0.2, y: 0.55)
+        // Centre colour near the top, darkened 35 % at the very top; `fade` is how much of
+        // it is gone (0 = solid, 1 = clear).
+        let top = AvComputation.color(tones, x: 0.5, y: 0.05)
+        func mood(_ fade: Double) -> String {
+            func c(_ w: Double) -> Int { Int((min(max(w, 0), 1) * 255).rounded()) }
+            let dark = 1 - 0.35 * (1 - fade)
+            return "rgba(\(c(top.r * dark)),\(c(top.g * dark)),\(c(top.b * dark)),\(String(format: "%.2f", 1 - fade)))"
+        }
         func k(_ w: Double) -> Int { Int((min(max(w * 0.92 + 0.08, 0), 1) * 255).rounded()) }
         return """
         .swiftly-seitenton.\(classKind) {
@@ -188,6 +196,14 @@ enum AudioSheet {
             background-position: 0 0, 0 0;
         }
         .\(classKind) .swiftly-staffelliste { background-color: rgb(\(k(f.r)),\(k(f.g)),\(k(f.b))); }
+        /* The top edge of a detail page in the page's mood colour (Mac `MoodHeaderEdge`),
+           the same eased fade, darkened toward the top; a gradient, no blur. */
+        .\(classKind) .swiftly-kopfleiste {
+            background-image: linear-gradient(to bottom,
+                \(mood(0.0)) 0%, \(mood(0.04)) 30%, \(mood(0.14)) 48%, \(mood(0.30)) 62%,
+                \(mood(0.48)) 73%, \(mood(0.66)) 82%, \(mood(0.81)) 89%, \(mood(0.91)) 95%,
+                \(mood(1.0)) 100%);
+        }
         """
     }
 

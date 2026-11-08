@@ -243,7 +243,7 @@ enum Theme {
     /// semibold on the Mac, 27 bold here.
     static let title = 22
     static let titleWeight = 600
-    static let rail = 20
+    static let rail = 22
     static let listTitle = 15
     static let body = 15
     /// **13 medium**, `Theme.tile` on the Mac. 14 is on no scale.
@@ -324,7 +324,7 @@ enum Theme {
         /* Fett wie `Theme.title` auf Apple (`.bold`, also 700), mit derselben
            leichten Sperrung von -0,6. */
         .swiftly-titel       { font-size: \(title)px; font-weight: \(titleWeight); letter-spacing: -0.31px; }
-        .swiftly-reihe       { font-size: \(rail)px; font-weight: 600; letter-spacing: -0.24px; }
+        .swiftly-reihe       { font-size: \(rail)px; font-weight: 700; letter-spacing: -0.484px; }
         .swiftly-listentitel { font-size: \(listTitle)px; font-weight: 600; }
         /* Der Discord-Hinweis (Mac `Discordhinweis`): erhoeht, Haarlinie,
            Ecke der Flaeche, 16 innen. Kein Schatten — nirgends (BRAND 4). */
@@ -342,8 +342,13 @@ enum Theme {
         button.swiftly-suchzeile image { color: \(font); }
         .swiftly-kachelname  { font-size: 14px; font-weight: 600; }
         .swiftly-kachelzeile { color: \(fontVeryQuiet); }
+        /* iPhone `LookPreviewBar`: capsule, 60 high, hairline. */
+        .swiftly-lookleiste { min-height: 60px; padding: 0 0 0 2px; border-radius: 999px;
+            background-color: rgba(30,30,30,0.96); border: 1px solid rgba(255,255,255,0.12); }
+        .swiftly-lookleiste-name { font-size: 15px; font-weight: 600; }
+        .swiftly-spielfolge .swiftly-kachelname { font-size: 13px; font-weight: 500; }
         /* "Alle" at the end of a rail's heading (Mac 1.1 `Rail`): 13 semibold, quietest ink. */
-        .swiftly-alle        { font-size: 13px; font-weight: 600; color: \(fontVeryQuiet); }
+        .swiftly-alle        { font-size: 15px; font-weight: 500; color: \(fontVeryQuiet); }
         /* Ziffern gleich breit (iOS `Tile`: `.monospacedDigit()`), damit „noch
            12 Min." beim Nachladen nicht springt. */
         .swiftly-zweitzeile  { font-size: \(secondLine)px; font-feature-settings: "tnum"; }
@@ -715,14 +720,15 @@ enum Theme {
         button.swiftly-gattungschip {
             min-height: 34px;
             padding: 0 14px;
-            border-radius: \(corner)px;
-            background-color: \(area);
-            border: none;
+            border-radius: 17px;
+            background-color: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+            box-shadow: none;
             font-size: 13px;
             font-weight: 500;
             color: \(font);
         }
-        button.swiftly-gattungschip:hover { background-color: #333333; }
+        button.swiftly-gattungschip:hover { background-color: rgba(255,255,255,0.14); }
         .swiftly-listenpfeil {
             background: none;
             border: none;
@@ -769,8 +775,12 @@ enum Theme {
         /* **Die Leiste, die beim Scrollen kommt** (`Bestandsleiste`): Grund
            und Haarlinie erscheinen erst mit dem Scrollweg; ein Dauerverlauf
            steht dort nicht (Mac c584bd70). */
+        /* **Deckend.** Die Leiste lag mit 0,78 auslaufend auf 0 ueber dem Inhalt;
+           der grosse Seitentitel lief darunter sichtbar durch (gemeldet, Windows).
+           Jetzt der volle Grund der Seite, wie die untere Leiste. */
         .swiftly-bestandsgrund {
-            background-image: linear-gradient(to bottom, rgba(16,16,16,0.78), rgba(16,16,16,0));
+            background-color: \(reason);
+            background-image: none;
         }
 
         /* Auf dem Mac schwebt die Titelzeile über dem Grund, ohne Kante.
@@ -1109,9 +1119,25 @@ enum Theme {
            darunter liefen die Plakate sichtbar durch. Der Grund dort steht
            ausdruecklich dabei: eine Flaeche kann nicht aufblitzen und ist
            genau so dunkel wie die Seite. */
+        /* Mac 1.1 `HeaderBackdrop`: one long eased fade of the ground tone, 0.97 at the top
+           to 0 at the bottom, no hairline, no blur (a gradient only, nothing per frame). */
         .swiftly-kopfleiste {
-            background-color: \(reason);
-            border-bottom: 1px solid \(line);
+            background-color: transparent;
+            border: none;
+            background-image: linear-gradient(to bottom,
+                alpha(\(reason), 0.97) 0%, alpha(\(reason), 0.93) 15%, alpha(\(reason), 0.87) 30%,
+                alpha(\(reason), 0.78) 45%, alpha(\(reason), 0.64) 58%, alpha(\(reason), 0.46) 70%,
+                alpha(\(reason), 0.29) 80%, alpha(\(reason), 0.15) 88%, alpha(\(reason), 0.06) 94%,
+                alpha(\(reason), 0) 100%);
+        }
+        .swiftly-kopfkante {
+            background-color: transparent;
+            border: none;
+            background-image: linear-gradient(to bottom,
+                alpha(\(reason), 0.97) 0%, alpha(\(reason), 0.93) 15%, alpha(\(reason), 0.87) 30%,
+                alpha(\(reason), 0.78) 45%, alpha(\(reason), 0.64) 58%, alpha(\(reason), 0.46) 70%,
+                alpha(\(reason), 0.29) 80%, alpha(\(reason), 0.15) 88%, alpha(\(reason), 0.06) 94%,
+                alpha(\(reason), 0) 100%);
         }
 
         /* Nebenknopf: abgerundetes Quadrat, nur Symbol. */
@@ -1918,6 +1944,8 @@ enum Theme {
             font-feature-settings: "tnum";
             color: \(fontQuiet);
         }
+        /* Popups carry no shadow (Mac 1.1): not the system menus either. */
+        popover > contents, popover.menu > contents, tooltip { box-shadow: none; }
         /* Mac 1.1 `ActionList`/`SelectionPanel`: surface `area`, corner 12 (was raised, 16). */
         popover.swiftly-mehr > contents {
             background-color: \(area);
@@ -2193,6 +2221,12 @@ enum Theme {
         window.csd { border-radius: 0; margin: 0; box-shadow: none; }
         window.csd decoration, window decoration { border-radius: 0; margin: 0; box-shadow: none; border: none; }
         window.csd headerbar { border-radius: 0; }
+        .swiftly-ampel { min-width: 12px; min-height: 12px; border-radius: 6px; margin: 0 4px; }
+        .swiftly-ampel-rot { background-color: #FF5F57; }
+        .swiftly-ampel-gelb { background-color: #FEBC2E; }
+        .swiftly-ampel-gruen { background-color: #28C840; }
+        .swiftly-ampel:hover { opacity: 0.8; }
+        window:backdrop .swiftly-ampel { background-color: rgba(128,128,128,0.45); }
         """
         #else
         return ""
@@ -2348,6 +2382,10 @@ enum Theme {
         .swiftly-s17-hell { font-size: 17px; color: rgba(255,255,255,0.9); }
         .swiftly-s20-fett { font-size: 20px; font-weight: 600; letter-spacing: -0.2px; color: \(font); }
         .swiftly-s22-fett { font-size: 22px; font-weight: 700; color: \(font); }
+        .swiftly-s22-titel { font-size: 22px; font-weight: 700; letter-spacing: -0.44px; color: \(font); }
+        .swiftly-s15-leise { font-size: 15px; color: \(fontQuiet); }
+        .swiftly-s13-mittel { font-size: 13px; font-weight: 500; color: \(fontQuiet); }
+        .swiftly-s13-akzent { font-size: 13px; font-weight: 500; color: \(accent); }
         .swiftly-s28-titel { font-size: 28px; font-weight: 700; letter-spacing: -0.56px; color: \(font); }
         .swiftly-s30-titel { font-size: 30px; font-weight: 700; letter-spacing: -0.6px; color: \(font); }
         .swiftly-s15-fett.swiftly-akzentschrift { color: \(accent); }
@@ -2422,7 +2460,7 @@ enum Theme {
 
         button.swiftly-plankachel {
             background-image: none; background-color: \(area); box-shadow: none;
-            border: 2px solid transparent; border-radius: 12px; padding: 12px; min-height: 56px;
+            border: 2px solid transparent; border-radius: 12px; padding: 12px; min-height: 64px;
         }
         button.swiftly-plankachel:hover { background-color: #2B2B2B; }
         button.swiftly-plankachel.swiftly-gewaehlt { border-color: \(accent); }

@@ -102,7 +102,7 @@ struct DownloadRing: View {
             //
             // The reason for the light track is at `ProgressBar`: the track is the
             // length of the whole, not the missing remainder.
-            Circle().strokeBorder(Color.white.opacity(0.30), lineWidth: 2)
+            Circle().strokeBorder(Theme.ringTrack, lineWidth: 2)
             Circle()
                 .trim(from: 0, to: max(0.02, share))
                 .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
@@ -199,8 +199,8 @@ struct DownloadField: View {
             // should do the same. The note here even named the coupling - "until it catches
             // up you see the difference" - but the neighbour caught up long ago and this
             // field stayed.
-            .frame(width: stretches ? nil : 48, height: caption != nil && stretches ? 36 : 48)
-            .background(stretches ? Color.clear : Theme.buttonArea(onImage: onImage),
+            .frame(width: stretches ? nil : (caption != nil ? 62 : 48), height: caption != nil ? 36 : 48)
+            .background(stretches || caption != nil ? Color.clear : Theme.buttonArea(onImage: onImage),
                         in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
             .contentShape(Rectangle())
             if let caption {
@@ -334,8 +334,8 @@ struct DownloadRow: View {
 
             if group != nil {
                 // 14 is in no scale - a chevron is 13 semibold.
-                Image(icon: "chevron.right", size: 13)
-                    .font(.app(size: 13, weight: .semibold))
+                Image(icon: "chevron.right", size: Theme.chevronSize)
+                    .font(.app(size: Theme.chevronSize, weight: .semibold))
                     .foregroundStyle(Theme.font)
             } else if !edit {
                 DownloadRing(entries: now, shareNow: share(loaded)) {
@@ -560,7 +560,10 @@ struct DownloadsView: View {
             .contentMargins(.bottom, edit ? 84 : 24, for: .scrollContent)
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top
-            } action: { _, new in offset = new }
+            } action: { _, new in
+                let clamped = min(max(new, 0), 30)
+                if clamped != offset { offset = clamped }
+            }
             .animation(Theme.reveal, value: management.entries.count)
             // **Only the scroll area draws in on the switch.**
             // The look's glow, the same on every main page; goes up with the content.
@@ -761,10 +764,9 @@ struct EditButton: View {
                 if !edit { selected = [] }
             }
         } label: {
-            // 18 medium was the third size for the same glyph on this page; 17 semibold
-            // is the scale's level.
-            Image(icon: edit ? "xmark" : "pencil", size: 17)
-                .font(.app(size: 17, weight: .semibold))
+            // Filled and the same size as the bookmark and heart in the header.
+            Image(icon: edit ? "xmark" : "pencil.fill", size: Theme.actionSymbol)
+                .font(.app(size: Theme.actionSymbol))
                 .foregroundStyle(edit ? Theme.accent : Theme.font)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
@@ -891,13 +893,6 @@ struct DownloadSeriesView: View {
                     // **Wide, the same header as on the series page** - `HeroHeader` with poster next
                     // to name and button. A 300 pt strip across the whole iPad width is no hero
                     // image anymore; the reasoning is there.
-                    if wide {
-                        HeroHeader(image: headerImage, poster: poster,
-                                 title: route.title, secondaryLine: detail) {
-                            primaryButton
-                        }
-                        Color.clear.frame(height: 22)
-                    } else {
                     HeroImage(url: headerImage)
                         .overlay(alignment: .bottom) { HeroRunOut() }
                         .overlay(alignment: .bottomLeading) { titleBlock }
@@ -906,7 +901,6 @@ struct DownloadSeriesView: View {
                         .padding(.horizontal, Theme.margin(wide: wide))
                         .padding(.top, 14)
                         .padding(.bottom, 22)
-                    }
 
                     ForEach(seasons, id: \.number) { season in
                         if let n = season.number {
@@ -1003,7 +997,7 @@ struct DownloadSeriesView: View {
               model.downloads.headerImage(series: route.seriesIdentifier, account: p.account) == nil,
               let series = await model.item(id: route.seriesIdentifier) else { return }
         // Wide, the header is at least `heroHeightWide` high.
-        let points = max(pagesWidth, (wide ? Theme.heroHeightWide : Theme.heroHeightValue) * 16 / 9)
+        let points = max(pagesWidth, Theme.heroHeightValue * 16 / 9)
         guard let address = model.headerImageURL(for: series,
                                               width: Int((points * pixelMetric).rounded(.up)))
         else { return }
@@ -1053,7 +1047,7 @@ struct DownloadSeriesView: View {
                 Text(verbatim: Item.seriesButton(episode: next?.asItem, loads: false))
             }
         }
-        .buttonStyle(PrimaryButtonStyle(stretches: !wide))
+        .buttonStyle(PrimaryButtonStyle(stretches: true))
         .disabled(next == nil)
     }
 }

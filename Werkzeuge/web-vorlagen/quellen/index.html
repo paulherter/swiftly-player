@@ -1,0 +1,2742 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swiftly Player: free Jellyfin client for Apple TV, iPhone, Mac and more</title>
+<meta name="description" content="Swiftly Player plays what your Jellyfin server already has, without transcoding it first. For iPhone, iPad, Mac, Apple TV, Android, Windows and Linux.">
+<link rel="canonical" href="https://swiftlyplayer.com/">
+<link rel="me" href="https://mastodon.social/@swiftlyplayer">
+<meta property="og:title" content="Swiftly Player: free Jellyfin client for every screen">
+<meta property="og:description" content="A video player for the Jellyfin server you run yourself.">
+<meta property="og:url" content="https://swiftlyplayer.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Swiftly Player">
+<meta property="og:image" content="https://swiftlyplayer.com/vorschau.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="iPad, iPhone and an Apple TV, all showing Swiftly Player">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#101010">
+<meta name="apple-itunes-app" content="app-id=6806824067">
+<link rel="alternate" type="application/rss+xml" title="Swiftly Player blog" href="/blog/feed.xml">
+<link rel="preload" as="font" type="font/woff2" href="schrift/figtree-latin.woff2" crossorigin>
+<link rel="icon" href="/symbol.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<style>
+/* ---------------------------------------------------------------
+   Figtree, selbst ausgeliefert. Eine variable Datei traegt alle
+   Staerken von 400 bis 800: latin 20 KB, latin-ext 10 KB. Kein
+   fremder Server, also kein zweiter Verbindungsaufbau und keine
+   Datenschutzfrage. SIL Open Font License 1.1, Text in
+   schrift/OFL.txt. Vorher stand Figtree zwar in der Schriftliste,
+   geladen wurde sie aber nirgends: die Seite lief in der
+   Systemschrift.
+   --------------------------------------------------------------- */
+@font-face {
+  font-family: "Figtree";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(schrift/figtree-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                 U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                 U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Figtree";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(schrift/figtree-latin-ext.woff2) format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+                 U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
+                 U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* ---------------------------------------------------------------
+   Farben woertlich aus Sources/Shared/Farben.swift. Der Akzent
+   traegt Zustand, nie eine Flaeche: der einzige gefuellte Knopf
+   der Seite ist deshalb weiss.
+   --------------------------------------------------------------- */
+:root {
+  /* Tokens wortgleich aus Sources/Shared/Farben.swift. Die Seite hat genau
+     EINEN Akzent. --kuehl, --warm und --marke sind gestrichen; die Namen
+     bleiben nur als Alias, damit keine alte Regel ins Leere greift. */
+  --grund:   #101010;
+  --tief:    #101010;
+  --gruppe:  #1E1E1E;   /* Karte, ruhiger Block */
+  --flaeche: #262626;   /* alles, was man anfassen kann */
+  --erhoeht: #303030;   /* gewaehlt, aufgelegt */
+  --gedrueckt: #3A3A3A;
+
+  --akzent:  #50D5DA;
+  --akzent-leise: #113435;
+  --auf-akzent:   #061212;
+  --kuehl:   var(--akzent);
+  --warm:    var(--akzent);
+  --marke:   var(--akzent);
+
+  --schrift:     #FFFFFF;
+  --leise:       #CCCCCC;
+  --sehr-leise:  #989898;
+  --linie:       rgba(255,255,255,.07);
+  --rand:        rgba(255,255,255,.12);
+  --schwebe:     rgba(255,255,255,.06);
+
+  --schriftart: "Figtree", ui-sans-serif, system-ui, -apple-system,
+                "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+
+  /* Entwurf 72:2: jede Ueberschrift steht 76 unter der Etagenkante,
+     unten bleiben 70 bis 110. Vorher 160 nach Bevel: jede Etage war rund
+     150 hoeher als im Entwurf, zwischen den Kapiteln stand zu viel Schwarz. */
+  --etage: clamp(56px, 5.3vw, 76px);
+  --bahn: 1240px;
+  --seitenrand: clamp(24px, 4vw, 40px);
+
+  /* Emil Kowalski: die eingebauten Kurven sind zu weich. */
+  --raus: cubic-bezier(.23, 1, .32, 1);
+  --rein-raus: cubic-bezier(.77, 0, .175, 1);
+  /* Apples Schubladenkurve: weich anlaufen, sauber ankommen. */
+  --feder: cubic-bezier(.32, .72, 0, 1);
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  background: var(--grund);
+  color: var(--schrift);
+  font-family: var(--schriftart);
+  font-size: 18px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+/* Kein overflow-x am body. Gemessen von 360 bis 1920: nichts ragt
+   seitlich heraus, jeder Ueberstand sitzt in einem Kasten, der selbst
+   klemmt. Ein hidden hier haette nur overflow-y still auf auto gesetzt
+   und damit position: sticky gebrochen. */
+
+img, video { max-width: 100%; display: block; }
+a { color: inherit; text-decoration: none; }
+
+/* Ueberschriften: Zeilenhoehe 1, enge Laufweite, halbfett.
+   Grosse Schrift laeuft sonst optisch auseinander. */
+h1, h2, h3 {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -.014em;
+}
+/* Sperrung haengt an der Stufe (Designsystem): Seitentitel -0,021 em, Bold
+   genau hier und nirgends sonst. */
+h1 { font-size: clamp(38px, 5.55vw, 80px); font-weight: 700; letter-spacing: -.021em; }
+h2 { font-size: clamp(32px, 4.44vw, 64px); }
+h3 { font-size: clamp(22px, 2.2vw, 32px); line-height: 1.15; letter-spacing: -.012em; }
+
+p { margin: 0; }
+
+.bahn {
+  width: 100%;
+  /* Der Inhalt ist 1240 breit wie im Entwurf, der Innenrand kommt dazu.
+     Vorher schloss max-width ihn ein, und alles war 80 px schmaler. */
+  max-width: calc(var(--bahn) + 2 * var(--seitenrand));
+  margin-inline: auto;
+  padding-inline: var(--seitenrand);
+}
+
+.etage {
+  position: relative;
+  padding-block: var(--etage);
+}
+
+/* Der Kopf einer Etage steht mittig. Abweichung von GESTALTUNG.md,
+   die fuer die App linksbuendig vorschreibt: im Web traegt die
+   Mitte den Wechsel zwischen den Kapiteln besser. */
+.etagenkopf { text-align: center; }
+.etagenkopf p {
+  max-width: 680px;
+  margin: 16px auto 0;
+  color: var(--leise);
+  font-size: clamp(16px, 1.25vw, 18px);
+  text-wrap: balance;
+}
+
+.nur-fuer-leser {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ================= Leiste ================= */
+
+/* Am Desktop steht die Leiste oben an der Seite und scrollt mit dem Inhalt
+   weg. Mobil laeuft sie mit, dort ist der Weg nach oben sonst zu weit. */
+.leiste {
+  position: absolute;
+  top: 10px; left: 0; right: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding-inline: var(--seitenrand);
+  pointer-events: none;
+}
+.leiste__kapsel {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 24px;
+  border-radius: 999px;
+  background: var(--gruppe);
+}
+.leiste__marke { display: flex; align-items: center; min-height: 44px; margin-right: 6px; }
+.leiste__marke img { height: 21px; width: auto; }
+
+.leiste__punkt {
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--leise);
+  transition: color 160ms var(--raus), background-color 160ms var(--raus);
+}
+
+.knopf {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: var(--schrift);
+  color: var(--auf-akzent);
+  font-family: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: transform 160ms var(--raus), background-color 160ms var(--raus);
+}
+/* Der Knopf antwortet auf den Druck, nicht auf das Loslassen. Wie, steht
+   weiter unten unter "Verhalten": eine Regel fuer alles. */
+.knopf { position: relative; }
+.knopf--leiste { min-height: 40px; padding: 0 18px; font-size: 14.5px; }
+.knopf--gross  { min-height: 48px; padding: 0 28px; font-size: 17px; }
+
+.leiste__burger { display: none; }
+
+/* ================= Hero ================= */
+
+.auftakt { position: relative; }
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding-top: clamp(104px, 8.1vw, 116px);
+  padding-bottom: 0;
+  min-height: min(900px, 100svh);
+}
+
+.hero__rahmen {
+  position: relative;
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+}
+
+/* Die Aurora ist gerechnet, nicht fotografiert: vier radiale Verlaeufe in
+   den Akzentfarben. Sie liegt ueber der VOLLEN Breite des Kopfes, nicht im
+   1440er Rahmen: auf breiteren Schirmen stand sonst links und rechts die
+   Kante des Kastens im Licht. Verlaeufe statt blur(), siehe DESIGN.md 11.4. */
+.aurora {
+  position: absolute;
+  left: 0; right: 0; top: -24px;
+  height: 780px;
+  z-index: 0;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
+  /* Ein Akzent, als Verlauf: oben fast schwarz, nach unten in die
+     Akzentfarbe, an den unteren Ecken am kraeftigsten. */
+  background:
+    radial-gradient(ellipse 44% 66% at 2% 68%, rgba(80,213,218,.52), rgba(80,213,218,.24) 50%, rgba(80,213,218,0) 100%),
+    radial-gradient(ellipse 44% 66% at 98% 68%, rgba(80,213,218,.52), rgba(80,213,218,.24) 50%, rgba(80,213,218,0) 100%),
+    radial-gradient(ellipse 46% 48% at 50% 84%, rgba(80,213,218,.26), rgba(80,213,218,0) 100%);
+}
+
+
+.hero__text { position: relative; z-index: 6; text-align: center; }
+.hero__text h1 { margin-bottom: 24px; }
+.hero__text p {
+  max-width: 620px;
+  margin-inline: auto;
+  color: var(--leise);
+  font-size: clamp(16px, 1.25vw, 18px);
+  text-wrap: balance;
+}
+.hero__knopf { margin-top: 26px; }
+
+/* Die Plaketten schweben neben dem Titel. Sie stehen absolut auf der
+   1440er Buehne, damit sie beim Verkleinern mitwandern statt zu
+   ueberlappen. */
+.plakette {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 16px 13px 14px;
+  border-radius: 16px;
+  background: var(--flaeche);
+}
+.plakette b  { display: block; font-size: 14px; font-weight: 600; line-height: 1.3; }
+.plakette em { display: block; font-size: 12.5px; font-style: normal; color: var(--sehr-leise); line-height: 1.3; }
+.plakette__zeichen {
+  flex: none;
+  width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: 10px;
+  background: var(--akzent-leise);
+  color: var(--akzent);
+}
+.plakette__zeichen svg { width: 20px; height: 20px; }
+.plakette--direkt { left: 11.0%; top: 29.1%; }
+.plakette--resume { left: 72.2%; top: 35.4%; }
+.plakette--pip    { left:  8.2%; top: 50.7%; }
+
+/* Die Plaketten fliegen einmal von der Seite herein und schweben dann, jede
+   in ihrem Takt. Einfliegen und Schweben liegen auf transform; der Zeiger
+   und das Scrollen verschieben ueber die eigene Eigenschaft translate, die
+   sich mit transform addiert statt sie zu ersetzen. */
+@media (prefers-reduced-motion: no-preference) {
+  .plakette {
+    animation: einfliegen 1000ms var(--raus) both;
+  }
+  .plakette--direkt { --von: -56px; --hub: -9px; --kipp: -1.2deg; --schwebe: 6.4s; animation-delay: 200ms; }
+  .plakette--resume { --von: 56px;  --hub: 8px;  --kipp: 1deg;    --schwebe: 7.6s; animation-delay: 360ms; }
+  .plakette--pip    { --von: -56px; --hub: -7px; --kipp: .8deg;   --schwebe: 8.8s; animation-delay: 520ms; }
+}
+@keyframes einfliegen {
+  from { opacity: 0; transform: translate3d(var(--von, -48px), 14px, 0) scale(.94); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes schweben {
+  0%, 100% { transform: none; }
+  50%      { transform: translate3d(0, var(--hub, -8px), 0) rotate(var(--kipp, 0deg)); }
+}
+
+/* ---- Geraete: ein Rahmenbild, ein Schirm dahinter ----
+   Die Prozentwerte sind am Alphakanal der Rahmenbilder gemessen, an
+   der Kante der vollen Deckkraft. Der Radius steht in cqw, damit er
+   beim Verkleinern mitwaechst. */
+.geraet { position: relative; container-type: inline-size; }
+.geraet__rahmen { position: relative; z-index: 2; width: 100%; height: auto; }
+.geraet__schirm {
+  position: absolute; z-index: 1;
+  object-fit: cover;
+  background: #000;
+}
+.geraet--fon .geraet__schirm { left: 5.16%;  top: 2.36%;  width: 89.6%; height: 95.3%; border-radius: 12.4cqw; }
+.geraet--tv  .geraet__schirm { left: 2.27%;  top: 4.14%;  width: 89.5%; height: 78.0%; border-radius: .35cqw; }
+.geraet--mac .geraet__schirm { left: 10.70%; top: 11.20%; width: 78.6%; height: 77.6%; border-radius: .2cqw; }
+.geraet--pad .geraet__schirm { left: 4.17%;  top: 5.64%;  width: 91.67%; height: 88.72%; border-radius: 1.4cqw; }
+/* Das iPhone im Querformat: dasselbe Geraet, um 90 Grad gedreht aufgenommen.
+   Der Rahmen zeichnet die Dynamic Island selbst, deshalb reicht das Loch
+   ueber die volle Schirmbreite. */
+.geraet--fonquer .geraet__schirm { left: 2.50%;  top: 5.33%;  width: 95.0%;  height: 89.33%; border-radius: 6.74cqw; }
+
+.hero__buehne {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  aspect-ratio: 1440 / 460;
+  margin-top: 8px;
+  /* Clip und Ausklang schnitten an derselben gebrochenen Kante (907,14);
+     dort blieb ein Pixel Geraet als helle Linie stehen. Die Buehne endet
+     14 px vorher, im deckenden Teil des Ausklangs. Oben und seitlich
+     bleibt sie offen, damit Telefonkopf und Schatten nicht beschnitten
+     werden. */
+  clip-path: inset(-100vh -100vw 14px -100vw);
+}
+.hero__buehne .geraet { position: absolute; }
+.hero__buehne .geraet--mac { left: 10.00%; top: 26.1%; width: 37.85%; transform: rotate(-3deg); }
+.hero__buehne .geraet--tv  { left: 55.97%; top: 26.1%; width: 37.85%; transform: rotate(3deg); }
+.hero__buehne .geraet--fon { left: 39.24%; top:  5.6%; width: 21.53%; z-index: 3;
+  filter: drop-shadow(0 40px 60px rgba(0,0,0,.55)); }
+
+.hero__ausklang {
+  position: absolute;
+  left: 0; right: 0; bottom: -4px;
+  height: 330px;
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(16,16,16,0), rgba(16,16,16,.75) 42%, var(--grund) 72%);
+}
+
+/* ================= Codecs ================= */
+
+.chip {
+  display: inline-flex; align-items: center;
+  padding: 6px 10px 5px;
+  border-radius: 8px;
+  background: var(--flaeche); color: var(--leise);
+  font-size: 11px; font-weight: 600; letter-spacing: .10em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.chip--beleg { background: var(--akzent-leise); color: var(--akzent); }
+
+/* ================= Bento: Mobil, TV, Desktop ================= */
+/* Drei Kacheln, alle gleichzeitig. Die Flaeche ist die Karte des Designsystems
+   (Gruppe, Ecke 16, kein Rand); der Akzent kommt als einfarbiger Verlauf in
+   je einer Ecke. Die Geraete sind Bilder, die unten aus der Kachel laufen. */
+.bento {
+  display: grid;
+  grid-template-columns: 5fr 7fr;
+  grid-template-rows: 320px 400px;
+  gap: 14px;
+  margin-top: 56px;
+}
+.kachel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--gruppe);
+}
+.kachel--mobil { grid-row: 1 / span 2;
+  background: radial-gradient(ellipse 80% 46% at 100% 100%, rgba(80,213,218,.24), rgba(80,213,218,0) 70%), var(--gruppe); }
+.kachel--tv { background: var(--gruppe); }
+.kachel--desktop { background: var(--gruppe); }
+.kachel__text { position: relative; z-index: 3; padding: 32px 32px 0; max-width: 360px; }
+.kachel__text p { margin-top: 12px; color: var(--leise); font-size: 16px; line-height: 1.45; }
+.kachel__chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.kachel__bild { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.kachel__bild .geraet { position: absolute; }
+.kachel--mobil .geraet--pad { left: -14%; bottom: -2%; width: 124%; }
+.kachel--mobil .geraet--fon { right: 4%; bottom: -9%; width: 52%; z-index: 2; }
+/* Ein Fernseher an der Wand: Rahmen ohne Fuss, ohne Zubehoer, fuer jede Plattform. */
+.wandtv {
+  position: absolute; right: 5%; top: 50%; translate: 0 -50%; width: 52%;
+  padding: 5px; border-radius: 10px;
+  background: var(--tief);
+  box-shadow: inset 0 0 0 1px var(--rand);
+}
+.wandtv img { width: 100%; height: auto; border-radius: 5px; }
+.kachel--desktop .geraet--mac { right: 2%; top: 50%; translate: 0 -47%; width: 62%; }
+@media (min-width: 901px) {
+  .kachel--tv .kachel__text { max-width: 280px; }
+  .kachel--desktop .kachel__text { max-width: 235px; }
+}
+@media (max-width: 900px) {
+  .bento { grid-template-columns: 1fr; grid-template-rows: none; margin-top: 34px; }
+  .kachel--mobil { grid-row: auto; }
+  .kachel__text { padding: 26px 24px 0; max-width: none; }
+  .kachel__bild { position: relative; inset: auto; height: clamp(230px, 64vw, 360px); margin-top: 22px; }
+  .kachel--mobil .geraet--pad { left: 0; bottom: -8%; width: 78%; }
+  .kachel--mobil .geraet--fon { right: 4%; bottom: -14%; width: 34%; }
+  .wandtv { left: 50%; right: auto; top: auto; bottom: 8%; translate: -50% 0; width: 86%; }
+  .kachel--desktop .geraet--mac { left: 50%; right: auto; top: auto; translate: -50% 0; bottom: -3%; width: 90%; }
+}
+
+/* ================= Farbeigenschaften fuer die Merkmale ================= */
+
+@property --farbe {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #50D5DA;
+}
+@property --schein {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: rgba(80,213,218,.30);
+}
+/* Verlauf statt blur(): der verwischte Fleck brach an seiner eigenen Kante
+   ab, senkrecht quer durch die Karte (DESIGN.md 11.4). Die Farbe wechselt
+   ueber --schein und blendet, weil die Eigenschaft registriert ist. */
+
+/* ================= Merkmale ================= */
+
+.merkmale__raster {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(0,640px);
+  gap: 60px;
+  align-items: start;
+  min-height: 670px;
+}
+.merkmale__raster > div:first-child { align-self: center;
+  /* Der erste Eintrag beginnt im Entwurf 33 unter der Ueberschrift, sein
+     Innenrand ist 43: die Spur faengt also 10 ueber der Ueberschriftkante
+     an. Die Aufnahme steht 60 darunter. */
+  margin-top: -10px;
+}
+
+/* Jedes Merkmal hat seine eigene Farbe; Bild im Bild bleibt orange wie die
+   Plakette im Kopf. Fuenf Eintraege auf drei Akzentfarben: zwei wiederholen
+   sich. */
+.spur { position: relative; padding-left: 44px; margin-left: 40px; }
+.merkmal:nth-of-type(1) { --farbe: var(--warm); }
+.merkmal:nth-of-type(2) { --farbe: var(--akzent); }
+.merkmal:nth-of-type(3) { --farbe: var(--kuehl); }
+.merkmal:nth-of-type(4) { --farbe: var(--warm); }
+.merkmal:nth-of-type(5) { --farbe: var(--akzent); }
+.merkmal:nth-of-type(6) { --farbe: var(--kuehl); }
+.spur::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 80px; bottom: 24px;
+  width: 2px;
+  background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,.12) 10%,
+                              rgba(255,255,255,.12) 90%, rgba(255,255,255,0));
+}
+/* EINE Linie, die nie neu anfaengt. Vorher lagen zwei Balken uebereinander:
+   der blaue lief zum naechsten Punkt, verschwand dort, und der Verlauf
+   deckte sich von oben neu auf. Das waren zwei Bewegungen fuer einen
+   Vorgang, und die zweite kam aus dem Nichts. Den Verlauf setzt das Skript,
+   damit die Farbwechsel genau auf den Punkten sitzen. */
+.spur__linie {
+  position: absolute;
+  left: -.5px; width: 3px; height: 0;
+  border-radius: 2px;
+  clip-path: inset(0 0 100% 0);
+}
+/* Nur beim Klick gleitet sie; im Lauf setzt sie jeder Takt selbst. */
+.spur__linie.gleitet { transition: clip-path 620ms var(--rein-raus); }
+
+.merkmal {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 41px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* Jeder Punkt ist 15 gross und wird inaktiv auf 9 verkleinert (0,6); der
+   Ring ist deshalb 3,4 dick, damit er verkleinert 2 px misst wie im Entwurf. */
+.merkmal__punkt {
+  position: absolute;
+  left: -50.5px; top: 48.5px;
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  background: var(--grund);
+  box-shadow: inset 0 0 0 3.4px var(--rand);
+  transform: scale(.6);
+  transition: transform 480ms var(--raus), background-color 320ms var(--raus), box-shadow 320ms var(--raus);
+}
+/* Alle Titel stehen in 24 und werden inaktiv auf 21 verkleinert (0,875).
+   Schriftgroesse selbst zu animieren rechnet jedes Mal das Layout neu und
+   ruckelt; transform laeuft auf der Grafikkarte. */
+.merkmal__titel {
+  display: block;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -.02em;
+  color: var(--leise);
+  transform: scale(.875);
+  transform-origin: left center;
+  transition: transform 480ms var(--raus), color 320ms var(--raus), font-weight 320ms var(--raus);
+}
+/* Die Beschreibung faehrt ueber die Rasterzeile auf, nicht ueber
+   max-height: so muss keine Hoehe geraten werden. */
+/* Im Entwurf behaelt die Liste ihren Takt von 112, auch mit Beschreibung:
+   die Zeile liegt im Luftraum unter dem Titel und schiebt nichts weg. */
+.merkmal__mehr {
+  position: absolute;
+  left: 0; right: 0;
+  top: 71px;
+  opacity: 0;
+  transform: translate3d(0,-4px,0);
+  transition: opacity 280ms var(--raus), transform 460ms var(--raus);
+  pointer-events: none;
+}
+.merkmal__mehr > span {
+  overflow: hidden;
+  display: block;
+  color: var(--leise);
+  font-size: 16px;
+  line-height: 1.5;
+}
+.merkmal[aria-current="true"] .merkmal__titel { transform: none; font-weight: 600; color: var(--schrift); }
+/* Antwort beim Druecken, nicht erst beim Loslassen. */
+.merkmal { -webkit-tap-highlight-color: transparent; }
+.merkmal:active .merkmal__titel { color: var(--schrift); }
+.merkmal[data-erledigt] .merkmal__punkt { background: var(--farbe); box-shadow: inset 0 0 0 0 var(--rand); }
+.merkmal[aria-current="true"] .merkmal__punkt { transform: none; background: var(--farbe); box-shadow: inset 0 0 0 0 var(--rand); }
+.merkmal[aria-current="true"] .merkmal__mehr  { opacity: 1; transform: none; transition-delay: 90ms; }
+.merkmal[aria-current="true"] .merkmal__mehr > span { padding-top: 6px; }
+
+/* Kein Kasten: das Geraet steht auf seiner Farbe, nicht in einer Karte. */
+.aufnahme {
+  position: relative;
+  /* Die Zeile ist so hoch wie die Merkmalsliste links, also 672. Ein
+     fester Seitenverhaeltnis-Kasten liess davon 164 Pixel ungenutzt und
+     die Geraete darin waren unnoetig klein. Jetzt nimmt der Kasten die
+     ganze Zeile; die Etage wird dadurch nicht hoeher. */
+  align-self: stretch;
+  --farbe: var(--warm);
+  transition: --farbe 480ms var(--raus);
+}
+/* Der Schein ragt 14 Prozent ueber seinen Kasten hinaus. Auf dem Handy
+   ist das ueber den Bildschirmrand: die Seite wurde 25 px breiter und liess
+   sich seitlich wischen. Die Etage klemmt ihn deshalb selbst, wie es die
+   Regel oben fuer jeden Ueberstand verlangt. clip statt hidden: kein
+   Scrollkasten, overflow-y bleibt sichtbar, sticky bleibt heil. */
+#merkmale { overflow-x: clip; }
+.aufnahme__schein {
+  position: absolute;
+  inset: 0;
+  inset: -12% -14%;
+  background: radial-gradient(ellipse 46% 44% at 50% 52%,
+              color-mix(in srgb, var(--farbe) 32%, transparent), transparent 100%);
+}
+/* Jedes Merkmal zeigt das Geraet, auf dem es zu sehen ist. Die Mockups
+   blenden ineinander; das alte bleibt, bis das neue steht. */
+.aufnahme .geraet {
+  position: absolute;
+  /* Ohne Kasten haelt nichts mehr die Mitte: das Geraet steht jetzt
+     mittig in seiner Flaeche statt von oben gemessen. */
+  left: 50%; top: 50%;
+  opacity: 0;
+  translate: -50% -50%;
+  transform: scale(.97);
+  transition: opacity 520ms var(--feder), transform 640ms var(--feder);
+}
+.aufnahme .geraet[data-an] { opacity: 1; transform: none; }
+.aufnahme .geraet--fon   { width: 47%; }
+.aufnahme .geraet--fonquer { width: 98%; }
+.aufnahme .geraet--mac   { width: 98%; }
+/* Wie in der Geraetekarte: Ellipse statt drop-shadow. Hier faellt es
+   am meisten auf, weil im Mockup ein Film laeuft. */
+.aufnahme .geraet::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: -14%; right: -14%; bottom: -7%; height: 26%;
+  background: radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.5), rgba(0,0,0,0) 70%);
+}
+.aufnahme .geraet--flach::after { content: none; }
+.aufnahme .geraet--flach { width: 90%; border-radius: 12px; overflow: hidden; }
+.aufnahme .geraet--flach img { display: block; width: 100%; height: auto; }
+
+/* ================= Resume ================= */
+
+/* Im Entwurf laeuft die Buehne bis an die Etagenkante. */
+.resume { position: relative; overflow: hidden; padding-bottom: 0; }
+.resume__buehne {
+  position: relative;
+  width: 100%;
+  max-width: 1440px;
+  margin: 92px auto 0;
+  aspect-ratio: 1440 / 600;
+  /* Wie im Kopf: Ausklang und Etage enden an derselben Kante, also endet
+     die Buehne 14 px vorher im deckenden Teil (DESIGN.md 11.3). */
+  clip-path: inset(-100vh -100vw 14px -100vw);
+}
+.resume__licht {
+  position: absolute;
+  inset: -12% 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 24% 36% at 26% 52%, rgba(80,213,218,.22), rgba(80,213,218,0) 100%),
+    radial-gradient(ellipse 28% 40% at 70% 46%, rgba(80,213,218,.24), rgba(80,213,218,0) 100%);
+}
+
+.resume__bogen { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.resume__ausklang {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 300px;
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(16,16,16,0), rgba(16,16,16,.85) 55%, var(--grund) 85%);
+}
+.resume__bogen path { fill: none; stroke-width: 3; stroke-linecap: round; }
+
+.resume__buehne .geraet { position: absolute; }
+/* Das Standbild liegt zusaetzlich als Hintergrund auf dem Schirm. Ein
+   poster-Attribut haengt daran, dass der Browser es laedt und zeigt;
+   ein Hintergrund steht ab dem ersten Zeichnen. Sobald der Film Bilder
+   liefert, deckt er ihn zu. So ist die Flaeche nie leer. */
+#video-tv  { background: #000 url(aufnahmen/weiter-tv.webp)  center / cover no-repeat; }
+#video-fon { background: #000 url(aufnahmen/weiter-fon.webp) center / cover no-repeat; }
+.resume__buehne .geraet--tv  { left: 32.6%; top:  2.5%; width: 55.6%; }
+.resume__buehne .geraet--fon { left: 15.3%; top: 11.7%; width: 21.5%; z-index: 3;
+  transform: rotate(7deg); filter: drop-shadow(0 30px 60px rgba(0,0,0,.55)); }
+
+/* ================= Fragen ================= */
+
+/* 50 statt 60, und unten 92 statt 110: mit Figtree wuchs die Etage auf
+   905 und passte damit nicht mehr auf einen 900er Schirm. Die 28 Pixel
+   holt das Polster zurueck, ohne dass eine Antwort kuerzer wird. */
+.fragen__blatt {
+  margin-top: 50px;
+  border-radius: 16px;
+  background: var(--gruppe);
+  overflow: hidden;
+}
+#fragen { padding-bottom: 92px; }
+.frage + .frage { border-top: 1px solid var(--linie); }
+.frage__knopf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  padding: 24px 32px;
+  border: 0;
+  background: none;
+  color: var(--schrift);
+  font-family: inherit;
+  font-size: clamp(16px, 1.4vw, 19px);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -.014em;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 160ms var(--raus);
+}
+.frage__pfeil {
+  flex: none;
+  width: 20px; height: 20px;
+  color: var(--sehr-leise);
+  transition: transform 280ms var(--raus), color 160ms var(--raus);
+}
+.frage__knopf[aria-expanded="true"] .frage__pfeil { transform: rotate(90deg); color: var(--leise); }
+.frage__antwort {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms var(--raus);
+}
+.frage__antwort > div { overflow: hidden; }
+.frage__knopf[aria-expanded="true"] + .frage__antwort { grid-template-rows: 1fr; }
+.frage__antwort p {
+  padding: 0 32px 27px;
+  color: var(--leise);
+  font-size: clamp(15px, 1.2vw, 16.5px);
+  line-height: 1.55;
+}
+
+/* ================= Downloads ================= */
+
+/* ---------------------------------------------------------------
+   Downloads, neu am 17.09. Paul: "Fuenf Knoepfe auf einem Haufen,
+   sieht nicht clean aus." Vorher lagen fuenf gleich grosse Kapseln
+   in zwei Spalten, jede in einer anderen Plattformfarbe, die letzte
+   allein in der Mitte. Das ist jetzt eine Hierarchie:
+
+     eine grosse, weisse Kapsel  -- der Weg fuer dieses Geraet
+     darunter eine ruhige Reihe  -- die uebrigen vier
+
+   Keine Plattformfarben mehr, nur Weiss und eine Haarlinie: die Logos
+   tragen den Unterschied, nicht vier Toenungen. Alle Zeichen stehen im
+   gleich grossen Kreis, damit kein Logo optisch groesser wirkt.
+   Jeder Knopf fuehrt auf die eigene Download-Seite, nicht nach aussen.
+   --------------------------------------------------------------- */
+.ladenblock { max-width: 620px; margin: 52px auto 0; }
+.laden__haupt { display: grid; }
+/* Paul, 17.09. spaeter: "Der grosse App-Store-Knopf ist zu schwer." Eine
+   vollflaechig weisse Kapsel neben sonst zurueckhaltendem Inhalt sticht
+   heraus wie ein Scheinwerfer. Der Hauptweg liegt jetzt auf derselben
+   ruhigen Flaeche wie die uebrigen, nur eine Stufe betonter: getoent mit
+   dem Akzent, Ring in Akzent, Zeichen in Akzent, groesser und mit
+   Unterzeile. Damit kommt auch die Farbe der App zurueck
+   (--akzent, woertlich aus Sources/Shared/Farben.swift). */
+.weg-gross {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 74px;
+  padding: 16px 28px 16px 18px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--akzent) 12%, var(--flaeche));
+  color: var(--schrift);
+}
+/* Alle Zeichen sind gleich gebaut: ein Kreis, keine Kontur, das Logo
+   einfarbig darin, Durchmesser zur Zeichengroesse immer 2 zu 1. Vorher
+   lagen beim Apple-Zeichen Logo, schwarze Kontur und weisse Flaeche
+   uebereinander, drei Lagen fuer ein Symbol ("zu viel Gefriekel"). */
+.weg-gross .weg__zeichen {
+  flex: none;
+  width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--akzent) 20%, transparent);
+  color: var(--akzent);
+}
+.weg-gross .weg__zeichen svg { width: 19px; height: 19px; }
+.weg-gross b  { display: block; font-size: 17px; font-weight: 600; line-height: 1.25; letter-spacing: -.014em; }
+.weg-gross em { display: block; font-size: 13.5px; font-style: normal; color: var(--leise); line-height: 1.3; }
+
+.laden__rest {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+/* Die ruhige Reihe: keine Fuellung, eine Haarlinie, gleiche Hoehe. */
+.weg-klein {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 84px;
+  padding: 14px 10px;
+  border-radius: 14px;
+  background: var(--flaeche);
+  color: var(--leise);
+  text-align: center;
+}
+.weg-klein .weg__zeichen {
+  flex: none;
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: rgba(255,255,255,.06);
+  color: var(--schrift);
+}
+.weg-klein .weg__zeichen svg { width: 16px; height: 16px; }
+.weg-klein b  { display: block; font-size: 14.5px; font-weight: 600; line-height: 1.2; letter-spacing: -.01em; color: var(--schrift); }
+/* Die Unterzeile traegt die grosse Kapsel; in der Reihe waere sie Kleingedrucktes. */
+.weg-klein em { display: none; }
+
+/* Das Stillleben ist eine Aufnahme von oben. Alles liegt gerade.
+   Die beiden Schirme liegen hinter dem Bild und scheinen durch die
+   ausgestanzten Loecher. */
+/* Bis an den Rand: das Bild ist keine Spalte, es ist der Boden der Seite. */
+.stillleben {
+  position: relative;
+  width: 100%;
+  margin: clamp(40px, 5vw, 70px) auto 0;
+  aspect-ratio: 1440 / 613;
+}
+.stillleben__innen { position: relative; width: 100%; }
+.stillleben__schirm { position: absolute; z-index: 1; object-fit: cover; background: #000; }
+.stillleben__schirm--ipad { left:  6.39%; top: 12.40%; width: 28.89%; height: 46.82%; border-radius: .7%; }
+.stillleben__schirm--fon  { left: 43.40%; top: 18.19%; width: 13.19%; height: 67.54%; border-radius: 1.6%; }
+/* Ohne drop-shadow: das Bild bringt seinen eigenen Schatten schon mit,
+   und der Filter rechnete zusaetzlich die eckigen Schirme mit ein. */
+.stillleben__aufbau {
+  position: relative; z-index: 2;
+  width: 100%; height: auto;
+}
+
+/* ================= Fuss ================= */
+
+.fuss { padding-block: 0 43px; }
+.fuss__linie { height: 1px; background: var(--linie); }
+.fuss__raster {
+  display: grid;
+  /* Entwurf: Spalten bei 0, 440, 720, 1000. */
+  grid-template-columns: minmax(0,440px) minmax(0,280px) minmax(0,280px) minmax(0,240px);
+  column-gap: 0; row-gap: 40px;
+  padding-block: 64px 73px;
+}
+@media (min-width: 901px) {
+  .fuss__raster--fuenf { grid-template-columns: minmax(0,360px) minmax(0,220px) minmax(0,220px) minmax(0,220px) minmax(0,200px); }
+}
+.fuss__marke { max-width: 360px; }
+.fuss__marke img { height: 21px; width: auto; }
+.fuss__marke p {
+  margin-top: 14px;
+  color: var(--leise);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.fuss__spalte h2 {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: .13em;
+  color: var(--sehr-leise);
+  text-transform: uppercase;
+}
+/* Schrift an der Liste, nicht nur am Verweis: die Zeilenhoehe eines
+   Listenpunkts richtet sich nach seinem eigenen Strut (sonst 18/1.45 vom
+   body, 26 statt 21 je Zeile), nicht nach dem Kind (DESIGN.md 11.5). */
+.fuss__spalte ul { margin: 16px 0 0; padding: 0; list-style: none; font-size: 15px; line-height: 1.4; }
+.fuss__spalte li + li { margin-top: 11px; }
+.fuss__spalte a {
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--leise);
+  transition: color 160ms var(--raus);
+}
+.fuss__klein {
+  padding-top: 28px;
+  max-width: 880px;
+  color: var(--sehr-leise);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+
+
+/* Hover nur mit echtem Zeiger: auf einem Schirm zum Tippen bleibt der
+   Zustand nach dem Tippen kleben. */
+@media (hover: hover) and (pointer: fine) {
+  .merkmal:hover .merkmal__titel { color: var(--schrift); }
+}
+
+/* Reduzierte Bewegung heisst weniger und sanfter, nicht gar nichts: Farbe
+   und Deckkraft bleiben, alles was sich bewegt, haelt an. */
+@media (prefers-reduced-motion: reduce) {
+  .merkmal__titel, .merkmal__punkt, .aufnahme .geraet, .geraetekarte__bild > *,
+  .weg, .knopf, .menue, .frage__pfeil, .spur__linie {
+    transition-property: opacity, color, background-color, box-shadow;
+  }
+  .aufnahme .geraet, .geraetekarte__bild > *, .menue { transform: none; }
+  .frage__pfeil { transition: none; }
+}
+
+/* Flaechen, die der Browser sonst selbst faerbt. */
+::selection { background: rgba(80,213,218,.32); color: var(--schrift); }
+:focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; border-radius: 4px; }
+html { scrollbar-color: #303030 var(--grund); }
+
+/* =====================================================================
+   Mobil. Die Seite ist bei 390 entworfen; 900 ist die Stelle, an der
+   das zweispaltige Raster nicht mehr traegt.
+   ===================================================================== */
+
+.merkmale__ansage { display: none; }
+.nur-mobil, .nur-mobil-inline { display: none; }
+
+@media (max-width: 900px) {
+  :root { --etage: clamp(56px, 9vw, 88px); }
+
+  .leiste { position: absolute; top: 12px; padding-inline: 20px; }
+  .leiste__kapsel {
+    width: 100%;
+    justify-content: space-between;
+    padding: 8px 8px 8px 20px;
+  }
+  .leiste__punkt, .knopf--leiste { display: none; }
+  .leiste__burger {
+    display: grid;
+    align-content: center;
+    justify-items: start;
+    width: 44px; height: 44px;
+    border: 0; padding: 0 0 0 12px;
+    background: none;
+    cursor: pointer;
+  }
+  .leiste__burger span {
+    display: block;
+    width: 20px; height: 2px;
+    border-radius: 1px;
+    background: var(--schrift);
+    transition: transform 280ms var(--raus), opacity 180ms var(--raus);
+  }
+  .leiste__burger span + span { margin-top: 5px; }
+  /* Der kurze Strich entsteht aus scaleX, nicht aus width: Breite rechnet
+     das Layout neu, transform laeuft auf der Grafikkarte. */
+  .leiste__burger span { transform-origin: left center; }
+  .leiste__burger span:nth-child(3) { transform: scaleX(.65); }
+
+  /* Die drei Striche werden zum Kreuz, an derselben Stelle: man weiss,
+     wo man wieder zumacht. */
+  .leiste__burger[aria-expanded="true"] span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  .leiste__burger[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+  .leiste__burger[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+  .hero {
+    min-height: 0;
+    padding-top: 120px;
+    padding-bottom: 96px;
+    text-align: center;
+  }
+  .hero__buehne, .plakette, .hero__ausklang { display: none; }
+  .aurora { top: 38px; height: 520px;
+    -webkit-mask-image: linear-gradient(to bottom, #000 30%, transparent 82%);
+    mask-image: linear-gradient(to bottom, #000 30%, transparent 82%); }
+
+
+
+  /* Paul: die Merkmale sollen mobil von links nach rechts laufen,
+     nicht von oben nach unten. Die Spur legt sich also flach. */
+  .merkmale__raster { grid-template-columns: 1fr; gap: 44px; margin-top: 48px; }
+  .spur {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-left: 0;
+    margin-left: -13.5px; margin-right: -13.5px;
+    padding-top: 18px;
+  }
+  .spur::before { left: 22px; right: 22px; top: 10.5px; bottom: auto; width: auto; height: 2px;
+    background: linear-gradient(to right, rgba(255,255,255,0), rgba(255,255,255,.12) 8%,
+                                rgba(255,255,255,.12) 92%, rgba(255,255,255,0)); }
+  /* Laenge null, bis das Skript sie setzt; sonst steht links ein Punkt. */
+  .spur__linie { top: 10px; height: 3px; width: 0; }
+  /* 44 hoch, damit der Punkt mit dem Daumen zu treffen ist. Der Punkt
+     sitzt weiter oben am Kasten, die Reihe waechst nur nach unten. */
+  .merkmal { width: auto; flex: 0 0 44px; padding: 0; height: 44px; }
+  .merkmal__punkt { left: 50%; top: -14px; transform: translateX(-50%) scale(.6); }
+  .merkmal[aria-current="true"] .merkmal__punkt { transform: translateX(-50%); }
+  .merkmal__mehr { display: none; }
+  /* Dots only on small screens; the title stays as the button's name for screen readers. */
+  .merkmal__titel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  .merkmale__ansage { display: block; text-align: center; margin-top: 22px; }
+  .merkmale__ansage h3 { font-size: 24px; }
+  .merkmale__ansage p { margin: 8px auto 0; max-width: 326px; color: var(--leise); font-size: 16px; }
+
+  /* Mobil wird nicht gerastet, das Band darf seine Luft behalten. */
+  .aufnahme { aspect-ratio: 342/380; align-self: center; }
+  .aufnahme .geraet--fon   { width: 44%; }
+  .aufnahme .geraet--fonquer { width: 96%; }
+  .aufnahme .geraet--mac   { width: 96%; }
+  .aufnahme .geraet--flach { width: 94%; }
+
+  /* Werte aus dem Entwurf (73:2): Telefon 150 breit bei 22/258, Fernseher
+     296 breit bei 78/300, Buehne ab y 250. Kein Ausklang: das Telefon
+     steht mobil ganz im Bild. */
+  .resume__buehne { aspect-ratio: 390 / 320; margin-top: 56px; }
+  .resume__ausklang { display: none; }
+  .resume__buehne .geraet--tv  { left: 20%;    top: 15.6%; width: 75.9%; }
+  .resume__buehne .geraet--fon { left: 5.64%;  top: 2.5%;  width: 38.46%; transform: none; }
+  .resume__licht {
+    background:
+      radial-gradient(ellipse 30% 45% at 31% 50%, rgba(80,213,218,.24), rgba(80,213,218,0) 100%),
+      radial-gradient(ellipse 34% 44% at 64% 55%, rgba(80,213,218,.26), rgba(80,213,218,0) 100%);
+  }
+
+  .fragen__blatt { border-radius: 16px; margin-top: 28px; }
+  .frage__knopf { padding: 20px 18px; }
+  .frage__antwort p { padding: 0 18px 22px; }
+
+  /* Mobil zuerst: die grosse Kapsel ueber die ganze Breite, die Reihe
+     darunter zweispaltig. Vier Kacheln nebeneinander waeren auf 375
+     je 80 breit, da passt kein Wort hinein. */
+  .ladenblock { max-width: none; margin-top: 30px; }
+  .weg-gross { min-height: 68px; padding: 14px 22px 14px 16px; }
+  .weg-gross b { font-size: 16px; }
+  .weg-gross em { font-size: 13px; }
+  .laden__rest { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+
+  /* Herangezoomtes Stillleben: derselbe Aufbau, nur der Ausschnitt
+     um iPad und iPhone. */
+  .stillleben {
+    aspect-ratio: 390 / 386;
+    overflow: hidden;
+    margin-top: 14px;
+  }
+  .stillleben__innen {
+    position: absolute;
+    left: -5%; top: 11.7%;
+    width: 178%;
+    aspect-ratio: 1440 / 613;
+  }
+
+  /* Entwurf 73:2: Marke, dann je Gruppe Beschriftung und eine Zeile
+     Verweise (Abstand 18, Umbruch 8), Gruppen 76 auseinander. */
+  .fuss { padding-block: 0 32px; }
+  .fuss__raster {
+    grid-template-columns: 1fr;
+    gap: 34px;
+    padding-block: 44px;
+  }
+  .fuss__marke p { margin-top: 10px; }
+  .fuss__spalte ul { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 8px; }
+  .fuss__spalte li + li { margin-top: 0; }
+  .fuss__klein { font-size: 12px; padding-top: 20px; }
+
+  .nur-mobil { display: block; }
+  .nur-mobil-inline { display: inline; }
+  .nur-desktop { display: none; }
+}
+
+
+/* Mobile Schrift und Abstaende, gemessen im Entwurf 73:2. Steht mit
+   Absicht hinter allen Basisregeln: gleiche Spezifitaet, die spaetere
+   gewinnt (DESIGN.md 11.1). */
+@media (max-width: 900px) {
+  h1 { font-size: 46px; line-height: 1; }
+  h2 { line-height: 1.05; }
+  .hero { padding-top: 118px; padding-bottom: 146px; }
+  .hero__text h1 { margin-bottom: 15px; }
+  .hero__text p { font-size: 18px; }
+  .hero__knopf { margin-top: 29px; }
+  .knopf--gross { font-size: 17px; }
+  .etagenkopf p { margin-top: 24px; font-size: 16px; }
+  .merkmale__ansage h3 { line-height: 1.2; }
+  .merkmale__ansage p { line-height: 1.55; text-wrap: balance; }
+  .fragen__blatt { margin-top: 42px; }
+  .frage__knopf { padding: 18px; font-size: 15.5px; font-weight: 600; line-height: 1.3; }
+  .frage__antwort p { font-size: 16px; line-height: 1.55; padding: 0 18px 20px; }
+  .fuss__marke p { font-size: 14px; line-height: 1.55; }
+  .fuss__spalte h2 { font-size: 11px; }
+  .fuss__spalte a { font-size: 14px; line-height: 1.4; }
+  .fuss__spalte ul { font-size: 14px; }
+  .fuss__marke { margin-bottom: -3px; }
+  .fuss__klein { font-size: 11.5px; }
+  .aufnahme { margin-top: 0; }
+  .resume__buehne { clip-path: none; }
+  .fuss__spalte h2 { line-height: 1.3; }
+  .fuss { padding-bottom: 18px; }
+  /* Etagenboeden aus dem Entwurf 73:2 */
+  #geraete { padding-bottom: 32px; }
+  #merkmale { padding-bottom: 50px; }
+  #resume { padding-bottom: 35px; }
+  #fragen { padding-bottom: 84px; }
+  #downloads { padding-bottom: 0; }
+}
+
+/* ================= Menue ================= */
+
+.menue {
+  display: none;
+  position: fixed;
+  z-index: 55;
+  left: 20px; right: 20px;
+  top: 12px;
+  padding: 78px 0 22px;
+  border-radius: 16px;
+  background: var(--gruppe);
+  transform-origin: top center;
+  opacity: 0;
+  transform: scaleY(.86) translateY(-10px);
+  pointer-events: none;
+  transition: opacity 220ms var(--raus), transform 320ms var(--raus);
+}
+.menue[data-offen] { opacity: 1; transform: none; pointer-events: auto; }
+.menue a {
+  display: block;
+  padding: 15px 20px;
+  color: var(--leise);
+  font-size: 19px;
+  font-weight: 500;
+}
+.menue a:active { color: var(--schrift); }
+/* .menue a ist genauer als .knopf und faerbte den Knopf grau-weiss auf
+   weissem Grund: ein leerer weisser Balken. Farbe und Zentrierung muessen
+   hier ausdruecklich zurueck, auch fuer :active. */
+.menue .knopf { display: flex; width: calc(100% - 40px); margin: 14px 20px 0; color: var(--auf-akzent); }
+.menue .knopf:active { color: var(--grund); }
+/* Muss NACH der Basisregel stehen: gleiche Spezifitaet, die spaetere
+   gewinnt. Stand sie im grossen Mobilblock weiter oben, blieb das Menue
+   auf display: none und ging nie auf. */
+@media (max-width: 900px) { .menue { display: block; } }
+
+/* ================= Inhalt 17.09. ================= */
+.hero__frei {
+  margin-top: 14px;
+  color: var(--schrift);
+  font-size: clamp(15px, 1.1vw, 16.5px);
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+.hero__text p.hero__frei { color: var(--schrift); margin-top: 14px; }
+/* Verweise im Text tragen den Akzent, wie im Blog. Tuerkis auf dem
+   Kartengrund misst 9,9:1, weit ueber den geforderten 4,5:1. */
+.frage__link {
+  color: var(--akzent);
+  text-decoration: underline;
+  text-decoration-color: rgba(80,213,218,.35);
+  text-underline-offset: 3px;
+}
+
+/* =====================================================================
+   Verhalten, 17.09. Paul: "Jeder Knopf hat eine andere Animation ...
+   such dir die beste aus und mach bei allen dieselbe."
+
+   Vorbild ist die ruhigste der vorhandenen Varianten, der Kartenhover:
+   zwei Pixel anheben, ein Schatten dahinter, fertig. Raus sind der harte
+   Sprung auf 104,5 Prozent am Download-Knopf, die Welle nach aussen und
+   das Huepfen per Skript. Eine Flaeche, die beim Zeigen groesser wird,
+   verrueckt den Text darin, und drei Varianten nebeneinander sehen nach
+   Zufall aus statt nach System.
+
+   Alles steht in Variablen: eine Dauer, eine Kurve, eine Hebung, ein
+   Druck, eine Aufhellung, ein Fokusring. Keine Komponente erfindet
+   eigene Werte. Zwei Staerken, weil eine Zeile im Fuss sich nicht wie
+   ein Knopf anheben darf: Flaechen heben sich, Zeilen hellen auf.
+   ===================================================================== */
+:root {
+  --dauer: 170ms;
+  --kurve: cubic-bezier(.23, 1, .32, 1);
+  --hebung: -2px;
+  --druck: .985;
+  --aufhellen: rgba(255,255,255,.06);
+  --schatten-hoch: 0 0 0 0 rgba(0,0,0,0);
+}
+.knopf, .weg-gross, .weg-klein, .karte, .kopieren, .laden, .weg,
+.reiter button, .frage__knopf, .mitmachen__liste a, .leiste__punkt, .leiste__marke,
+.menue a, .fuss__spalte a, .pfad a, .zurueck, .alle-wege, .text a, .frage__link,
+.schritt .knopf, .hilfe .knopf, .download .knopf {
+  transition: transform var(--dauer) var(--kurve), background-color var(--dauer) var(--kurve),
+              box-shadow var(--dauer) var(--kurve), color var(--dauer) var(--kurve),
+              border-color var(--dauer) var(--kurve), text-decoration-color var(--dauer) var(--kurve);
+}
+@media (hover: hover) and (pointer: fine) {
+  /* Flaechen: anheben. */
+  .knopf:hover, .weg-gross:hover, .karte:hover, .kopieren:hover, .laden:hover, .weg:hover,
+  .schritt .knopf:hover, .hilfe .knopf:hover, .download .knopf:hover {
+    transform: translateY(var(--hebung));
+    box-shadow: var(--schatten-hoch);
+  }
+  .weg-klein:hover {
+    transform: translateY(var(--hebung));
+    box-shadow: inset 0 0 0 1px var(--rand), var(--schatten-hoch);
+  }
+  /* Der Hauptweg behaelt seinen Akzentring, sonst blinkt er beim Zeigen weg. */
+  .weg-gross:hover, .knoepfe > :first-child:hover {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 55%, transparent), var(--schatten-hoch);
+  }
+  .laden:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 40%, transparent), var(--schatten-hoch); }
+  .karte:hover { border-color: var(--rand); }
+  .kopieren:hover { color: var(--schrift); box-shadow: inset 0 0 0 1px var(--rand), var(--schatten-hoch); }
+  /* Zeilen und Verweise: aufhellen. */
+  .reiter button:hover, .frage__knopf:hover, .mitmachen__liste a:hover, .leiste__punkt:hover {
+    background: var(--aufhellen);
+    color: var(--schrift);
+  }
+  .menue a:hover, .fuss__spalte a:hover, .pfad a:hover, .zurueck:hover, .alle-wege:hover { color: var(--schrift); }
+  .text a:hover, .frage__link:hover, .hinweis a:hover, .abschnitt a:not(.knopf):hover,
+  .frage__antwort a:hover { text-decoration-color: currentColor; }
+}
+/* Der Druck: ein Wert fuer jedes anfassbare Element. */
+.knopf:active, .weg-gross:active, .weg-klein:active, .karte:active, .kopieren:active,
+.reiter button:active, .laden:active, .weg:active { transform: scale(var(--druck)); }
+.mitmachen__liste a:active, .frage__knopf:active { background: rgba(255,255,255,.09); }
+/* Ein Fokusring fuer alles. */
+:focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; border-radius: 6px; }
+.knopf:focus-visible, .weg-gross:focus-visible, .weg-klein:focus-visible, .laden:focus-visible,
+.weg:focus-visible, .reiter button:focus-visible, .kopieren:focus-visible { border-radius: inherit; }
+@media (prefers-reduced-motion: reduce) {
+  /* Weniger, nicht nichts: Farbe bleibt, Bewegung geht. */
+  .knopf, .weg-gross, .weg-klein, .karte, .kopieren, .laden, .weg, .reiter button,
+  .frage__knopf, .mitmachen__liste a, .leiste__punkt, .menue a, .fuss__spalte a, .pfad a, .text a {
+    transition-property: color, background-color, box-shadow, border-color, text-decoration-color;
+  }
+  .knopf:hover, .weg-gross:hover, .weg-klein:hover, .karte:hover, .kopieren:hover, .laden:hover,
+  .weg:hover, .knopf:active, .weg-gross:active, .weg-klein:active, .karte:active,
+  .kopieren:active, .laden:active, .weg:active, .reiter button:active { transform: none; }
+}
+
+/* ================= Download: Kacheln wie im Bento, ruhig ================= */
+/* Eine Flaeche je Weg, kein Ring, kein Anheben, kein Schatten. Gezeigt wird
+   der Druck (Designsystem): Flaeche wird dunkler, Maßstab .98. */
+.ladenblock { max-width: 760px; margin-top: 48px; }
+.weg-gross, .weg-klein {
+  border-radius: 14px; box-shadow: none;
+  transition: background-color 120ms ease-out, transform 120ms ease-out;
+}
+.weg-gross {
+  min-height: 92px; padding: 18px 26px 18px 20px; gap: 18px;
+  background: color-mix(in srgb, var(--akzent) 34%, var(--grund));
+}
+.weg-gross .weg__zeichen { width: 46px; height: 46px; background: rgba(255,255,255,.12); color: var(--schrift); }
+.weg-gross .weg__zeichen svg { width: 22px; height: 22px; }
+.weg-gross b { font-size: 19px; }
+.weg-klein { min-height: 100px; gap: 6px; padding: 16px 10px; background: var(--flaeche); }
+.weg-klein em { display: block; font-size: 12.5px; font-style: normal; line-height: 1.3; color: var(--sehr-leise); }
+@media (hover: hover) and (pointer: fine) {
+  .knopf:hover, .weg-gross:hover, .weg-klein:hover { transform: none; box-shadow: none; }
+  .weg-klein:hover { background: var(--erhoeht); }
+  .weg-gross:hover { background: color-mix(in srgb, var(--akzent) 42%, var(--grund)); }
+}
+.knopf:active { background: rgba(255,255,255,.75); }
+.weg-klein:active { background: var(--gedrueckt); transform: scale(.98); }
+.weg-gross:active { background: color-mix(in srgb, var(--akzent) 26%, var(--grund)); transform: scale(.985); }
+@media (max-width: 900px) {
+  .ladenblock { margin-top: 32px; }
+  .weg-gross { min-height: 80px; padding: 16px 20px 16px 16px; }
+  .laden__rest { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* =====================================================================
+   Feinschliff 27.09. Steht zuletzt und gewinnt damit gegen alles oben.
+   Die Identitaet bleibt: ein Akzent, Karten ohne Schatten, Ecken aus der
+   App. Geaendert werden Rhythmus, Kopf und Bewegung.
+   ===================================================================== */
+
+/* Ueberschriften: eine Stufe ruhiger. Mit 64 px war jede Etage ein
+   Paukenschlag, dadurch keiner. Der Kopf der Seite bleibt der groesste. */
+h2 { font-size: clamp(32px, 3.9vw, 56px); letter-spacing: -.021em; }
+.etagenkopf h2 { text-wrap: balance; }
+.etagenkopf p { max-width: 600px; }
+.etagenkopf .frage__link { color: var(--akzent); }
+
+/* Aurora: dieselben Verlaeufe, weicher. Das harte Band quer ueber den
+   Kopf war zu schwer und nahm den Geraeten das Licht. */
+.aurora {
+  background:
+    radial-gradient(ellipse 38% 58% at -2% 86%, rgba(80,213,218,.36), rgba(80,213,218,.12) 52%, rgba(80,213,218,0) 100%),
+    radial-gradient(ellipse 38% 58% at 102% 86%, rgba(80,213,218,.36), rgba(80,213,218,.12) 52%, rgba(80,213,218,0) 100%),
+    radial-gradient(ellipse 34% 30% at 50% 96%, rgba(80,213,218,.22), rgba(80,213,218,0) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,.6) 22%, #000 48%, #000 62%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,.6) 22%, #000 48%, #000 62%, transparent 100%);
+}
+
+/* Die Buehne tritt groesser auf: die App ist der Beweis, nicht die Zeile
+   darueber. Alle Werte bleiben Prozent der 1440er Buehne. */
+@media (min-width: 901px) {
+  .hero__buehne { aspect-ratio: 1440 / 500; }
+  .hero__buehne .geraet--mac { left: 6.4%;  top: 25%; width: 41.5%; }
+  .hero__buehne .geraet--tv  { left: 52.1%; top: 25%; width: 41.5%; }
+  .hero__buehne .geraet--fon { left: 38.2%; top: 4.6%; width: 23.6%; }
+  .plakette--direkt { left: 8.4%; top: 28.6%; }
+  .plakette--resume { left: 73.6%; top: 33.8%; }
+  .plakette--pip    { left: 6.2%; top: 47.5%; }
+}
+
+/* Unter den Knoepfen nur noch eine leise Zeile (27.09.): Plattformen stehen
+   im Bento, der Kopf traegt Titel, einen Satz und zwei Knoepfe. */
+.hero__text p.hero__frei { margin-top: 18px; color: var(--sehr-leise); font-size: 14px; font-weight: 500; letter-spacing: 0; }
+@media (max-width: 900px) { .hero__text p.hero__frei { font-size: 13.5px; margin-top: 16px; } }
+/* Plattformen unter dem Knopf: leise, aber sofort lesbar. */
+.hero__plattformen {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 0;
+  margin: 18px auto 0; max-width: 560px;
+  color: var(--sehr-leise); font-size: 14px; font-weight: 500; letter-spacing: .005em;
+}
+.hero__text p.hero__plattformen { font-size: 14px; color: var(--sehr-leise); margin-top: 18px; }
+.hero__plattformen span + span::before { content: "·"; margin: 0 9px; color: #5a5a5a; }
+
+/* Leiste: der Punkt reagiert unter dem Zeiger wie ein Knopf in der App. */
+@media (hover: hover) and (pointer: fine) {
+  .leiste__punkt:hover { color: var(--schrift); background: var(--flaeche); }
+}
+
+/* ---------- Auftritt: einmal beim Laden, dann steht alles. ----------
+   Text zuerst, dann die Geraete von unten, zuletzt die Plaketten. Nur
+   Deckkraft und translate, nie Layout. `translate` ist eine eigene
+   Eigenschaft und laeuft damit neben dem rotate() von Mac und TV. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes auftritt { from { opacity: 0; translate: 0 14px; } }
+  @keyframes aufstieg { from { opacity: 0; translate: 0 48px; } }
+  @keyframes erscheinen { from { opacity: 0; } }
+  .hero__text > * { animation: auftritt 720ms var(--raus) both; }
+  .hero__text > :nth-child(2) { animation-delay: 70ms; }
+  .hero__text > :nth-child(3) { animation-delay: 140ms; }
+  .hero__text > :nth-child(4) { animation-delay: 200ms; }
+  .hero__text > :nth-child(5) { animation-delay: 260ms; }
+  .hero__buehne .geraet { animation: aufstieg 1100ms var(--feder) both; }
+  .hero__buehne .geraet--fon { animation-delay: 180ms; }
+  .hero__buehne .geraet--mac, .hero__buehne .geraet--tv { animation-delay: 300ms; }
+  .plakette { animation: erscheinen 600ms var(--raus) 700ms both; }
+
+  /* Das Einblenden beim Scrollen macht js/effekte.js (einmal, dann steht es). */
+}
+
+/* ---------- Mobil: der Kopf zeigt die App, nicht nur Text ----------
+   Vorher war die Buehne unter 900 px ausgeblendet: der erste Eindruck auf
+   dem Telefon war eine Ueberschrift ohne Produkt. Jetzt Telefon vorn,
+   Fernseher dahinter, beide aus denselben Bildern wie am Desktop. */
+@media (max-width: 900px) {
+  .hero { padding-bottom: 40px; }
+  .hero__plattformen { font-size: 13px; max-width: 330px; }
+  .hero__text p.hero__plattformen { font-size: 13px; }
+  .hero__plattformen span + span::before { margin: 0 7px; }
+  .hero__buehne {
+    display: block;
+    aspect-ratio: 390 / 300;
+    margin-top: 36px;
+    clip-path: inset(-100vh -100vw 0 -100vw);
+  }
+  .hero__buehne .geraet--mac { display: none; }
+  .hero__buehne .geraet--tv  { left: 24%; top: 26%; width: 72%; transform: rotate(2deg); }
+  .hero__buehne .geraet--fon { left: 7%; top: 2%; width: 34%; }
+  .hero__ausklang { display: block; height: 140px; bottom: -2px; }
+  .etagenkopf p { margin-top: 14px; }
+}
+
+/* Zweiter Knopf im Kopf: Swiftly Music neben Download. Gleiche Groesse,
+   ruhige Flaeche, damit Download der erste bleibt. */
+.hero__knoepfe { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 26px; }
+.hero__knoepfe .hero__knopf { margin-top: 0; }
+.knopf--zweit { background: var(--flaeche); color: var(--schrift); }
+.knopf--zweit:active { background: var(--gedrueckt); }
+@media (max-width: 900px) { .hero__knoepfe { margin-top: 29px; } }
+
+/* =====================================================================
+   Drei Momente mit Technik (27.09.), gezeichnet von js/effekte.js.
+   Ohne Skript, ohne WebGL oder bei reduzierter Bewegung gilt alles oben.
+   ===================================================================== */
+
+/* ---------- Die Linse ---------- */
+.linse__figur { margin: 48px 0 0; }
+.linse__buehne {
+  position: relative; overflow: hidden;
+  aspect-ratio: 2.39 / 1; border-radius: 16px; background: #000;
+  touch-action: pan-y;
+}
+.linse__ersatz, .linse__leinwand { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.linse__ersatz { object-fit: cover; }
+.linse__leinwand { opacity: 0; transition: opacity 500ms var(--raus); }
+.linse--an .linse__leinwand { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .linse--an { cursor: none; } }
+.linse__marke {
+  position: absolute; z-index: 2; opacity: 0;
+  padding: 6px 11px; border-radius: 8px;
+  font-size: 12.5px; font-weight: 600; letter-spacing: .01em; white-space: nowrap;
+  transition: opacity 400ms var(--raus);
+  pointer-events: none;
+}
+.linse--an .linse__marke { opacity: 1; }
+.linse__marke--kopie { left: 18px; top: 18px; background: rgba(16,16,16,.72); color: var(--leise);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.linse__marke--original { left: 0; top: 0; transform: translate(-50%, -100%); background: var(--akzent-leise); color: var(--akzent); }
+.linse__figur figcaption { margin-top: 14px; text-align: center; color: var(--sehr-leise); font-size: 13px; line-height: 1.5; }
+@media (max-width: 900px) {
+  .linse__buehne { aspect-ratio: 4 / 3; border-radius: 14px; }
+  .linse__figur { margin-top: 32px; }
+  .linse__marke--kopie { left: 12px; top: 12px; }
+}
+
+/* ---------- Continue here: zum Anklicken, wie in der App ----------
+   Eines spielt, das andere zeigt seinen Startbildschirm mit dem Knopf.
+   Ein Druck, und der Film laeuft dort weiter, dieselbe Sekunde. */
+.weiter { margin-top: 56px; }
+.weiter__bahn {
+  display: flex; align-items: center; justify-content: center; gap: 5%;
+  width: min(1120px, 100%); margin-inline: auto; padding-inline: var(--seitenrand);
+}
+.weiter__fon { width: 20%; flex: none; }
+.weiter .weiter__tv { position: relative; inset: auto; translate: none; width: 66%; flex: none; }
+.weiter__schirm { position: relative; overflow: hidden; background: #000; }
+.weiter__tv .weiter__schirm { border-radius: 5px; aspect-ratio: 16 / 9; }
+.weiter__fon .weiter__schirm { position: absolute; }
+.weiter__heim { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* Welcher Schirm spielt, sagt data-spielt; den Wechsel zeichnet
+   js/effekte.js wie die App (Uebergabekarte). Ohne Skript spielt das iPhone. */
+.weiter__spiel { position: absolute; inset: 0; background: #000; visibility: hidden; }
+.weiter__schirm[data-spielt] .weiter__spiel,
+.weiter:not([data-bereit]) .weiter__fon .weiter__spiel { visibility: visible; }
+.weiter__uebergang { position: absolute; inset: 0; z-index: 2; display: none; overflow: hidden; pointer-events: none; }
+.weiter__grund { position: absolute; inset: 0; background: #101010; opacity: 0; }
+.weiter__karte { position: absolute; left: 0; top: 0; display: block; background: #000; opacity: 0; will-change: translate, width, height; }
+.weiter__zeilen { position: absolute; left: 0; right: 0; top: 0; display: grid; justify-items: center; gap: .15em;
+  color: #fff; font-weight: 600; line-height: 1.2; letter-spacing: -.01em; opacity: 0; }
+.weiter__zeilen span { font-weight: 400; color: #989898; letter-spacing: 0; }
+.weiter__bild { position: absolute; left: 0; right: 0; top: 50%; translate: 0 -50%; aspect-ratio: 2.39 / 1; overflow: hidden; }
+.weiter__bild video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.weiter__tv .weiter__bild { aspect-ratio: auto; top: 0; bottom: 0; translate: none; }
+.weiter__tv .weiter__bild video { object-fit: contain; }
+.weiter__titel { position: absolute; left: 7%; top: 7%; font-weight: 600; color: #fff; font-size: 5.2cqw; }
+.weiter__leiste { position: absolute; left: 7%; right: 7%; bottom: 4.5%; display: grid; gap: 2cqw; }
+.weiter__spur { display: block; height: 1.1cqw; border-radius: 1cqw; background: rgba(255,255,255,.3); overflow: hidden; }
+.weiter__spur i { display: block; height: 100%; width: 58%; background: #fff; border-radius: inherit; }
+.weiter__zeiten { display: flex; justify-content: space-between; font-size: 3.4cqw; color: rgba(255,255,255,.75); font-variant-numeric: tabular-nums; }
+.weiter__zeiten b { font-weight: 500; }
+/* Fernseher: tvOS zeigt Titel und Leiste unten, kurz nach dem Wechsel. */
+.weiter__tv .weiter__schirm { container-type: inline-size; }
+.weiter__tv .weiter__leiste { left: 4%; right: 4%; bottom: 7%; gap: .9cqw; transition: opacity 600ms var(--raus); }
+.weiter__tv .weiter__titel { position: static; font-size: 1.9cqw; }
+.weiter__tv .weiter__spur { height: .5cqw; }
+.weiter__tv .weiter__zeiten { font-size: 1.3cqw; }
+.weiter__tv .weiter__spiel::after { content: ""; position: absolute; inset: auto 0 0; height: 30%; background: linear-gradient(to top, rgba(0,0,0,.7), rgba(0,0,0,0)); z-index: 0; transition: opacity 600ms var(--raus); }
+.weiter__tv .weiter__leiste { z-index: 1; }
+.weiter__tv[data-ruhig] .weiter__leiste, .weiter__tv[data-ruhig] .weiter__spiel::after { opacity: 0; }
+
+/* Der Knopf liegt genau auf dem Knopf im Bildschirmfoto. Nur auf dem
+   Geraet, das gerade nicht spielt, ist er da. */
+.weiter__knopf {
+  position: absolute; z-index: 3; display: none;
+  border: 0; padding: 0; background: transparent; cursor: pointer; border-radius: 999px;
+}
+.weiter[data-laeuft="fon"]:not([data-wechselt]) .weiter__tv .weiter__knopf,
+.weiter[data-laeuft="tv"]:not([data-wechselt]) .weiter__fon .weiter__knopf { display: block; }
+.weiter__tv .weiter__knopf { left: 76.2%; top: 5.2%; width: 15.9%; height: 6.9%; }
+/* Genau um das Symbol neben dem Profil, in dessen Form. */
+.weiter__fon .weiter__knopf { left: 68.4%; top: 7.55%; width: 8.4%; height: auto; aspect-ratio: 3 / 2; border-radius: 2.2cqw; }
+/* Der Rahmen liegt als Bild ueber dem Schirm und nahm echte Klicks weg. */
+.weiter .geraet__rahmen { pointer-events: none; }
+.weiter__knopf::after {
+  content: ""; position: absolute; inset: -4px; border-radius: inherit;
+  box-shadow: 0 0 0 2px rgba(80,213,218,.9);
+  opacity: 0; transition: opacity 200ms var(--raus);
+}
+.weiter__knopf:focus-visible { outline: none; }
+/* Groessere Trefferflaeche als das Symbol selbst, unsichtbar. */
+.weiter__knopf::before { content: ""; position: absolute; inset: -14px; }
+.weiter__knopf:focus-visible::after, .weiter__knopf:hover::after { opacity: 1; }
+.weiter__knopf:active { transform: scale(.96); }
+/* Zweimal leise pulsieren, dann still: man soll ihn finden, nicht ertragen. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes rufen { 0%, 100% { opacity: 0; transform: scale(1); } 45% { opacity: .9; transform: scale(1.06); } }
+  .weiter[data-bereit] .weiter__knopf::after { animation: rufen 1600ms var(--raus) 2; }
+}
+.weiter__hinweis { margin: 28px auto 0; text-align: center; color: var(--sehr-leise); font-size: 15px; min-height: 1.5em; }
+.weiter__hinweis b { color: var(--akzent); font-weight: 600; }
+@media (max-width: 900px) {
+  .weiter { margin-top: 36px; }
+  .weiter__bahn { flex-direction: column-reverse; gap: 28px; }
+  .weiter__fon { width: 40%; }
+  .weiter .weiter__tv { width: 100%; }
+  .weiter__hinweis { font-size: 14px; }
+}
+/* Links im Kleingedruckten der Fusszeile (Lizenzseite). */
+.fuss__klein a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+/* supporter:start */
+.pg { --grund:#101010; --flaeche:#1A1A1C; --erhoeht:#262626; --druck:#303030; --akzent:#50D5DA;
+  --auf:#061212; --schrift:#fff; --leise:#CCCCCC; --sehr:#989898; --linie:rgba(255,255,255,.07);
+  --rand:rgba(255,255,255,.12); --gruen:#8FD99A; --seitenrand:clamp(24px,4vw,40px); --raus:cubic-bezier(.23,1,.32,1);
+  --abschnitt:72px; --kopfabstand:32px;
+  position:relative; overflow:hidden; background:var(--grund); color:var(--schrift);
+  font-family:"Figtree",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:17px; line-height:1.45; -webkit-font-smoothing:antialiased; container-type:inline-size; }
+.pg *, .pg *::before, .pg *::after { box-sizing:border-box; }
+.pg p, .pg h1, .pg h2, .pg h3 { margin:0; }
+.pg a { color:inherit; text-decoration:none; }
+.pg img { display:block; max-width:100%; }
+.pg :focus-visible { outline:2px solid var(--akzent); outline-offset:3px; border-radius:4px; }
+.pg .bahn { width:100%; max-width:calc(1240px + 2 * var(--seitenrand)); margin-inline:auto; padding-inline:var(--seitenrand); position:relative; }
+.pg .knopf { white-space:nowrap; display:inline-flex; align-items:center; justify-content:center; gap:8px; border:0; border-radius:10px; background:#fff;
+  color:var(--auf); font:inherit; font-weight:600; line-height:1.2; cursor:pointer; min-height:50px; padding:0 32px; font-size:17px; }
+.pg .knopf--leise { background:rgba(255,255,255,.1); color:#fff; }
+.pg .knopf[disabled] { background:var(--erhoeht); color:var(--sehr); cursor:default; }
+.pg .spross { display:inline-block; width:.62em; height:.62em; margin-left:.28em; color:var(--gruen); vertical-align:.04em; }
+.pg .mini { --a:#50D5DA; position:relative; width:132px; height:264px; border-radius:22px; overflow:hidden; background:#101010; flex:none;
+  box-shadow:0 18px 40px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.1); transform:rotate(var(--r,0deg)); animation:schweben 4s ease-in-out infinite; }
+.pg .mini__schein { position:absolute; left:0; right:0; top:0; height:96px; background:radial-gradient(90% 100% at 50% 0%, color-mix(in srgb, var(--a) 40%, transparent), transparent 75%); }
+.pg .mini__logo { position:absolute; left:12px; top:20px; width:42px; height:auto; }
+.pg .mini__herz { position:absolute; right:12px; top:19px; width:12px; height:12px; color:#fff; }
+.pg .mini__t { position:absolute; left:12px; top:44px; font-size:9px; font-weight:600; white-space:nowrap; }
+.pg .mini__quer { position:absolute; left:12px; top:58px; width:108px; height:61px; border-radius:6px; overflow:hidden; }
+.pg .mini__quer img, .pg .mini__hoch img { width:100%; height:100%; object-fit:cover; }
+.pg .mini__quer i { position:absolute; left:0; right:0; bottom:0; height:3px; background:rgba(255,255,255,.3); }
+.pg .mini__quer i::after { content:""; position:absolute; left:0; top:0; bottom:0; width:46%; background:var(--a); }
+.pg .mini__hoch { position:absolute; top:130px; width:50px; height:75px; border-radius:5px; overflow:hidden; }
+.pg .mini__hoch--1 { left:12px; }
+.pg .mini__hoch--2 { left:68px; }
+.pg .mini__tabs { position:absolute; left:0; right:0; bottom:0; height:30px; border-top:1px solid rgba(255,255,255,.07); display:flex; justify-content:space-around; align-items:center; }
+.pg .mini__tabs i { width:9px; height:9px; border-radius:3px; background:#555; display:block; }
+.pg .mini__tabs i.an { background:var(--a); }
+@keyframes schweben { 0%,100% { transform:translateY(0) rotate(var(--r,0deg)); } 50% { transform:translateY(-6px) rotate(var(--r,0deg)); } }
+.pg .drei { display:flex; justify-content:center; align-items:flex-start; }
+.pg .drei .platz { margin:0 -16px; padding-top:40px; }
+.pg .drei .platz:nth-child(2) { position:relative; z-index:2; padding-top:8px; }
+.pg .nb { white-space:nowrap; }
+.pg .held__wege { display:flex; flex-wrap:wrap; gap:8px; margin-top:24px; }
+.pg .startteil { position:relative; background:var(--flaeche); border-radius:24px; display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr); align-items:center; gap:32px; padding:40px 48px; overflow:hidden; }
+.pg .startteil__licht { position:absolute; inset:0; pointer-events:none;
+  background: radial-gradient(40% 70% at 12% 0%, rgba(255,140,107,.36), transparent 72%), radial-gradient(40% 70% at 55% -10%, rgba(176,140,255,.34), transparent 72%), radial-gradient(34% 60% at 96% 0%, rgba(90,211,232,.26), transparent 72%); }
+.pg .startteil__text, .pg .startteil .drei { position:relative; }
+.pg .startteil h2 { font-size:clamp(30px,2.8vw,40px); font-weight:700; letter-spacing:-.018em; line-height:1.1; }
+.pg .startteil p { margin-top:8px; color:#E6E6E6; font-size:17px; line-height:1.5; max-width:440px; }
+.pg .startteil__punkte { list-style:none; margin:16px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:8px; }
+.pg .startteil__punkte li { display:inline-flex; align-items:center; height:32px; padding:0 14px; border-radius:999px; background:rgba(255,255,255,.1); font-size:14px; font-weight:500; }
+.pg .startteil .startteil__regel { margin-top:16px; font-size:14px; color:var(--leise); }
+.pg .startteil .drei { height:272px; overflow:hidden; }
+.pg .startteil .drei .mini { zoom:1; }
+@container (max-width: 900px) {
+.pg { --abschnitt:48px; --kopfabstand:24px; font-size:16px; }
+.pg .startteil { grid-template-columns:minmax(0,1fr); padding:24px 20px 0; gap:16px; border-radius:20px; }
+.pg .startteil .held__wege .knopf { flex:1; padding:0 16px; }
+.pg .startteil .drei { height:176px; }
+.pg .startteil .drei .mini { zoom:.7; }
+.pg .startteil .drei .platz { margin:0 -12px; padding-top:28px; }
+.pg .startteil .drei .platz:nth-child(2) { padding-top:8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+.pg *, .pg *::before, .pg *::after { animation:none !important; }
+}
+.pg.startseite { padding-top:var(--abschnitt); background:transparent; }
+/* Donate next to Download, styled like the second button it replaces. */
+.knopf--spenden { gap: 8px; }
+.knopf--spenden svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--akzent); stroke-width: 2; stroke-linejoin: round; }
+/* supporter:end */
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://swiftlyplayer.com/#organisation",
+      "name": "Swiftly Player",
+      "url": "https://swiftlyplayer.com/",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://swiftlyplayer.com/apple-touch-icon.png"
+      },
+      "sameAs": [
+        "https://github.com/paulherter/swiftly-player",
+        "https://apps.apple.com/app/id6806824067",
+        "https://www.tiktok.com/@swiftlyplayer",
+        "https://mastodon.social/@swiftlyplayer",
+        "https://discord.gg/MeGwfv3UwN"
+      ]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://swiftlyplayer.com/#website",
+      "name": "Swiftly Player",
+      "url": "https://swiftlyplayer.com/",
+      "inLanguage": "en",
+      "publisher": {
+        "@id": "https://swiftlyplayer.com/#organisation"
+      }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://swiftlyplayer.com/#app",
+      "name": "Swiftly Player",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": [
+        "iOS",
+        "iPadOS",
+        "tvOS",
+        "macOS",
+        "Android",
+        "Android TV",
+        "Windows",
+        "Linux"
+      ],
+      "description": "A client for your own Jellyfin server. Plays every file as Direct Play or Direct Stream, holds several servers and accounts at once, downloads for offline, and carries a film from one device to another.",
+      "url": "https://swiftlyplayer.com/",
+      "image": "https://swiftlyplayer.com/vorschau.jpg",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "EUR"
+      },
+      "author": {
+        "@id": "https://swiftlyplayer.com/#organisation"
+      },
+      "publisher": {
+        "@id": "https://swiftlyplayer.com/#organisation"
+      },
+      "license": "https://www.mozilla.org/en-US/MPL/2.0/",
+      "isAccessibleForFree": true,
+      "downloadUrl": [
+        "https://apps.apple.com/app/id6806824067",
+        "https://github.com/paulherter/swiftly-player/releases"
+      ],
+      "installUrl": "https://apps.apple.com/app/id6806824067",
+      "sameAs": [
+        "https://github.com/paulherter/swiftly-player",
+        "https://apps.apple.com/app/id6806824067",
+        "https://www.tiktok.com/@swiftlyplayer",
+        "https://mastodon.social/@swiftlyplayer",
+        "https://discord.gg/MeGwfv3UwN"
+      ]
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Do I need my own Jellyfin server?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Swiftly Player is the client, so you need a Jellyfin server of your own. Here is how to set one up with Docker. It speaks the Jellyfin API and nothing else, so Plex and Emby will not work. How the three compare."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which Jellyfin versions work?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Jellyfin 10.8 or newer, up to the current Jellyfin 12. Skip Intro, Skip Recap and Skip Credits need 10.10 or newer, because that is where Jellyfin stores the segments."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is it really free?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, and it stays that way: all the features you need are free, for everyone, with no ads and no account with me. Supporters get a few extras on top, like personalization and a thank-you. The source is on GitHub under the MPL-2.0."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which devices does it run on?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "iPhone, iPad, Apple TV and Mac, Android phones and Android TV, plus Windows and Linux. The Apple versions are one download from the App Store. Android is on Google Play, Windows and Linux come from GitHub."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I get the Android version?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "From Google Play, on Android phones and Android TV with Android 9 or newer. On the TV, search for Swiftly in the Play Store, or install it from your phone and pick the TV. All steps."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does it transcode?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Swiftly plays the original file with VLC, as Direct Play or Direct Stream, so your server has nothing to convert. Why other clients transcode. That covers MKV, HEVC, AV1, Dolby Vision, HDR10, TrueHD and PGS subtitles, and external subtitle files next to the video."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can it skip intros?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, when your server knows where they are. With the Intro Skipper plugin, Swiftly shows Skip Intro, Skip Recap and Skip Credits. When an episode ends, the next one starts on its own."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is Resume on this Device?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Start a film on your iPhone and walk to the television. The Apple TV shows a button, one press, and it carries on at the same second. It works in every direction between your devices."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I watch without a connection?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, on iPhone, iPad and Mac. A download pulls the original file over Wi-Fi and plays it from storage. Which clients can download. A train without signal is fine."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What data leaves my device?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Only what your own server needs: what you watched and where you stopped. There is no analytics, no account with me, and nobody in between."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Something does not work. Where do I report it?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "On Discord or as a GitHub issue. Name the device, the app version and the file. If your Jellyfin dashboard shows Transcoding instead of Direct Play, that is worth a report too."
+      }
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<a class="nur-fuer-leser" href="#inhalt">Skip to content</a>
+
+<header class="leiste">
+  <div class="leiste__kapsel">
+    <a class="leiste__marke" href="#inhalt" aria-label="Swiftly Player, to the top">
+      <img src="wortmarke.svg" alt="Swiftly" width="61" height="21">
+    </a>
+    <a class="leiste__punkt nur-desktop" href="/music/">Music</a>
+    <a class="leiste__punkt nur-desktop" href="/blog/">Blog</a>
+    <a class="leiste__punkt nur-desktop" href="https://github.com/paulherter/swiftly-player" target="_blank" rel="noopener">GitHub</a>
+    <button class="leiste__burger" type="button" aria-expanded="false" aria-controls="menue" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</header>
+
+<nav class="menue" id="menue" aria-label="Menu">
+  <a href="/music/">Swiftly Music</a>
+  <a href="/blog/">Blog</a>
+  <a href="https://discord.gg/MeGwfv3UwN" target="_blank" rel="noopener">Discord</a>
+  <a href="https://github.com/paulherter/swiftly-player" target="_blank" rel="noopener">GitHub</a>
+  <a href="/supporter/">Donate</a> <!-- supporter -->
+  <a class="knopf knopf--gross" href="#downloads">Download</a>
+</nav>
+
+<main id="inhalt">
+
+<!-- ================= Hero ================= -->
+<div class="auftakt">
+<section class="hero">
+  <div class="aurora" aria-hidden="true"></div>
+  <div class="hero__rahmen">
+
+    <div class="bahn hero__text">
+      <h1>Your player<br>for Jellyfin</h1>
+      <p>A video player for the Jellyfin server you run yourself.</p>
+      <div class="hero__knoepfe">
+        <a class="knopf knopf--gross hero__knopf" href="#downloads">Download</a>
+        <!-- supporter:hidden <a class="knopf knopf--gross knopf--zweit hero__knopf" href="/music/">Swiftly Music</a> -->
+        <a class="knopf knopf--gross knopf--zweit knopf--spenden hero__knopf" href="/supporter/"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/></svg>Donate</a> <!-- supporter -->
+      </div>
+      <p class="hero__frei">All the features you need are free, for everyone. Supporters get a few extras on top.</p>
+    </div>
+
+    <div class="plakette plakette--direkt nur-desktop" aria-hidden="true">
+      <span class="plakette__zeichen">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11 2 4 11h5l-1 7 7-9h-5z"/>
+        </svg>
+      </span>
+      <span><b>Direct Play</b><em>Your server stays idle</em></span>
+    </div>
+
+    <div class="plakette plakette--resume nur-desktop" aria-hidden="true">
+      <span class="plakette__zeichen">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3.4 8a7 7 0 1 1 .3 4.6"/><path d="M2 4v4h4"/><path d="M9 7v6l4.5-3z" fill="currentColor" stroke="none"/>
+        </svg>
+      </span>
+      <span><b>Resume on this Device</b><em>Carry on where you stopped</em></span>
+    </div>
+
+    <div class="plakette plakette--pip nur-desktop" aria-hidden="true">
+      <span class="plakette__zeichen">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+          <rect x="2" y="3.5" width="16" height="13" rx="2.5"/>
+          <rect x="9.5" y="9.5" width="7" height="5.5" rx="1.5" fill="currentColor" stroke="none"/>
+        </svg>
+      </span>
+      <span><b>Picture in Picture</b><em>Keep it in the corner</em></span>
+    </div>
+
+    <div class="hero__buehne" aria-hidden="true">
+      <div class="geraet geraet--mac">
+        <img class="geraet__schirm" src="bilder/macos-start.webp" alt="" loading="lazy">
+        <img class="geraet__rahmen" src="bilder/rahmen-macbook.webp" alt="" width="1400" height="921">
+      </div>
+      <div class="geraet geraet--tv">
+        <img class="geraet__schirm" src="bilder/tvos-start.webp" alt="" loading="lazy">
+        <img class="geraet__rahmen" src="bilder/rahmen-appletv.webp" alt="" width="1400" height="905">
+      </div>
+      <div class="geraet geraet--fon">
+        <img class="geraet__schirm" src="bilder/ios-start.webp" alt="">
+        <img class="geraet__rahmen" src="bilder/rahmen-iphone.webp" alt="" width="700" height="1431">
+      </div>
+    </div>
+  </div>
+  <div class="hero__ausklang" aria-hidden="true"></div>
+</section>
+
+<!-- ================= Codecs ================= -->
+</div>
+
+<!-- ================= Geraete ================= -->
+<section class="etage" id="geraete">
+  <div class="bahn">
+    <div class="etagenkopf"><h2>The same app <br class="nur-mobil-inline">on every screen</h2>
+      <p>One App Store download for iPhone, iPad, Mac and Apple TV. The same player on Android, Windows and Linux.</p></div>
+
+    <div class="bento">
+      <article class="kachel kachel--mobil">
+        <div class="kachel__text">
+          <h3>Mobile</h3>
+          <p>Keep the film in a corner, download it for the train, sign in with six digits.</p>
+          <div class="kachel__chips"><span class="chip">iOS</span><span class="chip">iPadOS</span><span class="chip">Android</span></div>
+        </div>
+        <div class="kachel__bild" aria-hidden="true">
+          <div class="geraet geraet--pad">
+            <img class="geraet__schirm" src="bilder/ipados-start.webp" alt="" loading="lazy">
+            <img class="geraet__rahmen" src="bilder/rahmen-ipad.webp" alt="" width="1400" height="997" loading="lazy">
+          </div>
+          <div class="geraet geraet--fon">
+            <img class="geraet__schirm" src="bilder/ios-start.webp" alt="" loading="lazy">
+            <img class="geraet__rahmen" src="bilder/rahmen-iphone.webp" alt="" width="700" height="1431" loading="lazy">
+          </div>
+        </div>
+      </article>
+
+      <article class="kachel kachel--tv">
+        <div class="kachel__text">
+          <h3>TV</h3>
+          <p>Six digits from a browser sign you in. Every Apple TV user gets their own Jellyfin account.</p>
+          <div class="kachel__chips"><span class="chip">Apple TV</span><span class="chip">Android TV</span></div>
+        </div>
+        <div class="kachel__bild" aria-hidden="true">
+          <div class="wandtv"><img src="bilder/tvos-start.webp" alt="" width="1600" height="900" loading="lazy"></div>
+        </div>
+      </article>
+
+      <article class="kachel kachel--desktop">
+        <div class="kachel__text">
+          <h3>Desktop</h3>
+          <p>Menu bar and keyboard shortcuts on the Mac, the same player on Windows and Linux.</p>
+          <div class="kachel__chips"><span class="chip">macOS</span><span class="chip">Windows</span><span class="chip">Linux</span></div>
+        </div>
+        <div class="kachel__bild" aria-hidden="true">
+          <div class="geraet geraet--mac">
+            <img class="geraet__schirm" src="bilder/macos-start.webp" alt="" loading="lazy">
+            <img class="geraet__rahmen" src="bilder/rahmen-macbook.webp" alt="" width="1400" height="921" loading="lazy">
+          </div>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Direct Play: die Linse ================= -->
+<section class="etage linse" id="direktplay">
+  <div class="bahn">
+    <div class="etagenkopf"><h2>The file, not a copy</h2>
+      <p>Many players ask your server for a smaller, re-encoded copy. Swiftly plays the file you have.<span class="nur-desktop"> Move across the frame.</span></p></div>
+    <figure class="linse__figur">
+      <div class="linse__buehne">
+        <img class="linse__ersatz" src="aufnahmen/film.webp" alt="A frame from Sprite Fright, a film by the Blender Foundation" width="1280" height="720" loading="lazy">
+        <canvas class="linse__leinwand" aria-hidden="true"></canvas>
+        <span class="linse__marke linse__marke--kopie" aria-hidden="true">Transcoded copy</span>
+        <span class="linse__marke linse__marke--original" aria-hidden="true">Direct Play</span>
+      </div>
+      <figcaption>An illustration: a transcode re-encodes the film at a lower bitrate, Direct Play sends it as it is. Sprite Fright &copy; Blender Foundation, CC BY 4.0.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ================= Merkmale ================= -->
+<section class="etage" id="merkmale">
+  <div class="bahn">
+    <div class="etagenkopf"><h2>What it does</h2>
+      <p>Five things you notice in the first week. Each one recorded in the app, not drawn.</p></div>
+
+    <div class="merkmale__raster">
+      <div>
+        <div class="spur" id="spur">
+          <div class="spur__linie" id="linie" aria-hidden="true"></div>
+          <button class="merkmal" type="button" data-bild="aufnahmen/pip.mp4" data-geraet="fon" aria-current="true">
+            <span class="merkmal__punkt" aria-hidden="true"></span>
+            <span class="merkmal__titel">Picture in Picture</span>
+            <span class="merkmal__mehr"><span>Keep the film in a corner. iPhone and iPad only.</span></span>
+          </button>
+          <button class="merkmal" type="button" data-bild="aufnahmen/quickconnect.mp4" data-geraet="fon">
+            <span class="merkmal__punkt" aria-hidden="true"></span>
+            <span class="merkmal__titel">Quick Connect</span>
+            <span class="merkmal__mehr"><span>Six digits in a browser, and the television is signed in.</span></span>
+          </button>
+          <button class="merkmal" type="button" data-bild="aufnahmen/konten.mp4" data-geraet="fon">
+            <span class="merkmal__punkt" aria-hidden="true"></span>
+            <span class="merkmal__titel">Accounts and servers</span>
+            <span class="merkmal__mehr"><span>Switch the account, or the whole server, without signing in again.</span></span>
+          </button>
+          <button class="merkmal" type="button" data-bild="aufnahmen/laden.mp4" data-geraet="fon">
+            <span class="merkmal__punkt" aria-hidden="true"></span>
+            <span class="merkmal__titel">Offline</span>
+            <span class="merkmal__mehr"><span>Download the original file over Wi-Fi and watch it on the train.</span></span>
+          </button>
+          <button class="merkmal" type="button" data-bild="aufnahmen/anfragen.mp4" data-geraet="fon">
+            <span class="merkmal__punkt" aria-hidden="true"></span>
+            <span class="merkmal__titel">Requests</span>
+            <span class="merkmal__mehr"><span>Search shows what is there and what is not. The rest goes to Seerr.</span></span>
+          </button>
+        </div>
+        <div class="merkmale__ansage">
+          <h3 id="merkmal-titel">Picture in Picture</h3>
+          <p id="merkmal-text">Keep the film in a corner. iPhone and iPad only.</p>
+        </div>
+      </div>
+
+      <div class="aufnahme" id="aufnahme">
+        <div class="aufnahme__schein" aria-hidden="true"></div>
+        <div class="geraet geraet--fon" data-bild="aufnahmen/pip.webp" data-an>
+          <img class="geraet__schirm" src="aufnahmen/pip.webp" alt="" width="540" height="1170">
+          <img class="geraet__rahmen" src="bilder/rahmen-iphone.webp" alt="" width="700" height="1431">
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Resume ================= -->
+<section class="etage resume" id="resume">
+  <div class="bahn etagenkopf">
+    <h2>Resume on <br class="nur-mobil-inline">this Device</h2>
+    <p>Start a film on the phone at dinner and carry on in the living room.<span class="nur-desktop"> The moment another device is playing, a badge appears on the one you pick up.</span></p>
+  </div>
+
+  <div class="weiter" data-laeuft="fon">
+    <div class="weiter__bahn">
+      <div class="geraet geraet--fon weiter__fon" data-geraet="fon">
+        <div class="geraet__schirm weiter__schirm">
+          <img class="weiter__heim" src="aufnahmen/fon-heim-weiter.webp" alt="" loading="lazy">
+          <div class="weiter__spiel">
+            <span class="weiter__titel">Sprite Fright</span>
+            <div class="weiter__bild"><video muted playsinline loop preload="none" poster="aufnahmen/film.webp"><source src="aufnahmen/film.mp4" type="video/mp4"></video></div>
+            <div class="weiter__leiste"><span class="weiter__spur"><i></i></span><span class="weiter__zeiten"><b>6:08</b><b>-4:21</b></span></div>
+          </div>
+          <button class="weiter__knopf" type="button" aria-label="Continue here, on the iPhone"></button>
+        </div>
+        <img class="geraet__rahmen" src="bilder/rahmen-iphone.webp" alt="" width="700" height="1431" loading="lazy">
+      </div>
+      <div class="wandtv weiter__tv" data-geraet="tv">
+        <div class="weiter__schirm">
+          <img class="weiter__heim" src="aufnahmen/tv-heim-weiter.webp" alt="" width="1600" height="900" loading="lazy">
+          <div class="weiter__spiel">
+            <div class="weiter__bild"><video muted playsinline loop preload="none" poster="aufnahmen/film.webp"><source src="aufnahmen/film.mp4" type="video/mp4"></video></div>
+            <div class="weiter__leiste"><span class="weiter__titel">Sprite Fright</span><span class="weiter__spur"><i></i></span><span class="weiter__zeiten"><b>6:08</b><b>-4:21</b></span></div>
+          </div>
+          <button class="weiter__knopf" type="button" aria-label="Continue here, on the TV"></button>
+        </div>
+      </div>
+    </div>
+    <p class="weiter__hinweis" aria-live="polite"><span class="weiter__hinweis-text">Press <b>Continue here</b> on the TV.</span></p>
+  </div>
+</section>
+
+<!-- ================= Fragen ================= -->
+<section class="etage" id="fragen">
+  <div class="bahn">
+    <div class="etagenkopf"><h2>Common questions</h2>
+      <p>Short answers here. The long ones are in the <a class="frage__link" href="/blog/">guides</a>.</p></div>
+    <div class="fragen__blatt">
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="true" aria-controls="antwort-0">
+          <span>Do I need my own Jellyfin server?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-0"><div><p>Yes. Swiftly Player is the client, so you need a Jellyfin server of your own. Here is <a class="frage__link" href="/blog/jellyfin-docker-compose-setup/">how to set one up with Docker</a>.<span class="nur-desktop"> It speaks the Jellyfin API and nothing else, so Plex and Emby will not work. <a class="frage__link" href="/blog/jellyfin-vs-plex-vs-emby/">How the three compare</a>.</span></p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-7">
+          <span>Which Jellyfin versions work?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-7"><div><p>Jellyfin 10.8 or newer, up to the current <a class="frage__link" href="/blog/jellyfin-12-whats-new/">Jellyfin 12</a>.<span class="nur-desktop"> Skip Intro, Skip Recap and Skip Credits need 10.10 or newer, because that is where Jellyfin stores the segments.</span></p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-1">
+          <span>Is it really free?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-1"><div><p>Yes, and it stays that way: all the features you need are free, for everyone, with no ads and no account with me. Supporters get a few extras on top, like personalization and a thank-you.<span class="nur-desktop"> The source is on GitHub under the MPL-2.0.</span></p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-2">
+          <span>Which devices does it run on?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-2"><div><p>iPhone, iPad, Apple TV and Mac, Android phones and Android TV, plus Windows and Linux.<span class="nur-desktop"> The Apple versions are one download from the App Store. Android is on Google Play, Windows and Linux come from GitHub.</span></p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-8">
+          <span>How do I get the Android version?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-8"><div><p>From <a class="frage__link" href="https://play.google.com/store/apps/details?id=de.paulherter.swiftly" target="_blank" rel="noopener">Google Play</a>, on Android phones and Android TV with Android 9 or newer. On the TV, search for Swiftly in the Play Store, or install it from your phone and pick the TV. <a class="frage__link" href="/android/">All steps</a>.</p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-3">
+          <span>Does it transcode?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-3"><div><p>No. Swiftly plays the original file with VLC, as Direct Play or Direct Stream, so your server has nothing to convert. <a class="frage__link" href="/blog/why-is-jellyfin-transcoding/">Why other clients transcode</a>.<span class="nur-desktop"> That covers MKV, HEVC, AV1, Dolby Vision, HDR10, TrueHD and PGS subtitles, and external subtitle files next to the video.</span></p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-9">
+          <span>Can it skip intros?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-9"><div><p>Yes, when your server knows where they are. With the <a class="frage__link" href="/blog/jellyfin-intro-skipper-setup/">Intro Skipper plugin</a>, Swiftly shows Skip Intro, Skip Recap and Skip Credits.<span class="nur-desktop"> When an episode ends, the next one starts on its own.</span></p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-4">
+          <span>What is Resume on this Device?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-4"><div><p>Start a film on your iPhone and walk to the television. The Apple TV shows a button, one press, and it carries on at the same second.<span class="nur-desktop"> It works in every direction between your devices.</span></p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-5">
+          <span>Can I watch without a connection?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-5"><div><p>Yes, on iPhone, iPad and Mac. A download pulls the original file over Wi-Fi and plays it from storage. <a class="frage__link" href="/blog/jellyfin-offline-downloads/">Which clients can download</a>.<span class="nur-desktop"> A train without signal is fine.</span></p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-6">
+          <span>What data leaves my device?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-6"><div><p>Only what your own server needs: what you watched and where you stopped.<span class="nur-desktop"> There is no analytics, no account with me, and nobody in between.</span></p></div></div>
+      </div>
+      <div class="frage">
+        <button class="frage__knopf" type="button" aria-expanded="false" aria-controls="antwort-10">
+          <span>Something does not work. Where do I report it?</span>
+          <svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>
+        </button>
+        <div class="frage__antwort" id="antwort-10"><div><p>On <a class="frage__link" href="https://discord.gg/MeGwfv3UwN" target="_blank" rel="noopener">Discord</a> or as a <a class="frage__link" href="https://github.com/paulherter/swiftly-player/issues" target="_blank" rel="noopener">GitHub issue</a>. Name the device, the app version and the file.<span class="nur-desktop"> If your Jellyfin dashboard shows Transcoding instead of Direct Play, that is worth a report too.</span></p></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Downloads ================= -->
+<section class="etage" id="downloads">
+  <div class="bahn">
+    <div class="etagenkopf">
+      <h2>Download it now</h2>
+      <p>Free, no account with me. Every way leads to a short page that says what to do next.</p>
+    </div>
+
+    <div class="ladenblock" data-geraete>
+      <div class="laden__haupt" id="laden-haupt">
+      <a class="weg-gross" href="/download/app-store/" data-geraet="apple">
+        <span class="weg__zeichen" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.04 3.517-.52 8.75 1.47 11.594.98 1.404 2.13 2.965 3.69 2.913 1.47-.052 2.03-.962 3.81-.962 1.77 0 2.28.962 3.83.936 1.6-.026 2.62-1.443 3.6-2.847 1.14-1.612 1.61-3.171 1.64-3.249-.03-.013-3.15-1.209-3.18-4.8-.026-3.003 2.45-4.442 2.56-4.512-1.4-2.055-3.57-2.29-4.33-2.343-1.95-.156-3.6 1.067-4.52 1.067zm3.09-3.093c.84-1.014 1.4-2.418 1.25-3.803-1.22.05-2.71.81-3.58 1.824-.78.897-1.47 2.338-1.29 3.71 1.36.106 2.77-.692 3.62-1.73"/></svg></span>
+        <span><b>App Store</b><em>iPhone, iPad, Apple TV, Mac</em></span>
+      </a>
+      </div>
+      <ul class="laden__rest" id="laden-rest">
+        <li>
+      <a class="weg-klein" href="/android/" data-geraet="android">
+        <span class="weg__zeichen" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"/>
+          </svg></span>
+        <span><b>Android</b><em>Phone and TV</em></span>
+      </a>
+        </li>
+        <li>
+      <a class="weg-klein" href="/download/windows/" data-geraet="windows">
+        <span class="weg__zeichen" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M0 0h11.377v11.372H0zm12.623 0H24v11.372H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/>
+          </svg></span>
+        <span><b>Windows</b><em>Windows 10 and 11</em></span>
+      </a>
+        </li>
+        <li>
+      <a class="weg-klein" href="/download/linux/" data-geraet="linux">
+        <span class="weg__zeichen" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.043c-.06-.003-.12 0-.18 0h-.016c.151-.467-.182-.825-1.065-1.224-.915-.4-1.646-.336-1.77.465-.008.043-.013.066-.018.135-.068.023-.139.053-.209.064-.43.268-.662.669-.793 1.187-.13.533-.17 1.156-.205 1.869v.003c-.02.334-.17.838-.319 1.35-1.5 1.072-3.58 1.538-5.348.334a2.645 2.645 0 00-.402-.533 1.45 1.45 0 00-.275-.333c.182 0 .338-.03.465-.067a.615.615 0 00.314-.334c.108-.267 0-.697-.345-1.163-.345-.467-.931-.995-1.788-1.521-.63-.4-.986-.87-1.15-1.396-.165-.534-.143-1.085-.015-1.645.245-1.07.873-2.11 1.274-2.763.107-.065.037.135-.408.974-.396.751-1.14 2.497-.122 3.854a8.123 8.123 0 01.647-2.876c.564-1.278 1.743-3.504 1.836-5.268.048.036.217.135.289.202.218.133.38.333.59.465.21.201.477.335.876.335.039.003.075.006.11.006.412 0 .73-.134.997-.268.29-.134.52-.334.74-.4h.005c.467-.135.835-.402 1.044-.7zm2.185 8.958c.037.6.343 1.245.882 1.377.588.134 1.434-.333 1.791-.765l.211-.01c.315-.007.577.01.847.268l.003.003c.208.199.305.53.391.876.085.4.154.78.409 1.066.486.527.645.906.636 1.14l.003-.007v.018l-.003-.012c-.015.262-.185.396-.498.595-.63.401-1.746.712-2.457 1.57-.618.737-1.37 1.14-2.036 1.191-.664.053-1.237-.2-1.574-.898l-.005-.003c-.21-.4-.12-1.025.056-1.69.176-.668.428-1.344.463-1.897.037-.714.076-1.335.195-1.814.12-.465.308-.797.641-.984l.045-.022zm-10.814.049h.01c.053 0 .105.005.157.014.376.055.706.333 1.023.752l.91 1.664.003.003c.243.533.754 1.064 1.189 1.637.434.598.77 1.131.729 1.57v.006c-.057.744-.48 1.148-1.125 1.294-.645.135-1.52.002-2.395-.464-.968-.536-2.118-.469-2.857-.602-.369-.066-.61-.2-.723-.4-.11-.2-.113-.602.123-1.23v-.004l.002-.003c.117-.334.03-.752-.027-1.118-.055-.401-.083-.71.043-.94.16-.334.396-.4.69-.533.294-.135.64-.202.915-.47h.002v-.002c.256-.268.445-.601.668-.838.19-.201.38-.336.663-.336zm7.159-9.074c-.435.201-.945.535-1.488.535-.542 0-.97-.267-1.28-.466-.154-.134-.28-.268-.373-.335-.164-.134-.144-.333-.074-.333.109.016.129.134.199.2.096.066.215.2.36.333.292.2.68.467 1.167.467.485 0 1.053-.267 1.398-.466.195-.135.445-.334.648-.467.156-.136.149-.267.279-.267.128.016.034.134-.147.332a8.097 8.097 0 01-.69.468zm-1.082-1.583V5.64c-.006-.02.013-.042.029-.05.074-.043.18-.027.26.004.063 0 .16.067.15.135-.006.049-.085.066-.135.066-.055 0-.092-.043-.141-.068-.052-.018-.146-.008-.163-.065zm-.551 0c-.02.058-.113.049-.166.066-.047.025-.086.068-.14.068-.05 0-.13-.02-.136-.068-.01-.066.088-.133.15-.133.08-.031.184-.047.259-.005.019.009.036.03.03.05v.02h.003z"/>
+          </svg></span>
+        <span><b>Linux</b><em>apt, dnf, pacman</em></span>
+      </a>
+        </li>
+        <li>
+      <a class="weg-klein" href="/download/testflight/" data-geraet="beta">
+        <span class="weg__zeichen" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4.6 1.2h2.8M5 1.2v3.3L2.4 9.3a1 1 0 0 0 .9 1.5h5.4a1 1 0 0 0 .9-1.5L7 4.5V1.2M3.4 7.6h5.2"/>
+          </svg></span>
+        <span><b>TestFlight</b><em>Beta, the next build first</em></span>
+      </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="stillleben">
+    <div class="stillleben__innen">
+      <img class="stillleben__schirm stillleben__schirm--ipad" src="bilder/ipados-start.webp" alt="" loading="lazy">
+      <img class="stillleben__schirm stillleben__schirm--fon"  src="bilder/ios-start.webp" alt="" loading="lazy">
+      <img class="stillleben__aufbau" src="bilder/stillleben.webp"
+           alt="iPad, iPhone, an Apple TV with its remote and a pair of AirPods, seen from above" loading="lazy">
+    </div>
+  </div>
+</section>
+
+<!-- supporter:start -->
+<div class="pg startseite"><section class="etage bahn" aria-labelledby="h-start"><div class="startteil"><div class="startteil__licht" aria-hidden="true"></div>
+<div class="startteil__text"><h2 id="h-start">Help Swiftly <span class="nb">grow<svg class="spross" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 13C12 8.5 8.5 6 4 6c0 4.5 3 7 8 7zM12 11c0-4 3-7 8-7 0 4.5-3 7-8 7z" fill="currentColor"/><path d="M12 22V10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span></h2><p>Your support keeps Swiftly going. Open source, no ads, everything for watching stays free.</p>
+<ul class="startteil__punkte"><li>8 looks and app icons</li><li>Your own accent and Home glow</li><li>Your name in the credits</li></ul>
+<div class="held__wege"><a class="knopf" href="/supporter/#options">Support Swiftly</a><a class="knopf knopf--leise" href="/supporter/">Learn more</a></div>
+<p class="startteil__regel">Linux and Windows here on the website. iPhone, iPad, Mac, Apple TV and Android inside the app, through the App Store and Google Play.</p></div>
+<div class="drei" role="img" aria-label="Home in three looks: Sunset, Neon Night and Aurora"><div class="platz"><div class="mini" style="--a: #FF8C6B; --r: -7deg; animation-delay: 0s"><span class="mini__schein"></span><img class="mini__logo" src="/bilder/supporter/mini-logo.svg" alt=""><svg class="mini__herz" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 20.5s-7.8-4.7-7.8-10.6A4.4 4.4 0 0 1 12 7.2a4.4 4.4 0 0 1 7.8 2.7c0 5.9-7.8 10.6-7.8 10.6z"/></svg><span class="mini__t">Continue watching</span><span class="mini__quer"><img src="/bilder/supporter/poster-quer.webp" alt="" loading="lazy"><i></i></span><span class="mini__hoch mini__hoch--1"><img src="/bilder/supporter/poster-1.webp" alt="" loading="lazy"></span><span class="mini__hoch mini__hoch--2"><img src="/bilder/supporter/poster-2.webp" alt="" loading="lazy"></span><span class="mini__tabs"><i class="an"></i><i></i><i></i><i></i></span></div></div><div class="platz"><div class="mini" style="--a: #B08CFF; --r: 0deg; animation-delay: .6s"><span class="mini__schein"></span><img class="mini__logo" src="/bilder/supporter/mini-logo.svg" alt=""><svg class="mini__herz" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 20.5s-7.8-4.7-7.8-10.6A4.4 4.4 0 0 1 12 7.2a4.4 4.4 0 0 1 7.8 2.7c0 5.9-7.8 10.6-7.8 10.6z"/></svg><span class="mini__t">Continue watching</span><span class="mini__quer"><img src="/bilder/supporter/poster-quer.webp" alt="" loading="lazy"><i></i></span><span class="mini__hoch mini__hoch--1"><img src="/bilder/supporter/poster-1.webp" alt="" loading="lazy"></span><span class="mini__hoch mini__hoch--2"><img src="/bilder/supporter/poster-2.webp" alt="" loading="lazy"></span><span class="mini__tabs"><i class="an"></i><i></i><i></i><i></i></span></div></div><div class="platz"><div class="mini" style="--a: #5AD3E8; --r: 7deg; animation-delay: 1.2s"><span class="mini__schein"></span><img class="mini__logo" src="/bilder/supporter/mini-logo.svg" alt=""><svg class="mini__herz" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 20.5s-7.8-4.7-7.8-10.6A4.4 4.4 0 0 1 12 7.2a4.4 4.4 0 0 1 7.8 2.7c0 5.9-7.8 10.6-7.8 10.6z"/></svg><span class="mini__t">Continue watching</span><span class="mini__quer"><img src="/bilder/supporter/poster-quer.webp" alt="" loading="lazy"><i></i></span><span class="mini__hoch mini__hoch--1"><img src="/bilder/supporter/poster-1.webp" alt="" loading="lazy"></span><span class="mini__hoch mini__hoch--2"><img src="/bilder/supporter/poster-2.webp" alt="" loading="lazy"></span><span class="mini__tabs"><i class="an"></i><i></i><i></i><i></i></span></div></div></div></div></section></div>
+<!-- supporter:end -->
+
+</main>
+
+<footer class="fuss">
+  <div class="bahn">
+    <div class="fuss__linie"></div>
+
+    <div class="fuss__raster fuss__raster--fuenf">
+      <div class="fuss__marke">
+        <img src="wortmarke.svg" alt="Swiftly" width="61" height="21">
+        <p>A video player for your own Jellyfin server. Built by one person.</p>
+      </div>
+
+      <div class="fuss__spalte">
+        <h2>Download</h2>
+        <ul>
+          <li><a href="/download/app-store/">App Store</a></li>
+          <li><a href="/download/testflight/">TestFlight</a></li>
+          <li><a href="/download/android-beta/">Android beta</a></li>
+          <li><a href="/android/">Android</a></li>
+          <li><a href="/download/windows/">Windows</a></li>
+          <li><a href="/download/linux/">Linux</a></li>
+          <li><a href="/music/">Swiftly Music</a></li>
+        </ul>
+      </div>
+
+      <!-- seiten:anfang (blog-bauen.py) -->
+      <div class="fuss__spalte">
+        <h2>Guides</h2>
+        <ul>
+          <li><a href="/blog/best-jellyfin-client/">Best Jellyfin client</a></li>
+          <li><a href="/blog/best-jellyfin-client-apple-tv/">Apple TV</a></li>
+          <li><a href="/blog/best-jellyfin-client-iphone/">iPhone</a></li>
+          <li><a href="/blog/jellyfin-android-tv-clients-compared/">Android TV</a></li>
+          <li><a href="/blog/best-jellyfin-client-mac/">Mac</a></li>
+          <li><a href="/blog/why-is-jellyfin-transcoding/">Why it transcodes</a></li>
+        </ul>
+      </div>
+      <!-- seiten:ende -->
+
+      <div class="fuss__spalte">
+        <h2>Elsewhere</h2>
+        <ul>
+          <li><a href="/about/">About</a></li>
+          <li><a href="/blog/">Blog</a></li>
+          <li><a href="https://github.com/paulherter/swiftly-player" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://discord.gg/MeGwfv3UwN" target="_blank" rel="noopener">Discord</a></li>
+          <li><a href="/supporter/">Donate</a></li> <!-- supporter -->
+          <li><a href="/support.html">Support</a></li>
+          <li><a href="https://jellyfin.org" target="_blank" rel="noopener">Jellyfin</a></li>
+        </ul>
+      </div>
+
+      <div class="fuss__spalte">
+        <h2>Legal</h2>
+        <ul>
+          <li><a href="/impressum.html">Impressum</a></li>
+          <li><a href="/privacy.html">Privacy</a></li>
+          <li><a href="/datenschutz.html">Datenschutz</a></li>
+          <li><a href="/terms/">Terms</a></li>
+          <li><a href="/licenses/">Open-source licenses</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="fuss__linie"></div>
+    <p class="fuss__klein">
+      Swiftly Player is not part of the Jellyfin project and hosts nothing itself. The code is
+      under the MPL-2.0<span class="nur-desktop">; the name, the wordmark and the app icon are not</span>. Playback uses VLCKit and libVLC by VideoLAN
+      under the LGPL-2.1-or-later: <a href="/licenses/">licenses and source</a>.<span class="nur-desktop"> The films in the screenshots are by the Blender Foundation,
+      released under Creative Commons Attribution.</span> App Store is a service mark of Apple Inc. The Android robot is
+      reproduced or modified from work created and shared by Google and used according to terms described in the
+      Creative Commons 3.0 Attribution License.
+    </p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var ruhig = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var schmal = function () { return window.matchMedia("(max-width: 900px)").matches; };
+
+  /* ---------- Menue ---------- */
+  var burger = document.querySelector(".leiste__burger");
+  var menue = document.getElementById("menue");
+  function menueSetzen(offen) {
+    burger.setAttribute("aria-expanded", offen ? "true" : "false");
+    if (offen) { menue.setAttribute("data-offen", ""); }
+    else { menue.removeAttribute("data-offen"); }
+  }
+  if (burger && menue) {
+    burger.addEventListener("click", function () {
+      menueSetzen(burger.getAttribute("aria-expanded") !== "true");
+    });
+    menue.addEventListener("click", function (e) {
+      if (e.target.closest("a")) { menueSetzen(false); }
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { menueSetzen(false); }
+    });
+  }
+
+  /* Der Klick braucht kein eigenes Skript mehr: Hover, Druck und Fokus
+     stehen fuer alle Elemente im Stilblatt unter "Verhalten" (Paul,
+     17.09.: "Such dir die beste aus und mach bei allen dieselbe"). Eine
+     Groesse, die per Skript huepft, war dabei die lauteste Variante. */
+
+  /* ---------- Masse jedes Bildes, damit kein Mockup springt ----------
+     Ein Mockup ist ein Kasten ohne eigene Hoehe: die Hoehe kommt vom
+     Rahmenbild. Fehlen width und height am img, ist der Kasten null hoch,
+     bis das Bild da ist. Weil das Geraet mittig sitzt (translate -50%),
+     stand es dann eine halbe Kartenhoehe zu tief und sprang beim Laden
+     nach oben -- genau der Fehler, den Paul bei Quick Connect und Offline
+     gesehen hat. Mit den Massen kennt der Browser das Seitenverhaeltnis
+     vor dem ersten Byte. Die Werte sind an den Dateien gemessen. */
+  var bildmasse = {
+    "bilder/rahmen-iphone.webp": [700, 1431],
+    "bilder/rahmen-iphone-quer.webp": [1400, 685],
+    "bilder/rahmen-ipad.webp": [1400, 997],
+    "bilder/rahmen-appletv.webp": [1400, 905],
+    "bilder/rahmen-macbook.webp": [1400, 921],
+    "bilder/ios-start.webp": [900, 1957],
+    "bilder/ipados-start.webp": [1600, 1103],
+    "bilder/macos-start.webp": [1600, 1039],
+    "bilder/tvos-start.webp": [1600, 900],
+    "bilder/windows-start.webp": [1280, 751],
+    "bilder/linux-start.webp": [1600, 985],
+    "aufnahmen/pip.webp": [540, 1170],
+    "aufnahmen/konten.webp": [540, 1170],
+    "aufnahmen/anfragen.webp": [540, 1170],
+    "aufnahmen/quickconnect.webp": [540, 1170],
+    "aufnahmen/laden.webp": [540, 1170]
+  };
+  function mass(pfad) {
+    var m = bildmasse[pfad];
+    return m ? ' width="' + m[0] + '" height="' + m[1] + '"' : "";
+  }
+
+
+  /* ---------- Merkmale: laeuft von selbst durch ---------- */
+  var spur = document.getElementById("spur");
+  /* Nicht "laeuft" nennen: so heisst weiter unten schon der Merker, ob
+     der Durchlauf laeuft (var kennt keinen Block, siehe DESIGN.md 11.2). */
+  var linie = document.getElementById("linie");
+  var mTitel = document.getElementById("merkmal-titel");
+  var mText  = document.getElementById("merkmal-text");
+  var ansage = document.querySelector(".merkmale__ansage");
+  var aufnahme = document.getElementById("aufnahme");
+  var merkmale = spur ? [].slice.call(spur.querySelectorAll(".merkmal")) : [];
+  var DAUER = 6200;
+  /* Laeuft im Mockup ein Film, bleibt das Merkmal so lange stehen, bis er
+     durch ist. Sonst springt die Liste weiter, bevor man den Vorgang
+     gesehen hat. Die Laenge steht erst fest, wenn der Kopf der Datei da
+     ist, deshalb wird der Beginn nachtraeglich verschoben statt der
+     Balken zurueckgesetzt. */
+  var dauerJetzt = DAUER;
+  function dauerSetzen(neu) {
+    neu = Math.max(DAUER, Math.round(neu));
+    if (neu === dauerJetzt) { return; }
+    var anteil = gleitBis ? 0 : Math.min(1, (performance.now() - beginn) / dauerJetzt);
+    dauerJetzt = neu;
+    if (!gleitBis) { beginn = performance.now() - anteil * dauerJetzt; }
+  }
+
+  var jetzt = 0, beginn = 0, laeuft = false, schleife = 0;
+
+  var rahmenFuer = { fon: "bilder/rahmen-iphone.webp", fonquer: "bilder/rahmen-iphone-quer.webp",
+                     mac: "bilder/rahmen-macbook.webp", tv: "bilder/rahmen-appletv.webp" };
+  function mockupFuer(i) {
+    var bild = merkmale[i].getAttribute("data-bild");
+    var art = merkmale[i].getAttribute("data-geraet") || "fon";
+    var alt = aufnahme.querySelector(".geraet[data-an]");
+    if (alt && alt.getAttribute("data-bild") === bild) { return; }
+    /* Reste wegraeumen, falls ein Zeitgeber nicht gelaufen ist (in einer
+       verborgenen Seite werden sie gedrosselt): hoechstens das alte und
+       das neue Mockup liegen gleichzeitig im Kasten. */
+    var reste = aufnahme.querySelectorAll(".geraet:not([data-an])");
+    for (var r = 0; r < reste.length; r++) { reste[r].parentNode.removeChild(reste[r]); }
+    var neu = document.createElement("div");
+    neu.className = "geraet " + (art === "pad" ? "geraet--flach" : "geraet--" + art);
+    neu.setAttribute("data-bild", bild);
+    /* Wo es eine Aufnahme gibt, laeuft sie im Geraet. Bei reduzierter
+       Bewegung bleibt das Standbild stehen. */
+    var film = /\.mp4$/.test(bild);
+    var standbild = film ? bild.replace(/\.mp4$/, ".webp") : bild;
+    var schirm = film && !ruhig
+      ? '<video class="geraet__schirm" muted playsinline loop autoplay preload="none" poster="'
+        + standbild + '"' + mass(standbild) + '><source src="' + bild + '" type="video/mp4"></video>'
+      : '<img class="geraet__schirm" src="' + standbild + '" alt=""' + mass(standbild) + '>';
+    neu.innerHTML = (art === "pad")
+      ? '<img src="' + bild + '" alt=""' + mass(bild) + '>'
+      : schirm + '<img class="geraet__rahmen" src="' + rahmenFuer[art] + '" alt=""' + mass(rahmenFuer[art]) + '>';
+    aufnahme.appendChild(neu);
+    /* Ein erzwungener Umbruch statt requestAnimationFrame: der Uebergang
+       laeuft dann auch, wenn die Seite gerade nicht gezeichnet wird. */
+    void neu.offsetWidth;
+    neu.setAttribute("data-an", "");
+    if (alt) {
+      alt.style.transitionDuration = "320ms";
+      alt.removeAttribute("data-an");
+      setTimeout(function () { if (alt.parentNode) { alt.parentNode.removeChild(alt); } }, 380);
+    }
+  }
+
+  /* Der Balken sagt, wie lange es noch laeuft. Er misst die Punkte
+     selbst aus, damit er senkrecht wie waagerecht stimmt. */
+  function mitte(el) {
+    var punkt = el.querySelector(".merkmal__punkt");
+    if (schmal()) { return el.offsetLeft + el.offsetWidth / 2; }
+    return el.offsetTop + punkt.offsetTop + punkt.offsetHeight / 2;
+  }
+  /* Tuerkis ist ein Balken ueber die ganze Spur, verkuerzt ueber scaleY/X:
+     so kann er per transform gleiten statt per Hoehe. Blau waechst jeden
+     Takt neu und braucht keinen Uebergang. */
+  var letztesK = 0, gleitBis = 0, verzugFrei = 0, verlauf = "";
+  var GLEIT = 620;
+
+  function masse() {
+    var erster = mitte(merkmale[0]);
+    var ende = schmal() ? spur.offsetWidth - 22 : spur.offsetHeight - 24;
+    return { erster: erster, ende: ende, spanne: Math.max(1, ende - erster) };
+  }
+
+  /* Der Verlauf bekommt harte Stufen genau an den Punkten: so traegt jeder
+     Abschnitt die Farbe seines Merkmals, und der Wechsel sitzt auf dem
+     Punkt statt irgendwo dazwischen. */
+  function verlaufSetzen() {
+    var m = masse(), stufen = [];
+    for (var i = 0; i < merkmale.length; i++) {
+      var farbe = getComputedStyle(merkmale[i]).getPropertyValue("--farbe").trim() || "#50D5DA";
+      var von = ((mitte(merkmale[i]) - m.erster) / m.spanne * 100).toFixed(2);
+      var bis = (i + 1 < merkmale.length) ? ((mitte(merkmale[i + 1]) - m.erster) / m.spanne * 100).toFixed(2) : "100";
+      stufen.push(farbe + " " + von + "% " + bis + "%");
+    }
+    verlauf = "linear-gradient(to " + (schmal() ? "right" : "bottom") + ", " + stufen.join(", ") + ")";
+  }
+
+  /* Die Linie macht den Punkt: beim Gleiten leuchtet jeder Punkt genau dann,
+     wenn die Linie ihn erreicht, nicht alle sofort. */
+  function punkteNachziehen(von, bis) {
+    var m = masse();
+    for (var i = 0; i < merkmale.length; i++) {
+      var mk = (mitte(merkmale[i]) - m.erster) / m.spanne;
+      var d = 0;
+      if (bis > von && mk > von && mk <= bis + 0.001) { d = (mk - von) / (bis - von) * GLEIT; }
+      else if (bis < von && mk < von && mk >= bis - 0.001) { d = (von - mk) / (von - bis) * GLEIT; }
+      merkmale[i].querySelector(".merkmal__punkt").style.transitionDelay = d ? Math.round(d) + "ms" : "";
+    }
+    clearTimeout(verzugFrei);
+    verzugFrei = setTimeout(function () {
+      for (var j = 0; j < merkmale.length; j++) { merkmale[j].querySelector(".merkmal__punkt").style.transitionDelay = ""; }
+    }, GLEIT + 80);
+  }
+
+  function balkenSetzen(anteil, sanft) {
+    if (!merkmale.length) { return; }
+    var m = masse();
+    var a = mitte(merkmale[jetzt]);
+    var b = (jetzt + 1 < merkmale.length) ? mitte(merkmale[jetzt + 1]) : m.ende;
+    var k = Math.max(0, Math.min(1, (a + (b - a) * anteil - m.erster) / m.spanne));
+    if (sanft !== undefined) {
+      linie.classList.toggle("gleitet", !!sanft && !ruhig);
+      if (sanft && !ruhig) { punkteNachziehen(letztesK, k); }
+    }
+    letztesK = k;
+    var rest = ((1 - k) * 100).toFixed(2);
+    if (schmal()) {
+      linie.style.cssText = "left:" + m.erster + "px;width:" + m.spanne + "px;clip-path:inset(0 " + rest + "% 0 0);background-image:" + verlauf;
+    } else {
+      linie.style.cssText = "top:" + m.erster + "px;height:" + m.spanne + "px;clip-path:inset(0 0 " + rest + "% 0);background-image:" + verlauf;
+    }
+  }
+
+  function merkmalZeigen(i, sanft) {
+    jetzt = i;
+    for (var k = 0; k < merkmale.length; k++) {
+      merkmale[k].setAttribute("aria-current", k === i ? "true" : "false");
+      if (k < i) { merkmale[k].setAttribute("data-erledigt", ""); }
+      else { merkmale[k].removeAttribute("data-erledigt"); }
+    }
+    mTitel.textContent = merkmale[i].querySelector(".merkmal__titel").textContent;
+    mText.textContent  = merkmale[i].querySelector(".merkmal__mehr span").textContent;
+    /* Mobil blendet die Ansage weich herein, statt nur den Text zu tauschen. */
+    if (sanft !== undefined && !ruhig && ansage && ansage.animate) {
+      ansage.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
+                     { duration: 380, easing: "cubic-bezier(.23,1,.32,1)" });
+    }
+    mockupFuer(i);
+    var f = getComputedStyle(merkmale[i]).getPropertyValue("--farbe").trim();
+    if (f) { aufnahme.style.setProperty("--farbe", f); }
+    balkenSetzen(0, !!sanft);
+    /* Beim Gleiten wartet der Zeitgeber, bis die Linie angekommen ist. Sonst
+       waechst der Lauf gegen den Gleitflug, und der Klick sieht aus, als
+       passiere erst nach einem vollen Durchlauf etwas. */
+    if (sanft && !ruhig) { gleitBis = performance.now() + GLEIT; beginn = gleitBis; }
+    else { gleitBis = 0; beginn = performance.now(); }
+    /* Erst jetzt steht der Beginn fest. Ein Kopf, der zu spaet eintrifft,
+       darf nicht mehr das naechste Merkmal verstellen. */
+    dauerJetzt = DAUER;
+    var film = aufnahme.querySelector(".geraet[data-an] video");
+    if (film) {
+      if (film.duration > 0) { dauerSetzen(film.duration * 1000 + 450); }
+      else {
+        film.addEventListener("loadedmetadata", function () {
+          if (jetzt === i && film.duration > 0) { dauerSetzen(film.duration * 1000 + 450); }
+        });
+      }
+    }
+  }
+
+  function takt(zeit) {
+    if (!laeuft) { return; }
+    if (zeit < gleitBis) { schleife = requestAnimationFrame(takt); return; }
+    gleitBis = 0;
+    if (linie.classList.contains("gleitet")) { linie.classList.remove("gleitet"); }
+    var anteil = (zeit - beginn) / dauerJetzt;
+    /* Gleichmaessig: eine weiche Kurve bremst zum Schluss so stark ab, dass
+       die Linie kurz vor dem Punkt stehen zu bleiben scheint. */
+    /* Am Ende der Reihe gleitet die Linie zurueck, statt zu verschwinden. */
+    if (anteil >= 1) {
+      if (jetzt + 1 >= merkmale.length) { merkmalZeigen(0, true); }
+      else { merkmalZeigen(jetzt + 1, false); }
+    }
+    else { balkenSetzen(anteil); }
+    schleife = requestAnimationFrame(takt);
+  }
+  /* Laeuft ein Film im Mockup, ruht er mit der Liste: nichts spielt
+     weiter, was niemand sieht. */
+  function filmeSchalten(an) {
+    var f = aufnahme.querySelectorAll("video");
+    for (var i = 0; i < f.length; i++) { if (an) { var v = f[i].play(); if (v && v.catch) { v.catch(function () {}); } } else { f[i].pause(); } }
+  }
+  function starten() { if (!laeuft && !ruhig) { laeuft = true; beginn = performance.now(); schleife = requestAnimationFrame(takt); } filmeSchalten(true); }
+  function anhalten() { laeuft = false; cancelAnimationFrame(schleife); filmeSchalten(false); }
+
+  for (var m = 0; m < merkmale.length; m++) {
+    (function (index) {
+      merkmale[index].addEventListener("click", function () {
+        merkmalZeigen(index, true);
+        if (!ruhig) { starten(); }
+      });
+    })(m);
+  }
+  if (merkmale.length) {
+    verlaufSetzen();
+    merkmalZeigen(0);
+    window.addEventListener("resize", function () { verlaufSetzen(); balkenSetzen(0); beginn = performance.now(); });
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(function (eintraege) {
+        if (eintraege[0].isIntersecting) { starten(); } else { anhalten(); }
+      }, { threshold: .25 }).observe(spur);
+    } else { starten(); }
+
+    /* Die Bilder der uebrigen Merkmale werden im Leerlauf geholt, damit
+       beim ersten Klick nichts erst geladen werden muss. Filme bleiben
+       aussen vor, von denen reicht das Standbild. */
+    var vorladen = function () {
+      var liste = [rahmenFuer.fon, rahmenFuer.fonquer, rahmenFuer.mac, rahmenFuer.tv];
+      for (var v = 0; v < merkmale.length; v++) {
+        var b = merkmale[v].getAttribute("data-bild") || "";
+        liste.push(b.replace(/\.mp4$/, ".webp"));
+      }
+      for (var w = 0; w < liste.length; w++) {
+        if (!liste[w]) { continue; }
+        var bild = new Image();
+        bild.decoding = "async";
+        bild.src = liste[w];
+      }
+    };
+    if (window.requestIdleCallback) { requestIdleCallback(vorladen, { timeout: 2500 }); }
+    else { setTimeout(vorladen, 1200); }
+  }
+
+  /* ---------- Fragen ---------- */
+  var knoepfe = document.querySelectorAll(".frage__knopf");
+  for (var f = 0; f < knoepfe.length; f++) {
+    knoepfe[f].addEventListener("click", function (e) {
+      var k = e.currentTarget;
+      var offen = k.getAttribute("aria-expanded") === "true";
+      for (var q = 0; q < knoepfe.length; q++) { knoepfe[q].setAttribute("aria-expanded", "false"); }
+      k.setAttribute("aria-expanded", offen ? "false" : "true");
+    });
+  }
+
+  /* ---------- Die beiden Aufnahmen laufen zusammen ----------
+     Die Filme liegen ungeschnitten in der Seite: Simulatoraufnahmen
+     schreiben nur bei Aenderung ein Bild, meist im Abstand von 16,7 ms,
+     dazwischen aber mit Luecken bis zu 9,7 Sekunden. Wer so etwas auf
+     feste 30 Bilder je Sekunde umrechnet, wirft in den bewegten Stellen
+     jedes zweite Bild weg -- das waren die Hakler. Deshalb bleibt die
+     Videospur, wie sie aufgenommen wurde, und der Ausschnitt kommt aus
+     data-von und data-bis.
+
+     Nachgezogen wird nicht mehr waehrend des Laufs. Ein Sprung auf eine
+     andere Stelle sieht aus wie ein Ruckler rueckwaerts; die beiden
+     Dateien sind auf 0,07 s ausgerichtet und gleich lang, das haelt.
+
+     Das Fenster ist eine ganze Uebergabe und nicht mehr: Telefon spielt,
+     der Film geht auf den Fernseher, das Telefon holt ihn zurueck. In
+     der Aufnahme stecken drei solche Wechsel; wer irgendwo schneidet,
+     springt mitten in einen Knopfdruck zurueck. Am Ende des Fensters
+     steht auf beiden Geraeten dasselbe Bild wie am Anfang, deshalb
+     faellt der Umsprung kaum auf. */
+  var vTv = document.getElementById("video-tv");
+  var vFon = document.getElementById("video-fon");
+  if (vTv && vFon && "IntersectionObserver" in window) {
+    var filme = [vTv, vFon];
+    var soll = false;
+    function von(v) { return parseFloat(v.getAttribute("data-von")) || 0; }
+    function bis(v) { return parseFloat(v.getAttribute("data-bis")) || (v.duration || 0); }
+
+    /* Schon vor der Etage holen, sonst faengt einer beim Auftauchen
+       erst an zu laden und bleibt stehen, waehrend der andere laeuft. */
+    new IntersectionObserver(function (e, selbst) {
+      if (!e[0].isIntersecting) { return; }
+      for (var l = 0; l < 2; l++) { filme[l].preload = "auto"; filme[l].load(); }
+      selbst.disconnect();
+    }, { rootMargin: "700px 0px" }).observe(vTv);
+
+    function bereit() { return vTv.readyState >= 3 && vFon.readyState >= 3; }
+    function anfangSetzen() { vTv.currentTime = von(vTv); vFon.currentTime = von(vFon); }
+
+    /* Beide starten erst, wenn beide koennen. */
+    function anlauf() {
+      if (!soll || ruhig || fertig) { return; }
+      if (!bereit()) {
+        /* Wer ueber den Menuepunkt direkt hierher springt, hat den
+           Vorlader nie ausgeloest. */
+        for (var n = 0; n < 2; n++) {
+          if (filme[n].preload !== "auto") { filme[n].preload = "auto"; filme[n].load(); }
+        }
+        return;
+      }
+      for (var i = 0; i < 2; i++) {
+        var pr = filme[i].play();
+        if (pr && pr.catch) { pr.catch(function () {}); }
+      }
+    }
+    function halten() { vTv.pause(); vFon.pause(); }
+
+    /* Die Schleife macht der Fernseher, und er nimmt das Telefon mit:
+       zwei Schleifen, die einzeln umspringen, laufen auseinander. */
+    var fertig = false;
+    vTv.addEventListener("timeupdate", function () {
+      if (soll && !fertig && vTv.currentTime >= bis(vTv)) { fertig = true; halten(); }
+    });
+
+    /* Stockt einer, wartet der andere. Danach laufen beide vom selben
+       Punkt weiter, statt dass einer Sekunden hinterherhinkt. */
+    for (var f3 = 0; f3 < 2; f3++) {
+      filme[f3].addEventListener("waiting", function () { if (soll) { halten(); } });
+      filme[f3].addEventListener("canplay", anlauf);
+      filme[f3].addEventListener("loadeddata", anlauf);
+    }
+
+    new IntersectionObserver(function (eintraege) {
+      soll = eintraege[0].isIntersecting;
+      if (!soll) { halten(); return; }
+      fertig = false;
+      anfangSetzen();
+      anlauf();
+    }, { threshold: .3 }).observe(vTv);
+
+    /* Aus einem anderen Reiter zurueck: dort drosselt der Browser, die
+       beiden stehen dann nie am selben Punkt. */
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) { halten(); }
+      else if (soll && !fertig) { anfangSetzen(); anlauf(); }
+    });
+  }
+
+  /* ---------- Der Bogen zeichnet sich ---------- */
+  var bogen = document.querySelectorAll(".resume__bogen path");
+  for (var b2 = 0; b2 < bogen.length; b2++) {
+    var laenge = bogen[b2].getTotalLength();
+    bogen[b2].style.strokeDasharray = laenge;
+    bogen[b2].style.strokeDashoffset = ruhig ? 0 : laenge;
+    bogen[b2].style.transition = "stroke-dashoffset 1400ms cubic-bezier(.23,1,.32,1)";
+  }
+
+  /* ---------- Plaketten: folgen dem Zeiger und dem Scrollen ----------
+     Nachgezogen mit 8 Prozent je Takt: das wirkt wie eine weiche Feder
+     und bleibt stehen, sobald nichts mehr zu tun ist. */
+  var plaketten = [].slice.call(document.querySelectorAll(".plakette"));
+  var kopf = document.querySelector(".hero");
+  var feinerZeiger = window.matchMedia("(pointer: fine) and (min-width: 901px)");
+  if (plaketten.length && kopf && !ruhig) {
+    var tiefe = [18, -24, 12], zug = [0.10, 0.16, 0.06];
+    var ziel = { x: 0, y: 0 }, stand = { x: 0, y: 0 }, pTakt = 0, kopfSichtbar = true;
+    var pSchritt = function () {
+      pTakt = 0;
+      stand.x += (ziel.x - stand.x) * 0.08;
+      stand.y += (ziel.y - stand.y) * 0.08;
+      var sy = window.scrollY;
+      for (var q = 0; q < plaketten.length; q++) {
+        plaketten[q].style.translate = (stand.x * tiefe[q]).toFixed(2) + "px " + (stand.y * tiefe[q] - sy * zug[q]).toFixed(2) + "px";
+      }
+      if (Math.abs(ziel.x - stand.x) > 0.001 || Math.abs(ziel.y - stand.y) > 0.001) { pTakt = requestAnimationFrame(pSchritt); }
+    };
+    var pAnstossen = function () { if (!pTakt && kopfSichtbar) { pTakt = requestAnimationFrame(pSchritt); } };
+    kopf.addEventListener("pointermove", function (e) {
+      if (!feinerZeiger.matches) { return; }
+      ziel.x = (e.clientX / window.innerWidth - 0.5) * 2;
+      ziel.y = (e.clientY / window.innerHeight - 0.5) * 2;
+      pAnstossen();
+    });
+    kopf.addEventListener("pointerleave", function () { ziel.x = 0; ziel.y = 0; pAnstossen(); });
+    window.addEventListener("scroll", pAnstossen, { passive: true });
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(function (e) { kopfSichtbar = e[0].isIntersecting; }).observe(kopf);
+    }
+  }
+
+  /* ---------- Der Bogen zeichnet sich, wenn die Uebergabe ins Bild kommt ----------
+     Die einzige Bewegung, die am Scrollen haengt: sie zeigt, was das Kapitel
+     behauptet. Ein gleicher Auftritt auf jeder Etage waere Zierde. */
+  var resume = document.getElementById("resume");
+  if (resume && "IntersectionObserver" in window && !ruhig) {
+    new IntersectionObserver(function (eintraege, selbst) {
+      if (!eintraege[0].isIntersecting) { return; }
+      var p = resume.querySelectorAll(".resume__bogen path");
+      for (var x = 0; x < p.length; x++) { p[x].style.strokeDashoffset = 0; }
+      selbst.disconnect();
+    }, { rootMargin: "0px 0px -12% 0px", threshold: .08 }).observe(resume);
+  }
+
+  /* ---------- Laufende Schleifen ruhen ausserhalb des Bildes ----------
+     Laufband und Aurora drehen sonst auch dann, wenn niemand hinsieht. */
+  if ("IntersectionObserver" in window) {
+    var ruhen = new IntersectionObserver(function (eintraege) {
+      for (var r2 = 0; r2 < eintraege.length; r2++) {
+        if (eintraege[r2].isIntersecting) { eintraege[r2].target.removeAttribute("data-ruht"); }
+        else { eintraege[r2].target.setAttribute("data-ruht", ""); }
+      }
+    }, { threshold: 0 });
+    var schleifen = [document.querySelector(".codecs"), document.querySelector(".hero")];
+    for (var s2 = 0; s2 < schleifen.length; s2++) { if (schleifen[s2]) { ruhen.observe(schleifen[s2]); } }
+  }
+  document.addEventListener("visibilitychange", function () {
+    var aus = document.hidden;
+    var teile = [document.querySelector(".codecs"), document.querySelector(".hero")];
+    for (var v = 0; v < teile.length; v++) {
+      if (!teile[v]) { continue; }
+      if (aus) { teile[v].setAttribute("data-ruht", ""); } else { teile[v].removeAttribute("data-ruht"); }
+    }
+    /* Nach der Rueckkehr nicht mehrere Merkmale auf einmal nachholen. */
+    if (!aus) { beginn = performance.now(); }
+  });
+})();
+</script>
+<script>
+/* Der Weg fuer dieses Geraet steht gross oben, die uebrigen in der ruhigen
+   Reihe darunter. Ohne Skript ist der App Store der grosse: die meisten
+   Besucher kommen von einem Apple-Geraet. Getauscht werden die beiden
+   Knoepfe selbst, nicht ihr Inhalt -- so behaelt der Windows-Knopf seinen
+   Klickhorcher, auch wenn er nach oben wandert. */
+(function () {
+  var ua = navigator.userAgent || "", pf = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+  var geraet = /Android/i.test(ua) ? "android" : /iPhone|iPad|iPod|Macintosh|Mac OS X/i.test(ua) ? "apple"
+    : /Win/i.test(pf) || /Windows/i.test(ua) ? "windows" : /Linux|X11|CrOS/i.test(pf + ua) ? "linux" : "";
+  if (!geraet) return;
+  var haupt = document.getElementById("laden-haupt");
+  var rest = document.getElementById("laden-rest");
+  if (!haupt || !rest) return;
+  var ziel = rest.querySelector('[data-geraet="' + geraet + '"]');
+  var jetzt = haupt.firstElementChild;
+  if (!ziel || !jetzt) return;
+  var platz = ziel.parentNode;
+  platz.appendChild(jetzt);
+  haupt.appendChild(ziel);
+  ziel.className = "weg-gross";
+  jetzt.className = "weg-klein";
+})();
+</script>
+<script>
+/* App Store, TestFlight und Google Play gehen beim Klick sofort im neuen
+   Fenster auf, waehrend dieses Fenster auf die Anleitung wechselt. Sonst
+   muesste man dort denselben Knopf ein zweites Mal druecken.
+
+   window.open steht in der Klickbehandlung, also erlaubt der Browser es -
+   es ist die Handlung des Lesers. Blockt er trotzdem, bleibt der Verweis
+   wie er ist: dann fuehrt der Klick nur auf die Anleitung, und dort wartet
+   der Knopf. Cmd, Ctrl, Shift und die mittlere Maustaste bleiben unberuehrt,
+   damit "in neuem Tab oeffnen" weiter das Gewohnte tut. */
+(function () {
+  var ziel = {
+    apple: "https://apps.apple.com/app/id6806824067",
+    beta: "https://testflight.apple.com/join/BKtrBmbz",
+    android: "https://play.google.com/store/apps/details?id=de.paulherter.swiftly"
+  };
+  var wege = document.querySelectorAll("[data-geraet]");
+  for (var i = 0; i < wege.length; i++) {
+    wege[i].addEventListener("click", function (e) {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) { return; }
+      var aussen = ziel[this.getAttribute("data-geraet")];
+      var anleitung = this.getAttribute("href");
+      if (!aussen || !anleitung) { return; }
+      if (!window.open(aussen, "_blank", "noopener")) { return; }
+      e.preventDefault();
+      location.href = anleitung;
+    });
+  }
+})();
+</script>
+<script src="js/effekte.js" defer></script>
+</body>
+</html>

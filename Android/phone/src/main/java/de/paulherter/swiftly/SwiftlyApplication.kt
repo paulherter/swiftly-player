@@ -104,7 +104,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     val discordHintDue = androidx.compose.runtime.mutableStateOf(false)
 
     /** The URLs from the package; they are typed only there. */
-    fun communityAddress(art: String): String = Kern.communityAddress(art, VersionRow + " · libVLC 3.6.3",
+    fun communityAddress(art: String): String = Kern.communityAddress(art, VersionRow + " · Media3 1.9.4",
         (if (isTv) "Android TV " else "Android ") + android.os.Build.VERSION.RELEASE)
 
     /** Opens a URL in the browser. Does nothing on a TV without a browser, where the URL is shown to type in. */

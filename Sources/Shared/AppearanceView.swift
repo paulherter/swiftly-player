@@ -297,8 +297,8 @@ struct PresentationView: View {
         Button(action: select) {
             RowsLayout(symbol: symbol, title: Text(title), under: nil, dimmedDown: false) {
                 if an {
-                    Image(icon: "checkmark", size: 13)
-                        .font(.app(size: 13, weight: .semibold))
+                    Image(icon: "checkmark", size: Theme.chevronSize)
+                        .font(.app(size: Theme.chevronSize, weight: .semibold))
                         // **Selected means white and weight, not color.** The checkmark used to be teal;
                         // that is ranking among siblings, and the accent carries only state. Semibold is
                         // already the row's title.

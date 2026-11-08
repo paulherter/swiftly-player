@@ -95,6 +95,12 @@ extension App {
         case "kauf":        supportSheetClose(); supportSheetShow()
         case "dank":        supportSheetClose(); supportThanksShow()
 
+        /// Frame times on the real app: home scroll, then page switches (``HomeProbe``).
+        case "heimprobe":
+            #if DEBUG
+            HomeProbe(app: self).start()
+            #endif
+
         /// The test page for frame time (``Messprobe``): `probe:60`.
         case "probe":
             _ = MeasureProbe.pageShow(self, tiles: Int(parts.count > 1 ? parts[1] : "") ?? 60)

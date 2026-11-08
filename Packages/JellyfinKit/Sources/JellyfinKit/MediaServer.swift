@@ -148,10 +148,6 @@ public protocol MediaServer: AnyObject, Sendable, HomePageSource {
     func playbackPlan(for itemID: String, profile: DeviceProfile, audioStreamIndex: Int?,
                       subtitleStreamIndex: Int?, mediaSourceID: String?) async throws -> PlaybackPlan?
     func airplayPlan(for itemID: String, source: MediaSource) async throws -> AirPlayInfo
-    /// The copy-only address for the AVPlayer engine, `nil` if this server has none
-    /// (then VLC plays). See ``JellyfinClient/avPlayerPlan(for:source:audioIndex:av1:)``.
-    func avPlayerPlan(for itemID: String, source: MediaSource, audioIndex: Int?,
-                      av1: Bool) async throws -> PlaybackPlan?
     func downloadURL(itemID: String, mediaSourceID: String?, quality: DownloadQuality,
                      audioStreamIndex: Int?) async throws -> URL
     func sections(for itemID: String) async -> [Segment]

@@ -344,11 +344,11 @@ struct PlexSignInView: View {
                 Spacer(minLength: 0)
                 // Running now: a spinner where the arrow stands, so the tap visibly did something.
                 if busy {
-                    ProgressView().controlSize(.small)
+                    LoadingSpinner()
                         .accessibilityHidden(true)
                 } else {
-                    Image(icon: "chevron.right", size: 13)
-                        .font(.app(size: 13, weight: .semibold))
+                    Image(icon: "chevron.right", size: Theme.chevronSize)
+                        .font(.app(size: Theme.chevronSize, weight: .semibold))
                         .foregroundStyle(Theme.font)
                         .accessibilityHidden(true)
                 }

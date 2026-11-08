@@ -87,7 +87,7 @@ extension View {
         overlay {
             if shown {
                 CornerWeb(cornerRadius: cornerRadius)
-                    .stroke(Color.white.opacity(0.42), style: StrokeStyle(lineWidth: 0.75, lineCap: .round, lineJoin: .round))
+                    .stroke(Theme.cornerWeb, style: StrokeStyle(lineWidth: 0.75, lineCap: .round, lineJoin: .round))
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                     .transition(.opacity)

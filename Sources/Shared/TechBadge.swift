@@ -76,9 +76,20 @@ struct TechBadge: View {
 
     private var source: MediaSource? { plan.source }
     private var video: MediaStream? { source.flatMap(FileDetails.videoTrack) }
-    private var audio: MediaStream? { source.flatMap(FileDetails.audioTracks)?.first }
+    /// **The track that plays, not the first one in the file.** The badge used to show the
+    /// file's first audio and subtitle track whatever was chosen. Without a report from the
+    /// player yet it still falls back to the first audio track.
+    private var audio: MediaStream? {
+        let tracks = source.flatMap(FileDetails.audioTracks) ?? []
+        if let index = area?.playingTracks.audio, let hit = tracks.first(where: { $0.index == index }) {
+            return hit
+        }
+        return tracks.first
+    }
     private var subtitle: MediaStream? {
-        source.flatMap(FileDetails.subtitleTracks)?.first
+        let tracks = source.flatMap(FileDetails.subtitleTracks) ?? []
+        guard let playing = area?.playingTracks.subtitle else { return tracks.first }
+        return tracks.first { $0.index == playing }
     }
 
     private var spacing: CGFloat { far ? 7 : 4 }
@@ -119,7 +130,6 @@ struct TechBadge: View {
             }
 
             if measure {
-                if let m = matroskaRow { measureRow(m, conspicuous: false) }
                 if let z = timeRow { measureRow(z, conspicuous: false) }
                 #if os(tvOS)
                 tickRow
@@ -304,23 +314,6 @@ struct TechBadge: View {
         }
     }
 
-    /// **Did the Matroska trick take effect?**
-    ///
-    /// `:demux=mkv_trusted` is the difference between a seek of one second and
-    /// one of twenty, and whether it applies is decided by the **extension of
-    /// the delivered URL**, not the file's container. The two diverged once
-    /// before, which is why both are shown here.
-    private var matroskaRow: String? {
-        let names = ["mkv", "matroska", "webm", "mka", "mks"]
-        let container = (source?.container ?? "").lowercased()
-        guard names.contains(where: { container.contains($0) }) else { return nil }
-        let suffix = plan.url.pathExtension.lowercased()
-        let address = suffix.isEmpty ? String(localized: "ohne Endung") : "." + suffix
-        let quirk = (area?.matroskaTrusted ?? false)
-            ? String(localized: "vertraut") : String(localized: "MISSTRAUT")
-        return "\(String(localized: "Matroska")) \(quirk) · \(address)"
-    }
-
     /// Where in the film we are. **So that a screenshot names a position**
     /// and not only a state: "at 41:12" can be reproduced, "somewhere in the
     /// middle" cannot.
@@ -454,7 +447,7 @@ struct TechBadge: View {
     /// what `FrameTick` is for, and without this line it could not be seen
     /// whether it takes effect.
     private var tickRow: some View {
-        let measured = area.flatMap { FrameTick.rate(from: $0.player) }
+        let measured: Double? = nil
         let claims = video?.frameRate
         let rate = TechDetails.frameRate(measured ?? claims)
         let tick = FrameTick.screenTick

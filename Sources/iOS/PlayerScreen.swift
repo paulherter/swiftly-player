@@ -385,11 +385,11 @@ struct PlayerScreen: View {
     /// What shows in the large picture while the small window plays next to it.
     private var smallerHint: some View {
         VStack(spacing: 12) {
-            Image(icon: "pip.fill", size: 30)
+            Image(icon: "pip.fill", size: Theme.overlaySymbolLarge)
                 // Before: `.light`. That weight is gone; only Regular, Medium and Semibold
                 // exist. Medium like the other symbols in the player. The size 30
                 // stays: it is a symbol, not text.
-                .font(.app(size: 30, weight: .medium))
+                .font(.app(size: Theme.overlaySymbolLarge, weight: Theme.overlayWeight))
                 .foregroundStyle(Theme.font)
             Text("Läuft im kleinen Fenster")
                 // Same step as before (15 Regular), now as a token.
@@ -2261,8 +2261,6 @@ struct PlayerScreen: View {
         model.reportProgress(item: item, plan: plan, seconds: position, paused: !running)
     }
 
-    private func time(_ seconds: Double) -> String { PlayTime.text(seconds) }
-
 }
 
 /// Feedback on double tap: the same rotation as on the buttons, so button and double tap do not look like two different things.
@@ -2273,8 +2271,8 @@ private struct JumpMark: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(icon: bearing < 0 ? "gobackward" : "goforward", size: 32)
-                .font(.app(size: 32, weight: .medium))
+            Image(icon: bearing < 0 ? "gobackward" : "goforward", size: Theme.overlaySymbolLarge)
+                .font(.app(size: Theme.overlaySymbolLarge, weight: Theme.overlayWeight))
                 // See the button above: with reduced motion the value stays and the effect does not play.
                 .symbolEffect(.bounce, options: .speed(1.7),
                               value: Theme.motionReduced ? false : rotated)

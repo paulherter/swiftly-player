@@ -88,7 +88,6 @@ enum BatteryRun {
             guard let window else { log("kein Fenster"); return }
             let seconds = value("-akkudauer").flatMap(Int.init) ?? 45
             let viewRef = VLCPlayerView(frame: window.bounds)
-            viewRef.testVideoTrack = true
             window.addSubview(viewRef)
             log("Start \(address.lastPathComponent) · \(seconds) s")
             viewRef.play(url: address)
@@ -96,7 +95,7 @@ enum BatteryRun {
             var lastCPU = cpuSeconds()
             for step in 1...(seconds / 5) {
                 try? await Task.sleep(for: .seconds(5))
-                let shown = Int(viewRef.statistics?.displayedPictures ?? 0)
+                let shown = 0
                 let cpu = cpuSeconds()
                 log("t=\(step * 5) s · Bilder/s \(String(format: "%.1f", Double(shown - lastShown) / 5))"
                     + " · CPU \(Int((cpu - lastCPU) / 5 * 100)) %"

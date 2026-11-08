@@ -153,7 +153,6 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
     var remembered by remember(target.id) { mutableStateOf(series?.remembered ?: false) }
     var watched by remember(target.id) { mutableStateOf(series?.watched ?: false) }
     var tab by rememberSaveable(target.id) { mutableIntStateOf(0) }
-    var listOpen by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     /** The schedule arrives after the page; until then the badge row keeps its place. */
     var planLoaded by remember(target.id) { mutableStateOf(series?.planPresent == true) }
@@ -261,8 +260,6 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
     LaunchedEffect(target.id) { load() }
 
     val scroll = rememberScrollState()
-    // Scrolling closes the season list; a tap on the pill itself does not.
-    LaunchedEffect(scroll) { snapshotFlow { scroll.isScrollInProgress }.collect { if (it) listOpen = false } }
     val density = LocalDensity.current.density
     val s = series
     val name = s?.name ?: target.name
@@ -402,25 +399,27 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
 
             WatchedBy(watchers)
             Spacer(Modifier.height(22.dp))
-            PageTab(listOfNotNull(translated("Folgen"), translated("Besetzung"), translated("Ähnliches"), if (extras.isNotEmpty()) translated("Extras") else null), tab) { tab = it }
+            // The season choice lives in the first tab (selected season name + chevron); tapping the selected
+            // first tab opens the "Staffel wählen" sheet (iPhone `PageTab(firstLabel:onReselect:)`).
+            val seasons = s?.seasons.orEmpty()
+            fun seasonSheet() {
+                if (seasons.size < 2) return
+                app.sheet.value = SheetRequest(translated("Staffel wählen"), seasons.map { Choice(it.id, it.name) }, season, accentCheck = true) { new ->
+                    selfSelected = true
+                    if (new != season) {
+                        season = new
+                        episodes = app.episodesCache[new].orEmpty()
+                        s?.id?.let { id -> section.launch { episodesLoad(id, new) } }
+                    }
+                }
+            }
+            PageTab(listOfNotNull(translated("Folgen"), translated("Besetzung"), translated("Ähnliches"), if (extras.isNotEmpty()) translated("Extras") else null), tab,
+                firstLabel = if (seasons.isEmpty()) null else (seasons.firstOrNull { it.id == season }?.name ?: translated("Staffel")),
+                firstChevron = seasons.size > 1, onReselect = { seasonSheet() }) { tab = it }
 
             Crossfade(tab, animationSpec = tween(160), label = "reiter") { r ->
                 when (r) {
                     0 -> Column {
-                        // **No placeholders** (as on iOS): while the series loads, the season button is invisible and
-                        // keeps its height; it fades in at its place.
-                        val headerPresent = s?.seasons?.isNotEmpty() == true
-                        val headerVisibility by animateFloatAsState(if (headerPresent) 1f else 0f, Motion.reveal(), label = "staffelkopf")
-                        if (headerPresent || s == null) Box(Modifier.alpha(headerVisibility)) {
-                            SeasonHeader(s?.seasons.orEmpty(), season, listOpen, { listOpen = it }) { new ->
-                                selfSelected = true
-                                if (new != season) {
-                                    season = new
-                                    episodes = app.episodesCache[new].orEmpty()
-                                    s?.id?.let { id -> section.launch { episodesLoad(id, new) } }
-                                }
-                            }
-                        }
                         // No lines between episodes: the image carries the row, 12 above and below.
                         // While loading the area stays empty: never "No episodes", never placeholders.
                         if (episodesDisturbed) DisturbHint(app.serverAddress(), retry = { s?.id?.let { id -> season?.let { st -> section.launch { episodesLoad(id, st) } } } })
@@ -469,32 +468,38 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
         }
         }
 
-        DetailHeader(name, { ((scroll.value / density - 150f) / 70f).coerceIn(0f, 1f) }, back)
+        DetailHeader(name, { detailStrength(scroll.value.toFloat(), density) }, back, mood = mood, scrollPx = { scroll.value.toFloat() })
         HintStrip(message, Modifier.align(Alignment.BottomCenter)) { message = null }
     }
 }
 
 /** Mirrors `Reiter` in `Style.swift`: spacing 26, 15 pt, active semibold with 2 pt accent below, hairline at the bottom. */
 @Composable
-private fun PageTab(title: List<String>, selected: Int, select: (Int) -> Unit) {
+private fun PageTab(title: List<String>, selected: Int, firstLabel: String? = null, firstChevron: Boolean = false,
+                    onReselect: () -> Unit = {}, select: (Int) -> Unit) {
     Box(Modifier.fillMaxWidth().drawBehind {
         drawRect(Theme.line, topLeft = Offset(0f, size.height - 1.dp.toPx()), size = Size(size.width, 1.dp.toPx()))
     }) {
         Row(Modifier.padding(horizontal = Theme.edgeSpacing), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-            title.forEachIndexed { i, t ->
+            title.forEachIndexed { i, t0 ->
+                val t = if (i == 0 && firstLabel != null) firstLabel else t0
                 val an = i == selected
                 // **Selected means white, no weight change:** semibold is wider than regular, and in a
                 // **horizontal** row every neighbour to the right would shift. The accent line below stays;
                 // it carries state.
-                Text(t, style = Theme.listTitle,
-                     color = if (an) Theme.font else Theme.fontQuiet,
-                     modifier = Modifier.tapOn { select(i) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                     modifier = Modifier.tapOn { if (an) onReselect() else select(i) }
                          .semantics { this.selected = an; role = Role.Tab }
                          .drawBehind {
                              // White, not accent: selected is ranking, not state.
                              if (an) drawRect(Theme.font, topLeft = Offset(0f, size.height - 2.dp.toPx()), size = Size(size.width, 2.dp.toPx()))
                          }
-                         .padding(bottom = 11.dp))
+                         .padding(bottom = 11.dp)) {
+                    Text(t, style = Theme.listTitle, color = if (an) Theme.font else Theme.fontQuiet, maxLines = 1,
+                         overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
+                    if (i == 0 && firstChevron) Symbol(Glyph.AngleDown, 11.dp, color = if (an) Theme.font else Theme.fontQuiet,
+                        strength = Strength.Semibold, description = translated("Staffel wählen"))
+                }
             }
         }
     }

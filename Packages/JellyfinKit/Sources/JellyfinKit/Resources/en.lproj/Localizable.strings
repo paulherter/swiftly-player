@@ -170,6 +170,7 @@
 "Immer AVPlayer" = "Always AVPlayer";
 
 "Immer VLC" = "Always VLC";
+"Aether, bei Problemen VLC" = "Aether, VLC if there are problems";
 
 /* "Gesehen von" (Jelly Twiggy): the line beside an avatar. */
 "heute" = "today";

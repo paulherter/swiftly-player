@@ -49,7 +49,7 @@ android {
         applicationId = "de.paulherter.swiftly"
         minSdk = 28
         targetSdk = 36
-        versionCode = 40
+        versionCode = 41
         versionName = "1.1.0"
         // **Switch-to-Play-Store build for the current beta testers** (`-PbetaRedirect=true`, never set
         // permanently): the app shows only a notice page (`BetaRedirectPage`). Off by default.
@@ -71,9 +71,8 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = false
-            // **`libc++_shared.so` twice:** from the core (NDK r27, for the Swift runtime) and from
-            // libvlc-all. The first wins, since the core module comes first in the dependencies, and the
-            // Swift runtime needs the newer one.
+            // **`libc++_shared.so` twice:** from the core (NDK r27, for the Swift runtime) and from the FFmpeg
+            // module; the first wins, and the Swift runtime needs the newer one.
             pickFirsts += "lib/**/libc++_shared.so"
         }
     }
@@ -93,9 +92,9 @@ dependencies {
     implementation(libs.androidx.foundation)
     implementation(libs.androidx.material3)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.libvlc.all)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
+    implementation(project(":ffmpeg"))
     implementation(libs.lottie.compose)
     implementation(libs.zxing.core)
     implementation(libs.play.review.ktx)

@@ -77,4 +77,7 @@ attachment.
 ## Licence
 
 By contributing you agree that your contribution is licensed under the
-Mozilla Public License 2.0, like the rest of the project.
+Mozilla Public License 2.0, like the rest of the project, and you grant Paul
+Herter a permanent, worldwide, free right to use, change and license your
+contribution under other terms as well (for example a future license of the
+project). You keep the copyright of your contribution.

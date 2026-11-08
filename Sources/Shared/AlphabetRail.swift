@@ -17,6 +17,9 @@ struct AlphabetRail: View {
     /// The key of the topmost visible title.
     let current: String?
     let jump: (String) -> Void
+    /// When set, every entry gets this fixed row height and the strip sits centred
+    /// instead of spreading over the full height (Mac, as on Apple TV).
+    var compactRow: CGFloat?
 
     /// The letter under the finger while it is down; it wins over `current`.
     @State private var touched: String?
@@ -29,15 +32,15 @@ struct AlphabetRail: View {
     /// The smallest row a letter gets; below it the strip condenses.
     static let minimumRow: CGFloat = 14
     static let width: CGFloat = 22
-    /// Fewer titles than this need no strip.
-    static let minimumTitles = 30
 
     var body: some View {
         GeometryReader { frame in
             // **The whole height, as in Plex**: the letters spread from the header to the
             // bar, so a long strip and a short one both reach the same edges.
-            let shown = index.condensed(fitting: max(2, Int(frame.size.height / Self.minimumRow)))
-            let row = frame.size.height / CGFloat(max(AlphabetIndex.rows(shown), 1))
+            let shown = index.condensed(fitting: max(2, Int(frame.size.height / (compactRow ?? Self.minimumRow))))
+            let fitted = frame.size.height / CGFloat(max(AlphabetIndex.rows(shown), 1))
+            let row = compactRow.map { min($0, fitted) } ?? fitted
+            let stripHeight = row * CGFloat(AlphabetIndex.rows(shown))
             VStack(spacing: 0) {
                 ForEach(shown) { entry in
                     // The next step of a scale, half a row high (``AlphabetIndex/gapShare``).
@@ -60,7 +63,7 @@ struct AlphabetRail: View {
                         // Before layout the height can be 0; `Int(.infinity)` would trap.
                         guard row > 0,
                               let letter = AlphabetIndex.entry(at: value.location.y,
-                                                               height: frame.size.height,
+                                                               height: stripHeight,
                                                                in: shown)?.letter
                         else { return }
                         guard letter != touched else { return }
@@ -82,6 +85,7 @@ struct AlphabetRail: View {
                 let next = direction == .increment ? min(at + 1, letters.count - 1) : max(at - 1, 0)
                 jump(letters[next])
             }
+            .frame(width: Self.width, height: frame.size.height)
         }
         .frame(width: Self.width)
         .onChange(of: current) { _, new in

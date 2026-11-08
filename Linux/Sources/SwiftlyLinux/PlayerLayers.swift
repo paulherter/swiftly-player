@@ -523,15 +523,22 @@ extension App {
         append(pillar, layersHeader(left: left))
 
         let role: Widget! = gtk_scrolled_window_new()
-        gtk_scrolled_window_set_policy(OpaquePointer(role), GTK_POLICY_NEVER, GTK_POLICY_EXTERNAL)
+        // **A horizontal strip of landscape cards** (Mac 1.1 `PlayerEpisodeStrip`): the running
+        // episode 1.25 times larger, all bottom-aligned, scrolled to the middle on opening.
+        gtk_scrolled_window_set_policy(OpaquePointer(role), GTK_POLICY_EXTERNAL, GTK_POLICY_NEVER)
         gtk_widget_set_vexpand(role, 1)
+        gtk_widget_set_valign(role, GTK_ALIGN_CENTER)
         gtk_widget_set_margin_top(role, 10)
-        let inner = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
-        gtk_widget_set_margin_top(inner, 12)
-        gtk_widget_set_margin_bottom(inner, 12)
+        let inner = stack(GTK_ORIENTATION_HORIZONTAL, spacing: 16)
+        gtk_widget_set_valign(inner, GTK_ALIGN_END)
+        gtk_widget_set_margin_start(inner, Int32(Theme.edgeSpacing))
+        gtk_widget_set_margin_end(inner, Int32(Theme.edgeSpacing))
+        gtk_widget_set_margin_top(inner, 8)
+        gtk_widget_set_margin_bottom(inner, 8)
         gtk_scrolled_window_set_child(OpaquePointer(role), inner)
         softScroll(role)
-        append(pillar, role)
+        // Arrow buttons on hover, like every rail (`sheetsArea`); 16:9 at the smallest card width.
+        append(pillar, sheetsArea(role, imageHeight: 135 / 2 + 60, piece: 270))
         playerEpisodesList = inner
         playerEpisodesScroller = role
 
@@ -567,8 +574,11 @@ extension App {
         guard let inner = playerEpisodesList else { return }
         playerEpisodesTarget = nil
         wipe(inner)
+        // Card width follows the window: three to four cards visible, never tiny or huge.
+        let windowWidth = Double(gtk_widget_get_width(window))
+        let cardWidth = Int(min(max((windowWidth - Double(Theme.edgeSpacing) * 2) / 4 - 16, 240), 360))
         for episode in episodes {
-            let row = episodeRow(episode, running: episode.id == ongoing.id) {
+            let card = playerEpisodeCard(episode, running: episode.id == ongoing.id, width: cardWidth) {
                 [weak self] selectedEpisode in
                 guard let self else { return }
                 self.layerClose()
@@ -579,16 +589,14 @@ extension App {
                 if self.inGroup { self.sharedBitTitle(selectedEpisode.id); return }
                 self.changeInto(selectedEpisode)
             }
-            append(inner, row)
-            if scroll, episode.id == ongoing.id { playerEpisodesTarget = row }
+            append(inner, card)
+            if scroll, episode.id == ongoing.id { playerEpisodesTarget = card }
         }
         guard let role = playerEpisodesScroller,
-              let adj = gtk_scrolled_window_get_vadjustment(OpaquePointer(role)) else { return }
+              let adj = gtk_scrolled_window_get_hadjustment(OpaquePointer(role)) else { return }
         gtk_adjustment_set_value(adj, 0)
         guard playerEpisodesTarget != nil else { return }
-        // **The current episode centered** as soon as the list is laid out; before
-        // that, neither the row knows its position nor the scroller its height. In
-        // the first frame the layer is still nearly transparent.
+        // **The running card centered** as soon as the strip is laid out.
         var completed = false
         runningCount(on: inner, duration: 1.0, step: { [weak self] _ in
             guard !completed, let self, let row = self.playerEpisodesTarget,
@@ -596,13 +604,62 @@ extension App {
             var r = graphene_rect_t()
             let page = gtk_adjustment_get_page_size(adj)
             guard page > 0, gtk_widget_compute_bounds(row, list, &r) != 0,
-                  r.size.height > 0 else { return }
+                  r.size.width > 0 else { return }
             completed = true
             self.playerEpisodesTarget = nil
-            let target = Double(r.origin.y) + 12 + Double(r.size.height) / 2 - page / 2
+            let target = Double(r.origin.x) + Double(Theme.edgeSpacing) + Double(r.size.width) / 2 - page / 2
             let atMost = gtk_adjustment_get_upper(adj) - page
             gtk_adjustment_set_value(adj, min(max(target, 0), max(atMost, 0)))
         }, done: {})
+    }
+
+    /// One card of the strip: 16:9 thumbnail with progress bar, "F3 · Title" above the runtime
+    /// and the remaining time. The running episode is 1.25 times larger, no frame.
+    private func playerEpisodeCard(_ episode: Item, running: Bool, width: Int,
+                                    action: @escaping (Item) -> Void) -> Widget! {
+        let w = running ? Int((Double(width) * 1.25).rounded()) : width
+        let h = Int((Double(w) * 9 / 16).rounded())
+        let card = stack(GTK_ORIENTATION_VERTICAL, spacing: 8)
+        gtk_widget_add_css_class(card, "swiftly-spielfolge")
+        gtk_widget_set_valign(card, GTK_ALIGN_END)
+        gtk_widget_set_size_request(card, Int32(w), -1)
+        let (wrapper, image) = framedImage(width: w, height: h, style: "swiftly-plakat")
+        if let addresses, let mark = episode.imageTags?["Primary"],
+           let url = addresses.construct(itemID: episode.id, mark: mark, mass: .atMostHigh(640)) {
+            imageLoad(image, url: url, key: ImageKey.of(url))
+        } else {
+            characterPut(wrapper, series: true)
+        }
+        if selection.progressOnTiles, let share = episode.isWatched ? 1 : episode.watchedShare {
+            _ = barPut(wrapper, width: w, share: share)
+        }
+        append(card, wrapper)
+        let head = (episode.indexNumber.map { "\(translated("F"))\($0) \u{00B7} " } ?? "") + episode.name
+        let first = label(head, style: "swiftly-kachelname")
+        gtk_label_set_xalign(OpaquePointer(first), 0)
+        gtk_label_set_ellipsize(OpaquePointer(first), PANGO_ELLIPSIZE_END)
+        gtk_label_set_max_width_chars(OpaquePointer(first), 1)
+        gtk_widget_set_hexpand(first, 1)
+        append(card, first)
+        if let seconds = episode.runtimeSeconds, seconds > 0 {
+            let text = (episode.isWatched ? nil : episode.remainingTimeText) ?? runtime(seconds)
+            let second = label(text, style: "swiftly-zweitzeile")
+            gtk_widget_add_css_class(second, "swiftly-leise")
+            gtk_label_set_xalign(OpaquePointer(second), 0)
+            append(card, second)
+        }
+        onClick(card) { action(episode) }
+        return card
+    }
+
+    /// One card to the left or right (arrow keys).
+    func episodesStripPage(_ direction: Double) {
+        guard let role = playerEpisodesScroller,
+              let adj = gtk_scrolled_window_get_hadjustment(OpaquePointer(role)) else { return }
+        let step = max(240.0, gtk_adjustment_get_page_size(adj) / 4)
+        let target = gtk_adjustment_get_value(adj) + direction * step
+        let atMost = gtk_adjustment_get_upper(adj) - gtk_adjustment_get_page_size(adj)
+        gtk_adjustment_set_value(adj, min(max(target, 0), max(atMost, 0)))
     }
 
     private func episodesListShow(_ episodes: [Item], ongoing: Item, crossfade fade: Bool) {

@@ -23,11 +23,15 @@ SECTION = re.compile(r"^bytes=(\d*)-(\d*)$")
 class Handler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    # /blog/ is PHP, which this server cannot run. PHP's built-in server runs
+    # /blog/ and /whats-new/ are PHP, which this server cannot run. PHP's built-in server runs
     # next to it (with website-router.php) and requests are proxied to it.
     # Videos and everything else stay on the Python server because it handles
     # range requests and PHP's does not.
     php_port = None
+
+    def _is_php(self):
+        path = self.path.split("?")[0]
+        return path.startswith("/blog") or path.startswith("/whats-new")
 
     def _php(self):
         import http.client
@@ -47,12 +51,12 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
 
     def do_GET(self):
-        if self.php_port and self.path.split("?")[0].startswith("/blog"):
+        if self.php_port and self._is_php():
             return self._php()
         return super().do_GET()
 
     def do_HEAD(self):
-        if self.php_port and self.path.split("?")[0].startswith("/blog"):
+        if self.php_port and self._is_php():
             return self._php()
         return super().do_HEAD()
 
@@ -140,7 +144,7 @@ if __name__ == "__main__":
     folder_abs = os.path.abspath(folder)
     php = shutil.which("php")
     router = os.path.join(os.path.dirname(os.path.abspath(__file__)), "website-router.php")
-    if php and os.path.isdir(os.path.join(folder_abs, "blog")) and os.path.exists(router):
+    if php and (os.path.isdir(os.path.join(folder_abs, "blog")) or os.path.isdir(os.path.join(folder_abs, "whats-new"))) and os.path.exists(router):
         Handler.php_port = port + 100
         proc = subprocess.Popen([php, "-S", "127.0.0.1:%d" % Handler.php_port, "-t", folder_abs, router],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -251,7 +251,7 @@ extension App {
         // the content, so nothing is ever beside anything. Difference from the Mac: there the
         // tone stays at the window's top edge on long scrolls; here it disappears with the header zone.
 
-        let scroller = pagesScroller()
+        let scroller = pagesScroller(edge: false)
         gtk_scrolled_window_set_child(OpaquePointer(scroller), situations)
         detailScroller = scroller
         signal(scroller, "destroy") { [weak self] in

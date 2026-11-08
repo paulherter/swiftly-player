@@ -287,7 +287,6 @@ fun LookMiniPhone(palette: Looks.Palette, delay: Float, modifier: Modifier = Mod
     val accent = palette.accent.main
     val shape = RoundedCornerShape(14.dp)
     Box(modifier.graphicsLayer { translationY = up() * density }
-            .shadow(20.dp, shape, ambientColor = Color.Black.copy(alpha = 0.5f), spotColor = Color.Black.copy(alpha = 0.5f))
             .size(104.dp, 208.dp).clip(shape).background(Theme.reason)
             .border(1.dp, Theme.font.copy(alpha = 0.1f), shape)) {
         Box(Modifier.fillMaxWidth().height(64.dp).drawBehind {
@@ -388,8 +387,7 @@ private fun IconFan() {
             Box(Modifier.size(size).zIndex(if (picks) 2f else 0f).offset(y = (f[2] as Float).dp)
                     .graphicsLayer { translationY = up() * density; rotationZ = f[1] as Float }) {
                 LookTileView(AppIcons.forAlias(f[0] as String), size, corner = 14.dp,
-                             modifier = Modifier.shadow(6.dp, RoundedCornerShape(14.dp), ambientColor = Color.Black.copy(alpha = 0.25f),
-                                                         spotColor = Color.Black.copy(alpha = 0.25f)))
+                             modifier = Modifier)
                 if (picks && !calm) PickRing(size)
             }
         }

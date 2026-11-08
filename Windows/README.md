@@ -30,7 +30,7 @@ shared files**, not in a copy:
 | `Platform.swift` | binary path, resource location, settings folder | `/proc/self/exe` and `XDG_CONFIG_HOME` do not exist here |
 | `CharacterItem.swift` | `.desktop` entry only on Linux | Wayland takes the window icon from that file; Windows does not |
 | `Cache.swift` | Unix permissions only on Linux | `%APPDATA%` is private through its ACL anyway |
-| `Player.swift` | `--no-xlib` removed, `VLC_PLUGIN_PATH` set | libVLC does not find its modules by itself here |
+| `Player.swift` | libmpv bridge with the Windows branches inside | the player is libmpv on Windows and Linux |
 | `imagebridge.c` | SRWLOCK instead of pthread | `pthread` does not exist under MSVC |
 | `Style.swift` | Segoe UI in the font chain | no `#if` needed: a system skips fonts it does not have |
 
@@ -39,8 +39,7 @@ shared files**, not in a copy:
 | | Location | Source |
 |---|---|---|
 | GTK4 (MSVC) | `C:\Werkzeuge\gtk4` | [gvsbuild release](https://github.com/wingtk/gvsbuild/releases), `GTK4_Gvsbuild_*_x64.zip` |
-| libVLC SDK | `C:\Werkzeuge\vlcsdk` | `vlc-3.0.21-win64.7z`, folder `sdk` |
-| libVLC runtime | `C:\Werkzeuge\vlc\vlc-3.0.21` | `vlc-3.0.21-win64.zip` |
+| libmpv | `C:\Werkzeuge\libmpv` | LGPL build `mpv-dev-lgpl-x86_64` from [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild/releases/tag/2026-11-05-3138fc8eea), release 2026-11-05-3138fc8eea |
 | Build Tools | n/a | `vs_BuildTools.exe --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64` |
 | Swift | n/a | swift.org, Windows installer |
 
@@ -67,10 +66,9 @@ This is how a startup crash hitting every third or fourth launch was found:
 `rlottie::Animation::renderSync` on freed memory. Seven guesses before it were
 all wrong; the PDB answered it in one pass.
 
-The script mirrors the shared sources, builds, and then places GTK, libVLC and
-**VLC's modules** next to the program. The last part is not optional: Windows
-looks for DLLs next to the executable, not via a search path, and without the
-modules the player starts without a single decoder.
+The script mirrors the shared sources, builds, and then places GTK and
+`libmpv-2.dll` next to the program, together with the license texts. Windows
+looks for DLLs next to the executable, not via a search path.
 
 ## Unverified paths
 
@@ -83,7 +81,7 @@ down, otherwise the next session takes "compiled" for "verified".
       [Paket] [Discord] Stand: erlaubt=true dauer=6778 stelle=4233
                               laeuft=true titel=Beauty & The Nerd
 
-  So the setting takes effect, VLC knows the duration (`guard dauer > 0`
+  So the setting takes effect, the player knows the duration (`guard dauer > 0`
   holds), the position advances, the title is right. **Only
   `CreateFileW`/`WriteFile` remain open**: the test machine has no Discord, so
   there is no `\\.\pipe\discord-ipc-*`. The framing itself is verified over a

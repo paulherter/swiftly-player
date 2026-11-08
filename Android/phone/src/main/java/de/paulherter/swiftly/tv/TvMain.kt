@@ -710,7 +710,9 @@ fun TvPanel(app: SwiftlyApplication) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f))) {
         CompositionLocalProvider(LocalWithinPanel provides true) {
             Column(Modifier.align(Alignment.CenterEnd).padding(end = TvTheme.edgePage).width(310.dp)
-                    .clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.area).padding(10.dp)
+                    .clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.area)
+                    // Hairline instead of a shadow, like the iPhone sheets (Apple TV menu panel).
+                    .border(0.5.dp, Theme.margin, RoundedCornerShape(TvTheme.cornerArea)).padding(10.dp)
                     .focusProperties { exit = { if (sharing[0]) FocusRequester.Default else FocusRequester.Cancel } }.focusGroup()) {
                 // Without a title, no header row: the title menu of movies and series has none on tvOS.
                 if (w.title.isNotEmpty()) Text(w.title, style = TvTheme.categoryLarge, color = Theme.font, maxLines = 2,

@@ -8,7 +8,7 @@
 # one directory. With DLLs next to the `.exe` the app does not start; it aborts
 # at the first window, with an access violation in `gtk_settings_get_default()`.
 #
-# libVLC also looks for its modules next to itself, i.e. under `bin\plugins`.
+# libmpv-2.dll sits next to the program in `bin`.
 # Our own resources are found by ``Plattform.mitgeliefert`` one level above the
 # `.exe`, i.e. under `<root>\Resources`.
 
@@ -16,7 +16,7 @@ param(
     [string]$Konfiguration = 'release',
     [string]$Ziel = '',
     [string]$Gtk = 'C:\Werkzeuge\gtk4',
-    [string]$VlcLaufzeit = 'C:\Werkzeuge\vlc\vlc-3.0.21',
+    [string]$Mpv = 'C:\Werkzeuge\libmpv',
     # The per-user Swift install (the one `build.ps1` compiles with); the runtime
     # DLLs must match that compiler version.
     [string]$SwiftLaufzeit = "$env:LOCALAPPDATA\Programs\Swift\Runtimes\6.3.3\usr\bin"
@@ -108,15 +108,14 @@ Get-ChildItem $bau -Directory | Where-Object { $_.Name -match '\.(resources|bund
 }
 if ($kopiert -eq 0) { throw "Kein Ressourcenbuendel in $bau" }
 
-Sag 'libVLC samt Modulen'
-Copy-Item "$VlcLaufzeit\libvlc.dll","$VlcLaufzeit\libvlccore.dll" "$Ziel\bin" -Force
-Copy-Item "$VlcLaufzeit\plugins" "$Ziel\bin" -Recurse -Force
+Sag 'libmpv'
+Copy-Item "$Mpv\libmpv-2.dll" "$Ziel\bin" -Force
 
 # **What is never loaded does not ship.** The GTK and Swift folders contain
 # DLLs nobody here needs (gtkmm, protobuf, gettext, parts of the Swift
 # runtime). Each one is one more file for Defender to check at first start and a
 # few MB more in the installer. Measured: only 51 of 101 DLLs in `bin`
-# are loaded by the app, the libVLC modules or the gdk-pixbuf loaders; none
+# are loaded by the app, the libmpv codecs or the gdk-pixbuf loaders; none
 # more were loaded at runtime.
 #
 # So no fixed list but the closure: everything reachable via imports (including
@@ -156,7 +155,7 @@ if ($dumpbin) {
 
 Sag 'Eigene Mittel'
 Copy-Item (Join-Path $hier 'Resources') "$Ziel\Resources" -Recurse -Force
-# **No license texts, no package.** libVLC (LGPL-2.1-or-later) requires text,
+# **No license texts, no package.** libmpv (LGPL-2.1-or-later) requires text,
 # author and source reference; the app shows them from Resources\Licenses,
 # and build.ps1 puts them there.
 foreach ($l in 'components.json','LGPL-2.1-or-later.txt') {

@@ -25,5 +25,6 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Swiftly"
 include(":core")
+include(":ffmpeg")
 include(":phone")
 include(":shared")

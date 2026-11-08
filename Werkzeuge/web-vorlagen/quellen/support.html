@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="index, follow">
+<link rel="preload" as="font" type="font/woff2" href="/schrift/figtree-latin.woff2" crossorigin>
+<link rel="icon" href="/symbol.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<style>
+/* ---------------------------------------------------------------
+   Figtree, selbst ausgeliefert. Eine variable Datei traegt alle
+   Staerken von 400 bis 800: latin 20 KB, latin-ext 10 KB. Kein
+   fremder Server, also kein zweiter Verbindungsaufbau und keine
+   Datenschutzfrage. SIL Open Font License 1.1, Text in
+   schrift/OFL.txt. Vorher stand Figtree zwar in der Schriftliste,
+   geladen wurde sie aber nirgends: die Seite lief in der
+   Systemschrift.
+   --------------------------------------------------------------- */
+@font-face {
+  font-family: "Figtree";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(/schrift/figtree-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                 U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                 U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Figtree";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url(/schrift/figtree-latin-ext.woff2) format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+                 U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
+                 U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+  :root {
+    --grund: #101010; --flaeche: #1E1E1E; --linie: rgba(255,255,255,.07);
+    --schrift: #FFFFFF; --leise: #CCCCCC; --marke: #50D5DA;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--grund); color: var(--schrift);
+    font-family: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+                 Roboto, "Helvetica Neue", sans-serif;
+    font-size: 17px; line-height: 1.62; -webkit-font-smoothing: antialiased;
+  }
+  .bahn { max-width: 720px; margin: 0 auto; padding: 0 clamp(24px, 5vw, 40px); }
+  header { padding: 28px 0 0; }
+  .zurueck {
+    display: inline-flex; align-items: center; gap: 9px;
+    color: var(--leise); text-decoration: none; font-size: 15px;
+    padding: 9px 16px 9px 13px; border: 1px solid var(--linie);
+    border-radius: 999px; transition: color 160ms ease, border-color 160ms ease;
+  }
+  .zurueck svg { width: 14px; height: 14px; }
+  main { padding: 44px 0 96px; }
+  h1 { font-size: clamp(30px, 4.4vw, 40px); line-height: 1.12; letter-spacing: -.026em; margin: 0 0 8px; }
+  .unter { color: var(--leise); margin: 0 0 44px; }
+  h2 {
+    font-size: 20px; letter-spacing: -.016em; margin: 44px 0 12px;
+    padding-top: 28px; border-top: 1px solid var(--linie);
+  }
+  h2:first-of-type { border-top: 0; padding-top: 0; margin-top: 36px; }
+  h3 { font-size: 16.5px; margin: 26px 0 6px; }
+  p, li { color: var(--leise); margin: 0 0 14px; }
+  li { margin-bottom: 8px; }
+  strong, b { color: var(--schrift); font-weight: 600; }
+  address { font-style: normal; color: var(--schrift); line-height: 1.75; }
+  a { color: var(--marke); text-decoration: none; }
+  .kasten { background: var(--flaeche); border-radius: 14px; padding: 22px 24px; margin: 0 0 14px; }
+  .en { margin-top: 8px; padding-top: 8px; color: rgba(255,255,255,.5); font-size: 15.5px; }
+  footer { border-top: 1px solid var(--linie); padding: 26px 0 48px; color: rgba(255,255,255,.4); font-size: 13.5px; }
+  footer a { color: rgba(255,255,255,.55); }
+  @media (hover: hover) and (pointer: fine) {
+    .zurueck:hover { color: var(--schrift); border-color: rgba(255,255,255,.2); }
+    a:hover { text-decoration: underline; }
+  }
+</style>
+<title>Support · Swiftly Player</title>
+</head>
+<body>
+<header><div class="bahn"><a class="zurueck" href="/"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 3 4.5 7l4 4"/></svg>Swiftly Player</a> <a class="zurueck" href="/blog/">Blog</a></div></header>
+<main><div class="bahn">
+
+<h1>Support</h1>
+  <p class="unter">Swiftly is a Jellyfin client for iPhone. If something is not
+  working, the answer is probably below — and if it isn't, write to me.</p>
+
+<h2>Before anything else</h2>
+<div class="kasten">
+  <p>Swiftly needs <strong>your own Jellyfin server</strong>, version 10.8 or
+  newer, reachable over a secure <code>https</code> address. It brings no films
+  of its own.</p>
+</div>
+
+<h2>Common questions</h2>
+
+<div class="frage">
+  <h3>It says no server could be found</h3>
+  <p>Check the address without a scheme first — type <code>tv.example.com</code>,
+  not <code>https://tv.example.com</code>. Swiftly adds it.</p>
+  <p>If the server sits in your home network, use its local address while you are
+  at home. From outside, it needs to be reachable from the internet.</p>
+</div>
+
+<div class="frage">
+  <h3>It mentions a secure connection</h3>
+  <p>iOS blocks unencrypted connections to servers outside your home network. A
+  server that is only reachable over <code>http</code> from the internet cannot be
+  used. Set up <code>https</code> on the server — Let's Encrypt is free, and most
+  reverse proxies do it in a few lines.</p>
+</div>
+
+<div class="frage">
+  <h3>No accounts appear on the sign-in screen</h3>
+  <p>Jellyfin only publishes accounts that are not hidden from login screens. In
+  Jellyfin go to Administration → Users → your account and allow it to be shown.
+  Signing in by typing the name works either way.</p>
+</div>
+
+<div class="frage">
+  <h3>A film says the server is converting it</h3>
+  <p>Swiftly names the track that caused it, right under the title. Most often it
+  is a subtitle format the server decided to burn into the picture.</p>
+  <p>Check that <em>Always Direct Play</em> is on under Profile → Playback, and
+  that your account has no bitrate limit set in Jellyfin itself — a server-side
+  limit overrides the app.</p>
+</div>
+
+<div class="frage">
+  <h3>Picture in Picture does not start</h3>
+  <p>Tap the small icon at the top right while the controls are visible. If the
+  button is dimmed, the film is still loading — give it a moment.</p>
+</div>
+
+<div class="frage">
+  <h3>Playback stops when I lock the phone</h3>
+  <p>It shouldn't. Check under iOS Settings → Swiftly that background activity is
+  allowed, and that Low Power Mode is off — it suspends background playback.</p>
+</div>
+
+<div class="frage">
+  <h3>How do I switch to a different server?</h3>
+  <p>Profile → Sign out. Swiftly then asks for an address again and tells your old
+  server to invalidate the session.</p>
+</div>
+
+<h2>Something else</h2>
+<p>Write to <a href="mailto:info@swiftlyplayer.com">info@swiftlyplayer.com</a>.
+It helps if you mention your Jellyfin version, your iOS version, and what you
+were doing when it went wrong.</p>
+
+<p><a href="privacy.html">Privacy</a> · Swiftly is not affiliated with the
+  Jellyfin project.</p>
+
+</div></main>
+<footer><div class="bahn"><a href="/">Startseite</a> · <a href="/blog/">Blog</a> · <a href="/impressum.html">Impressum</a> · <a href="/datenschutz.html">Datenschutz</a> · <a href="/terms/">Terms</a> · <a href="/licenses/">Open-source licenses</a><!-- supporter:start --> · <a href="/supporter/">Donate</a><!-- supporter:end --></div></footer>
+</body>
+</html>

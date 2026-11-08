@@ -77,7 +77,8 @@ struct PersonView: View {
             .coordinateSpace(.named("blatt"))
             .ignoresSafeArea(edges: .top)
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
-                offset = new
+                let clamped = min(max(new, 0), Theme.heroHeightValue - 110)
+                if clamped != offset { offset = clamped }
             }
 
             DetailHeader(title: person.name, offset: offset) { back() }

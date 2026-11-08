@@ -750,11 +750,14 @@ fun TvTile(image: String?, title: String, subline: String?, landscape: Boolean =
         }
         // **Only the focused tile's title is white and semibold**; the others step back to fontQuiet (watched titles
         // too, `titleQuiet`). Design: caption mt 18, 26/500, one 34 high line, drops 14 when focused (pt / 2 here).
-        Column(Modifier.padding(top = TvTheme.captionTop).graphicsLayer { translationY = drop.dp.toPx() }) {
-            Text(title, style = if (tileFocus) TvTheme.tileFocused else TvTheme.tile,
+        // Like Apple TV: the title stays Medium in every state (a heavier weight shifts the width), gap 2 (4 pt / 2),
+        // fixed line heights so every tile ends at the same height and no second line is cut off.
+        Column(Modifier.padding(top = TvTheme.captionTop).graphicsLayer { translationY = drop.dp.toPx() },
+               verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = TvTheme.tile,
                  color = if (tileFocus) Theme.font else Theme.fontQuiet,
                  maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.height(TvTheme.captionLine))
-            subline?.let { Text(it, style = TvTheme.small, color = Theme.fontVeryQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            subline?.let { Text(it, style = TvTheme.small, color = Theme.fontVeryQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.height(15.dp)) }
         }
     }
 }

@@ -24,6 +24,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Color
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
@@ -39,12 +41,14 @@ import org.json.JSONArray
  */
 @Composable
 fun GenreChips(genres: List<String>, select: (String) -> Unit) {
-    val form = RoundedCornerShape(Theme.corner)
+    val form = androidx.compose.foundation.shape.CircleShape
     LazyRow(contentPadding = PaddingValues(horizontal = Theme.edgeSpacing), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(genres, key = { it }) { g ->
-            // No border: the surface already says "tappable". And 14 is on no size ladder; a chip uses 13
-            // medium, like the value pill and choice chip.
-            Box(Modifier.tapOn { select(g) }.heightIn(min = 34.dp).clip(form).background(Theme.area)
+            // Glass chip (iPhone `SelectionChip`): white 8 % fill, 1 dp white 12 % border (`margin`), capsule,
+            // 13 medium. These chips only navigate, so there is no active state here; an active chip would be
+            // the accent fill with `onAccent` text.
+            Box(Modifier.tapOn { select(g) }.heightIn(min = 34.dp).clip(form).background(Color.White.copy(alpha = 0.08f))
+                    .border(1.dp, Theme.margin, form)
                     .padding(horizontal = 14.dp),
                 contentAlignment = Alignment.Center) {
                 Text(g, style = Theme.tile, color = Theme.font)

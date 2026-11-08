@@ -371,15 +371,6 @@ extension PlexClient: MediaServer {
         return .goes(try await plan(for: itemID, mediaSourceID: source.id))
     }
 
-    /// **Plex has no remux here.** AVPlayer can open the original file only if the container
-    /// is one it knows; Matroska stays with VLC.
-    public func avPlayerPlan(for itemID: String, source: MediaSource, audioIndex: Int?,
-                             av1: Bool) async throws -> PlaybackPlan? {
-        let containers: Set<String> = ["mp4", "m4v", "mov"]
-        let own = Set((source.container ?? "").lowercased().split(separator: ",").map(String.init))
-        guard !own.isEmpty, own.isSubset(of: containers) else { return nil }
-        return try await plan(for: itemID, mediaSourceID: source.id)
-    }
 
     /// The original file; Plex has no quality levels here.
     public func downloadURL(itemID: String, mediaSourceID: String?, quality: DownloadQuality,
