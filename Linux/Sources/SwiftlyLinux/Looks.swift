@@ -459,6 +459,7 @@ extension App {
     func lookApplied() {
         lookWear()
         lookPanelSync?()
+        lookPreviewBarSync()
     }
 
     /// "Become a supporter" in the panel: the try-on is held while the purchase page is
@@ -482,6 +483,7 @@ extension App {
     func lookSheetClosed() {
         lookPanelSync = nil
         guard !lookKeepHeld else { return }
+        defer { lookPreviewBarHide() }
         if looks.isPreviewing || !isSupporter {
             looks.supportSheetClosed()
             if looks.isPreviewing { looks.endPreview() }

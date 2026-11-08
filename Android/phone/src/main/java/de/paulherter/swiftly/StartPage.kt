@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -49,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
 import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.shared.Theme
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -294,14 +297,14 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
     }
 }
 
-/** Mirrors the header in `HomeView`: wordmark 30 left, `HeaderTargets` right, in the `BlurHeader`. */
+/** Mirrors the header in `HomeView`: wordmark 36 left, `HeaderTargets` right, in the `BlurHeader`. */
 @Composable
 private fun StartHeader(app: SwiftlyApplication, open: (Destination) -> Unit, offset: () -> Float) {
     RootHeader(offset) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val mark = if (app.isTv) null else app.looks.palette.value.logoGradient
-            if (mark != null && mark.size == 1) Wordmark(height = 30.dp, accent = mark.first())
-            else Wordmark(height = 30.dp, gradient = Theme.markGradient)
+            if (mark != null && mark.size == 1) Wordmark(height = 36.dp, accent = mark.first())
+            else Wordmark(height = 36.dp, gradient = Theme.markGradient)
             Spacer(Modifier.weight(1f))
             HeaderTargets(app, open)
         }
@@ -315,13 +318,23 @@ private fun RailView(rail: Rail, open: (Destination) -> Unit, libraryJump: (Stri
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // A chosen library or collection: the header opens it (mirrors `Rail` with `target` in HomeView).
         val header = Modifier.padding(horizontal = Theme.edgeSpacing)
-        Text(rail.title, style = Theme.section, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis,
-             modifier = when {
-                 rail.library != null -> header.tapOn { open(collectionTarget(rail.library, rail.title, null)) }
-                 // New movies and new series: their library, in the row's order.
-                 rail.jumpArt != null && rail.jumpSorting != null -> header.tapOn { libraryJump(rail.jumpArt, rail.jumpSorting) }
-                 else -> header
-             })
+        // Long rails (new movies / series, libraries) carry a quiet "Alle ›" at the right that opens the same
+        // destination as the title (iPhone `RailTitle(all:)`).
+        val destination: (() -> Unit)? = when {
+            rail.library != null -> { { open(collectionTarget(rail.library, rail.title, null)) } }
+            // New movies and new series: their library, in the row's order.
+            rail.jumpArt != null && rail.jumpSorting != null -> { { libraryJump(rail.jumpArt, rail.jumpSorting) } }
+            else -> null
+        }
+        Row(header.heightIn(min = 28.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(rail.title, style = Theme.section, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                 modifier = Modifier.weight(1f).then(if (destination != null) Modifier.tapOn { destination() } else Modifier))
+            if (destination != null) {
+                Spacer(Modifier.width(12.dp))
+                Text(translated("Alle ›"), style = Theme.buttonText.copy(fontWeight = FontWeight.Medium), color = Theme.fontVeryQuiet, maxLines = 1,
+                     modifier = Modifier.heightIn(min = 44.dp).wrapContentHeight(Alignment.CenterVertically).tapOn { destination() })
+            }
+        }
         LazyRow(contentPadding = PaddingValues(horizontal = Theme.edgeSpacing),
                 horizontalArrangement = Arrangement.spacedBy(Theme.tileSpacing)) {
             items(rail.tiles, key = { it.id }) { k -> TileView(k, rail.landscape, continueWatching = rail.landscape, afterwards) { direct?.invoke(k) ?: open(Destination(k.id, k.name, k.type)) } }
@@ -363,9 +376,11 @@ private fun TileView(k: Tile, landscape: Boolean, continueWatching: Boolean, aft
                 modifier = Modifier.fillMaxSize(), onError = { missing = true })
             k.progress?.takeIf { it > 0 && LocalProgressShow.current }?.let { ProgressBar(it, Modifier.align(Alignment.BottomStart)) }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(k.name, style = if (landscape) Theme.listTitle else Theme.tile, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            subline?.let { Text(it, style = Theme.small.copy(fontFeatureSettings = "tnum"), color = Theme.fontVeryQuiet, maxLines = 1) }
+        // One text block for every tile: title 13 medium on a fixed 16 line, 2 gap, subline on a fixed 15 line;
+        // block 34 high so every card in a row ends at the same height and nothing is cut off.
+        Column(Modifier.height(34.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(k.name, style = Theme.tile.copy(lineHeight = 16.sp), color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            subline?.let { Text(it, style = Theme.small.copy(fontFeatureSettings = "tnum", lineHeight = 15.sp), color = Theme.fontVeryQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
     }
 }

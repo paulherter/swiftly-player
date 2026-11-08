@@ -76,11 +76,6 @@ struct LibraryView: View {
     @State private var tileHeight: CGFloat = 0
     @State private var jumpTask: Task<Void, Never>?
 
-    /// How far the value row has been closed, 0 to 1.
-    private var pullGait: Double {
-        Double(min(max(headerState.offset / Theme.valueRailsDistance, 0), 1))
-    }
-
     /// **Fixed tiles, spread to both edges** (design: six of 150 with the rest shared
     /// out between them). At least 16 between two tiles; one column fewer before less.
     private var columnCount: Int {
@@ -153,7 +148,7 @@ struct LibraryView: View {
                 // It fades out on scroll: what you want to know before scrolling does not need to
                 // travel along. Opacity only, not height: a height tied to the scroll offset is a
                 // feedback loop.
-                .opacity(1 - pullGait)
+                .modifier(PullFade(state: headerState))
                 .zIndex(20)
 
                 // The placeholder is in the layout flow, not an overlay.
@@ -193,23 +188,27 @@ struct LibraryView: View {
                         }
                         .buttonStyle(Theme.PressButton())
                         .tileMenu(entryRecord, model: model)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { new in
-                            if new > 0, new != tileHeight { tileHeight = new }
+                        // One tile is enough to know the tile height; a geometry observer on
+                        // every tile costs a layout callback per tile and scroll.
+                        .background {
+                            if entryRecord.id == shelf.items.first?.id {
+                                Color.clear.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { new in
+                                    if new > 0, new != tileHeight { tileHeight = new }
+                                }
+                            }
                         }
                         .onAppear {
                             onScreen.ids.insert(entryRecord.id)
                             updateTopLetter()
+                            // More items are requested before the user reaches the bottom.
+                            if shelf.solvesLoadMoreOut(entryRecord.id, columns: estimatedColumns),
+                               let source {
+                                Task { await shelf.loadMore(model, from: source) }
+                            }
                         }
                         .onDisappear {
                             onScreen.ids.remove(entryRecord.id)
                             updateTopLetter()
-                        }
-                        .task {
-                            // More items are requested before the user reaches the bottom.
-                            if shelf.solvesLoadMoreOut(entryRecord.id, columns: estimatedColumns),
-                               let source {
-                                await shelf.loadMore(model, from: source)
-                            }
                         }
                     }
                     }
@@ -303,7 +302,8 @@ struct LibraryView: View {
         // In the right margin; 24 pt already fit the strip, so the grid does not move.
         .overlay(alignment: .trailing) {
             if let alphabet = shownAlphabet {
-                AlphabetRail(index: alphabet, current: topLetter) { letter in jumpTo(letter) }
+                AlphabetRail(index: alphabet, current: topLetter, jump: { letter in jumpTo(letter) },
+                             compactRow: 17)
                     .padding(.trailing, max(0, (Theme.edgeSpacing - AlphabetRail.width) / 2))
                     .padding(.top, Theme.contentTop + 96)
                     .padding(.bottom, 24)
@@ -381,7 +381,9 @@ struct LibraryView: View {
     /// entry for the order on screen (letters, years or ratings).
     private var shownAlphabet: AlphabetIndex? {
         guard model.alphabetShown, !showsCollections,
-              let alphabet = shelf.currentAlphabet else { return nil }
+              let alphabet = shelf.currentAlphabet,
+              // Long lists only, as the iPhone's scroll indicator.
+              (alphabet.count) >= 40 else { return nil }
         return alphabet
     }
 
@@ -399,12 +401,19 @@ struct LibraryView: View {
     /// The letter of the first loaded title on screen. **Written only when it changes**:
     /// tiles come and go on every scroll.
     private func updateTopLetter() {
-        guard let alphabet = shownAlphabet,
-              let item = shelf.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
-        let letter = alphabet.key(of: item)
-        if letter != topLetter { topLetter = letter }
+        guard shownAlphabet != nil, !onScreen.letterPending else { return }
+        // Tiles come and go in bursts while scrolling; one scan per burst instead of one per
+        // tile (the scan walks the loaded titles up to the first one on screen).
+        onScreen.letterPending = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(60))
+            onScreen.letterPending = false
+            guard let alphabet = shownAlphabet,
+                  let item = shelf.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
+            let letter = alphabet.key(of: item)
+            if letter != topLetter { topLetter = letter }
+        }
     }
-
     /// An estimate is enough for paging: whether the third-to-last row starts at six or
     /// seven columns moves the trigger by one tile width. Computing it exactly would
     /// mean carrying the window width along.

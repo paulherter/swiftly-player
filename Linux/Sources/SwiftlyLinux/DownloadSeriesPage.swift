@@ -238,7 +238,7 @@ extension App {
 
         let disc = nextDisc()
         let page = stack(GTK_ORIENTATION_VERTICAL, spacing: 0)
-        let scroller = pagesScroller()
+        let scroller = pagesScroller(edge: false)
         gtk_scrolled_window_set_child(OpaquePointer(scroller), page)
 
         let over: Widget! = gtk_overlay_new()

@@ -118,7 +118,7 @@ extension App {
             let detail = details[track.identifier]
             return PlayerTrack(identifier: identifier(track.identifier, art: art), name: track.name,
                                  language: detail?.language,
-                                 codec: detail.flatMap { TechDetails.codecNameValue(vlcId: $0.codec) },
+                                 codec: detail.flatMap { TechDetails.codecNameValue($0.codec) },
                                  channels: detail?.channels)
         }
     }
@@ -325,7 +325,7 @@ extension App {
             let a = details[track.identifier]
             let base = TechDetails.audioTrackName(
                 language: a?.language,
-                codec: a.flatMap { TechDetails.codecNameValue(vlcId: $0.codec) },
+                codec: a.flatMap { TechDetails.codecNameValue($0.codec) },
                 channels: a?.channels) ?? track.name
             // "(Original)" only with a server source; without one nothing is added.
             guard !streams.isEmpty else { return (track.identifier, base) }

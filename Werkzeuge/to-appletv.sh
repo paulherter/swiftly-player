@@ -11,7 +11,7 @@
 # same network and switched on.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 
 # **Release is the honest comparison.** A Debug build makes VLC write its own
 # log during playback -- hundreds of lines per second, each through `print`, a
@@ -55,7 +55,8 @@ echo "Geraet: ${NAME:-Apple TV} ($UDID)"
 xcodebuild -project Swiftly.xcodeproj -scheme Swiftly-tvOS \
   -destination "id=$UDID" -derivedDataPath build/DD-tv \
   -configuration "$KONFIG" \
-  DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic build
+  DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic \
+  OTHER_SWIFT_FLAGS='$(inherited) -DDEVLOG' build
 
 APP=$(find "build/DD-tv/Build/Products/$KONFIG-appletvos" -name "Swiftly-tvOS.app" -maxdepth 1 | head -1)
 echo "Installiere $APP"

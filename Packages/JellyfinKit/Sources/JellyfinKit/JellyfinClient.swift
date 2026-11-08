@@ -1393,38 +1393,6 @@ public actor JellyfinClient {
         return .goes(plan)
     }
 
-    /// **The address for the AVPlayer engine**: the same remux as for AirPlay (HLS with
-    /// fragmented MP4, picture and sound copied, nothing re-encoded), but for the title the
-    /// player already chose and without the receiver's limits.
-    ///
-    /// The engine choice (``PlayerEngineChoice``) has already checked codecs, so this asks
-    /// the server directly, for exactly `source` and the given audio track. `nil` means the
-    /// server would not only repackage: a re-encode reason in the address
-    /// (``PlayerEngineChoice/isCopyOnly(transcodingURL:)``) or no address for a container
-    /// AVPlayer cannot open. The caller then stays with VLC.
-    ///
-    /// `SubtitleStreamIndex: -1` for the same reason as in ``airplayPlan(for:source:)``;
-    /// text subtitles are drawn by the app from the server's file.
-    public func avPlayerPlan(for itemID: String, source: MediaSource, audioIndex: Int?,
-                             av1: Bool) async throws -> PlaybackPlan? {
-        let profile = DeviceProfile.airplay(av1: av1)
-        let info = try await playbackInfo(itemID: itemID, profile: profile,
-                                          audioStreamIndex: audioIndex, subtitleStreamIndex: -1,
-                                          mediaSourceID: source.id)
-        guard let answer = info.mediaSources.first(where: { $0.id == source.id })
-                ?? PlaybackPlan.bestSource(info.mediaSources) else { return nil }
-        if answer.deliveryMethod != .directPlay {
-            guard let path = answer.transcodingUrl,
-                  let address = AppModelURLNormalizer.serverRelative(path, base: baseURL),
-                  PlayerEngineChoice.isCopyOnly(transcodingURL: address) else { return nil }
-        }
-        return try PlaybackPlan.make(
-            from: info, itemID: itemID, profile: profile,
-            streamURL: { [self] id, sourceID, sessionID in
-                try streamURL(itemID: id, mediaSourceID: sourceID, playSessionID: sessionID)
-            },
-            serverBase: baseURL, preferredSourceID: answer.id)
-    }
 
     // MARK: - URLs for the player
 

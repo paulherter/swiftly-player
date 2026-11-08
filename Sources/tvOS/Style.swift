@@ -577,12 +577,6 @@ struct Picture: View {
         return max(width, height)
     }
 
-    /// A cancelled fetch: the only failure worth another attempt. For `Backdrop`,
-    /// which loads through `AsyncImage`.
-    static func cancelled(_ phase: AsyncImagePhase) -> Bool {
-        guard case let .failure(f) = phase else { return false }
-        return (f as NSError).code == NSURLErrorCancelled
-    }
 }
 
 /// Thin bar at the bottom of a tile. 6 pt on the TV; at 2, as on the iPhone, it

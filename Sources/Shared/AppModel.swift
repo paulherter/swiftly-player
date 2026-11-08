@@ -155,11 +155,6 @@ final class AppModel {
     }
     /// How much buffer the player holds. See ``BufferLevel`` in the package.
     var bufferLevel: BufferLevel { didSet { remember(bufferLevel.rawValue, "pufferstufe") } }
-    /// Which engine plays: VLC, or AVPlayer for Dolby Vision, HDR and AV1. Read by the player at
-    /// the start of each title (``PlayerEngineChoice``), so a change applies from the next one.
-    var playerEngine: PlayerEngineSetting = .standard {
-        didSet { remember(playerEngine.rawValue, PlayerEngineSetting.storageKey) }
-    }
     /// **Shows on Discord what is playing, and is off until enabled.**
     ///
     /// It is the only setting of this app that sends something **outside**: enabling
@@ -271,20 +266,6 @@ final class AppModel {
         views.filter { $0.collectionType == art }
     }
 
-    /// Which library was chosen last, remembered per type.
-    ///
-    /// By ID and not by position in the list: the server may reorder, and then
-    /// "Movies" would suddenly show the other collection. If the remembered library
-    /// is gone, the choice silently falls back to the first.
-    func selectedLibrary(art: String) -> Item? {
-        let available = libraries(art: art)
-        if let identifier = UserDefaults.standard.string(forKey: Self.libraryName(art)),
-           let hit = available.first(where: { $0.id == identifier }) {
-            return hit
-        }
-        return available.first
-    }
-
     /// **The library a start-page row asks.** With several libraries of one type and no
     /// remembered choice, `selectedLibrary` is only "the first", so "Recently added series"
     /// showed that one library (Kids on top, the rest missing). Nothing was ever chosen, so
@@ -298,10 +279,6 @@ final class AppModel {
             return hit
         }
         return available.count > 1 ? nil : available.first
-    }
-
-    func librarySelect(_ library: Item, art: String) {
-        remember(library.id, Self.libraryName(art))
     }
 
     private static func libraryName(_ art: String) -> String { "bibliothek-\(art)" }
@@ -752,7 +729,6 @@ final class AppModel {
         startLibraries = StartLibraries.read(store.data(forKey: "startBibliotheken"))
         bufferLevel = (store.string(forKey: "pufferstufe")
                        .flatMap(BufferLevel.init(rawValue:))) ?? .normal
-        playerEngine = PlayerEngineSetting(stored: store.string(forKey: PlayerEngineSetting.storageKey))
         discordShow = store.object(forKey: "discordAnzeigen") as? Bool ?? false
         backSeconds = store.object(forKey: "zurueckSek") as? Int ?? 10
         forwardSeconds = store.object(forKey: "vorSek") as? Int ?? 30
@@ -1976,39 +1952,6 @@ final class AppModel {
         }
     }
 
-    /// Started titles.
-    /// `nil` means the request failed. That differs from an empty list: with `try?`
-    /// both looked the same, and a single dropout silently emptied the home page.
-    func continueWatching() async -> [Item]? {
-        guard let client else { return nil }
-        return try? await client.resumeItems()
-    }
-
-    /// Next unwatched episodes of ongoing series.
-    ///
-    /// - Parameter ohne: titles already in "Continue Watching".
-    /// Jellyfin lists started episodes in both queries; without filtering them out
-    /// the same episode would appear twice on the home page.
-    func nextEpisode(without alreadyShown: [Item] = []) async -> [Item]? {
-        guard let client, let all = try? await client.nextUp() else { return nil }
-        let alreadyPresent = Set(alreadyShown.map(\.id))
-        return all.filter { !alreadyPresent.contains($0.id) }
-    }
-
-    /// Recently added across all libraries.
-    /// New arrivals, one entry per series, newest first.
-    ///
-    /// Jellyfin's own grouping names only the series and the number of new episodes,
-    /// not the season. So fetch ungrouped and group ourselves: the first episode per
-    /// series is the newest, since the server already sorts by date.
-    /// - Parameter in: only from this library. `nil` means from all.
-    /// **The rule lives in the package** (`JellyfinClient.lastAdded`); it
-    /// used to be here and did not reach Linux and Windows.
-    func lastAdded(in library: String? = nil) async -> [Item]? {
-        guard let client else { return nil }
-        return await client.lastAdded(in: library)
-    }
-
     /// One page from a library.
     ///
     /// Returns, besides the titles, how many there are in total; otherwise the view
@@ -2092,12 +2035,6 @@ final class AppModel {
             Self.log.error("Namensliste nicht geladen: \(error.localizedDescription, privacy: .public)")
             return nil
         }
-    }
-
-    /// **Name and sort name of the whole list, in "By name" order**, for the letter strip.
-    func sortNames(from source: ShelfSource,
-                   filter: LibraryFilter = .all) async -> [(name: String, sortName: String?)]? {
-        await naturalList(from: source, filter: filter)?.map { ($0.name, $0.sortName) }
     }
 
     /// **The whole list in any order, as slim as the server allows**, for the index beside
@@ -2807,20 +2744,6 @@ final class AppModel {
 }
 
 extension AppModel {
-    /// **The path into playing an episode, once.**
-    ///
-    /// It stood character for character in `Shared/SeriesView.swift` and
-    /// `tvOS/SeriesView.swift`, except for the assignment target. Exactly the kind
-    /// that drifts apart: it is enough for one to change the message or add a check,
-    /// and the platforms answer differently.
-    ///
-    /// Returns `nil` if the server delivers no plan. The message for that is in
-    /// `episodeNotLoaded` so it, too, exists only once.
-    func episodesRequest(_ episode: Item, since: Double) async -> PlayRequest? {
-        guard let plan = await plan(for: episode.id) else { return nil }
-        return PlayRequest(item: episode, plan: plan, startAt: since)
-    }
-
     static var episodeNotLoaded: String {
         String(localized: "Die Folge konnte nicht geladen werden.")
     }

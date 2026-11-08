@@ -50,8 +50,6 @@ object LogFile {
         rows += if (excerpt.isBlank())
             listOf("(no lines in the last hour — reproduce the problem first, then share without closing the app)")
         else excerpt.lines()
-        val vlc = vlcRows()
-        if (vlc.isNotEmpty()) { rows += ""; rows += "--- VLC ---"; rows += vlc }
         val folder = File(context.cacheDir, "protokoll").apply { mkdirs() }
         val file = File(folder, "Swiftly-Protokoll.txt")
         try {

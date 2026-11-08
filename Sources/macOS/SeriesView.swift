@@ -195,7 +195,16 @@ struct SeriesView: View {
                     .padding(.top, 34)
 
                 TabRail(pick: $tab, cases: extras.isEmpty ? [.episodes, .cast, .similarOne]
-                                                                    : SeriesView.PageTab.allCases)
+                                                                    : SeriesView.PageTab.allCases,
+                        // As on the iPhone: the season choice lives in the first tab (selected
+                        // season name + chevron); a click on the open first tab opens the list.
+                        firstLabel: seasons.isEmpty ? nil
+                            : (selected?.name ?? String(localized: "Staffel")),
+                        firstChevron: seasons.count > 1,
+                        chevronOpen: seasonOpen,
+                        onReselect: {
+                            if seasons.count > 1 { withAnimation(Theme.leap) { seasonOpen.toggle() } }
+                        })
                     .padding(.top, 34)
 
                 segment
@@ -207,7 +216,7 @@ struct SeriesView: View {
             // iPhone (`MoodReason`). It sits on the content so it scrolls with the
             // header; buttons, season pill and list pick it up through `onImageTint`.
             .background(alignment: .top) {
-                MoodReason(url: model.headerImageURL(for: series), since: DetailPageMetric.heroImage)
+                StretchedMood(url: model.headerImageURL(for: series), state: headerState)
             }
             .environment(\.onImageTint, true)
             .environment(\.imageColorSource, model.headerImageURL(for: series))
@@ -294,7 +303,8 @@ struct SeriesView: View {
             headerState.offset = new
         }
         .overlay(alignment: .top) {
-            DetailHeader(title: series.name, state: headerState, back: back)
+            DetailHeader(title: series.name, state: headerState, back: back,
+                         mood: model.headerImageURL(for: series))
         }
         .task { await load() }
         // Reload the episodes after the player closes: it is a layer above the page, so
@@ -362,7 +372,7 @@ struct SeriesView: View {
                 // is gone; the picker stands alone, as on the iPhone.
                 if !seasons.isEmpty {
                     SeasonSelection(seasons: seasons, selected: $selected,
-                                opened: $seasonOpen)
+                                opened: $seasonOpen, showsPill: false)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         // 14 as on the iPhone (`episodesList`), plus the 12 of the row: 26 up to the
                         // first still image.
@@ -595,13 +605,25 @@ struct SeriesView: View {
 struct TabRail: View {
     @Binding var pick: SeriesView.PageTab
     let cases: [SeriesView.PageTab]
+    /// The first tab shows this (the selected season) instead of its own name.
+    var firstLabel: String? = nil
+    var firstChevron = false
+    var chevronOpen = false
+    /// A click on the tab that is already open.
+    var onReselect: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 28) {
                 ForEach(cases, id: \.self) { fall in
+                    let isFirst = fall == cases.first
                     TabButton(label: fall.label,
-                                active: pick == fall) { pick = fall }
+                                active: pick == fall,
+                                verbatim: isFirst ? firstLabel : nil,
+                                chevron: isFirst && firstChevron,
+                                chevronOpen: chevronOpen) {
+                        if pick == fall { if isFirst { onReselect?() } } else { pick = fall }
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -617,6 +639,10 @@ struct TabRail: View {
 struct TabButton: View {
     let label: LocalizedStringKey
     let active: Bool
+    /// Replaces `label` (a season name from the server is not translated).
+    var verbatim: String? = nil
+    var chevron = false
+    var chevronOpen = false
     let pick: () -> Void
 
     @State private var hovers = false
@@ -626,7 +652,14 @@ struct TabButton: View {
             // **One weight, and the line in white.** Semibold is wider than regular, and in
             // a horizontal row that shifts every neighbor to its right. Accent carries
             // state, never rank; "this tab is selected" is rank.
-            Text(label)
+            HStack(spacing: 5) {
+                if let verbatim { Text(verbatim: verbatim) } else { Text(label) }
+                if chevron {
+                    Image(icon: chevronOpen ? "chevron.up" : "chevron.down", size: 11)
+                        .font(.app(size: 11, weight: .semibold))
+                        .accessibilityHidden(true)
+                }
+            }
                 .font(Theme.listTitle)
                 .foregroundStyle(active ? Theme.font
                                  : (hovers ? Theme.font : Theme.fontQuiet))
@@ -700,15 +733,21 @@ struct SeasonSelection: View {
     /// In the player the list lies over the episodes and must not run past the window: it
     /// scrolls once it is taller than the room left. On the series page the page scrolls.
     var limited = false
+    /// `false` when the open first tab of the series page is the button (no pill of its own).
+    var showsPill = true
     @Environment(\.onImageTint) private var onImage
     @Environment(\.imageColorSource) private var imageTint
     /// How far down the list may reach before it scrolls. `nil` until measured.
     @State private var room: CGFloat?
+    /// Measured height of the season rows.
+    @State private var rowsHeight: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SeasonPill(label: selected?.name ?? String(localized: "Staffel"), opened: opened) {
-                withAnimation(Theme.leap) { opened.toggle() }
+            if showsPill {
+                SeasonPill(label: selected?.name ?? String(localized: "Staffel"), opened: opened) {
+                    withAnimation(Theme.leap) { opened.toggle() }
+                }
             }
 
             if opened {
@@ -723,18 +762,23 @@ struct SeasonSelection: View {
                     }
                 }
                 if limited {
-                    // Short lists are laid out as before; only a taller one scrolls, and it
-                    // opens on the selected season.
-                    ViewThatFits(in: .vertical) {
-                        rows
-                        ScrollViewReader { reader in
-                            ScrollView(showsIndicators: false) { rows }
-                                .onAppear {
-                                    if let id = selected?.id { reader.scrollTo(id, anchor: .center) }
-                                }
+                    // **Height is explicit**: the measured height of the rows, capped at the room
+                    // left (and 360). A `ScrollView` takes all the height it is offered, and
+                    // `ViewThatFits` + `frame(maxHeight:)` let it do so; now it gets exactly what
+                    // the entries need until the cap, then it scrolls.
+                    let cap = min(room ?? 360, 360)
+                    ScrollViewReader { reader in
+                        ScrollView(showsIndicators: false) {
+                            rows.onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                                rowsHeight = $0
+                            }
+                        }
+                        .scrollBounceBehavior(.basedOnSize)
+                        .frame(height: min(rowsHeight > 0 ? rowsHeight : CGFloat(seasons.count) * 38, cap))
+                        .onAppear {
+                            if let id = selected?.id { reader.scrollTo(id, anchor: .center) }
                         }
                     }
-                    .frame(maxHeight: room)
                     .padding(.vertical, 4)
                     .frame(width: 220, alignment: .leading)
                     .background(listBackground)

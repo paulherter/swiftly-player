@@ -242,6 +242,24 @@ enum TitleActions {
 /// "S1 - E3" would be read as "S1 bullet E3". A movie's year was in the
 /// picture but not in the announcement.
 extension Item {
+    /// Title line of an episode tile in the player's episode strip (tvOS, iPhone,
+    /// iPad): "F3 · Name" ("E3" in English).
+    var stripHeaderLine: String {
+        guard let number = indexNumber else { return name }
+        return String(localized: "F\(number)") + " · " + name
+    }
+
+    /// "52 Min", and where something is started, the remainder behind it.
+    var stripDurationLine: String? {
+        var parts: [String] = []
+        if DisplayRules.runtimeShow(seconds: runtimeSeconds), let seconds = runtimeSeconds {
+            parts.append(String(localized: "\(Int(seconds / 60)) Min."))
+        }
+        // "Watched" shows as a check mark in the image, not as a word.
+        if let rest = remainingTimeText { parts.append(rest) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     var tileAnnouncement: String {
         var parts: [String] = []
         if type == "Episode" {

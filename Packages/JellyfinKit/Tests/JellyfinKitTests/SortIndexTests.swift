@@ -45,6 +45,17 @@ import Testing
         #expect(index.label(of: "2025") == "25")
     }
 
+    @Test func latestUsesMonthsWhenOneYear() {
+        let list = [item("a", added: "2026-10-05T10:00:00Z"), item("b", added: "2026-10-01T10:00:00Z"),
+                    item("c", added: "2026-03-01T10:00:00Z")]
+        let index = AlphabetIndex(items: list, sorting: .latest)
+        #expect(index.monthly)
+        #expect(index.entries.map(\.letter) == ["2026-10", "2026-03"])
+        #expect(index.entries.map(\.first) == [0, 2])
+        #expect(index.key(of: list[2]) == "2026-03")
+        #expect(index.isUseful)
+    }
+
     @Test func dotsBetweenYearsAndDecades() {
         let years = AlphabetIndex(items: [item("a", year: 2021), item("b", year: 2020), item("c", year: 2019),
                                           item("d", year: 2009), item("e")],

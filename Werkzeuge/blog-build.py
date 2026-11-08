@@ -58,8 +58,13 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "download-pages"))
 from parts import SUPPORTER_ON, SUPPORTER_PATH, SUPPORTER_LINK
 
+# The one page shell and the shared components (kit design).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import web_parts
+import web_shell
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-WEBSITE = os.path.normpath(os.path.join(HERE, "..", "Website"))
+WEBSITE = os.environ.get("SWIFTLY_WEBSITE") or os.path.normpath(os.path.join(HERE, "..", "Website"))
 SOURCES = os.path.join(WEBSITE, "blog", "quellen")
 PAGES_SOURCES = os.path.join(WEBSITE, "seiten", "quellen")
 IMAGES = os.path.join(WEBSITE, "blog", "bilder")
@@ -544,8 +549,7 @@ def structure(blocks):
     return fromValue
 
 
-ARROW = ('<svg class="frage__pfeil" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" '
-         'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5"/></svg>')
+ARROW = '<svg class="frage__pfeil" aria-hidden="true"><use href="#ph-b-caret-right"/></svg>'
 
 
 def plain_text(blocks):
@@ -576,50 +580,6 @@ def date_text(d):
     return f"{d.day} {MONATE[d.month - 1]} {d.year}"
 
 
-SYMBOL = ('<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" '
-          'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 3 4.5 7l4 4"/></svg>')
-
-# Platform logos are single-color in currentColor, paths from Simple Icons (CC0):
-# android (robot after Google, CC BY 3.0, credited in the footer), linux (Tux).
-# Simple Icons removed Windows at Microsoft's request; the four squares follow
-# "Windows logo - 2021.svg" on Wikimedia Commons (public domain).
-# apple (Simple Icons, CC0). All four buttons share the same circled mark; the
-# "App Store is a service mark of Apple Inc." notice stays in the footer.
-_Z = '<svg viewBox="0 0 24 24" fill="currentColor">'
-GLYPH_ANDROID = _Z + '<path d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"/></svg>'
-GLYPH_WINDOWS = _Z + '<path d="M0 0h11.377v11.372H0zm12.623 0H24v11.372H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/></svg>'
-GLYPH_LINUX = _Z + '<path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.043c-.06-.003-.12 0-.18 0h-.016c.151-.467-.182-.825-1.065-1.224-.915-.4-1.646-.336-1.77.465-.008.043-.013.066-.018.135-.068.023-.139.053-.209.064-.43.268-.662.669-.793 1.187-.13.533-.17 1.156-.205 1.869v.003c-.02.334-.17.838-.319 1.35-1.5 1.072-3.58 1.538-5.348.334a2.645 2.645 0 00-.402-.533 1.45 1.45 0 00-.275-.333c.182 0 .338-.03.465-.067a.615.615 0 00.314-.334c.108-.267 0-.697-.345-1.163-.345-.467-.931-.995-1.788-1.521-.63-.4-.986-.87-1.15-1.396-.165-.534-.143-1.085-.015-1.645.245-1.07.873-2.11 1.274-2.763.107-.065.037.135-.408.974-.396.751-1.14 2.497-.122 3.854a8.123 8.123 0 01.647-2.876c.564-1.278 1.743-3.504 1.836-5.268.048.036.217.135.289.202.218.133.38.333.59.465.21.201.477.335.876.335.039.003.075.006.11.006.412 0 .73-.134.997-.268.29-.134.52-.334.74-.4h.005c.467-.135.835-.402 1.044-.7zm2.185 8.958c.037.6.343 1.245.882 1.377.588.134 1.434-.333 1.791-.765l.211-.01c.315-.007.577.01.847.268l.003.003c.208.199.305.53.391.876.085.4.154.78.409 1.066.486.527.645.906.636 1.14l.003-.007v.018l-.003-.012c-.015.262-.185.396-.498.595-.63.401-1.746.712-2.457 1.57-.618.737-1.37 1.14-2.036 1.191-.664.053-1.237-.2-1.574-.898l-.005-.003c-.21-.4-.12-1.025.056-1.69.176-.668.428-1.344.463-1.897.037-.714.076-1.335.195-1.814.12-.465.308-.797.641-.984l.045-.022zm-10.814.049h.01c.053 0 .105.005.157.014.376.055.706.333 1.023.752l.91 1.664.003.003c.243.533.754 1.064 1.189 1.637.434.598.77 1.131.729 1.57v.006c-.057.744-.48 1.148-1.125 1.294-.645.135-1.52.002-2.395-.464-.968-.536-2.118-.469-2.857-.602-.369-.066-.61-.2-.723-.4-.11-.2-.113-.602.123-1.23v-.004l.002-.003c.117-.334.03-.752-.027-1.118-.055-.401-.083-.71.043-.94.16-.334.396-.4.69-.533.294-.135.64-.202.915-.47h.002v-.002c.256-.268.445-.601.668-.838.19-.201.38-.336.663-.336zm7.159-9.074c-.435.201-.945.535-1.488.535-.542 0-.97-.267-1.28-.466-.154-.134-.28-.268-.373-.335-.164-.134-.144-.333-.074-.333.109.016.129.134.199.2.096.066.215.2.36.333.292.2.68.467 1.167.467.485 0 1.053-.267 1.398-.466.195-.135.445-.334.648-.467.156-.136.149-.267.279-.267.128.016.034.134-.147.332a8.097 8.097 0 01-.69.468zm-1.082-1.583V5.64c-.006-.02.013-.042.029-.05.074-.043.18-.027.26.004.063 0 .16.067.15.135-.006.049-.085.066-.135.066-.055 0-.092-.043-.141-.068-.052-.018-.146-.008-.163-.065zm-.551 0c-.02.058-.113.049-.166.066-.047.025-.086.068-.14.068-.05 0-.13-.02-.136-.068-.01-.066.088-.133.15-.133.08-.031.184-.047.259-.005.019.009.036.03.03.05v.02h.003z"/></svg>'
-GLYPH_APPLE = _Z + '<path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.04 3.517-.52 8.75 1.47 11.594.98 1.404 2.13 2.965 3.69 2.913 1.47-.052 2.03-.962 3.81-.962 1.77 0 2.28.962 3.83.936 1.6-.026 2.62-1.443 3.6-2.847 1.14-1.612 1.61-3.171 1.64-3.249-.03-.013-3.15-1.209-3.18-4.8-.026-3.003 2.45-4.442 2.56-4.512-1.4-2.055-3.57-2.29-4.33-2.343-1.95-.156-3.6 1.067-4.52 1.067zm3.09-3.093c.84-1.014 1.4-2.418 1.25-3.803-1.22.05-2.71.81-3.58 1.824-.78.897-1.47 2.338-1.29 3.71 1.36.106 2.77-.692 3.62-1.73"/></svg>'
-
-# Order without the script. With the script, the button for the detected device
-# moves to the front and becomes the highlighted one (first child).
-LOAD = [
-    ("apple", APPLE_PAGE, GLYPH_APPLE, "App Store", "iPhone, iPad, Apple TV, Mac"),
-    ("android", ANDROID, GLYPH_ANDROID, "Android", "Phone and Android TV"),
-    ("windows", WINDOWS, GLYPH_WINDOWS, "Windows", "Windows 10 and 11"),
-    ("linux", LINUX, GLYPH_LINUX, "Linux", "apt, dnf, pacman"),
-]
-
-
-def extern(href):
-    return ' target="_blank" rel="noopener"' if href.startswith("http") and not href.startswith(DOMAIN) else ""
-
-
-def load_box():
-    buttons = "".join(
-        f'<a class="laden" href="{e(href)}"{extern(href)} data-geraet="{g}">'
-        f'<span class="laden__zeichen" aria-hidden="true">{z}</span><span><b>{t}</b><em>{u}</em></span></a>'
-        for g, href, z, t, u in LOAD)
-    coffee = (f'\n<p class="leistenkasten__kaffee">All the features you need are free. <a href="{SUPPORTER_PATH}">Buy us a coffee</a></p>'
-              if SUPPORTER_ON else "")
-    return f"""<section class="leistenkasten" id="laden" aria-labelledby="laden-titel">
-<p class="leistenkasten__marke" id="laden-titel"><img src="/symbol.svg" alt="" width="28" height="28">Swiftly Player</p>
-<p class="leistenkasten__satz">A free player for your own Jellyfin server. Pause on the TV, keep watching on your phone.</p>
-<div class="knoepfe" data-geraete>{buttons}</div>
-<a class="alle-wege" href="/#downloads">All downloads</a>{coffee}
-</section>"""
-
-
 def swiftly_box(content):
     # Short: the buttons are already in the sidebar (#laden).
     return f"""<aside class="swiftly" aria-label="Swiftly Player">
@@ -629,562 +589,22 @@ def swiftly_box(content):
 </aside>"""
 
 
-STYLE = """
-@font-face { font-family: "Figtree"; font-style: normal; font-weight: 400 800; font-display: swap;
-  src: url(/schrift/figtree-latin.woff2) format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-@font-face { font-family: "Figtree"; font-style: normal; font-weight: 400 800; font-display: swap;
-  src: url(/schrift/figtree-latin-ext.woff2) format("woff2");
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
-/* Colors and bar as in index.html. The home page is dark only,
-   so the blog is too. */
-:root {
-  --grund: #101010; --tief: #101010; --flaeche: #1E1E1E; --erhoeht: #262626; --akzent-leise: #113435; --auf-akzent: #061212;
-  --akzent: #50D5DA; --kuehl: var(--akzent); --warm: var(--akzent); --marke: var(--akzent);
-  --schrift: #FFFFFF; --leise: #CCCCCC; --sehr-leise: #989898;
-  --linie: rgba(255,255,255,.07); --rand: rgba(255,255,255,.12);
-  --schriftart: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  --bahn: 1280px; --lesen: 820px; --leiste: 312px; --seitenrand: clamp(24px, 4vw, 40px);
-  --raus: cubic-bezier(.23, 1, .32, 1);
-}
-* { box-sizing: border-box; }
-html { scroll-behavior: smooth; scrollbar-color: #303030 var(--grund); }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-body { margin: 0; background: var(--grund); color: var(--schrift); font-family: var(--schriftart);
-  font-size: 18px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
-img { max-width: 100%; height: auto; }
-a { color: inherit; text-decoration: none; }
-p { margin: 0; }
-::selection { background: rgba(80,213,218,.32); color: var(--schrift); }
-:focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; border-radius: 4px; }
-.nur-fuer-leser { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.bahn { width: 100%; max-width: calc(var(--bahn) + 2 * var(--seitenrand)); margin-inline: auto; padding-inline: var(--seitenrand); }
-
-/* Bar */
-.leiste { position: absolute; top: 10px; left: 0; right: 0; z-index: 60; display: flex; justify-content: center;
-  padding-inline: var(--seitenrand); pointer-events: none; }
-.leiste__kapsel { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 24px;
-  border-radius: 999px; background: var(--flaeche); }
-.leiste__marke { display: flex; align-items: center; min-height: 44px; margin-right: 6px; }
-.leiste__marke img { height: 21px; width: auto; }
-.leiste__punkt { padding: 10px 16px; border-radius: 10px; font-size: 14.5px; font-weight: 500; color: var(--leise);
-  transition: color 160ms var(--raus), background-color 160ms var(--raus); }
-.leiste__punkt[aria-current] { color: var(--schrift); }
-.knopf { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 10px;
-  background: var(--schrift); color: var(--auf-akzent); font-family: inherit; font-weight: 600; line-height: 1.2;
-  cursor: pointer; transition: transform 160ms var(--raus), background-color 160ms var(--raus); }
-.knopf--leiste { min-height: 40px; padding: 0 18px; font-size: 14.5px; }
-.knopf--gross { min-height: 48px; padding: 0 28px; font-size: 17px; }
-.knopf--leise { padding: 10px 21px; font-size: 14.5px; background: transparent; color: var(--schrift);
-  box-shadow: inset 0 0 0 1px var(--rand); }
-.leiste__burger { display: none; }
-.menue { display: none; position: fixed; z-index: 55; left: 20px; right: 20px; top: 12px; padding: 78px 0 22px;
-  border-radius: 16px; background: var(--flaeche); transform-origin: top center; opacity: 0;
-  transform: scaleY(.86) translateY(-10px); pointer-events: none;
-  transition: opacity 220ms var(--raus), transform 320ms var(--raus); }
-.menue[data-offen] { opacity: 1; transform: none; pointer-events: auto; }
-.menue a { display: block; padding: 15px 20px; color: var(--leise); font-size: 19px; font-weight: 500; }
-.menue a[aria-current] { color: var(--schrift); }
-.menue .knopf { display: flex; width: calc(100% - 40px); margin: 14px 20px 0; color: var(--auf-akzent); }
-
-/* Page header. Light like the home page aurora, but weaker:
-   this page is for reading. Sits below the text. */
-main { position: relative; padding: 140px 0 110px; }
-.schein { position: absolute; left: 0; right: 0; top: -10px; height: 560px; z-index: 0; pointer-events: none; opacity: .8;
-  -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent 100%); mask-image: linear-gradient(to bottom, #000 40%, transparent 100%);
-  background:
-    radial-gradient(ellipse 46% 70% at 0% 100%, rgba(80,213,218,.42), rgba(80,213,218,.16) 55%, rgba(80,213,218,0) 100%),
-    radial-gradient(ellipse 46% 70% at 100% 100%, rgba(80,213,218,.34), rgba(80,213,218,.13) 55%, rgba(80,213,218,0) 100%); }
-main > :not(.schein) { position: relative; z-index: 6; }
-.pfad { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 22px; padding: 0; list-style: none;
-  font-size: 14.5px; color: var(--sehr-leise); }
-.pfad a { color: var(--leise); transition: color 160ms var(--raus); }
-.pfad li + li::before { content: "/"; margin-right: 8px; color: var(--sehr-leise); }
-.seitenkopf h1 { font-size: clamp(36px, 4.4vw, 60px); font-weight: 700; line-height: 1.04; letter-spacing: -.021em;
-  margin: 0; text-wrap: balance; }
-.seitenkopf .unter { margin-top: 18px; color: var(--leise); font-size: clamp(17px, 1.4vw, 20px); line-height: 1.5; text-wrap: pretty; }
-.seitenkopf--mitte { text-align: center; }
-.seitenkopf--mitte .pfad { justify-content: center; }
-.seitenkopf--mitte h1 { font-size: clamp(38px, 5.55vw, 80px); line-height: 1.02; }
-.seitenkopf--mitte .unter { max-width: 620px; margin-inline: auto; text-wrap: balance; }
-.angaben { margin-top: 22px; color: var(--sehr-leise); font-size: 14.5px; }
-.angaben span + span::before { content: "·"; margin: 0 8px; }
-.geplant { display: inline-block; margin: 0 0 18px; padding: 6px 14px; border-radius: 999px; font-size: 13px;
-  font-weight: 600; color: var(--warm); background: color-mix(in srgb, var(--warm) 10%, var(--flaeche));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warm) 30%, transparent); }
-
-/* Article */
-.artikel .seitenkopf h1 { font-size: clamp(34px, 3.7vw, 52px); line-height: 1.06; }
-.artikel .seitenkopf .unter { font-size: clamp(17px, 1.3vw, 19px); }
-.titelbild { margin: 34px 0 0; border-radius: 16px; overflow: hidden; border: 1px solid var(--linie); background: var(--tief); }
-.titelbild img { display: block; width: 100%; height: auto; }
-.offenlegung { margin: 30px 0 0; padding: 2px 0 2px 16px; border-left: 2px solid var(--rand);
-  color: var(--leise); font-size: 15px; line-height: 1.55; }
-.offenlegung strong { color: var(--schrift); font-weight: 600; }
-.text { margin-top: 40px; font-size: 18px; line-height: 1.7; color: var(--leise); }
-.text > * + * { margin-top: 20px; }
-.text h2 { margin-top: 64px; font-size: clamp(26px, 2.6vw, 34px); font-weight: 600; line-height: 1.1;
-  letter-spacing: -.014em; color: var(--schrift); scroll-margin-top: 90px; }
-.text h3 { margin-top: 38px; font-size: clamp(20px, 1.8vw, 23px); font-weight: 600; line-height: 1.2; letter-spacing: -.012em;
-  color: var(--schrift); scroll-margin-top: 90px; }
-.text h4 { margin-top: 28px; font-size: 18px; font-weight: 600; letter-spacing: -.014em; color: var(--schrift); }
-.text h2 + *, .text h3 + *, .text h4 + * { margin-top: 14px; }
-.text strong { color: var(--schrift); font-weight: 600; }
-.text a { color: var(--akzent); text-decoration: underline; text-decoration-color: rgba(80,213,218,.35);
-  text-underline-offset: 3px; transition: text-decoration-color 160ms var(--raus); }
-.text ul, .text ol { padding-left: 1.3em; }
-.text li + li { margin-top: 8px; }
-.text li > * + * { margin-top: 10px; }
-.text li::marker { color: var(--sehr-leise); }
-.text code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .86em;
-  padding: .12em .4em; border-radius: 6px; background: var(--erhoeht); color: var(--schrift); }
-.text pre { margin-top: 24px; padding: 20px 22px; overflow-x: auto; border-radius: 14px; background: var(--tief);
-  border: 1px solid var(--linie); font-size: 15px; line-height: 1.55; }
-.text pre code { padding: 0; background: none; font-size: inherit; }
-/* Copy button in the code box. Top right, confirms visibly
-   ("Copied"), and is absent without script because the script adds it. */
-.codeblock { position: relative; }
-.codeblock pre { margin-top: 24px; }
-.kopieren { position: absolute; top: 34px; right: 12px; display: inline-flex; align-items: center; gap: 6px;
-  min-height: 36px; padding: 8px 14px; border: 0; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--rand);
-  background: var(--erhoeht); color: var(--leise); font-family: inherit; font-size: 13.5px; font-weight: 600;
-  line-height: 1; cursor: pointer; transition: color 160ms var(--raus), box-shadow 160ms var(--raus); }
-.kopieren[data-kopiert] { color: var(--akzent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 45%, transparent); }
-.kopieren svg { width: 13px; height: 13px; }
-.befehlszeile { margin-top: 10px; color: var(--sehr-leise); font-size: 14.5px; line-height: 1.5; }
-@media (max-width: 700px) {
-  /* On mobile the button sits below the command: beside it, it would cover it. */
-  .kopieren { position: static; margin-top: 10px; min-height: 44px; width: 100%; justify-content: center; }
-}
-.text blockquote { margin-inline: 0; padding-left: 20px; border-left: 2px solid var(--rand); }
-.text blockquote > * + * { margin-top: 12px; }
-.text hr { border: 0; height: 1px; background: var(--linie); margin-block: 48px; }
-.text figure { margin: 34px 0 0; }
-.text figure + * { margin-top: 30px; }
-.text .abbildung { display: block; margin-inline: auto; max-width: 100%; height: auto; border-radius: 14px; }
-.text .abbildung.hoch { max-height: 620px; width: auto; }
-.text figcaption { margin-top: 12px; text-align: center; font-size: 14px; line-height: 1.5; color: var(--sehr-leise); text-wrap: balance; }
-.text figcaption .quelle { white-space: nowrap; }
-.text figcaption .quelle::before { content: "· "; }
-.tabelle { margin-top: 28px; overflow-x: auto; border-radius: 14px; background: var(--flaeche); }
-.tabelle table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 1.45; }
-.tabelle th, .tabelle td { padding: 14px 18px; text-align: left; vertical-align: top; }
-.tabelle th { color: var(--sehr-leise); font-size: 12px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase;
-  white-space: nowrap; border-bottom: 1px solid var(--linie); }
-.tabelle td:first-child { color: var(--schrift); font-weight: 600; }
-.tabelle tbody tr + tr td { border-top: 1px solid var(--linie); }
-
-/* TL;DR: one sheet, small heading like the column heads in the footer */
-.kurz { margin-top: 36px; padding: 26px 30px; border-radius: 16px; background: var(--flaeche); }
-.text .kurz h2 { margin: 0; font-size: 12px; line-height: 1.3; letter-spacing: .13em; text-transform: uppercase; color: var(--akzent); }
-.text .kurz > * + * { margin-top: 12px; }
-.text .kurz h2 + * { margin-top: 14px; }
-
-/* FAQ: like "Common questions" on the home page, as details so it works
-   without script. The first answer is open. */
-.fragen__blatt { margin-top: 28px; border-radius: 16px; background: var(--flaeche); overflow: hidden; }
-.frage + .frage { border-top: 1px solid var(--linie); }
-.frage__knopf { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 32px;
-  cursor: pointer; list-style: none; transition: background-color 160ms var(--raus); }
-.frage__knopf::-webkit-details-marker { display: none; }
-.text .frage__knopf h3 { margin: 0; font-size: clamp(16px, 1.4vw, 19px); line-height: 1.3; letter-spacing: -.014em; }
-.frage__pfeil { flex: none; width: 20px; height: 20px; color: var(--sehr-leise); transition: transform 280ms var(--raus), color 160ms var(--raus); }
-.frage[open] .frage__pfeil { transform: rotate(90deg); color: var(--leise); }
-.frage__antwort { padding: 0 32px 27px; font-size: clamp(15px, 1.2vw, 16.5px); line-height: 1.55; }
-.frage__antwort > * + * { margin-top: 12px; }
-
-/* :::swiftly in the text: short, the buttons are in the sidebar */
-.swiftly { position: relative; margin-top: 40px; padding: 22px 26px 24px; border-radius: 16px; overflow: hidden;
-  background: radial-gradient(ellipse 70% 90% at 0% 0%, rgba(80,213,218,.12), rgba(80,213,218,0) 70%), var(--flaeche);
-  border: 1px solid var(--linie); color: var(--leise); }
-.text .swiftly > * + * { margin-top: 10px; }
-.swiftly__marke { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 600; letter-spacing: .13em;
-  text-transform: uppercase; color: var(--schrift); }
-.swiftly__marke img { width: 22px; height: 22px; }
-.text .swiftly__weiter a { font-weight: 600; }
-
-/* Grid: article + sidebar */
-.artikelbahn { width: 100%; max-width: calc(var(--bahn) + 2 * var(--seitenrand)); margin-inline: auto; padding-inline: var(--seitenrand);
-  display: grid; grid-template-columns: minmax(0, var(--lesen)) var(--leiste); justify-content: center;
-  column-gap: clamp(36px, 3.5vw, 60px); align-items: start; }
-.seitenleiste { display: flex; flex-direction: column; gap: 30px; padding-top: 40px; align-self: stretch; }
-.seitenleiste__klebt { position: sticky; top: 24px; display: flex; flex-direction: column; gap: 30px;
-  max-height: calc(100vh - 48px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
-.leistenblock h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; line-height: 1.3; letter-spacing: .13em;
-  text-transform: uppercase; color: var(--sehr-leise); }
-.inhaltsliste { margin: 0; padding: 0; list-style: none; border-left: 1px solid var(--linie); }
-.inhaltsliste a { display: block; margin-left: -1px; padding: 6px 0 6px 15px; border-left: 1px solid transparent;
-  font-size: 14.5px; line-height: 1.35; color: var(--leise); transition: color 160ms var(--raus), border-color 160ms var(--raus); }
-.leistenkasten { padding: 22px 20px 20px; border-radius: 16px; border: 1px solid var(--linie);
-  background: radial-gradient(ellipse 80% 70% at 0% 0%, rgba(80,213,218,.13), rgba(80,213,218,0) 70%), var(--flaeche); }
-.leistenkasten__marke { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 600; letter-spacing: -.014em; }
-.leistenkasten__marke img { width: 28px; height: 28px; }
-.leistenkasten__satz { margin-top: 10px; font-size: 14.5px; line-height: 1.5; color: var(--leise); }
-.knoepfe { display: grid; gap: 8px; margin-top: 18px; }
-/* All four options are built the same: quiet surface, an accent ring,
-   the logo in one color inside an outline-free circle, circle to mark 2 to 1.
-   The first (the one matching the device) is one step stronger, not filled
-   white: a solid white capsule was too heavy next to the quiet rest.
-   One accent for all, not four colors. */
-.laden { display: flex; align-items: center; gap: 12px; min-height: 54px; padding: 8px 16px 8px 10px; border-radius: 999px;
-  line-height: 1.25; color: var(--schrift); background: color-mix(in srgb, var(--akzent) 8%, var(--erhoeht));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 24%, transparent); }
-.laden__zeichen { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%;
-  background: rgba(255,255,255,.06); color: var(--schrift); }
-.laden__zeichen svg { width: 15px; height: 15px; }
-.laden b { display: block; font-size: 15px; font-weight: 600; letter-spacing: -.014em; }
-.laden em { display: block; font-size: 12.5px; font-style: normal; color: var(--leise); }
-.knoepfe > :first-child { background: color-mix(in srgb, var(--akzent) 14%, var(--flaeche));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 38%, transparent); }
-.knoepfe > :first-child .laden__zeichen { background: color-mix(in srgb, var(--akzent) 20%, transparent); color: var(--akzent); }
-.leistenkasten__kaffee { margin: 14px 0 0 10px; font-size: 14px; line-height: 1.45; color: var(--sehr-leise); }
-.leistenkasten__kaffee a { color: var(--leise); text-decoration: underline; text-underline-offset: 3px; }
-.alle-wege { display: inline-block; margin: 14px 0 0 10px; font-size: 14.5px; font-weight: 600; color: var(--akzent); }
-.verwandtliste { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
-.weiterlesen { margin-top: 64px; padding-top: 40px; border-top: 1px solid var(--linie); }
-.weiterlesen h2 { margin: 0 0 22px; font-size: 22px; font-weight: 600; letter-spacing: -.014em; }
-.verwandtliste--unten { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 20px; }
-.verwandtliste--unten .verwandt { grid-template-columns: 1fr; gap: 10px; align-items: start; }
-.verwandtliste--unten .verwandt img { width: 100%; height: auto; border-radius: 16px; }
-@media (max-width: 700px) { .verwandtliste--unten { grid-template-columns: 1fr; } }
-.verwandt { display: grid; grid-template-columns: 92px minmax(0,1fr); gap: 14px; align-items: center; }
-.verwandt img { width: 92px; height: auto; border-radius: 10px; border: 1px solid var(--linie); }
-.verwandt b { display: block; font-size: 14.5px; font-weight: 600; line-height: 1.3; letter-spacing: -.01em;
-  transition: color 160ms var(--raus); }
-.verwandt time { display: block; margin-top: 4px; font-size: 12.5px; color: var(--sehr-leise); }
-
-/* Overview */
-.karten { display: grid; gap: 20px; margin: 0; padding: 0; list-style: none; }
-.karten--raster { grid-template-columns: repeat(3, minmax(0,1fr)); margin-top: 60px; }
-.karte { display: flex; flex-direction: column; height: 100%; border-radius: 16px; overflow: hidden;
-  background: var(--flaeche);
-  transition: transform 200ms var(--raus), box-shadow 200ms var(--raus), border-color 200ms var(--raus); }
-.karte__bild { display: block; background: var(--tief); border-bottom: 1px solid var(--linie); }
-.karte__bild img { display: block; width: 100%; height: auto; }
-.karte__rumpf { display: flex; flex-direction: column; flex: 1; padding: 20px 24px 24px; }
-.karte__kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13.5px; color: var(--sehr-leise); }
-.karte__kopf > span:first-child { color: var(--akzent); font-weight: 600; }
-.karte__kopf .geplant { margin: 0; padding: 3px 10px; font-size: 12px; }
-.karte h2, .karte h3 { margin: 10px 0 0; font-size: clamp(19px, 1.5vw, 22px); font-weight: 600; line-height: 1.22; letter-spacing: -.012em; }
-.karte p { margin-top: 10px; font-size: 15px; line-height: 1.55; color: var(--leise); }
-.karte__weiter { margin-top: auto; padding-top: 18px; font-size: 14.5px; font-weight: 600; color: var(--akzent); }
-.leer { margin-top: 60px; text-align: center; color: var(--leise); }
-.mitte { text-align: center; }
-.zurueck { display: inline-flex; align-items: center; gap: 9px; margin-top: 56px; padding: 9px 16px 9px 13px;
-  border: 1px solid var(--linie); border-radius: 999px; color: var(--leise); font-size: 15px;
-  transition: color 160ms var(--raus), border-color 160ms var(--raus); }
-.zurueck svg { width: 14px; height: 14px; }
-
-/* Footer as in index.html */
-.fuss { padding-block: 0 43px; }
-.fuss__linie { height: 1px; background: var(--linie); }
-.fuss__raster { display: grid; grid-template-columns: minmax(0,440px) minmax(0,280px) minmax(0,280px) minmax(0,240px);
-  row-gap: 40px; padding-block: 64px 73px; }
-.fuss__raster--fuenf { grid-template-columns: minmax(0,360px) repeat(4, minmax(0,230px)); }
-.fuss__marke { max-width: 360px; }
-.fuss__marke img { height: 21px; width: auto; }
-.fuss__marke p { margin-top: 14px; color: var(--leise); font-size: 15px; line-height: 1.55; }
-.fuss__spalte h2 { margin: 0; font-size: 12px; font-weight: 600; line-height: 1.3; letter-spacing: .13em;
-  color: var(--sehr-leise); text-transform: uppercase; }
-.fuss__spalte ul { margin: 16px 0 0; padding: 0; list-style: none; font-size: 15px; line-height: 1.4; }
-.fuss__spalte li + li { margin-top: 11px; }
-.fuss__spalte a { color: var(--leise); transition: color 160ms var(--raus); }
-.fuss__klein { padding-top: 28px; max-width: 880px; color: var(--sehr-leise); font-size: 13px; line-height: 1.6; }
-
-@media (hover: hover) and (pointer: fine) {
-  .leiste__punkt:hover { color: var(--schrift); background: rgba(255,255,255,.06); }
-  .knopf--leise:hover { background: rgba(255,255,255,.06); }
-  .fuss__spalte a:hover, .pfad a:hover, .zurueck:hover { color: var(--schrift); }
-  .text a:hover { text-decoration-color: currentColor; }
-  .frage__knopf:hover { background: rgba(255,255,255,.03); }
-  .inhaltsliste a:hover { color: var(--schrift); border-left-color: var(--akzent); }
-  .verwandt:hover b, .alle-wege:hover { color: var(--schrift); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .knopf, .menue, .karte, .laden { transition-property: opacity, color, background-color, border-color, box-shadow; }
-  .menue { transform: none; }
-  .frage__pfeil { transition: none; }
-}
-
-@media (max-width: 1100px) {
-  .karten--raster { grid-template-columns: repeat(2, minmax(0,1fr)); }
-  .fuss__raster--fuenf { grid-template-columns: 1fr 1fr 1fr; }
-}
-@media (max-width: 1000px) {
-  .artikelbahn { grid-template-columns: minmax(0,1fr); max-width: calc(var(--lesen) + 2 * var(--seitenrand)); }
-  .seitenleiste { padding-top: 64px; }
-  .seitenleiste__klebt { position: static; }
-  .leistenblock--inhalt { display: none; }
-}
-@media (max-width: 900px) {
-  .leiste { position: fixed; top: 12px; padding-inline: 20px; }
-  .leiste__kapsel { width: 100%; justify-content: space-between; padding: 8px 8px 8px 20px; }
-  .leiste__punkt, .knopf--leiste.nur-desktop { display: none; }
-  .leiste__burger { display: grid; align-content: center; justify-items: start; width: 44px; height: 44px;
-    border: 0; padding: 0 0 0 12px; background: none; cursor: pointer; }
-  .leiste__burger span { display: block; width: 20px; height: 2px; border-radius: 1px; background: var(--schrift);
-    transform-origin: left center; transition: transform 280ms var(--raus), opacity 180ms var(--raus); }
-  .leiste__burger span + span { margin-top: 5px; }
-  .leiste__burger span:nth-child(3) { transform: scaleX(.65); }
-  .leiste__burger[aria-expanded="true"] span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
-  .leiste__burger[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
-  .leiste__burger[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
-  .menue { display: block; }
-  main { padding: 112px 0 84px; }
-  .schein { top: 38px; height: 420px; }
-  .seitenkopf h1 { font-size: 36px; line-height: 1.06; }
-  .seitenkopf--mitte h1 { font-size: 46px; line-height: 1; }
-  .seitenkopf .unter { font-size: 17px; }
-  .text { margin-top: 36px; font-size: 17px; line-height: 1.65; }
-  .text h2 { margin-top: 52px; font-size: 27px; line-height: 1.1; }
-  .text h3 { font-size: 20px; }
-  .text pre { font-size: 14px; }
-  .tabelle table { font-size: 14px; }
-  .tabelle th, .tabelle td { padding: 11px 14px; }
-  .kurz { padding: 22px; border-radius: 16px; }
-  .fragen__blatt { border-radius: 16px; }
-  .frage__knopf { padding: 18px; }
-  .text .frage__knopf h3 { font-size: 15.5px; }
-  .frage__antwort { padding: 0 18px 20px; font-size: 16px; }
-  .swiftly { padding: 20px 20px 20px; }
-  .titelbild { margin-top: 26px; border-radius: 14px; }
-  .artikel .seitenkopf h1 { font-size: 34px; }
-  .karte { border-radius: 16px; }
-  .fuss__raster, .fuss__raster--fuenf { grid-template-columns: 1fr 1fr; padding-block: 48px 40px; }
-  .fuss__marke { grid-column: 1 / -1; }
-  .fuss__spalte:last-child { grid-column: 1 / -1; }
-  .fuss__klein { font-size: 11.5px; padding-top: 20px; }
-  .fuss { padding-bottom: 18px; }
-}
-@media (max-width: 700px) {
-  .karten--raster { grid-template-columns: 1fr; margin-top: 40px; }
-}
-
-/* =====================================================================
-   Behavior: every button shares one animation, the calmest existing one,
-   the card hover: lift two pixels, a shadow behind, done. No hard jump to
-   104.5 percent, no outward wave, no script bounce. A surface that grows
-   on hover shifts the text inside it, and three different variants side
-   by side look random instead of systematic.
-
-   Everything is a variable: one duration, one curve, one lift, one press,
-   one brighten, one focus ring. No component invents its own values. Two
-   strengths, because a footer row must not lift like a button: surfaces
-   lift, rows brighten.
-   ===================================================================== */
-:root {
-  --dauer: 170ms;
-  --kurve: cubic-bezier(.23, 1, .32, 1);
-  --hebung: -2px;
-  --druck: .985;
-  --aufhellen: rgba(255,255,255,.06);
-  --schatten-hoch: 0 12px 26px rgba(0,0,0,.45);
-}
-.knopf, .weg-gross, .weg-klein, .karte, .kopieren, .laden, .weg,
-.reiter button, .frage__knopf, .mitmachen__liste a, .leiste__punkt, .leiste__marke,
-.menue a, .fuss__spalte a, .pfad a, .zurueck, .alle-wege, .text a, .frage__link,
-.schritt .knopf, .hilfe .knopf, .download .knopf {
-  transition: transform var(--dauer) var(--kurve), background-color var(--dauer) var(--kurve),
-              box-shadow var(--dauer) var(--kurve), color var(--dauer) var(--kurve),
-              border-color var(--dauer) var(--kurve), text-decoration-color var(--dauer) var(--kurve);
-}
-@media (hover: hover) and (pointer: fine) {
-  /* Surfaces: lift. */
-  .knopf:hover, .weg-gross:hover, .karte:hover, .kopieren:hover, .laden:hover, .weg:hover,
-  .schritt .knopf:hover, .hilfe .knopf:hover, .download .knopf:hover {
-    transform: translateY(var(--hebung));
-    box-shadow: var(--schatten-hoch);
-  }
-  .weg-klein:hover {
-    transform: translateY(var(--hebung));
-    box-shadow: inset 0 0 0 1px var(--rand), var(--schatten-hoch);
-  }
-  /* The primary option keeps its accent ring, otherwise it flickers away on hover. */
-  .weg-gross:hover, .knoepfe > :first-child:hover {
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 55%, transparent), var(--schatten-hoch);
-  }
-  .laden:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--akzent) 40%, transparent), var(--schatten-hoch); }
-  .karte:hover { border-color: var(--rand); }
-  .kopieren:hover { color: var(--schrift); box-shadow: inset 0 0 0 1px var(--rand), var(--schatten-hoch); }
-  /* Rows and links: brighten. */
-  .reiter button:hover, .frage__knopf:hover, .mitmachen__liste a:hover, .leiste__punkt:hover {
-    background: var(--aufhellen);
-    color: var(--schrift);
-  }
-  .menue a:hover, .fuss__spalte a:hover, .pfad a:hover, .zurueck:hover, .alle-wege:hover { color: var(--schrift); }
-  .text a:hover, .frage__link:hover, .hinweis a:hover, .abschnitt a:not(.knopf):hover,
-  .frage__antwort a:hover { text-decoration-color: currentColor; }
-}
-/* Press: one value for every touchable element. */
-.knopf:active, .weg-gross:active, .weg-klein:active, .karte:active, .kopieren:active,
-.reiter button:active, .laden:active, .weg:active { transform: scale(var(--druck)); }
-.mitmachen__liste a:active, .frage__knopf:active { background: rgba(255,255,255,.09); }
-/* One focus ring for everything. */
-:focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; border-radius: 6px; }
-.knopf:focus-visible, .weg-gross:focus-visible, .weg-klein:focus-visible, .laden:focus-visible,
-.weg:focus-visible, .reiter button:focus-visible, .kopieren:focus-visible { border-radius: inherit; }
-@media (prefers-reduced-motion: reduce) {
-  /* Reduced, not none: color stays, motion goes. */
-  .knopf, .weg-gross, .weg-klein, .karte, .kopieren, .laden, .weg, .reiter button,
-  .frage__knopf, .mitmachen__liste a, .leiste__punkt, .menue a, .fuss__spalte a, .pfad a, .text a {
-    transition-property: color, background-color, box-shadow, border-color, text-decoration-color;
-  }
-  .knopf:hover, .weg-gross:hover, .weg-klein:hover, .karte:hover, .kopieren:hover, .laden:hover,
-  .weg:hover, .knopf:active, .weg-gross:active, .weg-klein:active, .karte:active,
-  .kopieren:active, .laden:active, .weg:active, .reiter button:active { transform: none; }
-}
-
-/* ---- As on the home page: one surface per option, no ring, no
-   lift, no shadow. Press: surface darkens, scale .98. ---- */
-.laden { border-radius: 14px; box-shadow: none; background: #262626; min-height: 56px; }
-.knoepfe > :first-child { background: color-mix(in srgb, var(--akzent) 34%, #101010); box-shadow: none; }
-.knoepfe > :first-child .laden__zeichen { background: rgba(255,255,255,.12); color: var(--schrift); }
-.leistenkasten { border: 0; }
-@media (hover: hover) and (pointer: fine) {
-  .knopf:hover, .weg-gross:hover, .weg-klein:hover, .karte:hover, .kopieren:hover, .laden:hover, .weg:hover,
-  .schritt .knopf:hover, .hilfe .knopf:hover, .download .knopf:hover { transform: none; box-shadow: none; }
-  .laden:hover { background: #303030; }
-  .knoepfe > :first-child:hover { background: color-mix(in srgb, var(--akzent) 42%, #101010); }
-  .karte:hover { background: #262626; }
-}
-.knopf:active { background: rgba(255,255,255,.75); }
-.laden:active { background: #3A3A3A; }
-.knoepfe > :first-child:active { background: color-mix(in srgb, var(--akzent) 26%, #101010); }
-.karte:active { background: #303030; }
-
-@media (hover: hover) and (pointer: fine) {
-  .leiste__punkt:hover { color: var(--schrift); background: var(--flaeche); }
-}
-
-/* ================= Refinements =================
-   Overview in sections, cards without cover image, landing pages with device.
-   Same measures as the home page: card #1E1E1E, corner 16, no shadow. */
-.sprung { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 28px; }
-.sprung a { padding: 9px 16px; border-radius: 999px; background: #1E1E1E; color: var(--leise);
-  font-size: 14.5px; font-weight: 500; text-decoration: none; transition: background-color 160ms var(--raus), color 160ms var(--raus); }
-@media (hover: hover) and (pointer: fine) { .sprung a:hover { background: #262626; color: var(--schrift); } }
-
-.rubrik { margin-top: 88px; scroll-margin-top: 24px; }
-.rubrik__kopf { display: grid; gap: 8px; max-width: 640px; }
-.rubrik__kopf h2 { margin: 0; font-size: clamp(26px, 2.6vw, 36px); font-weight: 600; letter-spacing: -.018em; line-height: 1.12; }
-.rubrik__kopf p { margin: 0; color: var(--leise); font-size: 16.5px; line-height: 1.5; }
-.rubrik .karten--raster { margin-top: 28px; gap: 14px; }
-
-.karte { background: #1E1E1E; border: 0; }
-.karte__rumpf { padding: 24px 26px 24px; }
-.karte h3 { margin: 12px 0 0; font-size: clamp(18px, 1.35vw, 20px); font-weight: 600; line-height: 1.25; letter-spacing: -.012em; text-wrap: balance; }
-.karte p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-
-.leitkarte { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center;
-  min-height: 340px; margin-top: 64px; border-radius: 16px; overflow: hidden; text-decoration: none; color: inherit;
-  background: radial-gradient(ellipse 70% 80% at 100% 100%, rgba(80,213,218,.22), rgba(80,213,218,0) 70%), #1E1E1E;
-  transition: background-color 160ms var(--raus); }
-.leitkarte__text { position: relative; z-index: 2; padding: 44px 0 44px 44px; display: grid; gap: 14px; }
-.leitkarte__marke { justify-self: start; padding: 5px 10px; border-radius: 8px; background: var(--akzent-leise); color: var(--akzent);
-  font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
-.leitkarte h2 { margin: 0; font-size: clamp(26px, 2.8vw, 40px); font-weight: 600; letter-spacing: -.021em; line-height: 1.08; text-wrap: balance; }
-.leitkarte p { margin: 0; color: var(--leise); font-size: 17px; line-height: 1.5; max-width: 46ch; }
-.leitkarte .karte__weiter { padding-top: 6px; }
-.leitkarte__bild { position: relative; align-self: stretch; }
-.leitkarte__bild .geraet { position: absolute; }
-.leitkarte__bild .geraet--mac { right: 1%; bottom: 13%; width: 70%; }
-.leitkarte__bild .geraet--fon { left: 12%; bottom: -30%; width: 24%; z-index: 3; }
-
-/* Devices, identical to the home page: the screen sits in the frame's cutout. */
-.geraet { position: relative; display: block; container-type: inline-size; }
-.geraet__rahmen { position: relative; z-index: 2; display: block; width: 100%; height: auto; }
-.geraet__schirm { position: absolute; z-index: 1; object-fit: cover; background: #000; }
-.geraet--fon .geraet__schirm { left: 5.16%; top: 2.36%; width: 89.6%; height: 95.3%; border-radius: 12.4cqw; }
-.geraet--mac .geraet__schirm { left: 10.70%; top: 11.20%; width: 78.6%; height: 77.6%; border-radius: .2cqw; }
-.geraet--pad .geraet__schirm { left: 4.17%; top: 5.64%; width: 91.67%; height: 88.72%; border-radius: 1.4cqw; }
-.wandtv { padding: 5px; border-radius: 10px; background: #101010; box-shadow: inset 0 0 0 1px var(--rand); }
-.wandtv img { display: block; width: 100%; height: auto; border-radius: 5px; }
-.wandtv--fenster { border-radius: 12px; padding: 0; overflow: hidden; }
-.wandtv--fenster img { border-radius: 12px; }
-
-.geraetebild { position: relative; margin: 34px 0 0; padding: 40px 40px 0; border-radius: 16px; overflow: hidden;
-  display: flex; justify-content: center; align-items: flex-end; min-height: 240px;
-  background: radial-gradient(ellipse 80% 70% at 50% 110%, rgba(80,213,218,.24), rgba(80,213,218,0) 70%), #1E1E1E; }
-.geraetebild .wandtv, .geraetebild .geraet--mac { width: 86%; margin-bottom: 40px; }
-.geraetebild .geraet--mac { margin-bottom: -2%; }
-.geraetebild--jellyfin-client-iphone-ipad { padding-top: 34px; }
-.geraetebild--jellyfin-client-iphone-ipad .geraet--pad { width: 78%; margin-bottom: -8%; }
-.geraetebild--jellyfin-client-iphone-ipad .geraet--fon { position: absolute; right: 7%; bottom: -16%; width: 25%; z-index: 3; }
-
-@media (max-width: 900px) {
-  .rubrik { margin-top: 64px; }
-  .leitkarte { grid-template-columns: 1fr; margin-top: 44px; }
-  .leitkarte__text { padding: 30px 24px 0; }
-  .leitkarte__bild { min-height: 0; aspect-ratio: 16 / 11; margin-top: 18px; overflow: hidden; }
-  .leitkarte__bild .geraet--mac { right: -6%; bottom: 10%; width: 86%; }
-  .leitkarte__bild .geraet--fon { left: 5%; bottom: -34%; width: 27%; }
-  .geraetebild { padding: 24px 20px 0; }
-}
-@media (hover: hover) and (pointer: fine) {
-  .leitkarte:hover { background: radial-gradient(ellipse 70% 80% at 100% 100%, rgba(80,213,218,.28), rgba(80,213,218,0) 70%), #262626; }
-}
-"""
-
 SKRIPT = """(function () {
-  var burger = document.querySelector(".leiste__burger");
-  var menue = document.getElementById("menue");
-  if (burger && menue) {
-    var setzen = function (offen) {
-      burger.setAttribute("aria-expanded", offen ? "true" : "false");
-      if (offen) { menue.setAttribute("data-offen", ""); } else { menue.removeAttribute("data-offen"); }
-    };
-    burger.addEventListener("click", function () { setzen(burger.getAttribute("aria-expanded") !== "true"); });
-    menue.addEventListener("click", function (e) { if (e.target.closest("a")) setzen(false); });
-    document.addEventListener("keydown", function (e) { if (e.key === "Escape") setzen(false); });
-  }
   /* Copy button on every code box, with visible confirmation. */
   document.querySelectorAll(".codeblock").forEach(function (kasten) {
     var code = kasten.querySelector("code");
-    if (!code) return;
-    var knopf = document.createElement("button");
-    knopf.type = "button";
-    knopf.className = "kopieren";
-    var wort = document.createElement("span");
-    wort.textContent = "Copy";
-    knopf.appendChild(wort);
-    var zurueck = 0;
-    knopf.addEventListener("click", function () {
-      var text = code.textContent;
-      var fertig = function (gut) {
-        wort.textContent = gut ? "Copied" : "Press Cmd C";
-        if (gut) knopf.setAttribute("data-kopiert", "");
-        clearTimeout(zurueck);
-        zurueck = setTimeout(function () { wort.textContent = "Copy"; knopf.removeAttribute("data-kopiert"); }, 2000);
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(function () { fertig(true); }, function () { fertig(false); });
-      } else {
-        /* Older route: select and execCommand. */
-        var feld = document.createElement("textarea");
-        feld.value = text;
-        feld.setAttribute("readonly", "");
-        feld.style.position = "absolute";
-        feld.style.left = "-9999px";
-        document.body.appendChild(feld);
-        feld.select();
-        var gut = false;
-        try { gut = document.execCommand("copy"); } catch (e) { gut = false; }
-        document.body.removeChild(feld);
-        fertig(gut);
-      }
+    if (!code || !navigator.clipboard) return;
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "sw-btn sw-btn--sm sw-btn--secondary pb-copy"; b.textContent = "Copy";
+    var t = 0;
+    b.addEventListener("click", function () {
+      navigator.clipboard.writeText(code.textContent).then(function () { b.textContent = "Copied"; }, function () { b.textContent = "Press Cmd C"; });
+      clearTimeout(t); t = setTimeout(function () { b.textContent = "Copy"; }, 2000);
     });
-    kasten.appendChild(knopf);
-  });
-  /* Matching download first. Without script the fixed order stays. */
-  var ua = navigator.userAgent || "", pf = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
-  var geraet = /Android/i.test(ua) ? "android" : /iPhone|iPad|iPod|Macintosh|Mac OS X/i.test(ua) ? "apple"
-    : /Win/i.test(pf) || /Windows/i.test(ua) ? "windows" : /Linux|X11|CrOS/i.test(pf + ua) ? "linux" : "";
-  if (!geraet) return;
-  document.querySelectorAll("[data-geraete]").forEach(function (liste) {
-    var knopf = liste.querySelector('[data-geraet="' + geraet + '"]');
-    if (knopf && knopf !== liste.firstElementChild) liste.insertBefore(knopf, liste.firstElementChild);
+    kasten.appendChild(b);
   });
 })();"""
+
 
 
 def json_ld(data):
@@ -1206,33 +626,31 @@ FOOTER_GUIDES = [("/blog/best-jellyfin-client/", "Best Jellyfin client"),
                ("/blog/why-is-jellyfin-transcoding/", "Why it transcodes")]
 
 
-def footer_pages():
-    points = "".join(f'<li><a href="{p}">{e(t)}</a></li>' for p, t in FOOTER_GUIDES)
-    return f"""
-      <div class="fuss__spalte">
-        <h2>Guides</h2>
-        <ul>{points}</ul>
-      </div>"""
-
-
 ORGANISATION = {"@type": "Organization", "name": HERAUSGEBER, "url": DOMAIN + "/",
                 "logo": {"@type": "ImageObject", "url": DOMAIN + "/apple-touch-icon.png"}}
 
 
+def download_band():
+    """The download band at the end of every article (id "laden": the article callout links to it)."""
+    stores = [
+        ("apple", APP_STORE, "si-appstore", "App Store", "iPhone, iPad, Apple TV and Mac", "iOS 18 · tvOS 18 · macOS 15", True, ""),
+        ("android", "https://play.google.com/store/apps/details?id=de.paulherter.swiftly", "si-googleplay", "Google Play",
+         "Android and Android TV", "Android 9 or newer", False, ""),
+        ("desktop", GITHUB + "/releases/latest", "si-github", "GitHub", "Windows and Linux",
+         "Windows 10 (64-bit) · apt, dnf, pacman, zypper", False, ""),
+    ]
+    return web_parts.band(["Get Swiftly", "Player."], "Free. Open source. No ads.", stores,
+                          "Plex and Emby: beta. Jellyfin 10.8 or newer.", ident="laden") + "\n"
+
+
 def page(title, description, url, content, og_type="website", addition_header="", ld=(), robots="",
           image=None, image_old=None, blog_active=True):
+    """Whole page: this module writes head lines and content, web_shell.py wraps bar, nav, footer and scripts.
+    The icon sprite is not inlined: lib.php pastes it in at runtime (<!--sw:sprite-->), so the articles stay small."""
     image_url = DOMAIN + image if image else DOMAIN + "/vorschau.jpg"
     image_old = image_old or "iPad, iPhone and an Apple TV, all showing Swiftly Player"
-    current = ' aria-current="page"' if blog_active else ""
-    coffee_menu = f'\n  <a href="{SUPPORTER_PATH}">{SUPPORTER_LINK}</a>' if SUPPORTER_ON else ""
-    coffee_footer = f'\n          <li><a href="{SUPPORTER_PATH}">{SUPPORTER_LINK}</a></li>' if SUPPORTER_ON else ""
     kanonisch = f'<link rel="canonical" href="{e(url)}">\n' if url else ""
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{e(title)}</title>
+    head = f"""<title>{e(title)}</title>
 <meta name="description" content="{e(description)}">
 {robots}{kanonisch}<meta name="author" content="{HERAUSGEBER}">
 <meta name="apple-itunes-app" content="app-id={APP_ID}">
@@ -1251,102 +669,13 @@ def page(title, description, url, content, og_type="website", addition_header=""
 <meta name="twitter:image" content="{e(image_url)}">
 <meta name="theme-color" content="#101010">
 {addition_header}<link rel="alternate" type="application/rss+xml" title="Swiftly Player blog" href="/blog/feed.xml">
-<link rel="preload" as="font" type="font/woff2" href="/schrift/figtree-latin.woff2" crossorigin>
 <link rel="icon" href="/symbol.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 {MARKER}
-<style>{STYLE}</style>
-{chr(10).join(ld)}
-</head>
-<body>
-
-<a class="nur-fuer-leser" href="#inhalt">Skip to content</a>
-
-<header class="leiste">
-  <div class="leiste__kapsel">
-    <a class="leiste__marke" href="/" aria-label="Swiftly Player, home">
-      <img src="/wortmarke.svg" alt="Swiftly" width="61" height="21">
-    </a>
-    <a class="leiste__punkt" href="/music/">Music</a>
-    <a class="leiste__punkt" href="/blog/"{current}>Blog</a>
-    <a class="leiste__punkt" href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
-    <button class="leiste__burger" type="button" aria-expanded="false" aria-controls="menue" aria-label="Menu">
-      <span></span><span></span><span></span>
-    </button>
-  </div>
-</header>
-
-<nav class="menue" id="menue" aria-label="Menu">
-  <a href="/music/">Swiftly Music</a>
-  <a href="/blog/"{current}>Blog</a>
-  <a href="{DISCORD}" target="_blank" rel="noopener">Discord</a>
-  <a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>{coffee_menu}
-  <a class="knopf knopf--gross" href="/#downloads">Download</a>
-</nav>
-
-<main id="inhalt">
-{content}
-</main>
-
-<footer class="fuss">
-  <div class="bahn">
-    <div class="fuss__linie"></div>
-    <div class="fuss__raster{' fuss__raster--fuenf' if PAGES else ''}">
-      <div class="fuss__marke">
-        <img src="/wortmarke.svg" alt="Swiftly" width="61" height="21">
-        <p>A video player for your own Jellyfin server. Built by one person.</p>
-      </div>
-      <div class="fuss__spalte">
-        <h2>Download</h2>
-        <ul>
-          <li><a href="{APPLE_PAGE}">App Store</a></li>
-          <li><a href="{TESTFLIGHT_PAGE}">TestFlight</a></li>
-          <li><a href="{ANDROID}">Android</a></li>
-          <li><a href="{WINDOWS}">Windows</a></li>
-          <li><a href="{LINUX}">Linux</a></li>
-        </ul>
-      </div>{footer_pages()}
-      <div class="fuss__spalte">
-        <h2>Elsewhere</h2>
-        <ul>
-          <li><a href="/about/">About</a></li>
-          <li><a href="/blog/">Blog</a></li>
-          <li><a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a></li>
-          <li><a href="{DISCORD}" target="_blank" rel="noopener">Discord</a></li>{coffee_footer}
-          <li><a href="/support.html">Support</a></li>
-          <li><a href="https://jellyfin.org" target="_blank" rel="noopener">Jellyfin</a></li>
-        </ul>
-      </div>
-      <div class="fuss__spalte">
-        <h2>Legal</h2>
-        <ul>
-          <li><a href="/impressum.html">Impressum</a></li>
-          <li><a href="/privacy.html">Privacy</a></li>
-          <li><a href="/datenschutz.html">Datenschutz</a></li>
-          <li><a href="/terms/">Terms</a></li>
-          <li><a href="/licenses/">Open-source licenses</a></li>
-        </ul>
-      </div>
-    </div>
-    <div class="fuss__linie"></div>
-    <p class="fuss__klein">
-      Swiftly Player is not part of the Jellyfin project and hosts nothing itself. The code is
-      under the MPL-2.0; the name, the wordmark and the app icon are not. Playback uses VLCKit and
-      libVLC by VideoLAN under the LGPL-2.1-or-later: <a href="/licenses/" style="color:inherit;text-decoration:underline">licenses and source</a>. App Store is a service mark of Apple Inc. The Android robot is
-      reproduced or modified from work created and shared by Google and used according to terms
-      described in the Creative Commons 3.0 Attribution License.
-    </p>
-  </div>
-</footer>
-
-<script>
-{SKRIPT}
-</script>
-</body>
-</html>
-"""
-
+{chr(10).join(ld)}"""
+    doc = web_shell.page(head, content + download_band(), css="pages-blog.css", scripts=f"<script>\n{SKRIPT}\n</script>")
+    return doc.replace(web_shell.sprite(), "<!--sw:sprite-->", 1)
 
 # ------------------------------------------------------------------ Due dates
 # Blocks that may only become visible from a certain date sit between
@@ -1444,6 +773,11 @@ def kategorie(a):
     return "Jellyfin"
 
 
+def tag_name(a):
+    """Label on cards and article heads: the start-here guide is just 'Guide', not its first keyword."""
+    return "Guide" if a["slug"] == LEITARTIKEL else kategorie(a)
+
+
 def title_svg(a):
     random = hashlib.sha1(a["slug"].encode()).digest()
 
@@ -1510,14 +844,17 @@ def title_write(a, folder, name):
 
 # ------------------------------------------------------------------ Pages
 
-def card(a, level="h2", heute=None):
-    """Card without cover image: the image only repeated the title below it."""
-    planned = '<span class="geplant">Scheduled</span>' if heute and not a["seite"] and a["datum"] > heute else ""
-    return (f'<li><a class="karte" href="{a["pfad"]}">'
-            f'<span class="karte__rumpf"><span class="karte__kopf"><span>{e(kategorie(a))}</span>'
-            f'<time datetime="{a["datum"].isoformat()}">{date_text(a["datum"])}</time>{planned}</span>'
-            f'<{level}>{e(a["titel"])}</{level}><p>{e(a["beschreibung"])}</p>'
-            f'<span class="karte__weiter" aria-hidden="true">Read</span></span></a></li>')
+def card(href, tag, date_iso, date_txt, title, desc, extra="", planned=""):
+    """Article card of the kit (overview and 'Keep reading'). title and desc arrive already escaped."""
+    return (f'<a class="sw-card{extra}" href="{href}"><span class="sw-card__body"><span class="sw-card__meta"><span class="sw-tag">{tag}</span>'
+            f'<time class="sw-date" datetime="{date_iso}">{date_txt}</time>{planned}</span><h3>{title}</h3><p>{desc}</p>'
+            f'<span class="sw-card__more">Read<svg aria-hidden="true"><use href="#ph-b-arrow-right"/></svg></span></span></a>')
+
+
+def article_card(a, heute=None):
+    planned = '<span class="sw-tag">Scheduled</span>' if heute and not a["seite"] and a["datum"] > heute else ""
+    return card(a["pfad"], e(tag_name(a)), a["datum"].isoformat(), date_text(a["datum"]), e(a["titel"]), e(a["beschreibung"]),
+                planned=planned)
 
 
 # Three categories for the index. Visitors are looking for an app, have a playback problem, or are setting up a server.
@@ -1561,30 +898,10 @@ def category(a):
 
 
 def leadCard(a):
-    return (f'<a class="leitkarte" href="{a["pfad"]}">'
-            f'<span class="leitkarte__text"><span class="leitkarte__marke">Start here</span>'
-            f'<h2>{e(a["titel"])}</h2><p>{e(a["beschreibung"])}</p>'
-            f'<span class="karte__weiter" aria-hidden="true">Read the guide</span></span>'
-            f'<span class="leitkarte__bild" aria-hidden="true">'
-            f'<span class="geraet geraet--mac"><img class="geraet__schirm" src="/bilder/macos-start.webp" alt="" loading="lazy">'
-            f'<img class="geraet__rahmen" src="/bilder/rahmen-macbook.webp" alt="" width="1400" height="921" loading="lazy"></span>'
-            f'<span class="geraet geraet--fon"><img class="geraet__schirm" src="/bilder/ios-start.webp" alt="" loading="lazy">'
-            f'<img class="geraet__rahmen" src="/bilder/rahmen-iphone.webp" alt="" width="700" height="1431" loading="lazy"></span>'
-            f'</span></a>')
-
-
-# Landing pages show the device they are about instead of a cover image.
-GERAETEBILD = {
-    "/jellyfin-client-apple-tv/": '<div class="wandtv"><img src="/bilder/tvos-start.webp" alt="Swiftly Player on Apple TV" width="1600" height="900" fetchpriority="high"></div>',
-    "/jellyfin-client-iphone-ipad/": ('<div class="geraet geraet--pad"><img class="geraet__schirm" src="/bilder/ipados-start.webp" alt="" fetchpriority="high">'
-                                      '<img class="geraet__rahmen" src="/bilder/rahmen-ipad.webp" alt="Swiftly Player on iPad" width="1400" height="997"></div>'
-                                      '<div class="geraet geraet--fon"><img class="geraet__schirm" src="/bilder/ios-start.webp" alt="">'
-                                      '<img class="geraet__rahmen" src="/bilder/rahmen-iphone.webp" alt="Swiftly Player on iPhone" width="700" height="1431"></div>'),
-    "/jellyfin-client-mac/": ('<div class="geraet geraet--mac"><img class="geraet__schirm" src="/bilder/macos-start.webp" alt="" fetchpriority="high">'
-                              '<img class="geraet__rahmen" src="/bilder/rahmen-macbook.webp" alt="Swiftly Player on a MacBook" width="1400" height="921"></div>'),
-    "/jellyfin-client-windows/": '<div class="wandtv wandtv--fenster"><img src="/bilder/windows-start.webp" alt="Swiftly Player on Windows" width="1280" height="751" fetchpriority="high"></div>',
-    "/jellyfin-client-linux/": '<div class="wandtv wandtv--fenster"><img src="/bilder/linux-start.webp" alt="Swiftly Player on Linux" width="1600" height="985" fetchpriority="high"></div>',
-}
+    return (f'<section class="sw-section pb-lead" aria-label="Start here"><div class="sw-g">'
+            f'<a class="sw-card sw-card--wide pb-feature" href="{a["pfad"]}"><img class="sw-card__media" src="/kit/assets/shots/mac-01-home.webp" alt="" width="1600" height="1000" loading="eager">'
+            f'<span class="sw-card__body"><span class="sw-card__meta"><span class="sw-tag">Start here</span></span><h2>{e(a["titel"])}</h2><p>{e(a["beschreibung"])}</p>'
+            f'<span class="sw-card__more">Read the guide<svg aria-hidden="true"><use href="#ph-b-arrow-right"/></svg></span></span></a></div></section>')
 
 
 def related(a, all):
@@ -1599,27 +916,20 @@ def breadcrumb(entries):
                                 for i, (n, u) in enumerate(entries)]}
 
 
-def sidebar(body, rel, rel_title="Related articles"):
+def sidebar(body, rel, rel_title="Keep reading"):
+    """Table of contents (from three H2 on) and the 'Keep reading' cards."""
     content = re.findall(r'<h2 id="([^"]+)">(.*?)</h2>', body)
     toc = ""
     if len(content) >= 3:
         points = "".join(f'<li><a href="#{k}">{t}</a></li>' for k, t in content)
-        toc = (f'<nav class="leistenblock leistenblock--inhalt" aria-labelledby="inhalt-titel">'
-               f'<h2 id="inhalt-titel">On this page</h2><ol class="inhaltsliste">{points}</ol></nav>')
-    points = "".join(gated("rel", b["datum"] if not b["seite"] else dt.date(2000, 1, 1),
-                           f'<li><a class="verwandt" href="{b["pfad"]}"><img src="{b["bild"]}" alt="" width="1200" height="630" '
-                           f'loading="lazy" decoding="async"><span><b>{e(b["titel"])}</b>'
-                           f'<time datetime="{b["datum"].isoformat()}">{date_text(b["datum"])}</time></span></a></li>')
-                     for b in rel)
-    rel_html = (f'<!--wennvoll:rel--><section class="weiterlesen" aria-labelledby="verwandt">'
-                f'<h2 id="verwandt">{rel_title}</h2><ul class="verwandtliste verwandtliste--unten">{points}</ul></section><!--/wennvoll:rel-->')
-    bar = f"""<aside class="seitenleiste" aria-label="Contents and Swiftly Player downloads">
-  <div class="seitenleiste__klebt">
-  {toc}
-{load_box()}
-  </div>
-</aside>"""
-    return bar, rel_html
+        toc = f'<nav class="pb-toc" aria-labelledby="pb-toc-t"><h2 id="pb-toc-t">On this page</h2><ol>{points}</ol></nav>'
+    cards = "".join(gated("rel", b["datum"] if not b["seite"] else dt.date(2000, 1, 1),
+                          card(b["pfad"], e(tag_name(b)), b["datum"].isoformat(), date_text(b["datum"]), e(b["titel"]),
+                               html.escape(b["beschreibung"], quote=False)))
+                    for b in rel)
+    rel_html = (f'<!--wennvoll:rel--><section class="sw-section pb-related" aria-labelledby="pb-rel"><div class="sw-g"><h2 class="pb-h2" id="pb-rel">{rel_title}<i>.</i></h2>'
+                f'<div class="sw-cards">{cards}</div></div></section><!--/wennvoll:rel-->\n')
+    return toc, rel_html
 
 
 def article_page(a, all, heute=None):
@@ -1627,37 +937,34 @@ def article_page(a, all, heute=None):
     vergebene = set()
     body = render(structure(a["bloecke"]), vergebene=vergebene)
     minutes = max(1, round(a["woerter"] / 230))
-    details = [f"<span>By {HERAUSGEBER}</span>",
-               f'<span><time datetime="{a["datum"].isoformat()}">{date_text(a["datum"])}</time></span>']
-    if a["aktualisiert"]:
-        details.append(f'<span>Updated <time datetime="{a["aktualisiert"].isoformat()}">{date_text(a["aktualisiert"])}</time></span>')
-    details.append(f"<span>{minutes} min read</span>")
-    planned = (f'<p class="geplant">Preview · goes live on {date_text(a["datum"])}</p>\n'
+    planned = (f'<span class="sw-tag">Preview · goes live on {date_text(a["datum"])}</span>'
                if heute and not a["seite"] and a["datum"] > heute else "")
-    opened = f'<p class="offenlegung">{DISCLOSURE}</p>\n' if a["offenlegung"] else ""
-    path = ('<ol class="pfad"><li><a href="/">Swiftly Player</a></li><li><a href="/blog/">Blog</a></li></ol>'
-            if not a["seite"] else '<ol class="pfad"><li><a href="/">Swiftly Player</a></li></ol>')
-    bar, rel_html = sidebar(body, related(a, all), "Other devices" if a["seite"] else "Related articles")
-    gb = GERAETEBILD.get(a.get("pfad", "")) if a["seite"] else None
-    image_html = f'<figure class="geraetebild geraetebild--{a["slug"]}">{gb}</figure>' if gb else ""
-    content = f"""<div class="schein" aria-hidden="true"></div>
-<div class="artikelbahn">
-<article class="artikel">
-  <header class="seitenkopf">
-    {path}
-    {planned}<h1>{e(a["titel"])}</h1>
-    <p class="unter">{e(a["beschreibung"])}</p>
-    <p class="angaben">{"".join(details)}</p>
-  </header>
-  {image_html}
-  {opened}<div class="text">
-{body}
-  </div>
-  {rel_html}
-  <a class="zurueck" href="{'/' if a['seite'] else '/blog/'}">{SYMBOL}{'Swiftly Player' if a['seite'] else 'All articles'}</a>
+    dates = f'<time class="sw-date" datetime="{a["datum"].isoformat()}">{date_text(a["datum"])}</time>'
+    if a["aktualisiert"]:
+        dates += f'Updated <time class="sw-date" datetime="{a["aktualisiert"].isoformat()}">{date_text(a["aktualisiert"])}</time>'
+    meta = f'<span class="sw-tag">{e(tag_name(a))}</span>{planned}{dates}<span class="sw-date">{minutes} min read</span>'
+    opened = (f'<aside class="sw-callout pb-disclosure"><svg aria-hidden="true"><use href="#ph-f-info"/></svg><p>{DISCLOSURE}</p></aside>\n'
+              if a["offenlegung"] else "")
+    crumbs = '<li><a href="/">Swiftly Player</a></li>' + ('' if a["seite"] else '<li><a href="/blog/">Blog</a></li>')
+    toc, rel_html = sidebar(body, related(a, all))
+    # The "Swiftly Player" box from the :::swiftly block, in the kit's callout.
+    body = re.sub(r'<aside class="swiftly" aria-label="Swiftly Player">\s*<p class="swiftly__marke">.*?</p>\s*(.*?)<p class="swiftly__weiter"><a href="#laden">Get Swiftly Player</a></p>\s*</aside>',
+                  r'<aside class="sw-callout pb-swiftly" aria-label="Swiftly Player"><svg aria-hidden="true"><use href="#ph-f-play"/></svg><div><strong>Swiftly Player</strong>\1<p class="pb-swiftly__more"><a href="#laden">Get Swiftly Player</a></p></div></aside>',
+                  body, flags=re.S)
+    content = f"""<section class="sw-page-head sw-lines pb-head"><div class="sw-g">
+  <div class="sw-page-head__crumbs"><ol class="sw-crumbs">{crumbs}</ol></div>
+  <h1 class="sw-page-head__title pb-title">{e(a["titel"])}</h1>
+  <p class="sw-page-head__sub">{e(a["beschreibung"])}</p>
+  <div class="sw-page-head__meta"><div class="sw-dateline">{meta}</div></div>
+</div></section>
+<main id="inhalt" class="sw-section pb-article"><div class="sw-g">
+{toc}
+<article class="sw-prose pb-prose">
+{opened}{body.strip()}
+<p class="pb-back"><a class="sw-back" href="{'/' if a['seite'] else '/blog/'}"><svg aria-hidden="true"><use href="#ph-b-arrow-left"/></svg>{'Swiftly Player' if a['seite'] else 'All articles'}</a></p>
 </article>
-{bar}
-</div>"""
+</div></main>
+{rel_html}"""
     posting = {
         "@context": "https://schema.org", "@type": "BlogPosting" if not a["seite"] else "Article",
         "headline": a["titel"], "description": a["beschreibung"],
@@ -1692,25 +999,27 @@ def overview(list, heute=None):
     lead = next((a for a in list if a["slug"] == LEITARTIKEL and not a["seite"]), None)
     top = gated("kf", lead["datum"], leadCard(lead)) if lead else ""
     rest = [a for a in list if a is not lead]
-    jump = "".join(f'<a href="#{anchor}">{title}</a>' for _, anchor, title, _ in CATEGORY)
+    jump = "".join(f'<a class="sw-btn sw-btn--sm sw-btn--secondary" href="#{anchor}">{title}</a>' for _, anchor, title, _ in CATEGORY)
     sections = ""
     for group, anchor, title, sentence in CATEGORY:
-        cards = "".join(gated(group, a["datum"], card(a, "h3", heute))
-                         for a in sorted((x for x in rest if category(x) == anchor), key=priority))
-        sections += (f'<!--wennvoll:{group}--><section class="rubrik" id="{anchor}" aria-labelledby="r-{anchor}">'
-                       f'<div class="rubrik__kopf"><h2 id="r-{anchor}">{title}</h2><p>{sentence}</p></div>'
-                       f'<ul class="karten karten--raster">{cards}</ul></section><!--/wennvoll:{group}-->\n')
-    content = f"""<div class="schein" aria-hidden="true"></div>
-<div class="bahn">
-  <header class="seitenkopf seitenkopf--mitte">
-    <ol class="pfad"><li><a href="/">Swiftly Player</a></li></ol>
-    <h1>Jellyfin guides and client comparisons</h1>
-    <p class="unter">Which Jellyfin client to use on which device, why a file transcodes, and how to set up the server around it. Written by the developer of Swiftly Player.</p>
-    <nav class="sprung" aria-label="Topics">{jump}</nav>
-  </header>
-  <!--wennvoll:kf-->{top}<!--/wennvoll:kf-->
-  {sections}
-</div>"""
+        cards = "".join(gated(group, a["datum"], article_card(a, heute))
+                        for a in sorted((x for x in rest if category(x) == anchor), key=priority))
+        sections += (f'<!--wennvoll:{group}--><section class="sw-section pb-topic" id="{anchor}" aria-labelledby="t-{anchor}"><div class="sw-g">'
+                     f'<h2 class="pb-h2" id="t-{anchor}">{title}<i>.</i></h2><p class="pb-topic__intro">{sentence}</p><div class="sw-cards">{cards}</div></div></section><!--/wennvoll:{group}-->\n')
+    empty = ('<!--wennleer:alle--><section class="sw-section"><div class="sw-g"><div class="pb-empty"><svg aria-hidden="true"><use href="#ph-f-calendar-blank"/></svg>'
+             '<h2>No articles yet.</h2><p>The first guides are on their way. Until then, the download and the FAQ are on the home page.</p>'
+             '<a class="sw-btn" href="/">Back to Swiftly Player<svg class="sw-tri" aria-hidden="true"><use href="#sw-tri"/></svg></a></div></div></section><!--/wennleer:alle-->')
+    content = f"""<section class="sw-page-head sw-lines"><div class="sw-g">
+  <div class="sw-page-head__crumbs"><ol class="sw-crumbs"><li><a href="/">Swiftly Player</a></li><li><span aria-current="page">Blog</span></li></ol></div>
+  <h1 class="sw-page-head__title">Jellyfin guides and client comparisons<i>.</i></h1>
+  <p class="sw-page-head__sub">Which Jellyfin client to use on which device, why a file transcodes, and how to set up the server around it. Written by the developer of Swiftly Player.</p>
+  <div class="sw-page-head__meta"><nav class="pb-jump" aria-label="Topics">{jump}</nav></div>
+</div></section>
+<main id="inhalt">
+<!--wennvoll:kf-->{top}<!--/wennvoll:kf-->
+{sections}{empty}
+</main>
+"""
     url = DOMAIN + "/blog/"
     ld = [json_ld({"@context": "https://schema.org", "@type": "Blog", "name": "Swiftly Player blog", "url": url,
                    "inLanguage": "en", "author": {"@type": "Organization", "name": HERAUSGEBER, "url": DOMAIN + "/"},
@@ -1720,14 +1029,13 @@ def overview(list, heute=None):
 
 
 def page_404():
-    content = f"""<div class="schein" aria-hidden="true"></div>
-<div class="bahn">
-  <header class="seitenkopf seitenkopf--mitte">
-    <h1>Page not found</h1>
-    <p class="unter">There is no page at this address.</p>
-  </header>
-  <p class="mitte"><a class="zurueck" href="/blog/">{SYMBOL}All articles</a></p>
-</div>"""
+    content = """<section class="sw-page-head sw-lines pb-404"><div class="sw-g">
+  <div class="sw-page-head__crumbs"><ol class="sw-crumbs"><li><a href="/">Swiftly Player</a></li><li><a href="/blog/">Blog</a></li></ol></div>
+  <h1 class="sw-page-head__title" id="inhalt">Page not found<i>.</i></h1>
+  <p class="sw-page-head__sub">There is no page at this address. It may have moved, or it is not out yet.</p>
+  <div class="sw-page-head__meta pb-404__ways"><a class="sw-btn" href="/blog/">All articles<svg class="sw-tri" aria-hidden="true"><use href="#sw-tri"/></svg></a><a class="sw-back" href="/"><svg aria-hidden="true"><use href="#ph-b-arrow-left"/></svg>Home</a></div>
+</div></section>
+"""
     return page("Page not found | Swiftly Player", "There is no page at this address.", "", content,
                  robots='<meta name="robots" content="noindex">\n')
 
@@ -1796,8 +1104,16 @@ function stand(array $artikel, string $datei): int
     return $zeit;
 }
 
+// The kit's icon sprite, pasted inline once per page (external <use> needs CORS/file tricks).
+function sprite(): string
+{
+    $roh = @file_get_contents(dirname(__DIR__, 2) . '/kit/assets/sprite.svg');
+    return is_string($roh) ? $roh : '';
+}
+
 function filtern(string $html): string
 {
+    $html = str_replace('<!--sw:sprite-->', sprite(), $html);
     $heute = heute();
     $zahl = [];
     $html = preg_replace_callback('/<!--f:(\w+):(\d{4}-\d{2}-\d{2})-->(.*?)<!--\/f:\1-->/s',
@@ -1833,7 +1149,7 @@ function nicht_gefunden(): never
     http_response_code(404);
     header('Content-Type: text/html; charset=utf-8');
     header('Cache-Control: public, max-age=300');
-    readfile(__DIR__ . '/_404.html');
+    echo filtern((string) file_get_contents(__DIR__ . '/_404.html'));
     exit;
 }
 
@@ -1918,7 +1234,12 @@ require __DIR__ . '/_artikel/lib.php';
 $datei = __DIR__ . '/_artikel/_uebersicht.html';
 melden();
 kopfzeilen('text/html; charset=utf-8', stand(faellige(), $datei), 300);
-echo filtern((string) file_get_contents($datei));
+$html = (string) file_get_contents($datei);
+// Empty state ("No articles yet") only while no article is due.
+if (faellige()) {
+    $html = (string) preg_replace('/<!--wennleer:alle-->.*?<!--\/wennleer:alle-->/s', '', $html);
+}
+echo filtern($html);
 """
 
 PHP_TITLE = r"""<?php
@@ -2100,7 +1421,7 @@ def fixed_pages():
     if os.path.exists(path):
         for url in ET.parse(path).getroot().findall(f"{{{ns}}}url"):
             loc = url.findtext(f"{{{ns}}}loc", "")
-            if "/blog/" in loc:
+            if "/blog/" in loc or "/whats-new/" in loc:   # blog and release pages are generated below
                 continue
             fixed.append({"loc": loc, "lastmod": url.findtext(f"{{{ns}}}lastmod"),
                           "changefreq": url.findtext(f"{{{ns}}}changefreq"), "priority": url.findtext(f"{{{ns}}}priority")})
@@ -2116,8 +1437,18 @@ def sitemap_text(entries):
             + "\n".join(rows) + "\n</urlset>\n")
 
 
+def whatsnew_entries():
+    """/whats-new/ and one page per release that is out today (releases/*.json, see whats-new/README.md)."""
+    rows = web_shell.released(os.path.join(WEBSITE, "whats-new", "releases"))
+    if not rows:
+        return []
+    out = [{"loc": DOMAIN + "/whats-new/", "lastmod": rows[0]["date"], "changefreq": "monthly", "priority": "0.6"}]
+    return out + [{"loc": f"{DOMAIN}/whats-new/{r['version']}/", "lastmod": r["date"], "changefreq": "yearly", "priority": "0.5"} for r in rows]
+
+
 def sitemap_entries(list, pages):
     entries = [u for u in fixed_pages() if not any(u["loc"] == s["url"] for s in pages)]
+    entries += whatsnew_entries()
     entries += [{"loc": s["url"], "lastmod": (s["aktualisiert"] or s["datum"]).isoformat(),
                    "changefreq": "monthly", "priority": "0.7"} for s in pages if s["index"]]
     if list:
@@ -2140,6 +1471,14 @@ def sitemap_noindex(list, pages):
             + [{"loc": a["url"], "lastmod": NOINDEX_SINCE} for a in list if not a["index"] and a["datum"] <= heute])
 
 
+def whatsnew_llms():
+    rows = web_shell.released(os.path.join(WEBSITE, "whats-new", "releases"))
+    if not rows:
+        return []
+    out = [f"- [What's new]({DOMAIN}/whats-new/): release notes for every version"]
+    return out + [f"- [Swiftly Player {r['version']}]({DOMAIN}/whats-new/{r['version']}/): {r.get('summary') or r['title']}" for r in rows]
+
+
 def llms_header(pages):
     rows = ["# Swiftly Player", "",
               "> A free, open-source video player for your own Jellyfin server. It plays files as Direct Play "
@@ -2153,6 +1492,7 @@ def llms_header(pages):
               f"- [Windows]({DOMAIN}/download/windows/): installing the Windows build, step by step",
               f"- [Linux]({DOMAIN}/download/linux/): one command for apt, dnf, zypper and pacman",
               f"- [Support]({DOMAIN}/support.html): help and contact",
+              *whatsnew_llms(),
               f"- [Privacy]({DOMAIN}/privacy.html): the app collects nothing",
               f"- [Source code]({GITHUB}): MPL-2.0"]
     rows += [f"- [{s['titel']}]({s['url']}): {s['beschreibung']}" for s in pages]
@@ -2230,6 +1570,16 @@ def cleanUp(target, slugs, pages):
                 print("entfernt     " + os.path.relpath(os.path.join(folder, name), target))
 
 
+def landing_page(s, pages):
+    """Platform landing page (jellyfin-client-*) in the kit design: head, structured data and text come from
+    article_page(); the page itself is built by the shared shell (web_shell.py) and components (web_parts.py)."""
+    sys.path.insert(0, HERE)
+    import web_parts
+    import web_shell
+    head = web_parts.head_strip(article_page(s, pages))
+    return web_shell.page(head, web_parts.landing_body(s, pages, sys.modules[__name__]))
+
+
 def build_build(target, pages):
     for s in pages:
         folder = os.path.join(target, s["pfad"].strip("/"))
@@ -2249,7 +1599,7 @@ def build_build(target, pages):
                 if MARKER not in h.read(4000):
                     warn(f"{s['pfad']}index.html stammt nicht vom Generator; nicht ueberschrieben")
                     continue
-        write(index, filter(article_page(s, pages), "9999-12-31"))
+        write(index, filter(landing_page(s, pages), "9999-12-31"))
 
 
 def home_maintain(pages):

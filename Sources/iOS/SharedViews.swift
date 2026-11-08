@@ -57,6 +57,15 @@ struct GroupsEvent: View {
 /// If something plays elsewhere **and** there is a group, a counter sits on
 /// it and a tap opens a sheet with both - not two icons side by side that
 /// would shift watchlist and profile.
+private struct BadgeSlot: ViewModifier {
+    let compact: Bool
+    let width: CGFloat
+    func body(content: Content) -> some View {
+        if compact { content.headerSlot(width: width) }
+        else { content.frame(width: 44, height: 44).contentShape(Rectangle()) }
+    }
+}
+
 struct OfferingBadge: View {
     let takeover: TakeoverModel?
     /// Spacing below - only if the badge exists.
@@ -64,6 +73,7 @@ struct OfferingBadge: View {
     @State private var gemeinsam = SharedModel.shared
     /// Where the icon sits on screen - the picker grows from there.
     @State private var frameRect: CGRect = .zero
+    @Environment(\.compactHeaderRow) private var compact
 
     private var groups: [SyncPlayGroup] {
         gemeinsam.group == nil && gemeinsam.mayJoin ? gemeinsam.offerings : []
@@ -76,10 +86,12 @@ struct OfferingBadge: View {
     var body: some View {
         if count > 0 {
             Button(action: tapOn) {
-                Image(icon: symbol, size: 20)
-                    .font(.app(size: 20))
+                // Filled and at the header's symbol size, like heart and watchlist next to it
+                // (Paul 2026-11-05: the outline laptop at 20 pt did not belong there).
+                headerSymbol
+                    .font(.app(size: Theme.actionSymbol))
                     .foregroundStyle(Theme.accent)
-                    .frame(width: 44, height: 44)
+                    .modifier(BadgeSlot(compact: compact, width: glyphWidth))
                     .overlay(alignment: .topTrailing) {
                         if count > 1 {
                             Text(verbatim: "\(count)")
@@ -87,10 +99,9 @@ struct OfferingBadge: View {
                                 .foregroundStyle(Theme.onAccent)
                                 .frame(minWidth: 16, minHeight: 16)
                                 .background(Theme.accent, in: Capsule())
-                                .offset(x: -2, y: 4)
+                                .offset(x: compact ? 9 : -2, y: 4)
                         }
                     }
-                    .contentShape(Rectangle())
             }
             .buttonStyle(Theme.PressButton())
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameRect = $0 }
@@ -104,6 +115,27 @@ struct OfferingBadge: View {
     private var symbol: String {
         if let first = continueWatching.first { return first.devicesCharacter }
         return "person.2.fill"
+    }
+
+    /// Our filled Phosphor device symbols (`Icons.xcassets`); people stay as before.
+    @ViewBuilder private var headerSymbol: some View {
+        switch symbol {
+        case "laptopcomputer": Image("icon.monitor.fill")
+        case "iphone":         Image("icon.device-mobile.fill")
+        case "ipad":           Image("icon.device-tablet.fill")
+        case "tv", "play.tv":  Image("icon.television-simple.fill")
+        default:               Image(icon: symbol, size: Theme.actionSymbol)
+        }
+    }
+
+    /// Visible width of the glyph at 22 pt, so the header gap is the visible gap.
+    private var glyphWidth: CGFloat {
+        switch symbol {
+        case "laptopcomputer", "tv", "play.tv": return 20
+        case "iphone": return 14
+        case "ipad": return 17
+        default: return 22
+        }
     }
 
     private var label: Text {

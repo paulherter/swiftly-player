@@ -88,7 +88,7 @@ struct CountdownRing: View {
             ZStack {
                 Circle().fill(.black.opacity(0.5))
                 Circle().inset(by: stroke)
-                    .stroke(Color.white.opacity(0.18), lineWidth: stroke)
+                    .stroke(Theme.ringProgress, lineWidth: stroke)
                 Circle().inset(by: stroke)
                     .trim(from: 0, to: share)
                     .stroke(Theme.accent, style: StrokeStyle(lineWidth: stroke, lineCap: .round))

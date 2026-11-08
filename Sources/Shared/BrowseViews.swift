@@ -88,7 +88,7 @@ struct PosterTile: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 // **Single line.** Two lines would make the tiles of a row end at
                 // different heights, and the longer title would push its info down.
                 // Truncated with an ellipsis, not wrapped.
@@ -223,38 +223,6 @@ struct ItemDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    if wide {
-                        HeroHeader(image: model.headerImageURL(for: current),
-                                 poster: model.imageURL(for: current, maxHeight: 600,
-                                                        portrait: true),
-                                 title: current.name, logo: model.logoURL(for: current),
-                                 secondaryLine: secondaryLine,
-                                 progress: current.userData?.playedPercentage
-                                     .map { $0 / 100 }) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                proofRow
-                                // Buttons and action row in one line: there is width here, and stacked
-                                // they would sit in a half-empty column. Side by side only if it fits.
-                                // In portrait the text block is 476 pt; the row needs about 620, and
-                                // SwiftUI then sets the labels vertically.
-                                if broad {
-                                    HStack(alignment: .center, spacing: 14) {
-                                        primaryButton
-                                        actionRail
-                                    }
-                                } else {
-                                    primaryButton
-                                    actionRail
-                                }
-                            }
-                        }
-                        // Body text gets a measure. Stretched over the full width the lines
-                        // would be 140 characters long.
-                        description
-                            .frame(maxWidth: Theme.readWidth, alignment: .leading)
-                            .padding(.horizontal, Theme.edgePageWide)
-                            .padding(.top, 18)
-                    } else {
                     hero
                     VStack(alignment: .leading, spacing: Theme.blockGap) {
                         // Above the button after all, directly under the name: below it, it sat
@@ -277,7 +245,6 @@ struct ItemDetailView: View {
                     }
                     .padding(.horizontal, Theme.margin(wide: wide))
                     .padding(.top, 4)
-                    }
 
                     // **Everything below arrives at once.** Cast, extras, collection and
                     // similar used to arrive individually, pushed into the page and shoved
@@ -312,7 +279,7 @@ struct ItemDetailView: View {
                 // minimum height (iPad, 1.0.5).
                 .background(alignment: .top) {
                     MoodReason(url: model.headerImageURL(for: current),
-                                   since: wide ? Theme.heroHeightWide : Theme.heroHeightValue)
+                                   since: Theme.heroHeightValue)
                 }
                 // Translucent instead of solid surfaces above it, see
                 // `Theme.flaecheDurchsichtig`.
@@ -324,16 +291,14 @@ struct ItemDetailView: View {
             .coordinateSpace(.named("blatt"))
             .ignoresSafeArea(edges: .top)
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
-                distance.setDown(new)
+                distance.setDown(new, until: Theme.heroHeightValue + MoodReason.runOut)
             }
 
             // The sheet hangs on an empty surface; without `if` there would be two
             // routes to the same actions on wide windows.
-            if !wide {
-                ActionSheet(opened: $moreOpen, title: current.name,
-                               actions: moreActions)
-                    .zIndex(20)
-            }
+            ActionSheet(opened: $moreOpen, title: current.name,
+                           actions: moreActions)
+                .zIndex(20)
             if let entries = asEntry {
                 LoadSheet(opened: $loadSheet, model: model, entries: [entries],
                           title: current.name,
@@ -350,20 +315,7 @@ struct ItemDetailView: View {
                     .zIndex(21)
             }
 
-            DetailHeaderReader(title: current.name, distance: distance) { back() }
-        }
-
-        // Wide, the panel hangs on the button instead of the bottom edge of the
-        // image. The anchor comes from `asActionAnchor()`; fixed coordinates
-        // would not work because the button row shifts with the label length.
-        .overlayPreferenceValue(ActionAnchor.self) { anchor in
-            GeometryReader { space in
-                if wide, moreOpen, let anchor {
-                    ActionPanel(opened: $moreOpen, title: current.name,
-                                   actions: moreActions,
-                                   anchor: space[anchor], space: space.size)
-                }
-            }
+            DetailHeaderReader(title: current.name, distance: distance, mood: model.headerImageURL(for: current)) { back() }
         }
 
         #if os(iOS)
@@ -520,7 +472,7 @@ struct ItemDetailView: View {
                     Label("Abspielen", icon: "play.fill")
                 }
             }
-            .buttonStyle(PrimaryButtonStyle(stretches: !wide))
+            .buttonStyle(PrimaryButtonStyle(stretches: true))
             // Long press: the title's tile menu, as on its tile.
             .tileMenu(current, model: model)
             // **A title with several versions asks which one on press.** 4K next to
@@ -544,7 +496,7 @@ struct ItemDetailView: View {
             }
             // Wide, progress sits on the poster in the header; here it would be the
             // same thing a second time, and across the whole page.
-            if !wide, let share = current.userData?.playedPercentage, share > 0 {
+            if let share = current.userData?.playedPercentage, share > 0 {
                 ProgressBar(share: share / 100)
                     .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
             }
@@ -557,7 +509,7 @@ struct ItemDetailView: View {
         HStack(spacing: 8) {
             if watchlistShown {
                 ActionButton(symbol: remembered ? "bookmark.fill" : "bookmark",
-                             title: "Merkliste", active: remembered, stretches: !broad,
+                             title: "Merkliste", active: remembered, stretches: true,
                              caption: remembered ? "Gemerkt" : "Merken") {
                     remembered.toggle()
                     // Switch immediately so the button responds, but revert if the server
@@ -580,15 +532,15 @@ struct ItemDetailView: View {
             // fields; that is why it grows here instead of always reserving a fifth
             // slot.
             if model.downloadButtonShow, current.type != "Series" {
-                DownloadField(entries: loaded, stretches: !broad, caption: "Laden") {
+                DownloadField(entries: loaded, stretches: true, caption: "Laden") {
                     ringTap(loaded, model.downloads) { loadSheet = true }
                 }
             }
 
-            ActionButton(symbol: "play.rectangle", title: "Trailer", stretches: !broad,
+            ActionButton(symbol: "play.rectangle", title: "Trailer", stretches: true,
                          caption: "Trailer") { trailerStart() }
             ActionButton(symbol: watched ? "checkmark.circle.fill" : "checkmark.circle",
-                         title: "Gesehen", active: watched, stretches: !broad,
+                         title: "Gesehen", active: watched, stretches: true,
                          caption: "Gesehen") {
                 watched.toggle()
                 Task {
@@ -598,7 +550,7 @@ struct ItemDetailView: View {
                     }
                 }
             }
-            ActionButton(symbol: "ellipsis", title: "Mehr", stretches: !broad, caption: "Mehr") { moreOpen = true }
+            ActionButton(symbol: "ellipsis", title: "Mehr", stretches: true, caption: "Mehr") { moreOpen = true }
                 .asActionAnchor()
         }
         // No margin of its own anymore: the four fields share the row and end
@@ -815,11 +767,11 @@ struct Segment<ContentBody: View>: View {
                 // had zero. On the Seerr page both forms now meet.
                 RailTitle(text: title)
                 if arrow {
-                    Image(icon: "chevron.right", size: 13)
+                    Image(icon: "chevron.right", size: Theme.chevronSize)
                         // A chevron is 13 semibold. Before it was 12 semibold; at 12 the scale
                         // has Regular, and a semibold chevron in a Regular grade is none of the
                         // steps.
-                        .font(.app(size: 13, weight: .semibold))
+                        .font(.app(size: Theme.chevronSize, weight: .semibold))
                         .foregroundStyle(Theme.font)
                 }
             }

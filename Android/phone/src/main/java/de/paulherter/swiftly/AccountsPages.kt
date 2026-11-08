@@ -143,7 +143,9 @@ fun QuickConnectLogin(app: SwiftlyApplication, newServer: Boolean, back: () -> U
         code = null
         error = null
         try {
+            android.util.Log.i("Swiftly", "QuickConnect: start (newServer=$newServer)")
             code = withContext(Dispatchers.IO) { app.kern.quickConnectStart(newServer).await() }
+            android.util.Log.i("Swiftly", "QuickConnect: code received")
             // **The waiting lives in the package** (`QuickConnectWait`, via the kernel): deadline on the
             // clock, ask at once after returning from the browser, a network error does not end the wait.
             // Here only show the remaining time and accept the result.
@@ -163,6 +165,7 @@ fun QuickConnectLogin(app: SwiftlyApplication, newServer: Boolean, back: () -> U
                 app.kern.quickConnectWaitEnd(c)
             }
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
+            android.util.Log.w("Swiftly", "QuickConnect: failed (newServer=$newServer, ${e.javaClass.simpleName}): ${e.message}")
             error = errorString(app, e)
         }
     }
@@ -277,13 +280,17 @@ fun ServerOnboardingPage(app: SwiftlyApplication, preset: String?, kindPicked: B
     }
     LaunchedEffect(Unit) { if (preset != null) check() }
 
+    // **Before the early return below**: declared after it, switching to the Quick Connect page removed
+    // this effect from the composition, `onDispose` ran and dropped the client being added, so
+    // `quickConnectStart(newServer = true)` found none ("Nicht angemeldet.").
+    DisposableEffect(Unit) { onDispose { app.kern.onboardingCancel() } }
+
     if (quick) {
         QuickConnectLogin(app, newServer = true, back = { quick = false }) { record(it) }
         return
     }
     // **No back handling of its own**: it took away the main view's follow-along drag. The intake
     // aborts as soon as the page goes, by whatever route.
-    DisposableEffect(Unit) { onDispose { app.kern.onboardingCancel() } }
 
     val s = server
     // The title is the server name once it is known.

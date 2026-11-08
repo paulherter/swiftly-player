@@ -1,9 +1,0 @@
-// **`libvlc`, not `vlc`.** The link name must match the file: VideoLAN's SDK
-// ships `libvlc.lib`, while on Linux `libvlc.so` is found with `-lvlc`. A
-// `link "vlc"` would look for `vlc.lib` here, which also exists but belongs to
-// the program, not the library.
-module CVLC [system] {
-    header "shim.h"
-    link "libvlc"
-    export *
-}

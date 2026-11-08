@@ -20,11 +20,20 @@ import SwiftUI
 
 /// **The heart in the header.** White like the bookmark next to it: it is a
 /// destination, not a state, and the accent belongs to state.
+private struct HeartSlot: ViewModifier {
+    let compact: Bool
+    func body(content: Content) -> some View {
+        if compact { content.headerSlot(width: 22) }
+        else { content.frame(width: 44, height: 44).contentShape(Rectangle()) }
+    }
+}
+
 struct SupportHeart: View {
     /// Counts the heartbeats; each change plays two beats.
     @State private var beats = 0
     /// The heart beats once per launch, a second after the home page first appears.
     @MainActor private static var hasBeaten = false
+    @Environment(\.compactHeaderRow) private var compact
 
     var body: some View {
         // Supporters have said thank you already; the heart goes away for them.
@@ -37,9 +46,8 @@ struct SupportHeart: View {
         } label: {
             symbol
                 .font(.app(size: Theme.actionSymbol))
-                .foregroundStyle(Theme.fontQuiet)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+                .foregroundStyle(Theme.font)
+                .modifier(HeartSlot(compact: compact))
         }
         .buttonStyle(Theme.PressButton())
         .accessibilityLabel(Text(SupportCopy.supportSwiftly.localized))

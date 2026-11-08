@@ -334,46 +334,6 @@ struct CapsuleStyle: ButtonStyle {
     }
 }
 
-/// **One row in the player's settings bar.**
-///
-/// Like `ChipStyle`, but full width and with square corners instead of a capsule: the bar is
-/// a list, not a row of tags. Selection is white again, focus the calm surface, the same
-/// rule as everywhere so the bar does not read as a foreign body.
-struct BarsStyle: ButtonStyle {
-    let an: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        ContentBody(configuration: configuration, an: an)
-    }
-
-    private struct ContentBody: View {
-        let configuration: ButtonStyleConfiguration
-        let an: Bool
-        @Environment(\.isFocused) private var focus
-
-        var body: some View {
-            configuration.label
-                .accessibilityAddTraits(an ? [.isButton, .isSelected] : .isButton)
-                .foregroundStyle(an ? Theme.reason : Theme.font)
-                .background(area, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
-                // One row across the full bar width: the wide step.
-                .scaleEffect(focus ? Theme.focusMagnifierWide : 1)
-                .animation(Theme.focusAnimation, value: focus)
-        }
-
-        /// **The white fill stays here**, unlike the filter chip.
-        ///
-        /// The top bar on the TV is what the bottom bar is on iPhone: the place that shows
-        /// where you are. Its text is `reason` on white and therefore readable. The earlier
-        /// bug only affected the filter chip, whose text switched to white while its
-        /// surface stayed white.
-        private var area: Color {
-            if an { return Theme.font }
-            return focus ? Theme.focusArea : .clear
-        }
-    }
-}
-
 /// A row of the action panel (design "menu"): 72 high, 20 padding, r16, 30/500 #CCC; the
 /// selected one white 600, focus a white surface with dark text.
 struct MenuRowStyle: ButtonStyle {
@@ -554,9 +514,12 @@ struct TileContent: View {
             // **Only the focused tile's title is white and semibold**; the others step back to
             // light gray, so the row reads as images with one named.
             // Design: caption mt 18, 26/500 #CCC; focused it drops 14, white 600.
-            VStack(alignment: .leading, spacing: 0) {
+            // Like iPhone: title medium in every state (focus shows in color and drop, a
+            // heavier weight would shift the width), gap 2 scaled for TV = 4, fixed line
+            // heights so every tile ends at the same height and no second line is cut off.
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(focus ? Theme.tileFocused : Theme.tile)
+                    .font(Theme.tile)
                     .foregroundStyle(focus ? Theme.font : Theme.fontQuiet)
                     .lineLimit(1)
                     .frame(height: Theme.captionLine, alignment: .topLeading)
@@ -567,6 +530,7 @@ struct TileContent: View {
                         .monospacedDigit()
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .lineLimit(1)
+                        .frame(height: 30, alignment: .topLeading)
                 }
             }
             .padding(.top, Theme.captionTop)
@@ -880,6 +844,7 @@ struct CastTile: View {
                 .font(Theme.tile)
                 .foregroundStyle(Theme.font)
                 .lineLimit(1)
+                .frame(height: Theme.captionLine, alignment: .topLeading)
                 .padding(.top, 14)
 
             if let role, !role.isEmpty {
@@ -887,7 +852,8 @@ struct CastTile: View {
                     .font(Theme.small)
                     .foregroundStyle(Theme.fontQuiet)
                     .lineLimit(1)
-                    .padding(.top, 2)
+                    .frame(height: 30, alignment: .topLeading)
+                    .padding(.top, 4)
             }
         }
         .frame(width: 208, alignment: .leading)
@@ -1009,13 +975,14 @@ struct ActionPanel: View {
         .frame(width: panelWidth)
         .padding(Self.inset)
         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
-        // **No border, no shadow.** Depth comes from surface brightness: `erhoeht` is
+        // **Hairline, no shadow.** Depth comes from surface brightness: `erhoeht` is
         // already one step above the background. With radius 40 the shadow was the largest
         // in the app, contradicts the brand rule "no shadows, anywhere", and turns to mud
         // at three meters anyway.
         .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
-        // Design menu: #303030, r24, pad 10, lift shadow.
-        .lift(true)
+        // Like the iPhone sheets: a 1 pt hairline (`margin`) instead of a shadow.
+        .overlay(RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous)
+            .strokeBorder(Theme.margin, lineWidth: 1).allowsHitTesting(false))
         .focusSection()
         .task { focus = start }
         .onExitCommand { opened = false }

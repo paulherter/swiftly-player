@@ -1,10 +1,7 @@
 import JellyfinKit
 import SwiftUI
-#if canImport(VLCKit)
-import VLCKit
-#endif
 
-/// **The bridge from VLCKit to the counter in the package, nothing more.**
+/// **The bridge from the player to the counter in the package, nothing more.**
 ///
 /// The computation itself lives in ``JellyfinKit/Zaehlwerk``. It used to be
 /// here, so only on the Apple versions; Linux and Windows would have needed it a
@@ -47,23 +44,11 @@ struct PlayValues {
     var input: String { TechDetails.bitrate(mediaWork.input) ?? "—" }
     var demuxer: String { TechDetails.bitrate(mediaWork.demuxer) ?? "—" }
 
-    func reserveSeconds(bytesJeSecond: Double) -> Double? {
-        mediaWork.reserveSeconds(bytesJeSecond: bytesJeSecond)
+    /// The engine reports no decoder counters, so there are no values to show.
+    init?(_ raw: PlayStats?, spot: Double, running: Bool, before: PlayValues? = nil) {
+        return nil
     }
-
-    #if canImport(VLCKit)
-    init?(_ raw: VLCMedia.Stats?, spot: Double, running: Bool, before: PlayValues? = nil) {
-        guard let raw else { return nil }
-        let values = Counter.RawValues(
-            hasRead: raw.readBytes, unpacked: raw.demuxReadBytes,
-            shown: raw.displayedPictures, discarded: raw.lostPictures,
-            tooLate: raw.latePictures, videoBlocks: raw.decodedVideo,
-            audioBlocks: raw.decodedAudio, audioPlay: raw.playedAudioBuffers,
-            audioLost: raw.lostAudioBuffers, beschaedigt: raw.demuxCorrupted,
-            jumps: raw.demuxDiscontinuity)
-        guard let mediaWork = Counter(values, spot: spot, running: running,
-                                   before: before?.mediaWork) else { return nil }
-        self.mediaWork = mediaWork
-    }
-    #endif
 }
+
+/// The decoder counters of a player; Aether reports none, so this stays empty.
+struct PlayStats {}

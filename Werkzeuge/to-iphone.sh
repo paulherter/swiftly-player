@@ -6,7 +6,7 @@
 # to be installed again afterwards.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 
 # The team is in project.yml -- do not guess it from the certificate name,
 # which carries the personal identifier, not the team ID.
@@ -43,11 +43,15 @@ if [ -z "${UDID:-}" ]; then
 fi
 echo "Geraet: ${NAME:-iPhone} ($UDID)"
 
-xcodebuild -project Swiftly.xcodeproj -scheme Swiftly-iOS \
+# CONFIG=Release for anything about speed: the unoptimised Debug build is far too slow for the
+# Aether engine (Dolby Vision rewrite, TrueHD decode).
+CONFIG="${CONFIG:-Debug}"
+xcodebuild -project Swiftly.xcodeproj -scheme Swiftly-iOS -configuration "$CONFIG" \
   -destination "id=$UDID" -derivedDataPath build/DD \
-  DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic build
+  DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic \
+  OTHER_SWIFT_FLAGS='$(inherited) -DDEVLOG' build
 
-APP=$(find build/DD/Build/Products/Debug-iphoneos -name "Swiftly-iOS.app" -maxdepth 1 | head -1)
+APP=$(find build/DD/Build/Products/$CONFIG-iphoneos -name "Swiftly-iOS.app" -maxdepth 1 | head -1)
 echo "Installiere $APP"
 xcrun devicectl device install app --device "$ID" "$APP"
 echo "Fertig. App auf dem iPhone starten."

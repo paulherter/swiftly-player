@@ -33,15 +33,33 @@ struct RailTitle: View {
     /// **When the heading comes from the server.** A genre is called what it is
     /// called and must not go through the translation table.
     var name: String? = nil
+    /// Quiet "Alle ›" at the right edge. Only a visual: the caller wraps the title in
+    /// the link that opens the full list, so the whole row is the tap area.
+    var all = false
     var body: some View {
-        Group {
-            if let name { Text(verbatim: name) } else { Text(text) }
-        }
+        HStack(spacing: 12) {
+            Group {
+                if let name { Text(verbatim: name) } else { Text(text) }
+            }
             .font(Theme.section)
             .tracking(Theme.lockSection)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
             .foregroundStyle(Theme.font)
+            if all {
+                Spacer(minLength: 0)
+                Text("Alle \u{203A}")
+                    .font(.app(size: 15, weight: .medium))
+                    .foregroundStyle(Theme.fontVeryQuiet)
+                    .lineLimit(1)
+                    // No own minimum height: the rail's height is computed from a 28 pt
+                    // title row, and a taller "Alle" cut off the second line under the
+                    // posters (2026-11-05). The whole title row is the tap area anyway.
+                    .accessibilityLabel(Text("Alle"))
+            }
+        }
+        .frame(minHeight: all ? 28 : nil)
+        .contentShape(Rectangle())
     }
 }
 
@@ -606,10 +624,10 @@ struct ServerRow: View {
                         .foregroundStyle(Theme.fontVeryQuiet)
                 }
                 Spacer(minLength: 0)
-                Image(icon: "chevron.right", size: 13)
+                Image(icon: "chevron.right", size: Theme.chevronSize)
                     // 13 semibold: the chevron on the right of a row, as in `ValueRow` and
                     // `ProfileRow`. 12 was the second number for the same symbol.
-                    .font(.app(size: 13, weight: .semibold))
+                    .font(.app(size: Theme.chevronSize, weight: .semibold))
                     // White at 28 percent is 2.50:1; for a control symbol the limit is 3:1.
                     .foregroundStyle(Theme.font)
             }

@@ -151,36 +151,6 @@ struct SeriesDetailView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     // The same header as on the movie page, as its own building block so it is not
                     // written twice.
-                    if wide {
-                        HeroHeader(image: model.headerImageURL(for: series),
-                                 poster: model.imageURL(for: series, maxHeight: 600,
-                                                        portrait: true),
-                                 title: series.name, logo: model.logoURL(for: series),
-                                 secondaryLine: secondaryLine,
-                                 progress: series.userData?.playedPercentage
-                                     .map { $0 / 100 }) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                proofRow
-                                // Side by side only when there is room.
-                                // In portrait the text block is 476 pt wide; the row needs about 620, and
-                                // SwiftUI would then set the labels vertically.
-                                if broad {
-                                    HStack(alignment: .center, spacing: 14) {
-                                        primaryButton
-                                        actionRail
-                                    }
-                                } else {
-                                    primaryButton
-                                    actionRail
-                                }
-                            }
-                        }
-                        description
-                            .frame(maxWidth: Theme.readWidth, alignment: .leading)
-                            .padding(.horizontal, Theme.edgePageWide)
-                            .padding(.top, 18)
-                            .padding(.bottom, 22)
-                    } else {
                     hero
                     VStack(alignment: .leading, spacing: Theme.blockGap) {
                         // Above the button, directly under the name.
@@ -201,14 +171,20 @@ struct SeriesDetailView: View {
                     .padding(.horizontal, Theme.margin(wide: wide))
                     .padding(.top, 4)
                     .padding(.bottom, 22)
-                    }
 
                     WatchersRow(model: model, item: series)
                         .padding(.bottom, 8)
 
                     PageTab(title: extras.isEmpty ? ["Folgen", "Besetzung", "Ähnliches"]
                                                  : ["Folgen", "Besetzung", "Ähnliches", "Extras"],
-                           selected: $tab)
+                           selected: $tab,
+                           firstLabel: seasons.isEmpty ? nil
+                               : (selectedSeason?.name ?? String(localized: "Staffel")),
+                           firstChevron: seasons.count > 1,
+                           chevronOpen: seasonListOpen,
+                           onReselect: { _ in
+                               if seasons.count > 1 { withAnimation(Theme.leap) { seasonListOpen.toggle() } }
+                           })
 
                     switch tab {
                     case 0: episodesSection
@@ -227,7 +203,7 @@ struct SeriesDetailView: View {
                 // (iPad).
                 .background(alignment: .top) {
                     MoodReason(url: model.headerImageURL(for: series),
-                                   since: wide ? Theme.heroHeightWide : Theme.heroHeightValue)
+                                   since: Theme.heroHeightValue)
                 }
                 // Translucent instead of solid surfaces on top; see `Theme.flaecheDurchsichtig`.
                 .environment(\.onImageTint, true)
@@ -238,17 +214,7 @@ struct SeriesDetailView: View {
             .coordinateSpace(.named("blatt"))
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pagesWidth = $0 }
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
-                distance.setDown(new)
-                // **Scrolling closes the season list, tapping no longer does.**
-                //
-                // A `simultaneousGesture` on the whole scroll area closed it on tap. Simultaneous
-                // means what it says: tapping the pill itself fired **both**, the gesture closed
-                // the list and the button then toggled from closed to open. It looked like the
-                // window closing and immediately reopening.
-                //
-                // Scrolling is the movement where an open list really gets in the way, and it
-                // cannot compete with any button for the same touch.
-                if seasonListOpen { seasonListOpen = false }
+                distance.setDown(new, until: Theme.heroHeightValue + MoodReason.runOut)
             }
             .ignoresSafeArea(edges: .top)
 
@@ -256,11 +222,9 @@ struct SeriesDetailView: View {
             // arrow used to be here, which is why no bar ever faded in on the series page.
             // The sheet hangs on an empty surface; without the `if`, wide windows would get
             // two paths to the same actions.
-            if !wide {
-                ActionSheet(opened: $moreOpen, title: sheetTitle,
-                               actions: moreActions)
-                    .zIndex(20)
-            }
+            ActionSheet(opened: $moreOpen, title: sheetTitle,
+                           actions: moreActions)
+                .zIndex(20)
             // **The sheet is always in the tree, even when empty.**
             //
             // It used to hang on `if !loadItem.isEmpty`, and on the **first** open the
@@ -293,21 +257,23 @@ struct SeriesDetailView: View {
                     .zIndex(21)
             }
 
-            DetailHeaderReader(title: series.name, distance: distance) { back() }
+            DetailHeaderReader(title: series.name, distance: distance, mood: model.headerImageURL(for: series)) { back() }
         }
-        .animation(Theme.leap, value: seasonListOpen)
         .animation(Theme.sectionSwitch, value: tab)
-        // When wide, the panel hangs on the button instead of the bottom edge of the
-        // screen. The anchor comes from `asActionAnchor()`; fixed coordinates would
-        // not work because the button row moves with the label length.
-        .overlayPreferenceValue(ActionAnchor.self) { anchor in
-            GeometryReader { space in
-                if wide, moreOpen, let anchor {
-                    ActionPanel(opened: $moreOpen, title: sheetTitle,
-                                   actions: moreActions,
-                                   anchor: space[anchor], space: space.size)
-                }
-            }
+        // **Seasons in a sheet, not a dropdown in the page** (Paul 2026-11-05): a list
+        // hanging in the scroll area closed on every scroll, and on a short page (a
+        // season without episodes) its last entries could not be reached. The sheet
+        // scrolls on its own and always shows every season.
+        .overlay(alignment: .topTrailing) {
+            SelectionSheet(opened: $seasonListOpen,
+                           title: "Staffel wählen",
+                           entries: seasons,
+                           label: { $0.name },
+                           isSelected: { $0.id == selectedSeason?.id },
+                           select: { season in
+                               selfSelected = true
+                               seasonSwitch(season)
+                           })
         }
         #if os(iOS)
         .background(SwipeBack())
@@ -451,8 +417,6 @@ struct SeriesDetailView: View {
         }
     }
 
-    private func refresh() async { await load() }
-
     private func seasonsFetch() async -> [Item]? { await model.seasons(series) }
     private func similarFetch() async -> [Item]? { await model.similar(series) }
 
@@ -558,7 +522,7 @@ struct SeriesDetailView: View {
                 .animation(Theme.reveal, value: buttonReady)
                 .accessibilityLabel(Text(buttonText))
             }
-            .buttonStyle(PrimaryButtonStyle(stretches: !wide))
+            .buttonStyle(PrimaryButtonStyle(stretches: true))
             // Long press: the series' tile menu, as on its tile.
             .tileMenu(series, model: model)
             // **While loading it stays enabled and shows "Loading…".**
@@ -579,7 +543,7 @@ struct SeriesDetailView: View {
             }
             // When wide, the progress sits at the poster in the header; here it would be the
             // same thing twice, across the whole page.
-            if !wide, let state, let share = state.userData?.playedPercentage,
+            if let state, let share = state.userData?.playedPercentage,
                share > 0 {
                 ProgressBar(share: share / 100)
                     .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
@@ -593,7 +557,7 @@ struct SeriesDetailView: View {
         HStack(spacing: 8) {
             if watchlistShown {
                 ActionButton(symbol: remembered ? "bookmark.fill" : "bookmark",
-                             title: "Merkliste", active: remembered, stretches: !broad,
+                             title: "Merkliste", active: remembered, stretches: true,
                              caption: remembered ? "Gemerkt" : "Merken") {
                     remembered.toggle()
                     Task {
@@ -615,7 +579,7 @@ struct SeriesDetailView: View {
             // With downloads off there is nothing to download and the trailer keeps its
             // place.
             if model.downloadButtonShow {
-                ActionButton(symbol: "arrow.down", title: "Laden", stretches: !broad, caption: "Laden") {
+                ActionButton(symbol: "arrow.down", title: "Laden", stretches: true, caption: "Laden") {
                     // **Always the selection sheet, even with one season.**
                     //
                     // It used to depend on `seasons.count > 1`; with a single season it went
@@ -625,11 +589,11 @@ struct SeriesDetailView: View {
                     selectionOpen = true
                 }
             } else {
-                ActionButton(symbol: "play.rectangle", title: "Trailer", stretches: !broad,
+                ActionButton(symbol: "play.rectangle", title: "Trailer", stretches: true,
                              caption: "Trailer") { trailerStart() }
             }
             ActionButton(symbol: watched ? "checkmark.circle.fill" : "checkmark.circle",
-                         title: "Gesehen", active: watched, stretches: !broad,
+                         title: "Gesehen", active: watched, stretches: true,
                          caption: "Gesehen") {
                 watched.toggle()
                 Task {
@@ -640,7 +604,7 @@ struct SeriesDetailView: View {
                     // Refetching goes through `model.pagesRefresh`.
                 }
             }
-            ActionButton(symbol: "ellipsis", title: "Mehr", stretches: !broad, caption: "Mehr") { moreOpen = true }
+            ActionButton(symbol: "ellipsis", title: "Mehr", stretches: true, caption: "Mehr") { moreOpen = true }
                 .asActionAnchor()
         }
         // No own padding anymore: the four fields share the row and end where the button
@@ -668,38 +632,6 @@ struct SeriesDetailView: View {
                 // section, not under an empty season picker.
                 DisturbHint(model: model) { Task { await load() } }
             } else if !seasons.isEmpty {
-                // **The fallback must be translated, the name must not.**
-                //
-                // `label` is a `String` because to the left of it stands the season name
-                // from the server, which is not translated. To the right of `??` stood our own
-                // word, and a German word in a `String` never reaches the catalog:
-                // `Text(someString)` is verbatim. A season without a name was therefore shown as
-                // "Staffel" in English too.
-                //
-                // The key has long existed ("Staffel" -> "Season"); it just was not looked up
-                // here.
-                ExpandList(label: selectedSeason?.name
-                                  ?? String(localized: "Staffel"),
-                              entries: seasons,
-                              text: { $0.name },
-                              isSelected: { $0.id == selectedSeason?.id },
-                              select: { season in
-                                  selfSelected = true
-                                  seasonSwitch(season)
-                              },
-                              opened: $seasonListOpen)
-                    .padding(.leading, Theme.margin(wide: wide))
-                    .padding(.top, 14)
-                    .padding(.bottom, 14)
-                    .zIndex(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .transition(.opacity)
-            } else if loads {
-                // **Empty, but with space.** While the season picker loads, its height stays
-                // free (34 like `ExpandList`, 14 above and below); it fades in at that spot.
-                // A fixed-width placeholder was longer than the button and seemed to shrink on
-                // arrival.
-                Color.clear.frame(height: 34 + 2 * 14)
             }
 
             // **Four branches where there was one.** If the fetch failed, the page says so;

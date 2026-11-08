@@ -274,7 +274,7 @@ fun DrawScope.headerGradient(coverage: Float) {
 @Composable
 fun RootHeader(offset: () -> Float, modifier: Modifier = Modifier, margin: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
     Column(modifier.fillMaxWidth()
-            .drawBehind { headerGradient((offset() / 30f).coerceIn(0f, 1f)) }
+            .drawBehind { headerGradient((offset() / 10f).coerceIn(0f, 1f)) }  // the tone leads: full after a third of the 30 pt ramp, never flashes
             .statusBarsPadding()
             .then(if (margin) Modifier.padding(horizontal = Theme.edgeSpacing) else Modifier)
             .padding(bottom = 12.dp), content = content)
@@ -316,12 +316,16 @@ fun HeaderTargets(app: SwiftlyApplication, open: (Destination) -> Unit, front: @
         front()
         // The heart belongs to the group, on every main page (`HeaderTargets`): left of the watchlist, and while
         // something plays elsewhere (or a group exists) the offer takes its place instead of a further icon.
-        if (app.offerings.value.size + app.gemeinsam.value.openGroups.size > 0) TakeoverCharacter(app)
-        else de.paulherter.swiftly.support.SupportHeaderHeart(app)
+        // Visible gaps 16 everywhere (iPhone `HStack(spacing: -6)` on 44 targets): the 44 boxes overlap by 6, done
+        // with offsets because the avatar target is 50 wide and sits 5 beyond the margin.
+        Box(Modifier.offset(x = 17.dp)) {
+            if (app.offerings.value.size + app.gemeinsam.value.openGroups.size > 0) TakeoverCharacter(app)
+            else de.paulherter.swiftly.support.SupportHeaderHeart(app)
+        }
         // Filled, but not a state: here the bookmark is a destination, not a marker. Gone when the
         // watchlist is switched off in Appearance.
         if (app.settings.watchlist) {
-            Box(Modifier.size(44.dp).tapOn { open(Destination("merkliste", translated("Merkliste"), "Merkliste")) },
+            Box(Modifier.offset(x = 11.dp).size(44.dp).tapOn { open(Destination("merkliste", translated("Merkliste"), "Merkliste")) },
                 contentAlignment = Alignment.Center) {
                 Symbol(Glyph.BookmarkFilled, Theme.actionSymbol, color = Theme.font, description = translated("Merkliste"))
             }
@@ -331,7 +335,8 @@ fun HeaderTargets(app: SwiftlyApplication, open: (Destination) -> Unit, front: @
                 // The account switch flies here (`AccountSwitchTransition.targetReport`); while the new profile image
                 // is in transit, there is none yet.
         val transition = AccountSwitchTransition.transition
-        Box(Modifier.offset(x = 7.dp).size(44.dp).tapOn { open(Destination("profil", translated("Profil"), "Profil")) }, contentAlignment = Alignment.Center) {
+        Box(Modifier.offset(x = 5.dp).size(50.dp, 44.dp).tapOn { open(Destination("profil", translated("Profil"), "Profil")) }, contentAlignment = Alignment.CenterEnd) {
+            // Avatar flush right in its 50 target with 5 inner margin; the 5 offset puts its edge on the 18 margin.
             Box(Modifier.size(34.dp)
                     .onGloballyPositioned { AccountSwitchTransition.targetReport(it.boundsInRoot(), (it.findRootCoordinates().size.width).toFloat()) }
                     .graphicsLayer { alpha = if (transition != null && !transition.replaced) 0f else 1f }) {
@@ -639,6 +644,8 @@ class SheetRequest(val title: String, val entries: List<Choice>, val selected: S
                   val full: Boolean = false,
                   /** One quiet line under the title, for a question that needs a word of reassurance (`note`). */
                   val note: String? = null,
+                  /** The check mark of the chosen row in the accent (season sheet), otherwise white. */
+                  val accentCheck: Boolean = false,
                   /** Drawn behind the content over the whole card (`SheetModifier.light`, `LookGlowLayer`). */
                   val backdrop: (@Composable BoxScope.() -> Unit)? = null,
                   val select: (String) -> Unit)
@@ -718,6 +725,8 @@ private fun SheetCard(w: SheetRequest, pull: Animatable<Float, AnimationVector1D
         // The surface extends under the card: if it springs past its target, nothing shows below.
         .drawBehind { drawRect(ground, topLeft = Offset(0f, size.height - 1f), size = Size(size.width, 400.dp.toPx())) }
         .clip(top).background(ground)
+        // 1 dp hairline on the top edge, no shadow (iPhone sheet card).
+        .border(1.dp, Theme.margin, top)
         .draggable(rememberDraggableState { d ->
                 raw[0] += d
                 val target = if (raw[0] >= 0f) raw[0] else -rubber(-raw[0], height.toFloat())
@@ -794,7 +803,7 @@ private fun SelectionRows(w: SheetRequest, close: () -> Unit) {
                     .padding(horizontal = Theme.edgeSpacing),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Box(Modifier.width(18.dp), contentAlignment = Alignment.Center) {
-                    if (an) Symbol(Glyph.Checkmark, 17.dp, color = Theme.font, strength = Strength.Semibold)
+                    if (an) Symbol(Glyph.Checkmark, 17.dp, color = if (w.accentCheck) Theme.accent else Theme.font, strength = Strength.Semibold)
                 }
                 Text(e.text, style = Theme.categoryLarge.copy(fontWeight = if (an) FontWeight.SemiBold else FontWeight.Normal, letterSpacing = 0.sp),
                      color = if (an) Theme.font else Theme.fontQuiet, modifier = Modifier.weight(1f))
@@ -869,3 +878,10 @@ fun androidx.activity.ComponentActivity.setInterContent(content: @Composable () 
         androidx.compose.material3.ProvideTextStyle(
             androidx.compose.ui.text.TextStyle(fontFamily = de.paulherter.swiftly.shared.Inter), content)
     }
+
+/** The one loading ring (iOS: one spinner): stroke scales with the size, round caps. */
+@Composable
+fun Spinner(size: Dp, color: Color = Theme.fontQuiet, modifier: Modifier = Modifier) {
+    androidx.compose.material3.CircularProgressIndicator(modifier.size(size), color = color,
+        strokeWidth = (size.value / 8f).coerceIn(2f, 4f).dp, strokeCap = androidx.compose.ui.graphics.StrokeCap.Round)
+}

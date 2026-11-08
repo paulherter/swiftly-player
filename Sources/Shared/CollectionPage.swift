@@ -170,7 +170,10 @@ struct CollectionView: View {
         .scrollIndicators(.hidden)
         .animation(Theme.reveal, value: state.items.isEmpty)
         // The same measurement as in library and watchlist; see `HeaderScrollDistance`.
-        .scrollDistance { offset = $0 }
+        .scrollDistance {
+            let clamped = min(max($0, 0), Theme.valueRailsDistance)
+            if clamped != offset { offset = clamped }
+        }
         // Not moved sideways (``ScrollJump/anchor(index:columns:leading:trailing:usable:spacing:)``).
         .onChange(of: jump) { _, new in
             guard let new, let index = state.items.firstIndex(where: { $0.id == new.id }) else { return }
@@ -293,12 +296,8 @@ struct CollectionMosaic: View {
 /// iPhone no matter how many filters are added, and the fade mask at the right
 /// edge goes away entirely.
 ///
-/// **On wide screens it stays open.** There is room, and a sheet for something that
-/// fits beside it is a detour; same reasoning as before.
-///
-/// **Sorting sits at the far right on wide screens**, as on the Mac, where the
-/// same window has the same width. In portrait the pills stay, where there is no
-/// room.
+/// **iPad uses the same pills.** It is the iPhone design on a wider screen, not a
+/// different layout with chips.
 struct ShelfControls: View {
     let state: LibraryModel
     let filter: [LibraryFilter]
@@ -309,35 +308,19 @@ struct ShelfControls: View {
     /// needs neither filtering nor reordering.
     var onlyCount: Int?
 
+    /// Wide, the count sits up in the title row (`LibraryView`), not here.
     @Environment(\.wide) private var wide
 
     var body: some View {
-        if wide {
-            row.padding(.top, 14)
-        } else {
-            ValueRail(offset: offset) { row }
-        }
+        ValueRail(offset: offset) { row }
     }
 
+    /// The same pills on every width: iPad is the iPhone row, only wider.
     private var row: some View {
         HStack(spacing: 8) {
             if let onlyCount {
                 Spacer(minLength: 0)
                 if !wide { CountMark(count: onlyCount) }
-            } else if wide {
-                ForEach(filter) { f in
-                    SelectionChip(text: f.label, an: state.filter == f) {
-                        state.filter = f
-                    }
-                }
-                Spacer(minLength: 12)
-                ForEach(Sorting.allCases) { s in
-                    SelectionChip(text: s.label,
-                             symbol: s == state.sorting ? "line.3.horizontal.decrease" : nil,
-                             an: state.sorting == s) {
-                        state.sorting = s
-                    }
-                }
             } else {
                 ValuePill(symbol: "line.3.horizontal.decrease",
                           text: state.filter.label) { filterOpen = true }
@@ -345,7 +328,7 @@ struct ShelfControls: View {
                           text: state.sorting.label) { sortingOpen = true }
                 Spacer(minLength: 8)
                 // Only once we know it. A zero that is not one yet would be a false statement.
-                if state.total > 0 { CountMark(count: state.total) }
+                if state.total > 0, !wide { CountMark(count: state.total) }
             }
         }
         // **The same height as with pills, also without them.**

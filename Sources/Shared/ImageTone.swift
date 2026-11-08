@@ -295,13 +295,4 @@ extension ImageTone {
                             background: Theme.reason, smoothsColors: true, colorSpace: .perceptual)
     }
 
-    /// The hue at position `run` (0...1), blended between the found hues along
-    /// the shortest path on the color wheel.
-    ///
-    /// Every hue moves toward the main color: the movement across the surface
-    /// stays, its span shrinks to a third. Otherwise a full orange would sit next to
-    /// blue, which shows as a blotch however fine the mesh is.
-    static func audioAt(_ tones: [Double], _ run: Double) -> Double {
-        AvComputation.audioAt(tones, run)
-    }
 }

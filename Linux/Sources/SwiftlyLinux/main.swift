@@ -5,6 +5,16 @@ import JellyfinKit
 import WinSDK
 #endif
 
+// Probe for the libmpv engine without a window: SWIFTLY_MPV_PROBE=<file or url>.
+if let probe = ProcessInfo.processInfo.environment["SWIFTLY_MPV_PROBE"] {
+    Player.probe(probe)
+    exit(0)
+}
+if let probe = ProcessInfo.processInfo.environment["SWIFTLY_MPV_PROBE_FENSTER"] {
+    Player.probeWindow(probe)
+    exit(0)
+}
+
 /// Entry point. Everything else is in ``App``.
 ///
 /// **The app lives in a global reference** because GTK callbacks come from C

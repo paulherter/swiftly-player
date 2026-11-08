@@ -43,6 +43,10 @@ public struct AlphabetIndex: Sendable, Equatable {
     public let count: Int
     /// The order the list is sorted in; it decides what a key is.
     public let sorting: Sorting
+    /// **"Zuletzt" by month**: set when every title was added in one year (or none is
+    /// dated more than one year apart), so years alone would give no index. Keys are
+    /// then "2026-10" and labels "Okt 26".
+    public let monthly: Bool
 
     /// - Parameter titles: Name and the server's sort name of every title, in list order.
     public init(titles: [(name: String, sortName: String?)]) {
@@ -55,6 +59,7 @@ public struct AlphabetIndex: Sendable, Equatable {
             .sorted { Self.order($0.letter) < Self.order($1.letter) }
         count = titles.count
         sorting = .name
+        monthly = false
     }
 
     /// **The strip for any order**, from the whole list in the server's order.
@@ -72,37 +77,42 @@ public struct AlphabetIndex: Sendable, Equatable {
             self.init(titles: items.map { ($0.name, $0.sortName) })
             return
         }
+        // "Zuletzt": months instead of years when the years alone are no scale.
+        let monthly = sorting == .latest
+            && Set(items.compactMap { Self.year(of: $0.dateCreated) }).count <= 1
         var keys: [String] = []
         var firstAt: [String: Int] = [:]
         for (i, item) in items.enumerated() {
-            let key = Self.key(of: item, sorting: sorting)
+            let key = Self.key(of: item, sorting: sorting, monthly: monthly)
             if firstAt[key] == nil { firstAt[key] = i; keys.append(key) }
         }
         var built: [Entry] = []
         for key in keys {
             // Years and ratings are a scale: a dot between every two steps.
             built.append(Entry(letter: key, first: firstAt[key]!,
-                               label: Self.label(for: key, sorting: sorting), gap: !built.isEmpty))
+                               label: Self.label(for: key, sorting: sorting, monthly: monthly),
+                               gap: !built.isEmpty))
         }
-        self.init(entries: built, count: items.count, sorting: sorting)
+        self.init(entries: built, count: items.count, sorting: sorting, monthly: monthly)
     }
 
-    private init(entries: [Entry], count: Int, sorting: Sorting) {
+    private init(entries: [Entry], count: Int, sorting: Sorting, monthly: Bool) {
         self.entries = entries
         self.count = count
         self.sorting = sorting
+        self.monthly = monthly
     }
 
     // MARK: Keys of the other orders
 
     /// What a title is matched by in this index.
     public func key(of item: Item) -> String {
-        Self.key(of: item, sorting: sorting)
+        Self.key(of: item, sorting: sorting, monthly: monthly)
     }
 
     /// **The key of a title for an order**: the letter, the year ("2025"), the rating
     /// ("r7") or the year added ("2025"); "—" when the title lacks the value.
-    public static func key(of item: Item, sorting: Sorting) -> String {
+    public static func key(of item: Item, sorting: Sorting, monthly: Bool = false) -> String {
         switch sorting {
         case .name:
             return letter(name: item.name, sortName: item.sortName)
@@ -114,6 +124,9 @@ public struct AlphabetIndex: Sendable, Equatable {
             return "r\(min(10, max(0, Int(rating))))"
         case .latest:
             guard let year = year(of: item.dateCreated) else { return "—" }
+            if monthly, let month = month(of: item.dateCreated) {
+                return String(year) + (month < 10 ? "-0\(month)" : "-\(month)")
+            }
             return String(year)
         }
     }
@@ -124,13 +137,27 @@ public struct AlphabetIndex: Sendable, Equatable {
         return year
     }
 
+    /// The month (1 to 12) of an ISO 8601 date.
+    private static func month(of date: String?) -> Int? {
+        guard let date, date.count >= 7 else { return nil }
+        let part = date.dropFirst(5).prefix(2)
+        guard let month = Int(part), (1...12).contains(month) else { return nil }
+        return month
+    }
+
     private static func twoDigits(_ year: Int) -> String {
         let rest = year % 100
         return rest < 10 ? "0\(rest)" : String(rest)
     }
 
-    private static func label(for key: String, sorting: Sorting) -> String {
+    private static func label(for key: String, sorting: Sorting, monthly: Bool) -> String {
         guard key != "—" else { return key }
+        if monthly, sorting == .latest, key.count == 7, let year = Int(key.prefix(4)),
+           let month = Int(key.suffix(2)) {
+            let names = Calendar.current.shortMonthSymbols
+            let name = names.indices.contains(month - 1) ? names[month - 1] : ""
+            return name.trimmingCharacters(in: CharacterSet(charactersIn: ".")) + " " + twoDigits(year)
+        }
         switch sorting {
         case .name:        return key
         case .erscheinung, .latest: return Int(key).map(twoDigits) ?? key

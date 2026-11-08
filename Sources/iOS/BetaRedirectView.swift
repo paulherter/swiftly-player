@@ -40,7 +40,7 @@ struct BetaRedirectView: View {
                         .font(.headline)
                         .foregroundStyle(Theme.onAccent)
                         .frame(maxWidth: .infinity, minHeight: 52)
-                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }

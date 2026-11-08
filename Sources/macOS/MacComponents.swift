@@ -15,6 +15,8 @@ import SwiftUI
 /// limit, here it is the window height.
 struct SidebarRow: View {
     let symbol: String
+    /// Filled asset name (`icon.house.fill` ...); `nil` keeps `symbol`.
+    var filled: String? = nil
     var label: LocalizedStringKey = ""
     /// For rows whose text comes from the server. A library name is not a catalog
     /// string: passed as a `LocalizedStringKey`, "Filme" would be looked up as a key and
@@ -31,7 +33,10 @@ struct SidebarRow: View {
     var body: some View {
         Button(action: pick) {
             HStack(spacing: 10) {
-                Image(icon: symbol, size: 18)
+                Group {
+                    // Filled Phosphor asset where the iPhone tab bar uses one (shared catalog).
+                    if let filled { Image(filled) } else { Image(icon: symbol, size: 18) }
+                }
                     .font(.app(size: 18))
                     .frame(width: 18)
                 Group {
@@ -313,15 +318,20 @@ struct PosterCell: View {
                 }
                 .scaleEffect(hovers ? 1.04 : 1)
 
-                VStack(alignment: .leading, spacing: 1) {
+                // Same text block as iPhone: 13 medium, gap 2, fixed line heights (16 / 15)
+                // so every tile ends at the same height and no second line is cut off.
+                VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: title)
-                        .font(Theme.tileCaption)
+                        .font(Theme.tile)
                         .foregroundStyle(Theme.font)
+                        .frame(height: 16, alignment: .leading)
                         .lineLimit(1)
                     if let secondLine {
                         Text(verbatim: secondLine)
                             .font(Theme.secondLine)
+                            .monospacedDigit()
                             .foregroundStyle(Theme.fontVeryQuiet)
+                            .frame(height: 15, alignment: .leading)
                             .lineLimit(1)
                     }
                 }
@@ -382,12 +392,14 @@ struct LandscapeTile: View {
                             progress: progress, symbolText: symbolText)
                     .scaleEffect(hovers ? 1.04 : 1)
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: title)
-                        .font(Theme.tileCaption).foregroundStyle(Theme.font).lineLimit(1)
+                        .font(Theme.tile).foregroundStyle(Theme.font)
+                        .frame(height: 16, alignment: .leading).lineLimit(1)
                     if let secondLine {
                         Text(verbatim: secondLine)
-                            .font(Theme.secondLine).foregroundStyle(Theme.fontVeryQuiet).lineLimit(1)
+                            .font(Theme.secondLine).monospacedDigit().foregroundStyle(Theme.fontVeryQuiet)
+                            .frame(height: 15, alignment: .leading).lineLimit(1)
                     }
                 }
             }
@@ -867,32 +879,6 @@ struct HintStrip: View {
     }
 }
 
-/// **The back control is a bare arrow, not a round button.**
-///
-/// It used to exist three times in nearly the same form: as an `Aktionsknopf` with the
-/// ring turned off above the settings subpages, as a loose button in `DetailHeader`,
-/// and as a third one in the library bar. Now one component, one hit area (40 x 40),
-/// one weight (20 semibold), and hover as the only thing it reveals about itself.
-struct BackArrow: View {
-    let back: () -> Void
-
-    @State private var hovers = false
-
-    var body: some View {
-        Button(action: back) {
-            Image(icon: "chevron.left")
-                .font(Theme.rail)
-                .foregroundStyle(hovers ? Theme.font : Theme.fontQuiet)
-                .frame(width: 40, height: 40)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(Theme.PressButton())
-        .onHover { hovers = $0 }
-        .animation(Theme.timeFloat, value: hovers)
-        .accessibilityLabel(Text("Zurück"))
-    }
-}
-
 /// **Back and forward, as in Finder and Safari.** The top-left pair of the content
 /// area: caret left, caret right, 30 x 28 each. An arrow with nowhere to go stays in
 /// place at 35 %, so nothing beside it ever jumps.
@@ -970,6 +956,20 @@ final class HeaderState {
     var offset: CGFloat = 0
 }
 
+/// Fades a page's value row out over the first `valueRailsDistance` of scrolling.
+///
+/// **The read of `state.offset` lives in this modifier's body, not in the page's.** A page
+/// that read it itself (`opacity(1 - pull)`) registered the page body as an observer, so
+/// every scroll tick re-evaluated the header, the filter row and the whole grid, which
+/// defeated the point of `HeaderState`.
+struct PullFade: ViewModifier {
+    let state: HeaderState
+
+    func body(content: Content) -> some View {
+        content.opacity(1 - Double(min(max(state.offset / Theme.valueRailsDistance, 0), 1)))
+    }
+}
+
 struct DetailHeader: View {
     let title: String
     /// Where the page stands; see `HeaderState`.
@@ -995,6 +995,9 @@ struct DetailHeader: View {
     /// Over what distance it fades in: the height of the large title.
     var over: CGFloat = 42
     let back: () -> Void
+    /// The header image whose colour lies behind a movie/series page. With it the edge takes
+    /// the page's mood colour and there is no blur.
+    var mood: URL? = nil
 
     private var strength: Double {
         guard over > 0 else { return 1 }
@@ -1019,41 +1022,111 @@ struct DetailHeader: View {
         .padding(.leading, 20)
         .padding(.trailing, 16)
         .frame(height: Theme.toolbarHeight)
-        // **The bar that appears while scrolling:** a hairline at the bottom, behind it the
-        // background, which becomes opaque with the scroll distance.
-        //
-        // It also covers the edge effect macOS 26 draws at the top of every scroll view.
-        // That effect was once disabled with `scrollEdgeEffectHidden`, which caused a
-        // running trackpad gesture to stick at the edge (see `pagesScroll`). This bar is
-        // the answer: it lies there anyway, and it is ours.
-        .background(alignment: .bottom) {
-            Rectangle().fill(Theme.line).frame(height: 1).opacity(strength)
-        }
-        .background {
-            ZStack {
-                // **Only when it does something.**
-                //
-                // `BarGlass` is a *live* blur: it smears whatever scrolls underneath and
-                // recomputes that every frame, even when the mask sets it to zero and nothing is
-                // visible. Over a scrolling page that is the most expensive surface in the window.
-                // Added to the view only from a hint of visibility on, it costs nothing while
-                // scrolling through the hero image.
-                //
-                // **And no glass at all.** Apple's materials all carry a light layer, even the
-                // thinnest. Over our background and colorful posters that turns into a gray block
-                // lighter than the page, and it flashes while bouncing because its strength is
-                // controlled through a mask recomputed per frame. A plain surface cannot flash, is
-                // exactly as dark as the page and costs nothing.
-                //
-                // The soft gradient at rest is gone. It kept the back arrow legible on a bright hero
-                // image on the phone, where the image reaches both edges. On the Mac the backdrop
-                // only spans the right two thirds; the arrow sits on plain background on the left,
-                // where the gradient was a dark glow with no purpose. What remains is the bar that
-                // appears while scrolling.
-                Theme.reason.opacity(strength)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // The same backdrop as `StateBar`: soft blur and a darker shade toward the top,
+        // no hairline, no panel. Mood pages: the page's own colour, no blur (as iPhone).
+        .background(alignment: .top) {
+            if let mood {
+                MoodHeaderEdge(url: mood, offset: offset, fade: 0.7 + 0.3 * strength)
+                    .frame(height: HeaderBackdrop.height, alignment: .top)
+            } else {
+                HeaderBackdrop(strength: strength)
             }
-            .ignoresSafeArea(edges: .top)
         }
+    }
+}
+
+/// **The one header backdrop for every scrolling Mac page without a mood colour.**
+///
+/// No blur (it pulled the content colours up into a coloured gradient): only our ground tone
+/// `Theme.reason` as ONE long eased fade over the full width, 0.97 at the very top of the
+/// window, 0.78 at 45 % of the height, 0 at the bottom, so there is no visible edge anywhere.
+/// `strength` (0...1, from the scroll offset) drives the opacity continuously
+/// (`min(1, strength * 3)`); always mounted, nothing animates implicitly.
+struct HeaderBackdrop: View {
+    let strength: Double
+    /// About 2.8 times the 52 pt header.
+    static let height: CGFloat = 150
+
+    /// Eased stops (iPhone `HeaderHistory` style): location, opacity.
+    private static let curve: [(Double, Double)] = [
+        (0, 0.97), (0.15, 0.93), (0.30, 0.87), (0.45, 0.78), (0.58, 0.64),
+        (0.70, 0.46), (0.80, 0.29), (0.88, 0.15), (0.94, 0.06), (1, 0),
+    ]
+
+    var body: some View {
+        LinearGradient(stops: Self.curve.map { .init(color: Theme.reason.opacity($0.1), location: $0.0) },
+                       startPoint: .top, endPoint: .bottom)
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.height)
+            .opacity(min(1, strength * 3))
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+    }
+}
+
+/// **The top edge of a movie/series page in the page's mood colour** (iPhone `MoodEdge`).
+///
+/// Samples the same tones as `MoodReason` at the content row that sits at the top of the
+/// window (left, centre, right), darker toward the top (35 % black), fading out downward.
+/// No blur: a blur over a coloured page reads grey. Continuous in `offset`; nothing is
+/// inserted while scrolling (only once when the tones arrive).
+struct MoodHeaderEdge: View {
+    let url: URL
+    let offset: CGFloat
+    /// Overall opacity (0...1).
+    let fade: Double
+    @State private var tones: [Double]
+
+    init(url: URL, offset: CGFloat, fade: Double) {
+        self.url = url
+        self.offset = offset
+        self.fade = fade
+        _tones = State(initialValue: ImageTone.shared.remembered(for: url) ?? [])
+    }
+
+    var body: some View {
+        ZStack {
+            if tones.isEmpty {
+                Theme.reason.opacity(0.0)
+            } else {
+                edge
+            }
+        }
+        .task(id: url) {
+            if let known = ImageTone.shared.remembered(for: url) { tones = known; return }
+            let new = await ImageTone.shared.tones(for: url)
+            guard !Task.isCancelled else { return }
+            tones = new
+        }
+    }
+
+    private var edge: some View {
+        let since = Double(DetailPageMetric.heroImage)
+        let y = Double(offset)
+        let f = AvComputation.decay(y: y, since: since, runOut: Double(MoodReason.runOut))
+        let row = min(1, y / (since + Double(MoodReason.colorHeight)))
+        let colors = [0.0, 0.5, 1.0].map { ImageTone.color(tones, x: $0, y: row, decay: f) }
+        let curve = Gradient(stops: [
+            .init(color: .black.opacity(1.0), location: 0),
+            .init(color: .black.opacity(0.96), location: 0.30),
+            .init(color: .black.opacity(0.86), location: 0.48),
+            .init(color: .black.opacity(0.70), location: 0.62),
+            .init(color: .black.opacity(0.52), location: 0.73),
+            .init(color: .black.opacity(0.34), location: 0.82),
+            .init(color: .black.opacity(0.19), location: 0.89),
+            .init(color: .black.opacity(0.09), location: 0.95),
+            .init(color: .black.opacity(0), location: 1),
+        ])
+        return ZStack {
+            LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+            LinearGradient(colors: [.black.opacity(0.35), .black.opacity(0)],
+                           startPoint: .top, endPoint: .bottom)
+        }
+        .mask { LinearGradient(gradient: curve, startPoint: .top, endPoint: .bottom) }
+        .opacity(fade)
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
     }
 }
 
@@ -1614,15 +1687,8 @@ struct StateBar: View {
         .padding(.trailing, 16)
         .frame(height: Theme.toolbarHeight, alignment: .center)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // **A light shade, only once content runs under it** (design: `#101010` at 78 %
-        // fading to nothing). At rest the page shows through untouched.
-        .background {
-            LinearGradient(colors: [Theme.reason.opacity(0.78), Theme.reason.opacity(0)],
-                           startPoint: .top, endPoint: .bottom)
-                .opacity(strength)
-                .ignoresSafeArea(edges: .top)
-                .allowsHitTesting(false)
-        }
+        // One shared backdrop for every scrolling header (see `HeaderBackdrop`).
+        .background(alignment: .top) { HeaderBackdrop(strength: strength) }
     }
 }
 
@@ -1733,6 +1799,24 @@ struct QuickConnectCode: View {
                 LoadField(corner: Theme.cornerField)
                     .frame(width: 240, height: 64)
                     .padding(.top, 26)
+            }
+        }
+    }
+}
+
+/// Glass chip as on iPhone (`ChipSurface` in Shared/Style.swift is not part of the Mac target):
+/// material + translucent white + hairline `margin`; active = accent fill.
+struct ChipSurface: ViewModifier {
+    let an: Bool
+    func body(content: Content) -> some View {
+        content.background {
+            if an {
+                Capsule().fill(Theme.accent)
+            } else {
+                Capsule().fill(.ultraThinMaterial)
+                    .overlay(Capsule().fill(Theme.surfaceTranslucent))
+                    .overlay(Capsule().strokeBorder(Theme.margin, lineWidth: 1))
+                    .allowsHitTesting(false)
             }
         }
     }

@@ -2,9 +2,9 @@
 
 Swiftly Player is published under the MPL-2.0 (see `LICENSE`). It contains and uses the third-party components listed here. Each keeps its own license; the license texts are in `LICENSES/`. This file is generated from `LICENSES/components.json` (`Werkzeuge/licenses-generate.py`); do not edit it by hand.
 
-## VLCKit / libVLC — Source and your rights
+## VLCKit / libVLC and libmpv — Source and your rights
 
-**Swiftly Player uses VLCKit and libVLC by VideoLAN (LGPL-2.1 or later).**
+**Swiftly Player uses VLCKit and libVLC by VideoLAN and libmpv with FFmpeg (all LGPL-2.1 or later).**
 
 ### What is used
 
@@ -12,7 +12,7 @@ Swiftly Player plays video and audio with VLCKit and libVLC by VideoLAN, which a
 
 On Apple platforms (iPhone, iPad, Mac, Apple TV) the app contains VLCKit 4.0.0-a23 as a dynamic framework (VLCKit.framework), built from VideoLAN's sources with the Swiftly patches listed below. VLCKit in turn contains libVLC and the libraries listed on the licenses page; those libraries carry their own licenses. VLC is built without its GPL modules (--disable-gpl); FFmpeg is built without --enable-gpl.
 
-On Windows the app ships the official VLC 3.0.21 runtime with its plugins, as distributed by VideoLAN. libVLC and libvlccore are LGPL-2.1-or-later; some of the bundled plugins are GPL-2.0-or-later (see COPYING in the source archive below for which). On Linux the app does not bundle libVLC but uses the one of your system.
+On Windows the app ships libmpv-2.dll (mpv built as a library under LGPL-2.1-or-later, with FFmpeg under LGPL-3.0-or-later) from the zhongfly/mpv-winbuild project, unmodified. On Linux the app does not bundle libmpv but uses the one of your system.
 
 ### Source code
 
@@ -22,7 +22,7 @@ Upstream libVLC: https://code.videolan.org/videolan/vlc, commit 2cd8705589 (the 
 
 Bundled libraries: the exact release tarballs are those of VLC's contrib system (libvlc/vlc/contrib/src/*), in the versions listed on the licenses page.
 
-VLC for Windows: the source archive of VLC 3.0.21 at https://download.videolan.org/pub/videolan/vlc/3.0.21/ (vlc-3.0.21.tar.xz). Swiftly does not patch this runtime.
+libmpv for Windows: the sources of the build are mpv (https://github.com/mpv-player/mpv) and FFmpeg (https://ffmpeg.org) in the versions of release 2026-11-05-3138fc8eea at https://github.com/zhongfly/mpv-winbuild/releases/tag/2026-11-05-3138fc8eea; the recipe is https://github.com/shinchiro/mpv-winbuild-cmake. Swiftly does not patch it.
 
 Swiftly's changes: the patch files are public in Swiftly Player's repository, in Werkzeuge/vlckit-patches/ (https://github.com/paulherter/swiftly-player). Six patches against libVLC (0028 and 0030 to 0034) and one against VLCKit itself (VLCKit-pause-without-queue.patch, for Sources/Playback/VLCMediaPlayer.m). Patches 0035 to 0038 are in the same directory but are not part of any shipped build.
 
@@ -36,28 +36,65 @@ You may copy and pass on the library under the terms of the LGPL. You may revers
 
 ### Written offer
 
-On request we will provide the complete corresponding source code of VLCKit, libVLC (including the VLC 3.0.21 runtime and plugins shipped for Windows) and the bundled libraries of every version of Swiftly Player that we distribute, including the Swiftly patches and the scripts used to build it, on a data medium or as a download. The offer is valid for at least three years after the release of the respective version. We may charge no more than the cost of physically performing the delivery.
+On request we will provide the complete corresponding source code of VLCKit, libVLC and of libmpv with FFmpeg shipped for Windows and the bundled libraries of every version of Swiftly Player that we distribute, including the Swiftly patches and the scripts used to build it, on a data medium or as a download. The offer is valid for at least three years after the release of the respective version. We may charge no more than the cost of physically performing the delivery.
 
 Send the request, with the version and platform you have, to info@swiftlyplayer.com.
+
+### Current playback engines: what is used
+
+Apple (iPhone, iPad, Mac, Apple TV): the app plays with AetherEngine 7.58.0 (GNU LGPL version 3 with the Apple Store / DRM exception of the project). AetherEngine is linked statically and unmodified. It uses FFmpeg n8.1.3 from FFmpegBuild 3.13.0, delivered as dynamic frameworks under LGPL-2.1-or-later and replaceable by your own build. It further uses libdovi (MIT) and LibTrueHD (MIT, with the Apache-2.0 truehd and oamd crates).
+
+Android and Android TV: the app plays with Media3 / ExoPlayer (Apache-2.0) and an FFmpeg 6.0.1 audio decoder extension built by Swiftly from the official release without patches, as separate shared libraries (LGPL-2.1-or-later).
+
+Windows: libmpv-2.dll from the zhongfly/mpv-winbuild release 2026-11-05-3138fc8eea, unmodified. Linux: the libmpv of your system, loaded dynamically.
+
+### Current playback engines: source code
+
+AetherEngine: https://github.com/superuser404notfound/AetherEngine, tag 7.58.0 (revision 7ea27bff8d8fb4a457d6e0042b0537eb31253583). Swiftly uses it without changes.
+
+FFmpegBuild: https://github.com/superuser404notfound/FFmpegBuild, tag 3.13.0 (revision 9282e592b81d9aa1d699dcc70d46cf6b4d66b55f). Its build.sh fetches FFmpeg n8.1.3 (https://github.com/FFmpeg/FFmpeg, tag n8.1.3) and applies the patches in its patches folder.
+
+libdovi: https://github.com/superuser404notfound/LibDovi, tag 2.1.0. LibTrueHD: https://github.com/superuser404notfound/LibTrueHD, tag 3.2.0, with the truehdd source at https://github.com/superuser404notfound/truehdd, commit 33bae1657ceb25b5fe0347f42c544c3414e2760e.
+
+Android: the FFmpeg 6.0.1 tarball https://ffmpeg.org/releases/ffmpeg-6.0.1.tar.xz, the script Werkzeuge/media3-ffmpeg-bauen.sh and the Media3 source (https://github.com/androidx/media, tag 1.9.4, module decoder_ffmpeg) are used; the script is in https://github.com/paulherter/swiftly-player.
+
+Windows: https://github.com/zhongfly/mpv-winbuild/releases/tag/2026-11-05-3138fc8eea (sources of mpv and FFmpeg as given in the section above). Linux: the libmpv package of your distribution.
+
+The pins used for the Apple build are in Packages/SwiftlyAether/Package.swift and Package.resolved in https://github.com/paulherter/swiftly-player.
+
+### Current playback engines: your rights and written offer
+
+You may replace the FFmpeg frameworks (Apple), the FFmpeg shared libraries (Android) and libmpv-2.dll (Windows) with your own builds of the same versions, and you may modify and redistribute these LGPL components under the terms of their licenses. For the Apple and Android apps this means repackaging and signing the app yourself from the published Swiftly source.
+
+On request we provide the complete corresponding source code of the LGPL components named above on a data medium. Send the request, with the version and platform you have, to info@swiftlyplayer.com.
 
 ## Player
 
 | Component | Version | License (SPDX) | Copyright | Source | Platforms |
 |---|---|---|---|---|---|
 | VLCKit | 4.0.0-a23, built with Swiftly's patches | LGPL-2.1-or-later | VideoLAN and VLC authors | https://code.videolan.org/videolan/VLCKit | Apple (iPhone, iPad, Mac, Apple TV) |
-| libVLC (VLC core, libvlccore and modules) | VLC 4.0 development snapshot 2cd8705589 (Apple); libvlc-all 3.6.3 (Android) | LGPL-2.1-or-later | VideoLAN and VLC authors | https://www.videolan.org/vlc/ | Apple (iPhone, iPad, Mac, Apple TV), Android, Android TV |
-| VLC 3.0.21 runtime and plugins (Windows) | 3.0.21 | LGPL-2.1-or-later AND GPL-2.0-or-later | VideoLAN and VLC authors | https://download.videolan.org/pub/videolan/vlc/3.0.21/ | Windows |
-| libVLC of the system | as installed by your distribution (package dependency vlc / libvlc5) | LGPL-2.1-or-later | VideoLAN and VLC authors | https://www.videolan.org/vlc/ | Linux |
-| Android: libVLC contents (libvlc-all) | libvlc-all 3.6.3 | LGPL-2.1-or-later | VideoLAN and VLC authors | https://code.videolan.org/videolan/vlc-android | Android, Android TV |
-| Android: Media3 / ExoPlayer (media3-exoplayer, media3-ui; for Dolby Vision) | 1.9.4 | Apache-2.0 | The Android Open Source Project | https://github.com/androidx/media | Android, Android TV |
+| libVLC (VLC core, libvlccore and modules) | VLC 4.0 development snapshot 2cd8705589 (Apple) | LGPL-2.1-or-later | VideoLAN and VLC authors | https://www.videolan.org/vlc/ | Apple (iPhone, iPad, Mac, Apple TV) |
+| AetherEngine | 7.58.0 (revision 7ea27bff8d8fb4a457d6e0042b0537eb31253583) | LGPL-3.0-only with App Store exception | Vincent Herbst | https://github.com/superuser404notfound/AetherEngine/tree/7.58.0 | Apple (iPhone, iPad, Mac, Apple TV) |
+| FFmpeg through FFmpegBuild (libavcodec, libavformat, libavutil, libswscale, libswresample, libavfilter; dynamic frameworks) | FFmpeg n8.1.3 in FFmpegBuild 3.13.0 (revision 9282e592b81d9aa1d699dcc70d46cf6b4d66b55f) | LGPL-2.1-or-later | The FFmpeg developers; FFmpegBuild: superuser404notfound | https://github.com/superuser404notfound/FFmpegBuild/tree/3.13.0 | Apple (iPhone, iPad, Mac, Apple TV) |
+| libdovi (dolby_vision crate) | LibDovi 2.1.0 (revision 0d7cce1d6836a30d13a3a2326e50a153af53f014) | MIT | quietvoid and contributors; packaging: Vincent Herbst | https://github.com/superuser404notfound/LibDovi/tree/2.1.0 | Apple (iPhone, iPad, Mac, Apple TV) |
+| LibTrueHD (truehd and oamd crates, truehdd) | LibTrueHD 3.2.0 (revision 12b26e487a2ade918e53380d47f5727883fedafc) | MIT AND Apache-2.0 | Quick104, Vincent Herbst (LibTrueHD); Rainbaby and the truehdd contributors (truehd, oamd) | https://github.com/superuser404notfound/LibTrueHD/tree/3.2.0 | Apple (iPhone, iPad, Mac, Apple TV) |
+| libmpv with FFmpeg (Windows) | mpv-winbuild release 2026-11-05-3138fc8eea (file mpv-dev-lgpl-x86_64) | LGPL-2.1-or-later | mpv developers and FFmpeg developers | https://github.com/zhongfly/mpv-winbuild/releases/tag/2026-11-05-3138fc8eea | Windows |
+| libmpv of the system | as installed by your distribution (package dependency mpv / libmpv2) | LGPL-2.1-or-later | mpv developers and FFmpeg developers | https://mpv.io/ | Linux |
+| Android: Media3 / ExoPlayer (media3-exoplayer, media3-ui, media3-decoder; the only player engine on Android) | 1.9.4 | Apache-2.0 | The Android Open Source Project | https://github.com/androidx/media | Android, Android TV |
+| Android: FFmpeg audio decoders for Media3 (libavcodec, libavutil, libswresample as separate shared libraries; extension decoder_ffmpeg) | FFmpeg 6.0.1; Media3 decoder_ffmpeg 1.9.4 | LGPL-2.1-or-later | FFmpeg developers; the Android Open Source Project (decoder_ffmpeg, Apache-2.0) | https://ffmpeg.org/releases/ffmpeg-6.0.1.tar.xz | Android, Android TV |
 
 Notes:
 
 - **VLCKit** — Modified: Swiftly ships a VLCKit built with its own patches (see the written offer above).
 - **libVLC (VLC core, libvlccore and modules)** — On Apple platforms built with --disable-gpl, without VLC's GPL modules.
-- **VLC 3.0.21 runtime and plugins (Windows)** — The official VLC 3.0.21 runtime with its plugins folder, as distributed by VideoLAN. libVLC and libvlccore are LGPL-2.1-or-later; some of the bundled plugins are GPL-2.0-or-later. See COPYING in the source archive (vlc-3.0.21.tar.xz) for the modules.
-- **libVLC of the system** — Not bundled: the app uses the libVLC that your system provides. Its source code comes from your distribution.
-- **Android: Media3 / ExoPlayer (media3-exoplayer, media3-ui; for Dolby Vision)** — Plays Dolby Vision files through the device's own decoders; libVLC plays everything else. Used without an FFmpeg decoder extension: the Jellyfin build of that extension (org.jellyfin.media3:media3-ffmpeg-decoder) is published under the GPL-3.0 and is deliberately not included.
+- **AetherEngine** — Playback engine on Apple platforms, linked statically into the app unmodified. License: GNU LGPL version 3 with the Apple Store / DRM exception of the project (text in LGPL-3.0-AetherEngine-exception.txt). The exception covers AetherEngine only, not its dependencies. Source: the tag linked here; see the source section above.
+- **FFmpeg through FFmpegBuild (libavcodec, libavformat, libavutil, libswscale, libswresample, libavfilter; dynamic frameworks)** — Used by AetherEngine. Embedded as dynamic frameworks in the app's Frameworks folder and built without --enable-gpl and --enable-version3. FFmpegBuild applies its own patches to FFmpeg; they are in the patches folder of the linked tag together with build.sh, which downloads FFmpeg n8.1.3 from https://github.com/FFmpeg/FFmpeg. The same build also contains dav1d (BSD-2-Clause), zimg (WTFPL, text in WTFPL-zimg.txt) and libzvbi (LGPL-2.0-or-later, GPL-licensed source files left out by FFmpegBuild). Per-component texts of the project: https://github.com/superuser404notfound/FFmpegBuild/tree/3.13.0/LICENSES.
+- **libdovi (dolby_vision crate)** — Static library of the dolby_vision crate from https://github.com/quietvoid/dovi_tool, dual-licensed MIT OR Apache-2.0 and used here under MIT. The text is the one shipped by LibDovi (packaging notice plus the notice for the crate).
+- **LibTrueHD (truehd and oamd crates, truehdd)** — Decodes Dolby TrueHD for AetherEngine (package trait TrueHDObjectAudio, switched on in Packages/SwiftlyAether/Package.swift). The truehd crate comes from https://github.com/superuser404notfound/truehdd at commit 33bae1657ceb25b5fe0347f42c544c3414e2760e. Dolby, Dolby Atmos and Dolby TrueHD are trademarks of Dolby Laboratories; this app is not affiliated with Dolby Laboratories.
+- **libmpv with FFmpeg (Windows)** — libmpv-2.dll as built by zhongfly/mpv-winbuild (libmpv LGPL-2.1-or-later, FFmpeg LGPL-3.0-or-later; the DLL reports -Dgpl=false). Shipped unmodified next to the program. The libraries linked into the DLL (libass, harfbuzz, dav1d and others) carry their own licenses; the build recipe is public at https://github.com/shinchiro/mpv-winbuild-cmake. Source of mpv: https://github.com/mpv-player/mpv, of FFmpeg: https://ffmpeg.org.
+- **libmpv of the system** — Not bundled: the app uses the libmpv that your system provides. Its source code comes from your distribution.
+- **Android: Media3 / ExoPlayer (media3-exoplayer, media3-ui, media3-decoder; the only player engine on Android)** — Plays Dolby Vision files through the device's own decoders; libVLC plays everything else. Used without an FFmpeg decoder extension: the Jellyfin build of that extension (org.jellyfin.media3:media3-ffmpeg-decoder) is published under the GPL-3.0 and is deliberately not included.
+- **Android: FFmpeg audio decoders for Media3 (libavcodec, libavutil, libswresample as separate shared libraries; extension decoder_ffmpeg)** — Built by Swiftly without patches from the official release tarball, without --enable-gpl, --enable-version3 and --enable-nonfree, as separate shared libraries (libavcodec.so, libavutil.so, libswresample.so, in the app's lib folder) so you can replace them with your own build of the same FFmpeg version. Decoders only: ac3 eac3 truehd mlp dca flac opus vorbis aac mp3 alac. Script and exact configuration: Werkzeuge/media3-ffmpeg-bauen.sh in the repository. Source offer: the complete source is the tarball linked here plus the script and configuration in the repository (https://github.com/paulherter/swiftly-player); on request we also send it on a data medium. To use your own build, build FFmpeg 6.0.1 with the same configuration and put your libavcodec.so, libavutil.so and libswresample.so into the app's lib folder (repack and sign the app from the published source).
 
 ## Application and fonts
 
@@ -173,16 +210,21 @@ Notes:
 
 ## License texts
 
+- [`LICENSES/Apache-2.0-truehd.txt`](LICENSES/Apache-2.0-truehd.txt)
 - [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt)
 - [`LICENSES/BSD-2-Clause.txt`](LICENSES/BSD-2-Clause.txt)
 - [`LICENSES/BSD-3-Clause.txt`](LICENSES/BSD-3-Clause.txt)
 - [`LICENSES/FTL.txt`](LICENSES/FTL.txt)
-- [`LICENSES/GPL-2.0-or-later.txt`](LICENSES/GPL-2.0-or-later.txt)
 - [`LICENSES/GSM.txt`](LICENSES/GSM.txt)
 - [`LICENSES/ISC.txt`](LICENSES/ISC.txt)
 - [`LICENSES/LGPL-2.1-or-later.txt`](LICENSES/LGPL-2.1-or-later.txt)
+- [`LICENSES/LGPL-3.0-AetherEngine-exception.txt`](LICENSES/LGPL-3.0-AetherEngine-exception.txt)
+- [`LICENSES/MIT-LibDovi.txt`](LICENSES/MIT-LibDovi.txt)
+- [`LICENSES/MIT-LibTrueHD.txt`](LICENSES/MIT-LibTrueHD.txt)
 - [`LICENSES/MIT.txt`](LICENSES/MIT.txt)
+- [`LICENSES/NOTICE-LibTrueHD.txt`](LICENSES/NOTICE-LibTrueHD.txt)
 - [`LICENSES/OFL-1.1-Inter.txt`](LICENSES/OFL-1.1-Inter.txt)
 - [`LICENSES/PNG-libpng-2.txt`](LICENSES/PNG-libpng-2.txt)
+- [`LICENSES/WTFPL-zimg.txt`](LICENSES/WTFPL-zimg.txt)
 - [`LICENSES/Zlib.txt`](LICENSES/Zlib.txt)
 - [`LICENSES/libjpeg-turbo.txt`](LICENSES/libjpeg-turbo.txt)

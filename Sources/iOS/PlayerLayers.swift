@@ -1,6 +1,5 @@
 import JellyfinKit
 import SwiftUI
-import VLCKit
 
 /// Player dimensions on iPhone and iPad, **in one place**, so a layer's X
 /// sits exactly where the player's X sat, and the episode list's title
@@ -76,7 +75,7 @@ struct IconButton: View {
     var body: some View {
         Button(action: action) {
             Image(icon: symbol, size: mass.symbol)
-                .font(.app(size: mass.symbol, weight: .medium))
+                .font(.app(size: mass.symbol, weight: Theme.overlayWeight))
                 .foregroundStyle(.white)
                 .frame(width: mass.button, height: mass.button)
                 .contentShape(Rectangle())
@@ -128,6 +127,9 @@ private struct LayersHeader<Left: View>: View {
             left
             Spacer(minLength: 0)
             IconButton(symbol: "xmark", label: "Schließen", mass: mass, action: close)
+                // Exactly as in the player's `iconRail`: the glyph, not the 44 button, ends at
+                // the margin, so the X sits on the same spot as in the player.
+                .padding(.trailing, -(mass.button - mass.symbol) / 2)
         }
         .padding(.horizontal, mass.page)
         .padding(.top, mass.top)
@@ -290,8 +292,8 @@ struct DelayRow: View {
                     .frame(maxWidth: .infinity)
                 keyButton("plus", bearing: 1, locked: value.atEnd)
                 Button { setDown(.null) } label: {
-                    Image(icon: "arrow.counterclockwise", size: mass.symbol - 3)
-                        .font(.app(size: mass.symbol - 3, weight: .medium))
+                    Image(icon: "arrow.counterclockwise", size: mass.symbol)
+                        .font(.app(size: mass.symbol, weight: Theme.overlayWeight))
                         .foregroundStyle(Theme.font)
                         .frame(width: mass.button, height: mass.button)
                         .contentShape(Rectangle())
@@ -320,8 +322,8 @@ struct DelayRow: View {
         Button {
             setDown(value.shifted(bearing, steps: hold.press()))
         } label: {
-            Image(icon: symbol, size: mass.symbol - 2)
-                .font(.app(size: mass.symbol - 2, weight: .semibold))
+            Image(icon: symbol, size: mass.symbol)
+                .font(.app(size: mass.symbol, weight: Theme.overlayWeight))
                 .foregroundStyle(locked ? Theme.fontVeryQuiet : Theme.font)
                 .frame(width: mass.button, height: mass.button)
                 .contentShape(Rectangle())
@@ -611,23 +613,17 @@ struct EpisodesLayer: View {
                 // The expanded season list lies over the episodes.
                 .zIndex(1)
 
+                // The same strip as on Apple TV: landscape tiles side by side, the running
+                // episode marked and brought to the middle once the row is there.
                 ScrollViewReader { reader in
-                    ScrollView {
-                        // Lazy: a season with many episodes would otherwise build every row with
-                        // its still on opening.
-                        LazyVStack(spacing: 0) {
+                    ScrollView(.horizontal) {
+                        LazyHStack(alignment: .center, spacing: 12) {
                             ForEach(episodes) { episode in
                                 Button { start(episode) } label: {
-                                    // The running episode carries a larger picture, no surface: it ran across
-                                    // the full width here and made the Dynamic Island visible. Reasoning at
-                                    // `EpisodesRow.ongoing`.
-                                    EpisodesRow(model: model, episode: episode,
-                                                ongoing: episode.id == item.id)
+                                    EpisodeStripTile(model: model, episode: episode,
+                                                     ongoing: episode.id == item.id, pad: mass.pad)
                                 }
-                                // A row presses like a row: surface instead of scale. Before it was
-                                // `PressButton`, which pulled the whole still to 0.97, and in a list that
-                                // looks like slipping. `SwipeRow` on the series page does the same.
-                                .buttonStyle(Theme.PressRow())
+                                .buttonStyle(Theme.PressButton())
                                 // Long press: the tile menu, in the player with watch state only
                                 // (`TileMenu.inPlayer`).
                                 .tileMenu(episode, model: model, landscape: true, inPlayer: true,
@@ -637,11 +633,11 @@ struct EpisodesLayer: View {
                                 .transition(.opacity)
                             }
                         }
-                        .padding(.bottom, 12)
+                        .padding(.horizontal, mass.page)
                     }
                     .scrollIndicators(.hidden)
-                    // **The running episode in view** once the list is there. On opening it
-                    // sits there right away; if the list arrives later (server, season
+                    // **The running episode in view** once the row is there. On opening it
+                    // sits there right away; if the row arrives later (server, season
                     // change), it glides there, and with reduced motion it jumps.
                     .onChange(of: episodes.map(\.id), initial: true) { alt, ids in
                         guard ids.contains(item.id) else { return }
@@ -657,7 +653,16 @@ struct EpisodesLayer: View {
                         if seasonListOpen { seasonListOpen = false }
                     })
                 }
-                .padding(.top, 10)
+                // Clear gap to the season picker, as on Apple TV.
+                .padding(.top, 24)
+
+                Spacer(minLength: 0)
+            }
+            // Tap on the empty ground only closes the season list. The layer closes via the
+            // X and the episodes button, like every other player layer.
+            .background {
+                Color.clear.contentShape(Rectangle())
+                    .onTapGesture { if seasonListOpen { seasonListOpen = false } }
             }
         }
         .ignoresSafeArea(edges: mass.topSkip)
@@ -702,6 +707,69 @@ struct EpisodesLayer: View {
             episodes = loaded
         }
         if let season { SeriesCache.shared.remember(series) { $0.episodes[season] = loaded } }
+    }
+}
+
+/// One episode in the player's strip: landscape still with progress bar and watched mark,
+/// number and title, runtime. Texts from `Item.stripHeaderLine`/`stripDurationLine`, shared
+/// with the Apple TV strip (`EpisodesStrip`). The running episode is larger (1.2x) than the others, without an outline.
+private struct EpisodeStripTile: View {
+    let model: AppModel
+    let episode: Item
+    let ongoing: Bool
+    let pad: Bool
+
+    private var width: CGFloat { Theme.railsLandscapeWidth(wide: pad) }
+    private var height: CGFloat { Theme.railsLandscapeHeight(wide: pad) }
+
+    /// The running episode is this much larger than the others.
+    private let grow: CGFloat = 1.2
+    /// Picture, 8 gap, header line 16, gap 2, duration line 15.
+    private var tileHeight: CGFloat { height + 8 + 16 + 2 + 15 }
+
+    var body: some View {
+        content
+            .scaleEffect(ongoing ? grow : 1)
+            // The layout grows with it, so neighbours move aside and the row is centered.
+            .frame(width: width * (ongoing ? grow : 1), height: tileHeight * (ongoing ? grow : 1))
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picture(url: model.imageURL(for: episode, maxHeight: 360)
+                           ?? model.landscapeImageURL(for: episode, width: 640),
+                    width: width, height: height, corner: Theme.cornerTile,
+                    // A full bar and a check mark would say the same twice.
+                    progress: episode.isWatched ? nil : episode.watchedShare) {
+                Theme.area.overlay {
+                    Image(icon: episode.tileCharacter, size: 22)
+                        .font(.app(size: 22))
+                        .foregroundStyle(Theme.font)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if episode.isWatched { TileBadge(mark: .watched) }
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: episode.stripHeaderLine)
+                    .font(Theme.tile)
+                    .foregroundStyle(Theme.font)
+                    .lineLimit(1)
+                    .frame(height: 16, alignment: .leading)
+                if let line = episode.stripDurationLine {
+                    Text(verbatim: line)
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                        .lineLimit(1)
+                        .frame(height: 15, alignment: .leading)
+                }
+            }
+            .frame(width: width, alignment: .leading)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: episode.stripHeaderLine))
+        .accessibilityValue(Text(verbatim: [episode.stripDurationLine, episode.tileState]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")))
     }
 }
 

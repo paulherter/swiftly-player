@@ -277,6 +277,15 @@ private struct GiftPresentation: ViewModifier {
         content
             .environment(\.looksPreviewing, flow.looksOpen)
             .modifier(GiftSheetPresenter(flow: flow))
+            #if os(iOS)
+            .overlay(alignment: .bottom) {
+                if flow.showsPreviewBar {
+                    LookPreviewBar()
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(Theme.motionReduced ? nil : Theme.reveal, value: flow.showsPreviewBar)
+            #endif
             // A moment after the home page came up, and again when nothing showed then
             // because the player or another sheet was open.
             .task(id: flow.homeSince) {
@@ -342,7 +351,7 @@ private struct GiftSheetPresenter: ViewModifier {
     func body(content: Content) -> some View {
         #if os(iOS)
         content
-            .sheet(opened: Binding(get: { flow.presented },
+            .sheet(opened: Binding(get: { flow.presented && !flow.showsPreviewBar },
                                    set: { if !$0 { flow.close() } }),
                    dimmed: !flow.looksOpen,
                    light: flow.stage == nil ? lastTone : tone,
@@ -373,9 +382,9 @@ private struct GiftSheetPresenter: ViewModifier {
                         .transition(.opacity)
                     GiftSheet()
                         .background(Theme.area)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous)
                                 .strokeBorder(Theme.line, lineWidth: 1)
                         }
                         .shadow(color: Theme.reason.opacity(0.5), radius: 28, y: 12)
@@ -601,11 +610,26 @@ struct LooksPanel: View {
         let wearable = store.mayWear(selection)
         VStack(alignment: .leading, spacing: 0) {
             Text("Wähl deinen Look")
-                .giftFont(17, .semibold)
+                .giftFont(22, .bold)
+                .tracking(-0.44)
                 .foregroundStyle(Theme.font)
                 .accessibilityAddTraits(.isHeader)
-                .padding(.top, 26)
-                .padding(.trailing, 40)
+                .padding(.top, 24)
+                .padding(.trailing, 50)
+
+            // A look only for supporters (the Mac still previews in the panel) says so, quietly.
+            HStack(spacing: 6) {
+                if !wearable {
+                    Image(icon: "lock.fill", size: 12)
+                        .font(.app(size: 12))
+                        .accessibilityHidden(true)
+                    Text("Nur für Unterstützer")
+                }
+            }
+            .giftFont(13)
+            .foregroundStyle(Theme.fontVeryQuiet)
+            .frame(minHeight: 17, alignment: .leading)
+            .padding(.top, 4)
 
             // **A strip of its own that scrolls sideways**: every look has a column of the
             // same fixed width. The row used to share the panel's width evenly, and its
@@ -710,8 +734,8 @@ struct LooksPanel: View {
             accentRow(selection, look: look)
         }
         .disabled(!wearable)
-        .opacity(wearable ? 1 : 0.5)
-        .background(Theme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
+        .opacity(wearable ? 1 : 0.42)
+        .background(Theme.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .padding(.top, 14)
     }
 
@@ -767,10 +791,10 @@ struct LooksPanel: View {
     private func button(wearable: Bool) -> some View {
         if wearable {
             Button { GiftFlow.shared.use(store.saved) } label: { Text("Verwenden") }
-                .buttonStyle(GiftButton(primary: true))
+                .buttonStyle(PlayButtonStyle())
         } else {
             Button { SupportFlow.shared.keep() } label: { Text("Unterstützer werden") }
-                .buttonStyle(GiftButton(primary: true))
+                .buttonStyle(PlayButtonStyle())
         }
     }
 
@@ -839,7 +863,7 @@ private struct LookChoice: View {
                 tile
                     .overlay {
                         // The ring: 2 pt of the sheet's color, then 2 pt of white.
-                        RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous)
                             .strokeBorder(Theme.font, lineWidth: 2)
                             .padding(-4)
                             .opacity(chosen ? 1 : 0)
@@ -875,9 +899,9 @@ private struct LookChoice: View {
 
     @ViewBuilder private var tile: some View {
         if let icon {
-            LookTile(look: look, size: 56).matchedGeometryEffect(id: "gift", in: icon)
+            LookTile(look: look, size: 60).matchedGeometryEffect(id: "gift", in: icon)
         } else {
-            LookTile(look: look, size: 56)
+            LookTile(look: look, size: 60)
         }
     }
 }
@@ -922,7 +946,7 @@ struct LookTile: View {
             .clipShape(RoundedRectangle(cornerRadius: size * 0.225, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                    .strokeBorder(Theme.tileBorder, lineWidth: 1)
             }
             .accessibilityHidden(true)
     }
@@ -970,7 +994,7 @@ struct GiftButton: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(primary ? Color.white.opacity(configuration.isPressed ? 0.75 : 1)
                                 : (configuration.isPressed ? Theme.raised.opacity(0.7) : Theme.raised),
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
             .scaleEffect(configuration.isPressed && !Theme.motionReduced ? 0.97 : 1)
             .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
             .contentShape(Rectangle())

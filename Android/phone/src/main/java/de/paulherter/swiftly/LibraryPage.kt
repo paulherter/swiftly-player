@@ -303,7 +303,9 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
     BoxWithConstraints(Modifier.fillMaxSize().background(Theme.reason)) {
         // The strip where it means something (switched on, "By name", a grid of titles), and the right
         // margin making room for it so the gaps to the edge and to the posters match (`trailingLane`).
-        val shownLetters = if (app.settings.alphabet && !state.listSelected
+        // Phones have no letter strip any more (iPhone dropped it, no replacement); tablets keep theirs.
+        val phone = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp < 600
+        val shownLetters = if (!phone && app.settings.alphabet && !state.listSelected
                                && state.total >= AlphabetRailMinimumTitles && state.letters.size > 1) state.letters else emptyList()
         val lane = if (shownLetters.isEmpty()) Theme.edgeSpacing else maxOf(Theme.edgeSpacing, AlphabetRailWidth)
         // `Theme.columns(usableNow:)`: three on every phone.

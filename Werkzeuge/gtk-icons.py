@@ -83,6 +83,8 @@ MAP = {
  "x-office-calendar": "calendar_blank", "mail-unread": "tray_arrow_down", "network-workgroup": "globe",
  "network-transmit-receive": "arrows_down_up", "swiftly-heart": "heart_fill", "swiftly-heartline": "heart",
  "swiftly-merken": "bookmark_simple", "swiftly-merken-an": "bookmark_simple_fill",
+ "swiftly-home-fill": "house_fill", "swiftly-film-fill": "film_strip_fill",
+ "swiftly-cards-fill": "cards_three_fill", "swiftly-download-fill": "arrow_circle_down_fill",
  "swiftly-clock": "clock", "swiftly-tag": "tag", "swiftly-tray": "tray",
 }
 os.makedirs(OUT, exist_ok=True)

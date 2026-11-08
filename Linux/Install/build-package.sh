@@ -99,7 +99,7 @@ tree_fill() {
 
 # **Licenses: texts, authors, source, and the offer.**
 #
-# libVLC is LGPL-2.1-or-later, which requires shipping the license text and
+# libmpv is LGPL-2.1-or-later, which requires shipping the license text and
 # a pointer to the source. Three things are installed:
 #   - `/usr/share/doc/$PROGRAMM/`: LICENSE (the app, MPL-2.0),
 #     THIRD-PARTY-NOTICES.md (with the written offer) and the LICENSES
@@ -125,10 +125,10 @@ debian_copyright() {
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Swiftly Player
 Source: https://github.com/paulherter/swiftly-player
-Comment: libVLC and
+Comment: libmpv and
  GTK 4 are not part of this package; they come from the system (packages
- vlc and gtk4) and keep their own licenses (LGPL-2.1-or-later). The source
- code of libVLC is available from VideoLAN, https://www.videolan.org/vlc/,
+ mpv and gtk4) and keep their own licenses (LGPL-2.1-or-later). The source
+ code of libmpv is available from https://mpv.io/,
  and the written offer is in THIRD-PARTY-NOTICES.md. The full license
  texts are in /usr/share/doc/swiftly-jellyfin/LICENSES/.
 
@@ -152,7 +152,7 @@ License: MIT
  The full text is in /usr/share/doc/swiftly-jellyfin/LICENSES/MIT.txt.
 
 License: LGPL-2.1+
- The libraries libVLC and GTK 4, which this program uses, are licensed
+ The libraries libmpv and GTK 4, which this program uses, are licensed
  under the GNU Lesser General Public License, version 2.1 or (at your
  option) any later version. The full text is in
  /usr/share/doc/swiftly-jellyfin/LICENSES/LGPL-2.1-or-later.txt and in
@@ -175,7 +175,7 @@ Version: $debVersion
 Section: video
 Priority: optional
 Architecture: amd64
-Depends: libgtk-4-1 (>= 4.14), libvlc5 | libvlc-bin, vlc-plugin-base, libc6 (>= 2.39)
+Depends: libgtk-4-1 (>= 4.14), libmpv2, libc6 (>= 2.39)
 Maintainer: Paul Herter <accounts@paulherter.de>
 Installed-Size: $size
 Homepage: https://github.com/paulherter/swiftly-player
@@ -205,7 +205,7 @@ License:        MPL-2.0
 URL:            https://github.com/paulherter/swiftly-player
 BuildArch:      x86_64
 Requires:       gtk4 >= 4.14
-Requires:       vlc-libs
+Requires:       mpv-libs
 AutoReqProv:    no
 
 %description

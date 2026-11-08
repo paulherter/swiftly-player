@@ -94,11 +94,11 @@ private struct BobbingIcon: View {
         Image(name)
             .resizable()
             .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous))
             .overlay {
                 if picks, !Theme.motionReduced {
                     // pick: off, then on from 70 to 92 percent of a 4.8 s cycle.
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: Theme.cornerCard, style: .continuous)
                         .strokeBorder(Theme.font, lineWidth: 2)
                         .padding(-4)
                         .keyframeAnimator(initialValue: 0.0, repeating: true) { ring, value in
@@ -301,7 +301,7 @@ private struct ProfileIntroPanel: View {
                 .font(.app(size: 14, weight: .semibold))
                 .foregroundStyle(accent ? Theme.accent : Theme.font)
                 .frame(width: 32, height: 32)
-                .background(Theme.raised, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
                 .accessibilityHidden(true)
             text
                 .growing(15)

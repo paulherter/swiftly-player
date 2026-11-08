@@ -148,7 +148,7 @@ fun ProfilePage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -
                 LogFile.distribute(context)
             }
             SeparatorLine()
-            ProfileRow(Glyph.Document, translated("Open-Source-Lizenzen"), translated("Und der Quelltext von VLCKit")) {
+            ProfileRow(Glyph.Document, translated("Open-Source-Lizenzen"), translated("Und die Quelltexte der Bausteine")) {
                 open(Destination("lizenzen", translated("Open-Source-Lizenzen"), "Lizenzen"))
             }
         }
@@ -208,11 +208,12 @@ fun QuickConnectPage(app: SwiftlyApplication, back: () -> Unit) {
 fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit, open: (Destination) -> Unit = {}) {
     val e = app.settings
     val bitrates = remember { selectionRead(Kern.bitrateLevels()) }
-    // The same three values as `Settings.playerEngine`.
-    val engines = remember { listOf(
-        Choice("dolbyVision", translated("VLC, Dolby Vision mit ExoPlayer")),
-        Choice("exoplayer", translated("Immer ExoPlayer")),
-        Choice("vlc", translated("Immer VLC"))) }
+    val passthrough = remember { listOf(
+        Choice("auto", translated("Automatisch")),
+        Choice("off", translated("Aus (nur PCM)")),
+        Choice("ac3", translated("Nur Dolby Digital")),
+        Choice("all", translated("Alle erzwingen (auch DTS, TrueHD)"))) }
+    val dv7 = remember { listOf(Choice("auto", translated("Automatisch")), Choice("off", translated("Aus (spielt als HDR10)"))) }
     val buffer = remember { JSONArray(Kern.bufferLevels()).let { a -> (0 until a.length()).map { a.getJSONObject(it).let { o -> Choice(o.getString("wert"), o.getString("text")) } } } }
     val seconds = remember { JSONArray(Kern.span()).let { a -> (0 until a.length()).map { a.getInt(it) } } }
     val audioChoice = remember { selectionRead(Kern.languages("")) }
@@ -278,8 +279,12 @@ fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit, open: (Desti
                 sheet(translated("Puffer"), buffer, e.bufferLevel) { e.bufferLevel = it }
             }
             SeparatorLine()
-            ValueRow(Glyph.Film, translated("Player"), value = engines.firstOrNull { it.value == e.playerEngine }?.text) {
-                sheet(translated("Player"), engines, e.playerEngine) { e.playerEngine = it }
+            ValueRow(Glyph.Film, translated("Surround-Ton durchreichen"), value = passthrough.firstOrNull { it.value == e.passthrough }?.text) {
+                sheet(translated("Surround-Ton durchreichen"), passthrough, e.passthrough) { e.passthrough = it }
+            }
+            SeparatorLine()
+            ValueRow(Glyph.Film, translated("Dolby Vision Profil 7"), value = dv7.firstOrNull { it.value == e.dolbyVision7 }?.text) {
+                sheet(translated("Dolby Vision Profil 7"), dv7, e.dolbyVision7) { e.dolbyVision7 = it }
             }
             SeparatorLine()
             // Moved here from Darstellung, as on iOS (`PlaybackSettingsView`).
@@ -470,7 +475,7 @@ fun SettingsPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () 
         }
         // "Support Swiftly" and the app icon, last, as on iPhone.
         de.paulherter.swiftly.support.SupportSettingsGroup(app, open)
-        de.paulherter.swiftly.support.VersionLine(app, "${SwiftlyApplication.VersionRow} · libVLC 3.6.3",
+        de.paulherter.swiftly.support.VersionLine(app, "${SwiftlyApplication.VersionRow} · Media3 1.9.4",
              Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 26.dp))
     }
 }

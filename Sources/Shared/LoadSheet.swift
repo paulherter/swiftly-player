@@ -171,8 +171,8 @@ struct LoadSheet: View {
     private func detail(_ symbol: String, _ was: LocalizedStringKey,
                         _ value: String, cautionary: Bool = false) -> some View {
         HStack(spacing: 14) {
-            Image(icon: symbol, size: 17)
-                .font(.app(size: 17))
+            Image(icon: symbol, size: Theme.rowTitleSize)
+                .font(.app(size: Theme.rowTitleSize))
                 .foregroundStyle(cautionary ? Theme.warning : Theme.font)
                 .frame(width: 20)
             Text(was)
@@ -203,8 +203,8 @@ struct LoadSheet: View {
     /// download selection, so movie and series have the same place.
     private var qualityRow: some View {
         HStack(spacing: 14) {
-            Image(icon: "sparkles", size: 17)
-                .font(.app(size: 17))
+            Image(icon: "sparkles", size: Theme.rowTitleSize)
+                .font(.app(size: Theme.rowTitleSize))
                 .foregroundStyle(Theme.font)
                 .frame(width: 20)
                 .accessibilityHidden(true)
@@ -226,8 +226,8 @@ struct LoadSheet: View {
     /// **Audio as a row with the choice on the right**, built like the quality row.
     private var audioRow: some View {
         HStack(spacing: 14) {
-            Image(icon: "speaker.wave.2", size: 17)
-                .font(.app(size: 17))
+            Image(icon: "speaker.wave.2", size: Theme.rowTitleSize)
+                .font(.app(size: Theme.rowTitleSize))
                 .foregroundStyle(Theme.font)
                 .frame(width: 20)
                 .accessibilityHidden(true)

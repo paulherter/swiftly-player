@@ -1,5 +1,5 @@
 <?php
-// Router for the local preview: same rules as Website/blog/.htaccess, so /blog/
+// Router for the local preview: same rules as Website/blog/.htaccess and whats-new/.htaccess, so /blog/ and /whats-new/
 // answers here like it does on the web host. PHP's built-in server ignores
 // .htaccess. Static files are left to it (return false).
 $pfad   = rawurldecode(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? '/');
@@ -25,4 +25,12 @@ if (preg_match('#^/blog/titel/([a-z0-9]+(?:-[a-z0-9]+)*)\.(jpg|svg)$#', $pfad, $
 if (preg_match('#^/blog/([a-z0-9]+(?:-[a-z0-9]+)*)/?$#', $pfad, $m) && !is_dir("$blog/{$m[1]}")) {
     return laufen("$blog/artikel.php", ['slug' => $m[1]]);
 }
+// /whats-new/ (rules as in whats-new/.htaccess)
+$wn = $wurzel . '/whats-new';
+if ($pfad === '/whats-new')            { header('Location: /whats-new/', true, 301); return true; }
+if ($pfad === '/whats-new/')           { return laufen("$wn/index.php"); }
+if ($pfad === '/whats-new/latest.json') { return laufen("$wn/latest.php"); }
+if (preg_match('#^/whats-new/(\d+\.\d+(?:\.\d+)?)$#', $pfad, $m)) { header('Location: /whats-new/' . $m[1] . '/', true, 301); return true; }
+if (preg_match('#^/whats-new/(\d+\.\d+(?:\.\d+)?)/$#', $pfad, $m)) { return laufen("$wn/post.php", ['v' => $m[1]]); }
+if (preg_match('#^/whats-new/(releases|_lib\.php|_shell\.html)(/.*)?$#', $pfad)) { http_response_code(404); echo "404"; return true; }
 return false;

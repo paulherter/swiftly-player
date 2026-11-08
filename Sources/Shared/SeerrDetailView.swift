@@ -60,31 +60,6 @@ struct SeerrDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // **Wide, the same header as a real detail page.**
-                    //
-                    // Landscape used to show the narrow layout here: a strip across the full width,
-                    // title below, button below. On a 1000 point wide window that is the mail slot
-                    // `HeroHeader` was built against, and the page stood next to movie and series like
-                    // from another app. On the Mac that is exactly the difference: poster and text
-                    // side by side, the description as its own block below.
-                    //
-                    // No progress: what does not exist here yet, nobody has half seen.
-                    if wide {
-                        HeroHeader(image: hit.backdrop(),
-                                 poster: hit.poster(),
-                                 title: hit.title,
-                                 secondaryLine: secondaryLine) {
-                            VStack(alignment: .leading, spacing: 14) {
-                                proofRow
-                                primaryButton
-                            }
-                        }
-                        description
-                            .frame(maxWidth: Theme.readWidth, alignment: .leading)
-                            .padding(.horizontal, Theme.edgePageWide)
-                            .padding(.top, 18)
-                            .padding(.bottom, 22)
-                    } else {
                     hero
 
                     VStack(alignment: .leading, spacing: 14) {
@@ -94,7 +69,6 @@ struct SeerrDetailView: View {
                     }
                     .padding(.horizontal, Theme.margin(wide: wide))
                     .padding(.top, 14)
-                    }
 
                     // **Two rows, no tabs.** Exactly as on the movie page: a row of cast, below it a
                     // row of similar titles. As tabs with a grid this was a wall of twenty heads.
@@ -114,7 +88,8 @@ struct SeerrDetailView: View {
             // The space in which `Heldbild` measures its stretch. Without it the image stayed put while scrolling instead of moving along.
             .coordinateSpace(.named("blatt"))
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
-                offset = new
+                let clamped = min(max(new, 0), Theme.heroHeightValue - 110)
+                if clamped != offset { offset = clamped }
             }
             // Without this the safe area's black strip shows above the image.
             .ignoresSafeArea(edges: .top)
@@ -247,7 +222,7 @@ struct SeerrDetailView: View {
                 //
                 // Height, corner and font size live in the style and not here; a rebuilt button
                 // sat visibly lower and rounder.
-                .buttonStyle(PrimaryButtonStyle(stretches: !wide))
+                .buttonStyle(PrimaryButtonStyle(stretches: true))
                 .disabled(running)
                 // The change of label should be visible, otherwise nobody reads that something changed.
                 .animation(Theme.leap, value: confirmed)

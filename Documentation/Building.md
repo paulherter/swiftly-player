@@ -4,13 +4,6 @@
 git clone https://github.com/paulherter/swiftly-player.git
 cd swiftly-player
 
-# VLCKit is 2.7 GB and not in this repository.
-# NOTE: this fetches VideoLAN's official build, which has a known bug —
-# seeking inside MKV files served over HTTP reads from the start of the file.
-# The fix is in Werkzeuge/vlckit-patches/ and must be applied to a VLCKit
-# build for seeking to work. See Documentation/VLCKit.md.
-Werkzeuge/vlckit-fetch.sh
-
 # The .xcodeproj is generated, not checked in.
 brew install xcodegen && xcodegen generate
 
@@ -18,6 +11,13 @@ export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 xcodebuild -project Swiftly.xcodeproj -scheme Swiftly-iOS \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 ```
+
+The Apple player, AetherEngine, and its FFmpeg frameworks come in as Swift
+packages (`Packages/SwiftlyAether`) and are resolved by Xcode on the first
+build; nothing has to be fetched by hand. Windows and Linux need libmpv, and
+Linux needs GTK 4.14 or newer. Android uses Media3 with an FFmpeg audio
+decoder that `Werkzeuge/media3-ffmpeg-bauen.sh` builds. Which engine plays on
+which system is in [Players](Players.md).
 
 Logic lives in `Packages/JellyfinKit` and is testable without a simulator:
 

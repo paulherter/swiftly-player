@@ -25,7 +25,7 @@ struct PlaybackSettingsView: View {
     @State private var shownList: ListKind? = .audio
 
     private enum ListKind: String, Identifiable {
-        case bitrate, audio = "ton", subtitle = "untertitel", back = "zurueck", forward = "vor", buffer = "puffer", engine = "abspieler"
+        case bitrate, audio = "ton", subtitle = "untertitel", back = "zurueck", forward = "vor"
         var id: String { rawValue }
     }
 
@@ -141,25 +141,6 @@ struct PlaybackSettingsView: View {
                       value: "\(model.forwardSeconds) s",
                       action: { openIt(.forward) })
             SheetLine()
-            // **With the player, not under quality.** It changes nothing about the picture,
-            // only how much buffer the player holds before a shaky connection breaks
-            // through.
-            ValueRow(symbol: "wifi.exclamationmark", title: Text("Puffer"),
-                      value: model.bufferLevel.name,
-                      action: { openIt(.buffer) })
-            SheetLine()
-            // Same place and words as "Player" on Android. Applies from the next title.
-            ValueRow(symbol: "play.rectangle", title: Text("Player"),
-                      value: {
-                          // The row says what it does; the sheet keeps the full names.
-                          switch model.playerEngine {
-                          case .dolbyVision: return String(localized: "Automatisch")
-                          case .avPlayer: return "AVPlayer"
-                          case .vlc: return "VLC"
-                          }
-                      }(),
-                      action: { openIt(.engine) })
-            SheetLine()
             // Moved here from Darstellung; missing on iPad on purpose, see `Orientierung`.
             if Orientierung.landscapeLockPossible {
                 ChoiceRow(symbol: "rectangle.on.rectangle",
@@ -246,8 +227,6 @@ struct PlaybackSettingsView: View {
         case .subtitle: "Untertitel"
         case .back:    "Zurückspulen"
         case .forward:        "Vorspulen"
-        case .buffer:     "Puffer"
-        case .engine:     "Player"
         case nil:         ""
         }
     }
@@ -259,20 +238,6 @@ struct PlaybackSettingsView: View {
                 SelectionEntry(id: "b\(rung.value)", text: Bitrate.text(rung.value),
                                selected: rung.value == model.bitratesLimit) {
                     model.bitratesLimit = rung.value
-                }
-            }
-        case .buffer:
-            BufferLevel.allCases.map { rung in
-                SelectionEntry(id: rung.rawValue, text: rung.name,
-                               selected: rung == model.bufferLevel) {
-                    model.bufferLevel = rung
-                }
-            }
-        case .engine:
-            PlayerEngineSetting.allCases.map { choice in
-                SelectionEntry(id: choice.rawValue, text: choice.name,
-                               selected: choice == model.playerEngine) {
-                    model.playerEngine = choice
                 }
             }
         case .audio:
@@ -394,15 +359,15 @@ struct ValueRow: View {
                         .lineLimit(1)
                 }
                 if (action != nil && !inPlace) || chevron {
-                    Image(icon: "chevron.right", size: 13)
-                        .font(.app(size: 13, weight: .semibold))
+                    Image(icon: "chevron.right", size: Theme.chevronSize)
+                        .font(.app(size: Theme.chevronSize, weight: .semibold))
                         // See RootView: 28 percent is 2.50:1.
                         .foregroundStyle(Theme.font)
                         .accessibilityHidden(true)
                 }
                 if inPlace, action != nil {
-                    Image(icon: "arrow.clockwise", size: 13)
-                        .font(.app(size: 13, weight: .semibold))
+                    Image(icon: "arrow.clockwise", size: Theme.chevronSize)
+                        .font(.app(size: Theme.chevronSize, weight: .semibold))
                         .foregroundStyle(Theme.font)
                         .accessibilityHidden(true)
                 }
