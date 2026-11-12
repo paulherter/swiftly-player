@@ -195,7 +195,8 @@ import Testing
         }
         let beginning = ContinuousClock.now
         #expect(await Self.end(feed) == .end(last: .failed))
-        #expect(ContinuousClock.now - beginning < .milliseconds(400))
+        // Without the clock it would poll on for ten ticks of 160 ms; a slow machine still ends well below that.
+        #expect(ContinuousClock.now - beginning < .milliseconds(1000))
     }
 
     @Test func remainingCountsFromUnder() async {

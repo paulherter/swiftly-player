@@ -248,8 +248,11 @@ fn episode_toggle_failure_says_why_and_series_toggle_goes_back() {
         Some(account("TOKEN-A")),
     )
     .unwrap();
+    // Hold the failing answer back, so the optimistic state is seen before the revert.
+    fail.gate.close();
     vm.send(SeriesIntent::SetWatchlist { on: true });
     assert!(vm.button().favorite);
+    fail.gate.open();
     wait_for("revert", || vm.button().toggle_error.is_some());
     assert!(!vm.button().favorite);
     vm.send(SeriesIntent::SetEpisodeWatched {
