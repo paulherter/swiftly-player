@@ -26,7 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.SwiftlyApplication
-import de.paulherter.swiftly.core.Kern
+import de.paulherter.swiftly.rustcore.legacySupportKeyStatus
 import de.paulherter.swiftly.pressText
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.InputField
@@ -67,7 +67,7 @@ object FlavorSupport {
             // The renewal runs on a background thread; state and records change on the main thread.
             private val main = android.os.Handler(android.os.Looper.getMainLooper())
             override fun grant(license: SupporterKeyCheck.License, fresh: Boolean) {
-                val status = Kern.supportKeyStatus(license.issuedAtMs)
+                val status = legacySupportKeyStatus(license.issuedAtMs)
                 main.post { support.becameSupporter(status, fresh = fresh, plan = license.plan) }
             }
             override fun withdraw() { main.post { support.keyStatusGone() } }

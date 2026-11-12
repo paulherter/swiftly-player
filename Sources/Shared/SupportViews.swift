@@ -287,7 +287,7 @@ struct SupportDebugRows: View {
                  action: { GiftFlow.shared.stage = .offer(.halloween) })
         ValueRow(symbol: "sparkles", title: Text(verbatim: "Show What's New now"),
                  action: {
-                     if let entry = WhatsNewEntry.bundled(for: "1.0.8") { GiftFlow.shared.stage = .whatsNew(entry) }
+                     if let entry = WhatsNewPage.bundled(for: "1.0.8") { GiftFlow.shared.stage = .whatsNew(entry) }
                  })
         ValueRow(symbol: "arrow.counterclockwise", title: Text(verbatim: "Reset support state"),
                  action: {

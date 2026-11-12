@@ -142,7 +142,7 @@ fun SwiftlyApplication.sharedListen(run: kotlinx.coroutines.CoroutineScope) {
         var state = 0L
         var errorWatched = 0
         while (true) {
-            val raw = runCatching { withContext(Dispatchers.IO) { kern.syncPlayStatus(state).await() } }.getOrNull()
+            val raw = runCatching { withContext(Dispatchers.IO) { rk.syncPlayStatus(state).await() } }.getOrNull()
             if (raw == null) { kotlinx.coroutines.delay(1000); continue }
             val o = JSONObject(raw)
             state = o.optLong("stand", state)
@@ -157,7 +157,7 @@ fun SwiftlyApplication.sharedListen(run: kotlinx.coroutines.CoroutineScope) {
     }
     run.launch {
         while (true) {
-            val raw = runCatching { withContext(Dispatchers.IO) { kern.syncPlayRequest().await() } }.getOrNull()
+            val raw = runCatching { withContext(Dispatchers.IO) { rk.syncPlayRequest().await() } }.getOrNull()
             if (raw.isNullOrEmpty()) { kotlinx.coroutines.delay(500); continue }
             val o = JSONObject(raw)
             play.value = PlayRequest(o.getString("titel"), o.optDouble("ab", 0.0))
@@ -196,7 +196,7 @@ fun sharedCreateOpen(app: SwiftlyApplication, titleIdentifier: String, titleLine
         fun open() {
             focus.clearFocus()
             run.launch {
-                if (withContext(Dispatchers.IO) { app.kern.syncPlayCreate(name, titleIdentifier).await() }) close()
+                if (withContext(Dispatchers.IO) { app.rk.syncPlayCreate(name, titleIdentifier).await() }) close()
             }
         }
         Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(bottom = 12.dp)) {
@@ -234,7 +234,7 @@ fun sharedJoinOpen(app: SwiftlyApplication, g: SharedGroup) {
             Text(translated("Pause und Springen gelten für alle."), style = Theme.small, color = Theme.fontVeryQuiet,
                  modifier = Modifier.padding(top = 10.dp, bottom = 18.dp))
             PrimaryButton(translated("Beitreten"), released = !status.works, lockedArea = Theme.raised) {
-                run.launch { if (withContext(Dispatchers.IO) { app.kern.syncPlayJoin(g.id).await() }) close() }
+                run.launch { if (withContext(Dispatchers.IO) { app.rk.syncPlayJoin(g.id).await() }) close() }
             }
         }
         SheetLine()
@@ -258,7 +258,7 @@ fun sharedSelectionOpen(app: SwiftlyApplication, continueWatching: (Offering) ->
         app.gemeinsam.value.openGroups.forEach { g ->
             SheetLine()
             SelectionRow(Glyph.ClusterFilled, g.name, werWatch(g), translated("Beitreten")) {
-                run.launch { if (withContext(Dispatchers.IO) { app.kern.syncPlayJoin(g.id).await() }) close() }
+                run.launch { if (withContext(Dispatchers.IO) { app.rk.syncPlayJoin(g.id).await() }) close() }
             }
         }
         SheetLine()
@@ -297,7 +297,7 @@ fun ReturnPathStrip(app: SwiftlyApplication, bottom: androidx.compose.ui.unit.Dp
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(translated("%@ verlassen", remembered[0].orEmpty()), style = Theme.body.copy(fontSize = 13.sp),
                      color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Box(Modifier.heightIn(min = 44.dp).tapOn { run.launch { withContext(Dispatchers.IO) { app.kern.syncPlayAgainJoin().await() } } },
+                Box(Modifier.heightIn(min = 44.dp).tapOn { run.launch { withContext(Dispatchers.IO) { app.rk.syncPlayAgainJoin().await() } } },
                     contentAlignment = Alignment.Center) {
                     Text(translated("Wieder beitreten"), style = Theme.body.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
                          color = Theme.accent)

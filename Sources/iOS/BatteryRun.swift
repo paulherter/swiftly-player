@@ -41,7 +41,7 @@ enum BatteryRun {
 
     static func wish(_ model: AppModel) async -> PlayRequest? {
         guard let client = model.client else { log("nicht angemeldet"); return nil }
-        let hits = await model.search("Mentalist")
+        let hits = await model.search("Lighthouse")
         guard let series = hits?.first(where: { $0.type == "Series" }) else {
             log("keine Serie: \(hits.map { $0.map { "\($0.type ?? "?") \($0.name)" } } ?? ["Fehler"])")
             return nil

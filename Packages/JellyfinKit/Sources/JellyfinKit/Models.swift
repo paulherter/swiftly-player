@@ -480,6 +480,14 @@ public struct Person: Codable, Sendable, Identifiable, Hashable {
     public let type: String?
     public let primaryImageTag: String?
 
+    public init(id: String, name: String, role: String? = nil, type: String? = nil, primaryImageTag: String? = nil) {
+        self.id = id
+        self.name = name
+        self.role = role
+        self.type = type
+        self.primaryImageTag = primaryImageTag
+    }
+
     enum CodingKeys: String, CodingKey {
         case id = "Id"
         case name = "Name"
@@ -648,7 +656,10 @@ public struct MediaStream: Codable, Sendable, Equatable {
                 isForced: Bool? = nil, isExternal: Bool? = nil,
                 title: String? = nil, deliveryUrl: String? = nil,
                 isHearingImpaired: Bool? = nil, aspectRatio: String? = nil,
-                isOriginal: Bool? = nil) {
+                isOriginal: Bool? = nil, containerIndex: Int? = nil,
+                deliveryMethod: String? = nil) {
+        self.deliveryMethod = deliveryMethod
+        self.containerIndex = containerIndex
         self.isOriginal = isOriginal
         self.title = title; self.deliveryUrl = deliveryUrl
         self.isHearingImpaired = isHearingImpaired; self.aspectRatio = aspectRatio
@@ -696,7 +707,20 @@ public struct MediaStream: Codable, Sendable, Equatable {
     /// Where the server delivers an external subtitle file, relative to the server.
     /// Comes only if the device profile reports `External` for the format.
     public let deliveryUrl: String?
+    /// How the server delivers a subtitle in this answer (`External`, `Embed`, `Encode`, `Hls`, `Drop`).
+    public let deliveryMethod: String?
+    /// The server hands this subtitle out as its own file: a file next to the film, or (transcode) a track of the
+    /// container delivered as `External` with an address while ``isExternal`` stays false.
+    public var isDeliveredFile: Bool {
+        isExternal == true || (deliveryMethod == "External" && !(deliveryUrl ?? "").isEmpty)
+    }
     public let index: Int?
+    /// The stream's number inside the file, where the server's ``index`` is not that number: Plex's `index` is its
+    /// stream id (unique per item), the engine counts the file's streams. Nil where ``index`` already is it
+    /// (Jellyfin, Emby). See ``engineIndex``.
+    public let containerIndex: Int?
+    /// The number the playback engine knows this track under.
+    public var engineIndex: Int? { containerIndex ?? index }
     public let height: Int?
     public let width: Int?
     /// Dynamic range, transfer curve and primaries, see ``ColorRange``.
@@ -787,7 +811,9 @@ public struct MediaStream: Codable, Sendable, Equatable {
         case aspectRatio = "AspectRatio"
         case title = "Title"
         case deliveryUrl = "DeliveryUrl"
+        case deliveryMethod = "DeliveryMethod"
         case index = "Index"
+        case containerIndex = "ContainerIndex"
         case realFrameRateRaw = "RealFrameRate"
         case averageFrameRateRaw = "AverageFrameRate"
     }
@@ -844,3 +870,24 @@ public struct MediaStream: Codable, Sendable, Equatable {
         }
     }
 }
+
+extension MediaSource {
+    /// The track number the playback engine knows a stream under, for the server's `Index` of it: the stream's place in
+    /// the file (Plex numbers its streams by id), else the `Index` itself (Jellyfin, Emby, a downloaded file).
+    public func engineTrackIndex(forServerIndex index: Int) -> Int {
+        (mediaStreams ?? []).first { $0.index == index }?.engineIndex ?? index
+    }
+}
+
+extension MediaSource {
+    /// **AV1 Dolby Vision profile 10.0**: the picture is IPT-PQ-c2 with no HDR10 base layer under it, so only a player that
+    /// applies the Dolby Vision metadata shows it right. AVPlayer on the iPhone 15 Pro reads it as plain HDR10 (the picture is
+    /// green with colour artefacts: measured on a Plex title, `videoFormat=hdr10 subType=dav1`), and the engine's software path
+    /// cannot do it either. There is no base layer to fall back to (unlike 10.1 / 10.4), so the title must not start as it is.
+    public var isAV1DolbyVisionWithoutBaseLayer: Bool {
+        guard let video = (mediaStreams ?? []).first(where: { $0.type == "Video" }),
+              video.codec?.lowercased() == "av1", video.dvProfile == 10 else { return false }
+        return (video.dvBlSignalCompatibilityId ?? 0) == 0
+    }
+}
+

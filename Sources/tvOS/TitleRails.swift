@@ -166,6 +166,10 @@ struct TitleStrip: View {
     let items: [Item]
     /// Extras do not open a page, they play at once.
     var start: ((Item) -> Void)?
+    /// The core's wording and picture of the tiles, by title id (portrait strips only).
+    var looks: [String: RustTileLook]? = nil
+    /// A tile came into view (the person page loads the next page at the end).
+    var more: ((String) -> Void)? = nil
 
     var body: some View {
         strip {
@@ -180,9 +184,8 @@ struct TitleStrip: View {
                     .buttonStyle(TileStyle())
                 } else {
                     NavigationLink(value: item) {
-                        TileContent(image: model.imageURL(for: item, maxHeight: 600,
-                                                          portrait: true),
-                                     title: item.name,
+                        TileContent(image: looks?[item.id]?.image ?? model.portraitURL(item),
+                                     title: looks?[item.id]?.title ?? item.name,
                                      progress: item.userData?.playedPercentage
                                          .map { $0 / 100 },
                                      withUnderRow: false,
@@ -195,6 +198,7 @@ struct TitleStrip: View {
                     }
                     .buttonStyle(TileStyle())
                     .tileMenu(item, model: model)
+                    .onAppear { more?(item.id) }
                 }
             }
         }

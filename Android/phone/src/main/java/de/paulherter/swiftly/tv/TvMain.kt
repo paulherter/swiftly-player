@@ -155,7 +155,7 @@ fun TvMain(app: SwiftlyApplication) {
         app.seerrLoad()
         app.serverNameLoad()
         app.postConnect()
-        app.kern.remoteControlStart().await()
+        app.rk.remoteControlStart().await()
     }
     // "Continue here": taken from the phone (`MainScreen`, `Takeover.kt`). tvOS shows the badge on
     // every root page. Every five seconds while the app is in front; `offeringsFetch()` stays
@@ -208,7 +208,7 @@ fun TvMain(app: SwiftlyApplication) {
         // Only a Jellyfin id, like `PathPart.isId` in the package: no `..%2F` into the server address.
         val id = address.lastPathSegment?.takeIf { Regex("[A-Za-z0-9-]{1,64}").matches(it) } ?: return@LaunchedEffect
         section = TvSection.Start
-        runCatching { titleRead(withContext(Dispatchers.IO) { app.kern.title(id).await() }) }.getOrNull()?.let { t ->
+        runCatching { titleRead(withContext(Dispatchers.IO) { app.rk.title(id).await() }) }.getOrNull()?.let { t ->
             if (t.planPresent) de.paulherter.swiftly.playOrChoose(app, t, id, t.resumeFrom) else open(Destination(id, t.name, t.type))
         }
     }
@@ -220,6 +220,7 @@ fun TvMain(app: SwiftlyApplication) {
         val intent = (context as? android.app.Activity)?.intent ?: return@LaunchedEffect
         val page = intent.getStringExtra("page") ?: return@LaunchedEffect
         val id = intent.getStringExtra("pageId").orEmpty()
+        de.paulherter.swiftly.AppLog.writeOut("[Debug] Seite $page $id")
         delay(2500)
         when (page) {
             "movies" -> section = TvSection.Movies
@@ -232,8 +233,14 @@ fun TvMain(app: SwiftlyApplication) {
             "support" -> app.support.tvPanel.value = de.paulherter.swiftly.support.TvSupportPanel.Ask
             "movie" -> open(Destination(id, "", "Movie"))
             "series-detail" -> open(Destination(id, "", "Series"))
-            "player" -> runCatching { titleRead(withContext(Dispatchers.IO) { app.kern.title(id).await() }) }.getOrNull()
-                ?.let { t -> de.paulherter.swiftly.playOrChoose(app, t, id, 0.0) }
+            // The debug sign-in by launch extras may still be running: ask again until the title answers.
+            "player" -> for (attempt in 1..15) {
+                val title = runCatching { titleRead(withContext(Dispatchers.IO) { app.rk.title(id).await() }) }
+                    .onFailure { de.paulherter.swiftly.AppLog.writeOut("[Debug] Titel $id: ${it.message}") }.getOrNull()
+                // Straight to the player (a title with several versions would ask first, which needs a tap).
+                if (title != null) { app.play.value = de.paulherter.swiftly.PlayRequest(id, null); break }
+                delay(1000)
+            }
         }
     }
 
@@ -279,7 +286,7 @@ fun TvMain(app: SwiftlyApplication) {
                     if (target == null) {
                         Box(Modifier.fillMaxSize().focusRequester(content).focusGroup()) {
                             when (b) {
-                                // Start draws no look glow at all (Paul: the extra glow must not be on Home).
+                                // Start draws no look glow at all (the extra glow must not be on Home).
                                 TvSection.Start -> TvStartPage(app, open)
                                 TvSection.Movies -> TvLibrary(app, "movies", de.paulherter.swiftly.offeredFilters(listOf("alle", "angefangen", "merkliste", "ungesehen"), app.settings.watchlist), open)
                                 TvSection.Series -> TvLibrary(app, "tvshows", de.paulherter.swiftly.offeredFilters(listOf("alle", "angefangen", "merkliste"), app.settings.watchlist), open)
@@ -565,7 +572,7 @@ private fun HeaderBar(app: SwiftlyApplication, active: TvSection, select: (TvSec
                             it.findRootCoordinates().size.width.toFloat(), margin = TvSpec.accountSwitchTargetMargin * density)
                     }
                     .graphicsLayer { alpha = if (transition != null && !transition.replaced) 0f else 1f }) {
-                SubcomposeAsyncImage(model = app.kern.userImage(160).orElse(null), contentDescription = translated("Profil"),
+                SubcomposeAsyncImage(model = app.rk.userImage(160), contentDescription = translated("Profil"),
                     contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape).background(Theme.raised),
                     error = { AccountCircle(app.username(), null, TvSpec.headerProfileImage) })
             }
@@ -584,7 +591,7 @@ private fun takeoverCharacter(art: String): Glyph = when (art) {
 /**
  * Mirrors tvOS `Uebernahmeabzeichen`: "Playing on iPhone, continue here"; one line at rest, the
  * title joins on focus. On the phone the same action sits in `TakeoverCharacter` (`Takeover.kt`);
- * the logic (`app.kern.adopt`, `Angebot`) is shared, only the drawing is tvOS-specific:
+ * the logic (`rk.adopt`, `Angebot`) is shared, only the drawing is tvOS-specific:
  * capsule instead of circle.
  *
  * Several offers open `TvPanel` instead of a dedicated selection sheet, as on tvOS

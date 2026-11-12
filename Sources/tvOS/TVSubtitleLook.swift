@@ -82,9 +82,6 @@ struct TVSubtitleLookView: View {
                 .foregroundStyle(Theme.font)
             SubtitlePreview(look: trial ?? look, cornerRadius: 24)
             VStack(alignment: .leading, spacing: 8) {
-                if VLCPlayerView.playersOpen {
-                    Text("Gilt ab dem nächsten Video.")
-                }
                 Text("Gilt für Untertitel aus Text. Die von Blu-rays sind Bilder und bleiben, wie sie sind.")
             }
             .font(.app(size: 24))

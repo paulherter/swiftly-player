@@ -1,0 +1,149 @@
+BackButton	Mobile		Navigation	17
+BarGlass	Mobile		Navigation	0
+BlurHeader	Mobile		Navigation	0
+CloseButton	Mobile		Navigation	1
+DetailHeader	Mobile,TV	Top;TV: Series	Navigation,TV Detail	2
+HeaderBlur	Mobile		Navigation	0
+HeaderHistory	Mobile		Navigation	0
+HeaderTargets	Mobile		Navigation	5
+MoodEdge	Mobile		Navigation	0
+NavBar	Mobile	Downloads	Navigation	0
+NavBarDownloads	Mobile		Navigation	3
+PageTab	Mobile		Navigation	0
+PagesArrow	Mobile		Navigation	0
+SectionButton	Mobile	Badge;Inactive	Navigation	0
+SelectionSheet	Mobile		Navigation	0
+Sidebar	Desktop,Mobile	Desktop: Downloads open;Desktop: Filme;Desktop: Profile	Navigation,Desktop	33
+StatusBar	Mobile		Navigation	70
+SubpageBackdrop	Mobile		Navigation	0
+SubpageHeader	Desktop,Mobile		Navigation,Desktop	78
+TabBar	Mobile	Filme;Serien;Suche	Navigation	7
+ValueRail	Mobile		Navigation	0
+ActionButton	Mobile	Active;Boxed;Icon only	Buttons and Inputs	0
+ActionRail	Mobile		Buttons and Inputs	2
+CodeBoxes	Desktop,Mobile		Buttons and Inputs,Desktop	3
+EditButton	Mobile	Editing	Buttons and Inputs	0
+DeleteBar	Mobile	Disabled	Buttons and Inputs	0
+ExpandList	Mobile	Open	Buttons and Inputs	0
+InputField	Mobile,TV	TV: Focused	Buttons and Inputs,TV	23
+LoadField	Mobile		Buttons and Inputs	0
+LoadingSpinner	Mobile		Buttons and Inputs	0
+MoreEpisodesButton	Mobile		Buttons and Inputs	0
+PrimaryButton	Desktop,Mobile	Desktop: Play	Buttons and Inputs,Desktop	38
+SearchField	Desktop,Mobile	Filled;Desktop: Typed	Buttons and Inputs,Desktop	3
+SelectionChip	Mobile	On	Buttons and Inputs	0
+ShelfControls	Mobile		Buttons and Inputs	2
+TimeSlider	Mobile	Scrubbing	Buttons and Inputs	0
+ToggleSwitch	Desktop,Mobile,TV	Off;On;Desktop: Off;TV: Off;TV: Off on focus	Buttons and Inputs,Desktop,TV Settings	56
+ValuePill	Mobile		Buttons and Inputs	3
+AdvancedSection	Mobile		Rows and Lists	0
+CardView	Mobile		Rows and Lists	0
+ChoiceRow	Mobile		Rows and Lists	0
+CountMark	Mobile		Rows and Lists	8
+DownloadRow	Mobile	Editing;Series;Episode;Loading	Rows and Lists	0
+EmptyState	Desktop,Mobile,TV	Desktop: Account;Desktop: Bookmark;Desktop: Collection;Desktop: Error;Desktop: Filter;Desktop: Genre;Desktop: Plain;Desktop: Playlist;TV: Home;TV: Library;TV: Search;TV: Watchlist	Rows and Lists,Desktop,TV Home,TV Detail	22
+FileRow	Mobile		Rows and Lists	0
+Footer	Mobile		Rows and Lists	0
+GroupsTitle	Mobile,TV		Rows and Lists,TV	5
+HintStrip	Mobile		Rows and Lists	0
+FoundServersSection	Desktop,Mobile		Rows and Lists,Desktop	2
+ProfileRow	Mobile	Last;Accent;External	Rows and Lists	0
+SeparatorLine	Mobile		Rows and Lists	0
+ServerRow	Mobile		Rows and Lists	0
+SettingGroup	Mobile		Rows and Lists	0
+SheetLine	Mobile		Rows and Lists	16
+SkeletonBar	Mobile		Rows and Lists	0
+SwipeRow	Mobile	Pulled	Rows and Lists	0
+ValueRow	Mobile		Rows and Lists	0
+AlphabetRail	Mobile		Tiles and Posters	0
+CastTile	Mobile,TV		Tiles and Posters,TV Detail	32
+EpisodesRow	Mobile		Tiles and Posters	12
+ExtraTile	Mobile		Tiles and Posters	0
+GridPlaceholder	Mobile		Tiles and Posters	0
+HeroImage	Mobile		Tiles and Posters	0
+HeroRunOut	Mobile		Tiles and Posters	0
+NetworkImage	Mobile		Tiles and Posters	0
+Picture	Mobile		Tiles and Posters	0
+PosterTile	Desktop,Mobile		Tiles and Posters,Desktop	140
+ProgressBar	Mobile		Tiles and Posters	2
+RailTitle	Desktop,Mobile,TV		Tiles and Posters,Desktop,TV Detail	22
+RailsPlaceholder	Mobile		Tiles and Posters	0
+SeerrTile	Desktop,Mobile,TV		Tiles and Posters,Desktop,TV Detail	38
+Segment	Mobile		Tiles and Posters	0
+TileBadge	Mobile	Seasons;Watched	Tiles and Posters	0
+TilePlaceholder	Mobile		Tiles and Posters	0
+TileProgress	Mobile		Tiles and Posters	0
+WatchersRow	Mobile		Tiles and Posters	0
+AccountCharacter	Desktop,Mobile	Desktop: Selected	Profile Looks Marks,Desktop	25
+CollapsibleText	Mobile		Profile Looks Marks	4
+Emblem	Mobile		Profile Looks Marks	0
+LookMiniPhone	Mobile		Profile Looks Marks	3
+LookTile	Mobile		Profile Looks Marks	0
+OfferingBadge	Mobile	Count	Profile Looks Marks	0
+ProfileCharacter	Mobile		Profile Looks Marks	13
+ProfileTarget	Mobile		Profile Looks Marks	0
+ProofRow	Mobile		Profile Looks Marks	2
+ServerKindMark	Desktop,Mobile		Profile Looks Marks,Desktop	7
+ServerKindPicker	Mobile	Add server	Profile Looks Marks	0
+TitleMark	Mobile		Profile Looks Marks	0
+Wordmark	Mobile		Profile Looks Marks	57
+CardLight	Mobile	Two tones	Sheets and Overlays	0
+CardsScrim	Mobile		Sheets and Overlays	0
+LoadSheet	Mobile	Mobile data;Not enough space	Sheets and Overlays	0
+MoodReason	Mobile		Sheets and Overlays	0
+TakeoverCard	Mobile		Sheets and Overlays	0
+AudioBadge	Mobile		Progress and Badges	0
+Badge	Mobile	Accent;Warning	Progress and Badges	0
+CountdownRing	Mobile		Progress and Badges	0
+DownloadRing	Mobile	Done;Error;Halted;Loads;Waits	Progress and Badges	5
+Loader	Mobile		Progress and Badges	0
+QualityBadge	Mobile	Fixed;Reduced	Progress and Badges	0
+IconButton	Mobile,TV	TV: More;TV: Restart;TV: Watchlist	Player,TV Detail	4
+LayersHeader	Mobile		Player	0
+LayersReason	Mobile		Player	0
+LayersRow	Mobile	Selected	Player	0
+ColumnsRail	Mobile		Player	0
+SelectionColumn	Mobile	Narrow	Player	0
+AppIconSunset	Mobile		Support	0
+BobbingIcon	Mobile	Picks	Support	0
+IconFan	Mobile		Support	0
+SupportHeart	Mobile	Compact	Support	0
+SupportLooksCard	Mobile		Support	0
+SupportStatusCard	Mobile	Monthly;Tip	Support	0
+SupporterMark	Mobile		Support	0
+DetailHero	Desktop		Desktop	3
+DiscordHint	Desktop		Desktop	1
+DisturbHint	Desktop		Desktop	3
+HeaderImage	Desktop		Desktop	24
+InputRow	Desktop	Desktop: Focused	Desktop	34
+LandscapeTile	Desktop		Desktop	10
+MacAdvanced	Desktop		Desktop	12
+MacSupportCard	Desktop		Desktop	0
+MainSidebar	Desktop	Desktop: Downloads on;Desktop: Filme;Desktop: Merkliste;Desktop: Serien;Desktop: Suche	Desktop	10
+NavArrows	Desktop	Desktop: Root;Desktop: Subpage	Desktop	49
+OutlineButton	Desktop		Desktop	14
+PageTitle	Desktop		Desktop	10
+PosterCell	Desktop	Desktop: Progress;Desktop: Seasons;Desktop: Watched	Desktop	46
+QuickConnectCode	Desktop	Desktop: Loading	Desktop	6
+SearchPoster	Desktop		Desktop	4
+SelectionButton	Desktop	Desktop: Sort	Desktop	4
+ShelfButton	Desktop	Desktop: Grid;Desktop: Name;Desktop: Sorting	Desktop	8
+TabRail	Desktop		Desktop	2
+ValuesRow	Desktop	Desktop: Collection;Desktop: Library	Desktop	13
+WatcherAvatar	Mobile		Desktop	6
+CodeFields	TV		TV	0
+ThemedButtonStyle	TV	TV: Disabled;TV: Focused	TV	112
+ActionRow	TV	TV: Focused	TV Settings	0
+DisplayRow	TV		TV Settings	0
+SectionRow	TV	TV: Selected	TV Settings	0
+SettingsHeading	TV		TV Settings	0
+TVMiniScreen	TV	TV: Neon Coral;TV: Neon Night	TV Settings	6
+ToggleRow	TV	TV: Focused	TV Settings	0
+Capsule	TV	TV: Filter;TV: Menu;TV: Sort	TV Home	13
+HeaderBar	TV		TV Home	12
+TileCard	TV	TV: Focused;TV: Grid;TV: Grid Focused;TV: Landscape;TV: Landscape Focused	TV Home	51
+CapsuleButton	TV	TV: Focused	TV Detail	2
+ProofMark	TV	TV: DirectPlay;TV: Rating;TV: Seerr	TV Detail	10
+SeasonPill	TV		TV Detail	1
+ThemedButton	TV	TV: Focused	TV Detail	5
+TileContent	TV	TV: Focused;TV: Landscape;TV: Landscape / Focused	TV Detail	64

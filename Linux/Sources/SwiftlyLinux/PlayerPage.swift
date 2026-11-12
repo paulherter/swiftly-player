@@ -1334,7 +1334,9 @@ extension App {
             fflush(nil)
             nextEpisode()
         }
-        autoSkipRun()
+        // "Skip intro and outro automatically": the offer showed first (button fill / card
+        // countdown); the press happens only when that has run out, closing it cancels.
+        if offeringLayer.takeAutoSkip() { autoSkipRun() }
         offeringUpdate()
         // **Prepare the next episode** while this one still plays (iOS `tick`). Not in a
         // group (it advances by itself) and not from a file. Once per episode; when and
@@ -1484,13 +1486,18 @@ extension App {
                                       hasNextEpisode: prefetchedEpisode != nil)
         currentOffering = offering
         guard !episodesSwitch.running else { return false }
+        // The setting also lets the outro's card count down and advance, only inside the outro section.
+        offeringLayer.autoSkip = selection.skipAutomatic
+        let autoNext = selection.skipAutomatic
+            && SectionLogic.automatic(position: playState.position, duration: playState.duration,
+                                      sections: sections, hasNextEpisode: prefetchedEpisode != nil) != nil
         // **Variant C** (iOS `offeringCatchUp`): without a credits section the card appears
         // in the last ``Folgenkarte/restfenster`` seconds and counts to the end of the file;
         // at the end it keeps counting although nothing plays anymore, except while dragging the slider.
         return offeringLayer.tick(
             offering: offering,
             // "Next episode automatically" off: no card, no countdown, no advance.
-            cardDue: nextAutomatic && SectionLogic.cardDue(position: playState.position,
+            cardDue: (nextAutomatic || autoNext) && SectionLogic.cardDue(position: playState.position,
                                                        duration: playState.duration,
                                                        sections: sections,
                                                        hasNextEpisode: prefetchedEpisode != nil,
@@ -1753,16 +1760,10 @@ extension App {
     // Audio and subtitle selection at start: ``tracksPreSelect()`` in `TrackSelection.swift`.
 
     /// **The setting "Intro und Abspann automatisch überspringen"**: the same step as a press on
-    /// the button (macOS `autoSkipRun`), once per section so that rewinding into it does not jump again.
+    /// the button, run once the offer's countdown has run out (``OfferingLayer/takeAutoSkip()``).
     func autoSkipRun() {
-        guard selection.skipAutomatic, !episodesSwitch.running, playState.running,
-              playerLoadingScreen == nil, !atSlider,
-              let step = SectionLogic.automatic(position: playState.position, duration: playState.duration,
-                                                sections: sections,
-                                                hasNextEpisode: prefetchedEpisode != nil),
-              autoSkipped.insert(step.segment.from).inserted
-        else { return }
-        AppLog.writeOut("[Angebot] automatisch: \(step.offering.label) bei \(Int(playState.position)) s")
+        guard selection.skipAutomatic, !episodesSwitch.running, playerLoadingScreen == nil else { return }
+        AppLog.writeOut("[Angebot] automatisch: \(currentOffering.label) bei \(Int(playState.position)) s")
         fflush(nil)
         offeringRun()
     }
@@ -1946,7 +1947,6 @@ extension App {
         sinceOpen = Date()
         // **Nothing points to the old episode anymore.**
         sections = []
-        autoSkipped = []
         playerChapter = []
         prefetchedEpisode = nil
         offeringLayer.newEpisode()

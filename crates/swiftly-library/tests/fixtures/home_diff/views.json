@@ -1,0 +1,28 @@
+{
+ "Items": [
+  {
+   "CollectionType": "movies",
+   "Id": "v_mov",
+   "Name": "Filme",
+   "Type": "CollectionFolder"
+  },
+  {
+   "CollectionType": "tvshows",
+   "Id": "v_ser",
+   "Name": "Serien",
+   "Type": "CollectionFolder"
+  },
+  {
+   "CollectionType": "tvshows",
+   "Id": "v_ser2",
+   "Name": "Serien Kinder",
+   "Type": "CollectionFolder"
+  },
+  {
+   "Id": "v_mix",
+   "Name": "Heimvideos",
+   "Type": "CollectionFolder"
+  }
+ ],
+ "TotalRecordCount": 4
+}

@@ -54,7 +54,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -97,12 +96,12 @@ class SearchState {
     companion object {
         /** **History belongs to the account, not the device.** The active account takes over the old shared entry on first use. */
         fun historyKey(app: SwiftlyApplication): String =
-            Kern.searchHistoryKeyAccount(app.store.accounts?.let { Kern.bundleActiveId(it) }.orEmpty())
+            KernRules.searchHistoryKeyAccount(app.store.accounts?.let { KernRules.bundleActiveId(it) }.orEmpty())
 
         fun historyRead(app: SwiftlyApplication): String {
             val key = historyKey(app)
-            if (key != Kern.searchHistoryKey() && app.store.rememberValue(key) == null) {
-                app.store.remember(key, app.store.rememberValue(Kern.searchHistoryKey()).orEmpty())
+            if (key != KernRules.searchHistoryKey() && app.store.rememberValue(key) == null) {
+                app.store.remember(key, app.store.rememberValue(KernRules.searchHistoryKey()).orEmpty())
             }
             return app.store.rememberValue(key).orEmpty()
         }
@@ -115,19 +114,19 @@ class SearchState {
      * goes out (phone 300 ms; the TV debounces on its own and passes 0).
      */
     suspend fun searching(app: SwiftlyApplication, clean: String, pause: Long = 300) {
-            if (!Kern.searchTermFits(clean)) { hit = emptyList(); seerr = emptyList(); disrupted = false; hunts = false; searched = clean; return }
+            if (!KernRules.searchTermFits(clean)) { hit = emptyList(); seerr = emptyList(); disrupted = false; hunts = false; searched = clean; return }
             hunts = true
             disrupted = false
             if (pause > 0) delay(pause)
             try {
-                val json = withContext(Dispatchers.IO) { app.kern.search(clean).await() }
+                val json = withContext(Dispatchers.IO) { app.rk.search(clean).await() }
                 hit = JSONArray(json).let { a -> (0 until a.length()).map { gridTileRead(a.getJSONObject(it)) } }
                 searched = clean
                 // **Side by side, not one after the other** for the user: the own results are already there.
                 // **Seerr is a bonus:** if it fails, the own results stay; before, a Seerr error threw them
                 // away too and showed the whole failure state.
                 seerr = if (!app.seerrConnected.value) emptyList() else try {
-                    seerrTilesRead(withContext(Dispatchers.IO) { app.kern.seerrSearch(clean).await() })
+                    seerrTilesRead(withContext(Dispatchers.IO) { app.rk.seerrSearch(clean).await() })
                 } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
             } catch (e: CancellationException) { throw e } catch (_: Exception) {
                 disrupted = true
@@ -154,10 +153,10 @@ fun SuchPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val focusManager = LocalFocusManager.current
     var historyRaw by remember { mutableStateOf(SearchState.historyRead(app)) }
     val history = remember(historyRaw) {
-        JSONArray(Kern.searchHistoryList(historyRaw)).let { a -> (0 until a.length()).map { a.getString(it) } }
+        JSONArray(KernRules.searchHistoryList(historyRaw)).let { a -> (0 until a.length()).map { a.getString(it) } }
     }
     fun remember() {
-        historyRaw = Kern.searchHistoryRemember(st.term, historyRaw)
+        historyRaw = KernRules.searchHistoryRemember(st.term, historyRaw)
         SearchState.historyWrite(app, historyRaw)
     }
 
@@ -178,7 +177,7 @@ fun SuchPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     // Ticks and bars of the results: search again after a watch-state change; the results stay until the new ones arrive.
     WatchStateChange(app) {
         val clean = st.term.trim()
-        if (Kern.searchTermFits(clean)) st.searching(app, clean)
+        if (KernRules.searchTermFits(clean)) st.searching(app, clean)
     }
 
     val grid = rememberLazyGridState()

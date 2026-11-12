@@ -282,4 +282,68 @@ struct OfferingLayerTests {
         let without = try JSONDecoder().decode(AccountPreGift.self, from: Data(#"{"Id":"x"}"#.utf8))
         #expect(without.nextEpisodeAutomatic == nil)
     }
+
+    // MARK: Auto-skip: the offer shows first, acts after its countdown, dismiss cancels
+
+    /// Ticks the skip offer and counts how often the platform would press.
+    private func skipRun(_ e: inout OfferingLayer, _ seconds: Double, _ offer: ButtonOffering) -> Int {
+        var presses = 0
+        for _ in 0..<Int(seconds * 2) {
+            _ = e.tick(offering: offer, cardDue: false, running: true, elapsed: 0.5)
+            if e.takeAutoSkip() { presses += 1 }
+        }
+        return presses
+    }
+
+    @Test("Automatisch überspringen zeigt zuerst das Angebot und handelt erst nach dem Countdown")
+    func autoSkipShowsFirstActsAfterCountdown() {
+        var e = OfferingLayer()
+        e.autoSkip = true
+        #expect(skipRun(&e, 0.5, intro) == 0)
+        #expect(e.display == .button(intro))
+        #expect((e.skipShare ?? 1) < 0.1)
+        #expect(skipRun(&e, 2.5, intro) == 0)
+        let half = e.skipShare ?? 0
+        #expect(half > 0.4 && half < 0.6)
+        #expect(skipRun(&e, 3.0, intro) == 0)
+        #expect(e.display.visible, "the fill is full, the last tick's rest is still awaited")
+        #expect(skipRun(&e, 5.0, intro) == 1, "exactly once")
+        #expect(e.display == .nothing)
+        #expect(e.skipShare == nil)
+    }
+
+    @Test("Schließen bricht das automatische Überspringen ab")
+    func autoSkipDismissCancels() {
+        var e = OfferingLayer()
+        e.autoSkip = true
+        _ = skipRun(&e, 2, intro)
+        let closed = e.close()
+        #expect(closed)
+        #expect(skipRun(&e, 30, intro) == 0)
+    }
+
+    @Test("Aus: der Knopf wartet auf den Nutzer, kein Countdown")
+    func autoSkipOffWaits() {
+        var e = OfferingLayer()
+        #expect(skipRun(&e, 60, intro) == 0)
+        #expect(e.skipShare == nil)
+        e.controls(opened: true)
+        #expect(skipRun(&e, 60, intro) == 0)
+        #expect(e.display.visible)
+    }
+
+    @Test("Abspann-Karte zählt zuerst herunter, dann weiter; Schließen bricht ab")
+    func autoSkipNextEpisodeCard() {
+        var e = OfferingLayer()
+        e.autoSkip = true
+        #expect(runningCount(&e, OfferingLayer.countdown, offering: .nextEpisode, card: true) == 0)
+        #expect(runningCount(&e, 5, offering: .nextEpisode, card: true) == 1)
+        var d = OfferingLayer()
+        d.autoSkip = true
+        runningCount(&d, 2, offering: .nextEpisode, card: true)
+        let closed = d.close()
+        #expect(closed)
+        #expect(runningCount(&d, 30, offering: .nextEpisode, card: true) == 0)
+        #expect(!d.nextAtEnd)
+    }
 }

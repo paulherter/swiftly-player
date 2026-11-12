@@ -63,9 +63,9 @@ data class Offering(val session: String, val itemID: String, val device: String?
 suspend fun SwiftlyApplication.offeringsFetch() {
     if (play.value != null) return
     // Ask about groups on the same tick (`SharedModel.start`); the state arrives via `sharedListen`.
-    runCatching { withContext(Dispatchers.IO) { kern.syncPlayOfferingsAsk().await() } }
+    runCatching { withContext(Dispatchers.IO) { rk.syncPlayOfferingsAsk().await() } }
     offerings.value = runCatching {
-        JSONArray(withContext(Dispatchers.IO) { kern.takeoverOfferings().await() }).let { a ->
+        JSONArray(withContext(Dispatchers.IO) { rk.takeoverOfferings().await() }).let { a ->
             (0 until a.length()).map { a.getJSONObject(it) }.map {
                 Offering(it.getString("id"), it.getString("itemID"), it.fieldText("geraet"), it.getString("art"),
                         it.getString("titelzeile"), it.optDouble("stelle", 0.0), it.optString("stelleText"),
@@ -148,7 +148,7 @@ suspend fun hereContinueWatching(app: SwiftlyApplication, context: android.conte
                               provenance: androidx.compose.ui.geometry.Offset, density: Float, calm: Boolean) {
     Handoff.receive(app, a, provenance, density, calm)
     val answer = runCatching {
-        org.json.JSONObject(withContext(Dispatchers.IO) { app.kern.handedOver(a.session, a.itemID, a.spot, Handoff.ownName(app)).await() })
+        org.json.JSONObject(withContext(Dispatchers.IO) { app.rk.handedOver(a.session, a.itemID, a.spot, Handoff.ownName(app)).await() })
     }.getOrNull()
     val reason = answer?.optString("grund") ?: "nichtVerbunden"
     if (reason.isEmpty()) {

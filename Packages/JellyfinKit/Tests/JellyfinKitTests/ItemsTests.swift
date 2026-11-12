@@ -12,7 +12,7 @@ private func film(_ id: String, tmdb: String? = nil, imdb: String? = nil,
 }
 
 private func episode(_ id: String, series: String, season: Int, nr: Int) -> Item {
-    Item(id: id, name: "Folge", type: "Episode", seriesName: "The Mentalist",
+    Item(id: id, name: "Folge", type: "Episode", seriesName: "The Lighthouse",
          indexNumber: nr, parentIndexNumber: season, seriesId: series)
 }
 

@@ -1,0 +1,142 @@
+{
+ "Items": [
+  {
+   "BackdropImageTags": [],
+   "CanDelete": false,
+   "CanDownload": false,
+   "CollectionType": "movies",
+   "DateCreated": "2026-10-31T22:53:31.7690420Z",
+   "DateModified": "0001-01-01T00:00:00.0000000Z",
+   "DisplayPreferencesId": "90177d1cb2fa4ad5b222c9e6fd023f30",
+   "Etag": "adcfff3994dce75bf8cdb1de847f8077",
+   "ForcedSortName": "Filme",
+   "Guid": "90177d1cb2fa4ad5b222c9e6fd023f30",
+   "Id": "3",
+   "ImageTags": {
+    "Primary": "42cfad4dc43a0b8603de4265532dff85_639290854071869990"
+   },
+   "IsFolder": true,
+   "LockData": false,
+   "LockedFields": [],
+   "Name": "Filme",
+   "ParentId": "2",
+   "PresentationUniqueKey": "90177d1cb2fa4ad5b222c9e6fd023f30",
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "ProviderIds": {},
+   "RemoteTrailers": [],
+   "ServerId": "ec0ed358eb104c1298027df37843e858",
+   "SortName": "Filme",
+   "Taglines": [],
+   "Type": "CollectionFolder",
+   "UserData": {
+    "IsFavorite": false,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  },
+  {
+   "BackdropImageTags": [],
+   "CanDelete": false,
+   "CanDownload": false,
+   "CollectionType": "tvshows",
+   "DateCreated": "2026-10-31T22:53:31.8555620Z",
+   "DateModified": "0001-01-01T00:00:00.0000000Z",
+   "DisplayPreferencesId": "ebcf6842f3c248509c8d8e72eb29b6b6",
+   "Etag": "633bf643e4016c4e30e5c609273fc625",
+   "ForcedSortName": "Serien",
+   "Guid": "ebcf6842f3c248509c8d8e72eb29b6b6",
+   "Id": "6",
+   "ImageTags": {
+    "Primary": "42cfad4dc43a0b8603de4265532dff85_639290856498275910"
+   },
+   "IsFolder": true,
+   "LockData": false,
+   "LockedFields": [],
+   "Name": "Serien",
+   "ParentId": "2",
+   "PresentationUniqueKey": "ebcf6842f3c248509c8d8e72eb29b6b6",
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "ProviderIds": {},
+   "RemoteTrailers": [],
+   "ServerId": "ec0ed358eb104c1298027df37843e858",
+   "SortName": "Serien",
+   "Taglines": [],
+   "Type": "CollectionFolder",
+   "UserData": {
+    "IsFavorite": false,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  },
+  {
+   "BackdropImageTags": [],
+   "CanDelete": false,
+   "CanDownload": false,
+   "CollectionType": "boxsets",
+   "DateCreated": "2026-10-31T23:16:47.0664020Z",
+   "DateModified": "0001-01-01T00:00:00.0000000Z",
+   "DisplayPreferencesId": "6948dcc7b7fc4d18a22f39a1c13fd628",
+   "Etag": "e7a85d464c2e74d4c2fe669a21bfb87a",
+   "ForcedSortName": "zCollections",
+   "Guid": "6948dcc7b7fc4d18a22f39a1c13fd628",
+   "Id": "32",
+   "ImageTags": {
+    "Primary": "42cfad4dc43a0b8603de4265532dff85_639290856498313040"
+   },
+   "IsFolder": true,
+   "LockData": false,
+   "LockedFields": [
+    "SortName"
+   ],
+   "Name": "Collections",
+   "ParentId": "2",
+   "PresentationUniqueKey": "6948dcc7b7fc4d18a22f39a1c13fd628",
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "ProviderIds": {},
+   "RemoteTrailers": [],
+   "ServerId": "ec0ed358eb104c1298027df37843e858",
+   "SortName": "zCollections",
+   "Taglines": [],
+   "Type": "CollectionFolder",
+   "UserData": {
+    "IsFavorite": false,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  },
+  {
+   "BackdropImageTags": [],
+   "CanDelete": false,
+   "CanDownload": false,
+   "CollectionType": "playlists",
+   "DateCreated": "2026-10-31T23:14:21.8336780Z",
+   "DateModified": "0001-01-01T00:00:00.0000000Z",
+   "DisplayPreferencesId": "bea8e765a4dc49378171cf340e09c4be",
+   "Etag": "46358a99096505a3f075c2c29453798d",
+   "ForcedSortName": "zPlaylists",
+   "Guid": "bea8e765a4dc49378171cf340e09c4be",
+   "Id": "23",
+   "ImageTags": {},
+   "IsFolder": true,
+   "LockData": false,
+   "LockedFields": [
+    "SortName"
+   ],
+   "Name": "Playlists",
+   "ParentId": "2",
+   "PresentationUniqueKey": "bea8e765a4dc49378171cf340e09c4be",
+   "ProviderIds": {},
+   "RemoteTrailers": [],
+   "ServerId": "ec0ed358eb104c1298027df37843e858",
+   "SortName": "zPlaylists",
+   "Taglines": [],
+   "Type": "CollectionFolder",
+   "UserData": {
+    "IsFavorite": false,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  }
+ ],
+ "TotalRecordCount": 4
+}

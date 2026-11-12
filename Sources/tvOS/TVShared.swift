@@ -12,7 +12,7 @@ import SwiftUI
 /// before pressing.
 struct OfferingBadge: View {
     let continueWatching: [RemoteSession]
-    let groups: [SyncPlayGroup]
+    let groups: [SharedGroup]
     var action: () -> Void
 
     /// How many entries the panel would have.
@@ -166,11 +166,11 @@ struct TVSharedPanel: View {
     // MARK: Join
 
     @ViewBuilder
-    private func join(_ g: SyncPlayGroup) -> some View {
-        header(Text(verbatim: g.name), SharedModel.wer(g))
+    private func join(_ g: SharedGroup) -> some View {
+        header(Text(verbatim: g.name), g.who)
         VStack(spacing: 8) {
-            if let condition = SharedModel.stateTextOf(g.condition) {
-                Text(condition)
+            if let condition = g.stateText {
+                Text(verbatim: condition)
                     .font(Theme.small)
                     .foregroundStyle(Theme.accent)
             }
@@ -209,7 +209,7 @@ struct TVSharedPanel: View {
                 }
             }
             ForEach(gemeinsam.group == nil ? gemeinsam.offerings : []) { g in
-                row(key: "g" + g.id, symbol: "person.2.fill", title: g.name, under: SharedModel.wer(g),
+                row(key: "g" + g.id, symbol: "person.2.fill", title: g.name, under: g.who,
                       action: Text("Beitreten")) {
                     Task { await gemeinsam.join(g) }
                 }

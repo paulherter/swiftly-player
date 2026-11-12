@@ -3,6 +3,9 @@ import JellyfinKit
 import Observation
 import SwiftUI
 import Synchronization
+import class SwiftlyCore.LookModel
+import enum SwiftlyCore.LookKeep
+import struct SwiftlyCore.LookSelectionInfo
 #if os(iOS)
 import UIKit
 #elseif os(macOS)
@@ -26,21 +29,42 @@ import AppKit
 final class LookStore: Observable, Sendable {
     static let shared = LookStore()
 
-    /// The rules of what shows and what is stored live in the package (`LookTryOn`, with
-    /// its tests); this class only keeps the value, stores it and tells SwiftUI.
-    private let state: Mutex<LookTryOn>
+    /// What every read needs, copied from the core after each change so the hot reads (`Theme`
+    /// asks from any thread) are one lock and no call into Rust.
+    private struct Mirror: Sendable {
+        var shown: LookSelection
+        var saved: LookSelection
+        var isPreviewing: Bool
+        var owned: Set<String>
+        var isSupporter: Bool
+        var effectsOn: Bool
+    }
+
+    /// The rules of what shows and what is stored live in the core (`LookModel`, with its
+    /// tests, over the old UserDefaults keys); this class keeps the mirror and tells SwiftUI.
+    private let model: LookModel
+    private let state: Mutex<Mirror>
     private let registrar = ObservationRegistrar()
 
     private init() {
-        let defaults = UserDefaults.standard
-        let stored = defaults.data(forKey: LookStorageKey.selection)
-        let owned = (defaults.array(forKey: LookStorageKey.owned) as? [String]) ?? []
-        state = Mutex(LookTryOn(saved: LookSelection.decoded(from: stored), owned: Set(owned)))
-        effects = Mutex(defaults.object(forKey: LookStorageKey.effects) as? Bool ?? true)
+        // `AppCore` is main-actor; the first read can come from anywhere.
+        model = Thread.isMainThread
+            ? MainActor.assumeIsolated { AppCore.shared.raw.lookModel() }
+            : DispatchQueue.main.sync { MainActor.assumeIsolated { AppCore.shared.raw.lookModel() } }
+        state = Mutex(Self.mirror(of: model))
     }
 
-    /// "Bats and details", on by default.
-    private let effects: Mutex<Bool>
+    /// For tests: a store over its own model.
+    init(model: LookModel) {
+        self.model = model
+        state = Mutex(Self.mirror(of: model))
+    }
+
+    private static func mirror(of model: LookModel) -> Mirror {
+        Mirror(shown: LookSelection(model.selection()), saved: LookSelection(model.saved()),
+               isPreviewing: model.isPreviewing(), owned: Set(model.owned()),
+               isSupporter: model.isSupporter(), effectsOn: model.effectsOn())
+    }
 
     // MARK: Reading
 
@@ -80,92 +104,106 @@ final class LookStore: Observable, Sendable {
     var effectsOn: Bool {
         get {
             registrar.access(self, keyPath: \.effectsOn)
-            return effects.withLock { $0 }
+            return state.withLock { $0.effectsOn }
         }
         set {
             registrar.withMutation(of: self, keyPath: \.effectsOn) {
-                effects.withLock { $0 = newValue }
+                try? model.setEffectsOn(on: newValue)
+                state.withLock { $0.effectsOn = model.effectsOn() }
             }
-            UserDefaults.standard.set(newValue, forKey: LookStorageKey.effects)
         }
     }
 
     /// The looks this person can pick from right now: the original, gifts picked up or
     /// in their window (supporter looks are not part of this list).
     func freeLooks(now: Date = LookClock.now) -> [Look] {
-        let owned = owned
-        return Look.free.filter { LookGift.isAvailable($0, owned: owned, now: now) }
+        model.freeLooks(now: now.timeIntervalSince1970, utcOffset: Self.offset(at: now)).map(Look.with(id:))
     }
 
     /// **Every look the picker shows**, the locked ones too: the original, gifts in their
     /// window or picked up, and the supporter looks.
     func pickerLooks(now: Date = LookClock.now) -> [Look] {
-        let owned = owned
-        return Look.all.filter { !$0.isGift || LookGift.isAvailable($0, owned: owned, now: now) }
+        model.pickerLooks(now: now.timeIntervalSince1970, utcOffset: Self.offset(at: now)).map(Look.with(id:))
+    }
+
+    private static func offset(at date: Date) -> Int64 {
+        Int64(Calendar.current.timeZone.secondsFromGMT(for: date))
     }
 
     /// Whether this person may wear the selection (otherwise it can only be previewed).
     func mayWear(_ selection: LookSelection) -> Bool {
         registrar.access(self, keyPath: \.selection)
-        return state.withLock { $0.mayWear(selection) }
+        return model.mayWear(selection: LookSelectionInfo(selection))
     }
 
     // MARK: Changing
 
     /// From the support state: only supporters wear a stored look.
     func setSupporter(_ supporter: Bool) {
-        change { $0.setSupporter(supporter) }
+        change { try? $0.setSupporter(supporter: supporter) }
     }
 
-    /// Opens a preview; see `LookTryOn.begin`.
-    func beginPreview() { change { $0.begin() } }
+    /// Opens a preview.
+    func beginPreview() { change { try? $0.beginPreview() } }
 
     /// One change inside the preview. Nothing is stored.
-    func tryOn(_ selection: LookSelection) { change { $0.tryOn(selection) } }
+    func tryOn(_ selection: LookSelection) { change { try? $0.tryOn(selection: LookSelectionInfo(selection)) } }
 
     /// Closes the preview without storing anything.
-    func endPreview() { change { $0.end() } }
+    func endPreview() { change { try? $0.endPreview() } }
 
     /// "Keep": stored for a supporter, a wish for everyone else.
-    func keep() -> LookTryOn.KeepResult { change { $0.keep() } }
+    func keep() -> LookTryOn.KeepResult {
+        switch change({ try? $0.keep() }) {
+        case .kept: .kept
+        case .needsSupport: .needsSupport
+        case .nothing, nil: .nothing
+        }
+    }
 
-    func supportSheetClosed() { change { $0.supportSheetClosed() } }
+    func supportSheetClosed() { change { try? $0.supportSheetClosed() } }
 
     /// A purchase went through; returns the look stored with it.
-    func purchaseCompleted() -> LookSelection? { change { $0.purchaseCompleted() } }
+    func purchaseCompleted() -> LookSelection? {
+        change { try? $0.purchaseCompleted() }.flatMap { $0 }.map(LookSelection.init)
+    }
 
     /// A supporter picks a look outside the preview (Settings → Appearance).
     @discardableResult
-    func choose(_ selection: LookSelection) -> Bool { change { $0.choose(selection) } }
+    func choose(_ selection: LookSelection) -> Bool {
+        change { try? $0.choose(selection: LookSelectionInfo(selection)) } ?? false
+    }
 
     /// "Grab it": the gift is picked up for good and worn right away.
     @discardableResult
-    func claim(_ look: Look) -> LookSelection? { change { $0.claim(look) } }
-
-    /// Back to a fresh install.
-    func reset() {
-        change { $0.reset() }
-        UserDefaults.standard.removeObject(forKey: LookStorageKey.giftOffered)
-        effectsOn = true
+    func claim(_ look: Look) -> LookSelection? {
+        change { try? $0.claim(lookId: look.id) }.flatMap { $0 }.map(LookSelection.init)
     }
 
-    private func change<Result>(_ body: (inout LookTryOn) -> Result) -> Result {
-        let (result, saved, owned) = registrar.withMutation(of: self, keyPath: \.selection) {
-            state.withLock { value in
-                let before = value.saved
-                let ownedBefore = value.owned
-                let result = body(&value)
-                return (result, value.saved == before ? nil : value.saved,
-                        value.owned == ownedBefore ? nil : value.owned)
-            }
+    /// Back to a fresh install: the original, no gifts, no offers, effects on.
+    func reset() { change { try? $0.reset() } }
+
+    @discardableResult
+    private func change<Result>(_ body: (LookModel) -> Result) -> Result {
+        registrar.withMutation(of: self, keyPath: \.selection) {
+            let result = body(model)
+            state.withLock { $0 = Self.mirror(of: model) }
+            return result
         }
-        if let saved {
-            UserDefaults.standard.set(saved.encoded, forKey: LookStorageKey.selection)
-        }
-        if let owned {
-            UserDefaults.standard.set(owned.sorted(), forKey: LookStorageKey.owned)
-        }
-        return result
+    }
+}
+
+extension LookSelection {
+    init(_ info: LookSelectionInfo) {
+        self.init(lookID: info.lookId, accentID: info.accentId,
+                  glow: info.glow.flatMap(LookGlow.init(rawValue:)), usesLookIcon: info.usesLookIcon)
+    }
+}
+
+extension LookSelectionInfo {
+    init(_ selection: LookSelection) {
+        self.init(lookId: selection.lookID, accentId: selection.accentID,
+                  glow: selection.glow?.rawValue, usesLookIcon: selection.usesLookIcon)
     }
 }
 

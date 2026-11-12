@@ -1,0 +1,12 @@
+[
+ {"name":"Home","clientIdentifier":"MACHINE1","provides":"server","owned":true,
+  "accessToken":"SERVERTOKEN","httpsRequired":false,"presence":true,"ownerId":1,
+  "connections":[
+   {"protocol":"http","address":"192.168.1.5","port":32400,"uri":"http://192.168.1.5:32400","local":true,"relay":false,"IPv6":false},
+   {"protocol":"https","address":"192.168.1.5","port":32400,"uri":"https://192-168-1-5.abc.plex.direct:32400","local":true,"relay":false,"IPv6":false},
+   {"protocol":"https","address":"84.1.2.3","port":32400,"uri":"https://84-1-2-3.abc.plex.direct:32400","local":false,"relay":false,"IPv6":false},
+   {"protocol":"https","address":"10.0.0.1","port":8443,"uri":"https://10-0-0-1.abc.plex.direct:8443","local":false,"relay":true,"IPv6":false}]},
+ {"name":"Friend","clientIdentifier":"MACHINE2","provides":"server","owned":false,
+  "accessToken":"FRIENDTOKEN","connections":[]},
+ {"name":"Phone","clientIdentifier":"PHONE","provides":"client,player","owned":true,"connections":[]}
+]

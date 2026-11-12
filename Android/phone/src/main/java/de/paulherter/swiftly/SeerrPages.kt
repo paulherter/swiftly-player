@@ -145,7 +145,7 @@ fun SeerrSettingsPage(app: SwiftlyApplication, back: () -> Unit) {
     val connected = app.seerrConnected.value
     LaunchedEffect(connected) {
         // No network or broken response: "does not hold" instead of a crash out of the effect.
-        carries = if (!connected) null else try { withContext(Dispatchers.IO) { app.kern.seerrApplies().await() } }
+        carries = if (!connected) null else try { withContext(Dispatchers.IO) { app.rk.seerrApplies().await() } }
                  catch (e: CancellationException) { throw e } catch (_: Exception) { false }
     }
     fun linkUp() {
@@ -153,7 +153,7 @@ fun SeerrSettingsPage(app: SwiftlyApplication, back: () -> Unit) {
         leftUp = true; error = null
         run.launch {
             try {
-                app.seerrRemember(withContext(Dispatchers.IO) { app.kern.seerrConnect(address, user, password, headers.asJson()).await() })
+                app.seerrRemember(withContext(Dispatchers.IO) { app.rk.seerrConnect(address, user, password, headers.asJson()).await() })
                 password = ""
             } catch (e: CancellationException) { throw e } catch (e: Exception) { error = errorString(app, e) }
             leftUp = false
@@ -215,7 +215,7 @@ fun SeerrDetailPage(app: SwiftlyApplication, target: Destination, open: (Destina
     val run = rememberCoroutineScope()
     val jerk = rememberJerk()
     LaunchedEffect(target.id) {
-        detail = runCatching { JSONObject(withContext(Dispatchers.IO) { app.kern.seerrDetail(k.art, k.id.toLong()).await() }) }.getOrNull()
+        detail = runCatching { JSONObject(withContext(Dispatchers.IO) { app.rk.seerrDetail(k.art, k.id.toLong()).await() }) }.getOrNull()
         // The server knows better than the search result from before (`SeerrDetail.state`).
         detail?.takeIf { it.has("stand") && !it.isNull("stand") }?.let { state = it.getInt("stand"); requestable = it.optBoolean("anfragbar") }
     }
@@ -225,10 +225,10 @@ fun SeerrDetailPage(app: SwiftlyApplication, target: Destination, open: (Destina
         if (k.isSeries && seasons.isEmpty()) return
         running = true
         run.launch {
-            val reason = withContext(Dispatchers.IO) { app.kern.seerrRequest(k.art, k.id.toLong(), seasons.joinToString(",")).await() }
+            val reason = withContext(Dispatchers.IO) { app.rk.seerrRequest(k.art, k.id.toLong(), seasons.joinToString(",")).await() }
             if (reason.isEmpty()) {
                 // Read the state, do not assume: if Seerr approves at once, the title is not "waiting".
-                runCatching { JSONObject(withContext(Dispatchers.IO) { app.kern.seerrDetail(k.art, k.id.toLong()).await() }) }.getOrNull()?.let { freshValue ->
+                runCatching { JSONObject(withContext(Dispatchers.IO) { app.rk.seerrDetail(k.art, k.id.toLong()).await() }) }.getOrNull()?.let { freshValue ->
                     detail = freshValue
                     if (freshValue.has("stand") && !freshValue.isNull("stand")) { state = freshValue.getInt("stand"); requestable = freshValue.optBoolean("anfragbar") }
                 }

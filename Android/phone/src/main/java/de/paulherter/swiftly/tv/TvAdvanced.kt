@@ -32,7 +32,6 @@ import de.paulherter.swiftly.cleaned
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import de.paulherter.swiftly.headerRowOut
 
 /**
@@ -75,7 +74,7 @@ fun TvAdvanced(rows: SnapshotStateList<HeaderRow>, expanded: Boolean = false, mo
 fun TvOwnHeadersPage(app: SwiftlyApplication, close: () -> Unit) {
     val server = app.activeServer()
     val rows = remember { mutableStateListOf<HeaderRow>().apply { addAll(headerRowOut(app.ownHeaders(server))) } }
-    var secured by remember { mutableStateOf(Kern.ownHeadersCleaned(app.ownHeaders(server))) }
+    var secured by remember { mutableStateOf(de.paulherter.swiftly.rustcore.legacyOwnHeadersCleaned(app.ownHeaders(server))) }
     val focus = firstFocus()
     val changed = rows.cleaned() != secured
     Box(Modifier.fillMaxSize().background(Theme.reason).verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
@@ -86,7 +85,7 @@ fun TvOwnHeadersPage(app: SwiftlyApplication, close: () -> Unit) {
                 if (changed && server != null) {
                     TvButton(translated("Sichern")) {
                         app.ownHeadersSafe(rows.asJson(), server)
-                        secured = Kern.ownHeadersCleaned(app.ownHeaders(server))
+                        secured = de.paulherter.swiftly.rustcore.legacyOwnHeadersCleaned(app.ownHeaders(server))
                         close()
                     }
                 }

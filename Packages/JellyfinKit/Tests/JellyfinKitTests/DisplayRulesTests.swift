@@ -40,7 +40,7 @@ struct DisplayRulesTests {
     @Test("Ab zwei Zeichen wird gesucht")
     func offTwo() {
         #expect(DisplayRules.searchTermFits("ab"))
-        #expect(DisplayRules.searchTermFits("Mentalist"))
+        #expect(DisplayRules.searchTermFits("Lighthouse"))
     }
 }
 

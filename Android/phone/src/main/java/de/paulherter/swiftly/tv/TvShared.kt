@@ -62,7 +62,7 @@ fun tvCreateOpen(app: SwiftlyApplication, titleIdentifier: String, titleLine: St
         mapOf("oeffnen" to Glyph.ClusterFilled),
         subline = titleLine + "\n\n" +
             translated("Alle auf deinem Server sehen die Gruppe und können mit einsteigen. Pause und Springen gelten dann für alle.")) {
-        panelRun.launch { withContext(Dispatchers.IO) { app.kern.syncPlayCreate("", titleIdentifier).await() } }
+        panelRun.launch { withContext(Dispatchers.IO) { app.rk.syncPlayCreate("", titleIdentifier).await() } }
     }
 }
 
@@ -71,7 +71,7 @@ fun tvJoinOpen(app: SwiftlyApplication, g: SharedGroup) {
     val rows = listOfNotNull(werWatch(g), stateTextOf(g.condition), translated("Pause und Springen gelten für alle."))
     app.sheet.value = SheetRequest(g.name, listOf(Choice("beitreten", translated("Beitreten"))), null,
         mapOf("beitreten" to Glyph.ClusterFilled), subline = rows.joinToString("\n")) {
-        panelRun.launch { withContext(Dispatchers.IO) { app.kern.syncPlayJoin(g.id).await() } }
+        panelRun.launch { withContext(Dispatchers.IO) { app.rk.syncPlayJoin(g.id).await() } }
     }
 }
 
@@ -86,7 +86,7 @@ fun tvSelectionOpen(app: SwiftlyApplication, continueWatching: (Offering) -> Uni
         when {
             value.startsWith("u:") -> offerings.firstOrNull { it.session == value.drop(2) }?.let(continueWatching)
             value.startsWith("g:") -> groups.firstOrNull { it.id == value.drop(2) }?.let { g ->
-                panelRun.launch { withContext(Dispatchers.IO) { app.kern.syncPlayJoin(g.id).await() } }
+                panelRun.launch { withContext(Dispatchers.IO) { app.rk.syncPlayJoin(g.id).await() } }
             }
         }
     }
@@ -125,7 +125,7 @@ fun TvReturnPathStrip(app: SwiftlyApplication) {
                 Text(translated("%@ verlassen", remembered[0].orEmpty()), style = TvTheme.body, color = Theme.font,
                      maxLines = 1, overflow = TextOverflow.Ellipsis)
                 FocusArea(Modifier.focusRequester(button).onFocusChanged { hasFocus = it.hasFocus }, magnifier = TvTheme.focusMagnifierSmall,
-                    perform = { run.launch { withContext(Dispatchers.IO) { app.kern.syncPlayAgainJoin().await() } } }) { focus ->
+                    perform = { run.launch { withContext(Dispatchers.IO) { app.rk.syncPlayAgainJoin().await() } } }) { focus ->
                     Text(translated("Wieder beitreten"), style = TvTheme.button, color = if (focus) Theme.reason else Theme.accent,
                          modifier = Modifier.clip(RoundedCornerShape(50)).background(if (focus) Color.White else Color.Transparent)
                              .padding(horizontal = 14.dp, vertical = 6.dp))

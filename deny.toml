@@ -1,0 +1,76 @@
+# cargo-deny policy for the Swiftly Rust core. Run: cargo deny check (or `cargo xtask security`).
+# The core is MPL-2.0. Permissive licences and MPL-2.0 are fine; GPL, AGPL and LGPL are not
+# (they would reach the App Store builds), and nothing without a licence is allowed.
+
+[graph]
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-apple-ios",
+    "aarch64-apple-tvos",
+    "aarch64-linux-android",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+]
+
+[advisories]
+version = 2
+yanked = "deny"
+# Unmaintained notices without a vulnerability; each needs a replacement plan before it may stay here.
+ignore = [
+    { id = "RUSTSEC-2026-0374", reason = "basic-toml unmaintained (build-time TOML reader of a dependency); no vulnerability, revisit when the parent moves on" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names unmaintained (merged into zbus 6); only pulled by accesskit_unix (screen-reader AT-SPI on Linux) via accesskit_winit, whose latest release 0.24.1 still uses zbus 5; no vulnerability; revisit when accesskit_unix moves to zbus 6" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained (merged into zbus 6); only pulled by accesskit_unix (screen-reader AT-SPI on Linux) via accesskit_winit, whose latest release 0.24.1 still uses zbus 5; no vulnerability; revisit when accesskit_unix moves to zbus 6" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained (merged into zbus 6); only pulled by accesskit_unix (screen-reader AT-SPI on Linux) via accesskit_winit, whose latest release 0.24.1 still uses zbus 5; no vulnerability; revisit when accesskit_unix moves to zbus 6" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained (font parsing of the text stack); no vulnerability reported, fonts are our own bundled files; revisit with the text stack" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained; only reached through accesskit_unix (Linux screen-reader bridge), no vulnerability reported; revisit when accesskit moves on" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names unmaintained; same accesskit_unix path as zvariant" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained; same accesskit_unix path as zvariant" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "BSL-1.0",
+    "0BSD",
+    "OpenSSL",
+    "CDLA-Permissive-2.0",
+    # jpeg-encoder declares "(MIT OR Apache-2.0) AND IJG": the IJG part is BSD-style with an acknowledgement duty
+    # (the notices carry it, LICENSES/IJG.txt).
+    "IJG",
+]
+# Workspace crates with publish = false (workspace-hack) carry no licence field.
+[licenses.private]
+ignore = true
+
+# GPL-*, AGPL-*, LGPL-*, SSPL and unlicensed crates are not in the list, so they fail.
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+deny = [
+    # One TLS stack (rustls with the platform verifier); no OpenSSL anywhere.
+    { crate = "openssl" },
+    { crate = "openssl-sys" },
+    { crate = "native-tls" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

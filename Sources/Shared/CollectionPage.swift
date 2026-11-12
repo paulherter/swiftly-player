@@ -111,7 +111,7 @@ struct CollectionView: View {
     private func updateTopLetter() {
         guard let alphabet = shownAlphabet,
               let item = state.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
-        let letter = alphabet.key(of: item)
+        let letter = state.key(of: item, in: alphabet)
         if letter != topLetter { topLetter = letter }
     }
 

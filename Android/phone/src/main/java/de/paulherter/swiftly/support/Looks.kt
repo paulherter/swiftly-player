@@ -3,8 +3,8 @@ package de.paulherter.swiftly.support
 import android.content.Context
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
+import de.paulherter.swiftly.KernRules
 import de.paulherter.swiftly.SwiftlyApplication
-import de.paulherter.swiftly.core.Kern
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.translated
 import org.json.JSONArray
@@ -37,7 +37,7 @@ class Looks(private val app: SwiftlyApplication) {
     val glowOpacity: Map<String, Float>
 
     init {
-        val o = JSONObject(Kern.looksCatalog())
+        val o = JSONObject(KernRules.looksCatalog())
         accents = o.getJSONArray("accents").objects().map(::accent)
         catalog = o.getJSONArray("looks").objects().map { l ->
             LookInfo(l.getString("id"), l.getString("nameKey"), accent(l.getJSONObject("accent")),
@@ -84,7 +84,7 @@ class Looks(private val app: SwiftlyApplication) {
     var tonesAnimated = false
     fun goHome() = goHomeAction()
 
-    private fun basePalette() = runCatching { parsePalette(JSONObject(Kern.looksPalette("{}"))) }.getOrElse {
+    private fun basePalette() = runCatching { parsePalette(JSONObject(KernRules.looksPalette("{}"))) }.getOrElse {
         val a = Accent("main", Theme.accent, Theme.accentLight, Theme.accentQuiet, Theme.onAccent, null)
         Palette("original", a, "off", 0f, Theme.accent, null, emptyList(), null)
     }
@@ -92,7 +92,7 @@ class Looks(private val app: SwiftlyApplication) {
     /** Reads the records once at the start. Does not touch the system icon. */
     fun start() {
         supporter = app.support.isSupporter
-        val selection = Kern.looksNormalize(app.store.rememberValue(SELECTION).orEmpty())
+        val selection = KernRules.looksNormalize(app.store.rememberValue(SELECTION).orEmpty())
         val owned = strings(app.store.rememberValue(OWNED))
         effectsOn.value = app.store.rememberValue(EFFECTS) != "0"
         val state = JSONObject().put("saved", JSONObject(selection)).put("supporter", supporter)
@@ -103,11 +103,11 @@ class Looks(private val app: SwiftlyApplication) {
 
     /** One step of the package's `LookTryOn`; stores what became permanent. */
     fun run(op: String, arg: String = ""): JSONObject {
-        val answer = JSONObject(Kern.looksTryOn(tryState, op, arg))
+        val answer = JSONObject(KernRules.looksTryOn(tryState, op, arg))
         val state = answer.getJSONObject("state")
         tryState = state.toString()
         val savedSelection = state.getJSONObject("saved").toString()
-        if (savedSelection != saved.value) app.store.remember(SELECTION, Kern.looksNormalize(savedSelection))
+        if (savedSelection != saved.value) app.store.remember(SELECTION, KernRules.looksNormalize(savedSelection))
         saved.value = savedSelection
         val own = state.getJSONArray("owned").strings().toSet()
         if (own != owned.value) app.store.remember(OWNED, JSONArray(own.sorted()).toString())
@@ -136,7 +136,7 @@ class Looks(private val app: SwiftlyApplication) {
     // MARK: Picking
 
     /** The selection for another look, clean of the old overrides. */
-    fun switching(lookID: String): String = Kern.looksSwitch(lookID)
+    fun switching(lookID: String): String = KernRules.looksSwitch(lookID)
 
     /** Whether this person may wear the selection as it is (the package's `mayWear`). */
     fun mayWear(selection: JSONObject): Boolean {
@@ -220,26 +220,26 @@ class Looks(private val app: SwiftlyApplication) {
     private fun now() = System.currentTimeMillis()
 
     /** Whether a gift can be picked up now. */
-    fun giftAvailable(lookID: String): Boolean = Kern.looksGiftAvailable(lookID, JSONArray(owned.value.toList()).toString(), now())
+    fun giftAvailable(lookID: String): Boolean = KernRules.looksGiftAvailable(lookID, JSONArray(owned.value.toList()).toString(), now())
 
-    fun anyGiftAvailable(): Boolean = Kern.looksAnyGiftAvailable(JSONArray(owned.value.toList()).toString(), now())
+    fun anyGiftAvailable(): Boolean = KernRules.looksAnyGiftAvailable(JSONArray(owned.value.toList()).toString(), now())
 
     /** The gift whose pop-up is due now, or null. */
     fun giftDue(playing: Boolean, secondsOnHome: Double): LookInfo? {
-        val id = Kern.looksGiftDue(now(), true, playing, askedThisSession, secondsOnHome,
+        val id = KernRules.looksGiftDue(now(), true, playing, askedThisSession, secondsOnHome,
             JSONArray(owned.value.toList()).toString(), app.store.rememberValue(OFFERED) ?: "[]")
         return if (id.isEmpty()) null else info(id)
     }
 
     fun markOffered(lookID: String) {
-        val offer = Kern.looksGiftOfferID(lookID, now())
+        val offer = KernRules.looksGiftOfferID(lookID, now())
         if (offer.isEmpty()) return
         val all = strings(app.store.rememberValue(OFFERED)) + offer
         app.store.remember(OFFERED, JSONArray(all.sorted()).toString())
     }
 
     /** In the look's season (the bats and the web belong to it). */
-    fun effects(playing: Boolean, reduceMotion: Boolean, foreground: Boolean): JSONObject = JSONObject(Kern.looksEffects(
+    fun effects(playing: Boolean, reduceMotion: Boolean, foreground: Boolean): JSONObject = JSONObject(KernRules.looksEffects(
         palette.value.look, now(), effectsOn.value, playing, reduceMotion, false, foreground))
 
     fun setEffects(on: Boolean) {
@@ -268,11 +268,11 @@ class Looks(private val app: SwiftlyApplication) {
     }
 
     /** The palette a selection would give, without wearing it (the hero's small phones, a gift's light). */
-    fun paletteFor(selection: String): Palette = runCatching { parsePalette(JSONObject(Kern.looksPalette(selection))) }.getOrElse { palette.value }
+    fun paletteFor(selection: String): Palette = runCatching { parsePalette(JSONObject(KernRules.looksPalette(selection))) }.getOrElse { palette.value }
 
     /** `LookProfileEntry`: "none", "teaser" or "current" and whether the plain Looks row shows. */
     fun profileEntry(): Pair<String, Boolean> {
-        val o = JSONObject(Kern.looksProfileEntry(true, app.support.isSupporter, owned.value.isNotEmpty(), anyGiftAvailable()))
+        val o = JSONObject(KernRules.looksProfileEntry(true, app.support.isSupporter, owned.value.isNotEmpty(), anyGiftAvailable()))
         return o.getString("entry") to o.getBoolean("showsRow")
     }
 
@@ -281,12 +281,12 @@ class Looks(private val app: SwiftlyApplication) {
     /** The shipped entry for this version (asset), or null. Validated by the package. */
     fun whatsNewEntry(context: Context, version: String): JSONObject? = runCatching {
         val text = context.assets.open("whatsnew/$version.json").bufferedReader().use { it.readText() }
-        if (JSONObject(Kern.whatsNewCheck(text)).getBoolean("valid")) JSONObject(text) else null
+        if (JSONObject(KernRules.whatsNewCheck(text)).getBoolean("valid")) JSONObject(text) else null
     }.getOrNull()
 
     /** "show", "markSeen" or "nothing" for this start. */
     fun whatsNewDecision(version: String, hasEntry: Boolean): String =
-        Kern.whatsNewDecide(app.store.rememberValue(WHATS_NEW).orEmpty(), app.support.usedBeforeThisLaunch, version, hasEntry)
+        KernRules.whatsNewDecide(app.store.rememberValue(WHATS_NEW).orEmpty(), app.support.usedBeforeThisLaunch, version, hasEntry)
 
     fun whatsNewSeen(version: String) = app.store.remember(WHATS_NEW, version)
 

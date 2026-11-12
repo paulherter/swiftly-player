@@ -80,7 +80,7 @@ struct GroupsEvent: View {
 /// the picker with both, instead of two stacked rows pushing the account upward.
 struct OfferingRow: View {
     let continueWatching: [RemoteSession]
-    let groups: [SyncPlayGroup]
+    let groups: [SharedGroup]
 
     @State private var hovers = false
 
@@ -285,11 +285,11 @@ struct SharedPanel: View {
         if case let .join(g)? = gemeinsam.sheet {
             PanelCategory(text: Text(verbatim: g.name))
             VStack(alignment: .leading, spacing: 0) {
-                Text(verbatim: Self.wer(g))
+                Text(verbatim: g.who)
                     .font(Theme.body)
                     .foregroundStyle(Theme.fontQuiet)
-                if let condition = Self.stateTextOf(g.condition) {
-                    Text(condition)
+                if let condition = g.stateText {
+                    Text(verbatim: condition)
                         .font(Theme.small)
                         .foregroundStyle(Theme.accent)
                         .padding(.top, 6)
@@ -329,7 +329,7 @@ struct SharedPanel: View {
         }
         ForEach(gemeinsam.group == nil ? gemeinsam.offerings : []) { g in
             SheetLine()
-            SelectionRow(symbol: "person.2.fill", title: g.name, under: Self.wer(g),
+            SelectionRow(symbol: "person.2.fill", title: g.name, under: g.who,
                          action: Text("Beitreten")) {
                 Task { await gemeinsam.join(g) }
             }
@@ -346,25 +346,6 @@ struct SharedPanel: View {
             return "\(series) · " + String(localized: "Staffel \(season) · Folge \(episode)")
         }
         return "\(series) · \(title.name)"
-    }
-
-    /// "Anna and Ben are watching".
-    static func wer(_ g: SyncPlayGroup) -> String {
-        var watched = Set<String>()
-        let names = g.participant.filter { watched.insert($0).inserted }
-        guard !names.isEmpty else { return String(localized: "Noch niemand dabei") }
-        let list = ListFormatter.localizedString(byJoining: names)
-        return names.count == 1 ? String(localized: "\(list) schaut gerade")
-                                : String(localized: "\(list) schauen gerade")
-    }
-
-    static func stateTextOf(_ z: SyncPlayGroup.Phase?) -> LocalizedStringKey? {
-        switch z {
-        case .running: "Läuft gerade"
-        case .halted: "Angehalten"
-        case .waits: "Wartet auf alle"
-        case .empty, nil: nil
-        }
     }
 }
 
@@ -462,7 +443,7 @@ struct SharedError: View {
 ///
 /// In the shape of `Hinweisstreifen`, bottom centre of the content, where every
 /// notice sits on iPhone too. How long it stays is defined by the package
-/// (`SyncPlayStatus.lastLeave`).
+/// (`SyncPlayPage.lastLeave`).
 struct ReturnPathStrip: View {
     let name: String
     let join: () -> Void

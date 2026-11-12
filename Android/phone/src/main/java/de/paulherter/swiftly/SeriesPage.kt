@@ -165,7 +165,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
     suspend fun episodesLoad(seriesIdentifier: String, seasonIdentifier: String) {
         episodesLoads = true
         try {
-            val new = episodesRead(withContext(Dispatchers.IO) { app.kern.episodes(seriesIdentifier, seasonIdentifier).await() })
+            val new = episodesRead(withContext(Dispatchers.IO) { app.rk.episodes(seriesIdentifier, seasonIdentifier).await() })
             app.episodesCache[seasonIdentifier] = new
             if (season == seasonIdentifier) episodes = new
             episodesDisturbed = false
@@ -176,7 +176,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
 
     suspend fun planLoad(episodeIdentifier: String) {
         try {
-            val o = JSONObject(withContext(Dispatchers.IO) { app.kern.plan(episodeIdentifier).await() })
+            val o = JSONObject(withContext(Dispatchers.IO) { app.rk.plan(episodeIdentifier).await() })
             val new = series?.copy(planPresent = o.has("methode"), lossless = o.optBoolean("lossless"), method = o.fieldText("methode"))
             if (new != null) { series = new; app.seriesCache[target.id] = new }
             planLoaded = true
@@ -191,10 +191,10 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
             // them only after series and episodes made the bottom shift.
             // `null`: the fetch failed.
             val (hasRead, surroundings) = coroutineScope {
-                val a = async(Dispatchers.IO) { app.kern.series(target.id).await() }
+                val a = async(Dispatchers.IO) { app.rk.series(target.id).await() }
                 val b = async(Dispatchers.IO) {
                     try {
-                        val o = JSONObject(app.kern.titleField(target.id).await())
+                        val o = JSONObject(app.rk.titleField(target.id).await())
                         o.fieldList("aehnliche") { gridTileRead(it) } to
                             o.fieldList("extras") { Extra(it.getString("id"), it.getString("name"), it.fieldText("bild"), it.fieldText("laufzeit")) }
                     }
@@ -211,7 +211,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
             // frame; before, the series showed first with placeholders and the list then shrank to the
             // episodes. If the prefetch fails, `episodesLoad` loads afterwards as before.
             val preOff = if (episodes.isEmpty() && choice != null && app.episodesCache[choice] == null) try {
-                episodesRead(withContext(Dispatchers.IO) { app.kern.episodes(new.id, choice).await() })
+                episodesRead(withContext(Dispatchers.IO) { app.rk.episodes(new.id, choice).await() })
             } catch (e: CancellationException) { throw e } catch (_: Exception) { null } else null
             series = new
             app.seriesCache[target.id] = new
@@ -239,7 +239,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
         jerk(Jerk.Lightweight)
         episodes = episodes.map { if (it.id == f.id) it.copy(watched = an, progress = if (an) null else it.progress) else it }
         section.launch {
-            val reason = withContext(Dispatchers.IO) { app.kern.watched(f.id, an).await() }
+            val reason = withContext(Dispatchers.IO) { app.rk.watched(f.id, an).await() }
             if (reason.isNotEmpty()) {
                 message = errorString(reason)
                 episodes = episodes.map { if (it.id == f.id) f else it }
@@ -315,7 +315,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (app.settings.watchlist) {
                         ActionButton(if (remembered) Glyph.BookmarkFilled else Glyph.Bookmark, translated("Merkliste"), remembered, translated(if (remembered) "Gemerkt" else "Merken")) {
-                            toggle(!remembered, { remembered = it }) { id, an -> app.kern.remember(id, an).await() }
+                            toggle(!remembered, { remembered = it }) { id, an -> app.rk.remember(id, an).await() }
                         }
                     }
                     // **Download sits in the row, not in a hidden chip**, between Save and Watched, and always via
@@ -329,7 +329,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                         ActionButton(Glyph.PlayRectangle, translated("Trailer"), false, translated("Trailer")) { trailerStart() }
                     }
                     ActionButton(if (watched) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle, translated("Gesehen"), watched, translated("Gesehen")) {
-                        toggle(!watched, { watched = it }) { id, an -> app.kern.watched(id, an).await() }
+                        toggle(!watched, { watched = it }) { id, an -> app.rk.watched(id, an).await() }
                     }
                     ActionButton(Glyph.More, translated("Mehr"), false, translated("Mehr")) {
                         val selectedSeason = s?.seasons?.firstOrNull { it.id == season }
@@ -368,24 +368,24 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                                     "vonvorn" -> s?.state?.let { st -> playAsking(app, st.id, null) }
                                     // Without a next episode, report it rather than silently doing nothing.
                                     "naechste" -> s?.state?.let { st ->
-                                        val afterThat = withContext(Dispatchers.IO) { app.kern.episodeAfter(st.id, s.id).await() }
+                                        val afterThat = withContext(Dispatchers.IO) { app.rk.episodeAfter(st.id, s.id).await() }
                                         if (afterThat.isNotEmpty()) playAsking(app, afterThat, null)
                                         else message = translated("Danach kommt nichts mehr.")
                                     }
                                     // Mixes all episodes once (`ShuffleRun` in the package); "Next episode" in the player follows it.
                                     "zufaellig" -> {
-                                        val first = withContext(Dispatchers.IO) { app.kern.shuffleStart(s?.id ?: return@withContext "").await() }
+                                        val first = withContext(Dispatchers.IO) { app.rk.shuffleStart(s?.id ?: return@withContext "").await() }
                                         if (first.isNotEmpty()) playAsking(app, first, 0.0)
                                         else message = translated("Die Folge konnte nicht geladen werden.")
                                     }
                                     "staffel" -> selectedSeason?.let { st ->
-                                        val reason = withContext(Dispatchers.IO) { app.kern.watched(st.id, true).await() }
+                                        val reason = withContext(Dispatchers.IO) { app.rk.watched(st.id, true).await() }
                                         if (reason.isNotEmpty()) message = errorString(reason)
                                         else { message = translated("%@ ist als gesehen vermerkt.", st.name); load() }
                                     }
                                     "metadaten" -> {
                                         val id = s?.id ?: return@launch
-                                        val reason = withContext(Dispatchers.IO) { app.kern.metadataRefresh(id).await() }
+                                        val reason = withContext(Dispatchers.IO) { app.rk.metadataRefresh(id).await() }
                                         message = if (reason.isEmpty()) translated("Der Server liest die Metadaten neu ein.") else errorString(reason)
                                     }
                                 }

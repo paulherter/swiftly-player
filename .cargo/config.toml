@@ -1,0 +1,7 @@
+[build]
+# Incremental on: a change in the crate being worked on rebuilds in ~1-3 s instead of ~17-28 s (measured 10.11.).
+# sccache still caches the dependencies. No jobs cap: default is all cores; a shared build host can limit parallel builds itself.
+incremental = true
+
+[alias]
+xtask = "run -q -p xtask --"

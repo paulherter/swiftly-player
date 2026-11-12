@@ -1,4 +1,5 @@
 import JellyfinKit
+import SwiftlyCore
 import SwiftUI
 
 // MARK: - Playlists
@@ -17,9 +18,7 @@ struct PlaylistView: View {
 
     @Environment(\.dismiss) private var back
     @Environment(\.wide) private var wide
-    @State private var entries: [Item] = []
-    @State private var loads = true
-    @State private var disrupted = false
+    @State private var core: PlaylistController?
     @State private var offset: CGFloat = 0
     @State private var prepares = false
     @State private var play: PlayRequest?
@@ -29,9 +28,11 @@ struct PlaylistView: View {
 
     /// What this section shows: movies in "Movies", episodes in "Series"; without a
     /// section (search, watchlist) everything.
-    private var shown: [Item] {
-        AppModel.playlistShown(entries, art: art)
-    }
+    private var shown: [SwiftlyCore.Tile] { core?.page.shown ?? [] }
+    private var loads: Bool { core?.page.loading ?? !failedOpen }
+    private var disrupted: Bool { failedOpen || (core?.page.disrupted ?? false) }
+    /// No session, so the core could not even be opened: say so instead of loading forever.
+    @State private var failedOpen = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -68,14 +69,9 @@ struct PlaylistView: View {
     }
 
     private func load() async {
-        let found = await model.playlistEntries(playlist)
-        if let found {
-            entries = found
-            disrupted = false
-        } else {
-            disrupted = entries.isEmpty
-        }
-        loads = false
+        if core == nil { core = try? AppCore.shared.playlist(session: model.session, playlist: playlist, art: art) }
+        failedOpen = core == nil
+        try? await core?.load()
     }
 
     private var header: some View {
@@ -103,7 +99,7 @@ struct PlaylistView: View {
     /// From the first entry on; the rest follows through the player's
     /// "next episode".
     private func start() {
-        guard let first = model.playlistStart(shown) else { return }
+        guard core?.start() != nil, let first = model.playlistStart(shown.map { Item(rust: $0) }) else { return }
         Theme.jerk(.medium)
         PlayRequest.start(first, freshValue: true,
                           ask: VersionAsk(choose: { versionChoice = $0 },
@@ -124,9 +120,10 @@ struct PlaylistView: View {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.tileSpacing),
                                      count: columns),
                       alignment: .leading, spacing: Theme.gridRowGap) {
-                ForEach(shown) { item in
+                ForEach(shown, id: \.id) { tile in
+                    let item = Item(rust: tile)
                     NavigationLink(value: item) {
-                        PosterTile(model: model, item: item, width: nil)
+                        PosterTile(model: model, item: item, width: nil, coreLook: RustTileLook(tile))
                     }
                     .buttonStyle(Theme.PressButton())
                     .tileMenu(item, model: model)

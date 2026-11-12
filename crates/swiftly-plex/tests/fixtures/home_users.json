@@ -1,0 +1,3 @@
+{"id":99,"name":"Home","users":[
+  {"id":1,"uuid":"uuid-admin","title":"Owner","admin":true,"restricted":false,"protected":false,"guest":false},
+  {"id":2,"uuid":"uuid-kid","title":"Kid","admin":false,"restricted":true,"protected":true,"guest":false}]}

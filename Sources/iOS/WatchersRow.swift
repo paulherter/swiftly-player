@@ -8,9 +8,25 @@ import SwiftUI
 struct WatchersRow: View {
     @Environment(\.wide) private var wide
     let model: AppModel
-    let item: Item
-    @State private var list: [Watcher] = []
+    let item: Item?
+    /// The core's watchers (`DetailVm`), when the page takes them from there; else the row asks the server.
+    let given: [Watcher]?
+    @State private var found: [Watcher] = []
     @State private var picked: String?
+
+    private var list: [Watcher] { given ?? found }
+
+    init(model: AppModel, item: Item) {
+        self.model = model
+        self.item = item
+        self.given = nil
+    }
+
+    init(model: AppModel, list: [Watcher]) {
+        self.model = model
+        self.item = nil
+        self.given = list
+    }
 
     var body: some View {
         Group {
@@ -40,9 +56,10 @@ struct WatchersRow: View {
                 .transition(.opacity)
             }
         }
-        .task(id: "\(item.id)\(model.watchersShown)") {
-            let found = await model.watchers(of: item)
-            withAnimation(Theme.reveal) { list = found }
+        .task(id: "\(item?.id ?? "")\(model.watchersShown)") {
+            guard given == nil, let item else { return }
+            let fetched = await model.watchers(of: item)
+            withAnimation(Theme.reveal) { found = fetched }
         }
     }
 }

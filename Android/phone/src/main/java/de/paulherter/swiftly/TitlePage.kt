@@ -135,7 +135,7 @@ internal fun playAsking(app: SwiftlyApplication, id: String, since: Double?, tit
     versionsLoading = true
     app.applicationRun.launch {
         try {
-            val loaded = runCatching { titleRead(withContext(Dispatchers.IO) { app.kern.title(id).await() }) }.getOrNull()
+            val loaded = runCatching { titleRead(withContext(Dispatchers.IO) { app.rk.title(id).await() }) }.getOrNull()
             if (loaded == null) app.message.value = translated("Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal.")
             else playOrChoose(app, loaded, id, since, beforePlay)
         } finally { versionsLoading = false }
@@ -223,7 +223,7 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
 
     suspend fun refresh() {
         try {
-            val new = titleRead(withContext(Dispatchers.IO) { app.kern.title(target.id).await() })
+            val new = titleRead(withContext(Dispatchers.IO) { app.rk.title(target.id).await() })
             title = new
             app.titleCache[target.id] = new
             remembered = new.remembered
@@ -233,7 +233,7 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
 
     /** `titleField` was read; `null` if the request failed. */
     suspend fun fieldFetch(): Pair<List<GridTile>, List<Extra>>? = try {
-        val o = JSONObject(withContext(Dispatchers.IO) { app.kern.titleField(target.id).await() })
+        val o = JSONObject(withContext(Dispatchers.IO) { app.rk.titleField(target.id).await() })
         o.fieldList("aehnliche") { gridTileRead(it) } to
             o.fieldList("extras") { Extra(it.getString("id"), it.getString("name"), it.fieldText("bild"), it.fieldText("laufzeit")) }
     } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
@@ -251,10 +251,10 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
      */
     suspend fun load() {
         coroutineScope {
-            val a = async { try { titleRead(withContext(Dispatchers.IO) { app.kern.title(target.id).await() }) }
+            val a = async { try { titleRead(withContext(Dispatchers.IO) { app.rk.title(target.id).await() }) }
                             catch (e: CancellationException) { throw e } catch (_: Exception) { null } }
             val b = async { fieldFetch() }
-            val c = async { collectionRailsLoad(app.kern, target.id) }
+            val c = async { collectionRailsLoad(app.rk, target.id) }
             val d = async { watchersLoad(app, target.id) }
             val new = a.await(); val surroundings = b.await(); val rails = c.await(); val seen = d.await()
             // From here on without interruption: everything lands in the same frame.
@@ -323,7 +323,7 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (app.settings.watchlist) {
                         ActionButton(if (remembered) Glyph.BookmarkFilled else Glyph.Bookmark, translated("Merkliste"), remembered, translated(if (remembered) "Gemerkt" else "Merken")) {
-                            toggle(!remembered, { remembered = it }, { app.kern.remember(target.id, it).await() }) { alt, an -> alt.copy(remembered = an) }
+                            toggle(!remembered, { remembered = it }, { app.rk.remember(target.id, it).await() }) { alt, an -> alt.copy(remembered = an) }
                         }
                     }
                     // The fifth field, only when the feature is on; next to the watchlist, as the "for later" pair.
@@ -332,7 +332,7 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                         section.launch { trailerStart(app, context, target.id)?.let { message = it } }
                     }
                     ActionButton(if (watched) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle, translated("Gesehen"), watched, translated("Gesehen")) {
-                        toggle(!watched, { watched = it }, { app.kern.watched(target.id, it).await() }) { alt, an -> alt.copy(watched = an) }
+                        toggle(!watched, { watched = it }, { app.rk.watched(target.id, it).await() }) { alt, an -> alt.copy(watched = an) }
                     }
                     ActionButton(Glyph.More, translated("Mehr"), false, translated("Mehr")) {
                         // `TitleActions.forMovie`.
@@ -358,12 +358,12 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                                 when (choice) {
                                     "vonvorn" -> playAsking(app, target.id, null, t)
                                     "zuruecksetzen" -> {
-                                        val reason = withContext(Dispatchers.IO) { app.kern.watched(target.id, false).await() }
+                                        val reason = withContext(Dispatchers.IO) { app.rk.watched(target.id, false).await() }
                                         if (reason.isNotEmpty()) message = errorString(reason)
                                         else { message = translated("Der Fortschritt ist zurückgesetzt."); refresh() }
                                     }
                                     "metadaten" -> {
-                                        val reason = withContext(Dispatchers.IO) { app.kern.metadataRefresh(target.id).await() }
+                                        val reason = withContext(Dispatchers.IO) { app.rk.metadataRefresh(target.id).await() }
                                         message = if (reason.isEmpty()) translated("Der Server liest die Metadaten neu ein.") else errorString(reason)
                                     }
                                 }

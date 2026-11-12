@@ -40,12 +40,20 @@ final class SeerrModel {
     var connected: Bool { access != nil }
     var address: String? { access?.address.absoluteString }
 
-    private var client: SeerrClient? {
-        access.map { SeerrClient(access: $0) }
+    /// The core's Seerr for the stored connection (search, detail, request, session check).
+    /// The core's Seerr for the person page; `nil` when not connected.
+    var coreClient: SeerrCore.Client? { client }
+
+    private var client: SeerrCore.Client? {
+        access.map { SeerrCore.model($0) }
     }
 
     /// Connecting or disconnecting here; the settings sync takes it to the other devices.
     @ObservationIgnored var changed: (() -> Void)?
+
+    /// The media server's signed-in user name (set by the app model); Seerr signs in with the same account.
+    @ObservationIgnored var userName: (() -> String?)?
+    private var passwordKey: String { key + "|passwort" }
 
     init() { access = loaded() }
 
@@ -53,8 +61,8 @@ final class SeerrModel {
     /// there. Not reported back as a change of this device's.
     func adopt(_ new: SeerrAccess?) {
         guard new != access else { return }
-        if let old = access?.address, old != new?.address { Seerr.cookiesForget(for: old) }
-        if let new { secure(new) } else { Keychain.delete(key: key) }
+        if let old = access?.address, old != new?.address { Self.cookiesForget(for: old) }
+        if let new { secure(new) } else { Keychain.delete(key: key); Keychain.delete(key: passwordKey) }
         access = new
         sessionState = .invalid
         error = nil
@@ -99,36 +107,28 @@ final class SeerrModel {
         // and the user had to type `https://` themselves. The media server already
         // falls back to the other scheme in that case; Seerr now does too. If the
         // user typed the scheme, there is no second attempt: that is a decision.
-        let addresses = Seerr.addresses(from: typedInput)
-        guard !addresses.isEmpty else {
+        guard !Seerr.addresses(from: typedInput).isEmpty else {
             error = String(localized: "Das ist keine gültige Adresse.")
             return
         }
         reportAn = true
         defer { reportAn = false }
 
-        var lastOne: Error?
-        for url in addresses {
-            do {
-                let new = try await SeerrClient.signIn(an: url, user: user,
-                                                         password: password, headers: headers)
-                secure(new)
-                access = new
-                sessionState = .valid
-                error = nil
-                changed?()
-                return
-            } catch {
-                // The first failure stays when the second attempt only trips over the
-                // scheme or a refused redirect: "no server reachable" is the real news.
-                lastOne = lastOne.map { Seerr.errorToShow(first: $0, second: error) } ?? error
-                // **Only keep trying on a network error.** If Seerr says "wrong password",
-                // the address is right and the other scheme would just add a second
-                // timeout.
-                guard (error as? URLError) != nil else { break }
-            }
+        do {
+            // The core tries the addresses in turn (the second only after a network error), keeps the
+            // first failure when the second only trips over the scheme or a refused redirect, and words it.
+            let new = try await SeerrCore.signIn(typed: typedInput, user: user, password: password,
+                                                 headers: headers)
+            secure(new)
+            // The same password signs in again when the session expires (Keychain, this device only).
+            try? Keychain.save(Data(password.utf8), key: passwordKey)
+            access = new
+            sessionState = .valid
+            error = nil
+            changed?()
+        } catch {
+            self.error = readableError(error)
         }
-        error = lastOne.map(readableError)
     }
 
     /// Disconnect. Our side only; everything stays as it is at Seerr itself.
@@ -136,8 +136,9 @@ final class SeerrModel {
         // Also the connection cookie, not just the stored credentials:
         // a still-valid session in memory stops Seerr from issuing a new one on the
         // next sign-in (see `Seerr.cookiesForget`).
-        if let address = access?.address { Seerr.cookiesForget(for: address) }
+        if let address = access?.address { Self.cookiesForget(for: address) }
         Keychain.delete(key: key)
+        Keychain.delete(key: passwordKey)
         access = nil
         sessionState = .invalid
         error = nil
@@ -150,7 +151,29 @@ final class SeerrModel {
     /// on the next request.
     func lookUp() async {
         guard let client else { return }
-        sessionState = await client.applies()
+        sessionState = (try? await client.applies()).map(SeerrCore.session) ?? .unreachable
+        if sessionState == .invalid { await signInAgain() }
+    }
+
+    /// Seerr is set up but its session is gone: sign in again with the media server's account. Without a
+    /// stored password nothing happens (the row asks for the manual sign-in); a refusal is shown, not retried.
+    private func signInAgain() async {
+        guard let stored = access, let user = userName?(), !user.isEmpty else { return }
+        let started = key
+        let result = await SeerrCore.autoSignIn(
+            stored: stored, user: user, secret: KeychainSeerrPassword(key: passwordKey), headers: stored.headers)
+        guard started == key, access == stored else { return }
+        switch result {
+        case .signedIn(let new):
+            secure(new)
+            access = new
+            sessionState = .valid
+            error = nil
+            changed?()
+        case .rejected(let message): error = message
+        case .unreachable: sessionState = .unreachable
+        case .noPassword, .notConfigured: break
+        }
     }
 
     // MARK: Using
@@ -158,26 +181,33 @@ final class SeerrModel {
     /// Search, **without throwing and without blocking.**
     func searching(_ term: String) async -> [SeerrHit] {
         guard let client, DisplayRules.searchTermFits(term) else { return [] }
-        return await client.searching(term)
+        return ((try? await client.search(term: term)) ?? []).map(SeerrCore.hit)
     }
 
     /// What a person has done as far as Seerr knows, for "Can be requested" on
     /// their page. Does not throw, like `searching`.
     func filmography(person tmdb: Int) async -> [SeerrHit] {
         guard let client else { return [] }
-        return await client.filmography(person: tmdb)
+        return ((try? await client.filmography(personTmdb: Int64(tmdb))) ?? []).map(SeerrCore.hit)
     }
 
     /// Description, rating and seasons, for a title's page.
     func detail(_ hit: SeerrHit) async -> SeerrDetail? {
         guard let client else { return nil }
-        return await client.detail(art: hit.art, id: hit.id)
+        guard let detail = try? await client.detail(art: hit.art, id: Int64(hit.id)) else { return nil }
+        return SeerrCore.detail(detail)
     }
 
     /// Requests. This one throws: the user pressed the button.
     func askFor(_ hit: SeerrHit, seasons: [Int]? = nil) async throws {
         guard let client else { throw JellyfinError.notAuthenticated }
-        try await client.askFor(art: hit.art, id: hit.id, seasons: seasons)
+        try await SeerrCore.askFor(client, art: hit.art, id: hit.id, seasons: seasons)
+    }
+
+    /// Removes the platform's cookies of the Seerr address (a valid session in memory would stop Seerr from
+    /// issuing a new one on the next sign-in).
+    private static func cookiesForget(for address: URL) {
+        SeerrCore.cookiesForget(for: address)
     }
 
     // MARK: Ablage

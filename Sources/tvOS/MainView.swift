@@ -69,6 +69,10 @@ struct MainView: View {
     ///
     /// So the request lives in the frame and the player on top of everything.
     @State private var play: PlayRequest?
+    #if DEBUG
+    /// `-SwiftlyLiveLookPage`: the subtitle look page, opened by the live run for a shot.
+    @State private var liveLookPage = false
+    #endif
 
     /// On subpages the top bar yields: content counts there, and Menu goes back.
     ///
@@ -132,7 +136,7 @@ struct MainView: View {
     }
 
     /// Groups one could join; only while in none.
-    private var groupsOfferings: [SyncPlayGroup] {
+    private var groupsOfferings: [SharedGroup] {
         gemeinsam.group == nil && gemeinsam.mayJoin ? gemeinsam.offerings : []
     }
 
@@ -251,7 +255,7 @@ struct MainView: View {
             // "Leave movie night / Rejoin" after the player closes. Not over the player, where one
             // is in the group anyway.
             if play == nil, !sharedPanel, let alt = gemeinsam.lastLeave {
-                TVReturnPathStrip(name: alt.name) { gemeinsam.againJoin() }
+                TVReturnPathStrip(name: alt) { gemeinsam.againJoin() }
                     .transition(.opacity)
                     .zIndex(4)
             }
@@ -278,7 +282,7 @@ struct MainView: View {
                    value: selectionOpen)
         .animation(fromEmblem ? Theme.spring : Theme.motion(.easeInOut(duration: 0.2)),
                    value: sharedPanel)
-        .animation(Theme.reveal, value: gemeinsam.lastLeave?.id)
+        .animation(Theme.reveal, value: gemeinsam.lastLeave)
         // Closing returns to the trigger. If the sheet came from the badge, focus is back there;
         // if from a page, the page takes it itself (see `gemeinsamZu` in the detail and series
         // pages).
@@ -345,6 +349,10 @@ struct MainView: View {
         .onDisappear { takeover.finish() }
         #if DEBUG
         .task { await debugJump() }
+        #endif
+        #if DEBUG
+        .task { LiveRun.start(model, open: { play = $0 }, close: { play = nil }, look: { liveLookPage = $0 }) }
+        .fullScreenCover(isPresented: $liveLookPage) { TVSubtitleLookView(model: model) { liveLookPage = false } }
         #endif
         .onDisappear {
             Task { await model.remoteControlEnd() }

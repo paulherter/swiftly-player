@@ -25,6 +25,7 @@ enum ProfilePickerRule {
     static func opensAtLaunch(ready: Bool, accounts: Int) -> Bool {
         guard ready, accounts >= minimum else { return false }
         #if DEBUG
+        if LiveRun.inMemory { return false }  // the live matrix on a real device must not stop at the picker
         if forced { return true }
         #endif
         return UserDefaults.standard.object(forKey: key) as? Bool ?? true

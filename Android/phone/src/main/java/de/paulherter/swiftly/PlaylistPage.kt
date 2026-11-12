@@ -19,7 +19,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import de.paulherter.swiftly.core.Kern
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Theme
@@ -68,7 +67,7 @@ class PlaylistState(val id: String, val art: String?) {
     var loads by mutableStateOf(true); private set
     var disrupted by mutableStateOf(false); private set
 
-    suspend fun load(kern: Kern) {
+    suspend fun load(kern: RustKern) {
         try {
             val o = JSONObject(withContext(Dispatchers.IO) { kern.playlistPage(id, art.orEmpty()).await() })
             val a = o.getJSONArray("titel")
@@ -81,7 +80,7 @@ class PlaylistState(val id: String, val art: String?) {
     }
 
     /** The first entry's ID after the core has made the list the run; empty if there is none. */
-    suspend fun start(kern: Kern): String = withContext(Dispatchers.IO) { kern.playlistStart(id, art.orEmpty()).await() }
+    suspend fun start(kern: RustKern): String = withContext(Dispatchers.IO) { kern.playlistStart(id, art.orEmpty()).await() }
 }
 
 /**
@@ -94,8 +93,8 @@ fun PlaylistPage(app: SwiftlyApplication, target: Destination, open: (Destinatio
     val section = rememberCoroutineScope()
     var message by remember { mutableStateOf<String?>(null) }
     var prepares by remember { mutableStateOf(false) }
-    LaunchedEffect(state) { state.load(app.kern) }
-    WatchStateChange(app) { state.load(app.kern) }
+    LaunchedEffect(state) { state.load(app.rk) }
+    WatchStateChange(app) { state.load(app.rk) }
     val grid = rememberLazyGridState()
     val density = LocalDensity.current
     val offset by remember {
@@ -110,7 +109,7 @@ fun PlaylistPage(app: SwiftlyApplication, target: Destination, open: (Destinatio
                         if (state.items.isEmpty() || prepares) return@ValuePill
                         prepares = true
                         section.launch {
-                            val first = try { state.start(app.kern) } catch (e: CancellationException) { throw e } catch (_: Exception) { "" }
+                            val first = try { state.start(app.rk) } catch (e: CancellationException) { throw e } catch (_: Exception) { "" }
                             if (first.isNotEmpty()) playAsking(app, first, null)
                             else message = translated("Die Folge konnte nicht geladen werden.")
                             prepares = false
@@ -134,11 +133,11 @@ fun PlaylistPage(app: SwiftlyApplication, target: Destination, open: (Destinatio
                 if (state.disrupted) {
                     EmptyState(Glyph.WlanDisruption, translated("Server ist abgetaucht"),
                         translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serverAddress()),
-                        primaryButton = translated("Erneut versuchen") to { section.launch { state.load(app.kern) } })
+                        primaryButton = translated("Erneut versuchen") to { section.launch { state.load(app.rk) } })
                 } else if (state.items.isEmpty() && !state.loads) {
                     EmptyState(Glyph.Store, translated("Hier ist noch nichts"),
                         translated("Sobald in dieser Wiedergabeliste etwas liegt, taucht es hier auf."),
-                        quietButton = translated("Aktualisieren") to { section.launch { state.load(app.kern) } })
+                        quietButton = translated("Aktualisieren") to { section.launch { state.load(app.rk) } })
                 }
             }
         }

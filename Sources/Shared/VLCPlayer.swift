@@ -105,7 +105,10 @@ enum AppLog {
         // `Documents`, is backed up to iCloud and grows to 256 KB at runtime.
         // `Logger` stays, it is made for this.
         // `DEVLOG` is set by `Werkzeuge/to-iphone.sh` for a fast (Release) test build.
-        #if !DEBUG && !DEVLOG
+        // **The Mac writes the file in every build** (it has no `-DDEVLOG` build step like `to-iphone.sh`, and the
+        // candidate had no log at all, so a failed subtitle test could not be read). Its container's `Documents` is not
+        // backed up to iCloud; the file stays capped at 256 KB.
+        #if !DEBUG && !DEVLOG && !os(macOS)
         return
         #else
         print(text)
@@ -215,6 +218,9 @@ final class VLCPlayerView: BaseView {
         layer?.backgroundColor = NSColor.black.cgColor
         #endif
         Self.liveViews.add(self)
+        #if DEBUG
+        Self.recent = self
+        #endif
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -310,6 +316,13 @@ final class VLCPlayerView: BaseView {
 
     /// Which tracks the next start wants; set before `play(url:)`.
     var trackRequest: TrackRequest?
+    /// What the lookup found for the running title (next episode, sections), kept until the core's backend exists.
+    /// The next title comes from a quality choice (the new core model says when the original plays).
+    var coreQualityWish = false
+    var corePendingChapters: [Chapter]?
+    var corePendingTrickplay: Trickplay?
+    var corePendingNext: Item?
+    var corePendingSections: [JellyfinKit.Segment]?
 
     /// The inputs of ``wendeLanguagesAn(audio:subtitle:automatic:source:title:originalLanguage:)``.
     struct TrackRequest {
@@ -323,6 +336,15 @@ final class VLCPlayerView: BaseView {
         var ordered: TrackIndices? = nil
         /// What the engine needs besides the address; `nil` for files on the device.
         var engine: EngineRequest? = nil
+        /// What the core needs to play this title itself (``PlaybackRoute``); `nil` for files on the device.
+        var coreStart: CoreStart? = nil
+    }
+
+    /// The title and plan behind a start, and the model whose session and report queue the core plays over.
+    struct CoreStart {
+        let item: Item
+        let plan: PlaybackPlan
+        let model: AppModel
     }
 
     /// The engine while it plays this title.
@@ -353,6 +375,8 @@ final class VLCPlayerView: BaseView {
     /// If the engine cannot open the title or fails before the first picture, this reports the
     /// reason. The UI then shows a message instead of endless black.
     var startErrorReported: ((String) -> Void)?
+    /// A downloaded file failed to open before the first picture. Returns `true` when the screen switched to the stream.
+    var fileFailed: ((String) -> Bool)?
 
     func pause() {
         if pausedSince == nil { pausedSince = Date() }
@@ -412,6 +436,7 @@ final class VLCPlayerView: BaseView {
         runsReported = nil
         jumpReported = nil
         startErrorReported = nil
+        fileFailed = nil
         tracksReported = nil
         #if os(iOS)
         onPiPAvailable = nil
@@ -515,10 +540,10 @@ final class VLCPlayerView: BaseView {
 
     func delayForNewTitle(oldTitle: String, oldSeries: String?,
                           newTitle: String, addedSeries: String?) {
-        subtitleDelay = .forNewTitle(subtitleDelay, oldTitle: oldTitle,
+        subtitleDelay = DelayCarry.forNewTitle(subtitleDelay, oldTitle: oldTitle,
                                      oldSeries: oldSeries, newTitle: newTitle,
                                      addedSeries: addedSeries)
-        audioDelay = .forNewTitle(audioDelay, oldTitle: oldTitle,
+        audioDelay = DelayCarry.forNewTitle(audioDelay, oldTitle: oldTitle,
                                   oldSeries: oldSeries, newTitle: newTitle,
                                   addedSeries: addedSeries)
     }
@@ -536,6 +561,20 @@ final class VLCPlayerView: BaseView {
             return
         }
         avEngine?.move(to: seconds)
+        jumpReported?(seconds)
+    }
+
+    /// The slider, as the core's scrub intents (core-played titles only; the old way has nothing to tell).
+    func scrubStart() { (avEngine as? CorePlaybackBackend)?.scrubStart() }
+    func scrubMove(to seconds: Double) {
+        guard let seconds = JumpTarget.seconds(seconds) else { return }
+        (avEngine as? CorePlaybackBackend)?.scrubMove(seconds)
+    }
+    /// Release: the seek. In the core it is `scrubEnd`, which also ends its push state; otherwise `seek`.
+    func scrubEnd(to seconds: Double) {
+        guard let core = avEngine as? CorePlaybackBackend else { seek(toSeconds: seconds); return }
+        guard let seconds = JumpTarget.seconds(seconds) else { return }
+        core.scrubEnd(seconds)
         jumpReported?(seconds)
     }
 

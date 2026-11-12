@@ -1,6 +1,13 @@
 import Foundation
 import OSLog
 import JellyfinKit
+import enum SwiftlyCore.PendingProgress
+import enum SwiftlyCore.HomeRowOrder
+import struct SwiftlyCore.HomeLibraryChoice
+import class SwiftlyCore.PlayReporter
+import struct SwiftlyCore.AccountRef
+import struct SwiftlyCore.PlayReportPlan
+import enum SwiftlyCore.PlayReportOutcome
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
@@ -32,6 +39,8 @@ final class AppModel {
 
     var phase: Phase = .disconnected
     var errorMessage: String?
+    /// Image addresses of the public users, from the core's last list (`publicUser()`).
+    @ObservationIgnored var userImages: [String: URL] = [:]
     var views: [Item] = []
     /// For the header in the profile menu.
     var serverName: String?
@@ -87,7 +96,7 @@ final class AppModel {
     }
     /// The account's `EnableNextEpisodeAutoPlay`. Not persisted: it arrives fresh
     /// on every launch, and another account has another.
-    private var nextAutomaticAccount: Bool?
+    private(set) var nextAutomaticAccount: Bool?
     /// Becomes `true` once the rating question is due after a title is finished.
     /// The root view asks and resets it.
     var ratingDue = false
@@ -139,6 +148,27 @@ final class AppModel {
     /// own. Off by default and without genres, so the home page stays as it was
     /// until someone wants something.
     var genreChips: Bool { didSet { remember(genreChips, "genreChips") } }
+    /// Whether the Rust core is the source of Home, Library, Search and the title wording for the signed-in
+    /// server. No switch: it is a fact of the session and the platform.
+    // Plex is a core account like the others (the address in use and the server token; the address failover
+    // stays with `PlexClient` until the core owns it). Detail and Series on tvOS and the player are still
+    // marked `CORE-GAP` where they read `Item` data.
+    var coreServes: Bool {
+        #if canImport(SwiftlyCore) && (os(iOS) || os(macOS) || os(tvOS))
+        coreAccount != nil
+        #else
+        false
+        #endif
+    }
+    /// What the Library and Search tiles show when the core feeds them, by title id (`RustTileLook`).
+    @ObservationIgnored var rustLooks: [String: RustTileLook] = [:]
+    #if canImport(SwiftlyCore)
+    /// The only door to the Rust core (`AppCore`): models of the screens are asked here.
+    @ObservationIgnored let core = AppCore.shared
+    /// The core's account for the current session (`nil` without a session or for Plex).
+    var coreAccount: CoreAccount? { core.account(session) }
+    @ObservationIgnored let rustScreens = RustScreens()
+    #endif
     var startGenres: [String] { didSet { remember(startGenres, "startGenres") } }
     /// **Libraries and collections as home page rows of their own**, in the chosen
     /// order. The choice belongs to the server (`serverKey`), since the IDs
@@ -152,6 +182,32 @@ final class AppModel {
             guard clean == startLibraries else { startLibraries = clean; return }
             remember(StartLibraries.data(startLibraries) ?? Data(), "startBibliotheken" + serverKey)
         }
+    }
+    /// **One order for the fixed rows, libraries and collections together** (`startReihenfolge`, per server,
+    /// this device only, not synced). Empty: the old order. The core heals it (`HomeRowOrder`).
+    var startOrder: [String] { didSet { remember(startOrder, "startReihenfolge" + serverKey) } }
+    /// The effective combined order of the Home rows.
+    var rowOrder: [String] {
+        HomeRowOrder.effective(
+            stored: startOrder, fallbackFixed: startRails.map(\.rawValue), disconnected: newAccessDisconnected,
+            libraries: startLibraries.map { HomeLibraryChoice(id: $0.id, name: $0.name, collection: $0.collection) })
+    }
+    /// A drag in the combined list: stores the order and keeps the fixed rows' own list (`startReihen`) in step.
+    func moveRows(from source: IndexSet, to destination: Int) {
+        storeOrder(HomeRowOrder.moved(rowOrder, from: source, to: destination))
+    }
+    /// A drop of one row onto another in the combined list.
+    func dropRow(_ row: String, onto target: String) {
+        storeOrder(HomeRowOrder.moved(rowOrder, row: row, onto: target))
+    }
+    /// Move Up / Move Down among the rows that are shown.
+    func shiftRow(_ row: String, by delta: Int, among shown: [String]) {
+        storeOrder(HomeRowOrder.moved(rowOrder, row: row, by: delta, among: shown))
+    }
+    func storeOrder(_ moved: [String]) {
+        startOrder = moved
+        let fixed = moved.compactMap(StartRail.init(rawValue:))
+        startRails = fixed + startRails.filter { !fixed.contains($0) }
     }
     /// How much buffer the player holds. See ``BufferLevel`` in the package.
     var bufferLevel: BufferLevel { didSet { remember(bufferLevel.rawValue, "pufferstufe") } }
@@ -241,6 +297,7 @@ final class AppModel {
         bitratesLimit = store.object(forKey: "bitratenGrenze" + k) as? Int
             ?? store.integer(forKey: "bitratenGrenze")
         startLibraries = StartLibraries.read(store.data(forKey: "startBibliotheken" + k))
+        startOrder = store.stringArray(forKey: "startReihenfolge" + k) ?? []
     }
 
     private func remember(_ value: Any, _ name: String) {
@@ -462,7 +519,7 @@ final class AppModel {
     /// What is reported to the server as the limit. The computation lives in the
     /// package (``Bitratengrenze``) because Linux must give the same answer and it
     /// existed there verbatim a second time.
-    private var profileBitrate: Int {
+    var profileBitrate: Int {
         BitratesLimit.of(alwaysDirectPlay: alwaysDirectPlay, megabit: bitratesLimit)
     }
     var serverVersion: String?
@@ -561,6 +618,9 @@ final class AppModel {
     var pagesRefresh: Int { playbackEnded + watchStateChanged }
     /// A title was added to or removed from the watchlist.
     private(set) var watchlistChanged = 0
+    /// A page's own write reached the server (the core told the page): other pages reload.
+    func noteWatchStateChanged() { watchStateChanged += 1 }
+    func noteWatchlistChanged() { watchlistChanged += 1 }
     /// **What lists listen to** (watchlist, movies/series, search): watch state
     /// and bookmarks. Detail pages deliberately listen only to `pagesRefresh`,
     /// since they set the bookmark themselves.
@@ -577,6 +637,7 @@ final class AppModel {
             session = bundles.active?.activeOne
             // Seerr is tied to a server: on switching to another, its access applies.
             // Within one server nothing changes.
+            seerr.userName = { [weak self] in self?.session?.userName }
             seerr.serverSwitched(session?.serverIdentity)
             profileImagePrefetch()
         }
@@ -590,8 +651,10 @@ final class AppModel {
         set { bundles.set(newValue, for: bundles.activeKind) }
     }
 
-    /// Records an account in the bundle of **its own kind** and makes that kind current.
-    /// Returns whether the app was signed in before, which makes it an account switch.
+    #if DEBUG
+    /// Records an account in the bundle of **its own kind** and makes that kind current. Only the
+    /// test session (`setTestSession`) writes a bundle from Swift; real accounts are made by the core
+    /// (`AccountsHost`) and read back with ``loadBundles()``.
     private func bundleRecord(_ s: Session) -> Bool {
         let kind = s.kind
         let (new, _) = AccountBundle.record(s, in: bundles.bundle(for: kind))
@@ -600,6 +663,7 @@ final class AppModel {
         bundles.switchTo(kind)
         return wasSignedIn
     }
+    #endif
 
     /// **The images of the other accounts, before anyone asks.**
     ///
@@ -666,6 +730,7 @@ final class AppModel {
     }
 
     init() {
+        CoreErrorText.install()
         let store = UserDefaults.standard
         // `object(forKey:)` distinguishes "never set" from "off"; with
         // `bool(forKey:)` the default would always be false.
@@ -714,6 +779,7 @@ final class AppModel {
         genreChips = store.object(forKey: "genreChips") as? Bool ?? false
         startGenres = store.stringArray(forKey: "startGenres") ?? []
         startLibraries = StartLibraries.read(store.data(forKey: "startBibliotheken"))
+        startOrder = store.stringArray(forKey: "startReihenfolge") ?? []
         bufferLevel = (store.string(forKey: "pufferstufe")
                        .flatMap(BufferLevel.init(rawValue:))) ?? .normal
         discordShow = store.object(forKey: "discordAnzeigen") as? Bool ?? false
@@ -752,6 +818,17 @@ final class AppModel {
         // own headers, and the first posters right after.
         Self.ownHeadersLoad()
         #if DEBUG
+        // `-SwiftlyLiveMemory` (a real device with real accounts): the fixture account lives in memory only and is
+        // never written to the Keychain, and the stored accounts are not read.
+        if LiveRun.inMemory, let live = LiveRun.session() {
+            var only = ServerBundles()
+            let (record, _) = AccountBundle.record(live, in: nil)
+            only.set(record, for: live.kind)
+            only.switchTo(live.kind)
+            restoreSession(from: only)
+            AppLog.writeOut("[Livelauf] Fixture-Sitzung nur im Speicher an \(live.serverURL.absoluteString)")
+            return
+        }
         setTestSession()
         #endif
         restoreSession()
@@ -765,6 +842,14 @@ final class AppModel {
     /// xcrun simctl launch <device> <bundle-id> -testsitzung http://127.0.0.1:8899
     private func setTestSession() {
         let arguments = ProcessInfo.processInfo.arguments
+        // `-SwiftlyFixture <url>`: the running-app matrix (`LiveRun`) signs in to the fixture server.
+        if let live = LiveRun.session() {
+            bundles = loadBundles()
+            _ = bundleRecord(live)
+            saveBundle()
+            AppLog.writeOut("[Livelauf] Fixture-Sitzung an \(live.serverURL.absoluteString)")
+            return
+        }
         guard let i = arguments.firstIndex(of: "-testsitzung"), i + 1 < arguments.count,
               let address = URL(string: arguments[i + 1]) else { return }
         let s = Session(accessToken: "testmerkmal", userID: "testnutzer",
@@ -903,41 +988,43 @@ final class AppModel {
             return
         }
 
-        // First as guessed, then the other way around.
+        // **The core probes** (`AccountsHost.linkUp`): as guessed, then, only for an address typed
+        // without a scheme and only after a failure that a second attempt can fix, the other way
+        // around. What it throws is the reason of the **first** attempt.
         //
-        // Without a scheme, `https` is assumed for addresses outside the home network.
-        // If a server without a certificate runs there, the first attempt fails at the
-        // connection, not at a response. Exactly then, and only then, is a second
-        // attempt over `http` worthwhile. With a response carrying an error code it
-        // would be wrong: the server is there, it just says something else.
-        if await connectWith(url, headers: headers, mark: mark) { return }
-        guard checkState.applies(mark) else { return }
-
-        // Keep the reason of the **first** attempt.
-        //
-        // Otherwise the fallback attempt overwrites it with its own, which is almost
-        // always the wrong one: if `https` already fails at name resolution, `http`
-        // fails the same way, but reports earlier that iOS blocks unencrypted
-        // connections. The user then reads "set up https" although the server simply
-        // could not be found.
-        let realReason = errorMessage
-
-        // **Not after every error.** If the name does not exist or the deadline
-        // expired, `http` fails just the same, only twice as late.
-        if raw.contains("://") == false,
-           let firstOne = lastConnectionError,
-           AddressCheck.fallbackPaysOff(to: firstOne),
-           let alternate = AppModelURLNormalizer.reversed(url),
-           await connectWith(alternate, headers: headers, mark: mark) { return }
-        guard checkState.applies(mark) else { return }
-
-        errorMessage = realReason
-        phase = .disconnected
+        // The own headers go down for both candidate addresses first (the HTTP client reads this table)
+        // and are taken back from the one that did not answer.
+        let candidates = [url] + (raw.contains("://") ? [] : AppModelURLNormalizer.reversed(url).map { [$0] } ?? [])
+        let before = candidates.map { OwnHeaders.registered(for: $0) }
+        let new = OwnHeaders.cleaned(headers)
+        if !new.isEmpty { for c in candidates { OwnHeaders.setDown(new, for: c) } }
+        func restore(except winner: URL? = nil) {
+            guard !new.isEmpty else { return }
+            for (c, old) in zip(candidates, before) where c != winner { OwnHeaders.setDown(old, for: c) }
+        }
+        do {
+            let found = try await AccountsHost.shared.linkUp(raw)
+            let answered = URL(string: found.adresse) ?? url
+            guard checkState.applies(mark) else { restore(); return }
+            guard let c = Self.makeServer(baseURL: answered) else { restore(); phase = .disconnected; return }
+            restore(except: answered)
+            // Store only now: for an address where nothing answers, nothing is left in the keychain.
+            if !new.isEmpty { ownHeadersSafe(new, for: answered) }
+            let name = found.name.isEmpty ? (answered.host() ?? "Server") : found.name
+            client = c
+            serverName = name
+            serverVersion = found.version.isEmpty ? nil : found.version
+            phase = .needsLogin(serverName: name, version: found.version.isEmpty ? "?" : found.version)
+            serverRemember(address: answered.host() ?? answered.absoluteString,
+                           name: name, version: found.version.isEmpty ? "?" : found.version)
+            errorMessage = nil
+        } catch {
+            restore()
+            guard checkState.applies(mark) else { return }
+            errorMessage = readable(error)
+            phase = .disconnected
+        }
     }
-
-    /// The raw error of the last attempt in ``connectWith(_:headers:mark:)``, for
-    /// deciding whether the fallback attempt is worthwhile.
-    @ObservationIgnored private var lastConnectionError: (any Error)?
 
     /// **Every client is built here**, through the package's factory, so the app never names
     /// a server class. `nil` for a kind without a backend (none of them reaches this yet).
@@ -946,89 +1033,29 @@ final class AppModel {
     }
 
     static func makeServer(session: Session) -> (any MediaServer)? {
-        MediaServerFactory.make(session: session, deviceID: deviceID, deviceName: deviceName)
-    }
-
-    /// - Returns: `true` if the server answered. `false` with a superseded token,
-    /// without touching anything.
-    private func connectWith(_ url: URL, headers: [OwnHeader] = [], mark: CheckMark) async -> Bool {
-        guard let c = Self.makeServer(baseURL: url) else { return false }
-        let before = OwnHeaders.registered(for: url)
-        let new = OwnHeaders.cleaned(headers)
-        if !new.isEmpty { OwnHeaders.setDown(new, for: url) }
-        lastConnectionError = nil
-        do {
-            let info = try await c.checkReachability()
-            guard checkState.applies(mark) else {
-                if !new.isEmpty { OwnHeaders.setDown(before, for: url) }
-                return false
-            }
-            // Store only now: for an address where nothing answers, nothing is left in
-            // the keychain.
-            if !new.isEmpty { ownHeadersSafe(new, for: url) }
-            client = c
-            serverName = info.serverName ?? url.host()
-            serverVersion = info.version
-            phase = .needsLogin(serverName: info.serverName ?? url.host() ?? "Server",
-                                version: info.version ?? "?")
-            serverRemember(address: url.host() ?? url.absoluteString,
-                         name: info.serverName ?? url.host() ?? "Server",
-                         version: info.version ?? "?")
-            errorMessage = nil
-            return true
-        } catch {
-            if !new.isEmpty { OwnHeaders.setDown(before, for: url) }
-            guard checkState.applies(mark) else { return false }
-            lastConnectionError = error
-            errorMessage = connectionError(error, address: url)
-            return false
-        }
-    }
-
-    /// Connection errors presented so the cause is evident.
-    ///
-    /// The most common case with self-hosted servers is an unencrypted address
-    /// outside the home network: iOS blocks it by itself, and the system's error
-    /// message does not say so. Add the hint that makes the system error
-    /// interpretable.
-    ///
-    /// **The case at hand is a false report by the system.** If the user denies the
-    /// local network permission, URLSession reports "The Internet connection appears
-    /// to be offline" although the network works fine and only this one permission
-    /// is missing. Anyone reading that checks their Wi-Fi and finds nothing. So say
-    /// it.
-    ///
-    /// The earlier hint ("set up https") is gone: since `NSAllowsArbitraryLoads` iOS
-    /// no longer blocks http, and advice that is no longer true is worse than none.
-    private func connectionError(_ error: any Error, address: URL) -> String {
-        let text = readable(error)
-        let inHomeNetwork = AppModelURLNormalizer.isHomeNetwork(address.host() ?? "")
-        // Only for "offline", and only on the home network: outside, the same error
-        // is simply a missing network, and the hint would be misleading.
-        if inHomeNetwork, (error as? URLError)?.code == .notConnectedToInternet {
-            return String(localized: "Der Server war nicht erreichbar. Hat Swiftly die Erlaubnis, Geräte im heimischen Netz zu suchen? Sie steht in den Systemeinstellungen unter „Swiftly · Lokales Netzwerk\".")
-        }
-        return text
+        // A Plex server that moved to another address is looked up again by the core (`AccountsHost`).
+        MediaServerFactory.make(
+            session: session, deviceID: deviceID, deviceName: deviceName, plexResolver: AccountsHost.plexResolver)
     }
 
     /// What happens the same way after every successful sign-in, whether by
     /// password or Quick Connect.
-    /// Takes a fresh session. Returns whether it was an **account switch**; then
-    /// this function has already cleaned up and reloaded, and the caller must not
-    /// load again.
     ///
-    /// `signedInWith` is the client that was signed in on, if not the running one
-    /// (``anmeldeclient()``). It is adopted only here, **after** the bundle, so
-    /// `client.didSet` reaches downloads with the right account, and the group is
+    /// **The core signed in and saved the account** (`AccountsHost`); `stored` is what it left in the
+    /// Keychain, read back the way a launch reads it. Returns whether it was an **account switch**;
+    /// then this function has already cleaned up and reloaded, and the caller must not load again.
+    ///
+    /// The client is built from the stored session, as at a launch. It is adopted only here, **after**
+    /// the bundle, so `client.didSet` reaches downloads with the right account, and the group is
     /// still left with the previous account's identity.
     @discardableResult
-    func sessionAdopt(_ s: Session, signedInWith newer: (any MediaServer)? = nil) -> Bool {
-        // **The rule lives in the package**, not here: the same server means add and
-        // switch, another one means start from scratch. Both versions (this one and
-        // GTK) had derived it themselves, and all cleanup hangs on this answer.
-        let wasSignedIn = bundleRecord(s)
-        saveBundle()
-        if let newer, newer !== client { client = newer }
+    private func sessionAdopt(stored: ServerBundles) -> Bool {
+        // **The rule lives in the core**: the same server means add and switch, another one means start
+        // from scratch. Both versions (this one and GTK) had derived it themselves, and all cleanup
+        // hangs on this answer.
+        let wasSignedIn = !bundles.kinds.isEmpty
+        bundles = stored
+        if let s = session, let newer = Self.makeServer(session: s) { client = newer }
         phase = .ready
         // **If the app was already signed in, this is an account switch.** The client
         // is already the new account's; everything else is missing. Without cleanup,
@@ -1040,6 +1067,42 @@ final class AppModel {
         // settings then showed "Server · ?".
         Task { _ = await connectionCheck() }
         return wasSignedIn
+    }
+
+    /// What the core has just saved: the stored accounts and the one in use. `nil` with the old
+    /// message when the Keychain does not hold it (the write was read back, as `saveBundle` did).
+    private func storedAccounts() -> (bundles: ServerBundles, session: Session)? {
+        let stored = loadBundles()
+        guard let s = stored.active?.activeOne,
+              Keychain.load(key: stored.activeKind.bundleStorageKey) != nil else {
+            Self.log.error("Keychain: Sitzung geschrieben, aber nicht lesbar")
+            errorMessage = String(localized: "Deine Anmeldung ließ sich nicht speichern. Beim nächsten Start musst du dich neu anmelden.")
+            return nil
+        }
+        Self.log.info("Keychain: Sitzung gesichert")
+        return (stored, s)
+    }
+
+    /// The core signed in at the server this client talks to (name and password): shows the sign-in
+    /// transition and adopts the account.
+    func adoptSignedIn() {
+        guard let (stored, s) = storedAccounts() else { return }
+        // **Do not load additionally if it was a switch.** Then `sessionAdopt`
+        // already cleans up and triggers the reload; a second run alongside races the
+        // first, and whoever loses writes something half-finished.
+        signInTransition(s) { [self] in
+            if !sessionAdopt(stored: stored) { Task { await loadViews() } }
+        }
+    }
+
+    /// A new account of any kind (Emby, Plex) that the core saved: the first one starts the app,
+    /// a further one switches to it.
+    func accountAdded() {
+        guard let (stored, s) = storedAccounts() else { return }
+        let first = session == nil
+        signInTransition(s) { [self] in
+            if first { sessionAdopt(stored: stored) } else { serverRecord(stored: stored) }
+        }
     }
 
     /// What must be redone after every account switch, besides the client
@@ -1077,36 +1140,18 @@ final class AppModel {
         remoteControlNewStart()
     }
 
-    /// The client on which a sign-in is to run.
-    ///
-    /// **Always a fresh one.** `authenticate` applies the client's identity to the
-    /// client it runs on. If sign-in ran on the running client, the same instance
-    /// stayed and `client.didSet` never fired: with "Add another account" the
-    /// previous account's group was not left, and downloads stayed with the
-    /// previous account (on first sign-in with no account). 
-    /// ``sessionAdopt(_:signedInWith:)`` adopts it only once the sign-in
-    /// worked.
-    func loginClient() -> (any MediaServer)? { client?.signedOutCopy() }
-
     func login(username: String, password: String) async {
-        guard let signInClient = loginClient() else { return }
+        guard let current = client else { return }
         isWorking = true
         defer { isWorking = false }
         errorMessage = nil
         do {
-            let s = try await signInClient.authenticate(username: username, password: password)
+            try await AccountsHost.shared.signIn(
+                address: current.baseURL, kind: current.kind, user: username, password: password)
             // **Do not additionally load if it was a switch**, same reasoning as for
             // Quick Connect: `sessionAdopt` cleans up itself and triggers the reload,
             // and a second run alongside races with the first.
-            //
-            // This went unnoticed longer here than there: on TV, where the profile switch
-            // was built first, "Add another account" leads to Quick Connect. Name and
-            // password are the path on iPhone, iPad and desktop, i.e. exactly where four
-            // platforms would have hit it. Found when reading through the code, not through
-            // a failure.
-            signInTransition(s) { [self] in
-                if !sessionAdopt(s, signedInWith: signInClient) { Task { await loadViews() } }
-            }
+            adoptSignedIn()
         } catch {
             errorMessage = readable(error)
         }
@@ -1122,6 +1167,8 @@ final class AppModel {
     /// bundle.
     @ObservationIgnored private var onboarding: (any MediaServer)?
     @ObservationIgnored private var onboardingName: String?
+    /// The server being added, for the Quick Connect wait.
+    var onboardingServer: (any MediaServer)? { onboarding }
 
     /// Checks an address and keeps the server ready: name and version, or `nil`
     /// with the reason in `errorMessage`.
@@ -1177,7 +1224,10 @@ final class AppModel {
         defer { isWorking = false }
         errorMessage = nil
         do {
-            serverRecord(try await onboarding.authenticate(username: user, password: password))
+            try await AccountsHost.shared.signIn(
+                address: onboarding.baseURL, kind: onboarding.kind, user: user, password: password)
+            guard let (stored, _) = storedAccounts() else { return false }
+            serverRecord(stored: stored)
             return true
         } catch {
             errorMessage = readable(error)
@@ -1190,33 +1240,21 @@ final class AppModel {
     // currently connected to.
 
     func quickConnectStartAtNewServer() async throws -> LoginCode {
-        guard let onboarding = onboarding as? any QuickSignIn else { throw JellyfinError.notAuthenticated }
-        return try await onboarding.quickConnectStart()
+        guard let onboarding, onboarding is any QuickSignIn else { throw JellyfinError.notAuthenticated }
+        return try await AccountsHost.shared.quickStart(address: onboarding.baseURL)
     }
 
-    func quickConnectAskAgainAtNewServer(_ preGait: LoginCode) async -> QuickConnectState {
-        guard let onboarding = onboarding as? any QuickSignIn else { return .failed }
-        return await onboarding.quickConnectAskAgain(preGait)
-    }
-
+    /// The core signed in when the code was approved (`quickConnectWait`): takes the account over.
     func signInWithQuickConnectAtNewServer(_ preGait: LoginCode) async -> Bool {
-        guard let onboarding = onboarding as? any QuickSignIn else { return false }
-        isWorking = true
-        defer { isWorking = false }
+        guard let (stored, _) = storedAccounts() else { return false }
         errorMessage = nil
-        do {
-            serverRecord(try await onboarding.signInWithQuickConnect(preGait))
-            return true
-        } catch {
-            errorMessage = readable(error)
-            return false
-        }
+        serverRecord(stored: stored)
+        return true
     }
 
-    /// The one completion for both paths: into the bundle, secure, switch.
-    func serverRecord(_ s: Session) {
-        _ = bundleRecord(s)
-        saveBundle()
+    /// The one completion for both paths: the account is saved, switch.
+    private func serverRecord(stored: ServerBundles) {
+        bundles = stored
         onboarding = nil
         newConnect()
         if let onboardingName { serverName = onboardingName }
@@ -1259,9 +1297,6 @@ final class AppModel {
     }
     /// Set by the player while it is on screen.
     @ObservationIgnored var remoteCommand: ((RemoteCommand) -> Void)?
-    /// Set by whoever can watch together (so far only iPhone and iPad). Comes over
-    /// the same channel as the remote commands.
-    @ObservationIgnored var syncPlayPostDirection: ((SyncPlayPostDirection) -> Void)?
     /// **Who is taking over right now.** Arrives as a hint shortly before the stop
     /// (``JellyfinClient/handoffHint(an:geraet:)``). The player reads it at the
     /// stop: with a fresh hint the picture leaves as a card and flies out; without,
@@ -1348,9 +1383,6 @@ final class AppModel {
             return
         }
         far = controls
-        await controls.syncPlayHear { [weak self] postDirection in
-            Task { @MainActor in self?.syncPlayPostDirection?(postDirection) }
-        }
         await controls.handoffHear { [weak self] name in
             Task { @MainActor in
                 self?.handoffTarget = (name, Date())
@@ -1724,6 +1756,16 @@ final class AppModel {
             }
         }
         downloads.follow(available: available, watchState: watchState)
+        // What was watched offline and the server has not seen goes into the unsent stops (the core
+        // decides and keeps the newer-wins rule), then out with the next pass.
+        if let account = session?.storageAccount {
+            let unreported = downloads.unreportedProgress(account: account, watchState: watchState)
+            if let merged = PendingProgress.merged(unreportedJson: unreported,
+                                                   into: core.store.get(key: "pending.reports")) {
+                core.store.set(key: "pending.reports", value: merged)
+                await pendingSubmit()
+            }
+        }
         downloads.sectionsCatchUp()
     }
 
@@ -1766,12 +1808,18 @@ final class AppModel {
     /// yet). A silent server is something else, and the series page must be able to
     /// tell them apart.
     func seasons(_ series: Item) async -> [Item]? {
+        #if DEBUG
+        if let stand = Self.snapshotSeries { return stand.seasons }
+        #endif
         guard let client else { return nil }
         return try? await client.seasons(seriesID: series.id)
     }
 
     /// **`nil` means disturbed, `[]` means: the season has no episodes.**
     func episodes(series: String, season: String?) async -> [Item]? {
+        #if DEBUG
+        if let stand = Self.snapshotSeries { return stand.episodes }
+        #endif
         guard let client else { return nil }
         return try? await client.episodes(seriesID: series, seasonID: season)
     }
@@ -1888,15 +1936,15 @@ final class AppModel {
 
     /// The running "Play shuffled" order, if there is one. It applies as long as the
     /// playing episode belongs to it; any other episode ends it.
-    @ObservationIgnored private var shuffleRun: ShuffleRun?
+    @ObservationIgnored private var shuffleRun: ShuffleRunCore?
 
     /// Mix all episodes of the series once and return the first one. `nil` if the
     /// series has no episodes or the server does not answer.
     func shuffleStart(_ series: Item) async -> Item? {
         guard let all = await episodes(series: series.id, season: nil), !all.isEmpty else { return nil }
-        let run = ShuffleRun.mixed(all)
+        let run = ShuffleRunCore.mixed(all)
         shuffleRun = run
-        return run.episodes.first
+        return run?.first
     }
 
     /// Starts a playlist: the entries in their order are the run, and "next episode"
@@ -1904,7 +1952,7 @@ final class AppModel {
     /// entry; `nil` for an empty list.
     func playlistStart(_ entries: [Item]) -> Item? {
         guard let first = entries.first else { return nil }
-        shuffleRun = ShuffleRun(episodes: entries)
+        shuffleRun = ShuffleRunCore.ordered(entries)
         return first
     }
 
@@ -2077,6 +2125,10 @@ final class AppModel {
         }
     }
 
+    /// Subtitle picked while a transcoded stream plays, by item: the next plan for that title names it
+    /// (see ``plan(for:still:sourceID:)``).
+    var subtitleWish: [String: Int64] = [:]
+
     /// Large enough that the first swipe does not reach the end, small enough that
     /// the first page appears quickly.
     static let pagesSize = 60
@@ -2099,7 +2151,7 @@ final class AppModel {
             // something to keep.
             let sources: [MediaSource]?
             if let known = episode.mediaSources { sources = known } else { sources = await item(id: episode.id)?.mediaSources }
-            sourceID = MediaVersions.matching(previous: playing, in: sources)?.id
+            sourceID = VersionKeeping.matching(previous: playing, in: sources)
         }
         return await plan(for: episode.id, still: still, sourceID: sourceID)
     }
@@ -2109,6 +2161,12 @@ final class AppModel {
     /// `still`: an error lands only in the log, not as a message; for the background
     /// preparation (``EpisodePreparation``) nobody asked for.
     func plan(for itemID: String, still: Bool = false, sourceID: String? = nil) async -> PlaybackPlan? {
+        // A title that starts now draws its subtitles in the look the other devices saved: let a settings run that is
+        // under way (launch, new account) finish first, for two seconds at most.
+        if !still { await settingsSync.settled() }
+        // A subtitle picked on a transcoded stream (the core's `reloadForSubtitle`): this one plan names the track so
+        // the server burns it in (or drops it). Taken once; a download plays without the server anyway.
+        let subtitle = subtitleWish.removeValue(forKey: itemID)
         // **if the file is here, the server is not needed.**
         //
         // Before the `guard`: without network `client` exists, but `playbackPlan` would
@@ -2117,15 +2175,34 @@ final class AppModel {
         // a plane would be the feature canceling itself out.
         //
         // The user notices nothing: no second button, no choice.
-        if let file = downloads.file(for: itemID) {
+        if let file = downloads.file(for: itemID), !downloads.playFailed.contains(itemID) {
             let p = downloads.entries(for: itemID)
             return .fromSlab(file, container: p?.container, mediaSourceID: p?.source,
                                  videoCodec: p?.videoCodec)
         }
         guard let client else { return nil }
+        // Jellyfin and Emby: the core's plan (one request, the same version choice, address and error words).
+        // Plex keeps asking its own client.
+        if let session, session.kind != .plex, let account = core.account(session) {
+            switch await PlanFromCore.plan(core: core.raw, account: account, itemID: itemID, sourceID: sourceID,
+                                           maxBitrate: profileBitrate, locale: AppCore.language, subtitle: subtitle) {
+            case .plan(let plan):
+                return plan
+            case .noSource:
+                Self.log.error("Kein Plan für \(itemID, privacy: .public) — Server nannte keine MediaSource")
+                return nil
+            case .failed(let error):
+                Self.log.error("PlaybackInfo fehlgeschlagen für \(itemID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                if !still { errorMessage = readable(error) }
+                return nil
+            }
+        }
         do {
+            // Plex burns the chosen track itself (`subtitles=burn`); the Jellyfin client here is the fallback without
+            // a core account and keeps the old request.
             let plan = try await client.playbackPlan(for: itemID,
                                                        profile: .vlc(maxBitrate: profileBitrate),
+                                                       subtitleStreamIndex: session?.kind == .plex ? subtitle.map(Int.init) : nil,
                                                        mediaSourceID: sourceID)
             if plan == nil {
                 // Occurs with series and seasons: they have no media file, only their
@@ -2143,6 +2220,9 @@ final class AppModel {
     /// Poster URL. Built here instead of in the client so views do not have to
     /// wait for the actor.
     func imageURL(for item: Item, maxHeight: Int = 480, portrait: Bool = false) -> URL? {
+        #if DEBUG
+        if let stand = Self.snapshotImageURL { return stand(item, portrait) }
+        #endif
         guard let images else { return nil }
         // Portrait means, for an episode, the series poster. Why is in
         // `ImageSelection.portrait`; the same rule used to stand here a second time.
@@ -2154,6 +2234,16 @@ final class AppModel {
                             mass: .atMostHigh(maxHeight))
     }
 
+    #if DEBUG
+    /// Snapshot tests only (`Tests/SwiftUIParity`): stands in for the server's image addresses; the test fills
+    /// `ImageCache` under the same addresses. Does not exist in release builds.
+    static var snapshotImageURL: ((Item, Bool) -> URL?)?
+    /// Snapshot tests only: the seasons and episodes a series page shows without a server.
+    static var snapshotSeries: (seasons: [Item], episodes: [Item])?
+    /// Snapshot tests only: the sign-in page behaves as if the server offered Quick Connect (the usual Jellyfin case).
+    static var snapshotQuickConnect = false
+    #endif
+
     /// Intro, recap and credits of an episode.
     ///
     /// Empty means the server knows nothing about them: no plugin, no analysis, or an
@@ -2162,14 +2252,28 @@ final class AppModel {
         // Those stored at download first; without network there are no others
         // (`DownloadRules.sections`).
         let client = self.client
+        let account = playAccount()
         return await DownloadRules.sections(stored: downloads.entries(for: itemID)?.sections) {
-            await client?.sections(for: itemID) ?? []
+            // Jellyfin and Emby ask the core; Plex its own client.
+            if let account { return await PlayExtras.sections(core: AppCore.shared.raw, account: account, itemID: itemID, locale: AppCore.language) }
+            return await client?.sections(for: itemID) ?? []
         }
+    }
+
+    /// The account the core serves for the play extras (sections, trickplay, chapters, plan): any signed-in
+    /// Jellyfin or Emby account while a server connection exists. Plex keeps its own client.
+    private func playAccount() -> AccountRef? {
+        guard client != nil, let session, session.kind != .plex else { return nil }
+        return core.account(session)
     }
 
     /// Thumbnails while scrubbing; `nil` without trickplay on the server.
     func trickplay(for itemID: String, source: String?) async -> Trickplay? {
         guard let client else { return nil }
+        if let account = playAccount() {
+            return await PlayExtras.trickplay(core: core.raw, account: account, itemID: itemID, source: source,
+                                              locale: AppCore.language)
+        }
         return await client.trickplay(itemID: itemID, mediaSourceID: source)
     }
 
@@ -2177,6 +2281,10 @@ final class AppModel {
     /// server does not answer. Then the bar stays a single piece.
     func chapter(for itemID: String, source: String?) async -> [Chapter] {
         guard let client else { return [] }
+        if let account = playAccount() {
+            return await PlayExtras.chapters(core: core.raw, account: account, itemID: itemID, source: source,
+                                             locale: AppCore.language)
+        }
         return await client.chapter(itemID: itemID, mediaSourceID: source)
     }
 
@@ -2191,55 +2299,43 @@ final class AppModel {
     // If a report fails, that is no reason to disturb playback; so the error is only
     // noted here, not shown.
 
-    /// What a report to the server needs. The client is captured when queued: if
-    /// the account switches afterwards, the report still belongs to whoever
-    /// watched.
-    struct ReportContent: Sendable {
-        let client: (any MediaServer)?
-        let item: Item
-        let plan: PlaybackPlan
-        let seconds: Double
-        let tracks: TrackIndices
+    /// **The report queue lives in the core** (`PlayReporter`): order, coalescing, a deadline per report,
+    /// the stop lock per PlaySession, the awaited stop, the capabilities before every start, and the
+    /// stops that did not get through (`nachmeldungen`). Here only what the screens call stays. One
+    /// queue per signed-in account; it is rebuilt when the session changes, and a report already
+    /// queued keeps going out through the queue it was queued on (it belongs to whoever watched).
+    @ObservationIgnored private var reporterHeld: (key: String, reporter: PlayReporter)?
+
+    /// `nil` without a server connection: the old queue then failed every report at once (`noServer`),
+    /// so nothing is sent and a stop goes into the late report.
+    /// The queue the core's player reports through, shared with the app's own stop (`CorePlaybackBackend`).
+    /// Also without a server connection (a download plays offline): the core's reports then fail like the old ones
+    /// did, and the stop is kept by the app (`reportStopped`).
+    func reporterForCore() -> PlayReporter? { playReporter(needsConnection: false) }
+
+    /// Titles (`StopLock` key) the core reports start and progress for; the app does not send those a second time.
+    @ObservationIgnored private var coreOwned: Set<String> = []
+    func coreOwns(_ key: String) { coreOwned.insert(key) }
+    func coreReleased(_ key: String) { coreOwned.remove(key) }
+    private func coreOwns(_ item: Item, _ plan: PlaybackPlan) -> Bool {
+        coreOwned.contains(StopLock.key(itemID: item.id, playSessionID: plan.playSessionID))
     }
 
-    private enum ReportError: Error { case noServer }
-
-    /// **Dispatched, not awaited.** The queue lives in the package
-    /// (`ReportQueue`): order, coalescing, deadline and the stop lock per
-    /// PlaySession. Here only what is sent.
-    @ObservationIgnored private let messages = ReportQueue<ReportContent> { message in
-        let content = message.payload
-        guard let client = content.client else { throw ReportError.noServer }
-        #if DEBUG
-        // Measurement run: a server that does not answer (tvOS `-measurementRun`).
-        if ProcessInfo.processInfo.arguments.contains("-meldungenHaengen") {
-            try await Task.sleep(for: .seconds(30))
-        }
-        #endif
-        let item = content.item, plan = content.plan
-        let ticks = JellyfinClient.ticks(fromSeconds: content.seconds)
-        switch message.art {
-        case .start:
-            try await AppModel.startSend(client: client, item: item, plan: plan, ticks: ticks,
-                                           tracks: content.tracks)
-            AppLog.writeOut("[Melden] Start \(Int(content.seconds)) s \(item.id) session \(plan.playSessionID ?? "nil")"
-                + " Spuren \(content.tracks.audio.map(String.init) ?? "—")/\(content.tracks.subtitle.map(String.init) ?? "—")")
-        case let .progress(paused):
-            try await client.reportProgress(itemID: item.id, plan: plan,
-                                            positionTicks: ticks, paused: paused, tracks: content.tracks)
-            AppLog.writeOut("[Melden] Progress \(Int(content.seconds)) s pausiert \(paused) \(item.id)"
-                + " Spuren \(content.tracks.audio.map(String.init) ?? "—")/\(content.tracks.subtitle.map(String.init) ?? "—")")
-        case .stop:
-            try await client.reportStopped(itemID: item.id, plan: plan, positionTicks: ticks)
-        }
+    private func playReporter(needsConnection: Bool = true) -> PlayReporter? {
+        guard !needsConnection || client != nil, let session else { return nil }
+        let key = [session.storageAccount, session.serverURL.absoluteString, session.accessToken]
+            .joined(separator: "|")
+        if let held = reporterHeld, held.key == key { return held.reporter }
+        guard let made = try? core.playReporter(session: session) else { return nil }
+        reporterHeld = (key, made)
+        return made
     }
 
-    private func message(_ art: ReportQueue<ReportContent>.Art, item: Item,
-                         plan: PlaybackPlan, seconds: Double) -> ReportQueue<ReportContent>.Message {
-        .init(art: art,
-              key: StopLock.key(itemID: item.id, playSessionID: plan.playSessionID),
-              payload: ReportContent(client: client, item: item, plan: plan, seconds: seconds,
-                                    tracks: runningTracks))
+    private func reportPlan(_ plan: PlaybackPlan) -> PlayReportPlan {
+        PlayReportPlan(
+            playSessionId: plan.playSessionID, mediaSourceId: plan.mediaSourceID,
+            method: plan.method == .directPlay ? .directPlay : plan.method == .directStream ? .directStream : .transcode,
+            runtimeMs: plan.source?.runTimeTicks.map { $0 / 10_000 })
     }
 
     /// The tracks the player last reported, as Jellyfin index. They go out with
@@ -2258,41 +2354,13 @@ final class AppModel {
         runningTitle = (item, plan)
         reportedPaused = false
         StartMeasurement.shared.mark("Start an den Server")
-        messages.report(message(.start, item: item, plan: plan, seconds: seconds))
-    }
-
-    private nonisolated static func startSend(client: any MediaServer, item: Item,
-                                                plan: PlaybackPlan, ticks: Int64,
-                                                tracks: TrackIndices) async throws {
-        // **Report capabilities again before every playback.**
-        //
-        // They used to be reported **once**, when the main view appeared. That is not
-        // enough: handover stopped working on both devices at once, in both directions.
-        //
-        // The reason lies in how the server searches. `Sessions` is queried with
-        // `controllableByUserId`, so only sessions that **accept commands** come back,
-        // and the server knows that only through `Sessions/Capabilities/Full`. But a
-        // session does not live forever there: server restart, timeout, a longer time in
-        // the background, and it is gone. The next playback then creates a **new** one,
-        // which never received the capabilities because that only happened at program
-        // start. Both devices are then invisible to each other until someone restarts
-        // the app. That also explains why it stopped "suddenly" and not gradually.
-        //
-        // The call is cheap, goes to the same peer that gets the start report right
-        // after, and can be repeated any number of times. Here and nowhere else,
-        // because this is the moment the other device must be able to see us.
-        //
-        // If it fails, the start still goes ahead, unless the deadline cancelled; then
-        // the start is not due anymore either.
-        if let remote = client as? any RemoteSessionServer {
-            do {
-                try await remote.reportCapabilities()
-            } catch {
-                try Task.checkCancellation()
-                AppLog.writeOut("[Uebernahme] Faehigkeiten nicht gemeldet: \(error)")
-            }
+        if ReportRoute.appSends(.start, coreOwns: coreOwns(item, plan)) {
+            playReporter()?.start(itemId: item.id, plan: reportPlan(plan), seconds: seconds,
+                                  audio: runningTracks.audio.map(Int64.init),
+                                  subtitle: runningTracks.subtitle.map(Int64.init))
         }
-        try await client.reportStart(itemID: item.id, plan: plan, ticks: ticks, tracks: tracks)
+        AppLog.writeOut("[Melden] Start \(Int(seconds)) s \(item.id) session \(plan.playSessionID ?? "nil")"
+            + " Spuren \(runningTracks.audio.map(String.init) ?? "—")/\(runningTracks.subtitle.map(String.init) ?? "—")")
     }
 
     /// What is playing right now, remembered so a remote command, a pause or a seek
@@ -2309,11 +2377,22 @@ final class AppModel {
     /// Returns immediately; sending happens in the queue. Discarded after this
     /// session's stop.
     func reportProgress(item: Item, plan: PlaybackPlan, seconds: Double, paused: Bool) {
-        guard messages.report(message(.progress(paused: paused), item: item,
-                                       plan: plan, seconds: seconds)) else {
+        // Without a connection the old queue took the report and failed it; nothing to send, the rest runs on.
+        let accepted: Bool
+        if ReportRoute.appSends(.progress, coreOwns: coreOwns(item, plan)) {
+            accepted = playReporter()?.progress(
+                itemId: item.id, plan: reportPlan(plan), seconds: seconds, paused: paused,
+                audio: runningTracks.audio.map(Int64.init), subtitle: runningTracks.subtitle.map(Int64.init)) ?? true
+        } else {
+            // The core sends it; only the stop lock is asked, so nothing is counted after the end.
+            accepted = playReporter()?.progressAllowed(itemId: item.id, playSessionId: plan.playSessionID) ?? true
+        }
+        guard accepted else {
             AppLog.writeOut("[Melden] Fortschritt nach Stopp verworfen \(item.id)")
             return
         }
+        AppLog.writeOut("[Melden] Progress \(Int(seconds)) s pausiert \(paused) \(item.id)"
+            + " Spuren \(runningTracks.audio.map(String.init) ?? "—")/\(runningTracks.subtitle.map(String.init) ?? "—")")
         runningTitle = (item, plan)
         reportedPaused = paused
         // Watch time for "Support Swiftly": counted where progress is reported anyway,
@@ -2348,18 +2427,24 @@ final class AppModel {
     /// `beginBackgroundTask` keeps the app awake until the report is through or its
     /// deadline has passed.
     func backgroundReport(item: Item, plan: PlaybackPlan, seconds: Double, paused: Bool) {
-        let entryRecord = message(.progress(paused: paused), item: item, plan: plan, seconds: seconds)
-        guard messages.progressAllowed(entryRecord.key) else { return }
+        let reporter = playReporter()
+        guard reporter?.progressAllowed(itemId: item.id, playSessionId: plan.playSessionID) ?? true else { return }
         AppLog.writeOut("[Melden] Hintergrund: \(Int(seconds)) s pausiert \(paused)")
+        let sent = reportPlan(plan)
+        let audio = runningTracks.audio.map(Int64.init), subtitle = runningTracks.subtitle.map(Int64.init)
         #if os(iOS) || os(tvOS)
         let task = UIApplication.shared.beginBackgroundTask(withName: "Wiedergabe melden")
         Task {
-            let result = await messages.reportAndWait(entryRecord)
-            AppLog.writeOut("[Melden] Hintergrund: \(result)")
+            if let reporter {
+                let result = (try? await reporter.progressAndWait(
+                    itemId: item.id, plan: sent, seconds: seconds, paused: paused, audio: audio, subtitle: subtitle)) ?? .failed
+                AppLog.writeOut("[Melden] Hintergrund: \(result)")
+            }
             UIApplication.shared.endBackgroundTask(task)
         }
         #else
-        messages.report(entryRecord)
+        _ = reporter?.progress(itemId: item.id, plan: sent, seconds: seconds, paused: paused,
+                               audio: audio, subtitle: subtitle)
         #endif
         runningTitle = (item, plan)
         reportedPaused = paused
@@ -2419,51 +2504,49 @@ final class AppModel {
         // last episode.
         defer { if !playerOpen { playbackEnded += 1 } }
         SupportModel.shared.playbackStopped()
-        let entryRecord = message(.stop, item: item, plan: plan, seconds: seconds)
         // Immediately, not after the response: a remote command in the meantime no
         // longer belongs to any title.
         if let runningTitle,
-           StopLock.key(itemID: runningTitle.item.id,
-                                  playSessionID: runningTitle.plan.playSessionID) == entryRecord.key {
+           StopLock.key(itemID: runningTitle.item.id, playSessionID: runningTitle.plan.playSessionID)
+            == StopLock.key(itemID: item.id, playSessionID: plan.playSessionID) {
             self.runningTitle = nil
         }
-        let result = await messages.reportAndWait(entryRecord)
+        let reporter = playReporter()
+        let result = (try? await reporter?.stop(itemId: item.id, plan: reportPlan(plan), seconds: seconds)) ?? .failed
         switch result {
         case .sent:
+            // The core also dropped an older position of this title from the plane.
             Self.log.info("Wiedergabe gemeldet: Ende bei \(Int(seconds)) s")
             AppLog.writeOut("[Melden] Stopped \(Int(seconds)) s \(item.id) session \(plan.playSessionID ?? "nil")")
-            // An older position from the plane must not go out afterwards.
-            if let account {
-                pending = PostReportRules.overFetches(itemID: item.id, account: account, in: pending)
-            }
         case .discarded:
             AppLog.writeOut("[Melden] Stopped doppelt verworfen \(item.id) session \(plan.playSessionID ?? "nil")")
-        case .failed, .timeOverStep:
+        case .failed, .timedOut:
             // **This is where the information downloads exist for is created.**
             //
             // Whoever watches a title on a plane produces exactly one piece of information
             // nobody else has: where they stopped. If it were lost here, the server would
             // have the state from the start of the flight, and at home the episode would
-            // start from the beginning. The offline rule, second half.
+            // start from the beginning. The offline rule, second half. The core keeps it
+            // (`pending.reports`); without a connection no reporter exists and it is kept here.
             Self.log.error("Ende-Meldung nicht durch (\(String(describing: result), privacy: .public)), wird nachgemeldet")
             AppLog.writeOut("[Melden] Stopped \(result) → Nachmeldung \(item.id)")
-            reportLater(item.id, ticks, account: account)
+            if reporter == nil { reportLater(item.id, ticks, account: account) }
         }
     }
 
     // MARK: what the server does not know yet
 
-    private static let postReportKey = "nachmeldungen"
-
+    /// The unsent stops (`nachmeldungen`), read and written through the core's store: the core adds
+    /// to the list when a stop does not get through and removes from it when one does.
     private var pending: [PendingReport] {
         get {
-            guard let raw = UserDefaults.standard.data(forKey: Self.postReportKey)
+            guard let raw = core.store.get(key: "pending.reports")
             else { return [] }
             return (try? JSONDecoder().decode([PendingReport].self, from: raw)) ?? []
         }
         set {
             guard let raw = try? JSONEncoder().encode(newValue) else { return }
-            UserDefaults.standard.set(raw, forKey: Self.postReportKey)
+            core.store.set(key: "pending.reports", value: raw)
         }
     }
 
@@ -2520,12 +2603,10 @@ final class AppModel {
         // one strip), so look in all of them.
         guard let current = session,
               let kind = bundles.kinds.first(where: { bundles.bundle(for: $0)?.account(identifier) != nil }),
-              var new = bundles.bundle(for: kind), let target = new.account(identifier),
+              let target = bundles.bundle(for: kind)?.account(identifier),
               target.accountKey != current.accountKey else { return }
-        new.switchTo(toward: identifier)
-        bundles.set(new, for: kind)
-        bundles.switchTo(kind)
-        saveBundle()
+        AccountsHost.shared.switchTo(key: target.accountKey)
+        bundles = loadBundles()
         newConnect()
     }
 
@@ -2565,17 +2646,24 @@ final class AppModel {
         // next account (`newConnect` below) could end up in the chain before this
         // stop.
         let ended = remoteInRails { [weak self] in await self?.remoteEnd() }
-        Task {
-            await ended.value
-            await older?.signOff()
+        let key = session?.accountKey
+        // **The core drops the account at once and tells the server afterwards** (`POST
+        // Sessions/Logout`, not waited for). Without a saved account key the old client still does it.
+        if key == nil {
+            Task {
+                await ended.value
+                await older?.signOff()
+            }
         }
         // **Signing out affects only the active account.** If others remain, the app
         // switches to the next instead of falling back to the server sign-in; whoever
         // wants to leave the server entirely signs out each account individually. One
         // button, one meaning.
-        if let account = session?.accountKey { HomeModel.storeDelete(account) }
-        bundle = bundle?.removed(bundle?.activeId ?? "")
-        saveBundle()
+        if let account = key {
+            HomeModel.storeDelete(account)
+            AccountsHost.shared.removeAndSignOff(key: account)
+        }
+        reloadBundles()
         // Another account is left, of the same kind or another one: switch to it.
         if session != nil {
             newConnect()
@@ -2604,41 +2692,30 @@ final class AppModel {
     /// with that client; anything else is a late call of a client that is gone.
     private func plexRouteMoved(_ moved: Session, from plex: PlexClient) {
         guard client === plex, session?.accountKey == moved.accountKey,
-              let current = bundles.bundle(for: .plex) else { return }
-        var new = current
-        new.record(moved)
-        bundles.set(new, for: .plex)
-        saveBundle()
+              bundles.bundle(for: .plex) != nil else { return }
+        AccountsHost.shared.plexMoved(
+            key: moved.accountKey, address: moved.serverURL, token: moved.accessToken,
+            local: moved.plex?.isLocal ?? false, relay: moved.plex?.isRelay ?? false)
+        bundles = loadBundles()
     }
 
-    func saveBundle() {
-        guard !bundles.kinds.isEmpty else { wipeStored(); return }
-        do {
-            try bundles.save { key, data in
-                if let data { try Keychain.save(data, key: key) } else { Keychain.delete(key: key) }
-            }
-            // The single session of the time before multiple accounts is gone for good once
-            // the Jellyfin bundle is: otherwise `loadBundles` would adopt it again.
-            if bundles.bundle(for: .jellyfin) == nil { Keychain.delete(key: Self.sessionKey) }
-            // Read back immediately: a write error that only shows at the next launch
-            // needlessly costs a sign-in.
-            guard Keychain.load(key: bundles.activeKind.bundleStorageKey) != nil else {
-                Self.log.error("Keychain: Sitzung geschrieben, aber nicht lesbar")
-                errorMessage = String(localized: "Deine Anmeldung ließ sich nicht speichern. Beim nächsten Start musst du dich neu anmelden.")
-                return
-            }
-            Self.log.info("Keychain: Sitzung gesichert")
-        } catch {
-            errorMessage = String(localized: "Deine Anmeldung ließ sich nicht speichern.")
+    /// The core changed the saved accounts (remove): read them back. Nobody left means every stored trace
+    /// is gone; the single session of the time before multiple accounts goes with the Jellyfin bundle,
+    /// otherwise `loadBundles` would adopt it again.
+    private func reloadBundles() {
+        let left = ServerBundles.load { Keychain.load(key: $0) }
+        if left.bundle(for: .jellyfin) == nil { Keychain.delete(key: Self.sessionKey) }
+        bundles = loadBundles()
+    }
+
+    #if DEBUG
+    /// The test session writes its bundle from Swift (see ``bundleRecord(_:)``).
+    private func saveBundle() {
+        try? bundles.save { key, data in
+            if let data { try Keychain.save(data, key: key) } else { Keychain.delete(key: key) }
         }
     }
-
-    /// Nobody is signed in any more: every stored trace goes.
-    private func wipeStored() {
-        for kind in ServerKind.allCases { Keychain.delete(key: kind.bundleStorageKey) }
-        Keychain.delete(key: ServerBundles.pointerKey)
-        Keychain.delete(key: Self.sessionKey)
-    }
+    #endif
 
     /// Reads the bundles of all kinds and adopts a single session from the time before.
     ///
@@ -2660,8 +2737,8 @@ final class AppModel {
         return loaded
     }
 
-    private func restoreSession() {
-        let anew = loadBundles()
+    private func restoreSession(from preloaded: ServerBundles? = nil) {
+        let anew = preloaded ?? loadBundles()
         guard let s = anew.active?.activeOne else { return }
         bundles = anew
         guard let newer = Self.makeServer(session: s) else { return }

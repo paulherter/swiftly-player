@@ -37,7 +37,6 @@ import androidx.media3.ui.SubtitleView
 import androidx.media3.common.AudioAttributes
 import androidx.media3.exoplayer.audio.AudioCapabilities
 import java.util.concurrent.atomic.AtomicLong
-import de.paulherter.swiftly.core.Kern
 
 /**
  * **Media3 (ExoPlayer) is the only engine on Android.** `PlayItem` talks only to this class; the names still follow
@@ -51,7 +50,7 @@ import de.paulherter.swiftly.core.Kern
  * the main thread, and reads from another thread return the last known value.
  */
 @OptIn(UnstableApi::class)
-class PlayerEngine(private val context: Context, private val isTv: Boolean, private val look: String = "") {
+class PlayerEngine(private val context: Context, private val isTv: Boolean, private var look: String = "") {
     private var exo: ExoPlayer? = null
     private val audioDelayProcessor = DelayAudioProcessor()
     private var passthroughBuilt = "auto"
@@ -108,8 +107,94 @@ class PlayerEngine(private val context: Context, private val isTv: Boolean, priv
 
     private var layout: FrameLayout? = null
     private var frame: AspectRatioFrameLayout? = null
-    private var subtitleView: SubtitleView? = null
+    private var subtitleView: CaptionLayer? = null
+    /** The text of the cues Media3 handed out last (tests and logs). */
+    @Volatile var cueText: String = ""
+        private set
+    /** How many picture cues (PGS, VobSub) Media3 handed out last. */
+    @Volatile var cueBitmaps: Int = 0
+        private set
     private var fillFrame = false
+
+    // MARK: Cue at a paused seek (contract line 14)
+
+    /** The parsed cues of every text track; see `SubtitleCueTable`. */
+    private val cueTable = SubtitleCueTable()
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    /** True while the cue on screen came from [cueTable] and not from Media3. */
+    private var fallbackShown = false
+
+    /**
+     * A moment after a seek: when Media3 has handed out no cue but the selected track has one active at the new position,
+     * draw that one. Media3 keeps its own cues when it has them (it clears [fallbackShown] with the first real cue).
+     */
+    private val fallbackCheck = Runnable {
+        val e = exo ?: return@Runnable
+        if (cueText.isNotEmpty() || cueBitmaps > 0) return@Runnable
+        val format = e.currentTracks.groups.firstNotNullOfOrNull { g ->
+            if (g.type != C.TRACK_TYPE_TEXT) null else (0 until g.length).firstOrNull { g.isTrackSelected(it) }?.let { g.getTrackFormat(it) }
+        } ?: return@Runnable
+        val at = (e.currentPosition - (renderers?.subtitleDelayMs ?: 0)) * 1000L
+        val cues = cueTable.activeAt(format.id, at)
+        if (cues.isEmpty()) return@Runnable
+        fallbackShown = true
+        cueText = cues.mapNotNull { it.text?.toString() }.joinToString("\n")
+        subtitleView?.setCues(cues)
+    }
+
+    // MARK: Pre-roll for a far jump with a subtitle track on (contract line 4 and 14; `PreRoll`)
+
+    private var preRoll: PreRoll.State = PreRoll.State.Idle
+    /** The picture is shown again with the first frame at the target. */
+    private var unhideOnFrame = false
+    /** Where the film was opened (ms): the track chosen right after the opening is read from before that point. */
+    private var openedAtMs = 0L
+
+    private fun subtitleOn(e: ExoPlayer): Boolean = e.currentTracks.groups.any { g ->
+        g.type == C.TRACK_TYPE_TEXT && (0 until g.length).any { g.isTrackSelected(it) }
+    }
+
+    private val preRollTick = object : Runnable {
+        override fun run() {
+            val s = preRoll as? PreRoll.State.Reading ?: return
+            val e = exo ?: return
+            if (PreRoll.readyToLand(s, e.bufferedPosition, e.playbackState == Player.STATE_ENDED, android.os.SystemClock.uptimeMillis())) land(s, e)
+            else mainHandler.postDelayed(this, 80)
+        }
+    }
+
+    /** One place for the seek: a plain Media3 seek, or the hidden read from earlier (main thread). */
+    private fun seekTo(target: Long, force: Boolean = false) {
+        val e = exo ?: return
+        val from = PreRoll.start(target, e.currentPosition, e.bufferedPosition, force || subtitleOn(e), force)
+        if (from == null) { preRollCancel(e); e.seekTo(target); return }
+        val resume = (preRoll as? PreRoll.State.Reading)?.resume ?: e.playWhenReady
+        preRoll = PreRoll.State.Reading(target, from, resume, android.os.SystemClock.uptimeMillis() + PreRoll.TIMEOUT_MS)
+        e.playWhenReady = false
+        frame?.alpha = 0f
+        AppLog.writeOut("[Media3] Untertitel-Vorlauf $from → $target")
+        e.seekTo(from)
+        mainHandler.removeCallbacks(preRollTick)
+        mainHandler.postDelayed(preRollTick, 80)
+    }
+
+    private fun land(s: PreRoll.State.Reading, e: ExoPlayer) {
+        preRoll = PreRoll.State.Idle
+        unhideOnFrame = true
+        e.seekTo(s.target)
+        e.playWhenReady = s.resume
+        updateMirror(e)
+        mainHandler.postDelayed({ if (unhideOnFrame) { unhideOnFrame = false; frame?.alpha = 1f } }, 1500)
+    }
+
+    private fun preRollCancel(e: ExoPlayer?) {
+        mainHandler.removeCallbacks(preRollTick)
+        val s = preRoll as? PreRoll.State.Reading
+        preRoll = PreRoll.State.Idle
+        if (s != null && e != null) { e.playWhenReady = s.resume; updateMirror(e) }
+        unhideOnFrame = false
+        frame?.alpha = 1f
+    }
 
     /** Attach the video surface: a `SurfaceView` of Media3's own inside `l`. */
     fun attach(l: FrameLayout) {
@@ -127,7 +212,7 @@ class PlayerEngine(private val context: Context, private val isTv: Boolean, priv
         val r = frame ?: AspectRatioFrameLayout(context).also { neu ->
             neu.addView(SurfaceView(context), FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             // Above the picture, inside the video frame, as `PlayerView` does it.
-            val sv = SubtitleView(context).apply { subtitleStyleApply(this) }
+            val sv = CaptionLayer(context).apply { subtitleStyleApply(this) }
             neu.addView(sv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             subtitleView = sv
             frame = neu
@@ -139,33 +224,24 @@ class PlayerEngine(private val context: Context, private val isTv: Boolean, priv
     }
 
     /**
-     * **Media3 captions from the stored look** (spec section 9). The numbers come from the package
-     * (`Kern.subtitleLookFacts`): size = 6.25 % x base x step, one edge only (the outline wins over the
-     * shadow), `#A0000000` as the background, bottom padding 0.08 or 0.15 for "Higher". Embedded styles
-     * stay on only with "keep the file's style"; the file's own sizes never apply.
+     * **The captions from the stored look** (spec section 9, contract line 8). The numbers come from the package
+     * (`Kern.subtitleLookFacts`); `CaptionLayer` draws them like the Apple overlay (Inter SemiBold, outline in
+     * percent of the font size) instead of Media3's fixed 2 dp edge. Embedded styles stay on only with "keep
+     * the file's style"; the file's own sizes never apply.
      */
-    private fun subtitleStyleApply(view: SubtitleView) {
-        val f = runCatching { org.json.JSONObject(Kern.subtitleLookFacts(look, SubtitleBase.of(isTv))) }.getOrNull()
-        if (f == null) {
-            view.setStyle(CaptionStyleCompat(android.graphics.Color.WHITE, android.graphics.Color.TRANSPARENT,
-                android.graphics.Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE, android.graphics.Color.BLACK, null))
-            view.setFractionalTextSize(0.0625f * SubtitleBase.of(isTv).toFloat())
-            view.setApplyEmbeddedStyles(true)
-            view.setApplyEmbeddedFontSizes(false)
-            return
-        }
-        val edge = when (f.getString("edge")) {
-            "outline" -> CaptionStyleCompat.EDGE_TYPE_OUTLINE
-            "shadow" -> CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW
-            else -> CaptionStyleCompat.EDGE_TYPE_NONE
-        }
-        view.setStyle(CaptionStyleCompat(0xFF000000.toInt() or f.getInt("rgb"),
-            if (f.getBoolean("background")) 0xA0000000.toInt() else android.graphics.Color.TRANSPARENT,
-            android.graphics.Color.TRANSPARENT, edge, android.graphics.Color.BLACK, null))
-        view.setFractionalTextSize(f.getDouble("fraction").toFloat())
-        view.setBottomPaddingFraction(f.getDouble("bottomPadding").toFloat())
-        view.setApplyEmbeddedStyles(f.getBoolean("keepFileStyle"))
-        view.setApplyEmbeddedFontSizes(false)
+    private fun subtitleStyleApply(view: CaptionLayer) {
+        val f = runCatching { org.json.JSONObject(KernRules.subtitleLookFacts(look, SubtitleBase.of(isTv))) }.getOrNull()
+        view.apply(f)
+    }
+
+    /** The caption layer on screen (tests read pixels from it). */
+    val captionLayer: CaptionLayer? get() = subtitleView
+
+    /** A look that changed while a video runs (sync, settings): applied at once, main thread. */
+    fun lookSet(json: String) = onMain {
+        if (json == look) return@onMain
+        look = json
+        subtitleView?.let { subtitleStyleApply(it) }
     }
 
     private fun removeFrame() {
@@ -200,15 +276,17 @@ class PlayerEngine(private val context: Context, private val isTv: Boolean, priv
      * **Media3 plays the address from `since` seconds** (main thread). External subtitles go in right away
      * (`subtitles`: Jellyfin index and address).
      */
-    fun openMedia3(address: String, since: Double?, subtitles: List<Pair<Long, String>>) {
+    fun openMedia3(address: String, since: Double?, subtitles: List<Pair<Long, String>>, formats: Map<Long, String> = emptyMap()) {
         val e = exo ?: buildMedia3().also { exo = it }
         displayRateReset()
         attachMedia3()
         val configs = subtitles.mapNotNull { (index, url) ->
-            val kind = subtitleKind(url) ?: return@mapNotNull null
+            val kind = subtitleKind(url, formats[index]) ?: return@mapNotNull null
             MediaItem.SubtitleConfiguration.Builder(Uri.parse(url)).setId("datei:$index").setMimeType(kind).build()
         }
         val item = MediaItem.Builder().setUri(address).setSubtitleConfigurations(configs).build()
+        preRollCancel(null)
+        openedAtMs = ((since ?: 0.0) * 1000).toLong().coerceAtLeast(0)
         reportedPlaying = false
         seen.clear()
         e.setMediaItem(item, ((since ?: 0.0) * 1000).toLong().coerceAtLeast(0))
@@ -229,7 +307,8 @@ class PlayerEngine(private val context: Context, private val isTv: Boolean, priv
         val sources = DefaultDataSource.Factory(context, DefaultHttpDataSource.Factory().setUserAgent("Swiftly")
             .setAllowCrossProtocolRedirects(true)).setTransferListener(byteCounter)
         return ExoPlayer.Builder(context, factory)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(sources, DolbyVisionBaseLayerExtractors { dvOff }))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(sources, DolbyVisionBaseLayerExtractors({ dvOff }, cueTable))
+                .setSubtitleParserFactory(RecordingSubtitleParsers(cueTable)))
             // `PlayItem` manages audio focus itself, as with VLC.
             .setAudioAttributes(androidx.media3.common.AudioAttributes.Builder().setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), false)
@@ -245,6 +324,7 @@ class PlayerEngine(private val context: Context, private val isTv: Boolean, priv
     /** Take Media3 down (main thread), if it was running. */
     fun media3Down() {
         val e = exo ?: return
+        preRollCancel(null)
         removeFrame()
         e.removeListener(media3Listener)
         e.release()
@@ -259,12 +339,14 @@ class PlayerEngine(private val context: Context, private val isTv: Boolean, priv
     @Volatile private var exoTime = 0L
 
     private fun updateMirror(e: ExoPlayer) {
-        exoPlaying = e.playWhenReady && (e.playbackState == Player.STATE_READY || e.playbackState == Player.STATE_BUFFERING)
+        val wants = (preRoll as? PreRoll.State.Reading)?.resume ?: e.playWhenReady
+        exoPlaying = wants && (e.playbackState == Player.STATE_READY || e.playbackState == Player.STATE_BUFFERING)
     }
 
     private val media3Listener = object : Player.Listener {
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             val e = exo ?: return
+            if (preRoll is PreRoll.State.Reading) return
             updateMirror(e)
             if (playWhenReady && e.playbackState == Player.STATE_READY && !reportedPlaying) { reportedPlaying = true; emit(Event.Playing) }
             if (!playWhenReady && reportedPlaying) { reportedPlaying = false; emit(Event.Paused) }
@@ -277,16 +359,38 @@ class PlayerEngine(private val context: Context, private val isTv: Boolean, priv
                 Player.STATE_BUFFERING -> emit(Event.Buffering(0f))
                 Player.STATE_READY -> {
                     emit(Event.Buffering(100f))
-                    if (e.playWhenReady && !reportedPlaying) { reportedPlaying = true; emit(Event.Playing) }
+                    if (e.playWhenReady && !reportedPlaying && preRoll !is PreRoll.State.Reading) { reportedPlaying = true; emit(Event.Playing) }
                 }
                 Player.STATE_ENDED -> { reportedPlaying = false; emit(Event.Ended) }
                 Player.STATE_IDLE -> if (reportedPlaying) { reportedPlaying = false; emit(Event.Stopped) }
             }
         }
 
-        override fun onRenderedFirstFrame() = emit(Event.Frame)
+        override fun onRenderedFirstFrame() {
+            if (unhideOnFrame && preRoll is PreRoll.State.Idle) { unhideOnFrame = false; frame?.alpha = 1f }
+            emit(Event.Frame)
+            // The live runner (`Werkzeuge/android-live.py`) waits for this line: the format is known by now.
+            AppLog.writeOut("[Media3] Erstes Bild")
+            exo?.videoFormat?.let { AppLog.writeOut("[Media3] Video ${it.sampleMimeType} ${it.codecs.orEmpty()} ${it.width}×${it.height}") }
+        }
 
-        override fun onCues(cueGroup: CueGroup) { subtitleView?.setCues(cueGroup.cues) }
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            if (reason != Player.DISCONTINUITY_REASON_SEEK) return
+            fallbackShown = false
+            mainHandler.removeCallbacks(fallbackCheck)
+            mainHandler.postDelayed(fallbackCheck, 250)
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) { if (isPlaying) { fallbackShown = false; mainHandler.removeCallbacks(fallbackCheck) } }
+
+        override fun onCues(cueGroup: CueGroup) {
+            // Our own cue (below) stays while Media3 only says "nothing" after the seek; any real cue replaces it.
+            if (fallbackShown && cueGroup.cues.isEmpty() && exo?.isPlaying != true) return
+            fallbackShown = false
+            cueBitmaps = cueGroup.cues.count { it.bitmap != null }
+            cueText = cueGroup.cues.mapNotNull { it.text?.toString() }.joinToString("\n")
+            subtitleView?.setCues(cueGroup.cues)
+        }
 
         override fun onPlayerError(error: PlaybackException) {
             AppLog.writeOut("[Media3] Fehler ${error.errorCodeName}: ${error.message}")
@@ -319,13 +423,20 @@ class PlayerEngine(private val context: Context, private val isTv: Boolean, priv
     /** Milliseconds. */
     var time: Long
         get() = exo?.takeIf { onMainThread() }?.currentPosition?.also { exoTime = it } ?: exoTime
-        set(value) { onMain { exo?.seekTo(value.coerceAtLeast(0)) } }
+        set(value) { onMain { seekTo(value.coerceAtLeast(0)) } }
 
     /** Milliseconds, 0 while unknown. */
     val length: Long get() = exo?.takeIf { onMainThread() }?.duration?.let { if (it == C.TIME_UNSET) 0L else it } ?: 0L
 
-    fun play() { onMain { exo?.playWhenReady = true } }
-    fun pause() { onMain { exo?.playWhenReady = false } }
+    fun play() { onMain { setWanted(true) } }
+    fun pause() { onMain { setWanted(false) } }
+
+    /** Play or pause; during a pre-roll the player stays held and only the wish for after the landing changes. */
+    private fun setWanted(play: Boolean) {
+        val s = preRoll
+        if (s is PreRoll.State.Reading) { preRoll = s.copy(resume = play); exo?.let { updateMirror(it) }; return }
+        exo?.playWhenReady = play
+    }
 
     /** Stop Media3 (main thread). */
     fun stopMedia3() { onMain { exo?.stop() } }
@@ -380,6 +491,9 @@ class PlayerEngine(private val context: Context, private val isTv: Boolean, priv
         e.trackSelectionParameters = p.build()
         AppLog.writeOut("[Media3] ${if (kind == C.TRACK_TYPE_TEXT) "Untertitel" else "Ton"} → $id")
         if (kind == C.TRACK_TYPE_TEXT && id < 0) subtitleView?.setCues(emptyList())
+        // A film opened inside a cue (resume) never read the cue's start: read from before the opening point.
+        if (kind == C.TRACK_TYPE_TEXT && id >= 0 && preRoll is PreRoll.State.Idle && openedAtMs > 0 &&
+            Math.abs(e.currentPosition - openedAtMs) < 4_000) seekTo(e.currentPosition, force = true)
     }
 
     val audioTracks: List<Track>? get() = tracksOf(C.TRACK_TYPE_AUDIO).map { Track(it.first, it.second.label) }
@@ -493,6 +607,18 @@ class PlayerEngine(private val context: Context, private val isTv: Boolean, priv
          * **Does any Dolby Vision decoder on this device take profile 7 (dual layer)?** Many do not (Pixel: no frames at
          * all, only sound); without one the HEVC base layer (HDR10) is the way, as with the setting "off".
          */
+        /** Is there any Dolby Vision decoder at all (the emulator and many TVs have none)? */
+        fun dolbyVisionAnyDecoder(): Boolean =
+            runCatching { MediaCodecUtil.getDecoderInfos(MimeTypes.VIDEO_DOLBY_VISION, false, false).isNotEmpty() }.getOrDefault(false)
+
+        /**
+         * **Play the HEVC base layer (HDR10) instead of Dolby Vision?** Profiles 4, 7 and 8 carry a plain HEVC base layer;
+         * profile 5 has none (the server transcodes it) and profile 10 is AV1 (own rules). Without a Dolby Vision
+         * decoder the device fails at once (`ERROR_CODE_DECODING_FAILED` at index 0) for a `dvhe.08` track.
+         */
+        fun dolbyVisionBaseLayerNeeded(profile: Int?, anyDecoder: Boolean): Boolean =
+            profile != null && profile != 5 && profile != 10 && !anyDecoder
+
         fun dolbyVision7Decodable(): Boolean = runCatching {
             MediaCodecUtil.getDecoderInfos(MimeTypes.VIDEO_DOLBY_VISION, false, false).any { info ->
                 info.capabilities?.profileLevels?.any {
@@ -534,7 +660,7 @@ class PlayerEngine(private val context: Context, private val isTv: Boolean, priv
         }
 
         /** Subtitle files Media3 can load alongside, by the ending of the address. */
-        private fun subtitleKind(url: String): String? = when (Uri.parse(url).lastPathSegment?.substringAfterLast('.')?.lowercase()) {
+        private fun subtitleKind(url: String, hint: String? = null): String? = when (Uri.parse(url).lastPathSegment?.takeIf { '.' in it }?.substringAfterLast('.')?.lowercase() ?: hint?.lowercase()) {
             "srt", "subrip" -> MimeTypes.APPLICATION_SUBRIP
             "vtt", "webvtt" -> MimeTypes.TEXT_VTT
             "ass", "ssa" -> MimeTypes.TEXT_SSA

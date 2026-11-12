@@ -1,0 +1,78 @@
+[package]
+name = "swiftly-hardening-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+swiftly-model = { path = "../../swiftly-model" }
+swiftly-plex = { path = "../../swiftly-plex", default-features = false }
+swiftly-playback = { path = "../../swiftly-playback" }
+swiftly-cache = { path = "../../swiftly-cache" }
+swiftly-sync = { path = "../../swiftly-sync" }
+swiftly-settings = { path = "../../swiftly-settings" }
+swiftly-downloads = { path = "../../swiftly-downloads" }
+swiftly-images = { path = "../../swiftly-images" }
+swiftly-jellyfin = { path = "../../swiftly-jellyfin", default-features = false }
+
+# Excluded from the workspace on purpose (needs nightly + cargo-fuzz).
+[workspace]
+
+[[bin]]
+name = "item_json"
+path = "fuzz_targets/item_json.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "plex_json"
+path = "fuzz_targets/plex_json.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "subtitles"
+path = "fuzz_targets/subtitles.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "address"
+path = "fuzz_targets/address.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "playback_info"
+path = "fuzz_targets/playback_info.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "ws_message"
+path = "fuzz_targets/ws_message.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "settings_json"
+path = "fuzz_targets/settings_json.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "downloads_json"
+path = "fuzz_targets/downloads_json.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "image_url"
+path = "fuzz_targets/image_url.rs"
+test = false
+doc = false

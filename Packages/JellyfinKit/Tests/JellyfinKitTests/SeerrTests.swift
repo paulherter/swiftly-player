@@ -15,11 +15,11 @@ struct SeerrTests {
     /// encoder. A test that encodes by itself only tests itself.
     private let answer = Data("""
     {"page":1,"totalResults":4,"results":[
-      {"id":1,"mediaType":"movie","title":"Mentalist Live","releaseDate":"2014-03-01",
+      {"id":1,"mediaType":"movie","title":"Lighthouse Live","releaseDate":"2014-03-01",
        "posterPath":"/abc.jpg","backdropPath":"/quer.jpg"},
-      {"id":2,"mediaType":"tv","name":"The Mentalist","firstAirDate":"2008-09-23",
+      {"id":2,"mediaType":"tv","name":"The Lighthouse","firstAirDate":"2008-09-23",
        "posterPath":"/def.jpg","mediaInfo":{"status":5}},
-      {"id":3,"mediaType":"tv","name":"The Mentalist (UK)","firstAirDate":"2011-01-01",
+      {"id":3,"mediaType":"tv","name":"The Lighthouse (UK)","firstAirDate":"2011-01-01",
        "mediaInfo":{"status":2}},
       {"id":4,"mediaType":"person","name":"Simon Baker","profilePath":"/ghi.jpg"}
     ]}
@@ -36,10 +36,10 @@ struct SeerrTests {
     func titleAndYear() throws {
         let t = Seerr.hit(fromSearch: answer)
         let film = try #require(t.first { $0.id == 1 })
-        #expect(film.title == "Mentalist Live")
+        #expect(film.title == "Lighthouse Live")
         #expect(film.year == 2014)
         let series = try #require(t.first { $0.id == 2 })
-        #expect(series.title == "The Mentalist")
+        #expect(series.title == "The Lighthouse")
         #expect(series.year == 2008)
         #expect(series.isSeries)
     }
@@ -503,7 +503,7 @@ struct SeerrPreItemTests {
         // `Cookie` as a custom header is blocked: it belongs to the session.
         let access = SeerrAccess(address: address, cookie: "connect.sid=s%3Aalt",
                                  headers: headers + [OwnHeader(name: "Cookie", value: "fremd=1")])
-        _ = await SeerrClient(access: access, session: session()).searching("Mentalist")
+        _ = await SeerrClient(access: access, session: session()).searching("Lighthouse")
         let req = try #require(Spy.withCut.first)
         #expect(req.value(forHTTPHeaderField: "CF-Access-Client-Secret") == "auch-erfunden")
         #expect(req.value(forHTTPHeaderField: "Cookie") == "connect.sid=s%3Aalt")

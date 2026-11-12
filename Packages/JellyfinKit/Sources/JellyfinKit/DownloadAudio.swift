@@ -21,6 +21,7 @@ public struct DownloadAudioOption: Identifiable, Hashable, Sendable {
     public let choice: DownloadAudioChoice
     public let label: String
     public var id: DownloadAudioChoice { choice }
+    public init(choice: DownloadAudioChoice, label: String) { self.choice = choice; self.label = label }
 }
 
 public enum DownloadAudio {

@@ -1,5 +1,6 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.rustcore.downloadLanguageName
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
@@ -65,12 +66,11 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-private fun size(bytes: Long) = Kern.downloadSize(bytes)
+private fun size(bytes: Long) = KernRules.downloadSize(bytes)
 
 /**
  * Mirrors iOS `DownloadRing`: one symbol for all states. Downloading: an arc with a square (the
@@ -166,7 +166,7 @@ fun loadSheetShow(app: SwiftlyApplication, newOne: List<DownloadItem>, images: M
                     qualitySelect: Boolean = false) {
     val v = app.downloads
     val free = v.free()
-    val slot = JSONObject(Kern.downloadSpace(newOne.sumOf { it.bytes }, free, DownloadItem.list(v.entries.value)))
+    val slot = JSONObject(KernRules.downloadSpace(newOne.sumOf { it.bytes }, free, DownloadItem.list(v.entries.value)))
     val header = if (slot.getBoolean("reicht")) translated("%@ laden", title) else translated("Nicht genug Platz")
     app.sheet.value = SheetRequest(header, emptyList(), null, content = { close ->
         LoadContent(app, newOne, images, free, qualitySelect, close)
@@ -184,7 +184,7 @@ private fun LoadContent(app: SwiftlyApplication, original: List<DownloadItem>, i
     var offer by remember { mutableStateOf(AudioOffer.none) }
     LaunchedEffect(Unit) {
         if (qualitySelect && selectable && original.size == 1)
-            offer = audioOfferRead(runCatching { app.kern.downloadAudioOptions(arrayOf(original[0].id), app.settings.audioLanguage).await() }.getOrNull())
+            offer = audioOfferRead(runCatching { app.rk.downloadAudioOptions(arrayOf(original[0].id), app.settings.audioLanguage).await() }.getOrNull())
     }
     var audioChosen by remember { mutableStateOf<String?>(null) }
     val audioSelect = qualitySelect && selectable && offer.offered
@@ -192,11 +192,11 @@ private fun LoadContent(app: SwiftlyApplication, original: List<DownloadItem>, i
     // The items in the chosen quality and audio: Matroska and estimated size once converting.
     val newOne = remember(choice, audio, audioSelect) {
         val base = if (!qualitySelect || choice == "original") original
-        else JSONArray(Kern.downloadInQuality(DownloadItem.list(original), choice)).let { a ->
+        else JSONArray(KernRules.downloadInQuality(DownloadItem.list(original), choice)).let { a ->
             (0 until a.length()).map { DownloadItem.read(a.getJSONObject(it)) }
         }
         if (!audioSelect) base
-        else JSONArray(app.kern.downloadWithAudio(DownloadItem.list(base), audio)).let { a ->
+        else JSONArray(app.rk.downloadWithAudio(DownloadItem.list(base), audio)).let { a ->
             (0 until a.length()).map { DownloadItem.read(a.getJSONObject(it)) }
         }
     }
@@ -204,9 +204,9 @@ private fun LoadContent(app: SwiftlyApplication, original: List<DownloadItem>, i
     // Built by the server: the size is an estimate. Converted, not only cut down to one audio track.
     val converted = newOne.any { it.streamed }
     val recomputed = newOne.any { it.converted }
-    val slot = remember(bytes) { JSONObject(Kern.downloadSpace(bytes, free, DownloadItem.list(v.entries.value))) }
+    val slot = remember(bytes) { JSONObject(KernRules.downloadSpace(bytes, free, DownloadItem.list(v.entries.value))) }
     val offered = remember(selectable) {
-        qualitiesRead(Kern.downloadQualities(selectable, JSONArray(original.map { JSONArray(listOf(it.bytes, it.runtimeTicks ?: 0L)) }).toString()))
+        qualitiesRead(KernRules.downloadQualities(selectable, JSONArray(original.map { JSONArray(listOf(it.bytes, it.runtimeTicks ?: 0L)) }).toString()))
     }
     val selectionShow = qualitySelect && selectable && offered.size > 1
     /** The size with "≈" when estimated. */
@@ -222,7 +222,7 @@ private fun LoadContent(app: SwiftlyApplication, original: List<DownloadItem>, i
         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(translated("Qualität"), style = TextStyle(fontSize = 15.sp), color = Theme.fontQuiet, modifier = Modifier.weight(1f))
             QualityBadge(choice, offered, true,
-                               size = { q -> original.sumOf { Kern.downloadEstimated(q, it.bytes, it.runtimeTicks ?: 0L) } }) { choice = it }
+                               size = { q -> original.sumOf { KernRules.downloadEstimated(q, it.bytes, it.runtimeTicks ?: 0L) } }) { choice = it }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Theme.line))
     }
@@ -267,14 +267,14 @@ private fun LoadContent(app: SwiftlyApplication, original: List<DownloadItem>, i
                 if (selectionShow) qualityRow()
                 else {
                     // If the series comes converted from the choice, the tier is shown first.
-                    val q = newOne.firstOrNull()?.takeIf { it.converted }?.let { Kern.downloadBadge(it.quality.orEmpty()) }
+                    val q = newOne.firstOrNull()?.takeIf { it.converted }?.let { KernRules.downloadBadge(it.quality.orEmpty()) }
                     val c = newOne.singleOrNull()?.container?.uppercase()
                     listOfNotNull(q, c).takeIf { it.isNotEmpty() }?.let { SheetRow(translated("Qualität"), it.joinToString(" · ")) }
                 }
                 // A series brings the language along from its selection; a film chooses here.
                 if (audioSelect) audioRow()
                 else newOne.firstOrNull()?.takeIf { it.audioIndex != null }?.audioLanguage?.let {
-                    SheetRow(translated("Ton"), Kern.downloadLanguageName(it))
+                    SheetRow(translated("Ton"), downloadLanguageName(it, java.util.Locale.getDefault().toLanguageTag()))
                 }
                 SheetRow(translated("Danach frei"), size(slot.getLong("freiDanach")))
                 ButtonRail { PlayButton(Glyph.ArrowDown, translated("Laden"), true, main = true) { close(); load() } }
@@ -318,7 +318,7 @@ private fun groupsRead(json: String): List<DownloadGroup> = JSONArray(json).let 
     }
 }
 
-private fun rung(p: DownloadItem) = Kern.downloadQualityName(p.quality.orEmpty())
+private fun rung(p: DownloadItem) = KernRules.downloadQualityName(p.quality.orEmpty())
 
 /** Like `Downloadzeile.subline`: episode or runtime, then the state. Downloading and errors replace everything. */
 private fun subline(p: DownloadItem, loaded: Long = p.loaded): String {
@@ -330,12 +330,12 @@ private fun subline(p: DownloadItem, loaded: Long = p.loaded): String {
         // Fixed unit, fixed digits (`DownloadRules.progress`): `size` switched mid-download from
         // "845 MB" to "1 GB" and "1,01 GB", and the row changed width at every step. When
         // converting, the end is estimated, so "≈" precedes it.
-        "laedt" -> return JSONArray(Kern.downloadProgress(loaded, p.bytes)).let { f ->
+        "laedt" -> return JSONArray(KernRules.downloadProgress(loaded, p.bytes)).let { f ->
             translated("%@ von %@", f.getString(0), (if (p.streamed) "≈ " else "") + f.getString(1))
         }
         "wartet" -> { parts += translated("wartet"); if (p.converted) parts += rung(p) }
         "angehalten" -> { parts += translated("angehalten"); if (p.converted) parts += rung(p) }
-        "fehler" -> return p.reason ?: translated("Fehlgeschlagen")
+        "fehler" -> return p.reason?.let { translated(it) } ?: translated("Fehlgeschlagen")
         else -> {
             parts += size(p.bytes)
             // The chosen tier is shown where the container is otherwise shown.
@@ -359,7 +359,7 @@ fun DownloadsPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val all = v.entries.value
     val ongoing = all.filter { it.state != "fertig" }.sortedBy { it.created }
     val finished = all.filter { it.state == "fertig" }
-    val groups = remember(finished) { groupsRead(Kern.downloadGroups(DownloadItem.list(finished))) }
+    val groups = remember(finished) { groupsRead(KernRules.downloadGroups(DownloadItem.list(finished))) }
     var edit by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(emptySet<String>()) }
     LaunchedEffect(all.isEmpty()) { if (all.isEmpty()) { edit = false; selected = emptySet() } }
@@ -408,7 +408,7 @@ fun DownloadsPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                     val first = all.firstOrNull { it.id == g.episodes.firstOrNull() }
                     // The JNI call and the JSON run per membership change, not per progress tick.
                     val shared = remember(g.episodes, all.size) {
-                        Kern.downloadShared(DownloadItem.list(all.filter { it.id in g.episodes }))
+                        KernRules.downloadShared(DownloadItem.list(all.filter { it.id in g.episodes }))
                     }
                     if (sid != null && first != null) {
                         // One row in both positions, no swap, so it slides with the others.
@@ -528,13 +528,13 @@ private fun DownloadRow(app: SwiftlyApplication, p: DownloadItem, image: File, l
                           group: Pair<String, String>? = null, modifier: Modifier = Modifier) {
     val comesWas = group == null && p.state == "laedt" && app.downloads.network.value
     DisposableEffect(p.id, comesWas) {
-        if (comesWas) DownloadTick.an() else Kern.downloadEstimatorHalt(p.id)
+        if (comesWas) DownloadTick.an() else KernRules.downloadEstimatorHalt(p.id)
         onDispose { if (comesWas) DownloadTick.from() }
     }
     val loaded = when {
         // Reading the tick ties the row to the clock: it recomposes on every tick, otherwise not.
-        comesWas -> { DownloadTick.strike.longValue; Kern.downloadEstimatorValue(p.id, p.loaded) }
-        group == null && (p.state == "angehalten" || p.state == "laedt") -> maxOf(Kern.downloadEstimatorValue(p.id, p.loaded), p.loaded)
+        comesWas -> { DownloadTick.strike.longValue; KernRules.downloadEstimatorValue(p.id, p.loaded) }
+        group == null && (p.state == "angehalten" || p.state == "laedt") -> maxOf(KernRules.downloadEstimatorValue(p.id, p.loaded), p.loaded)
         else -> p.loaded
     }
     val share = if (p.bytes > 0) (loaded.toDouble() / p.bytes).coerceIn(0.0, 1.0) else p.share
@@ -627,7 +627,7 @@ fun DownloadSeriesPage(app: SwiftlyApplication, target: Destination, back: () ->
     var caughtUp by remember { mutableStateOf<File?>(null) }
 
     // `DownloadRules.nextEpisode`: the first unwatched finished one, otherwise from the start.
-    val next = remember(episodes) { JSONObject(Kern.downloadNextEpisode(DownloadItem.list(episodes))) }
+    val next = remember(episodes) { JSONObject(KernRules.downloadNextEpisode(DownloadItem.list(episodes))) }
     val nextEpisode = episodes.firstOrNull { it.id == next.fieldText("id") }
     val headerImage = caughtUp ?: v.headerImage(target.id)
         ?: (nextEpisode ?: episodes.firstOrNull())?.let { p -> v.imageFile(p.id).takeIf { it.exists() } }
@@ -636,7 +636,7 @@ fun DownloadSeriesPage(app: SwiftlyApplication, target: Destination, back: () ->
 
     LaunchedEffect(target.id) {
         if (v.headerImage(target.id) != null) return@LaunchedEffect
-        val address = runCatching { app.kern.downloadHeaderImage(target.id, app.headerImageWidth()).await() }.getOrNull()
+        val address = runCatching { app.rk.downloadHeaderImage(target.id, app.headerImageWidth()).await() }.getOrNull()
         if (!address.isNullOrEmpty()) caughtUp = v.headerImageCatchUp(target.id, address)
     }
 
@@ -727,6 +727,7 @@ fun OfflineGroup(app: SwiftlyApplication) {
             SeparatorLine()
             ChoiceRow(Glyph.Pile, translated("Nächste Folge vorab laden"), translated("Lädt die nächste, löscht die gesehene"), e.loadNextEpisode) {
                 e.loadNextEpisode = it
+                v.tick()
             }
             SeparatorLine()
             val done = v.entries.value.filter { it.state == "fertig" }

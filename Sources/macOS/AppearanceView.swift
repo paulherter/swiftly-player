@@ -1,5 +1,6 @@
 import JellyfinKit
 import SwiftUI
+import enum SwiftlyCore.HomeRowOrder
 
 /// **Profile → Appearance.** How things look and what is on the home page,
 /// on one page next to "Wiedergabe", as on iPhone and iPad.
@@ -27,7 +28,16 @@ struct PresentationView: View {
 
     /// What the dragged row is currently hovering over; the line goes there.
     @State private var over: String?
-    @AppStorage("titelAlsLogo") private var titleAsLogo = false
+    /// Rows, titles, second lines and the genre form come from the Rust core; symbols, groups and
+    /// the Mac wording (`SettingsWording`) stay here.
+    private let feed = SettingsRowsFeed.shared
+
+    @ViewBuilder private func switchRow(_ key: String, _ symbol: String) -> some View {
+        if let row = feed.row(key) {
+            ToggleRow(symbol: symbol, title: feed.title(key), under: feed.under(key), an: feed.binding(key))
+                .disabled(!row.enabled)
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -37,7 +47,7 @@ struct PresentationView: View {
                 HStack(alignment: .top, spacing: Theme.edgeSpacing * 2) {
                     VStack(alignment: .leading, spacing: 0) { general; looks; rails }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 0) { libraryRails; genres }
+                    VStack(alignment: .leading, spacing: 0) { genres }
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -49,6 +59,7 @@ struct PresentationView: View {
         }
         .scrollIndicators(.never)
         .pagesScroll()
+        .onChange(of: feed.facts(model), initial: true) { _, new in feed.apply(new, model) }
     }
 
     // MARK: General
@@ -58,30 +69,13 @@ struct PresentationView: View {
     /// counterpart.
     private var general: some View {
         SettingGroup(title: "Allgemein") {
-            ToggleRow(symbol: "chart.bar.fill",
-                          title: Text("Fortschritt auf Kacheln"),
-                          an: Binding(get: { model.progressOnTiles },
-                                      set: { model.progressOnTiles = $0 }))
-            ToggleRow(symbol: "bookmark",
-                          title: Text("Merkliste"),
-                          under: Text("Seite, Filter und Knopf auf Film- und Serienseiten"),
-                          an: Binding(get: { model.watchlistShown },
-                                      set: { model.watchlistShown = $0 }))
-            if model.watchersPluginHere {
-                ToggleRow(symbol: "eye",
-                              title: Text("Gesehen von"),
-                              under: Text("Zeigt auf Titelseiten, wer einen Titel gesehen hat"),
-                              an: Binding(get: { model.watchersShown },
-                                          set: { model.watchersShown = $0 }))
+            switchRow("fortschritt", "chart.bar.fill")
+            switchRow("merklisteAn", "bookmark")
+            if feed.row("gesehenVonAn") != nil {
+                switchRow("gesehenVonAn", "eye")
             }
-            ToggleRow(symbol: "textformat.abc",
-                          title: Text("Alphabetische Suche in Listen"),
-                          an: Binding(get: { model.alphabetShown },
-                                      set: { model.alphabetShown = $0 }))
-            ToggleRow(symbol: "textformat",
-                          title: Text("Titel als Logo"),
-                          under: Text("Auf Film- und Serienseiten, wenn dein Server eins hat"),
-                          an: $titleAsLogo)
+            switchRow("alphabetAn", "textformat.abc")
+            switchRow("titelAlsLogo", "textformat")
         }
     }
 
@@ -116,95 +110,71 @@ struct PresentationView: View {
 
     // MARK: Rows
 
-    private var visibleRails: [StartRail] {
-        model.startRails.filter { $0.fits(disconnected: model.newAccessDisconnected) }
+    private var visibleRows: [String] {
+        model.rowOrder.filter { id in
+            guard let rail = StartRail(rawValue: id) else { return true }
+            return rail.fits(disconnected: model.newAccessDisconnected)
+        }
     }
 
+    /// **One list**: fixed rows, libraries and collections in the order the core keeps (`HomeRowOrder`).
+    /// Drag a row onto another, or Move Up / Move Down (context menu, VoiceOver actions, Option + arrow
+    /// keys on the focused row). Keyboard moves do not animate.
     private var rails: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SettingGroup(title: "Reihen") {
-                ForEach(Array(visibleRails.enumerated()), id: \.element) { spot, rail in
+            SettingGroup(title: "Startseite") {
+                let shown = visibleRows
+                ForEach(Array(shown.enumerated()), id: \.element) { spot, id in
                     if spot > 0 { SheetLine().padding(.leading, Theme.separatorInsetCard) }
-                    ChoiceRow(symbol: rail.symbol, title: Text(rail.name),
-                              an: Binding(get: { !model.startOut.contains(rail) },
-                                          set: { an in
-                                              if an { model.startOut.remove(rail) }
-                                              else { model.startOut.insert(rail) }
-                                          }))
-                        .dragBar(rail.rawValue, over: $over) { source in
-                            railStore(source, on: rail)
+                    row(id, shown: shown)
+                        .dragBar(id, over: $over) { source in
+                            withAnimation(Theme.reveal) { model.dropRow(source, onto: id) }
+                        }
+                        .contextMenu {
+                            Button("Nach oben") { model.shiftRow(id, by: -1, among: shown) }
+                                .disabled(spot == 0)
+                            Button("Nach unten") { model.shiftRow(id, by: 1, among: shown) }
+                                .disabled(spot == shown.count - 1)
+                        }
+                        .accessibilityAction(named: Text("Nach oben")) { model.shiftRow(id, by: -1, among: shown) }
+                        .accessibilityAction(named: Text("Nach unten")) { model.shiftRow(id, by: 1, among: shown) }
+                        .focusable()
+                        .onKeyPress(.upArrow, phases: .down) { press in
+                            guard press.modifiers.contains(.option) else { return .ignored }
+                            model.shiftRow(id, by: -1, among: shown); return .handled
+                        }
+                        .onKeyPress(.downArrow, phases: .down) { press in
+                            guard press.modifiers.contains(.option) else { return .ignored }
+                            model.shiftRow(id, by: 1, among: shown); return .handled
                         }
                 }
-            }
-            Footer(text: "Zum Umsortieren eine Zeile ziehen.")
-
-            SettingGroup(title: "Neuzugänge") {
-                ToggleRow(symbol: "square.split.2x1",
-                              title: Text("Neuzugänge getrennt"),
-                              under: Text("Neue Filme und neue Serien als eigene Reihen"),
-                              an: Binding(get: { model.newAccessDisconnected },
-                                          set: { model.newAccessDisconnected = $0 }))
-            }
-        }
-    }
-
-    /// The dragged row moves to the position of the one it lands on.
-    ///
-    /// **The target position is looked up after removal, not before.** It used to
-    /// be fixed before the row left the list, and when dragging downward the
-    /// removal shifts everything by one. The row ended up **behind** the one it
-    /// was dropped on: A onto C gave B · C · A instead of B · A · C. Upward it was
-    /// fine because nothing before the target shifts, which is why this kind of
-    /// bug is easy to miss when trying it out.
-    private func railStore(_ source: String, on target: StartRail) {
-        guard let moved = StartRail(rawValue: source), moved != target else { return }
-        var visible = visibleRails
-        guard let from = visible.firstIndex(of: moved) else { return }
-        withAnimation(Theme.reveal) {
-            visible.remove(at: from)
-            let spot = visible.firstIndex(of: target) ?? visible.endIndex
-            visible.insert(moved, at: spot)
-            model.startRails = visible + model.startRails.filter { !visible.contains($0) }
-        }
-    }
-
-
-    // MARK: Libraries and collections
-
-    /// Custom rows from the server, in the order of this list, after the fixed
-    /// rows. As with genres: drag the handle, cross to remove.
-    private var libraryRails: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SettingGroup(title: "Bibliotheken und Sammlungen") {
-                ForEach(model.startLibraries) { entryRecord in
-                    GenreRow(name: entryRecord.name, symbol: entryRecord.collection ? "square.stack" : "rectangle.stack") {
-                        withAnimation(Theme.reveal) {
-                            model.startLibraries.removeAll { $0.id == entryRecord.id }
-                        }
-                    }
-                    .dragBar("bibliothek:" + entryRecord.id, over: $over) { source in
-                        libraryStore(source, on: entryRecord.id)
-                    }
-                    SheetLine().padding(.leading, Theme.separatorInsetCard)
-                }
+                SheetLine().padding(.leading, Theme.separatorInsetCard)
                 Button { navigator.openIt(.librarySelection, in: section) } label: {
                     ValuesRow(symbol: "plus", title: Text("Bibliothek hinzufügen"),
                                accent: true, arrow: true, hoverable: true)
                 }
                 .buttonStyle(Theme.PressRow())
             }
+            Footer(text: "Zum Umsortieren eine Zeile ziehen oder mit dem Kontextmenü verschieben.")
+
+            SettingGroup(title: "Neuzugänge") {
+                switchRow("neuGetrennt", "square.split.2x1")
+            }
         }
-        .padding(.bottom, 22)
     }
 
-    private func libraryStore(_ source: String, on target: String) {
-        let moved = String(source.dropFirst("bibliothek:".count))
-        guard moved != target,
-              let from = model.startLibraries.firstIndex(where: { $0.id == moved }),
-              let to = model.startLibraries.firstIndex(where: { $0.id == target }) else { return }
-        withAnimation(Theme.reveal) {
-            let entryRecord = model.startLibraries.remove(at: from)
-            model.startLibraries.insert(entryRecord, at: to)
+    @ViewBuilder private func row(_ id: String, shown: [String]) -> some View {
+        if let library = HomeRowOrder.library(of: id) {
+            let entry = model.startLibraries.first { $0.id == library }
+            GenreRow(name: entry?.name ?? "", symbol: entry?.collection == true ? "square.stack" : "rectangle.stack") {
+                withAnimation(Theme.reveal) { model.startLibraries.removeAll { $0.id == library } }
+            }
+        } else if let rail = StartRail(rawValue: id) {
+            ChoiceRow(symbol: rail.symbol, title: Text(rail.name),
+                      an: Binding(get: { !model.startOut.contains(rail) },
+                                  set: { an in
+                                      if an { model.startOut.remove(rail) } else { model.startOut.insert(rail) }
+                                  }))
         }
     }
 
@@ -217,9 +187,12 @@ struct PresentationView: View {
     private var genres: some View {
         VStack(alignment: .leading, spacing: 0) {
             SettingGroup(title: "Genres") {
-                form("Als eigene Reihen", symbol: "rectangle.grid.1x2", an: !model.genreChips) { model.genreChips = false }
-                SheetLine().padding(.leading, Theme.separatorInsetCard)
-                form("Als Chips über den Reihen", symbol: "capsule", an: model.genreChips) { model.genreChips = true }
+                // The two forms are the core's options of "genreChips" (`rails`, `chips`).
+                ForEach(feed.choices("genreChips")) { choice in
+                    if choice.value != "rails" { SheetLine().padding(.leading, Theme.separatorInsetCard) }
+                    form(choice.label, symbol: choice.value == "chips" ? "capsule" : "rectangle.grid.1x2",
+                         an: choice.selected) { feed.choose("genreChips", choice.value) }
+                }
 
                 ForEach(model.startGenres, id: \.self) { name in
                     SheetLine().padding(.leading, Theme.separatorInsetCard)
@@ -255,9 +228,9 @@ struct PresentationView: View {
     }
 
     /// Like the rows above: icon, title, checkmark, not smaller.
-    private func form(_ title: LocalizedStringKey, symbol: String, an: Bool,
+    private func form(_ title: String, symbol: String, an: Bool,
                       select: @escaping () -> Void) -> some View {
-        ValuesRow(symbol: symbol, title: Text(title), action: select, checkmark: an)
+        ValuesRow(symbol: symbol, title: Text(verbatim: title), action: select, checkmark: an)
             .accessibilityAddTraits(an ? .isSelected : [])
     }
 

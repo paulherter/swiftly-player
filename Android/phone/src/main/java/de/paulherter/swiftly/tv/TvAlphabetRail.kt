@@ -24,6 +24,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
+import kotlinx.coroutines.delay
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -51,13 +60,21 @@ val TvAlphabetRailWidth = 28.dp
  */
 @Composable
 fun TvAlphabetRail(letters: List<LetterEntry>, current: String?, modifier: Modifier = Modifier,
-                   jump: (String) -> Unit) {
+                   toGrid: FocusRequester? = null, jump: (String) -> Unit) {
     val list = rememberLazyListState()
+    val manager = LocalFocusManager.current
     var focused by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(current, focused) {
         if (focused != null) return@LaunchedEffect
         val at = letters.indexOfFirst { it.letter == current }
         if (at >= 0) list.animateScrollToItem(maxOf(0, at - 4))
+    }
+    // **Scroll the grid only once the focus has settled**: a jump per letter while walking down the rail
+    // re-laid-out the tiles beside it and Left found no candidate. OK still jumps at once.
+    LaunchedEffect(focused) {
+        val letter = focused ?: return@LaunchedEffect
+        delay(150)
+        jump(letter)
     }
     // A soft edge says there are more letters above or below (tvOS mask: clear 0, black .02, black .98, clear 1).
     LazyColumn(modifier.width(TvAlphabetRailWidth).fillMaxHeight()
@@ -66,6 +83,12 @@ fun TvAlphabetRail(letters: List<LetterEntry>, current: String?, modifier: Modif
                        drawContent()
                        drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.02f to Color.Black, 0.98f to Color.Black, 1f to Color.Transparent),
                                 blendMode = BlendMode.DstIn)
+                   }.onPreviewKeyEvent { e ->
+                       // Left goes back into the grid: the requested landing tile first, the focus search as a fallback.
+                       if (e.key == Key.DirectionLeft && e.type == KeyEventType.KeyDown) {
+                           val ok = toGrid != null && try { toGrid.requestFocus(); true } catch (_: Exception) { false }
+                           ok || manager.moveFocus(FocusDirection.Left)
+                       } else false
                    }.focusGroup()
                    .semantics { contentDescription = translated("Alphabet") },
                state = list, contentPadding = PaddingValues(vertical = 8.dp),
@@ -80,7 +103,7 @@ fun TvAlphabetRail(letters: List<LetterEntry>, current: String?, modifier: Modif
                 }
                 FocusArea(Modifier.height(21.5.dp), magnifier = 1.15f,
                           focusChanged = { inside ->
-                              if (inside) { focused = entry.letter; jump(entry.letter) }
+                              if (inside) focused = entry.letter
                               else if (focused == entry.letter) focused = null
                           },
                           perform = { jump(entry.letter) }) { focus ->

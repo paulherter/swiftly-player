@@ -11,7 +11,9 @@ extension AppModel {
         let files = SubtitleFile.forAVPlayer(
             streams: source.mediaStreams ?? [], itemID: itemID, source: plan.mediaSourceID,
             server: server, key: key, keyName: EmbyPaths.tokenName(for: session.kind),
-            serverExtracts: fileStyleAdjustable)
-        return EngineRequest(itemID: itemID, source: source, subtitleFiles: files)
+            serverExtracts: fileStyleAdjustable,
+            // The engine draws the file's own style while "keep the file's style" is on (Plex has no choice: always on).
+            keepFileStyle: subtitleLook.keepFileStyle || !fileStyleAdjustable)
+        return EngineRequest(itemID: itemID, source: source, subtitleFiles: files, transcoded: plan.method == .transcode)
     }
 }

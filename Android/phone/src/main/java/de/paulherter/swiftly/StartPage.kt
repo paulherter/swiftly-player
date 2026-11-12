@@ -62,7 +62,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.combinedClickable
-import de.paulherter.swiftly.core.Kern
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -141,7 +140,7 @@ internal fun startKey(e: Settings): String =
  * Compose tears the page down on every section change, and the effect below used to fetch each time.
  */
 internal fun startFresh(app: SwiftlyApplication, key: String): Boolean =
-    app.startRails != null && app.startKey == key && !Kern.refreshDue(app.startLoaded)
+    app.startRails != null && app.startKey == key && !KernRules.refreshDue(app.startLoaded)
 
 /**
  * **From Continue Watching straight into playback** (`starte` in `HomeView`): fetch the position
@@ -149,7 +148,7 @@ internal fun startFresh(app: SwiftlyApplication, key: String): Boolean =
  * Without a plan the tap goes to the detail page. True = handled.
  */
 internal suspend fun continueWatchingAsking(app: SwiftlyApplication, id: String): Boolean {
-    val loaded = runCatching { titleRead(withContext(Dispatchers.IO) { app.kern.title(id).await() }) }.getOrNull()
+    val loaded = runCatching { titleRead(withContext(Dispatchers.IO) { app.rk.title(id).await() }) }.getOrNull()
     if (loaded == null) { app.message.value = translated("Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal."); return true }
     if (!loaded.planPresent) return false
     // The full title is in hand, so its versions are known: several of them ask, one plays (issue 33).
@@ -186,7 +185,7 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
         val key = startKey(e)
         try {
             val json = withContext(Dispatchers.IO) {
-                app.kern.home(e.newAccessDisconnected, e.startRails.toTypedArray(), e.startOut.toTypedArray(),
+                app.rk.home(e.newAccessDisconnected, e.startRails.toTypedArray(), e.startOut.toTypedArray(),
                                     app.store.rememberValue("bibliothek-movies").orEmpty(), app.store.rememberValue("bibliothek-tvshows").orEmpty(),
                                     e.startGenres.toTypedArray(), e.genreChips, e.startLibrariesJson()).await()
             }
@@ -216,7 +215,7 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
     val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-            if (running == 0 && Kern.refreshDue(app.startLoaded)) load()
+            if (running == 0 && KernRules.refreshDue(app.startLoaded)) load()
         }
     }
     var pulls by remember { mutableStateOf(false) }

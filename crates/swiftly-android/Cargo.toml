@@ -1,0 +1,50 @@
+[package]
+name = "swiftly-android"
+description = "Android and Android TV shell of the shared Swiftly Rust UI: a cdylib the Kotlin host loads (surface, touch, keys, text, frames)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+swiftly-desktop = { path = "../swiftly-desktop" }
+swiftly-ui = { path = "../swiftly-ui" }
+swiftly-text = { path = "../swiftly-text" }
+swiftly-render = { path = "../swiftly-render" }
+swiftly-player-surface = { path = "../swiftly-player-surface" }
+swiftly-playback = { path = "../swiftly-playback" }
+swiftly-rules = { path = "../swiftly-rules" }
+swiftly-net = { path = "../swiftly-net" }
+swiftly-accounts = { path = "../swiftly-accounts" }
+url = "2"
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[target.'cfg(target_os = "android")'.dependencies]
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "wgsl", "vulkan", "gles"] }
+pollster = "1.0.1"
+# JNI glue and the ANativeWindow of the Kotlin Surface; MIT OR Apache-2.0.
+jni = "0.21"
+ndk = { version = "0.9", default-features = false, features = ["rwh_06"] }
+raw-window-handle = "0.6"
+# swiftly-desktop pulls winit, which refuses to build for Android without a backend; no activity of it is ever used.
+winit = { version = "=0.30.13", features = ["android-native-activity"] }
+android-activity = { version = "0.6", features = ["native-activity"] }
+log = "0.4"
+
+# Unsafe is allowed only in `jni_bridge.rs` (the Android JNI file of the architecture's unsafe list).
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+clone_on_ref_ptr = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+await_holding_refcell_ref = "deny"
+await_holding_lock = "deny"

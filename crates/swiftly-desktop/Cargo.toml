@@ -1,0 +1,97 @@
+[package]
+name = "swiftly-desktop"
+description = "Windows, Linux and Mac window shell of the shared Swiftly Rust UI, with the gate G1 demo"
+version = "1.1.0" # = MARKETING_VERSION in project.yml (tests/version_source.rs checks it)
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "swiftly-desktop"
+path = "src/main.rs"
+required-features = ["window"]
+
+[features]
+default = ["window"]
+# The winit window (`app`, the binary). The iOS/tvOS shell turns it off: winit has no tvOS backend.
+window = ["dep:winit", "dep:accesskit_winit"]
+# Real video under the player screen through libmpv (loaded at run time).
+mpv = ["dep:swiftly-player-surface", "swiftly-player-surface/mpv"]
+
+[dependencies]
+swiftly-atomic = { path = "../swiftly-atomic" }
+swiftly-player-surface = { path = "../swiftly-player-surface", optional = true }
+swiftly-ui = { path = "../swiftly-ui" }
+swiftly-render = { path = "../swiftly-render" }
+swiftly-layout = { path = "../swiftly-layout" }
+swiftly-motion = { path = "../swiftly-motion" }
+swiftly-design = { path = "../swiftly-design" }
+swiftly-images = { path = "../swiftly-images" }
+# The window icon picture (the same PNG decoder the image stack uses); MIT OR Apache-2.0.
+png = "0.18"
+swiftly-text = { path = "../swiftly-text" }
+# The home screen is driven by the real HomeVm over a scripted (mock) server.
+swiftly-vm = { path = "../swiftly-vm" }
+swiftly-net = { path = "../swiftly-net" }
+swiftly-accounts = { path = "../swiftly-accounts" }
+swiftly-seerr = { path = "../swiftly-seerr" }
+swiftly-library = { path = "../swiftly-library" }
+swiftly-l10n = { path = "../swiftly-l10n" }
+swiftly-settings = { path = "../swiftly-settings" }
+swiftly-support = { path = "../swiftly-support" }
+swiftly-downloads = { path = "../swiftly-downloads" }
+swiftly-model = { path = "../swiftly-model" }
+swiftly-playback = { path = "../swiftly-playback" }
+swiftly-rules = { path = "../swiftly-rules" }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+# reqwest needs a tokio reactor; the real transport runs its requests on this runtime from any executor.
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+# The file downloads (Range resume) run on that runtime.
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+swiftly-jellyfin = { path = "../swiftly-jellyfin", default-features = false }
+swiftly-plex = { path = "../swiftly-plex" }
+futures-executor = { version = "0.3", features = ["thread-pool"] }
+# Window and input: pinned to the latest 0.30 (0.31 is still a beta); Apache-2.0.
+winit = { version = "=0.30.13", optional = true }
+# Screen readers: the tree (accesskit) and its winit adapter (UI Automation, AT-SPI); MIT OR Apache-2.0.
+accesskit = "=0.25.2"
+accesskit_winit = { version = "=0.34.2", default-features = false, features = ["rwh_06", "accesskit_unix", "async-io"], optional = true }
+# Same wgpu as swiftly-render (exact pin there); only the types are used here.
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "wgsl", "metal", "vulkan", "gles", "dx12"] }
+# Blocks on the adapter and device futures; MIT OR Apache-2.0.
+pollster = "1.0.1"
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+
+# The exe's icon and details resource, used when the TARGET is Windows (also when cross-compiling from Linux); MIT.
+[build-dependencies]
+embed-resource = "3"
+
+# Same lints as the workspace, except that unsafe is denied (not forbidden) so `win_backdrop` can set the window class brush.
+[lints.rust]
+unsafe_code = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(swiftly_loom)"] }
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+clone_on_ref_ptr = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+await_holding_refcell_ref = "deny"
+await_holding_lock = "deny"
+
+# Platform secret stores: Keychain on macOS, Credential Manager on Windows. Linux uses the 0600 file fallback
+# (Secret Service needs libdbus on the build machine).
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["apple-native"] }
+# System media controls (Windows SMTC, Linux MPRIS over pure-Rust zbus, no libdbus); MIT.
+[target.'cfg(target_os = "windows")'.dependencies]
+souvlaki = { version = "0.9", default-features = false }
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Console", "Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_WindowsAndMessaging"] }
+[target.'cfg(all(unix, not(any(target_os = "macos", target_os = "ios", target_os = "android"))))'.dependencies]
+souvlaki = { version = "0.9", default-features = false, features = ["use_zbus"] }

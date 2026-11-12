@@ -18,7 +18,27 @@ final class LibraryModel {
     /// makes the same distinction; without it the library showed an unreachable
     /// server as an empty shelf.
     private(set) var disrupted = false
+    /// Why it is disrupted, for the page's own wording; `.unreachable` unless the core named another reason.
+    private(set) var trouble = Trouble.unreachable
     private var loadsPost = false
+    #if canImport(SwiftlyCore)
+    /// The core's grid for the list shown, when `AppModel.coreServes` feeds this page (see `loadRust`).
+    @ObservationIgnored private var rustShelf: (key: String, shelf: RustShelf)?
+    private var rustMore = false
+    private var rustActive = false
+    /// What the core says for each tile of this list (title, line, picture), by title id; this list's own,
+    /// so another screen's tiles of the same title never change it.
+    private(set) var coreLooks: [String: RustTileLook] = [:]
+    #endif
+
+    /// The core's wording of one tile while the core feeds this list; `nil` otherwise.
+    func coreLook(_ id: String) -> RustTileLook? {
+        #if canImport(SwiftlyCore)
+        rustActive ? coreLooks[id] : nil
+        #else
+        nil
+        #endif
+    }
 
     /// Which account the contents belong to.
     ///
@@ -97,6 +117,16 @@ final class LibraryModel {
         let key = "\(source.key)|\(identifier)|\(model.accountSwitch)"
         guard alphabetFor != key else { return }
         let asked = sorting
+        #if canImport(SwiftlyCore)
+        // The core builds the strip from the full titles (sort names, dates), whole list fetched once.
+        if rustActive, let shelf = rustShelf?.shelf {
+            let fresh = await shelf.alphabet()
+            guard sorting == asked, rustActive else { return }
+            alphabet = fresh
+            alphabetFor = key
+            return
+        }
+        #endif
         guard let list = await model.indexList(from: source, sorting: asked, filter: filter) else { return }
         // Another order was picked meanwhile: its own load builds its index.
         guard sorting == asked else { return }
@@ -112,6 +142,23 @@ final class LibraryModel {
 
     @ObservationIgnored private var jumpAsked = 0
 
+    /// The strip key of a title the grid shows: the core's from the full title when it feeds the grid (the
+    /// tiles are stand-ins without sort name or dates), else the index's own.
+    func key(of item: Item, in alphabet: AlphabetIndex) -> String {
+        #if canImport(SwiftlyCore)
+        if rustActive, let key = rustShelf?.shelf.key(of: item.id) { return key }
+        #endif
+        return alphabet.key(of: item)
+    }
+
+    /// The id of the first loaded title under a strip key, `nil` while it is not loaded yet.
+    private func target(of letter: String, in alphabet: AlphabetIndex) -> String? {
+        #if canImport(SwiftlyCore)
+        if rustActive, let shelf = rustShelf?.shelf { return shelf.jumpTargetID(letter) }
+        #endif
+        return alphabet.target(for: letter, in: items).map { items[$0].id }
+    }
+
     /// **The title to scroll to for a letter**, loading until it is there. Loads in steps
     /// sized by where the letter starts on the server, so a jump to the end of a long
     /// library takes a few requests, not dozens.
@@ -123,8 +170,8 @@ final class LibraryModel {
         let asked = jumpAsked
         let start = alphabet.entries.first { $0.letter == letter }?.first ?? 0
         for _ in 0..<20 {
-            if let i = alphabet.target(for: letter, in: items) {
-                return asked == jumpAsked ? items[i].id : nil
+            if let id = target(of: letter, in: alphabet) {
+                return asked == jumpAsked ? id : nil
             }
             guard stillMorePresent else { break }
             // A page being appended right now blocks `loadMore`; wait for it instead of
@@ -148,7 +195,10 @@ final class LibraryModel {
     private(set) var loadMoreFailed = false
 
     var stillMorePresent: Bool {
-        filterRef == nil ? ListRules.stillMorePresent(loaded: items.count, total: total)
+        #if canImport(SwiftlyCore)
+        if rustActive { return rustMore }
+        #endif
+        return filterRef == nil ? ListRules.stillMorePresent(loaded: items.count, total: total)
                     : ListRules.stillMorePresent(loaded: rawOffset, total: rawTotal)
     }
 
@@ -185,6 +235,7 @@ final class LibraryModel {
         }
         loads = items.isEmpty
         disrupted = false
+        trouble = .unreachable
         loadMoreFailed = false
         forAccount = model.accountSwitch
         guard let source else {
@@ -195,6 +246,17 @@ final class LibraryModel {
             loads = false
             return
         }
+        #if canImport(SwiftlyCore)
+        if model.coreServes {
+            await loadRust(model, from: source, run: myOwn)
+            if myOwn == run { loads = false }
+            return
+        }
+        rustActive = false
+        #endif
+        // CORE-GAP: the loading below (`items`, `titleFilter`, `fill`) still serves the tvOS library tiles
+        // and sessions the core cannot serve; where the core feeds the grid the alphabet strip is the
+        // core's too (`RustShelf.alphabet`).
         if source.isFiltering {
             await filteredLoad(model, from: source, run: myOwn)
             if myOwn == run { loads = false }
@@ -250,6 +312,14 @@ final class LibraryModel {
         defer { loadsPost = false }
         let before = loadedFor
         loadMoreFailed = false
+        #if canImport(SwiftlyCore)
+        if rustActive, let shelf = rustShelf {
+            let page = await shelf.shelf.more()
+            guard loadedFor == before, rustShelf?.key == shelf.key else { return }
+            adoptRust(page, model)
+            return
+        }
+        #endif
         if source.isFiltering, var s = filterRef {
             let filled = await fill(model, from: source, filterRef: &s,
                                          since: rawOffset, first: count)
@@ -327,3 +397,57 @@ final class LibraryModel {
         return (new, offset, raw)
     }
 }
+
+#if canImport(SwiftlyCore)
+extension LibraryModel {
+    /// The same job as the Swift loading, with the Rust core's library grid as the source (`RustShelf`):
+    /// the first page, sort order, filter and paging come from the core; the tiles are `Item` stand-ins
+    /// plus a `RustTileLook` each. When the core cannot serve this list (a core error, signed out) the page shows the server as out of reach, there is no second path.
+    fileprivate func loadRust(_ model: AppModel, from source: ShelfSource, run myOwn: Int) async {
+        let key = "\(source.key)|\(forAccount)"
+        let shelf: RustShelf
+        if let held = rustShelf, held.key == key {
+            shelf = held.shelf
+        } else {
+            guard let fresh = model.rustScreens.shelf(for: model.session, source: source) else {
+                disrupted = items.isEmpty
+                return
+            }
+            shelf = fresh
+            rustShelf = (key, fresh)
+        }
+        let page = await shelf.load(sorting: sorting, filter: filter)
+        guard myOwn == run, !Task.isCancelled else { return }
+        if page.signedOut {
+            rustShelf = nil
+            disrupted = items.isEmpty
+            return
+        }
+        adoptRust(page, model)
+        loadedFor = "\(source.key)|\(identifier)|\(forAccount)"
+        disrupted = page.offline && items.isEmpty
+        trouble = disrupted ? page.trouble : .unreachable
+    }
+
+    fileprivate func adoptRust(_ page: RustShelf.Page, _ model: AppModel) {
+        model.rustLooks.merge(page.looks) { _, new in new }
+        coreLooks = page.looks
+        items = ListRules.withoutDouble(page.items)
+        total = page.total
+        rustMore = page.more
+        loadMoreFailed = page.moreFailed
+        rustActive = true
+    }
+}
+#endif
+
+#if DEBUG
+extension LibraryModel {
+    /// Snapshot tests only (`Tests/SwiftUIParity`): fills the shelf without a server.
+    func seedForSnapshot(_ items: [Item]) {
+        self.items = items
+        total = items.count
+        loads = false
+    }
+}
+#endif

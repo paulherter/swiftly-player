@@ -40,7 +40,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import de.paulherter.swiftly.core.Kern
 import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.translated
 import org.json.JSONObject
@@ -51,7 +50,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 // **The subtitle look on Android, phone and TV.** Every rule (steps, defaults, option lists) is in the
-// package (`SubtitleLook`) and reaches this side through `Kern.subtitleLook…`; this file holds the
+// package (`SubtitleLook`) and reaches this side through `KernRules.subtitleLook…`; this file holds the
 // words and the self-drawn preview, which both pages share, exactly as `SubtitlePreview.swift` does
 // for the three Apple versions. The numbers of the drawing follow the spec
 // (`Notizen/Mehrserver/UNTERTITEL-ENTWURF.md`, section 5) and have not been compared with VLC yet.
@@ -90,7 +89,7 @@ class SubtitleFacts private constructor(private val o: JSONObject) {
 
     companion object {
         fun of(look: String, isTv: Boolean): SubtitleFacts =
-            SubtitleFacts(runCatching { JSONObject(Kern.subtitleLookFacts(look, SubtitleBase.of(isTv))) }.getOrDefault(JSONObject()))
+            SubtitleFacts(runCatching { JSONObject(KernRules.subtitleLookFacts(look, SubtitleBase.of(isTv))) }.getOrDefault(JSONObject()))
     }
 }
 
@@ -129,7 +128,7 @@ fun SubtitleFacts.fileStyleLine(): String = translated(
     else "Auch ASS und SSA sehen dann aus wie oben. Schilder rutschen als Zeile nach unten.")
 
 /** One field changed, in the package's text form. */
-fun subtitleLookChanged(look: String, field: String, value: String): String = Kern.subtitleLookChange(look, field, value)
+fun subtitleLookChanged(look: String, field: String, value: String): String = KernRules.subtitleLookChange(look, field, value)
 
 // MARK: - Preview
 

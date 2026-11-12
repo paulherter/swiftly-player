@@ -92,6 +92,56 @@ public struct PlexPlayback: Sendable {
                             source: source)
     }
 
+    // MARK: - Transcode (AV1 Dolby Vision 10.0 only)
+
+    /// The query of the universal transcoder (decision and start): direct play and direct stream off, so the
+    /// server may neither send the file nor copy its video. Mirrors `PlexDecision::transcode_query`.
+    /// **A transcoded stream carries no subtitle unless the request asks for it.** With a chosen subtitle
+    /// (`subtitleStreamID`, the stream's `MediaStream.id`) the server burns it into the picture
+    /// (`subtitles=burn`), which is the only way a bitmap track (PGS, VobSub) can reach a player at all;
+    /// without one it sends none.
+    static func transcodeQuery(ratingKey: String, mediaIndex: Int, partIndex: Int, session: String,
+                               subtitleStreamID: Int? = nil) -> [(String, String)] {
+        var query = [("path", "/library/metadata/\(ratingKey)"), ("mediaIndex", String(mediaIndex)),
+                     ("partIndex", String(partIndex)), ("protocol", "hls"), ("directPlay", "0"), ("directStream", "0"),
+                     ("directStreamAudio", "1"), ("hasMDE", "1"), ("fastSeek", "1"), ("copyts", "1"),
+                     ("subtitles", subtitleStreamID.map { $0 > 0 } == true ? "burn" : "none"),
+                     ("videoQuality", "100"), ("session", session)]
+        if let subtitleStreamID, subtitleStreamID > 0 { query.append(("subtitleStreamID", String(subtitleStreamID))) }
+        return query
+    }
+
+    /// Whether a decision answer says the server will transcode (general code 1xxx; 2xxx/3xxx refuse).
+    /// Numbers may arrive as text.
+    static func decisionAllowsTranscode(_ body: Data) -> Bool {
+        guard let root = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let container = root["MediaContainer"] as? [String: Any] else { return false }
+        let code = (container["generalDecisionCode"] as? Int) ?? Int((container["generalDecisionCode"] as? String) ?? "")
+        return code.map { (1000..<2000).contains($0) } ?? false
+    }
+
+    /// Where a file sits in its title: version number and part number, as the transcoder counts them.
+    func transcodeIndices(of metadata: PlexMetadata, file: PlexFile) -> (media: Int, part: Int)? {
+        guard let media = metadata.media.firstIndex(where: { $0.id == file.media.id }) else { return nil }
+        return (media, file.number - 1)
+    }
+
+    /// The same plan as a server transcode: the transcoder's HLS address (the client fields ride in the query, a
+    /// player cannot set headers), delivery `.transcode`, the video as the reason.
+    public func transcodePlan(from direct: PlaybackPlan, metadata: PlexMetadata, file: PlexFile, sessionID: String,
+                              identity: [(String, String)], subtitleStreamID: Int? = nil) -> PlaybackPlan? {
+        guard let at = transcodeIndices(of: metadata, file: file),
+              let address = url(path: "/video/:/transcode/universal/start.m3u8",
+                                query: Self.transcodeQuery(ratingKey: metadata.ratingKey, mediaIndex: at.media,
+                                                           partIndex: at.part, session: sessionID,
+                                                           subtitleStreamID: subtitleStreamID) + identity,
+                                withToken: true) else { return nil }
+        return PlaybackPlan(url: address, method: .transcode, mediaSourceID: direct.mediaSourceID,
+                            playSessionID: direct.playSessionID, container: direct.container,
+                            reasons: [TranscodeReason(kind: .video, codec: direct.source?.videoCodec ?? "av1", detail: nil)],
+                            source: direct.source)
+    }
+
     /// The part a plan belongs to (needed for progress and track choice).
     public static func part(of metadata: PlexMetadata, mediaSourceID: String?) -> PlexPart? {
         file(of: metadata, mediaSourceID: mediaSourceID)?.part

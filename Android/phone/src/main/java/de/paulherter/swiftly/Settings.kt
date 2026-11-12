@@ -6,7 +6,6 @@ import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
 import androidx.compose.animation.core.EaseInOut
-import de.paulherter.swiftly.core.Kern
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -101,7 +100,7 @@ class Settings(store: Store) {
     /**
      * **How text subtitles look**, as the package's JSON (`SubtitleLook`, sync key `utAussehen`): seven
      * steps and switches. Empty is the default. Every rule, table and default is in the package
-     * (`Kern.subtitleLook…`); this holds the text only. Applies from the next video.
+     * (`KernRules.subtitleLook…`); this holds the text only. Applies from the next video.
      */
     var subtitleLook by RememberValue(a, "utAussehen", a.rememberValue("utAussehen").orEmpty()) { it }
     /** `"1"`/`"0"`, empty: never toggled, so the account applies (`nextAutomaticAccount`). */
@@ -113,7 +112,7 @@ class Settings(store: Store) {
     var nextAutomaticAccount by mutableStateOf("")
     /** Rule in the package (`Weiterschalten.gilt`): own choice before account before "on". Like `AppModel` on iOS. */
     var nextAutomatic: Boolean
-        get() = Kern.nextAutomaticApplies(nextAutomaticSelection, nextAutomaticAccount)
+        get() = KernRules.nextAutomaticApplies(nextAutomaticSelection, nextAutomaticAccount)
         set(value) { nextAutomaticSelection = if (value) "1" else "0" }
     /** "Skip intro and outro automatically"; off by default (iOS: `introAbspannAuto`). The pick is in the core (`SectionLogic.automatic`). */
     var introOutroAutomatic by RememberValue(a, "introAbspannAuto", bool("introAbspannAuto", false), yesNo)
@@ -177,7 +176,7 @@ class Settings(store: Store) {
          * reachable even without permission.
          */
     val downloadButtonShow: Boolean
-        get() = Kern.downloadButtonShow(downloadRightAccount, downloadsAn)
+        get() = KernRules.downloadButtonShow(downloadRightAccount, downloadsAn)
     /**
          * `Policy.EnableVideoPlaybackTranscoding` of the current account, `"1"`/`"0"`/empty. Not
          * stored; fetched fresh at each start and account switch (`SwiftlyApplication.accountPreGiftFetch`).
@@ -206,7 +205,7 @@ class Settings(store: Store) {
         values["tonSprache"]?.let { audioLanguage = it }
         values["utSprache"]?.let { subtitleLanguage = it }
         bool("utAuto")?.let { subtitleAutomatic = it }
-        values["utAussehen"]?.let { subtitleLook = Kern.subtitleLookNormalise(it) }
+        values["utAussehen"]?.let { subtitleLook = KernRules.subtitleLookNormalise(it) }
         bool("naechsteAuto")?.let { nextAutomatic = it }
         bool("introAbspannAuto")?.let { introOutroAutomatic = it }
         bool("endzeitImPlayer")?.let { endTimeInPlayer = it }

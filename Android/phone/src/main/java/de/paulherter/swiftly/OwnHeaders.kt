@@ -1,5 +1,7 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.rustcore.legacyOwnHeadersCleaned
+import de.paulherter.swiftly.rustcore.legacyOwnHeadersFields
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -40,7 +42,6 @@ import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -55,7 +56,7 @@ class HeaderRow(name: String = "", value: String = "") {
     var name by mutableStateOf(name)
     var value by mutableStateOf(value)
     /** Swiftly sets this one itself; the row says so instead of silently doing nothing. */
-    val locked: Boolean get() = Kern.headerLocked(name)
+    val locked: Boolean get() = de.paulherter.swiftly.rustcore.legacyHeaderLocked(name)
 }
 
 /** The rows as JSON `[{"name","wert"}]` for the core, which sanitises them with the same gate as everywhere. */
@@ -63,7 +64,7 @@ fun List<HeaderRow>.asJson(): String =
     JSONArray(map { JSONObject().put("name", it.name).put("wert", it.value) }).toString()
 
 /** What of it may go out: `OwnHeaders.cleaned`, as JSON. */
-fun List<HeaderRow>.cleaned(): String = Kern.ownHeadersCleaned(asJson())
+fun List<HeaderRow>.cleaned(): String = legacyOwnHeadersCleaned(asJson())
 
 fun headerRowOut(json: String): List<HeaderRow> = runCatching {
     val a = JSONArray(json)
@@ -75,7 +76,7 @@ fun headerRowOut(json: String): List<HeaderRow> = runCatching {
  * Empty for any foreign host (TMDB, foreign images) and for everyone who entered nothing.
  */
 fun ownHeadersFields(address: String): Map<String, String> {
-    val o = runCatching { JSONObject(Kern.ownHeadersFields(address)) }.getOrNull() ?: return emptyMap()
+    val o = runCatching { JSONObject(legacyOwnHeadersFields(address)) }.getOrNull() ?: return emptyMap()
     return o.keys().asSequence().associateWith { o.getString(it) }
 }
 
@@ -168,14 +169,14 @@ fun rememberHeaderRow(): SnapshotStateList<HeaderRow> = remember { mutableStateL
 fun OwnHeadersPage(app: SwiftlyApplication, back: () -> Unit) {
     val server = app.activeServer()
     val rows = remember { mutableStateListOf<HeaderRow>().apply { addAll(headerRowOut(app.ownHeaders(server))) } }
-    var secured by remember { mutableStateOf(Kern.ownHeadersCleaned(app.ownHeaders(server))) }
+    var secured by remember { mutableStateOf(legacyOwnHeadersCleaned(app.ownHeaders(server))) }
     SettingPage(translated("Eigene Header"), back) {
         Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 10.dp)) {
             AdvancedSection(rows, expanded = true)
             if (rows.cleaned() != secured && server != null) {
                 PrimaryButton(translated("Sichern"), modifier = Modifier.padding(top = 22.dp)) {
                     app.ownHeadersSafe(rows.asJson(), server)
-                    secured = Kern.ownHeadersCleaned(app.ownHeaders(server))
+                    secured = legacyOwnHeadersCleaned(app.ownHeaders(server))
                 }
             }
         }

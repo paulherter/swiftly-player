@@ -15,6 +15,8 @@
 ; shows a loading window meanwhile; see `Windows\Launcher\launcher.c`.
 
 #define Name "Swiftly"
+; The name people read (setup, Start menu, shortcuts, uninstall list); the folder and the files keep "Swiftly".
+#define Anzeige "Swiftly Player"
 #define Fassung "1.1.0"
 ; Build number, same as `Fassung.bau` in Linux/Sources/SwiftlyLinux/Version.swift.
 #define Bau "34"
@@ -24,14 +26,14 @@
 
 [Setup]
 AppId={{8E2F1C74-3D9A-4B10-9C7E-5A6B2D8F0E31}
-AppName={#Name}
+AppName={#Anzeige}
 AppVersion={#Fassung}
 VersionInfoVersion={#Fassung}.{#Bau}
 AppPublisher={#Herausgeber}
 AppPublisherURL={#Netz}
 AppSupportURL={#Netz}
 DefaultDirName={autopf}\{#Name}
-DefaultGroupName={#Name}
+DefaultGroupName={#Anzeige}
 DisableProgramGroupPage=yes
 LicenseFile=..\..\LICENSE
 OutputDir=..\Output
@@ -70,8 +72,8 @@ Source: "..\Output\Swiftly\*"; DestDir: "{app}"; Flags: ignoreversion recursesub
 Type: filesandordirs; Name: "{app}\bin\*.dll"
 
 [Icons]
-Name: "{group}\{#Name}"; Filename: "{app}\{#Programm}"; WorkingDir: "{app}"
-Name: "{autodesktop}\{#Name}"; Filename: "{app}\{#Programm}"; WorkingDir: "{app}"; Tasks: desktopsymbol
+Name: "{group}\{#Anzeige}"; Filename: "{app}\{#Programm}"; WorkingDir: "{app}"
+Name: "{autodesktop}\{#Anzeige}"; Filename: "{app}\{#Programm}"; WorkingDir: "{app}"; Tasks: desktopsymbol
 
 [Run]
-Filename: "{app}\{#Programm}"; Description: "{cm:LaunchProgram,{#Name}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#Programm}"; Description: "{cm:LaunchProgram,{#Anzeige}}"; Flags: nowait postinstall skipifsilent

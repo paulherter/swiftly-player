@@ -1,0 +1,24 @@
+[package]
+name = "swiftly-playback"
+description = "Playback decision logic of the Swiftly core: device profile, playback plan, track rules, sections, and the engine-neutral player state machine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swiftly-model = { path = "../swiftly-model" }
+swiftly-rules = { path = "../swiftly-rules" }
+swiftly-jellyfin = { path = "../swiftly-jellyfin", default-features = false }
+swiftly-library = { path = "../swiftly-library" }
+swiftly-net = { path = "../swiftly-net", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[dev-dependencies]
+futures-executor = "0.3"
+
+[lints]
+workspace = true

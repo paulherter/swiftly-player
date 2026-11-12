@@ -1,4 +1,5 @@
 import JellyfinKit
+import SwiftlyCore
 import SwiftUI
 
 /// **One person: who they are and what exists for them.**
@@ -26,20 +27,16 @@ struct PersonView: View {
 
     @State private var color = ImageColor()
     @State private var headerState = HeaderState()
-    @State private var inquiry: Item?
-    @State private var title: [Item] = []
-    @State private var requestable: [SeerrHit] = []
-    @State private var loaded = false
-    /// `nil` from `title(person:)` means the server is disturbed. Previously a silent
-    /// server showed "Auf deinem Server gibt es sonst nichts mit ...".
-    @State private var disrupted = false
-    /// Seerr has answered; only then does "there is nothing else" hold.
-    @State private var seerrReady = false
-    @State private var wholeBiography = false
-    @State private var banner: [URL] = []
-    @State private var bannerPoint = 0
+    @State private var core: PersonController?
+    /// The banner stays on the first picture.
+    private let bannerPoint = 0
 
-    private var bannerNow: URL? { banner.isEmpty ? nil : banner[bannerPoint % banner.count] }
+    private var page: SwiftlyCore.PersonPage? { core?.page }
+    private var loaded: Bool { page?.loaded ?? false }
+    private var disrupted: Bool { page?.disrupted ?? false }
+    private var title: [SwiftlyCore.Tile] { page?.titles ?? [] }
+    private var requestable: [JellyfinKit.SeerrHit] { page?.seerrHits ?? [] }
+    private var bannerNow: URL? { page?.bannerURL }
 
     /// How tall the round head is, and so the whole block, since the text beside it is shorter.
     private let blockHeight: CGFloat = 88
@@ -84,14 +81,16 @@ struct PersonView: View {
                         }
                         .transition(.opacity)
                     }
-                    TitleRail(title: "Auf deinem Server", entries: title, model: model)
+                    TitleRail(title: "Auf deinem Server", entries: title.map { Item(rust: $0) }, model: model,
+                              looks: Dictionary(title.map { ($0.id, RustTileLook($0)) }, uniquingKeysWith: { a, _ in a }),
+                              more: { id in Task { try? await core?.titleVisible(id) } })
                     requestRail
                     if disrupted, title.isEmpty {
                         // Seerr is not waited for: what the own server says is the main information of this page.
                         DisturbHint(model: model, retry: { Task { await load() } },
                                      spacingTop: 0)
-                    } else if loaded, seerrReady, title.isEmpty, requestable.isEmpty {
-                        Text("Auf deinem Server gibt es sonst nichts mit \(person.name).")
+                    } else if let empty = page?.emptyText {
+                        Text(verbatim: empty)
                             .font(Theme.body)
                             .foregroundStyle(Theme.fontQuiet)
                     }
@@ -189,20 +188,14 @@ struct PersonView: View {
         }
     }
 
-    private var birthRow: String? {
-        guard let tag = inquiry?.daysDate, let date = Calendar.current.date(from: tag) else { return nil }
-        return String(localized: "Geboren \(date.formatted(date: .long, time: .omitted))")
-    }
+    private var birthRow: String? { page?.bornLine }
 
-    private var place: String? {
-        guard let place = inquiry?.productionLocations?.first, !place.isEmpty else { return nil }
-        return place
-    }
+    private var place: String? { page?.place }
 
     @ViewBuilder
     private var roleRow: some View {
-        if let role = person.role, !role.isEmpty, let origin {
-            Text("\(role) in \(origin)")
+        if let line = page?.roleLine {
+            Text(verbatim: line)
                 .font(Theme.tile)
                 .foregroundStyle(Theme.accent)
                 .lineLimit(1)
@@ -213,16 +206,16 @@ struct PersonView: View {
     /// the page; it should not push the titles down before the user wants it.
     @ViewBuilder
     private var biography: some View {
-        if let text = inquiry?.description {
+        if let text = page?.biography {
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: text)
                     .font(Theme.body)
                     .lineSpacing(3)
                     .foregroundStyle(Theme.fontQuiet)
-                    .lineLimit(wholeBiography ? nil : 4)
+                    .lineLimit(page?.biographyExpanded == true ? nil : 4)
                     .fixedSize(horizontal: false, vertical: true)
-                Button(wholeBiography ? "Weniger" : "Mehr") {
-                    withAnimation(Theme.leap) { wholeBiography.toggle() }
+                Button(page?.biographyToggle ?? "") {
+                    withAnimation(Theme.leap) { core?.toggleBiography() }
                 }
                 .buttonStyle(Theme.PressButton())
                 .font(Theme.body.weight(.medium))
@@ -255,42 +248,7 @@ struct PersonView: View {
     // MARK: Loading
 
     private func load() async {
-        // **The own server first, Seerr alongside.** For a filmography Seerr first asks TMDB
-        // and sometimes needs seconds for that; the whole page used to wait for it.
-        async let ownOnes = model.title(person: person.id)
-        let a = await model.item(id: person.id)
-        async let foreignOnes = filmography(tmdb: a?.tmdbId)
-        let fetched = await ownOnes
-        // Failed: the page keeps what it had and says so.
-        let b = fetched ?? title
-
-        // Only real landscape images rotate; if none of the titles has one, the banner takes
-        // what the first offers as a substitute.
-        var images = b.compactMap { model.landscapeImageReal(for: $0) }
-        if images.isEmpty, let firstOne = b.first, let substitute = model.headerImageURL(for: firstOne) {
-            images = [substitute]
-        }
-
-        withAnimation(Theme.reveal) {
-            inquiry = a
-            disrupted = fetched == nil
-            title = b
-            banner = images
-            loaded = true
-        }
-
-        // **Only what is not already there.** Seerr knows what it manages itself; what came
-        // onto the server another way appears there as open, so the name filters it out.
-        let ownNames = Set(b.map { $0.name.lowercased() })
-        let new = await foreignOnes.filter { !$0.state.alreadyPresent && !ownNames.contains($0.title.lowercased()) }
-        withAnimation(Theme.reveal) {
-            requestable = new
-            seerrReady = true
-        }
-    }
-
-    private func filmography(tmdb: Int?) async -> [SeerrHit] {
-        guard model.seerr.connected, let tmdb else { return [] }
-        return await model.seerr.filmography(person: tmdb)
+        if core == nil { core = try? AppCore.shared.person(session: model.session, person: person, origin: origin) }
+        await core?.run(app: model)
     }
 }

@@ -1,5 +1,6 @@
 import JellyfinKit
 import SwiftUI
+import enum SwiftlyCore.HomeRowOrder
 
 /// **Profile -> Appearance.** How things look and what is on the home page, on one
 /// page, next to "Playback".
@@ -15,9 +16,7 @@ struct PresentationView: View {
     @Environment(\.wide) private var wide
     @State private var genreSelection = false
     @State private var librarySelection = false
-    #if os(iOS)
-    @AppStorage("titelAlsLogo") private var titleAsLogo = false
-    #endif
+    private let feed = SettingsRowsFeed.shared
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -41,6 +40,7 @@ struct PresentationView: View {
             .fadingUnderSubpageHeader(title: String(localized: "Darstellung")) { back() }
         }
         .tint(Theme.accent)
+        .onChange(of: feed.facts(model), initial: true) { _, new in feed.apply(new, model) }
         .navigationDestination(isPresented: $genreSelection) { GenreSelectionView(model: model) }
         .navigationDestination(isPresented: $librarySelection) { LibrarySelectionView(model: model) }
         #if os(iOS)
@@ -67,33 +67,15 @@ struct PresentationView: View {
     @ViewBuilder
     private var general: some View {
         KitSection {
-            ChoiceRow(symbol: "chart.bar", title: Text("Fortschritt auf Kacheln"),
-                      an: Binding(get: { model.progressOnTiles },
-                                  set: { model.progressOnTiles = $0 }))
-                .row()
-            ChoiceRow(symbol: "bookmark", title: Text("Merkliste"),
-                      under: Text("Auf Film- und Serienseiten"),
-                      an: Binding(get: { model.watchlistShown },
-                                  set: { model.watchlistShown = $0 }))
-                .row()
-            // Only once a server has shown it has the plugin.
-            if model.watchersPluginHere {
-                ChoiceRow(symbol: "eye", title: Text("Gesehen von"),
-                          under: Text("Zeigt auf Titelseiten, wer einen Titel gesehen hat"),
-                          an: Binding(get: { model.watchersShown },
-                                      set: { model.watchersShown = $0 }))
-                    .row()
+            // Rows, wording and the "Gesehen von" rule (only once the server has shown the plugin)
+            // come from the Rust core; icons and layout stay here.
+            if let rows = feed.section("Filme und Serien")?.rows {
+                ForEach(rows, id: \.key) { row in
+                    ChoiceRow(symbol: SettingsRowsFeed.symbol(row.key), title: row.titleText,
+                              under: row.underText, an: feed.binding(row.key))
+                        .row()
+                }
             }
-            ChoiceRow(symbol: "textformat.abc", title: Text("Alphabet in Listen"),
-                      an: Binding(get: { model.alphabetShown },
-                                  set: { model.alphabetShown = $0 }))
-                .row()
-            #if os(iOS)
-            ChoiceRow(symbol: "textformat", title: Text("Titel als Logo"),
-                      under: Text("Wenn dein Server eins hat"),
-                      an: $titleAsLogo)
-                .row()
-            #endif
         } header: {
             Category(text: "Filme und Serien")
         }
@@ -169,26 +151,53 @@ struct PresentationView: View {
         model.startRails.filter { $0.fits(disconnected: model.newAccessDisconnected) }
     }
 
+    /// A row of the combined list is shown unless it is a fixed row that does not fit right now.
+    private func rowShown(_ id: String) -> Bool {
+        guard let rail = StartRail(rawValue: id) else { return true }
+        return rail.fits(disconnected: model.newAccessDisconnected)
+    }
+
     private var rails: some View {
         KitSection {
-            ForEach(visibleRails) { rail in
-                ChoiceRow(symbol: rail.symbol, title: Text(rail.name),
-                          an: Binding(get: { !model.startOut.contains(rail) },
-                                      set: { an in
-                                          if an { model.startOut.remove(rail) }
-                                          else { model.startOut.insert(rail) }
-                                      }))
+            // Fixed rows and chosen libraries/collections in ONE list; the drag follows the finger
+            // (system List), the order is the core's (`HomeRowOrder`).
+            ForEach(model.rowOrder.filter(rowShown), id: \.self) { id in
+                if let library = HomeRowOrder.library(of: id) {
+                    HStack(spacing: 14) {
+                        Image(icon: "rectangle.stack", size: Theme.rowSymbolSize)
+                            .font(.app(size: Theme.rowSymbolSize))
+                            .frame(width: Theme.rowIconWidth)
+                        // From the server, so not translated.
+                        Text(verbatim: model.startLibraries.first { $0.id == library }?.name ?? "")
+                            .growing(Theme.rowTitleSize, .medium)
+                    }
+                    .foregroundStyle(Theme.font)
+                    .plainRow()
                     .row(handle: true)
+                    .deleteDisabled(false)
+                } else if let rail = StartRail(rawValue: id) {
+                    ChoiceRow(symbol: rail.symbol, title: Text(rail.name),
+                              an: Binding(get: { !model.startOut.contains(rail) },
+                                          set: { an in
+                                              if an { model.startOut.remove(rail) }
+                                              else { model.startOut.insert(rail) }
+                                          }))
+                        .row(handle: true)
+                        .deleteDisabled(true)
+                }
             }
-            .onMove { from, to in move(from: from, to: to) }
-            .deleteDisabled(true)
+            .onMove { model.moveRows(from: $0, to: $1) }
+            .onDelete { offsets in
+                let shown = model.rowOrder.filter(rowShown)
+                let gone = Set(offsets.compactMap { HomeRowOrder.library(of: shown[$0]) })
+                model.startLibraries.removeAll { gone.contains($0.id) }
+            }
 
-            ChoiceRow(symbol: "square.split.2x1",
-                      title: Text("Neuzugänge getrennt"),
-                      under: Text("Als eigene Reihen"),
-                      an: Binding(get: { model.newAccessDisconnected },
-                                  set: { model.newAccessDisconnected = $0 }))
-                .row(handleSpace: true)
+            if let row = feed.row("neuGetrennt") {
+                ChoiceRow(symbol: "square.split.2x1", title: row.titleText, under: row.underText,
+                          an: feed.binding("neuGetrennt"))
+                    .row(handleSpace: true)
+            }
         } header: {
             Category(text: "Startseite")
         } footer: {
@@ -199,11 +208,6 @@ struct PresentationView: View {
     /// Moving happens in the visible list. What is not visible right now (the shared
     /// row when separate, or vice versa) is appended at the end and reappears there on
     /// toggling.
-    private func move(from: IndexSet, to: Int) {
-        var visible = visibleRails
-        visible.move(fromOffsets: from, toOffset: to)
-        model.startRails = visible + model.startRails.filter { !visible.contains($0) }
-    }
 
     // MARK: Libraries and collections
 
@@ -212,17 +216,6 @@ struct PresentationView: View {
     /// in edit mode.
     private var libraryRails: some View {
         KitSection {
-            ForEach(model.startLibraries) { entryRecord in
-                // From the server, so not translated.
-                Text(verbatim: entryRecord.name)
-                    .growing(Theme.rowTitleSize, .medium)
-                    .foregroundStyle(Theme.font)
-                    .plainRow()
-                    .row()
-            }
-            .onMove { model.startLibraries.move(fromOffsets: $0, toOffset: $1) }
-            .onDelete { model.startLibraries.remove(atOffsets: $0) }
-
             Button { librarySelection = true } label: {
                 HStack(spacing: 14) {
                     Image(icon: "plus", size: Theme.rowSymbolSize)

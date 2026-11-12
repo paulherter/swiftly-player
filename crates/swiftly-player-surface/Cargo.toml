@@ -1,0 +1,39 @@
+[package]
+name = "swiftly-player-surface"
+description = "Video under the Rust UI on non-Apple targets: the VideoSurface and SurfaceEngine contract, track/stat/hint types, and the libmpv engine (feature mpv)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+# libmpv (LGPL, loaded at run time with libloading; no link-time dependency).
+mpv = ["dep:libloading"]
+
+[dependencies]
+swiftly-playback = { path = "../swiftly-playback" }
+swiftly-rules = { path = "../swiftly-rules" }
+serde_json = "1"
+# MIT OR Apache-2.0 / ISC; already in the lock file through other crates.
+libloading = { version = "0.8", optional = true }
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[[example]]
+name = "mpv_probe"
+required-features = ["mpv"]
+
+# Same lints as the workspace, except that unsafe is denied (not forbidden) so the libmpv FFI module can allow it.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+clone_on_ref_ptr = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+await_holding_refcell_ref = "deny"
+await_holding_lock = "deny"

@@ -1,6 +1,7 @@
 import Foundation
 import JellyfinKit
 import Observation
+import SwiftlyCore
 import SwiftUI
 
 /// What the player provides for "Watch together".
@@ -10,7 +11,7 @@ import SwiftUI
 /// `hubAdopt` in the player). Here the player rewrites surface,
 /// title and "ready" every tick, and the group always reads the current state.
 @MainActor
-final class SharedPlayer: SyncPlayPlayer {
+final class SharedPlayer {
     weak var area: VLCPlayerView?
     /// Which title is currently playing.
     var titleID = ""
@@ -32,16 +33,19 @@ final class SharedPlayer: SyncPlayPlayer {
     }
 }
 
+/// A group on offer (the core's row: name, who is watching, the phase in words).
+typealias SharedGroup = SwiftlyCore.SyncPlayGroupRow
+
 /// **Watch together: the SwiftUI mirror (iPhone, iPad, Mac, TV).**
 ///
-/// The flow lives in the package (``SyncPlaySession``), shared with Mac, TV,
-/// Android, Linux and Windows. Only what ties to the app is here: the mirror
-/// of ``SyncPlayStatus`` for SwiftUI, the sheets, loading a title into the
-/// player, and the symbols for the notices.
+/// The flow lives in the Rust core (`SyncPlayModel`, behind ``SyncPlayController``): rights, groups, the
+/// clock, who is ready, what the player must do. Swift only mirrors the core's page for SwiftUI, reads its
+/// phase through the one state machine (``TogetherState``), feeds it the control-channel messages
+/// (`RemoteController`, `URLSessionWebSocketLink`), and does what the core asks of the player and of the
+/// sheets. Linux, Windows and Android-Swift still run JellyfinKit's `SyncPlaySession`.
 ///
-/// **One for the whole app.** The detail page creates the group, the header
-/// offers it, the player runs it; on iPhone the player sits in its own UIKit
-/// frame, which the environment does not reach.
+/// **One for the whole app.** The detail page creates the group, the header offers it, the player runs it;
+/// on iPhone the player sits in its own UIKit frame, which the environment does not reach.
 @MainActor
 @Observable
 final class SharedModel {
@@ -50,149 +54,193 @@ final class SharedModel {
 
     // MARK: Read by the UI
 
-    /// The latest state from the package.
-    private(set) var status = SyncPlayStatus()
+    /// The core's controller for the current account (`nil`: no SyncPlay here).
+    private(set) var controller: SyncPlayController?
+    /// Where the group stands, read from the core's page (one machine, see ``TogetherState``).
+    private(set) var together = TogetherState.off
 
-    var rights: SyncPlayRight? { status.rights }
-    var mayCreate: Bool { status.mayCreate }
-    var mayJoin: Bool { status.mayJoin }
+    private var page: SyncPlayPage? { controller?.page }
+
+    var mayCreate: Bool { page?.mayCreate ?? false }
+    var mayJoin: Bool { page?.mayJoin ?? false }
     /// Groups on the server that you are not in.
-    var offerings: [SyncPlayGroup] { status.offerings }
+    var offerings: [SharedGroup] { page?.groups ?? [] }
     /// The group you are in.
-    var group: SyncPlayGroup? { status.group }
-    var condition: SyncPlayGroup.Phase? { status.condition }
-    /// For the strip "Leave movie night · Rejoin".
-    var lastLeave: SyncPlayGroup? { status.lastLeave }
-    var works: Bool { status.works }
+    var group: SyncPlayCurrent? { page?.current }
+    /// For the strip "Leave movie night · Rejoin": the name of the group you left last.
+    var lastLeave: String? { page?.lastLeave }
+    /// Everyone in the group as the server names them.
+    var participants: [String] { page?.detail.group?.participants ?? [] }
+    var works: Bool { page?.works ?? false }
+    /// What the group is currently watching.
+    var queueTitle: String? { page?.queueTitle }
 
     /// Shown briefly at the top of the player: who joined, who left, why the movie stopped.
     struct AppEvent: Equatable, Identifiable {
-        let id: UUID
+        let id: UInt64
         let symbol: String
         let text: String
     }
     var event: AppEvent? {
-        status.event.map { AppEvent(id: $0.id, symbol: Self.symbolText($0.art), text: $0.text) }
+        guard let page, let id = page.detail.noticeId, let kind = page.detail.noticeKind,
+            let text = page.notice
+        else { return nil }
+        return AppEvent(id: id, symbol: Self.symbol(kind), text: text)
     }
 
-    private static func symbolText(_ art: SyncPlayEvent.Art) -> String {
-        switch art {
-        case .present: "person.2.fill"
-        case .gone: "person.2"
-        case .waitsOnAll: "hourglass"
-        case .halted: "pause.fill"
-        case .goesNext: "play.fill"
-        case .jumped: "arrow.left.and.right"
-        case .noAccess, .notPlayable: "exclamationmark.triangle"
+    private static func symbol(_ kind: String) -> String {
+        switch kind {
+        case "dabei": "person.2.fill"
+        case "gegangen": "person.2"
+        case "wartet": "hourglass"
+        case "angehalten": "pause.fill"
+        case "weiter": "play.fill"
+        case "gesprungen": "arrow.left.and.right"
+        default: "exclamationmark.triangle"
         }
     }
 
     /// The "Watch together" sheet for this title is open.
     var createFor: Item?
     /// The sheet for joining, or the picker with "Continue watching here".
-    enum Sheet: Equatable { case join(SyncPlayGroup), pick }
+    enum Sheet: Equatable { case join(SharedGroup), pick }
     var sheet: Sheet?
 
     /// What the player should start; picked up by ``MainView``.
     var wish: PlayRequest?
 
-    /// For a message in the view.
+    /// For a message in the view (the core's latest error; the view clears it).
     var error: String?
 
     /// "with A and B", excluding yourself.
-    var withWhom: String {
-        guard let group else { return "" }
-        let other = group.other(asValue: ich)
-        guard !other.isEmpty else { return String(localized: "noch niemand dabei") }
-        let list = ListFormatter.localizedString(byJoining: other)
-        return String(localized: "mit \(list)")
+    var withWhom: String { group?.withWhom ?? "" }
+
+    /// Is the player currently running in the group?
+    var inPlayer: Bool {
+        if case .watching = together { return true }
+        return false
     }
+
+    /// Does this title belong to what the group is watching?
+    func belongsGroup(_ titleID: String) -> Bool { together.inGroup && queueTitle == titleID }
 
     // MARK: Internals
 
     @ObservationIgnored private weak var model: AppModel?
     @ObservationIgnored private var tick: Task<Void, Never>?
-    @ObservationIgnored private var hearOut: Task<Void, Never>?
+    @ObservationIgnored private var pumps: [Task<Void, Never>] = []
+    @ObservationIgnored private var remote: RemoteController?
+    @ObservationIgnored private var seenAccepted: UInt64 = 0
+    @ObservationIgnored private var seenErrors: UInt64 = 0
     @ObservationIgnored private(set) var player: SharedPlayer?
-
-    /// The flow. One for the app's lifetime; at each step it asks for the client
-    /// that currently applies.
-    @ObservationIgnored private lazy var session: SyncPlaySession = {
-        let session = SyncPlaySession(
-            // SyncPlay is a Jellyfin feature (`ServerCapability.syncPlay`).
-            client: { @MainActor [weak self] in
-                // Emby's client is a `JellyfinClient` as well, without SyncPlay.
-                guard let c = self?.model?.client, c.capabilities.contains(.syncPlay) else { return nil }
-                return c as? JellyfinClient
-            },
-            ich: { @MainActor [weak self] in self?.ich },
-            titleLoad: { @MainActor [weak self] title, since in
-                await self?.titleLoad(title, since: since) ?? false
-            })
-        hearOut = Task { @MainActor [weak self] in
-            for await m in session.withPart {
-                guard let self else { return }
-                switch m {
-                case let .status(new): self.status = new
-                case let .error(f):
-                    // **Not in `model.errorMessage`**: that is shown only by the sign-in, and in
-                    // the main view nobody read it. The message appears as a `Hinweisstreifen`
-                    // wherever you are.
-                    self.error = f.text
-                }
-            }
-        }
-        return session
-    }()
-
-    private var ich: String? { model?.session?.userName }
-
-    /// What the group is currently watching.
-    var queueTitle: String? { status.queueTitle }
-
-    /// Is the player currently running in the group?
-    var inPlayer: Bool { group != nil && player != nil }
 
     // MARK: Start and end
 
     func start(_ model: AppModel) {
         self.model = model
-        let session = self.session
-        model.syncPlayPostDirection = { session.accept($0) }
+        connect()
         guard tick == nil else { return }
-        tick = Task {
-            await session.rightFetch()
+        tick = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                if !PlayState.playerRuns { await session.offeringsAsk() }
+                if !PlayState.playerRuns { self?.controller?.offeringsAsk() }
                 await Foreground.wait(seconds: TakeoverModel.tickSeconds)
             }
         }
     }
 
-    /// **The account changed** (also sign-out, also first sign-in); called by
-    /// `AppModel.client` on every change. The old account's group is left with
-    /// its own client, everything else is forgotten, and the new account's
-    /// permission is fetched. The query keeps running; it asks for the current
-    /// client each time anyway.
+    /// Builds the core's model and the control channel for the current account (Jellyfin with SyncPlay only).
+    private func connect() {
+        disconnect()
+        guard let model, let session = model.session, model.client?.capabilities.contains(.syncPlay) == true,
+            let account = CoreAccount(session)
+        else {
+            together = TogetherState.reduce(together, .unavailable)
+            return
+        }
+        let host = ClosureSyncPlayHost(
+            step: { [weak self] step in Task { @MainActor in self?.apply(step) } },
+            loadTitle: { [weak self] title, since in
+                Task { @MainActor in await self?.titleLoad(title, since: since) }
+            })
+        let core = AppCore.shared.raw
+        guard let syncPlay = try? core.syncPlayModel(
+            account: account, locale: AppCore.language, selfName: session.userName, host: host)
+        else {
+            together = TogetherState.reduce(together, .unavailable)
+            return
+        }
+        let controller = SyncPlayController(model: syncPlay)
+        self.controller = controller
+        seenAccepted = controller.page.detail.accepted
+        seenErrors = controller.page.detail.errorCount
+        together = TogetherState.reduce(.off, .page(controller.page))
+        pumps.append(Task { @MainActor in await controller.observe() })
+        if let remote = try? RemoteController(core: core, account: account) {
+            self.remote = remote
+            remote.start()
+            pumps.append(RemoteController.bind(remote, syncPlay: controller))
+        }
+        watch()
+        controller.refresh()
+    }
+
+    private func disconnect() {
+        pumps.forEach { $0.cancel() }
+        pumps = []
+        remote?.stop()
+        remote = nil
+        controller = nil
+    }
+
+    /// Re-arms itself: one reaction per page change of the core.
+    private func watch() {
+        guard let controller else { return }
+        withObservationTracking {
+            _ = controller.page
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self, self.controller === controller else { return }
+                self.pageChanged(controller.page)
+                self.watch()
+            }
+        }
+    }
+
+    /// What the page's counters mean for the sheets and the strip.
+    private func pageChanged(_ page: SyncPlayPage) {
+        together = TogetherState.reduce(together, .page(page))
+        if page.detail.accepted != seenAccepted {
+            seenAccepted = page.detail.accepted
+            createFor = nil
+            sheet = nil
+        }
+        if page.detail.errorCount != seenErrors {
+            seenErrors = page.detail.errorCount
+            // **Not in `model.errorMessage`**: that is shown only by the sign-in. The message appears
+            // as a `Hinweisstreifen` wherever you are.
+            error = page.error
+        }
+    }
+
+    /// **The account changed** (also sign-out, also first sign-in); called by `AppModel.client` on every
+    /// change. The old account's model leaves its group (it keeps its own account), then the new account's
+    /// model is built.
     func accountSwitched(alt: (any MediaServer)?) {
         createFor = nil
         sheet = nil
         error = nil
         wish = nil
         guard model != nil else { return }
-        let session = self.session
-        Task {
-            await session.finish(oldClient: alt as? JellyfinClient)
-            await session.rightFetch()
-        }
+        controller?.finish()
+        Task { @MainActor in self.connect() }
     }
 
-    /// On sign-out and account switch: leave the group, forget everything.
+    /// On sign-out: leave the group, forget everything.
     func finish() {
         tick?.cancel(); tick = nil
-        model?.syncPlayPostDirection = nil
-        let session = self.session
-        Task { await session.finish() }
+        controller?.finish()
+        disconnect()
+        together = TogetherState.reduce(together, .unavailable)
     }
 
     // MARK: Create, join, leave
@@ -200,30 +248,36 @@ final class SharedModel {
     /// Open the group and set the title right away. Everyone, including you,
     /// then gets the queue and opens the player paused.
     func create(name: String, title: Item) async {
-        await session.create(name: name, title: title.id, accepted: { @MainActor [weak self] in
-            self?.createFor = nil
-        })
+        controller?.create(name: name, titleId: title.id)
     }
 
-    func join(_ target: SyncPlayGroup) async {
-        await session.join(target, accepted: { @MainActor [weak self] in
-            self?.sheet = nil
-        })
+    func join(_ target: SharedGroup) async {
+        controller?.join(target.id)
     }
 
-    func againJoin() {
-        let session = self.session
-        Task { await session.againJoin() }
+    func againJoin() { controller?.rejoin() }
+
+    /// The core moves the player.
+    private func apply(_ step: SyncPlayStep) {
+        guard let player else { return }
+        switch step {
+        case .proceed: player.proceed()
+        case .halt: player.halt()
+        case .jump(let seconds): player.jump(seconds)
+        }
     }
 
     /// The group sets a title: switch in the open player, otherwise open the
     /// player. The same title in the open player does not arrive here; the
-    /// session jumps there itself.
-    private func titleLoad(_ titleID: String, since: Double) async -> Bool {
-        guard let model else { return false }
+    /// core jumps there itself.
+    private func titleLoad(_ titleID: String, since: Double) async {
+        guard let model else { controller?.titleLoadFailed(); return }
         async let titleFetch = model.item(id: titleID)
         async let planFetch = model.plan(for: titleID)
-        guard let title = await titleFetch, let plan = await planFetch else { return false }
+        guard let title = await titleFetch, let plan = await planFetch else {
+            controller?.titleLoadFailed()
+            return
+        }
         if let player {
             // Until the player reports in at the next tick, the old title counts as
             // not ready, otherwise "ready" would go out before the new one even loads.
@@ -232,54 +286,44 @@ final class SharedModel {
         } else {
             wish = PlayRequest(item: title, plan: plan, startAt: since)
         }
-        return true
     }
 
     // MARK: From the player
 
+    private func snapshot(_ s: SharedPlayer) -> SwiftlyCore.SyncPlayPlayer {
+        SwiftlyCore.SyncPlayPlayer(title: s.titleID, ready: s.isReady, spot: s.spot())
+    }
+
     /// The player is open and belongs to the group.
     func plugIn(_ s: SharedPlayer) {
         player = s
-        let session = self.session
-        Task { await session.plugIn(s) }
+        controller?.playerAttached(snapshot(s))
+        together = TogetherState.reduce(together, .playerAttached)
     }
 
     /// The player closes. **That is leaving**.
     func detach() {
         player = nil
-        let session = self.session
-        Task { await session.detach() }
+        controller?.playerDetached()
+        together = TogetherState.reduce(together, .playerDetached)
     }
 
     /// Pause and resume go to the server as a request. The button flips only
     /// when the command comes back, then for everyone at the same time.
-    func bitToggle(runningCurrently: Bool) {
-        let session = self.session
-        Task { await session.bitToggle(runningCurrently: runningCurrently) }
-    }
+    func bitToggle(runningCurrently: Bool) { controller?.requestToggle(runningNow: runningCurrently) }
 
-    func bitJump(on seconds: Double) {
-        let session = self.session
-        Task { await session.bitJump(on: seconds) }
-    }
+    func bitJump(on seconds: Double) { controller?.requestJump(seconds) }
 
     /// Episode choice in the player, in the group: for everyone.
     func bitTitle(_ titleID: String, since seconds: Double = 0) {
-        let session = self.session
-        Task { await session.bitTitle(titleID, since: seconds) }
+        controller?.requestTitle(titleID, since: seconds)
     }
 
-    /// Once per player tick: report buffering.
+    /// Once per player tick: the picture state, then the buffering report.
     func playerTick() {
-        let session = self.session
-        Task { await session.playerTick() }
-    }
-}
-
-extension SharedModel {
-    /// Does this title belong to what the group is watching?
-    func belongsGroup(_ titleID: String) -> Bool {
-        status.belongsGroup(titleID)
+        guard let player, let controller else { return }
+        controller.playerUpdate(snapshot(player))
+        controller.playerTick()
     }
 }
 
@@ -299,24 +343,5 @@ extension SharedModel {
             return "\(series) · " + String(localized: "Staffel \(season) · Folge \(episode)")
         }
         return "\(series) · \(title.name)"
-    }
-
-    /// "A and B are watching right now".
-    static func wer(_ g: SyncPlayGroup) -> String {
-        var watched = Set<String>()
-        let names = g.participant.filter { watched.insert($0).inserted }
-        guard !names.isEmpty else { return String(localized: "Noch niemand dabei") }
-        let list = ListFormatter.localizedString(byJoining: names)
-        return names.count == 1 ? String(localized: "\(list) schaut gerade")
-                                : String(localized: "\(list) schauen gerade")
-    }
-
-    static func stateTextOf(_ z: SyncPlayGroup.Phase?) -> LocalizedStringKey? {
-        switch z {
-        case .running: "Läuft gerade"
-        case .halted: "Angehalten"
-        case .waits: "Wartet auf alle"
-        case .empty, nil: nil
-        }
     }
 }

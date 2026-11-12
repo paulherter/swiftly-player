@@ -803,13 +803,15 @@ struct EmptyState: View {
 struct DisturbState: View {
     let model: AppModel
     var address: String?
+    var trouble: Trouble = .unreachable
     var retry: (() -> Void)?
 
     var body: some View {
+        let copy = trouble.copy(server: address ?? model.serverAddress ?? String(localized: "Der Server"))
         EmptyState(
             symbol: "externaldrive.badge.xmark",
-            title: "Server ist abgetaucht",
-            hint: "\(address ?? model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+            title: copy.title,
+            hint: copy.text,
             button: retry.map { perform in (title: LocalizedStringKey("Erneut versuchen"), perform: perform) })
     }
 }

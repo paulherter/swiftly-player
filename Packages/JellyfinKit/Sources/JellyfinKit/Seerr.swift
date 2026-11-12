@@ -74,6 +74,12 @@ public struct SeerrHit: Sendable, Hashable, Identifiable, Codable {
     public let backdropPath: String?
     public let state: SeerrState
 
+    public init(id: Int, art: String, title: String, year: Int?, posterPath: String?,
+                backdropPath: String?, state: SeerrState) {
+        self.id = id; self.art = art; self.title = title; self.year = year
+        self.posterPath = posterPath; self.backdropPath = backdropPath; self.state = state
+    }
+
     public var isSeries: Bool { art == "tv" }
 
     /// The image URL at TMDB.
@@ -116,6 +122,10 @@ public struct SeerrPerson: Sendable, Hashable, Identifiable, Codable {
     public let role: String?
     public let imagePath: String?
 
+    public init(id: Int, name: String, role: String?, imagePath: String?) {
+        self.id = id; self.name = name; self.role = role; self.imagePath = imagePath
+    }
+
     /// The portrait at TMDB. `w185` is the smallest size that does not get soft in a
     /// 76-point circle.
     public func image(width: Int = 185) -> URL? {
@@ -136,6 +146,10 @@ public struct SeerrSeason: Sendable, Hashable, Identifiable, Codable {
     public let episodes: Int
     /// What the own server already has of it.
     public let state: SeerrState
+
+    public init(number: Int, episodes: Int, state: SeerrState) {
+        self.number = number; self.episodes = episodes; self.state = state
+    }
 
     public var id: Int { number }
     /// Season 0 is where TMDB collects specials.
@@ -175,6 +189,13 @@ public struct SeerrDetail: Sendable, Equatable, Codable {
     /// approve at once) and on reopening, this one applies.
     /// `nil` if the response does not carry it; then the hit stays.
     public let state: SeerrState?
+
+    public init(description: String?, genres: [String], runtime: Int?, rating: Double?,
+                seasons: [SeerrSeason], cast: [SeerrPerson], similarOne: [SeerrHit], state: SeerrState?) {
+        self.description = description; self.genres = genres; self.runtime = runtime
+        self.rating = rating; self.seasons = seasons; self.cast = cast
+        self.similarOne = similarOne; self.state = state
+    }
 
     /// The same information, only with the suggestions from the second fetch.
     public func with(similarOne new: [SeerrHit]) -> SeerrDetail {

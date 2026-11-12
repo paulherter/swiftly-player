@@ -1,0 +1,21 @@
+[package]
+name = "swiftly-model"
+description = "Jellyfin/Emby wire models and derived properties, ported 1:1 from JellyfinKit (serde)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+swiftly-rules = { path = "../swiftly-rules" }
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "parse"
+harness = false

@@ -33,7 +33,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.Theme
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import android.view.Choreographer
@@ -164,7 +163,7 @@ object AccountSwitchTransition {
             val stillImage = runCatching { screen?.toImageBitmap() }.getOrNull()
             targetTap = target
             val curve = if (!calm && from.width > 0 && target.width > 0) runCatching {
-                Curve(Kern.accountSwitchCurve((from.center.x / density).toDouble(), (from.center.y / density).toDouble(),
+                Curve(KernRules.accountSwitchCurve((from.center.x / density).toDouble(), (from.center.y / density).toDouble(),
                     (from.width / density).toDouble(), (target.center.x / density).toDouble(), (target.center.y / density).toDouble(),
                     (target.width / density).toDouble()))
             }.getOrNull() else null

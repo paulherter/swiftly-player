@@ -1,0 +1,22 @@
+[package]
+name = "swiftly-seerr"
+description = "Seerr / Jellyseerr / Overseerr client of the Swiftly core: models, response mapping, address rules, sign-in with an explicit cookie jar, requests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swiftly-net = { path = "../swiftly-net", default-features = false }
+swiftly-jellyfin = { path = "../swiftly-jellyfin", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures-util = { version = "0.3", default-features = false, features = ["alloc", "std"] }
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[dev-dependencies]
+futures-executor = "0.3"
+
+[lints]
+workspace = true

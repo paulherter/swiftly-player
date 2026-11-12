@@ -98,6 +98,11 @@ struct MacSupporterAvatarBadge: ViewModifier {
 /// **The settings group "Swiftly"**: always here from the first launch on, it is the
 /// entry App Review is pointed to. Like on iPhone: icons come with the looks.
 struct MacSupportSettingsGroup: View {
+    #if DEBUG
+    /// Parity renders only: the debug rows below do not exist in release builds.
+    nonisolated(unsafe) static var snapshotWithoutDebugRows = false
+    #endif
+
     var body: some View {
         let support = SupportModel.shared
         SettingGroup(title: "Swiftly") {
@@ -108,6 +113,7 @@ struct MacSupportSettingsGroup: View {
                       action: { support.open() })
                 .padding(16)
             #if DEBUG
+            if !Self.snapshotWithoutDebugRows {
             SheetLine().padding(.leading, Theme.separatorInsetCard)
             ValuesRow(symbol: "eye", title: Text(verbatim: "Preview (debug)"))
             ValuesRow(symbol: "rectangle.bottomhalf.inset.filled", title: Text(verbatim: "Show the card now"),
@@ -134,13 +140,14 @@ struct MacSupportSettingsGroup: View {
                       action: { GiftFlow.shared.stage = .offer(.halloween) })
             ValuesRow(symbol: "sparkles", title: Text(verbatim: "Show What's New now"),
                       action: {
-                          if let entry = WhatsNewEntry.bundled(for: "1.0.8") { GiftFlow.shared.stage = .whatsNew(entry) }
+                          if let entry = WhatsNewPage.bundled(for: "1.0.8") { GiftFlow.shared.stage = .whatsNew(entry) }
                       })
             ValuesRow(symbol: "arrow.counterclockwise", title: Text(verbatim: "Reset support state"),
                       action: {
                           support.debugReset()
                           SupportFlow.shared.reset()
                       })
+            }
             #endif
         }
     }

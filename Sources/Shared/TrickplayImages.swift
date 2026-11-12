@@ -2,6 +2,7 @@ import CoreGraphics
 import ImageIO
 import JellyfinKit
 import SwiftUI
+import struct SwiftlyCore.PlayerPreview
 
 /// **The preview image above the bar when scrubbing**, cut out of Jellyfin's
 /// trickplay sheets.
@@ -47,9 +48,18 @@ final class TrickplayImages {
 
     /// The image for the position, or `nil` while its sheet is still on the way. If
     /// it is missing, it is requested.
-    func image(at seconds: Double, model: AppModel) -> CGImage? {
+    /// With `core` (the core plays the title) the tile is the core's; without, ``Trickplay`` computes it.
+    func image(at seconds: Double, model: AppModel, core: PlayerPreview??) -> CGImage? {
         _ = state
-        guard let detail, let title, let tile = detail.tile(seconds: seconds) else { return nil }
+        guard let detail, let title else { return nil }
+        let tile: (sheet: Int, x: Int, y: Int, width: Int, height: Int)
+        if let core {
+            guard let found = core else { return nil }
+            tile = (Int(found.sheet), Int(found.x), Int(found.y), Int(found.width), Int(found.height))
+        } else {
+            guard let found = detail.tile(seconds: seconds) else { return nil }
+            tile = (found.sheet, found.x, found.y, found.width, found.height)
+        }
         guard let sheet = leaves[tile.sheet] else {
             demand(tile.sheet, detail: detail, title: title, model: model)
             return nil

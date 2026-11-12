@@ -1,0 +1,5 @@
+{"Items":[
+ {"Id":"x1","Name":"Zweiter Film","Type":"Movie","ProductionYear":2023,"ImageTags":{"Primary":"p-x1"},
+  "UserData":{"PlaybackPositionTicks":3000000000,"PlayedPercentage":10.0,"Played":false}},
+ {"Id":"x2","Name":"Neues Konto","Type":"Movie","ProductionYear":2024,"ImageTags":{"Primary":"p-x2"},"UserData":{"Played":false}}
+],"TotalRecordCount":2}

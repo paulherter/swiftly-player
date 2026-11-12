@@ -282,6 +282,8 @@ public protocol RemoteSessionServer: MediaServer {
     func reportCapabilities() async throws
     func remoteControl() async throws -> RemoteControl
     func remoteSession() async throws -> [RemoteSession]
+    /// The same answer, undecoded (the core's takeover flow reads it).
+    func remoteSessionData() async throws -> Data
     func handoffHint(an session: String, device: String) async throws
     func foreignCommand(_ command: ForeignCommand, an session: String) async throws
     func playOn(session: String, order: PlayOrder) async throws

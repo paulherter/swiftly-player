@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import JellyfinKit
+import SwiftlyCore
 import SwiftUI
 
 /// The player inside the window.
@@ -24,6 +25,8 @@ struct PlayerScreen: View {
     @State private var title: Item
     @State private var plan: PlaybackPlan
     @State private var nextEpisode: Item?
+    /// The card was tapped: the core's switch that follows is a card switch (zoom).
+    @State private var cardTapped = false
     /// Intro, recap, outro. Empty if the server knows nothing.
     @State private var sections: [JellyfinKit.Segment] = []
     /// The file's chapters; they split the scrubber. Empty means one segment.
@@ -42,7 +45,6 @@ struct PlayerScreen: View {
     /// "Skip intro and outro automatically" (settings). Off by default.
     @AppStorage("introAbspannAuto") private var autoSkip = false
     /// Sections already skipped on their own in this episode (by start second): once per section.
-    @State private var autoSkipped: Set<Double> = []
     @State private var episodesSwitch = EpisodeSwitch()
     /// Plan and file start of the next episode, fetched in the last minutes. Same
     /// preparation as on iPhone (``Prebuffer``).
@@ -96,6 +98,12 @@ struct PlayerScreen: View {
     /// Only for the fade: `state.firstImagePresent` says *whether*; this flag makes the
     /// removal fade smoothly.
     @State private var screenDistance = false
+    /// **The start failed** (the engine or the core said so, or no picture after `PlayerStartTimeout`): the veil shows
+    /// "Das startet nicht" with a way out, as on iOS. Before this the Mac had only the spinner, so a title that
+    /// could not start loaded forever.
+    @State private var startFailed = false
+    /// Counts the starts, so the veil's timeout runs once for each.
+    @State private var startAttempt = 0
     /// As on iOS: seeks set `state.sprung` via `jumped(on:)`, and the tick holds
     /// the target position until VLC has arrived. This is the seek currently being
     /// acknowledged (direction and distance).
@@ -187,7 +195,7 @@ struct PlayerScreen: View {
         if let own = holder.window, own !== window { return }
         let value = target ?? window.styleMask.contains(.fullScreen)
         guard fullScreenTarget != value else { return }
-        if animated {
+        if animated && value {
             withAnimation(.easeInOut(duration: 0.5)) { fullScreenTarget = value }
         } else {
             fullScreenTarget = value
@@ -238,6 +246,20 @@ struct PlayerScreen: View {
                 }
                 new.jumpReported = { target in reporter.jumpReported(target: target) }
                 new.tracksReported = { tracks in reporter.tracksSelected(tracks) }
+                new.fileFailed = { reason in
+                    // **A downloaded file that does not open: play the stream instead** (same episode, same position).
+                    guard plan.url.isFileURL, !state.firstImagePresent, !inGroup, !switches,
+                          reporter.client != nil, !reporter.downloads.playFailed.contains(title.id) else { return false }
+                    AppLog.writeOut("[Player] Datei lässt sich nicht öffnen (\(reason)): spiele den Stream")
+                    reporter.downloads.playFailed.insert(title.id)
+                    toNextEpisode(title, since: state.position)
+                    return true
+                }
+                new.startErrorReported = { reason in
+                    guard !state.firstImagePresent else { return }
+                    AppLog.writeOut("[Player] Start gescheitert: \(reason)")
+                    startFailed = true
+                }
                 // Whatever was chosen once also applies to the next episode; same key as the
                 // gesture on iPhone and the card on tvOS.
                 new.fillFrame(fillFrame)
@@ -463,6 +485,9 @@ struct PlayerScreen: View {
             // "Next episode" card.
             if distance > 2 { controlsShow(through: .beside) }
         }
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: LiveRun.hideControls)) { _ in controlsPresent = false }
+        #endif
         .onAppear { controlsShow() }
         .onChange(of: volume) { _, new in
             area?.volumeSet(Int((new * 100).rounded()))
@@ -509,12 +534,15 @@ struct PlayerScreen: View {
             // **No next episode in a group.** Everyone would otherwise advance on their own
             // and the group would drift apart.
             await episodesSwitch.lookUp(fetch: { await model.episodePost(opened) },
-                                             adopt: { nextEpisode = sharedAn ? nil : $0 })
+                                             adopt: { (n: Item?) in nextEpisode = sharedAn ? nil : n; if !sharedAn { area?.coreAdopt(next: n, sections: nil) } })
             await episodesSwitch.lookUp(fetch: { await model.sections(for: opened.id) },
-                                             adopt: { sections = $0 })
+                                             adopt: { (g: [JellyfinKit.Segment]) in sections = g; area?.coreAdopt(next: nil, sections: g) })
         }
         // Check once per title whether the server has thumbnails.
-        .task(id: title.id) { await trickplay.load(model: model, item: title, plan: plan) }
+        .task(id: title.id) {
+            await trickplay.load(model: model, item: title, plan: plan)
+            area?.coreAdopt(trickplay: trickplay.detail)
+        }
         // **Per version, not per title**: a director's cut has different chapters. Until
         // they arrive, the scrubber shows none from another version.
         .task(id: [title.id, plan.mediaSourceID]) {
@@ -522,6 +550,7 @@ struct PlayerScreen: View {
             let found = await model.chapter(for: title.id, source: plan.mediaSourceID)
             guard !Task.isCancelled else { return }
             chapter = found
+            area?.coreAdopt(chapters: found)
         }
         // Have the next-episode image ready for a possible handoff; the giving side's
         // card needs it in the first frame (``Uebergabeabgang``).
@@ -638,12 +667,43 @@ struct PlayerScreen: View {
 
     private var startScrim: some View {
         ZStack {
-            Color.black
-            Loader()
+            ZStack {
+                Color.black
+                if !startFailed { Loader() }
+            }
+            .allowsHitTesting(false)
+            // **A timeout instead of endless black** (as on iOS): no picture after `PlayerStartTimeout` seconds is a
+            // failed start. Runs only while the veil is up; a new attempt restarts it.
+            .task(id: startAttempt) {
+                try? await Task.sleep(for: .seconds(PlayerStartTimeout.seconds))
+                guard !Task.isCancelled, !state.firstImagePresent, !startFailed else { return }
+                AppLog.writeOut("[Player] Start gescheitert: \(PlayerStartTimeout.seconds) s ohne erstes Bild")
+                startFailed = true
+            }
+            if startFailed {
+                EmptyState(symbol: "exclamationmark.triangle",
+                           headerLine: "Das startet nicht",
+                           text: "Die Datei oder der Server liefert kein Bild. Prüf die Verbindung und versuch es noch einmal.",
+                           primaryButton: ("Erneut versuchen", { startNewTry() }),
+                           quietButton: ("Schließen", { finish() }))
+                    .padding(.horizontal, 24)
+                    .transition(.opacity)
+            }
         }
         .ignoresSafeArea()
         .transition(.opacity)
-        .allowsHitTesting(false)
+    }
+
+    /// "Try again" in the start veil: same title, same position, fresh setup.
+    private func startNewTry() {
+        AppLog.writeOut("[Player] Start erneut versucht")
+        startFailed = false
+        startAttempt += 1
+        area?.buffer = model.bufferLevel
+        area?.trackRequest = trackRequest(title, plan)
+        area?.play(url: plan.url, offSeconds: state.position > 0 ? state.position : beginning.startAt,
+                   container: plan.container, subtitle: model.subtitleFiles(plan),
+                   softwareDecoder: plan.softwareDecoder)
     }
 
     // MARK: - Header, middle, footer
@@ -910,7 +970,7 @@ struct PlayerScreen: View {
     private var footer: some View {
         TimeRow(position: $state.position, duration: state.duration, atSlider: $atSlider,
                   mass: mass, marks: sections.flatMap { [$0.from, $0.until] }, chapter: chapter,
-                  preview: { trickplay.image(at: $0, model: model) }) { target in
+                  preview: { trickplay.image(at: $0, model: model, core: area?.corePreview) }) { target in
             if inGroup { gemeinsam.bitJump(on: target) }
             else { area?.seek(toSeconds: target) }
             jumped(on: target)
@@ -920,8 +980,8 @@ struct PlayerScreen: View {
     }
 
     private var offeringButton: some View {
-        OfferingButton(offering: offering, action: offeringRun)
-            .accessibilityAction(.escape) { _ = layer.close() }
+        OfferingButton(offering: offering, fillContent: layer.skipShare != nil ? fillClock : nil, action: offeringRun)
+            .accessibilityAction(.escape) { if layer.close() { area?.coreDismissOffer() } }
     }
 
     // MARK: Actions
@@ -1085,8 +1145,14 @@ struct PlayerScreen: View {
     private func offeringCatchUp(elapsed: Double) -> Bool {
         guard !switches else { return false }
         var new = layer
+        // "Skip intro and outro automatically": the offer shows first (button fill / card
+        // countdown) and acts only when that has run out; closing it cancels the action.
+        new.autoSkip = autoSkip
+        let autoNext = autoSkip && SectionLogic.automatic(position: state.position, duration: state.duration,
+                                                          sections: sections,
+                                                          hasNextEpisode: nextEpisode != nil) != nil
         let done = new.tick(offering: offering,
-                          cardDue: model.nextAutomatic && SectionLogic.cardDue(position: state.position,
+                          cardDue: (model.nextAutomatic || autoNext) && SectionLogic.cardDue(position: state.position,
                                                                      duration: state.duration,
                                                                      sections: sections,
                                                                      hasNextEpisode: nextEpisode != nil,
@@ -1108,12 +1174,14 @@ struct PlayerScreen: View {
             layer = new
         }
         fillSet()
+        if layer.takeAutoSkip(), area?.coreDecides != true { offeringRun() }
         return done
     }
 
     private func fillSet() {
-        fillClock.set(share: countdownShare, running: state.running && screenDistance && !atSlider,
-                             length: layer.countdownLength)
+        // The card's countdown, or the skip button's with automatic skipping.
+        fillClock.set(share: countdownShare ?? layer.skipShare, running: state.running && screenDistance && !atSlider,
+                             length: countdownShare != nil ? layer.countdownLength : OfferingLayer.buttonDuration)
     }
 
     /// Which button currently applies. Same rule as on iOS.
@@ -1177,7 +1245,8 @@ struct PlayerScreen: View {
                 rest: layer.countdownRest,
                 onTap: {
                     layer.pressed()
-                    toNextEpisode(episode, fromCard: true)
+                    if area?.coreDecides == true { cardTapped = true; area?.corePressOffer(); pollCoreSwitch() }
+                    else { toNextEpisode(episode, fromCard: true) }
                 },
                 cancel: cardCancel)
             .allowsHitTesting(cardPresent && cardsSwitch == nil)
@@ -1191,19 +1260,28 @@ struct PlayerScreen: View {
     /// Watch the credits: countdown gone, no auto-advance at the end of the file
     /// (`OfferingLayer.nextCancelled`). X on the card, Esc, drag away.
     private func cardCancel() {
-        layer.close()
+        if layer.close() { area?.coreDismissOffer() }
         fillSet()
     }
 
-    /// The setting "Skip intro and outro automatically": the same step as the press on the button, once per section.
-    private func autoSkipRun() {
-        guard autoSkip, !switches, state.running, screenDistance,
-              let step = SectionLogic.automatic(position: state.position, duration: state.duration,
-                                                sections: sections,
-                                                hasNextEpisode: nextEpisode != nil),
-              autoSkipped.insert(step.segment.from).inserted
-        else { return }
-        offeringRun()
+    /// The core decided to switch (press, auto skip, card countdown out, end of file): the screen runs the switch.
+    private func pollCoreSwitch() {
+        guard let calls = area?.coreTakeCalls() else { return }
+        if let chosen = calls.quality {
+            model.alwaysDirectPlay = chosen.directPlay
+            if !chosen.directPlay { model.bitratesLimit = Int(chosen.limit) }
+            AppLog.writeOut("[Qualität] \(chosen.directPlay ? "Direct Play" : "\(chosen.limit) Mbit/s") — neu laden bei \(Int(state.position)) s")
+            layerClose()
+            area?.coreQualityWish = true
+        }
+        if calls.forgetPrepared { preparation.forget() }
+        guard let call = calls.switchTo else { return }
+        // The same id is the reload of a quality choice.
+        guard let episode = call.id == title.id ? title : nextEpisode.flatMap({ $0.id == call.id ? $0 : nil }) else { return }
+        let fromCard = call.fromCard || cardTapped
+        cardTapped = false
+        if call.fromCard { AppLog.writeOut("[Karte] Countdown abgelaufen") }
+        toNextEpisode(episode, since: call.since, fromCard: fromCard)
     }
 
     private func offeringRun() {
@@ -1213,13 +1291,15 @@ struct PlayerScreen: View {
             break
         case let .skip(to, _):
             if inGroup { gemeinsam.bitJump(on: to) }
+            else if area?.coreDecides == true { area?.corePressOffer() }
             else { area?.seek(toSeconds: to) }
             jumped(on: to)
             controlsShow()
         case .nextEpisode:
             // From the card (Return) it zooms into the picture, from the pill of the open
             // controls it does not.
-            if let episode = nextEpisode { toNextEpisode(episode, fromCard: cardPresent) }
+            if area?.coreDecides == true { cardTapped = cardPresent; area?.corePressOffer(); pollCoreSwitch() }
+            else if let episode = nextEpisode { toNextEpisode(episode, fromCard: cardPresent) }
         }
     }
 
@@ -1300,7 +1380,7 @@ struct PlayerScreen: View {
         }
         // Then the overlay; the film keeps running.
         if offeringPresent, layer.display.visible {
-            layer.close()
+            if layer.close() { area?.coreDismissOffer() }
             fillSet()
             return
         }
@@ -1393,6 +1473,12 @@ struct PlayerScreen: View {
         return QualitySelection(directPlay: model.alwaysDirectPlay, limit: model.bitratesLimit) { value in
             // The group can join while the layer is open.
             guard !inGroup else { return }
+            // **The core decides** (changed? reload at the position, forget the prepared plan); the screen files it.
+            if area?.coreDecides == true {
+                area?.coreChooseQuality(value)
+                pollCoreSwitch()
+                return
+            }
             let before = (model.alwaysDirectPlay, model.bitratesLimit)
             if let value {
                 model.alwaysDirectPlay = false
@@ -1467,9 +1553,9 @@ struct PlayerScreen: View {
                 return
             }
             await episodesSwitch.lookUp(fetch: { await model.episodePost(episode) },
-                                             adopt: { nextEpisode = sharedAn ? nil : $0 })
+                                             adopt: { (n: Item?) in nextEpisode = sharedAn ? nil : n; if !sharedAn { area?.coreAdopt(next: n, sections: nil) } })
             await episodesSwitch.lookUp(fetch: { await model.sections(for: episode.id) },
-                                             adopt: { sections = $0 })
+                                             adopt: { (g: [JellyfinKit.Segment]) in sections = g; area?.coreAdopt(next: nil, sections: g) })
             // **Stays at the end.** The hub carries the "next episode" command, which needs
             // `nextEpisode`.
             hubAdopt()
@@ -1527,9 +1613,10 @@ struct PlayerScreen: View {
     private func trackRequest(_ title: Item, _ plan: PlaybackPlan) -> VLCPlayerView.TrackRequest {
         VLCPlayerView.TrackRequest(audio: model.audioLanguage, subtitle: model.subtitleLanguage,
                                  automatic: model.subtitleAutomatic, source: plan.source,
-                                 title: TrackMemory.title(for: title, account: model.session?.storageAccount),
+                                 title: StartTracks.key(for: title, account: model.session?.storageAccount),
                                  ordered: title.id == beginning.item.id ? beginning.tracks : nil,
-                                 engine: model.engineRequest(for: title.id, plan: plan))
+                                 engine: model.engineRequest(for: title.id, plan: plan),
+                                 coreStart: .init(item: title, plan: plan, model: model))
     }
 
     private func episodeApply(_ episode: Item, _ newPlan: PlaybackPlan, since: Double = 0) {
@@ -1563,12 +1650,14 @@ struct PlayerScreen: View {
         // **Nothing points at the old episode any more**.
         nextEpisode = nil
         sections = []
-        autoSkipped = []
+        area?.coreForgetLookup()
         chapter = []
         layer.newEpisode()
         hubAdopt()
         // **Here too before `play`.** Without it the next episode would keep the buffer
         // level from opening.
+        startFailed = false
+        startAttempt += 1
         area?.buffer = model.bufferLevel
         area?.trackRequest = trackRequest(episode, newPlan)
         area?.play(url: newPlan.url, offSeconds: since, container: newPlan.container,
@@ -1612,16 +1701,35 @@ struct PlayerScreen: View {
     private func withRun() async {
         var beats = 0
         var onlyTime = false
+        // The model of the title that was playing before a switch: stale until the new backend replaces it.
+        var staleCore: ObjectIdentifier?
+        // The core's own hint ("plays in the original quality" after a quality choice), shown once.
+        var coreHint: String?
+        var lastStart = sinceStart
         while !Task.isCancelled {
             try? await Task.sleep(for: PlaybackTick.displayTick)
             guard let area else { continue }
             if sharedAn { bridgeCatchUp() }
+            // A new title starts its own clock (`episodeApply`): the old model is stale from then on.
+            if sinceStart != lastStart {
+                lastStart = sinceStart
+                staleCore = area.coreTransport?.id
+            }
+            // **The core runs the tick rules** for a title it plays; the old computation below stays for a
+            // group, Plex and `-alterWiedergabeweg`.
+            let core: PlayerTransport? = {
+                guard !sharedAn, let read = area.coreTransport, read.id != staleCore else { return nil }
+                return read.value
+            }()
 
             // **In between, only the time**, as on iOS: running on the half-second tick it
             // started late and advanced unevenly.
             onlyTime.toggle()
             if onlyTime {
-                if !switches {
+                if !switches, let core {
+                    if !atSlider, state.firstImagePresent || core.leap != nil { state.position = core.position }
+                    if state.leap?.target != core.leap { state.leap = core.leap.map { PlaybackTick.Jump(target: $0) } }
+                } else if !switches {
                     PlaybackTick.timeAdopt(&state, reported: area.positionSeconds,
                                                    atPush: atSlider, sinceStart: sinceStart)
                 }
@@ -1631,7 +1739,27 @@ struct PlayerScreen: View {
             // Whether VLC is at the target of a seek is decided by `PlaybackTick` based on
             // `state.sprung`.
 
-            let job = PlaybackTick.compute(
+            var job = PlaybackTick.WorkItem()
+            if let core, core.hint != coreHint {
+                coreHint = core.hint
+                if let h = core.hint { notify(h) }
+            }
+            if let core {
+                // Read, do not compute: the core adopted the time, decided the jump and the report spacing.
+                state.duration = core.duration
+                if core.pictureShown, !state.firstImagePresent {
+                    state.firstImagePresent = true
+                    job.loadingScreenGone = true
+                }
+                if !atSlider, state.firstImagePresent || core.leap != nil { state.position = core.position }
+                if state.leap?.target != core.leap { state.leap = core.leap.map { PlaybackTick.Jump(target: $0) } }
+                if state.firstImagePresent { state.running = core.running }
+                if !state.tracksSet, state.firstImagePresent, !area.audioTracks.isEmpty {
+                    state.tracksSet = true
+                    job.tracksApply = true
+                }
+            } else {
+            job = PlaybackTick.compute(
                 &state,
                 measurement: .init(duration: area.durationSeconds,
                                position: area.positionSeconds,
@@ -1651,6 +1779,7 @@ struct PlayerScreen: View {
                 // No finger, but a pointer: the same question.
                 atPush: atSlider,
                 sinceStart: sinceStart)
+            }
 
             if job.loadingScreenGone {
                 StartMeasurement.shared.mark("Ladeschirm weicht")
@@ -1672,7 +1801,7 @@ struct PlayerScreen: View {
                                         subtitle: model.subtitleLanguage,
                                         automatic: model.subtitleAutomatic,
                                         source: plan.source,
-                                        title: TrackMemory.title(for: title, account: model.session?.storageAccount),
+                                        title: StartTracks.key(for: title, account: model.session?.storageAccount),
                                         originalLanguage: title.originalLanguage)
             }
             // Stay silent during the switch, as on iOS. Dispatched, not awaited (see tvOS).
@@ -1691,12 +1820,11 @@ struct PlayerScreen: View {
                                      paused: !state.running)
             }
 
-            autoSkipRun()
 
             // **The overlay** (card countdown). While stationary it pauses.
             let cardBefore = cardPresent
             if offeringCatchUp(elapsed: PlaybackTick.tickLength / .seconds(1)),
-               let episode = nextEpisode {
+               area.coreDecides != true, let episode = nextEpisode {
                 AppLog.writeOut("[Karte] Countdown abgelaufen")
                 toNextEpisode(episode, fromCard: cardBefore)
             }
@@ -1714,7 +1842,8 @@ struct PlayerScreen: View {
             // Advance by itself at the end only with a card (outro section from the server),
             // not if it was dismissed. **If the card is counting, it owns the advance**
             // (as iOS: when seeked to the end, the end of file switched immediately).
-            if layer.nextAtEnd, let episode = nextEpisode, !switches,
+            pollCoreSwitch()
+            if layer.nextAtEnd, area.coreDecides != true, let episode = nextEpisode, !switches,
                EpisodeEnd.advance(position: state.position, duration: state.duration,
                                          sinceOpen: Date().timeIntervalSince(sinceStart),
                                          cardCounts: layer.cardCounts) {
@@ -2155,6 +2284,8 @@ private struct TimeSlider: View {
 private struct OfferingButton: View {
     private static let dark = Theme.reason
     let offering: ButtonOffering
+    /// The countdown to the automatic skip as a fill from the left (only with that setting on).
+    var fillContent: FillClock? = nil
     let action: () -> Void
 
     var body: some View {
@@ -2169,7 +2300,21 @@ private struct OfferingButton: View {
                 .font(Theme.listTitle)
                 .padding(.horizontal, 18)
                 .frame(height: 40)
-                .background(.white, in: Capsule())
+                .background {
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.white)
+                        if let fillContent {
+                            TimelineView(.animation(minimumInterval: 1.0 / 30)) { time in
+                                GeometryReader { g in
+                                    Rectangle()
+                                        .fill(Self.dark.opacity(0.16))
+                                        .frame(width: g.size.width * fillContent.share(now: time.date))
+                                }
+                            }
+                        }
+                    }
+                    .clipShape(Capsule())
+                }
             }
             .buttonStyle(Theme.PressButton())
             .foregroundStyle(Self.dark)

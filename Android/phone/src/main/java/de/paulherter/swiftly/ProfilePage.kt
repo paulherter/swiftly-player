@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
@@ -40,7 +39,7 @@ private fun rememberServerInfo(app: SwiftlyApplication): State<Pair<String, Stri
     val inquiry = remember { mutableStateOf<Pair<String, String>?>(null) }
     LaunchedEffect(Unit) {
         try {
-            val o = JSONObject(withContext(Dispatchers.IO) { app.kern.serverInfo().await() })
+            val o = JSONObject(withContext(Dispatchers.IO) { app.rk.serverInfo().await() })
             inquiry.value = o.optString("name") to o.optString("version")
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
@@ -185,7 +184,7 @@ fun QuickConnectPage(app: SwiftlyApplication, back: () -> Unit) {
                 running = true
                 message = null
                 run.launch {
-                    val reason = withContext(Dispatchers.IO) { app.kern.quickConnectShare(code).await() }
+                    val reason = withContext(Dispatchers.IO) { app.rk.quickConnectShare(code).await() }
                     succeeded = reason.isEmpty()
                     message = if (succeeded) translated("Freigegeben. Das andere Gerät ist gleich angemeldet.") else errorString(reason)
                     running = false
@@ -200,17 +199,17 @@ fun QuickConnectPage(app: SwiftlyApplication, back: () -> Unit) {
 @Composable
 fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit, open: (Destination) -> Unit = {}) {
     val e = app.settings
-    val bitrates = remember { selectionRead(Kern.bitrateLevels()) }
+    val bitrates = remember { selectionRead(KernRules.bitrateLevels()) }
     val passthrough = remember { listOf(
         Choice("auto", translated("Automatisch")),
         Choice("off", translated("Aus (nur PCM)")),
         Choice("ac3", translated("Nur Dolby Digital")),
         Choice("all", translated("Alle erzwingen (auch DTS, TrueHD)"))) }
     val dv7 = remember { listOf(Choice("auto", translated("Automatisch")), Choice("off", translated("Aus (spielt als HDR10)"))) }
-    val buffer = remember { JSONArray(Kern.bufferLevels()).let { a -> (0 until a.length()).map { a.getJSONObject(it).let { o -> Choice(o.getString("wert"), o.getString("text")) } } } }
-    val seconds = remember { JSONArray(Kern.span()).let { a -> (0 until a.length()).map { a.getInt(it) } } }
-    val audioChoice = remember { selectionRead(Kern.languages("")) }
-    val subtitleSelection = remember { selectionRead(Kern.languages(translated("Aus"))) }
+    val buffer = remember { JSONArray(KernRules.bufferLevels()).let { a -> (0 until a.length()).map { a.getJSONObject(it).let { o -> Choice(o.getString("wert"), o.getString("text")) } } } }
+    val seconds = remember { JSONArray(KernRules.span()).let { a -> (0 until a.length()).map { a.getInt(it) } } }
+    val audioChoice = remember { selectionRead(KernRules.languages("")) }
+    val subtitleSelection = remember { selectionRead(KernRules.languages(translated("Aus"))) }
     fun sheet(title: String, entries: List<Choice>, selected: String, select: (String) -> Unit) {
         app.sheet.value = SheetRequest(title, entries, selected, select = select)
     }
@@ -306,10 +305,10 @@ fun PresentationPage(app: SwiftlyApplication, open: (Destination) -> Unit, back:
         // Order of `PresentationView` (narrow): Startseite, Bibliotheken, Genres, Filme und Serien, Looks.
         SettingGroup(translated("Startseite")) {
             val rails = remember(e.startRails, e.newAccessDisconnected) {
-                selectionRead(Kern.startRails(e.startRails.toTypedArray(), e.newAccessDisconnected))
+                selectionRead(KernRules.startRails(e.startRails.toTypedArray(), e.newAccessDisconnected))
             }
             SortBar(rails, { it.value }, move = { r, step ->
-                e.startRails = JSONArray(Kern.startRailShifted(r.value, step.toLong(), e.startRails.toTypedArray(), e.newAccessDisconnected))
+                e.startRails = JSONArray(KernRules.startRailShifted(r.value, step.toLong(), e.startRails.toTypedArray(), e.newAccessDisconnected))
                     .let { a -> (0 until a.length()).map { a.getString(it) } }
             }) { r ->
                 // Each row with its own icon (`StartRail.symbol`).
@@ -437,7 +436,7 @@ fun SettingsPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () 
                           checks = true
                           run.launch {
                               result = try {
-                                  val o = JSONObject(withContext(Dispatchers.IO) { app.kern.serverInfo().await() })
+                                  val o = JSONObject(withContext(Dispatchers.IO) { app.rk.serverInfo().await() })
                                   translated("Erreichbar — Jellyfin %@", o.optString("version"))
                               } catch (e: CancellationException) { throw e } catch (e: Exception) { errorString(app, e) }
                               checks = false
@@ -480,7 +479,7 @@ fun GenreSelectionPage(app: SwiftlyApplication, back: () -> Unit) {
     var all by remember { mutableStateOf<List<String>?>(null) }
     LaunchedEffect(Unit) {
         all = try {
-            JSONArray(withContext(Dispatchers.IO) { app.kern.genres().await() }).let { a -> (0 until a.length()).map { a.getString(it) } }
+            JSONArray(withContext(Dispatchers.IO) { app.rk.genres().await() }).let { a -> (0 until a.length()).map { a.getString(it) } }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
     }
     SettingPage(translated("Genre hinzufügen"), back) {
@@ -530,7 +529,7 @@ fun LibrarySelectionPage(app: SwiftlyApplication, back: () -> Unit) {
 /** What is available as a custom home row (`Kern.startSelection`); empty on error. */
 suspend fun startSelectionLoad(app: SwiftlyApplication): List<StartLibraryItem> = try {
     val raw = app.settings.startLibrariesJson()
-    JSONArray(withContext(Dispatchers.IO) { app.kern.startSelection(raw).await() }).let { a ->
+    JSONArray(withContext(Dispatchers.IO) { app.rk.startSelection(raw).await() }).let { a ->
         (0 until a.length()).map { a.getJSONObject(it).let { o -> StartLibraryItem(o.getString("id"), o.optString("name"), o.optBoolean("sammlung", false)) } }
     }
 } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }

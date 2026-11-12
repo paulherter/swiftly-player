@@ -1,0 +1,30 @@
+[package]
+name = "swiftly-net"
+description = "HTTP transport seam of the Swiftly core: request/response types, reqwest+rustls transport, mock transport, error kinds"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["reqwest"]
+# The default transport (reqwest + rustls with the platform certificate verifier).
+# Without it only the trait, the types and `MockTransport` are built, so another
+# transport (platform HTTP stack) can be swapped in.
+reqwest = ["dep:reqwest", "dep:tokio"]
+
+[dependencies]
+url = "2"
+zeroize = "1"
+futures-util = { version = "0.3", default-features = false, features = ["alloc", "std"] }
+tokio = { version = "1", features = ["time"], optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "cookies", "system-proxy", "http2", "gzip", "deflate", "brotli"], optional = true }
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[dev-dependencies]
+futures-executor = "0.3"
+tokio = { version = "1", features = ["rt", "net", "io-util", "macros", "time"] }
+
+[lints]
+workspace = true

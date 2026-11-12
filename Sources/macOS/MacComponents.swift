@@ -1,4 +1,5 @@
 import JellyfinKit
+import func SwiftlyCore.moodDecay
 import OSLog
 import SwiftUI
 
@@ -1104,7 +1105,7 @@ struct MoodHeaderEdge: View {
     private var edge: some View {
         let since = Double(DetailPageMetric.heroImage)
         let y = Double(offset)
-        let f = AvComputation.decay(y: y, since: since, runOut: Double(MoodReason.runOut))
+        let f = moodDecay(y: y, since: since, runOut: Double(MoodReason.runOut))
         let row = min(1, y / (since + Double(MoodReason.colorHeight)))
         let colors = [0.0, 0.5, 1.0].map { ImageTone.color(tones, x: $0, y: row, decay: f) }
         let curve = Gradient(stops: [

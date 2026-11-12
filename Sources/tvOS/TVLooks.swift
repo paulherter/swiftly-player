@@ -1,4 +1,5 @@
 import JellyfinKit
+import struct SwiftlyCore.WhatsNewLine
 import SwiftUI
 
 // **The looks, the Halloween gift and "What's new" on Apple TV.** The flow is the shared one
@@ -188,11 +189,10 @@ private struct TVGiftClaiming: View {
 /// **"What's new": once after an update, from the version's JSON.** The same plain page as
 /// on the iPhone: version line, title, a few entries, the gift when there is one.
 private struct TVWhatsNew: View {
-    let entry: WhatsNewEntry
+    let entry: WhatsNewPage
     let giftAvailable: Bool
     @FocusState private var focus: Bool
 
-    private var language: String { Bundle.main.preferredLocalizations.first ?? "en" }
     private var gift: Look? { giftAvailable ? entry.giftLook : nil }
 
     var body: some View {
@@ -200,15 +200,15 @@ private struct TVWhatsNew: View {
             Text("Neu in Version \(entry.version)")
                 .font(Theme.small)
                 .foregroundStyle(Theme.fontVeryQuiet)
-            Text(verbatim: entry.title.localized(language))
+            Text(verbatim: entry.title)
                 .font(Theme.titleLarge)
                 .foregroundStyle(Theme.font)
                 .padding(.top, 8)
                 .accessibilityAddTraits(.isHeader)
 
             VStack(alignment: .leading, spacing: 26) {
-                ForEach(entry.items.indices, id: \.self) { index in
-                    row(entry.items[index])
+                ForEach(entry.lines.indices, id: \.self) { index in
+                    row(entry.lines[index])
                 }
             }
             .padding(.top, 40)
@@ -252,7 +252,7 @@ private struct TVWhatsNew: View {
         .defaultFocus($focus, true)
     }
 
-    private func row(_ item: WhatsNewEntry.Item) -> some View {
+    private func row(_ item: WhatsNewLine) -> some View {
         HStack(alignment: .center, spacing: 24) {
             Image(icon: item.symbol)
                 .font(.app(size: 34))
@@ -261,11 +261,11 @@ private struct TVWhatsNew: View {
                 .frame(width: 52, height: 52)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                Text(verbatim: item.title.localized(language))
+                Text(verbatim: item.title)
                     .font(Theme.button)
                     .foregroundStyle(Theme.font)
                 if let detail = item.detail {
-                    Text(verbatim: detail.localized(language))
+                    Text(verbatim: detail)
                         .font(Theme.small)
                         .foregroundStyle(Theme.fontQuiet)
                 }
@@ -276,7 +276,7 @@ private struct TVWhatsNew: View {
     }
 
     private var primaryTitle: LocalizedStringKey {
-        switch gift == nil && entry.primary.label == "grab" ? "continue" : entry.primary.label {
+        switch gift == nil && entry.primaryLabel == "grab" ? "continue" : entry.primaryLabel {
         case "grab": "Hol ihn dir"
         case "try": "Ausprobieren"
         case "tryLook": "Look ausprobieren"
@@ -285,7 +285,7 @@ private struct TVWhatsNew: View {
     }
 
     private func primary() {
-        let action = entry.primary.action
+        let action = entry.primaryAction
         if action.hasPrefix("applyLook:"), let gift {
             GiftFlow.shared.grab(gift)
         } else if action == "open:looks" {

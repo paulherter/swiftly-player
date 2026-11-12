@@ -7,7 +7,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import de.paulherter.swiftly.SwiftlyApplication
-import de.paulherter.swiftly.core.Kern
+import de.paulherter.swiftly.KernRules
 import de.paulherter.swiftly.shared.translated
 import org.json.JSONArray
 import org.json.JSONObject
@@ -32,7 +32,7 @@ class Support(private val app: SwiftlyApplication) {
     val channel: SupportChannel = FlavorSupport.channel(app, this)
 
     /** Supporter on this device: "store", "key", or "" for none. Drives hearts and badges. */
-    val source = mutableStateOf(Kern.supportSource(record(STATUS)))
+    val source = mutableStateOf(KernRules.supportSource(record(STATUS)))
     val isSupporter: Boolean get() = source.value.isNotEmpty()
 
     /** Whether the usage record existed before this launch (the package's `usedBeforeThisLaunch`). */
@@ -56,7 +56,7 @@ class Support(private val app: SwiftlyApplication) {
 
     /** The three tips, in display order, from the package (title per language, symbol). */
     val tips: List<SupportTipInfo> = runCatching {
-        val a = JSONArray(Kern.supportTips())
+        val a = JSONArray(KernRules.supportTips())
         (0 until a.length()).map { a.getJSONObject(it).let { o ->
             SupportTipInfo(o.getString("id"), o.getString("de"), o.getString("emoji"))
         } }
@@ -81,21 +81,21 @@ class Support(private val app: SwiftlyApplication) {
     fun start() {
         usedBeforeThisLaunch = record(USAGE).isNotEmpty()
         runCatching {
-            store(USAGE, Kern.supportRecordLaunch(record(USAGE), System.currentTimeMillis()))
-            app.kern.supportWatchBegin(record(USAGE))
+            store(USAGE, KernRules.supportRecordLaunch(record(USAGE), System.currentTimeMillis()))
+            app.rk.supportWatchBegin(record(USAGE))
         }.onFailure { log("start: $it") }
         channel.connect()
     }
 
     /** Store counted watch time; `force` at the end of playback. Cheap when nothing is due. */
     fun watchSave(force: Boolean) {
-        runCatching { store(USAGE, app.kern.supportWatchTake(record(USAGE), force)) }
+        runCatching { store(USAGE, app.rk.supportWatchTake(record(USAGE), force)) }
             .onFailure { log("watch: $it") }
     }
 
     /** What the package decides right now. */
     fun decide(): SupportDecision = runCatching {
-        val o = JSONObject(Kern.supportDecide(record(STATUS), record(USAGE), record(HISTORY),
+        val o = JSONObject(KernRules.supportDecide(record(STATUS), record(USAGE), record(HISTORY),
             app.play.value != null, (SystemClock.elapsedRealtime() - launchedAt) / 1000.0, app.isTv,
             System.currentTimeMillis()))
         SupportDecision(o.getBoolean("showsHeart") && available, o.getBoolean("showsCard") && available,
@@ -104,7 +104,7 @@ class Support(private val app: SwiftlyApplication) {
 
     /** "Not now" on the card (30 days), "Don't show again", or the sheet appeared. */
     fun answer(kind: String) {
-        runCatching { store(HISTORY, Kern.supportHistoryAfter(record(HISTORY), kind, System.currentTimeMillis())) }
+        runCatching { store(HISTORY, KernRules.supportHistoryAfter(record(HISTORY), kind, System.currentTimeMillis())) }
             .onFailure { log("answer: $it") }
     }
 
@@ -117,7 +117,7 @@ class Support(private val app: SwiftlyApplication) {
         // A restore at every start must not rewrite the record (and its date) each time.
         if (!fresh && isSupporter) return
         store(STATUS, status)
-        source.value = Kern.supportSource(record(STATUS))
+        source.value = KernRules.supportSource(record(STATUS))
         if (fresh) thanksDue.value = true
     }
 

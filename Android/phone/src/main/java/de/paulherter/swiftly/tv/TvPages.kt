@@ -1,5 +1,7 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.KernRules
+
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
@@ -62,7 +64,6 @@ import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.*
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -103,6 +104,14 @@ fun TvGrid(tiles: List<GridTile>, loadMore: () -> Unit = {}, focus: FocusRequest
     var comeBack by remember { mutableStateOf(recent) }
     LaunchedEffect(loads) { if (loads) comeBack = null }
     val focusIndex = comeBack?.let { id -> tiles.indexOfFirst { it.id == id } }?.takeIf { it >= 0 } ?: 0
+    // The tile Left from the letter rail lands on: the one focused last when it is in view, else the first in view
+    // (the requester must sit on a composed tile, or Left is swallowed).
+    val landing by remember(tiles) {
+        derivedStateOf {
+            val seen = lattice.layoutInfo.visibleItemsInfo.map { it.index - 1 }.filter { it in tiles.indices }
+            if (focusIndex in seen || seen.isEmpty()) focusIndex else seen.first()
+        }
+    }
     val end by remember { derivedStateOf { (lattice.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0) >= lattice.layoutInfo.totalItemsCount - TvTheme.gridColumns * 3 } }
     LaunchedEffect(end, tiles.size) { if (end && tiles.isNotEmpty()) loadMore() }
     // **The look's glow behind the page** (`.lookGlow()` on tvOS): from the screen's top edge, moving
@@ -137,7 +146,7 @@ fun TvGrid(tiles: List<GridTile>, loadMore: () -> Unit = {}, focus: FocusRequest
                 TvTile(k.poster, k.title, if (withUnderRow) k.subline else null,
                          mark = k.mark, markCount = k.markCount,
                          lengthy = menu?.let { m -> { m(de.paulherter.swiftly.TileMenuRequest(k.id, k.title, k.type, k.poster, false, k.subline)) } },
-                         modifier = if (i == focusIndex && focus != null) Modifier.focusRequester(focus) else Modifier,
+                         modifier = if (i == landing && focus != null) Modifier.focusRequester(focus) else Modifier,
                          focusChanged = { if (it) recent = k.id }) {
                     open(Destination(k.id, k.title, k.type))
                 }
@@ -234,10 +243,10 @@ fun TvDisruption(app: SwiftlyApplication, address: String? = null, buttonModifie
 fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: (Destination) -> Unit) {
     val state = remember { app.libraries.getOrPut(art) { LibraryState(art, app.store) } }
     val run = rememberCoroutineScope()
-    LaunchedEffect(state.sorting, state.filter) { state.load(app.kern) }
+    LaunchedEffect(state.sorting, state.filter) { state.load(app.rk) }
     // A filter the panel no longer offers (the watchlist, switched off) falls back to "all".
     LaunchedEffect(filter) { if (state.filter !in filter) state.filterSet("alle") }
-    de.paulherter.swiftly.WatchStateChange(app) { state.load(app.kern) }
+    de.paulherter.swiftly.WatchStateChange(app) { state.load(app.rk) }
     val collections = state.listSelected
     val focus = firstFocus(!state.loads || collections)
     val lattice = rememberLazyGridState()
@@ -248,7 +257,7 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
     }
     DisposableEffect(Unit) { onDispose { TvLibraryScroll.scrolled = false } }
     Box(Modifier.fillMaxSize()) {
-        TvGrid(if (collections) emptyList() else state.items, { run.launch { state.loadMore(app.kern) } }, focus, open,
+        TvGrid(if (collections) emptyList() else state.items, { run.launch { state.loadMore(app.rk) } }, focus, open,
                  loads = state.loads && !collections, withUnderRow = false, lattice = lattice, header = {
             Column(Modifier.padding(top = headerBottom + 14.dp)) {
                 // **A fixed height with and without capsules** (tvOS: `.frame(height: chipHeight)`): "Sammlungen"
@@ -263,7 +272,7 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
                                          state.choice, categories = state.categories) { new ->
                             if (new != state.choice) {
                                 state.select(new)
-                                run.launch { state.load(app.kern) }
+                                run.launch { state.load(app.rk) }
                             }
                         }
                         // Vertical divider, 2 x 60 % of the chip height on tvOS. Without a filter ("Sammlungen") it
@@ -296,10 +305,10 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
                     // The list is already in memory: "Sammlungen" only appears in the panel if there are any.
                 } else if (de.paulherter.swiftly.AccountSwitchTransition.waits) {
                     // No error or empty state while switching accounts.
-                } else if (state.disrupted) TvDisruption(app, buttonModifier = Modifier.focusRequester(focus), retry = { run.launch { state.load(app.kern) } })
+                } else if (state.disrupted) TvDisruption(app, buttonModifier = Modifier.focusRequester(focus), retry = { run.launch { state.load(app.rk) } })
                 else if (!state.loads && state.items.isEmpty()) {
                     if (state.filter == "alle") TvEmpty(translated("Hier ist noch nichts"), translated("Sobald in dieser Bibliothek etwas liegt, taucht es hier auf."),
-                        symbol = Glyph.Store, button = translated("Aktualisieren") to { run.launch { state.load(app.kern) } }, buttonModifier = Modifier.focusRequester(focus))
+                        symbol = Glyph.Store, button = translated("Aktualisieren") to { run.launch { state.load(app.rk) } }, buttonModifier = Modifier.focusRequester(focus))
                     else TvEmpty(translated("Nichts gefunden"), translated("Unter diesem Filter liegt gerade nichts."),
                         symbol = Glyph.Filter, button = translated("Filter zurücksetzen") to { state.filterSet("alle") }, buttonModifier = Modifier.focusRequester(focus))
                 }
@@ -326,8 +335,8 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
             TvAlphabetRail(state.letters, current,
                            Modifier.align(Alignment.TopEnd)
                                // tvOS: trailing -32 from the page edge, top at 330 - 5 pt, bottom 60 pt.
-                               .padding(end = TvTheme.edgePage - 16.dp, top = 162.dp, bottom = 30.dp)) { letter ->
-                run.launch { state.jumpTarget(app.kern, letter)?.let { lattice.animateScrollToItem(it + 1) } }
+                               .padding(end = TvTheme.edgePage - 16.dp, top = 162.dp, bottom = 30.dp), toGrid = focus) { letter ->
+                run.launch { state.jumpTarget(app.rk, letter)?.let { lattice.animateScrollToItem(it + 1) } }
             }
         }
     }
@@ -422,11 +431,11 @@ private fun TvCapsuleWithPanel(text: String, symbol: Glyph?, entries: List<Choic
 fun TvWatchlist(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val state = app.watchlist
     val run = rememberCoroutineScope()
-    val genres = remember { selectionRead(Kern.savedGenres()) }
-    LaunchedEffect(state.genre, state.sorting) { state.load(app.kern) }
-    de.paulherter.swiftly.WatchStateChange(app) { state.load(app.kern) }
+    val genres = remember { selectionRead(KernRules.savedGenres()) }
+    LaunchedEffect(state.genre, state.sorting) { state.load(app.rk) }
+    de.paulherter.swiftly.WatchStateChange(app) { state.load(app.rk) }
     val focus = firstFocus(!state.loads)
-    TvGrid(state.items, { run.launch { state.loadMore(app.kern) } }, focus, open, loads = state.loads, withUnderRow = false, header = {
+    TvGrid(state.items, { run.launch { state.loadMore(app.rk) } }, focus, open, loads = state.loads, withUnderRow = false, header = {
         Column(Modifier.padding(top = headerBottom + 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 genres.forEach { g -> TvChip(g.text, state.genre == g.value) { state.genreSet(g.value) } }
@@ -439,7 +448,7 @@ fun TvWatchlist(app: SwiftlyApplication, open: (Destination) -> Unit) {
             // No way-out button here, unlike in Library: tvOS' `WatchlistView.empty` has none either. There is
             // nothing to refresh or reset, only the hint where to add titles.
             if (de.paulherter.swiftly.AccountSwitchTransition.waits) { /* No error or empty state while switching accounts. */ }
-            else if (state.disrupted) TvDisruption(app, buttonModifier = Modifier.focusRequester(focus), retry = { run.launch { state.load(app.kern) } })
+            else if (state.disrupted) TvDisruption(app, buttonModifier = Modifier.focusRequester(focus), retry = { run.launch { state.load(app.rk) } })
             else if (!state.loads && state.items.isEmpty()) {
                 TvEmpty(translated("Noch nichts gemerkt"),
                     translated("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort auswählst, sammelt sich hier."),

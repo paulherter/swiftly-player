@@ -55,6 +55,11 @@ class TvActivity : ComponentActivity() {
         // Measure mode of the tech shield as a start extra, like `-technikschildMessen YES` on Apple.
         if (intent?.hasExtra("technikschildMessen") == true)
             (application as SwiftlyApplication).settings.techBadgeMeasure = intent.getBooleanExtra("technikschildMessen", false)
+        // Debug builds only: "skip intro and outro automatically" and "tech badge" as start extras, for runs without taps.
+        if (de.paulherter.swiftly.BuildConfig.DEBUG && intent?.hasExtra("introOutroAutomatic") == true)
+            (application as SwiftlyApplication).settings.introOutroAutomatic = intent.getBooleanExtra("introOutroAutomatic", false)
+        if (de.paulherter.swiftly.BuildConfig.DEBUG && intent?.hasExtra("techBadge") == true)
+            (application as SwiftlyApplication).settings.techBadge = intent.getBooleanExtra("techBadge", false)
         val app = application as SwiftlyApplication
         app.deepLink.value = intent?.data
         setContent {
@@ -66,13 +71,30 @@ class TvActivity : ComponentActivity() {
                 if (!de.paulherter.swiftly.BuildConfig.DEBUG || address == null || app.sessionAgainFromSet()) return@LaunchedEffect
                 runCatching {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        app.kern.embyCheck(address, "[]").await()
-                        val session = app.kern.embySignIn(intent.getStringExtra("testUser").orEmpty(), intent.getStringExtra("testPassword").orEmpty()).await()
-                        app.kern.onboardingCancel()
+                        val session = if (intent.getStringExtra("testSession") != null || intent.getStringExtra("testSessionB64") != null) {
+                            // A finished session JSON (Jellyfin or Plex fixture), as in `MainActivity`.
+                            de.paulherter.swiftly.DebugSessionExtra.read(intent.getStringExtra("testSession"), intent.getStringExtra("testSessionB64")).getOrThrow()
+                        } else if (intent.getBooleanExtra("testJellyfin", false)) {
+                            app.rk.onboardingConnect(address, "[]").await()
+                            app.rk.onboardingSignIn(intent.getStringExtra("testUser").orEmpty(), intent.getStringExtra("testPassword").orEmpty()).await()
+                        } else {
+                            app.rk.embyCheck(address, "[]").await()
+                            app.rk.embySignIn(intent.getStringExtra("testUser").orEmpty(), intent.getStringExtra("testPassword").orEmpty()).await()
+                        }
+                        app.rk.onboardingCancel()
                         app.sessionRecord(session)
                     }
                     phase = Phase.Start
                 }.onFailure { android.util.Log.w("Swiftly", "testServer sign-in failed: $it") }
+            }
+            // Debug builds only: start playback of one item by launch extra (`testPlay` = item id), no taps, as in `MainActivity`.
+            LaunchedEffect(Unit) {
+                val id = intent?.getStringExtra("testPlay")
+                if (!de.paulherter.swiftly.BuildConfig.DEBUG || id.isNullOrEmpty()) return@LaunchedEffect
+                while (app.accountId().isEmpty()) delay(500)
+                delay(3000)
+                de.paulherter.swiftly.DebugPlay.read(intent)
+                app.play.value = de.paulherter.swiftly.PlayRequest(id, de.paulherter.swiftly.DebugPlay.since)
             }
             var started by rememberSaveable { mutableStateOf(false) }
             // The screen as a recorded layer, source of the still frame for the account switch (`AccountSwitchTransition`).

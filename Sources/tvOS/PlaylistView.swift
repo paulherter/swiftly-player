@@ -1,4 +1,5 @@
 import JellyfinKit
+import SwiftlyCore
 import SwiftUI
 
 /// **A video playlist as a page.** Template: `PlaylistView` in
@@ -15,14 +16,14 @@ struct PlaylistView: View {
     let art: String?
 
     @Environment(\.playRequest) private var play
-    @State private var entries: [Item] = []
-    @State private var loads = true
-    @State private var disrupted = false
+    @State private var core: PlaylistController?
     @State private var prepares = false
     @FocusState private var atTitle: String?
     @State private var lastAtTitle: String?
 
-    private var shown: [Item] { AppModel.playlistShown(entries, art: art) }
+    private var shown: [SwiftlyCore.Tile] { core?.page.shown ?? [] }
+    private var loads: Bool { core?.page.loading ?? true }
+    private var disrupted: Bool { core?.page.disrupted ?? false }
 
     private var columns: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: Theme.gridColumn),
@@ -86,10 +87,11 @@ struct PlaylistView: View {
 
     private var lattice: some View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: Theme.latticeRow) {
-            ForEach(shown) { item in
+            ForEach(shown, id: \.id) { tile in
+                let item = Item(rust: tile)
                 NavigationLink(value: item) {
-                    TileContent(image: model.imageURL(for: item, maxHeight: 600, portrait: true),
-                                 title: item.name,
+                    TileContent(image: tile.image.flatMap { URL(string: $0.address) },
+                                 title: tile.title,
                                  progress: item.userData?.playedPercentage.map { $0 / 100 },
                                  withUnderRow: false,
                                  mark: DisplayRules.tileMark(
@@ -128,19 +130,13 @@ struct PlaylistView: View {
     }
 
     private func load() async {
-        let found = await model.playlistEntries(playlist)
-        if let found {
-            entries = found
-            disrupted = false
-        } else {
-            disrupted = entries.isEmpty
-        }
-        loads = false
+        if core == nil { core = try? AppCore.shared.playlist(session: model.session, playlist: playlist, art: art) }
+        try? await core?.load()
     }
 
     /// From the first entry on; the rest follows through the player's "next episode".
     private func start() {
-        guard let first = model.playlistStart(shown) else { return }
+        guard core?.start() != nil, let first = model.playlistStart(shown.map { Item(rust: $0) }) else { return }
         PlayRequest.start(first, freshValue: true,
                           ask: VersionAsk(choose: { TileRequest.shared.choice = $0 },
                                           failed: { TileRequest.shared.message = $0 }),

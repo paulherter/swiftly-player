@@ -19,7 +19,7 @@ data class PlayOutputChoice(val deviceID: String, val name: String)
 /** From the last takeover poll (`offeringsFetch`); the core keeps the list, no request of its own. */
 internal fun SwiftlyApplication.playTargetsTake() {
     playTargets.value = runCatching {
-        JSONArray(kern.playTargets()).let { a ->
+        JSONArray(rk.playTargets()).let { a ->
             (0 until a.length()).map { a.getJSONObject(it) }.map { PlayOutputChoice(it.getString("deviceId"), it.getString("name")) }
         }
     }.getOrDefault(emptyList())
@@ -27,7 +27,7 @@ internal fun SwiftlyApplication.playTargetsTake() {
 
 /** The poll rests while the player is open: one question for "Übergeben an …" when it opens. */
 suspend fun SwiftlyApplication.playTargetsRefresh() {
-    runCatching { withContext(Dispatchers.IO) { kern.takeoverOfferings().await() } }
+    runCatching { withContext(Dispatchers.IO) { rk.takeoverOfferings().await() } }
     playTargetsTake()
 }
 
@@ -36,14 +36,14 @@ suspend fun SwiftlyApplication.playTargetsRefresh() {
  * tracks. `true` only if the TV took it; then the player leaves.
  */
 suspend fun SwiftlyApplication.playOnHandOver(output: PlayOutputChoice, position: Double): Boolean =
-    playOnAnswer(output) { kern.playHandOver(output.deviceID, output.name, position).await() }
+    playOnAnswer(output) { rk.playHandOver(output.deviceID, output.name, position).await() }
 
 /**
  * **A title started on the TV from a detail page or a menu** (`PlayOutputs.play`), without opening the
  * player here. `position` < 0: the core takes the server's resume position.
  */
 suspend fun SwiftlyApplication.playOnStart(itemID: String, output: PlayOutputChoice, position: Double = -1.0): Boolean =
-    playOnAnswer(output) { kern.playOn(itemID, output.deviceID, output.name, position).await() }
+    playOnAnswer(output) { rk.playOn(itemID, output.deviceID, output.name, position).await() }
 
 /** The entries "Abspielen auf …" of a sheet: (value, text) per TV in reach; the value starts with [PLAY_ON_PREFIX]. */
 internal const val PLAY_ON_PREFIX = "abspielenAuf:"
@@ -78,7 +78,7 @@ private suspend fun SwiftlyApplication.playOnAnswer(output: PlayOutputChoice, as
 fun SwiftlyApplication.playOrdersListen(run: kotlinx.coroutines.CoroutineScope) {
     run.launch {
         while (true) {
-            val raw = runCatching { withContext(Dispatchers.IO) { kern.playOrderWait().await() } }.getOrNull()
+            val raw = runCatching { withContext(Dispatchers.IO) { rk.playOrderWait().await() } }.getOrNull()
             if (raw.isNullOrEmpty()) { kotlinx.coroutines.delay(500); continue }
             val o = JSONObject(raw)
             val w = PlayRequest(o.getString("titel"), o.optDouble("ab", 0.0), o.optString("fassung"))

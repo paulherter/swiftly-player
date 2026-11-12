@@ -567,14 +567,34 @@ public actor PlexClient {
 
     // MARK: - Playback
 
-    /// Direct play, always. No server call besides the detail. ← `playbackPlan`
+    /// Direct play. No server call besides the detail, except for **AV1 Dolby Vision 10.0** (no HDR10 base layer) on a
+    /// device that shows it green (everything but the Mac): then the server is asked (decision with direct play and
+    /// direct stream off) and, when it agrees, the plan is the universal transcoder's HLS address. A server that
+    /// refuses or does not answer keeps the direct plan; the engine then shows its message. ← `playbackPlan`
     public func plan(for ratingKey: String, mediaSourceID: String? = nil,
                      audioStreamID: Int? = nil, subtitleStreamID: Int? = nil) async throws
         -> PlaybackPlan {
         let detail = try await detail(ratingKey)
-        return try playback.plan(for: detail.metadata, mediaSourceID: mediaSourceID,
-                                 audioStreamID: audioStreamID, subtitleStreamID: subtitleStreamID,
-                                 sessionID: sessionID)
+        let direct = try playback.plan(for: detail.metadata, mediaSourceID: mediaSourceID,
+                                       audioStreamID: audioStreamID, subtitleStreamID: subtitleStreamID,
+                                       sessionID: sessionID)
+        #if os(macOS)
+        return direct
+        #else
+        guard direct.source?.isAV1DolbyVisionWithoutBaseLayer == true,
+              let file = PlexPlayback.file(of: detail.metadata, mediaSourceID: mediaSourceID),
+              let at = playback.transcodeIndices(of: detail.metadata, file: file) else { return direct }
+        // The subtitle the title starts on (the caller's pick, else the server's own selected one) rides in
+        // the request: a transcode has no subtitle otherwise (burn-in, see `transcodeQuery`).
+        let subtitle = subtitleStreamID ?? direct.source?.defaultSubtitleStreamIndex
+        let query = PlexPlayback.transcodeQuery(ratingKey: ratingKey, mediaIndex: at.media, partIndex: at.part,
+                                                session: sessionID, subtitleStreamID: subtitle)
+        guard let answer = try? await fetch({ try request("GET", "/video/:/transcode/universal/decision", query) }),
+              PlexPlayback.decisionAllowsTranscode(answer) else { return direct }
+        let fields = identity.headers().filter { $0.key.hasPrefix("X-Plex-") }.map { ($0.key, $0.value) }
+        return playback.transcodePlan(from: direct, metadata: detail.metadata, file: file, sessionID: sessionID,
+                                      identity: fields, subtitleStreamID: subtitle) ?? direct
+        #endif
     }
 
     /// The original file for a download. ← `downloadURL`

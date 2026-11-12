@@ -75,7 +75,7 @@ struct OfferingBadge: View {
     @State private var frameRect: CGRect = .zero
     @Environment(\.compactHeaderRow) private var compact
 
-    private var groups: [SyncPlayGroup] {
+    private var groups: [SharedGroup] {
         gemeinsam.group == nil && gemeinsam.mayJoin ? gemeinsam.offerings : []
     }
     private var continueWatching: [RemoteSession] { takeover?.offerings ?? [] }
@@ -87,7 +87,7 @@ struct OfferingBadge: View {
         if count > 0 {
             Button(action: tapOn) {
                 // Filled and at the header's symbol size, like heart and watchlist next to it
-                // (Paul 2026-11-05: the outline laptop at 20 pt did not belong there).
+                // (the outline laptop at 20 pt did not belong there).
                 headerSymbol
                     .font(.app(size: Theme.actionSymbol))
                     .foregroundStyle(Theme.accent)
@@ -180,7 +180,7 @@ struct SharedSheets: View {
     /// first and the sheet opens one beat later.
     @State private var createTitle: Item?
     @State private var createOn = false
-    @State private var joinGroup: SyncPlayGroup?
+    @State private var joinGroup: SharedGroup?
     @State private var joinOn = false
 
     var body: some View {
@@ -207,7 +207,7 @@ struct SharedSheets: View {
             }
 
             if let alt = gemeinsam.lastLeave {
-                ReturnPathStrip(name: alt.name) { gemeinsam.againJoin() }
+                ReturnPathStrip(name: alt) { gemeinsam.againJoin() }
                     .transition(.opacity)
             } else if let error = gemeinsam.error, !gemeinsam.inPlayer {
                 // In the player it shows the strip itself.
@@ -215,7 +215,7 @@ struct SharedSheets: View {
             }
         }
         .animation(Theme.spring, value: selectionOpen)
-        .animation(Theme.reveal, value: gemeinsam.lastLeave?.id)
+        .animation(Theme.reveal, value: gemeinsam.lastLeave)
         .animation(Theme.reveal, value: gemeinsam.error)
         .onChange(of: gemeinsam.createFor?.id) { _, new in
             guard new != nil, let title = gemeinsam.createFor else {
@@ -303,12 +303,12 @@ struct SharedSheets: View {
         if let g = joinGroup {
             SheetCategory(text: Text(verbatim: g.name))
             VStack(alignment: .leading, spacing: 0) {
-                Text(verbatim: SharedModel.wer(g))
+                Text(verbatim: g.who)
                     .font(Theme.body)
                     .foregroundStyle(Theme.fontQuiet)
                     .padding(.top, -10)
-                if let condition = SharedModel.stateTextOf(g.condition) {
-                    Text(condition)
+                if let condition = g.stateText {
+                    Text(verbatim: condition)
                         .font(Theme.small)
                         .foregroundStyle(Theme.accent)
                         .padding(.top, 6)
@@ -351,7 +351,7 @@ struct SharedSheets: View {
         }
         ForEach(gemeinsam.group == nil ? gemeinsam.offerings : []) { g in
             SheetLine()
-            row(symbol: "person.2.fill", title: g.name, under: SharedModel.wer(g),
+            row(symbol: "person.2.fill", title: g.name, under: g.who,
                   action: Text("Beitreten")) {
                 Task { await gemeinsam.join(g) }
             }

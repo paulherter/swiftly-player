@@ -566,7 +566,7 @@ struct SettingLayer: View {
                 // Together comes first (design A, as on iPhone): who is in, then the exit. The names do nothing and are not focus targets, so focus skips them to "leave group".
                 if let gemeinsam, let group = gemeinsam.group {
                     SelectionColumn(title: "Gemeinsam · \(group.name)") {
-                        ForEach(Array(group.participant.enumerated()), id: \.offset) { pair in
+                        ForEach(Array(gemeinsam.participants.enumerated()), id: \.offset) { pair in
                             ParticipantRow(name: pair.element)
                         }
                         Button(action: groupLeave) {

@@ -1,5 +1,7 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.rustcore.legacyEpisodeCardWidth
+import de.paulherter.swiftly.rustcore.legacyEpisodeCard
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
@@ -131,7 +133,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import de.paulherter.swiftly.core.Kern
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -220,7 +221,7 @@ internal fun playPlanRead(json: String) = JSONObject(json).let { o ->
 internal data class DelayDisplay(val text: String, val isNull: Boolean, val atStart: Boolean, val atEnd: Boolean)
 
 internal fun delayDisplay(milliseconds: Int): DelayDisplay =
-    JSONObject(Kern.delayState(milliseconds.toLong(), Locale.getDefault().toLanguageTag())).let {
+    JSONObject(KernRules.delayState(milliseconds.toLong(), Locale.getDefault().toLanguageTag())).let {
         DelayDisplay(it.getString("text"), it.getBoolean("istNull"), it.getBoolean("amAnfang"), it.getBoolean("amEnde"))
     }
 
@@ -253,11 +254,11 @@ private fun trickplayDetailRead(json: String): TrickplayDetail? = JSONObject(jso
  */
 internal suspend fun episodesPreload(app: SwiftlyApplication, seriesIdentifier: String, seasonIdentifier: String?) {
     try {
-        val series = seriesRead(withContext(Dispatchers.IO) { app.kern.series(seriesIdentifier).await() })
+        val series = seriesRead(withContext(Dispatchers.IO) { app.rk.series(seriesIdentifier).await() })
         app.seriesCache[seriesIdentifier] = series
         if (series.seasons.isEmpty()) return
         val season = series.seasons.firstOrNull { it.id == seasonIdentifier } ?: series.seasons.firstOrNull { it.id == series.selected } ?: series.seasons.first()
-        val episodes = episodesRead(withContext(Dispatchers.IO) { app.kern.episodes(seriesIdentifier, season.id).await() })
+        val episodes = episodesRead(withContext(Dispatchers.IO) { app.rk.episodes(seriesIdentifier, season.id).await() })
         app.episodesCache[season.id] = episodes
     } catch (e: CancellationException) { throw e } catch (_: Exception) {}
 }
@@ -294,10 +295,13 @@ class PlayItem(
     private val run: CoroutineScope,
     private val jerk: (Jerk) -> Unit = {},
 ) {
-    /** The subtitle look is read when the player page is created; a changed look applies from the next video. */
+    /** The subtitle look is read when the player page is created; a look that changes later (sync) follows at once. */
     val look = app.settings.subtitleLook
     /** Media3 (ExoPlayer) is the only engine (`PlayerEngine`). */
     val player = PlayerEngine(context, app.isTv, look)
+    init {
+        player.followLook(app.settings, run)
+    }
     val session = MediaSession(context, "Swiftly")
 
     // MARK: Threads: `PlayerEngine` posts every call to the main thread itself; these helpers only keep the names.
@@ -343,6 +347,8 @@ class PlayItem(
     var countdown by mutableDoubleStateOf(0.0); private set
     var countdownRest by mutableIntStateOf(0); private set
     var countdownLength by mutableDoubleStateOf(7.0); private set
+    /** Fill (0..1) of the skip button's countdown with "skip intro and outro automatically"; null without it. */
+    var buttonCountdown by mutableStateOf<Double?>(null); private set
     /**
      * **After a seek the card's fill starts over** (`layer.jumped()`, iOS `fillClock = FillClock()`).
      * Counted so the display restarts instead of continuing.
@@ -352,7 +358,7 @@ class PlayItem(
     // MARK: Next-episode card C: timings and sizes come from the core.
 
     /** Sizes, springs and timings of the card, for phone or TV (`Kern.episodeCard`). */
-    val cardsMetrics: CardsMetrics by lazy { CardsMetrics.read(Kern.episodeCard(app.isTv), app.isTv) }
+    val cardsMetrics: CardsMetrics by lazy { CardsMetrics.read(legacyEpisodeCard(app.isTv), app.isTv) }
     /**
      * **The card is zooming into the picture.** Held from the start so it does not vanish with the offer
      * that the episode change removes (`CardsSwitch`).
@@ -369,7 +375,7 @@ class PlayItem(
      * goes to the idle surface (`TvPlayer`).
      */
     fun controlsChanged(opened: Boolean) {
-        overlay = app.kern.controlsChanged(opened)
+        overlay = app.rk.controlsChanged(opened)
     }
     var hint by mutableStateOf<String?>(null)
     var techFixed by mutableStateOf<List<TechRow>>(emptyList()); private set
@@ -407,9 +413,9 @@ class PlayItem(
 
     /** - (-1) or + (+1) in the audio or subtitle row. While held, the core counts the repeats (`Haltezaehler`). */
     fun delayPush(audio: Boolean, bearing: Int) {
-        val steps = app.kern.delayPress(if (audio) "ton" else "untertitel")
+        val steps = app.rk.delayPress(if (audio) "ton" else "untertitel")
         val now = if (audio) audioDelay else subtitleDelay
-        delaySet(audio, Kern.delayShifted(now.toLong(), bearing.toLong(), steps).toInt())
+        delaySet(audio, KernRules.delayShifted(now.toLong(), bearing.toLong(), steps).toInt())
     }
 
     fun delaySet(audio: Boolean, milliseconds: Int) {
@@ -448,7 +454,7 @@ class PlayItem(
 
     suspend fun chapterLoad() {
         chapterCount = 0
-        val n = withContext(Dispatchers.IO) { app.kern.chapterLoad().await() }
+        val n = withContext(Dispatchers.IO) { app.rk.chapterLoad().await() }
         AppLog.writeOut("[Kapitel] " + if (n > 0L) "$n" else "keine")
         chapterCount = n.toInt()
     }
@@ -465,7 +471,7 @@ class PlayItem(
         trickplayDetail = null
         trickplaySheets.clear()
         trickplayUnderRoute.clear()
-        val raw = withContext(Dispatchers.IO) { app.kern.trickplayDetail().await() }
+        val raw = withContext(Dispatchers.IO) { app.rk.trickplayDetail().await() }
         val hasRead = trickplayDetailRead(raw)
         // As in `TrickplayImages.load` on iOS: one line per title, otherwise the log cannot show whether the
         // server has none or the preview just does not arrive.
@@ -485,7 +491,7 @@ class PlayItem(
     private fun trickplayRequest(number: Int, detail: TrickplayDetail) {
         if (!trickplayUnderRoute.add(number)) return
         run.launch {
-            val address = withContext(Dispatchers.IO) { app.kern.trickplayAddress(detail.width.toLong(), number.toLong()).await() }
+            val address = withContext(Dispatchers.IO) { app.rk.trickplayAddress(detail.width.toLong(), number.toLong()).await() }
             val image = if (address.isEmpty()) null else runCatching {
                 (SingletonImageLoader.get(context).execute(ImageRequest.Builder(context).data(address).allowHardware(false).build())
                     as? SuccessResult)?.image?.toBitmap()
@@ -531,10 +537,10 @@ class PlayItem(
                 // a started title; `Stopped` reports nothing, the end goes through `playbackEnd`.
                 // Whoever resumes by hand takes focus back (after a permanent loss).
                 PlayerEngine.Event.Playing -> {
-                    running = true; focusFetch(); app.kern.runStateReported(true, pointNow()); delayCatchUp()
+                    running = true; focusFetch(); app.rk.runStateReported(true, pointNow()); delayCatchUp()
                     if (handoffFadeIn) nowOrAfter("stumm") { player.volume = 0 }
                 }
-                PlayerEngine.Event.Paused -> { running = false; app.kern.runStateReported(false, pointNow()) }
+                PlayerEngine.Event.Paused -> { running = false; app.rk.runStateReported(false, pointNow()) }
                 PlayerEngine.Event.Stopped -> running = false
                 PlayerEngine.Event.Frame -> showsImage[0] = true
                 is PlayerEngine.Event.Buffering -> buffers = e.percent < 100f
@@ -550,6 +556,14 @@ class PlayItem(
                         AppLog.writeOut("[Media3] Ton-Ausgabe ${code.name}: neuer Versuch ohne Durchreichen")
                         val spot = if (imageFree) pointNow() else position
                         plan?.let { run.launch { mediaOpen(it.url, spot) } }
+                        return@onEvents
+                    }
+                    // A Dolby Vision track the decoder refuses before any picture: once more with the base layer (HDR10).
+                    val dvProfile = plan?.dolbyVision
+                    if (code?.decoder == true && !imageFree && !dvFirstFrameFailed && dvProfile != null && dvProfile != 5 && dvProfile != 10) {
+                        dvFirstFrameFailed = true
+                        AppLog.writeOut("[Media3] Dekoder lehnt Dolby Vision (Profil $dvProfile) ab: neuer Versuch mit der Basisschicht")
+                        plan?.let { run.launch { mediaOpen(it.url, position) } }
                         return@onEvents
                     }
                     AppLog.writeOut("[Media3] Fehler ${code?.name ?: "?"}${if (imageFree) "" else " vor dem ersten Bild"}")
@@ -568,14 +582,14 @@ class PlayItem(
      * **The activity goes to the background**: report the state immediately with the real play state,
      * since Android does not pause playback then (picture-in-picture, service).
      */
-    fun backgroundReport() = app.kern.backgroundReport(pointNow(), !playerFree || !player.isPlaying)
+    fun backgroundReport() = app.rk.backgroundReport(pointNow(), !playerFree || !player.isPlaying)
 
     /** Tear down VLC and the drawing surface; counterpart to `installEventListener`. */
     fun cleanUp() {
         networkSignOut()
         audioSignOut()
         // **Closing means leaving**, without confirmation; the strip offers the way back.
-        if (mark > 0) app.kern.syncPlayDetach(mark)
+        if (mark > 0) app.rk.syncPlayDetach(mark)
         if (!ended[0]) app.playbackEnd(endPoint())
         // The player closed before the card released it (`HandoffStage.playerDistance`).
         plan?.itemId?.let { Handoff.playerDistance(app, it) }
@@ -662,12 +676,14 @@ class PlayItem(
     fun launch(new: PlayPlan, since: Double?) {
         // Delay: the same title or series keeps it, otherwise null (iOS `episodeApply`).
         plan?.let { alt ->
-            fun keep(ms: Int) = Kern.delayForNewTitle(ms.toLong(), alt.itemId, alt.seriesIdentifier.orEmpty(),
+            fun keep(ms: Int) = KernRules.delayForNewTitle(ms.toLong(), alt.itemId, alt.seriesIdentifier.orEmpty(),
                                                                     new.itemId, new.seriesIdentifier.orEmpty()).toInt()
             subtitleDelay = keep(subtitleDelay)
             audioDelay = keep(audioDelay)
         }
         plan = new
+        // What the core chose, for the live matrix and the Technik view's source (no address: it carries the token).
+        AppLog.writeOut("[Plan] ${new.itemId} ${new.method} dv=${new.dolbyVision} hls=${new.url.contains(".m3u8")} from=${since ?: 0.0}")
         run.launch { trickplayLoad() }
         run.launch { chapterLoad() }
         imageFree = false
@@ -675,7 +691,7 @@ class PlayItem(
         buffers = false
         end[0] = false
         position = since ?: 0.0
-        since?.takeIf { it > 1 }?.let { app.kern.playbackPoint(it) }
+        since?.takeIf { it > 1 }?.let { app.rk.playbackPoint(it) }
         powerGuardBackSet()
         firstFrameLevel = 0
         // XviD/DivX straight to software: libVLC 3 otherwise hands MPEG-4 Part 2 to MediaCodec (log:
@@ -699,7 +715,7 @@ class PlayItem(
     private fun lookUp(of: PlayPlan) {
         if (!of.url.startsWith("file:")) return
         run.launch {
-            val new = runCatching { withContext(Dispatchers.IO) { app.kern.playbackLookUp().await() } }.getOrDefault("")
+            val new = runCatching { withContext(Dispatchers.IO) { app.rk.playbackLookUp().await() } }.getOrDefault("")
             app.logWrite()
             if (new.isEmpty() || ended[0]) return@launch
             val p = playPlanRead(new)
@@ -724,15 +740,18 @@ class PlayItem(
             AppLog.writeOut("[Player] Ton $audioCodec: weder Gerät noch FFmpeg-Erweiterung dekodieren ihn, der Titel bleibt womöglich stumm")
         AppLog.writeOut("[Media3] " + (dv?.let { "Dolby Vision (Profil $it)" } ?: "ohne Dolby Vision") + ", Ton ${audioCodec ?: "unbekannt"}")
         val subtitles = files.map { it.index to StreamForwarder.gemeinsam.address(it.address) }
+        AppLog.writeOut("[Media3] Untertitel-Dateien ${subtitles.size}: " + subtitles.joinToString { it.first.toString() + "=" + it.second.takeLast(60) })
+        val subtitleFormats = files.mapNotNull { f -> f.format?.let { f.index to it } }.toMap()
         files.clear()
         val fireTv = android.os.Build.MANUFACTURER.equals("Amazon", ignoreCase = true)
         val dv7NoDecoder = dv == 7 && !PlayerEngine.dolbyVision7Decodable()
-        val dvOff = (dv == 7 && app.settings.dolbyVision7 == "off") || dv7NoDecoder || dvFirstFrameFailed ||
+        val dvNoDecoder = PlayerEngine.dolbyVisionBaseLayerNeeded(dv, PlayerEngine.dolbyVisionAnyDecoder())
+        val dvOff = (dv == 7 && app.settings.dolbyVision7 == "off") || dv7NoDecoder || dvNoDecoder || dvFirstFrameFailed ||
             (dv != null && dv != 5 && fireTv && app.settings.dolbyAsHdr10Plus)
         if (dvOff) AppLog.writeOut("[Media3] Dolby Vision aus für diesen Titel (Profil $dv): Basisschicht als HDR10" +
-            (if (dv7NoDecoder) " · das Gerät hat keinen Profil-7-Dekoder" else if (dvFirstFrameFailed) " · kein Bild mit Dolby Vision" else ""))
+            (if (dv7NoDecoder) " · das Gerät hat keinen Profil-7-Dekoder" else if (dvNoDecoder) " · das Gerät hat keinen Dolby-Vision-Dekoder" else if (dvFirstFrameFailed) " · kein Bild mit Dolby Vision" else ""))
         player.media3Configure(retryPassthrough ?: app.settings.passthrough, dvOff)
-        player.openMedia3(address, since, subtitles)
+        player.openMedia3(address, since, subtitles, subtitleFormats)
         player.play()
         // The speed the viewer set (shown in the UI) goes on now.
         if (tempo != 1f) player.rateSet(tempo)
@@ -813,7 +832,7 @@ class PlayItem(
     fun cardStart() {
         if (switches || cardsSwitch != null) return
         jerk(Jerk.Lightweight)
-        app.kern.offeringPressed()
+        app.rk.offeringPressed()
         overlay = "nichts"
         run.launch { nextEpisode(fromCard = true) }
     }
@@ -824,7 +843,7 @@ class PlayItem(
      */
     fun offeringRun(): Boolean {
         if (offeringArt == "keiner" || offerText.isEmpty()) return false
-        app.kern.offeringPressed()
+        app.rk.offeringPressed()
         overlay = "nichts"
         val to = offeringPost
         // "Next episode": a light tick to confirm the press (haptics).
@@ -835,7 +854,7 @@ class PlayItem(
     /** Back or a direction key: closes only the overlay; a countdown is cancelled. `true` if something was open. */
     fun offeringClose(): Boolean {
         if (overlay == "nichts") return false
-        val toward = app.kern.offeringClose()
+        val toward = app.rk.offeringClose()
         overlay = "nichts"
         return toward
     }
@@ -852,7 +871,7 @@ class PlayItem(
      * everyone loads the episode, as when creating one (`bitTitle`).
      */
     suspend fun episodeSelect(id: String) {
-        if (inGroup) app.kern.syncPlayPleaseTitle(id) else changeInto(id)
+        if (inGroup) app.rk.syncPlayPleaseTitle(id) else changeInto(id)
     }
 
     /**
@@ -865,7 +884,7 @@ class PlayItem(
         switches = true
         val spot = (if (playerFree) player.time / 1000.0 else position).coerceAtLeast(0.0)
         try {
-            val answer = JSONObject(withContext(Dispatchers.IO) { app.kern.qualitySwitch(spot).await() })
+            val answer = JSONObject(withContext(Dispatchers.IO) { app.rk.qualitySwitch(spot).await() })
             app.toStop(answer.fieldText("nachmeldung"))
             app.logWrite()
             when (answer.optString("ergebnis")) {
@@ -919,7 +938,7 @@ class PlayItem(
         val spot = (if (playerFree) player.time / 1000.0 else position).coerceAtLeast(0.0)
         app.doneWatch(spot, duration)
         try {
-            val answer = JSONObject(withContext(Dispatchers.IO) { app.kern.episodeSwitch(id, spot).await() })
+            val answer = JSONObject(withContext(Dispatchers.IO) { app.rk.episodeSwitch(id, spot).await() })
             app.toStop(answer.fieldText("nachmeldung"))
             app.logWrite()
             when (answer.optString("ergebnis")) {
@@ -932,6 +951,12 @@ class PlayItem(
                         stopNow("Folgenwechsel")
                         launch(playPlanRead(new), since)
                         cardsSwitch?.let { AppLog.writeOut("[Karte] Tausch nach ${SystemClock.elapsedRealtime() - it.beginning} ms") }
+                    } else if (new == null && !ended[0]) {
+                        // The core already moved on to the new title; without its plan the old file would keep
+                        // playing under the new title's reports (it got marked watched). Never stay silent.
+                        AppLog.writeOut("[Wechsel] Kern meldet gewechselt, aber ohne Spielplan")
+                        stopNow("Folgenwechsel ohne Plan")
+                        hint = errorString(context, Exception(translated(failure)))
                     }
                 }
                 "gescheitert" -> hint = errorString(context, Exception(answer.fieldText("fehler") ?: translated(failure)))
@@ -1005,7 +1030,7 @@ class PlayItem(
     private fun firstFrameCheck(): Boolean {
         if (ended[0] || switches || !player.isPlaying) return false
         val spot = player.time / 1000.0
-        firstFrameRun += Kern.firstFrameGrowth(firstFrameBefore, spot)
+        firstFrameRun += KernRules.firstFrameGrowth(firstFrameBefore, spot)
         firstFrameBefore = spot
         val values = player.counters() ?: return false
         val shown = values.displayedPictures
@@ -1015,15 +1040,15 @@ class PlayItem(
             firstFrameWatched = true
             return false
         }
-        val codec = app.kern.firstFrameVideoCodec()
-        val rat = Kern.firstFrameRat(codec.isNotEmpty(), smallWindow, shown.toInt().toLong(), firstFrameRun, firstFrameLevel.toLong())
+        val codec = app.rk.firstFrameVideoCodec()
+        val rat = KernRules.firstFrameRat(codec.isNotEmpty(), smallWindow, shown.toInt().toLong(), firstFrameRun, firstFrameLevel.toLong())
         if (rat == "nichts" || rat == "warten") return false
         AppLog.writeOut("[Bild] kein erstes Bild nach ${firstFrameRun.toInt()} s Laufzeit bei ${spot.toInt()} s · Server $codec" +
             " · dekodiert ${values.decodedVideo}, gezeigt $shown, verloren ${values.lostPictures} · Ton gespielt ${values.playedAbuffers}" +
             " · Dekoder ${if (softwareDecoder) "Software" else "frei"} → $rat")
         if (plan?.dolbyVision != null && plan?.dolbyVision != 5 && !dvFirstFrameFailed) dvFirstFrameFailed = true
-        firstFrameLevel = Kern.firstFrameNext(rat, firstFrameLevel.toLong()).toInt()
-        firstFrameHint = Kern.firstFrameHint(firstFrameLevel.toLong()).ifEmpty { null }
+        firstFrameLevel = KernRules.firstFrameNext(rat, firstFrameLevel.toLong()).toInt()
+        firstFrameHint = KernRules.firstFrameHint(firstFrameLevel.toLong()).ifEmpty { null }
         if (rat == "aufgeben") return false
         if (rat == "softwareDekoder") softwareDecoder = true
         val p = plan ?: return false
@@ -1037,7 +1062,7 @@ class PlayItem(
         powerGuardBackSet()
         end[0] = false
         stopNow("kein erstes Bild")
-        app.kern.playbackPoint(spot)
+        app.rk.playbackPoint(spot)
         mediaOpen(p.url, spot)
         return true
     }
@@ -1166,7 +1191,7 @@ class PlayItem(
         AppLog.writeOut("[Netz] kein Weg mehr — vorgemerkt bei ${lastGoodPoint.toInt()} s")
     }
 
-    private fun rat(standstill: Long, now: Long) = Kern.streamWatchRat(standstill / 1000.0,
+    private fun rat(standstill: Long, now: Long) = KernRules.streamWatchRat(standstill / 1000.0,
         networkSwitchSince?.let { (now - it) / 1000.0 } ?: -1.0, false,
         (now - lastJump) / 1000.0, (now - streamBufferGrew) / 1000.0)
 
@@ -1205,7 +1230,7 @@ class PlayItem(
         // **The clock runs, but does a frame arrive?** (iOS `imageFlow`: measured 76 s of frozen picture with
         // a running clock.)
         val images = values?.displayedPictures ?: -1L
-        if (Kern.streamWatchImagesState(lastImages, images)) { if (imagesStateSince == null) imagesStateSince = now } else imagesStateSince = null
+        if (KernRules.streamWatchImagesState(lastImages, images)) { if (imagesStateSince == null) imagesStateSince = now } else imagesStateSince = null
         lastImages = images
         imagesStateSince?.let { since ->
             if (rat(now - since, now) == "neuVerbinden") {
@@ -1222,7 +1247,7 @@ class PlayItem(
     /** VLC reports end or error. `true` if it was a drop and the stream is being rebuilt. */
     private fun teardown(condition: String): Boolean {
         if (ended[0] || switches || fromSlab() || !imageFree || lastGoodPoint <= 1) return false
-        val freshValue = networkSwitchSince?.let { SystemClock.elapsedRealtime() - it < Kern.streamWatchNetworkChangeDeadline() * 1000 } ?: false
+        val freshValue = networkSwitchSince?.let { SystemClock.elapsedRealtime() - it < KernRules.streamWatchNetworkChangeDeadline() * 1000 } ?: false
         if (!(if (duration > 0) lastGoodPoint < duration - 10 else freshValue)) return false
         AppLog.writeOut("[Netz] Zustand $condition: Strom tot bei ${lastGoodPoint.toInt()} s von ${duration.toInt()} s")
         run.launch { newConnect("Strom abgerissen") }
@@ -1260,7 +1285,7 @@ class PlayItem(
         // own preselection and disabled subtitles came back on by themselves (iOS).
         tracksPostLayout = true
         stopNow("Neuaufbau")
-        app.kern.playbackPoint(lastGoodPoint)
+        app.rk.playbackPoint(lastGoodPoint)
         mediaOpen(p.url, lastGoodPoint)
     }
 
@@ -1272,7 +1297,7 @@ class PlayItem(
         if (inGroup) {
             val z = if (duration > 0) target.coerceIn(0.0, duration) else target.coerceAtLeast(0.0)
             position = z
-            app.kern.syncPlayPleaseJump(z)
+            app.rk.syncPlayPleaseJump(z)
             return
         }
         jumpReally(target)
@@ -1285,7 +1310,7 @@ class PlayItem(
         position = z
         // Immediately with the target position, queued and not awaited; also "seek to" from the dashboard.
         // The core holds the target until VLC is there, and the offer follows it at once.
-        val answer = JSONObject(app.kern.jumpReported(z))
+        val answer = JSONObject(app.rk.jumpReported(z))
         if (answer.has("position")) {
             position = answer.getDouble("position")
             offeringAdopt(answer)
@@ -1302,12 +1327,13 @@ class PlayItem(
         countdown = answer.optDouble("countdown", 0.0)
         countdownRest = answer.optInt("countdownRest", 0)
         countdownLength = answer.optDouble("countdownLaenge", 7.0)
+        buttonCountdown = if (answer.has("knopfCountdown") && !answer.isNull("knopfCountdown")) answer.getDouble("knopfCountdown") else null
     }
 
     fun toggle() {
         jerk(Jerk.Medium)
         // In a group the button only flips when the command comes back, then for everyone at the same time.
-        if (inGroup) { app.kern.syncPlayPleaseToggle(running); return }
+        if (inGroup) { app.rk.syncPlayPleaseToggle(running); return }
         // Reported from VLC's `Playing`/`Paused` (`installEventListener`).
         if (!playerFree) { if (running) halt() else nowOrAfter("Weiter") { player.play() }; return }
         if (player.isPlaying) player.pause() else resume()
@@ -1321,7 +1347,7 @@ class PlayItem(
      */
     fun resume() {
         if (imageFree && !restoring) {
-            val target = app.kern.resumeTarget(pointNow(), inGroup || sharedAn)
+            val target = app.rk.resumeTarget(pointNow(), inGroup || sharedAn)
             if (target >= 0) jumpReally(target)
         }
         nowOrAfter("Weiter") { player.play() }
@@ -1355,7 +1381,7 @@ class PlayItem(
     // The core decides via `TrackRule`/`TrackMapping`; only libVLC lives here.
 
     /** An external subtitle file of the episode: Jellyfin index, URL, MD5 of the URL. */
-    private class SubtitleFile(val index: Long, val address: String, val attribute: String)
+    private class SubtitleFile(val index: Long, val address: String, val attribute: String, val format: String? = null)
     private val files = ArrayDeque<SubtitleFile>()
     /** The file whose track is currently expected, since when, and which subtitle tracks existed before. */
     private var fileLoads: SubtitleFile? = null
@@ -1373,14 +1399,14 @@ class PlayItem(
     /** New per episode: fetch the files from the plan and give their signature to the core. None from disk. */
     private fun filesPrepare() {
         files.clear(); fileLoads = null; fileTracks.clear(); fileAttributes.clear(); tracksSelected = false
-        val list = runCatching { JSONArray(app.kern.subtitleFiles()) }.getOrNull() ?: return
+        val list = runCatching { JSONArray(app.rk.subtitleFiles()) }.getOrNull() ?: return
         for (i in 0 until list.length()) {
             val o = list.getJSONObject(i)
             val address = o.getString("adresse")
             val attribute = java.security.MessageDigest.getInstance("MD5").digest(address.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it) }
-            app.kern.subtitleAttributeSet(o.getLong("index"), attribute)
-            files.addLast(SubtitleFile(o.getLong("index"), address, attribute))
+            app.rk.subtitleAttributeSet(o.getLong("index"), attribute)
+            files.addLast(SubtitleFile(o.getLong("index"), address, attribute, o.optString("format").takeIf { it.isNotEmpty() }))
             fileAttributes[o.getLong("index")] = attribute
         }
     }
@@ -1413,7 +1439,7 @@ class PlayItem(
      */
     private fun languagesApply() {
         val e = app.settings
-        val answer = JSONObject(app.kern.tracksSelect(
+        val answer = JSONObject(app.rk.tracksSelect(
             tracksJson(true), tracksJson(false), player.audioTrack.toLong(), e.audioLanguage, e.subtitleLanguage,
             e.subtitleAutomatic, app.store.rememberValue(AUDIO_JE_TITLE) ?: "{}", app.store.rememberValue(UT_JE_TITLE) ?: "{}"))
         if (answer.has("ton") && !answer.isNull("ton")) player.audioTrack = answer.getInt("ton")
@@ -1421,23 +1447,45 @@ class PlayItem(
         player.spuTrack = answer.optInt("untertitel", -1)
         tracksSelected = true
         app.logWrite()
+        if (BuildConfig.DEBUG) debugTracks()
+    }
+
+    private var debugNextDone = false
+
+    /** Debug builds: log the subtitle table of this title for the live runner and apply its launch extras. */
+    private fun debugTracks() {
+        fun table() = player.spuTracks?.filter { it.id >= 0 }.orEmpty()
+        fun names() = trackList(false).joinToString("|") { "${it.first}:${it.second}" }
+        AppLog.writeOut("[Spuren] ${plan?.itemId} untertitel=" + names() + " gewaehlt=${player.spuTrack}")
+        run.launch {
+            delay(2500)
+            // External files arrive after the first table: log it again and apply the choice on the settled table.
+            val list = table()
+            AppLog.writeOut("[Spuren] spaeter ${plan?.itemId} untertitel=" + names() + " gewaehlt=${player.spuTrack}")
+            DebugPlay.subtitle?.let { i -> nowOrAfter("Test-Untertitel") { player.spuTrack = if (i < 0) -1 else list.getOrNull(i)?.id ?: -1 }; AppLog.writeOut("[Spuren] Test: Untertitel $i von ${list.size}") }
+            DebugPlay.pauseAt?.let { at -> DebugPlay.pauseAt = null; nowOrAfter("Test-Pause") { player.pause() }; delay(700); vault(at); delay(2000); AppLog.writeOut("[Test] pausiert bei $at") }
+            if (DebugPlay.next && !debugNextDone) {
+                debugNextDone = true
+                delay(1500); AppLog.writeOut("[Test] naechste Folge"); nextEpisode()
+            }
+        }
     }
 
     /** Chosen by hand: applies at once and to the whole series. */
     fun audioFromHand(id: Int) {
         player.audioTrack = id
-        app.store.remember(AUDIO_JE_TITLE, app.kern.audioFromHand(tracksJson(true), id.toLong(), app.store.rememberValue(AUDIO_JE_TITLE) ?: "{}"))
+        app.store.remember(AUDIO_JE_TITLE, app.rk.audioFromHand(tracksJson(true), id.toLong(), app.store.rememberValue(AUDIO_JE_TITLE) ?: "{}"))
     }
 
     /** `-1` means off; that also applies to the whole series, the next episode stays without. */
     fun subtitleFromHand(id: Int) {
         player.spuTrack = id
-        app.store.remember(UT_JE_TITLE, app.kern.subtitleFromHand(tracksJson(false), id.toLong(), app.store.rememberValue(UT_JE_TITLE) ?: "{}"))
+        app.store.remember(UT_JE_TITLE, app.rk.subtitleFromHand(tracksJson(false), id.toLong(), app.store.rememberValue(UT_JE_TITLE) ?: "{}"))
     }
 
     /** Audio "Deutsch · AAC · 5.1", subtitles with format, "Erzwungen", "Hörgeschädigt", "Datei", instead of libVLC's "Track 1 - [English]". */
     fun trackList(audio: Boolean): List<Pair<Int, String>> {
-        val names = runCatching { JSONObject(app.kern.trackNames(tracksJson(true), tracksJson(false))) }.getOrNull() ?: return emptyList()
+        val names = runCatching { JSONObject(app.rk.trackNames(tracksJson(true), tracksJson(false))) }.getOrNull() ?: return emptyList()
         val a = names.optJSONArray(if (audio) "ton" else "untertitel") ?: return emptyList()
         return (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
             val parts = listOfNotNull(o.getString("text"),
@@ -1451,7 +1499,7 @@ class PlayItem(
     /** Count only while someone is looking; same tick as `PlaybackTick`, for the same reason. */
     suspend fun techBadgeTick(active: Boolean) {
         if (!active || plan == null) { techLive = null; return }
-        techFixed = JSONArray(app.kern.techFixed(app.settings.techBadgeMeasure)).let { a ->
+        techFixed = JSONArray(app.rk.techFixed(app.settings.techBadgeMeasure)).let { a ->
             (0 until a.length()).map { a.getJSONObject(it).let { o ->
                 TechRow(o.fieldText("schluessel")?.let { k -> translated(k) }, o.getString("text"), o.getString("art"), o.optBoolean("kopf"))
             } }
@@ -1460,7 +1508,7 @@ class PlayItem(
             // VLC counts in `int`, which overflows past 2 GB; `PlayerEngine.counters` reads it unsigned.
             val values = if (playerFree) player.counters() else null
             if (values != null) {
-                techLive = JSONObject(app.kern.techTick(
+                techLive = JSONObject(app.rk.techTick(
                     values.readBytes, values.demuxReadBytes, values.displayedPictures, values.lostPictures,
                     values.decodedVideo, values.decodedAudio, values.playedAbuffers, values.lostAbuffers,
                     values.demuxCorrupted, values.demuxDiscontinuity, position, player.isPlaying))
@@ -1477,7 +1525,7 @@ class PlayItem(
     private fun sharedReport(wish: PlayRequest) {
         val m = mark
         if (m <= 0) return
-        app.kern.syncPlayTick(m, plan?.itemId ?: wish.id, imageFree && !switches && !restoring, position, player.isPlaying)
+        app.rk.syncPlayTick(m, plan?.itemId ?: wish.id, imageFree && !switches && !restoring, position, player.isPlaying)
     }
 
     /**
@@ -1486,7 +1534,7 @@ class PlayItem(
      */
     private suspend fun stepRun(m: Long) {
         while (true) {
-            val raw = runCatching { withContext(Dispatchers.IO) { app.kern.syncPlayStep(m).await() } }.getOrNull()
+            val raw = runCatching { withContext(Dispatchers.IO) { app.rk.syncPlayStep(m).await() } }.getOrNull()
             if (raw.isNullOrEmpty() || mark != m) return
             val o = JSONObject(raw)
             when (o.optString("art")) {
@@ -1512,7 +1560,7 @@ class PlayItem(
     suspend fun openAndTick(wish: PlayRequest, close: () -> Unit) {
         // **If the title belongs to the group, join right away**, before opening, like `onAppear` on iOS.
         // The tick reports "ready" only when the picture is up.
-        mark = runCatching { withContext(Dispatchers.IO) { app.kern.syncPlayConnect(wish.id).await() } }.getOrDefault(0L)
+        mark = runCatching { withContext(Dispatchers.IO) { app.rk.syncPlayConnect(wish.id).await() } }.getOrDefault(0L)
         if (mark > 0) run.launch { stepRun(mark) }
         try {
             // **Disk before any server**; in flight mode a timeout would wait otherwise.
@@ -1520,11 +1568,11 @@ class PlayItem(
             val entries = app.downloads.entries(wish.id)
             val answer = if (slab != null && entries != null) {
                 val image = app.downloads.imageFile(entries.id).takeIf { it.exists() }?.let { "file://" + it.absolutePath }.orEmpty()
-                app.kern.playbackFromTheSlab(entries.json().toString(), slab.absolutePath, image)
+                app.rk.playbackFromTheSlab(entries.json().toString(), slab.absolutePath, image)
             } else {
                 // The subtitle look's file switch decides which subtitle files the plan carries.
                 app.qualityReport()
-                withContext(Dispatchers.IO) { app.kern.playbackOpen(wish.id, wish.sourceID).await() }
+                withContext(Dispatchers.IO) { app.rk.playbackOpen(wish.id, wish.sourceID, mark > 0).await() }
             }
             launch(playPlanRead(answer), wish.since)
         } catch (e: CancellationException) { throw e } catch (_: Exception) {
@@ -1544,14 +1592,14 @@ class PlayItem(
             onlyTime = !onlyTime
             if (onlyTime) {
                 if (!switches && imageFree && !restoring) {
-                    val z = app.kern.displayTime((player.time / 1000.0).coerceAtLeast(0.0), atPush)
+                    val z = app.rk.displayTime((player.time / 1000.0).coerceAtLeast(0.0), atPush)
                     if (z >= 0 && !atPush) position = z
                 }
                 sharedReport(wish)
                 continue
             }
             // **Commands from the dashboard or another device**; the socket deposits them.
-            runCatching { JSONArray(app.kern.remoteCommands()) }.getOrNull()?.let { a ->
+            runCatching { JSONArray(app.rk.remoteCommands()) }.getOrNull()?.let { a ->
                 for (i in 0 until a.length()) {
                     val b = a.getJSONObject(i)
                     when (b.optString("art")) {
@@ -1561,7 +1609,7 @@ class PlayItem(
                         // **Another device takes over** (the notice came shortly before): the picture leaves as a card
                         // (`HandoffExit`). Otherwise, dashboard or another app, as usual.
                         "stopp" -> {
-                            val target = app.kern.handoffTargetTake()
+                            val target = app.rk.handoffTargetTake()
                             if (target.isNotEmpty() && handIn(target, close)) return
                             finish(close); return
                         }
@@ -1573,9 +1621,6 @@ class PlayItem(
                     }
                 }
             }
-            // Debug build only: `adb shell run-as <bundle-id> touch files/meldungen-haengen`
-            // makes every report hang for 60 s, like a server that does not answer.
-            if (debugBuild) app.kern.messagesHanging(java.io.File(context.filesDir, "meldungen-haengen").exists())
             app.logWrite()
             // During the change the tick is silent; the old stream's time would already belong to the new episode.
             if (switches) { sharedReport(wish); continue }
@@ -1585,8 +1630,8 @@ class PlayItem(
             // During the rebuild the last good position, not VLC's time: after a drop that jumps to the end.
             val reported = if (restoring) lastGoodPoint else (player.time / 1000.0).coerceAtLeast(0.0)
             // "Next episode automatically" off: the core offers no card, so nothing advances by itself.
-            app.kern.nextAutomaticSet(app.settings.nextAutomatic)
-            val answer = JSONObject(app.kern.playbackTick(
+            app.rk.nextAutomaticSet(app.settings.nextAutomatic)
+            val answer = JSONObject(app.rk.playbackTick(
                 if (restoring) maxOf(length, duration) else length, reported, showsImage[0], player.isPlaying,
                 player.audioTracksCount > 0, atPush, app.settings.introOutroAutomatic))
             if (answer.optBoolean("ladeschirmWeg")) {
@@ -1614,13 +1659,14 @@ class PlayItem(
             // If the card was up, it zooms into the picture on expiry (`toNextEpisode(fromCard: cardBefore)`).
             val cardBefore = overlay == "karte"
             if (answer.has("angebot")) offeringAdopt(answer)
-            // "Skip intro and outro automatically": the same step as the button; the core picks the section, once each.
+            // "Skip intro and outro automatically": the offer shows first (button fill / card countdown); the core
+            // reports the press only when that has run out, and closing the offer cancels it.
             if (answer.optBoolean("autoUeberspringen")) { AppLog.writeOut("[Abschnitt] überspringt automatisch"); offeringRun() }
             sharedReport(wish)
             // **Prepare the next episode** while this one still plays; when and over which network is decided
             // by the core (`Prebuffer`): from three minutes before the end, Wi-Fi or cable without data saver.
-            if (!switches && app.kern.prebufferDue(position, duration, networkFavorable())) {
-                run.launch(Dispatchers.IO) { app.kern.episodePrepare().await(); app.logWrite() }
+            if (!switches && app.rk.prebufferDue(position, duration, networkFavorable())) {
+                run.launch(Dispatchers.IO) { app.rk.episodePrepare().await(); app.logWrite() }
             }
             // Whether automatic is decided by the core (card, not cancelled; if it counts, it owns this).
             if (answer.optBoolean("weiterschalten")) {
@@ -1932,7 +1978,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
             val edgeBottom = margin.bottom
             EpisodeCard(mediaWork, cardPresent, card = { w, h, d ->
                 val safeWidth = w / d - edgePage.value * 2
-                val width = Kern.episodeCardWidth(safeWidth.toDouble(), large, false).toFloat()
+                val width = legacyEpisodeCardWidth(safeWidth.toDouble(), large, false).toFloat()
                 val height = width * 9f / 16f
                 val bottom = edgeBottom.value + m.bottomSpacing
                 val x = w / d - edgePage.value - PlayerMetric.page.value - width
@@ -2026,7 +2072,10 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
             contentAlignment = Alignment.BottomEnd) {
             // The button, but not while the card is there. Fades in and out softly.
             AnimatedVisibility(visible = buttonPresent, enter = fadeIn(fadeUp), exit = fadeOut(fadeTo)) {
-                OfferingPill(mediaWork.offeringArt, mediaWork.offerText, null, null, mediaWork) {
+                val skipShare = mediaWork.buttonCountdown
+                OfferingPill(mediaWork.offeringArt, mediaWork.offerText, skipShare,
+                    skipShare?.let { kotlin.math.ceil((1 - it) * SKIP_BUTTON_SECONDS).toInt() }, mediaWork,
+                    length = SKIP_BUTTON_SECONDS) {
                     mediaWork.offeringRun()
                 }
             }
@@ -2367,10 +2416,10 @@ private fun TimeRow(app: SwiftlyApplication, position: () -> Double, duration: D
                     // **Plus the cuts between chapters**, only the visible ones with room beside them
                     // (`ChapterBar.snapCuts`, from the core); once per grab, the width does not change meanwhile.
                     val snapMarks = marksNow + chapterBarRead(
-                        app.kern.chapterBar(length, (size.width / density).toDouble(), ChapterMass.minWidth, ChapterMass.gap)).snap
+                        app.rk.chapterBar(length, (size.width / density).toDouble(), ChapterMass.minWidth, ChapterMass.gap)).snap
                     fun spot(x: Float): Double {
                         val raw = (x / size.width).coerceIn(0f, 1f).toDouble() * length
-                        val notch = Kern.notch(raw, length, snapMarks, (size.width / density).toDouble())
+                        val notch = KernRules.notch(raw, length, snapMarks, (size.width / density).toDouble())
                         if (notch < 0) { inSnapped = -1.0; return raw }
                         if (notch != inSnapped) { inSnapped = notch; jerk(Jerk.Lightweight) }
                         return notch
@@ -2399,7 +2448,7 @@ private fun TimeRow(app: SwiftlyApplication, position: () -> Double, duration: D
             .semantics {
                 // With chapter: "12:00 / 45:00, chapter name", the server's name, untranslated.
                 stateDescription = timeText(shown) + " / " + timeText(duration) +
-                    (if (chapterCount > 0) app.kern.chapterName(shown).let { if (it.isEmpty()) "" else ", $it" } else "")
+                    (if (chapterCount > 0) app.rk.chapterName(shown).let { if (it.isEmpty()) "" else ", $it" } else "")
                 if (duration > 0) progressBarRangeInfo = ProgressBarRangeInfo(shown.toFloat().coerceIn(0f, duration.toFloat()), 0f..duration.toFloat())
                 setProgress { value -> jump(value.toDouble()); true }
             },
@@ -2410,9 +2459,9 @@ private fun TimeRow(app: SwiftlyApplication, position: () -> Double, duration: D
             // without chapters it is one piece across the full width. While seeking only the piece under the
             // finger rises to 6, the others stay at 4.
             val bar = remember(chapterCount, duration, width) {
-                chapterBarRead(app.kern.chapterBar(duration, width.value.toDouble(), ChapterMass.minWidth, ChapterMass.gap))
+                chapterBarRead(app.rk.chapterBar(duration, width.value.toDouble(), ChapterMass.minWidth, ChapterMass.gap))
             }
-            val elevated = if (atPush) app.kern.chapterPiece(share.toDouble(), duration, width.value.toDouble(), ChapterMass.minWidth).toInt() else -1
+            val elevated = if (atPush) app.rk.chapterPiece(share.toDouble(), duration, width.value.toDouble(), ChapterMass.minWidth).toInt() else -1
             // **Notches at the section boundaries**, 2 wide in `reason`: where the intro starts does not say where
             // it ends, and that is what you want to see before grabbing.
             val notches = if (duration > 0) marks.map { (it / duration).toFloat() }.filter { it > 0.01f && it < 0.99f } else emptyList()
@@ -2455,7 +2504,7 @@ private fun TimeRow(app: SwiftlyApplication, position: () -> Double, duration: D
                     // Semibold, not bold; on its own capsule since no veil lies here. **With a chapter its name stands
                     // before the time**, in the same capsule: one line, at most as wide as the preview image; a long
                     // name is truncated, never the time.
-                    val name = if (chapterCount > 0) app.kern.chapterName(shown) else ""
+                    val name = if (chapterCount > 0) app.rk.chapterName(shown) else ""
                     Row(Modifier.widthIn(max = 160.dp).clip(CircleShape).background(Theme.reason.copy(alpha = 0.82f))
                             .padding(horizontal = 8.dp, vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2684,7 +2733,7 @@ private fun SettingsLayer(app: SwiftlyApplication, mediaWork: PlayItem, margin: 
             // **Quality: Direct Play or an upper limit.** A limit means the server may transcode, so Direct Play
             // is off. Works like the setting in the app and reloads the movie at the same position.
             if (qualityShow) {
-                val bitrates = remember { selectionRead(Kern.bitrateLevels()) }
+                val bitrates = remember { selectionRead(KernRules.bitrateLevels()) }
                 // `-1`: Direct Play. Otherwise a bitrate limit; `0` means unlimited.
                 fun select(megabit: Int) {
                     val before = e.alwaysDirectPlay to e.bitratesLimit
@@ -2736,20 +2785,20 @@ private fun EpisodesLayer(app: SwiftlyApplication, seriesIdentifier: String, run
     suspend fun episodesRefresh() {
         val g = selected ?: return
         try {
-            val f = episodesRead(withContext(Dispatchers.IO) { app.kern.episodes(seriesIdentifier, g).await() })
+            val f = episodesRead(withContext(Dispatchers.IO) { app.rk.episodes(seriesIdentifier, g).await() })
             if (selected == g) { episodes = f; app.episodesCache[g] = f }
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
 
     LaunchedEffect(seriesIdentifier) {
         try {
-            val s = seriesRead(withContext(Dispatchers.IO) { app.kern.series(seriesIdentifier).await() })
+            val s = seriesRead(withContext(Dispatchers.IO) { app.rk.series(seriesIdentifier).await() })
             app.seriesCache[seriesIdentifier] = s
             seasons = s.seasons
             if (selected == null || seasons.none { it.id == selected }) selected = matching(seasons, s.selected)
             val g = selected ?: return@LaunchedEffect
             if (episodes.isEmpty()) app.episodesCache[g]?.let { episodes = it }
-            val f = episodesRead(withContext(Dispatchers.IO) { app.kern.episodes(seriesIdentifier, g).await() })
+            val f = episodesRead(withContext(Dispatchers.IO) { app.rk.episodes(seriesIdentifier, g).await() })
             if (selected == g) { episodes = f; app.episodesCache[g] = f }
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
@@ -2787,7 +2836,7 @@ private fun EpisodesLayer(app: SwiftlyApplication, seriesIdentifier: String, run
                                 app.episodesCache[new]?.let { episodes = it }
                                 run.launch {
                                     try {
-                                        val f = episodesRead(withContext(Dispatchers.IO) { app.kern.episodes(seriesIdentifier, new).await() })
+                                        val f = episodesRead(withContext(Dispatchers.IO) { app.rk.episodes(seriesIdentifier, new).await() })
                                         if (selected == new) { episodes = f; app.episodesCache[new] = f }
                                     } catch (e: CancellationException) { throw e } catch (_: Exception) {}
                                 }
@@ -2849,6 +2898,9 @@ private fun EpisodeStripTile(f: Episode, ongoing: Boolean, lengthy: (() -> Unit)
     }
 }
 
+/** Length of the skip button's countdown (`OfferingLayer.buttonDuration`). */
+const val SKIP_BUTTON_SECONDS = 6.0
+
 /**
  * **The offer button**, the same in the controls and in the overlay (`Angebotsknopf` on iOS): white
  * pill, corner 12, 40 high, skip icon and bold 15. `share` (0..1): the countdown to the next
@@ -2857,8 +2909,9 @@ private fun EpisodeStripTile(f: Episode, ongoing: Boolean, lengthy: (() -> Unit)
  * countdown, the seconds until start.
  */
 @Composable
-fun OfferingPill(art: String, text: String, share: Double?, seconds: Int?, mediaWork: PlayItem, action: () -> Unit) {
-    val fillContent = continuousFill(share, mediaWork.running, mediaWork.countdownLength)
+fun OfferingPill(art: String, text: String, share: Double?, seconds: Int?, mediaWork: PlayItem,
+                 length: Double = mediaWork.countdownLength, action: () -> Unit) {
+    val fillContent = continuousFill(share, mediaWork.running, length)
     Row(Modifier.height(40.dp).clip(RoundedCornerShape(Theme.cornerField))
             .background(Color.White)
             .drawBehind { if (share != null) drawRect(Theme.reason.copy(alpha = 0.16f), size = size.copy(width = size.width * fillContent)) }

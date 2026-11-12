@@ -1,5 +1,6 @@
 import JellyfinKit
 import SwiftUI
+import SwiftlyCore
 
 struct PosterTile: View {
     let model: AppModel
@@ -27,11 +28,18 @@ struct PosterTile: View {
     /// shows a grid instead of rows, episodes land in it too and appeared
     /// without any hint which one they are.
     private var titleLine: String {
-        item.type == "Episode" ? (item.seriesName ?? item.name) : item.name
+        if let look { return look.title }
+        return item.type == "Episode" ? (item.seriesName ?? item.name) : item.name
     }
+
+    /// What the Rust core says for this tile (`AppModel.coreServes`), by title id; `nil` otherwise.
+    private var look: RustTileLook? { coreLook ?? (model.coreServes ? model.rustLooks[item.id] : nil) }
+    /// The look of the page's own core tile (person and playlist pages), before the shared lookup.
+    var coreLook: RustTileLook? = nil
 
     private var subline: String? {
         if let inquiry { return inquiry }
+        if let look { return look.subtitle }
         if item.type == "Episode" { return item.episodeCode }
         return item.productionYear.map(String.init)
     }
@@ -56,7 +64,7 @@ struct PosterTile: View {
             CollectionMosaic(model: model, collection: mosaicSource.collection,
                             art: mosaicSource.art, width: width)
         } else {
-            Picture(url: model.imageURL(for: item, maxHeight: 500, portrait: true),
+            Picture(url: look?.image ?? model.imageURL(for: item, maxHeight: 500, portrait: true),
                  width: width,
                  height: width.map { $0 * 1.5 },
                  ratio: width == nil ? 2.0 / 3.0 : nil,
@@ -159,46 +167,27 @@ struct ItemDetailView: View {
     /// the value, the same fix as `Scrollweg` on the home page.
     @State private var distance = ScrollDistance()
 
-    @State private var plan: PlaybackPlan?
+    /// The page's data owner, the core's `DetailVm` (`DetailCore`); `nil` when there is no account.
+    @State private var page: DetailCore?
     /// A title with several versions waiting for the pick ("Fassung wählen").
-    @State private var versionChoice: VersionChoice?
-    /// Loading the full title (with its versions) failed; Play is enabled again so
-    /// that a press tries once more and says so if it fails.
-    @State private var versionsFailed = false
-    /// The plan has been answered, with or without a result. See `proofRow`.
-    @State private var planPresent = false
+    @State private var versionChoice: VersionPick?
     @State private var loadSheet = false
-    @State private var examine = true
     @State private var play: PlayRequest?
     /// Blocks a second tap while a plan is being fetched on press.
     @State private var prepares = false
     @State private var moreOpen = false
     @State private var message: String?
-    @State private var freshValue: Item?
-    @State private var similar: [Item] = []
-    /// **`[]` and "failed" are two things.** The "Similar titles" section
-    /// vanished without a trace on a network error, while the series page two
-    /// files away said "Nothing similar found": two answers to the same
-    /// question, both wrong.
-    @State private var similarDisturbed = false
-    @State private var extras: [Item] = []
-    @State private var collectionRails: [CollectionRail.Rail] = []
-    /// Everything below the description has been answered. See `body`.
-    @State private var bottomPresent = false
-    /// Initial value from the list object: watchlist bookmark and watched
-    /// checkmark are correct from the first frame, not only after the last
-    /// request. `frisch` only catches up.
-    @State private var remembered: Bool
-    @State private var watched: Bool
 
     @MainActor init(model: AppModel, item: Item) {
         self.model = model
         self.item = item
-        _remembered = State(initialValue: item.userData?.isFavorite ?? false)
-        _watched = State(initialValue: item.userData?.played ?? false)
+        _page = State(initialValue: DetailCore(app: model, item: item))
     }
 
-    private var current: Item { freshValue ?? item }
+    private var current: Item { page?.item ?? item }
+    private var hero: HeroPart? { page?.model.hero }
+    private var actions: ActionsPart? { page?.model.actions }
+    private var bottom: BottomPart? { page?.model.bottom }
 
     /// What of this title is already on the device; `nil` means nothing.
     private var loaded: DownloadItem? { model.downloads.entries(for: current.id) }
@@ -207,7 +196,7 @@ struct ItemDetailView: View {
     /// the player would use: it is the same file.
     private var asEntry: DownloadItem? {
         guard let account = model.session?.storageAccount else { return nil }
-        let source = plan?.source ?? current.mediaSources?.first
+        let source = page?.plan(app: model)?.source ?? current.mediaSources?.first
         return DownloadItem(
             id: current.id, account: account, art: .film, title: current.name,
             runtimeTicks: current.runTimeTicks, container: source?.container,
@@ -215,7 +204,8 @@ struct ItemDetailView: View {
             watchState: current.userData, videoCodec: source?.videoCodec)
     }
 
-    private var resumeFrom: Double? { current.resumeFrom }
+    private var headerImage: URL? { hero?.image.flatMap { URL(string: $0.address) } }
+    private var logoImage: URL? { hero?.logo.flatMap { URL(string: $0.address) } }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -223,7 +213,7 @@ struct ItemDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    hero
+                    heroBlock
                     VStack(alignment: .leading, spacing: Theme.blockGap) {
                         // Above the button after all, directly under the name: below it, it sat
                         // between button and action row and separated two things that belong
@@ -248,18 +238,18 @@ struct ItemDetailView: View {
 
                     // **Everything below arrives at once.** Cast, extras, collection and
                     // similar used to arrive individually, pushed into the page and shoved
-                    // the rest ahead of them. Now the page waits for all of them and fades
-                    // them in together, like the series page: no placeholders and no
-                    // empty-state hint while still loading.
-                    if bottomPresent {
+                    // the rest ahead of them. Now the core answers them together (`bottom.ready`)
+                    // and the page fades them in at once: no placeholders and no empty-state
+                    // hint while still loading.
+                    if bottom?.ready == true {
                         VStack(alignment: .leading, spacing: 0) {
                             // Quiet and first: who has seen it belongs to the title itself.
-                            WatchersRow(model: model, item: item)
+                            WatchersRow(model: model, list: (bottom?.watchers ?? []).map(Watcher.init(core:)))
                             cast
                             extrasRail
                             // Above "Similar titles": the collection is the closer relation. Only
                             // for titles that are in one.
-                            CollectionRail(model: model, title: item, rails: collectionRails)
+                            CollectionRail(model: model, title: current, rails: collectionRails)
                             similarRail
                             // File details at the very bottom: they answer a question asked only
                             // later.
@@ -268,6 +258,8 @@ struct ItemDetailView: View {
                         .transition(.opacity)
                     }
                 }
+                // The core assigns `bottom` with no transaction, so the fade needs its own driver.
+                .animation(Theme.reveal, value: bottom?.ready == true)
                 // **Never wider than the screen.** If a child gets wider, it becomes the
                 // whole page, and a page wider than its scroll area can be dragged
                 // sideways.
@@ -278,13 +270,12 @@ struct ItemDetailView: View {
                 // instead of `reason`; beneath it lies the same mesh, computed from its
                 // minimum height (iPad, 1.0.5).
                 .background(alignment: .top) {
-                    MoodReason(url: model.headerImageURL(for: current),
-                                   since: Theme.heroHeightValue)
+                    MoodReason(url: headerImage, since: Theme.heroHeightValue)
                 }
                 // Translucent instead of solid surfaces above it, see
                 // `Theme.flaecheDurchsichtig`.
                 .environment(\.onImageTint, true)
-                .environment(\.imageColorSource, model.headerImageURL(for: current))
+                .environment(\.imageColorSource, headerImage)
                 .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
@@ -294,9 +285,19 @@ struct ItemDetailView: View {
                 distance.setDown(new, until: Theme.heroHeightValue + MoodReason.runOut)
             }
 
+            // The first fresh load failed: say why, with the copy of that kind, instead of a
+            // half-empty page with a gray button. Retrying loads the page again.
+            Group {
+                if let trouble = page?.trouble {
+                    EmptyState.serverDived(model, trouble: trouble, retry: { page?.model.load() })
+                        .background(Theme.reason)
+                }
+            }
+            .animation(Theme.reveal, value: page?.trouble)
+            .zIndex(10)
             // The sheet hangs on an empty surface; without `if` there would be two
             // routes to the same actions on wide windows.
-            ActionSheet(opened: $moreOpen, title: current.name,
+            ActionSheet(opened: $moreOpen, title: hero?.title ?? current.name,
                            actions: moreActions)
                 .zIndex(20)
             if let entries = asEntry {
@@ -307,15 +308,15 @@ struct ItemDetailView: View {
                               mark: current.imageTags?["Primary"])].compactMapValues { $0 },
                           failed: { message = $0 },
                           qualitySelect: true,
-                          audioStreams: (plan?.source ?? current.mediaSources?.first)?.mediaStreams ?? [])
+                          audioStreams: (page?.plan(app: model)?.source ?? current.mediaSources?.first)?.mediaStreams ?? [])
                     .zIndex(20)
             }
             if let message {
-                HintStrip(text: message) { self.message = nil }
+                HintStrip(text: message) { self.message = nil; page?.model.dismissMessage() }
                     .zIndex(21)
             }
 
-            DetailHeaderReader(title: current.name, distance: distance, mood: model.headerImageURL(for: current)) { back() }
+            DetailHeaderReader(title: hero?.title ?? current.name, distance: distance, mood: headerImage) { back() }
         }
 
         #if os(iOS)
@@ -326,87 +327,43 @@ struct ItemDetailView: View {
                          plan: wish.plan, startAt: wish.startAt)
         }
         #endif
-        .catchUp(at: model.pagesRefresh) { Task { await refresh() } }
-        .task {
-            async let freshTitle = model.item(id: item.id)
-            async let planning = model.plan(for: item.id, still: true)
-            async let alike = model.similar(item)
-            async let extra = model.extras(item)
-            async let collection = model.collectionRails(toward: item)
-            // **Set title and plan together, the rest follows separately.** The
-            // slowest request ("Similar", "Collections") would otherwise hold back
-            // the main button with its Direct Play mark and "Continue from ..."; the
-            // series page already separates this.
-            let newTitle = await freshTitle
-            let newPlan = await planning
-            freshValue = newTitle
-            versionsFailed = newTitle == nil
-            plan = newPlan
-            remembered = current.userData?.isFavorite ?? false
-            watched = current.userData?.played ?? false
-            withAnimation(Theme.reveal) { planPresent = true }
-            // **Remove duplicate identifiers.** Under "Similar" the server
-            // occasionally returns the same title twice, and `ForEach` maps by
-            // identifier: two equal identifiers mean two equal tiles and a tap that
-            // misses. The same rule as in search, home and watchlist; it was only
-            // missing here.
-            let freshSimilar = await alike
-            // Cancelled (page covered) is not a failure; the task restarts on
-            // return.
-            if Task.isCancelled { return }
-            // Extras are not a section with a statement: if missing, the row is
-            // missing. A second error hint below the first would be the same
-            // information twice.
-            let newExtras = (await extra) ?? []
-            let newCollections = await collection
-            // **One fade-in for the rest.** Only when everything below has been
-            // answered is it set all at once.
-            similarDisturbed = freshSimilar == nil && similar.isEmpty
-            if let freshSimilar {
-                similar = ListRules.withoutDouble(freshSimilar)
-            }
-            extras = newExtras
-            collectionRails = newCollections
-            withAnimation(Theme.reveal) { bottomPresent = true }
-            examine = false
+        .versionPick($versionChoice) { choice, version in
+            launch(page?.pressPlay(pick: version.id), since: choice.since, picked: version.id)
         }
-    }
-
-    /// Refetch the title from the server after its state changed. Here too
-    /// one function fetches everything that can change.
-    ///
-    /// The plan was missing. It does not change on resetting progress (the
-    /// playback mode does not depend on it), but the omission was the same as
-    /// on the series page, where it became visible. Two paths that should
-    /// fetch the same thing, and one knows less.
-    private func refresh() async {
-        async let freshTitle = model.item(id: item.id)
-        async let planning = model.plan(for: item.id, still: true)
-        // A failed refresh keeps the title shown so far; replacing it with the list
-        // entry would drop its `MediaSources` and gray Play out again.
-        if let newTitle = await freshTitle { freshValue = newTitle }
-        plan = await planning
-        remembered = current.userData?.isFavorite ?? false
-        watched = current.userData?.played ?? false
+        .catchUp(at: model.pagesRefresh) { page?.model.refresh() }
+        // The core loads the title with its plan, then cast, extras, similar and collections, and keeps the page
+        // current. Cancelled (page covered) is not a failure; the task restarts on return.
+        .task { await page?.run(app: model) }
+        // What the core tells the host to do (open a trailer page, hand a title to another device ...).
+        .onChange(of: actions?.effectSeq) { _, _ in drain() }
+        .onChange(of: actions?.message) { _, new in if let new { message = new } }
+        .onChange(of: actions?.toggleError) { _, new in if let new { message = new } }
+        // The tiles under the page take their wording from the core, like the home page's.
+        .onChange(of: bottom) { _, new in if let new { rememberLooks(new) } }
+        // What the core cannot know: settings, rights, devices in reach, a copy on the device.
+        .onChange(of: model.watchersShown) { _, _ in page?.send(options: model) }
+        .onChange(of: model.downloadButtonShow) { _, _ in page?.send(options: model) }
+        .onChange(of: model.downloads.entries.count) { _, _ in page?.send(options: model) }
+        .onChange(of: PlayOutputs.shared.targets.map(\.id)) { _, _ in page?.send(options: model) }
     }
 
     // MARK: Parts
 
     /// Same height as on the series page; before it was 260 versus 300.
-    private var hero: some View {
-        HeroImage(url: model.headerImageURL(for: current))
-            .overlay(alignment: .bottom) { HeroRunOut(image: model.headerImageURL(for: current)) }
+    private var heroBlock: some View {
+        HeroImage(url: headerImage)
+            .overlay(alignment: .bottom) { HeroRunOut(image: headerImage) }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 4) {
                     #if os(iOS)
-                    TitleMark(title: current.name, logo: model.logoURL(for: current))
+                    TitleMark(title: hero?.title ?? current.name, logo: logoImage)
                     #else
-                    Text(current.name)
+                    Text(hero?.title ?? current.name)
                         .font(Theme.title)
                         .tracking(Theme.lockTitle)
                         .foregroundStyle(Theme.font)
                     #endif
-                    Text(secondaryLine)
+                    Text(hero?.secondaryLine ?? "")
                         // Year, runtime, genre are one piece of info: 12. Before it was 14,
                         // which appears in no step of the scale.
                         .font(Theme.small)
@@ -418,21 +375,16 @@ struct ItemDetailView: View {
             }
     }
 
-    /// Year, runtime and genre sit in the hero image, no longer in a line of
-    /// their own below.
-    private var secondaryLine: String { current.secondaryLine }
-
     /// **First with the plan, then as a whole.** Stars and age rating are
     /// there immediately, the Direct Play mark only with the playback plan,
     /// and it then pushed in on the left and moved the other two right. Now
-    /// the line holds its place but stays invisible until the plan is there,
-    /// then fades in at once. If no plan comes, it fades in anyway, just
-    /// without the mark.
+    /// the line holds its place but stays invisible until the plan is there
+    /// (`proof.visible`), then fades in at once. If no plan comes, it fades
+    /// in anyway, just without the mark.
     private var proofRow: some View {
-        ProofRow(directPlayFlag: plan?.isLossless ?? false,
-                   hint: plan.map { $0.isLossless ? nil : $0.method.rawValue } ?? nil,
-                   rating: current.communityRating,
-                   sharing: current.ageRating)
+        let proof = actions?.proof
+        return ProofRow(directPlayFlag: proof?.directPlay ?? false, hint: proof?.hint,
+                        ratingText: proof?.rating, sharing: proof?.ageRating)
             // **Fixed height, even when empty.** The line only comes with the plan,
             // and from the list often without rating and age rating. Empty, it had no
             // height; the button below sat higher and dropped as soon as it filled.
@@ -442,7 +394,8 @@ struct ItemDetailView: View {
             // beyond 26 and the button would have jumped exactly as described. The
             // line holds only badges, and badges stay fixed.
             .frame(height: 26, alignment: .leading)
-            .opacity(planPresent ? 1 : 0)
+            .opacity(proof?.visible == true ? 1 : 0)
+            .animation(Theme.reveal, value: proof?.visible)
     }
 
     /// **One button, not two.**
@@ -450,27 +403,21 @@ struct ItemDetailView: View {
     /// Below "Continue" there was a second, equally wide "Start over" button,
     /// so for a started movie two full button rows sat above the content. It
     /// was also redundant: "Play from start" has always been in the More
-    /// panel (`TitleActions.forMovie`), just like "Reset progress" next to
-    /// it. Feedback: "get rid of it, it's in the menu anyway".
+    /// panel, just like "Reset progress" next to it. Feedback: "get rid of
+    /// it, it's in the menu anyway".
     ///
     /// The page again has **one** main thing, and the row below starts 60
     /// points higher.
     private var primaryButton: some View {
-        // **Remaining time and bar as on the series page.**
-        //
-        // There they have always sat under the Continue button; a started movie
-        // showed only "Continue from 51:10" and left open how much is left. The
-        // same question, the same answer: layout and spacing identical to
-        // `SeriesView.primaryButton`.
-        VStack(alignment: .leading, spacing: 8) {
+        // **Remaining time and bar as on the series page.** There they have always
+        // sat under the Continue button; a started movie showed only "Continue from
+        // 51:10" and left open how much is left. The same question, the same answer.
+        let button = actions?.play
+        return VStack(alignment: .leading, spacing: 8) {
             Button {
-                launch(since: resumeFrom ?? 0)
+                launch(page?.pressPlay(), since: nil, picked: nil)
             } label: {
-                if let since = resumeFrom {
-                    Label("Fortsetzen ab \(timeText(since))", icon: "play.fill")
-                } else {
-                    Label("Abspielen", icon: "play.fill")
-                }
+                Label { Text(verbatim: button?.label ?? "") } icon: { Image(icon: "play.fill") }
             }
             .buttonStyle(PrimaryButtonStyle(stretches: true))
             // Long press: the title's tile menu, as on its tile.
@@ -478,48 +425,38 @@ struct ItemDetailView: View {
             // **A title with several versions asks which one on press.** 4K next to
             // 1080p, theatrical next to extended cut; the server lists them as
             // sources of one item. One version, or a copy on the device, starts at once.
-            .versionChoice($versionChoice) { choice, version in
-                launch(choice, picking: version)
-            }
-            // **Gray until the versions are known**, and while a plan is on its way on
-            // press. The page opens with the list entry, which has no `MediaSources`;
-            // an early press used to take that for "one version" and start the default.
-            // If loading the full title fails, the button is enabled again: a press
-            // tries once more and says so if it fails too. (Before, the button hung on
-            // the preloaded plan, and when that single request failed it stayed gray
-            // forever without a word.)
-            .disabled(prepares || !versionsKnown)
+            //
+            // **Gray until the versions are known** (the core enables the button, and
+            // enables it again when the fresh load failed so that a press tries once
+            // more), and while a plan is on its way on press.
+            .disabled(prepares || button?.enabled != true)
 
-            if let rest = current.remainingTimeText {
+            if let rest = button?.remaining {
                 // Remaining time is one piece of info: 12.
-                Text(rest).growing(12).foregroundStyle(Theme.fontQuiet)
+                Text(rest).growing(12).monospacedDigit().foregroundStyle(Theme.fontQuiet)
             }
             // Wide, progress sits on the poster in the header; here it would be the
             // same thing a second time, and across the whole page.
-            if let share = current.userData?.playedPercentage, share > 0 {
-                ProgressBar(share: share / 100)
+            if let share = button?.progress, share > 0 {
+                ProgressBar(share: Double(share))
                     .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
             }
         }
     }
 
     private var actionRail: some View {
+        let remembered = actions?.favorite ?? false
+        let watched = actions?.watched ?? false
         // Narrow, the spacers distribute the buttons across the row; wide, they
         // sit next to the play button and should stay together.
-        HStack(spacing: 8) {
+        return HStack(spacing: 8) {
             if watchlistShown {
                 ActionButton(symbol: remembered ? "bookmark.fill" : "bookmark",
                              title: "Merkliste", active: remembered, stretches: true,
                              caption: remembered ? "Gemerkt" : "Merken") {
-                    remembered.toggle()
-                    // Switch immediately so the button responds, but revert if the server
-                    // says no. Before, the display stayed put and lied.
-                    Task {
-                        if let reason = await model.setWatchlist(current, an: remembered) {
-                            remembered.toggle()
-                            message = reason
-                        }
-                    }
+                    // The core switches at once so the button responds, and goes back if the
+                    // server says no (`toggleError`).
+                    page?.model.setWatchlist(!remembered)
                 }
             }
             // **The fifth field, only when the feature is on.**
@@ -531,24 +468,18 @@ struct ItemDetailView: View {
             // Whoever never enables the feature sees the row unchanged with its four
             // fields; that is why it grows here instead of always reserving a fifth
             // slot.
-            if model.downloadButtonShow, current.type != "Series" {
+            if actions?.download != nil {
                 DownloadField(entries: loaded, stretches: true, caption: "Laden") {
                     ringTap(loaded, model.downloads) { loadSheet = true }
                 }
             }
 
             ActionButton(symbol: "play.rectangle", title: "Trailer", stretches: true,
-                         caption: "Trailer") { trailerStart() }
+                         caption: "Trailer") { page?.model.trailer() }
             ActionButton(symbol: watched ? "checkmark.circle.fill" : "checkmark.circle",
                          title: "Gesehen", active: watched, stretches: true,
                          caption: "Gesehen") {
-                watched.toggle()
-                Task {
-                    if let reason = await model.setWatched(current, an: watched) {
-                        watched.toggle()
-                        message = reason
-                    }
-                }
+                page?.model.setWatched(!watched)
             }
             ActionButton(symbol: "ellipsis", title: "Mehr", stretches: true, caption: "Mehr") { moreOpen = true }
                 .asActionAnchor()
@@ -559,16 +490,16 @@ struct ItemDetailView: View {
 
     @ViewBuilder
     private var description: some View {
-        if let text = current.description {
+        if let text = hero?.overview {
             VStack(alignment: .leading, spacing: 8) {
                 // Single line with truncation, tap expands. The full text was too heavy
                 // on this page.
                 CollapsibleText(text: text)
 
-                if !current.direction.isEmpty {
+                if let directors = hero?.directors, !directors.isEmpty {
                     HStack(spacing: 5) {
                         Text("Regie").foregroundStyle(Theme.fontQuiet)
-                        Text(current.direction.joined(separator: ", "))
+                        Text(directors.joined(separator: ", "))
                             .foregroundStyle(Theme.font)
                     }
                     // A role is one piece of info: 12. Before it was 13; that grade is
@@ -586,33 +517,19 @@ struct ItemDetailView: View {
     /// The excerpt this app is about.
     @ViewBuilder
     private var fileExcerpt: some View {
-        if let source = plan?.source {
+        if let file = bottom?.file {
             VStack(alignment: .leading, spacing: 0) {
                 // **Take back its own margin.** `Gruppentitel` indents itself by
                 // `edgeSpacing`, and the stack here wraps the side margin around it once
                 // more: "File" sat twice as far in as its rows and as "Cast" below.
-                GroupsTitle(text: "Datei")
+                GroupsTitle(verbatim: file.title)
                     .padding(.horizontal, -Theme.edgeSpacing)
                     .padding(.top, Theme.railsSpacing)
                 Rectangle().fill(Theme.line).frame(height: 1)
-                if source.container != nil {
-                    FileRow(designation: "Container", value: FileDetails.container(source) ?? "")
+                ForEach(Array(file.rows.enumerated()), id: \.offset) { pair in
+                    FileRow(verbatim: pair.element.label, value: pair.element.value)
                     Rectangle().fill(Theme.line).frame(height: 1)
                 }
-                if let video = source.mediaStreams?.first(where: { $0.type == "Video" }) {
-                    FileRow(designation: "Video", value: FileDetails.video(video, source))
-                    Rectangle().fill(Theme.line).frame(height: 1)
-                }
-                ForEach(Array((source.mediaStreams ?? []).filter { $0.type == "Audio" }.prefix(2).enumerated()),
-                        id: \.offset) { pair in
-                    FileRow(designation: "Ton",
-                               value: pair.element.short)
-                    Rectangle().fill(Theme.line).frame(height: 1)
-                }
-                let subtitle = (source.mediaStreams ?? []).filter { $0.type == "Subtitle" }
-                FileRow(designation: "Untertitel",
-                           value: FileDetails.subtitle(subtitle))
-                Rectangle().fill(Theme.line).frame(height: 1)
             }
             .padding(.horizontal, Theme.margin(wide: wide))
         }
@@ -620,17 +537,16 @@ struct ItemDetailView: View {
 
     @ViewBuilder
     private var cast: some View {
-        let folks = current.actors
-        if !folks.isEmpty {
+        if let folks = bottom?.cast, !folks.isEmpty {
             // **Tappable now**, and the arrow is gone: it promised a full list that
             // never existed. A tap opens the person: what exists for them on the
             // server, and with Seerr what can be requested. Reported by a tester.
             Segment(title: "Besetzung") {
                 HStack(spacing: 14) {
-                    ForEach(folks.prefix(12)) { person in
-                        NavigationLink(value: PersonRoute(person: person, origin: current.name)) {
-                            CastTile(image: model.personImage(person),
-                                             name: person.name, role: person.role)
+                    ForEach(folks, id: \.id) { person in
+                        NavigationLink(value: PersonRoute(person: Person(core: person), origin: current.name)) {
+                            CastTile(image: person.image.flatMap { URL(string: $0.address) },
+                                     name: person.name, role: person.role)
                         }
                         .buttonStyle(Theme.PressButton())
                     }
@@ -642,11 +558,11 @@ struct ItemDetailView: View {
 
     @ViewBuilder
     private var extrasRail: some View {
-        if !extras.isEmpty {
+        if let extras = bottom?.extras, !extras.isEmpty {
             Segment(title: "Extras") {
                 HStack(spacing: 12) {
-                    ForEach(extras) { extra in
-                        ExtraTile(model: model, extra: extra, prepares: $prepares,
+                    ForEach(extras, id: \.id) { extra in
+                        ExtraTile(model: model, extra: Item(rust: extra), look: RustTileLook(extra), prepares: $prepares,
                                     missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") }) {
                             play = $0
                         }
@@ -657,19 +573,28 @@ struct ItemDetailView: View {
         }
     }
 
+    /// The "Part of the collection" rows, as the collection view takes them.
+    private var collectionRails: [CollectionRail.Rail] {
+        (bottom?.collections ?? []).map { rail in
+            let collection = Item(id: rail.id, name: rail.title, type: "BoxSet")
+            return (ItemCollection(item: collection, members: []), rail.tiles.map(Item.init(rust:)))
+        }
+    }
+
     @ViewBuilder
     private var similarRail: some View {
+        let similar = bottom?.similar ?? []
         if similar.isEmpty {
             // Only if the fetch failed. A collection without related items needs no
             // section.
-            if similarDisturbed {
+            if bottom?.similarFailed == true {
                 // **Not `Abschnitt`.** It puts its content in a horizontal scroll area,
                 // and there a hint meant to take the full width collapses to its text
                 // width.
                 VStack(alignment: .leading, spacing: 12) {
                     RailTitle(text: "Ähnliche Titel")
                         .padding(.horizontal, Theme.margin(wide: wide))
-                    DisturbHint(model: model, retry: { againSimilar() },
+                    DisturbHint(model: model, retry: { page?.model.retrySimilar() },
                                  spacingTop: 0)
                 }
                 .padding(.top, Theme.railsSpacing)
@@ -677,9 +602,9 @@ struct ItemDetailView: View {
         } else {
             Segment(title: "Ähnliche Titel") {
                 LazyHStack(spacing: Theme.tileSpacing) {
-                    ForEach(similar) { title in
-                        NavigationLink(value: title) {
-                            PosterTile(model: model, item: title)
+                    ForEach(similar, id: \.id) { tile in
+                        NavigationLink(value: Item(rust: tile)) {
+                            PosterTile(model: model, item: Item(rust: tile))
                         }
                         .buttonStyle(Theme.PressButton())
                     }
@@ -689,67 +614,126 @@ struct ItemDetailView: View {
         }
     }
 
-    /// The title's versions are known (or a copy on the device decides): Play may
-    /// ask or start. See ``MediaVersions/start(_:downloaded:)``.
-    private var versionsKnown: Bool {
-        // The full title came and names no sources (a Plex title without media, a server that
-        // leaves them out): nothing to choose between. ``launch(since:)`` fetches and decides.
-        versionsFailed || freshValue != nil
-            || MediaVersions.start(current.mediaSources,
-                                   downloaded: model.downloads.file(for: current.id) != nil) != .wait
+    // MARK: What the core asks of the host
+
+    /// The tiles below the page: the core's own pictures and wording, found by id.
+    private func rememberLooks(_ part: BottomPart) {
+        var looks: [String: RustTileLook] = [:]
+        for tile in part.similar + part.extras + part.collections.flatMap(\.tiles) {
+            looks[tile.id] = RustTileLook(tile)
+        }
+        model.rustLooks.merge(looks) { _, new in new }
     }
 
-    private func launch(since: Double) {
-        Theme.jerk(.medium)
-        // The versions are here: ask on the spot, or start with the plan already
-        // fetched. Otherwise (failed load) ``PlayRequest/start`` fetches the full
-        // title and decides; it reports a failure instead of taking the default.
-        switch MediaVersions.start(current.mediaSources,
-                                   downloaded: model.downloads.file(for: current.id) != nil) {
-        case .choose(let versions):
-            versionChoice = VersionChoice(item: current, versions: versions, since: since)
-            return
-        case .play:
-            if let plan {
-                play = PlayRequest(item: current, plan: plan, startAt: since)
-                return
+    private func drain() {
+        guard let page else { return }
+        for effect in page.model.takeEffects() {
+            switch effect {
+            case .play(let action):
+                launch(action, since: nil, picked: nil)
+            case .playTrailer(let id):
+                Theme.jerk(.medium)
+                PlayRequest.start(Item(id: id, name: current.name), freshValue: true, model: model, prepares: $prepares,
+                                  missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                                  play: { play = $0 })
+            case .openWeb(let address):
+                #if os(iOS)
+                if let url = URL(string: address) { Task { await UIApplication.shared.open(url) } }
+                #endif
+            case .openDownload:
+                if model.downloadButtonShow { ringTap(loaded, model.downloads) { loadSheet = true } }
+            case .menu(let kind):
+                hostMenu(kind)
+            case .stateChanged:
+                SeriesCache.shared.forget(current.seriesId ?? current.id)
+                model.noteWatchStateChanged()
+            case .watchlistChanged:
+                model.noteWatchlistChanged()
             }
-        case .wait:
+        }
+    }
+
+    /// The menu entries only the platform can carry out.
+    private func hostMenu(_ kind: MenuKind) {
+        switch kind {
+        case .playOn(let id, _):
+            guard let target = PlayOutputs.shared.targets.compactMap(PlayOutput.init(session:)).first(where: { $0.deviceID == id })
+            else { return }
+            let title = current
+            Task { await PlayOutputs.shared.play(title, to: target, model: model) }
+        case .together:
+            SharedModel.shared.createFor = current
+        case .download:
+            loadSheet = true
+        default:
             break
         }
-        // **No preloaded plan** (still on its way or failed), or the versions are not
-        // known: fetch on press, as on the series page, and say so if that fails too.
-        PlayRequest.start(current, since: since,
-                          ask: VersionAsk(choose: { versionChoice = $0 },
-                                          failed: { message = $0 }),
-                          model: model, prepares: $prepares,
-                          missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
-                          play: { wish in
-                              plan = wish.plan
-                              play = wish
-                          })
     }
 
-    private func launch(_ choice: VersionChoice, picking version: MediaSource) {
+    /// What a press on Play (or a menu entry that plays) does, as the core decides it.
+    ///
+    /// `since` overrides the core's start second, `picked` is the version the user chose.
+    private func launch(_ action: PlayAction?, since: Double?, picked: String?) {
+        guard let page, let action else { return }
         Theme.jerk(.medium)
-        PlayRequest.start(choice, picking: version, model: model, prepares: $prepares,
-                          missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
-                          play: { wish in
-                              plan = wish.plan
-                              play = wish
-                          })
-    }
-
-    /// Retry only that one row; reloading the whole page would be too much
-    /// for one failed section.
-    private func againSimilar() {
-        Task {
-            let freshValue = await model.similar(item)
-            similarDisturbed = freshValue == nil
-            if let freshValue { similar = ListRules.withoutDouble(freshValue) }
+        let missing = { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") }
+        switch action {
+        case .wait:
+            return
+        case .choose(_, let at, let versions):
+            versionChoice = VersionPick(
+                heading: page.model.actions.play.versionTitle, options: versions, since: since ?? at)
+        case .resolve(_, let at):
+            // The fresh title never came: fetch it once more and decide again; say so if that fails too.
+            guard !prepares else { return }
+            prepares = true
+            Task {
+                let again = await page.resolve(pick: picked)
+                prepares = false
+                if case .resolve = again {
+                    message = String(localized: "Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal.")
+                } else {
+                    launch(again, since: since ?? at, picked: picked)
+                }
+            }
+        case .start(_, let at, let source):
+            let start = since ?? at
+            let downloaded = model.downloads.file(for: current.id) != nil
+            // The plan the page already holds, unless a version was picked or a copy on the device decides.
+            if source == nil, !downloaded, let plan = page.plan(app: model) {
+                play = PlayRequest(item: current, plan: plan, startAt: start)
+                return
+            }
+            PlayRequest.start(current, since: start, sourceID: source, model: model, prepares: $prepares,
+                              missing: missing, play: { play = $0 })
         }
     }
 
+    /// The long-press menu of the "Mehr" sheet: the core names the entries, the host runs what only it can.
+    private var moreActions: [TitleAction] {
+        guard let page else { return [] }
+        return page.model.moreMenu().map { entry in
+            TitleAction(symbol: Self.symbol(of: entry.kind), wording: entry.text) {
+                switch entry.kind {
+                case .playFromStart:
+                    launch(page.model.playFromStart(), since: nil, picked: nil)
+                default:
+                    page.model.menu(entry.kind)
+                }
+            }
+        }
+    }
+
+    private static func symbol(of kind: MenuKind) -> String {
+        switch kind {
+        case .playOn: "tv"
+        case .playFromStart: "gobackward"
+        case .resetProgress: "arrow.counterclockwise.circle"
+        case .together: "person.2"
+        case .refreshMetadata: "arrow.clockwise"
+        default: "ellipsis"
+        }
+    }
 }
 
 /// Section with a heading and horizontally scrolling content.
@@ -794,22 +778,5 @@ struct Segment<ContentBody: View>: View {
                         // home page uses 28. Two rhythms for the same layout are noticeable
                         // when tapping through.
                         .padding(.top, Theme.railsSpacing)
-    }
-}
-
-extension ItemDetailView {
-
-    func trailerStart() {
-        TrailerStart.start(current, model: model,
-                             play: { play = $0 },
-                             report: { message = $0 })
-    }
-
-    var moreActions: [TitleAction] {
-        TitleActions.playOn(plan == nil ? nil : current, model: model) + TitleActions.forMovie(current, plan: plan, model: model,
-                                 start: { launch(since: $0) },
-                                 report: { message = $0 },
-                                 gemeinsam: SharedModel.shared.mayCreate
-                                     ? { [current] in SharedModel.shared.createFor = current } : nil)
     }
 }

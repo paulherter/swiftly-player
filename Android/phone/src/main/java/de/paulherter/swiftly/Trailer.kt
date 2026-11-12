@@ -20,7 +20,7 @@ import org.json.JSONArray
  */
 internal suspend fun trailerStart(app: SwiftlyApplication, context: Context, id: String): String? {
     val found = try {
-        JSONArray(withContext(Dispatchers.IO) { app.kern.trailers(id, true).await() })
+        JSONArray(withContext(Dispatchers.IO) { app.rk.trailers(id, true).await() })
     } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { JSONArray() }
     for (i in 0 until found.length()) {
         val entry = found.getJSONObject(i)
@@ -29,7 +29,7 @@ internal suspend fun trailerStart(app: SwiftlyApplication, context: Context, id:
             // `TrailerStart` on iPhone); the last one goes to the player, which reports its own error.
             if (i < found.length() - 1) {
                 val planned = try {
-                    withContext(Dispatchers.IO) { app.kern.plan(entry.getString("id")).await() } != "{}"
+                    withContext(Dispatchers.IO) { app.rk.plan(entry.getString("id")).await() } != "{}"
                 } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { false }
                 if (!planned) continue
             }
@@ -51,7 +51,7 @@ internal suspend fun trailerStart(app: SwiftlyApplication, context: Context, id:
  */
 internal suspend fun trailerShelf(app: SwiftlyApplication, id: String, extras: List<Extra>): List<Extra> {
     val found = try {
-        JSONArray(withContext(Dispatchers.IO) { app.kern.trailers(id, false).await() })
+        JSONArray(withContext(Dispatchers.IO) { app.rk.trailers(id, false).await() })
     } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { JSONArray() }
     val files = (0 until found.length()).map { found.getJSONObject(it) }
         .filter { it.getString("art") == "datei" }

@@ -7,7 +7,10 @@ import SwiftUI
 struct WatchersRow: View {
     let model: AppModel
     let item: Item
-    @State private var list: [Watcher] = []
+    /// The core's own list (detail pages); `nil` fetches it here (other pages).
+    var fromCore: [Watcher]? = nil
+    @State private var fetched: [Watcher] = []
+    private var list: [Watcher] { fromCore ?? fetched }
 
     var body: some View {
         Group {
@@ -27,8 +30,9 @@ struct WatchersRow: View {
             }
         }
         .task(id: "\(item.id)\(model.watchersShown)") {
+            guard fromCore == nil else { return }
             let found = await model.watchers(of: item)
-            withAnimation(Theme.reveal) { list = found }
+            withAnimation(Theme.reveal) { fetched = found }
         }
     }
 }

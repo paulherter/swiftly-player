@@ -1,0 +1,24 @@
+[package]
+name = "swiftly-sync"
+description = "SyncPlay session logic, settings sync (DisplayPreferences) and remote-control messages of the Swiftly core, sans-IO over transport and clock traits"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swiftly-net = { path = "../swiftly-net", default-features = false }
+swiftly-model = { path = "../swiftly-model" }
+swiftly-seerr = { path = "../swiftly-seerr" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-normalization = "0.1"
+futures-util = { version = "0.3", default-features = false, features = ["alloc", "std"] }
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[dev-dependencies]
+futures-executor = "0.3"
+
+[lints]
+workspace = true

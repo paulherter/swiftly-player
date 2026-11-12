@@ -22,6 +22,11 @@ public struct LoginCode: Sendable, Equatable {
     public let code: String
     /// The secret stays with the device; only the code is read out.
     public let confidential: String
+
+    public init(code: String, confidential: String) {
+        self.code = code
+        self.confidential = confidential
+    }
 }
 
 extension JellyfinClient {

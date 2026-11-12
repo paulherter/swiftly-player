@@ -58,8 +58,8 @@ enum OfflineRun {
         guard model.session?.userName == allowed, let client = model.client,
               let account = model.session?.storageAccount
         else { log("Profil \(allowed) nicht aktiv — Lauf endet"); return nil }
-        let hit = await model.search("Mentalist")
-        guard let series = hit?.first(where: { $0.type == "Series" && $0.name == "The Mentalist" })
+        let hit = await model.search("Lighthouse")
+        guard let series = hit?.first(where: { $0.type == "Series" && $0.name == "The Lighthouse" })
         else { log("keine Serie: \(hit.map { $0.map(\.name) } ?? ["Fehler"])"); return nil }
         let all = await model.episodes(series: series.id, season: nil) ?? []
         var withSections = 0

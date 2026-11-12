@@ -1,0 +1,21 @@
+[bindings.swift]
+module_name = "SwiftlyCore"
+ffi_module_name = "SwiftlyCoreFFI"
+ffi_module_filename = "SwiftlyCoreFFI"
+
+[bindings.kotlin]
+package_name = "de.paulherter.swiftly.rustcore"
+cdylib_name = "swiftly_uniffi"
+android = true
+android_cleaner = true
+
+# Names that clash in Kotlin only (Swift keeps its names): `message` is `Throwable.message`, `close` is the
+# generated `AutoCloseable.close()` of every object, and the variants `List`/`Map` hide kotlin.collections inside
+# their own sealed class.
+[bindings.kotlin.rename]
+"CoreError.Failed.message" = "detail"
+"HttpFailure.Other.message" = "detail"
+"SocketFailure.Other.message" = "detail"
+"WebSocketLink.close" = "closeLink"
+"SettingValue.List" = "Items"
+"SettingValue.Map" = "Pairs"

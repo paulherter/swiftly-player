@@ -288,6 +288,20 @@ public actor JellyfinClient {
 
     private func send<T: Decodable>(_ req: URLRequest, as: T.Type,
                                     over session: URLSession? = nil) async throws -> T {
+        let (data, http) = try await sendData(req, over: session)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            // HTML instead of JSON means a gateway answered, not Jellyfin; see
+            // ``Eigenkoepfe/anmeldeseite(_:)``.
+            if OwnHeaders.loginPage(http) { throw JellyfinError.transport(OwnHeaders.loginPageText) }
+            throw JellyfinError.decoding(String(describing: error))
+        }
+    }
+
+    /// The checked body of an answer, undecoded (the core reads some answers itself).
+    private func sendData(_ req: URLRequest,
+                          over session: URLSession? = nil) async throws -> (Data, HTTPURLResponse) {
         let data: Data
         let response: URLResponse
         do {
@@ -308,14 +322,7 @@ public actor JellyfinClient {
             throw JellyfinError.http(status: http.statusCode,
                                      body: String(data: data.prefix(400), encoding: .utf8))
         }
-        do {
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            // HTML instead of JSON means a gateway answered, not Jellyfin; see
-            // ``Eigenkoepfe/anmeldeseite(_:)``.
-            if OwnHeaders.loginPage(http) { throw JellyfinError.transport(OwnHeaders.loginPageText) }
-            throw JellyfinError.decoding(String(describing: error))
-        }
+        return (data, http)
     }
 
     /// For the extension in PlaybackReporting.
@@ -1144,11 +1151,19 @@ public actor JellyfinClient {
     /// message belongs there), but it should **know** what happened instead of guessing.
     public func remoteSession() async throws -> [RemoteSession] {
         let s = try requireSession()
-        let req = try request("Sessions", query: [
+        return try await send(try sessionsRequest(s), as: [RemoteSession].self)
+    }
+
+    /// The same answer as ``remoteSession()``, undecoded, for the core's takeover flow.
+    public func remoteSessionData() async throws -> Data {
+        try await sendData(try sessionsRequest(try requireSession())).0
+    }
+
+    private func sessionsRequest(_ s: Session) throws -> URLRequest {
+        try request("Sessions", query: [
             .init(name: "controllableByUserId", value: s.userID),
             .init(name: "activeWithinSeconds", value: "120"),
         ])
-        return try await send(req, as: [RemoteSession].self)
     }
 
     /// Sends a playback command to another session.

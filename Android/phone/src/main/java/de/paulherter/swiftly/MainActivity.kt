@@ -83,6 +83,11 @@ class MainActivity : ComponentActivity() {
         // Measurement mode as a launch extra, like the launch argument on Apple.
         if (intent?.hasExtra("technikschildMessen") == true)
             (application as SwiftlyApplication).settings.techBadgeMeasure = intent.getBooleanExtra("technikschildMessen", false)
+        // Debug builds only: "skip intro and outro automatically" and "tech badge" as start extras, for runs without taps.
+        if (BuildConfig.DEBUG && intent?.hasExtra("introOutroAutomatic") == true)
+            (application as SwiftlyApplication).settings.introOutroAutomatic = intent.getBooleanExtra("introOutroAutomatic", false)
+        if (BuildConfig.DEBUG && intent?.hasExtra("techBadge") == true)
+            (application as SwiftlyApplication).settings.techBadge = intent.getBooleanExtra("techBadge", false)
         // Always light status bar icons: the app is dark whatever the system setting is. Without a
         // default, `enableEdgeToEdge` follows the system theme, and on a light theme clock and
         // battery were black on black.
@@ -132,13 +137,44 @@ class MainActivity : ComponentActivity() {
                 if (!BuildConfig.DEBUG || address == null || app.sessionAgainFromSet()) return@LaunchedEffect
                 runCatching {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        app.kern.embyCheck(address, "[]").await()
-                        val session = app.kern.embySignIn(intent.getStringExtra("testUser").orEmpty(), intent.getStringExtra("testPassword").orEmpty()).await()
-                        app.kern.onboardingCancel()
+                        val session = if (intent.getStringExtra("testSession") != null || intent.getStringExtra("testSessionB64") != null) {
+                            // A finished session JSON (a Plex fixture account has no sign-in call to make); `testSessionB64` survives the adb shell.
+                            DebugSessionExtra.read(intent.getStringExtra("testSession"), intent.getStringExtra("testSessionB64")).getOrThrow()
+                        } else if (intent.getBooleanExtra("testJellyfin", false)) {
+                            app.rk.onboardingConnect(address, "[]").await()
+                            app.rk.onboardingSignIn(intent.getStringExtra("testUser").orEmpty(), intent.getStringExtra("testPassword").orEmpty()).await()
+                        } else {
+                            app.rk.embyCheck(address, "[]").await()
+                            app.rk.embySignIn(intent.getStringExtra("testUser").orEmpty(), intent.getStringExtra("testPassword").orEmpty()).await()
+                        }
+                        app.rk.onboardingCancel()
                         app.sessionRecord(session)
                     }
                     phase = Phase.Start
                 }.onFailure { android.util.Log.w("Swiftly", "testServer sign-in failed: $it") }
+            }
+            // Debug builds only: queue downloads by launch extra (`testDownload` = comma separated item ids), no sheet, no taps.
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                val ids = intent?.getStringExtra("testDownload")?.split(',')?.filter { it.isNotBlank() }
+                if (!BuildConfig.DEBUG || ids.isNullOrEmpty()) return@LaunchedEffect
+                while (app.accountId().isEmpty()) kotlinx.coroutines.delay(500)
+                app.downloads.accountSet(app.accountId())
+                runCatching {
+                    val a = org.json.JSONArray(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.rk.downloadItem(ids.toTypedArray()).await() })
+                    val items = (0 until a.length()).map { DownloadItem.read(a.getJSONObject(it).getJSONObject("posten")) }
+                    val images = mutableMapOf<String, String>()
+                    for (i in 0 until a.length()) a.getJSONObject(i).fieldText("bild")?.let { images[items[i].id] = it }
+                    app.downloads.insert(items, images)
+                }.onFailure { android.util.Log.w("Swiftly", "testDownload failed: $it") }
+            }
+            // Debug builds only: start playback of one item by launch extra (`testPlay` = item id), no taps.
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                val id = intent?.getStringExtra("testPlay")
+                if (!BuildConfig.DEBUG || id.isNullOrEmpty()) return@LaunchedEffect
+                while (app.accountId().isEmpty()) kotlinx.coroutines.delay(500)
+                kotlinx.coroutines.delay(3000)
+                DebugPlay.read(intent)
+                app.play.value = PlayRequest(id, DebugPlay.since)
             }
             // Signed out: back to server selection.
             androidx.compose.runtime.LaunchedEffect(app.signedOut.intValue) { if (app.signedOut.intValue > 0) phase = Phase.Server }

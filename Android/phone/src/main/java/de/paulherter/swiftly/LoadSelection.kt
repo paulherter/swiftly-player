@@ -40,7 +40,6 @@ import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
@@ -113,13 +112,13 @@ private fun LoadSelection(app: SwiftlyApplication, seriesIdentifier: String, nam
     val stateAll = state(allEpisodes, presentCounts = !loads)
     val selectedEpisodes = allEpisodes.filter { it.id in selected }
     /** **The footer computes in the chosen quality:** the real size for the original, estimated otherwise. */
-    fun bytesIn(q: String) = selectedEpisodes.sumOf { Kern.downloadEstimated(q, it.bytes, it.ticks) }
+    fun bytesIn(q: String) = selectedEpisodes.sumOf { KernRules.downloadEstimated(q, it.bytes, it.ticks) }
     val bytes = bytesIn(quality)
     /** The tiers by the selection's best file, or the whole series while nothing is selected. */
     val selectable = app.settings.downloadQualitySelectable
     val offered = remember(selected, episodes, selectable) {
         val base = if (selectedEpisodes.isEmpty()) allEpisodes else selectedEpisodes
-        qualitiesRead(Kern.downloadQualities(selectable, JSONArray(base.map { JSONArray(listOf(it.bytes, it.ticks)) }).toString()))
+        qualitiesRead(KernRules.downloadQualities(selectable, JSONArray(base.map { JSONArray(listOf(it.bytes, it.ticks)) }).toString()))
     }
     // If the chosen tier disappears, the original applies again.
     LaunchedEffect(offered) { if (offered.none { it.id == quality }) quality = "original" }
@@ -130,7 +129,7 @@ private fun LoadSelection(app: SwiftlyApplication, seriesIdentifier: String, nam
     var offer by remember { mutableStateOf(AudioOffer.none) }
     LaunchedEffect(selectedIds) {
         offer = if (selectedIds.isEmpty()) AudioOffer.none
-                else audioOfferRead(runCatching { app.kern.downloadAudioOptions(selectedIds.toTypedArray(), app.settings.audioLanguage).await() }.getOrNull())
+                else audioOfferRead(runCatching { app.rk.downloadAudioOptions(selectedIds.toTypedArray(), app.settings.audioLanguage).await() }.getOrNull())
     }
     /** The chosen language, or the one from the settings, or all tracks; never one the selection does not hold. */
     val audio = (audioChosen ?: offer.preset).takeIf { c -> offer.offered && offer.options.any { it.id == c } } ?: "all"
@@ -152,7 +151,7 @@ private fun LoadSelection(app: SwiftlyApplication, seriesIdentifier: String, nam
         for (st in seasons) {
             if (episodes[st.id] != null) continue
             try {
-                val list = loadEpisodesRead(withContext(Dispatchers.IO) { app.kern.loadSelectionEpisodes(seriesIdentifier, st.id).await() })
+                val list = loadEpisodesRead(withContext(Dispatchers.IO) { app.rk.loadSelectionEpisodes(seriesIdentifier, st.id).await() })
                 episodes = episodes + (st.id to list)
             } catch (e: CancellationException) { throw e } catch (_: Exception) { disrupted = true }
         }
@@ -165,7 +164,7 @@ private fun LoadSelection(app: SwiftlyApplication, seriesIdentifier: String, nam
 
     fun episodesNumber(n: Int) = if (n == 1) translated("1 Folge") else translated("%lld Folgen", n)
     /** "23 episodes · 31.4 GB": count and size in one go. */
-    fun numberAndSize(n: Int, b: Long) = episodesNumber(n) + " · " + Kern.downloadSize(b)
+    fun numberAndSize(n: Int, b: Long) = episodesNumber(n) + " · " + KernRules.downloadSize(b)
 
     if (disrupted && allEpisodes.isEmpty()) {
         DisturbHint(app.serverAddress(), Modifier.padding(bottom = 16.dp), spacingTop = 10.dp, retry = { attempt++ })
@@ -228,7 +227,7 @@ private fun LoadSelection(app: SwiftlyApplication, seriesIdentifier: String, nam
                                     SheetLine()
                                     val p = v.entries(f.id)
                                     // **Watched is shown before choosing;** a downloaded episode says it is there.
-                                    val size = if (f.bytes > 0) Kern.downloadSize(f.bytes) else "—"
+                                    val size = if (f.bytes > 0) KernRules.downloadSize(f.bytes) else "—"
                                     val episodeRight = when {
                                         p == null -> if (f.watched) translated("gesehen") + " · " + size else size
                                         p.state == "fertig" -> translated("geladen")
@@ -256,14 +255,14 @@ private fun LoadSelection(app: SwiftlyApplication, seriesIdentifier: String, nam
                  style = Theme.tile.copy(fontFeatureSettings = "tnum"), color = Theme.font, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(8.dp))
             // Whether it suffices is decided by `DownloadRules.footSpace`, with the same reserve as the following sheet.
-            val slot = JSONObject(Kern.downloadFooterSpace(bytes, free))
+            val slot = JSONObject(KernRules.downloadFooterSpace(bytes, free))
             if (slot.getBoolean("reicht")) {
-                Text(translated("Danach %@ frei", Kern.downloadSize(slot.getLong("bytes"))),
+                Text(translated("Danach %@ frei", KernRules.downloadSize(slot.getLong("bytes"))),
                      style = Theme.small.copy(fontFeatureSettings = "tnum"), color = Theme.fontVeryQuiet)
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     Symbol(Glyph.Info, 12.dp, color = Theme.warning, strength = Strength.Semibold)
-                    Text(translated("%@ zu wenig", Kern.downloadSize(slot.getLong("bytes"))),
+                    Text(translated("%@ zu wenig", KernRules.downloadSize(slot.getLong("bytes"))),
                          style = Theme.small.copy(fontFeatureSettings = "tnum"), color = Theme.warning)
                 }
             }
@@ -374,13 +373,13 @@ fun QualityBadge(choice: String, offered: List<QualityLevel>, selectable: Boolea
         Box {
             Row(Modifier.then(if (expandable) Modifier.heightIn(min = 44.dp) else Modifier)
                     .then(if (expandable) Modifier.tapOn { opened = true } else Modifier)
-                    .semantics { contentDescription = translated("Qualität") + ", " + Kern.downloadBadge(choice) },
+                    .semantics { contentDescription = translated("Qualität") + ", " + KernRules.downloadBadge(choice) },
                 verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.clip(RoundedCornerShape(Theme.cornerSmall)).background(Theme.accent.copy(alpha = 0.15f))
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (choice == "original") Symbol(Glyph.Checkmark, 11.dp, color = Theme.accent, strength = Strength.Semibold)
-                    Text(Kern.downloadBadge(choice), style = Theme.small.copy(fontFeatureSettings = "tnum"), color = Theme.accent)
+                    Text(KernRules.downloadBadge(choice), style = Theme.small.copy(fontFeatureSettings = "tnum"), color = Theme.accent)
                     if (expandable) Symbol(Glyph.AngleDown, 11.dp, color = Theme.accent, strength = Strength.Semibold)
                 }
             }
@@ -392,7 +391,7 @@ fun QualityBadge(choice: String, offered: List<QualityLevel>, selectable: Boolea
                         text = {
                             Column {
                                 Text(q.row, style = Theme.listTitle, color = Theme.font)
-                                if (g > 0) Text((if (q.id == "original") "" else "≈ ") + Kern.downloadSize(g),
+                                if (g > 0) Text((if (q.id == "original") "" else "≈ ") + KernRules.downloadSize(g),
                                                 style = Theme.small.copy(fontFeatureSettings = "tnum"), color = Theme.fontVeryQuiet)
                             }
                         },

@@ -1,6 +1,7 @@
 import AppKit
 import JellyfinKit
 import SwiftUI
+import SwiftlyCore
 
 /// Detail page. Movies and series share the same header, as on iPhone; only the
 /// content below it differs.
@@ -123,17 +124,29 @@ struct FilmView: View {
     let film: Item
     let back: () -> Void
 
-    @State private var extras: [Item] = []
-    @State private var similar: [Item] = []
-    @State private var collectionRails: [CollectionRail.Rail] = []
-    /// Everything below the header is already resolved. See `body`.
-    @State private var bottomPresent = false
+    /// The page's data owner, the core's `DetailVm` (`DetailCore`); `nil` when there is no account.
+    @State private var page: DetailCore?
     @State private var headerState = HeaderState()
+
+    private var current: Item { page?.item ?? film }
+    private var bottom: BottomPart? { page?.model.bottom }
+    private var collectionRails: [CollectionRail.Rail] {
+        (bottom?.collections ?? []).map { rail in
+            let collection = Item(id: rail.id, name: rail.title, type: "BoxSet")
+            return (ItemCollection(item: collection, members: []), rail.tiles.map(Item.init(rust:)))
+        }
+    }
+    /// The tiles under the page take their pictures and wording from the core, found by id.
+    private var looks: [String: RustTileLook] {
+        var out: [String: RustTileLook] = [:]
+        for tile in (bottom?.similar ?? []) + (bottom?.extras ?? []) { out[tile.id] = RustTileLook(tile) }
+        return out
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                DetailHero(model: model, title: film, state: headerState)
+                DetailHero(model: model, title: current, state: headerState, film: page)
                     // The header draws over what is below it.
                     //
                     // Without this, the More menu ends up behind the tab row and the episode list:
@@ -144,23 +157,27 @@ struct FilmView: View {
                 // `BrowseViews.swift`). Extras, similar titles and the collection row used to fade
                 // in separately and each pushed the rest down. Now the page waits for all of them
                 // and fades them in together, with no placeholder or empty hint while loading.
-                if bottomPresent {
+                if bottom?.ready == true {
                     VStack(alignment: .leading, spacing: 26) {
                         // The description is in the header, as on Apple TV; showing it here would
                         // duplicate it.
-                        WatchersRow(model: model, item: film)
-                        CastRail(model: model, folks: film.actors,
+                        WatchersRow(model: model, item: film,
+                                    fromCore: (bottom?.watchers ?? []).map(Watcher.init(core:)))
+                        CastRail(model: model, folks: (bottom?.cast ?? []).map(Person.init(core:)),
                                         origin: film.name)
                         // Extras and similar titles. Order as on iOS.
-                        TitleRail(title: "Extras", entries: extras, model: model, play: true)
+                        TitleRail(title: "Extras", entries: (bottom?.extras ?? []).map(Item.init(rust:)), model: model,
+                                  play: true, looks: looks)
                         // Above "similar titles": the collection is the closer relation. Only for titles
                         // that belong to one.
                         ForEach(collectionRails, id: \.collection.id) { rail in
                             CollectionRail(model: model, rail: rail,
                                            art: LibraryGenre.art(toType: film.type))
                         }
-                        TitleRail(title: "Ähnliches", entries: similar, model: model)
-                        if let source = film.mediaSources?.first {
+                        TitleRail(title: "Ähnliches",
+                                  entries: (bottom?.similar ?? []).map(Item.init(rust:)),
+                                  model: model, looks: looks)
+                        if let source = current.mediaSources?.first {
                             FileRow(source: source)
                         }
                     }
@@ -176,7 +193,7 @@ struct FilmView: View {
             // not the page: it scrolls with the header, otherwise an edge would show while
             // scrolling.
             .background(alignment: .top) {
-                StretchedMood(url: model.headerImageURL(for: film), state: headerState)
+                StretchedMood(url: model.headerImageURL(for: current), state: headerState)
             }
             // Translucent instead of solid surfaces on top; see `Theme.flaecheDurchsichtig`.
             .environment(\.onImageTint, true)
@@ -211,21 +228,26 @@ struct FilmView: View {
             DetailHeader(title: film.name, state: headerState, back: back,
                          mood: model.headerImageURL(for: film))
         }
+        // The core loads the title with its plan, then cast, extras, similar and collections, and keeps the page
+        // current. Cancelled (page covered) is not a failure; the task restarts on return.
         .task {
-            async let a = model.extras(film)
-            async let b = model.similar(film)
-            async let c = model.collectionRails(toward: film)
-            let newExtras = (await a) ?? []
-            let newSimilar = (await b) ?? []
-            let newCollections = await c
-            await InTravel.waitFor()
-            guard !Task.isCancelled else { return }
-            // One fade-in, not three. Set all at once when everything is resolved.
-            extras = newExtras
-            similar = newSimilar
-            collectionRails = newCollections
-            withAnimation(Theme.reveal) { bottomPresent = true }
+            if page == nil { page = DetailCore(app: model, item: film) }
+            await page?.run(app: model)
         }
+        .overlay {
+            if let trouble = page?.trouble {
+                let copy = trouble.copy(server: model.serverAddress ?? String(localized: "Der Server"))
+                EmptyState(symbol: "wifi.exclamationmark", headerLine: copy.title, text: copy.text,
+                           primaryButton: ("Erneut versuchen", { page?.model.load() }))
+                    .background(Theme.reason)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Theme.reveal, value: page?.trouble)
+        .onChange(of: model.pagesRefresh) { _, _ in page?.model.refresh() }
+        .onChange(of: model.watchersShown) { _, _ in page?.send(options: model) }
+        .onChange(of: model.downloadButtonShow) { _, _ in page?.send(options: model) }
+        .onChange(of: PlayOutputs.shared.targets.map(\.id)) { _, _ in page?.send(options: model) }
     }
 }
 
@@ -259,6 +281,10 @@ struct TitleRail: View {
     /// Extras are meant to be played: a click starts them instead of opening a page,
     /// as on iPhone and Apple TV.
     var play = false
+    /// The core's wording of the tiles, by title id; `nil` keeps the Swift one.
+    var looks: [String: RustTileLook]? = nil
+    /// A tile came into view (the person page loads the next page at the end).
+    var more: ((String) -> Void)? = nil
     @Environment(PlayControls.self) private var controls
 
     var body: some View {
@@ -269,13 +295,14 @@ struct TitleRail: View {
                 RailTitle(text: title)
                 PagingRail(margin: 0) {
                     ForEach(entries, id: \.id) { entryRecord in
+                        let look = looks?[entryRecord.id]
                         Button {
                             if play { controls.launch(entryRecord, since: 0) }
                             else { navigator.openIt(.title(entryRecord), in: section) }
                         } label: {
-                            PosterCell(title: entryRecord.name,
-                                         secondLine: entryRecord.productionYear.map { "\($0)" },
-                                         image: model.imageURL(for: entryRecord, portrait: true),
+                            PosterCell(title: look?.title ?? entryRecord.name,
+                                         secondLine: look != nil ? look?.subtitle : entryRecord.productionYear.map { "\($0)" },
+                                         image: look?.image ?? model.imageURL(for: entryRecord, portrait: true),
                                          progress: entryRecord.userData?.playedPercentage.map { $0 / 100 },
                                          mark: DisplayRules.tileMark(
                                          art: entryRecord.type,
@@ -286,6 +313,7 @@ struct TitleRail: View {
                         }
                         .buttonStyle(Theme.PressButton())
                         .tileMenu(entryRecord, model: model)
+                        .onAppear { more?(entryRecord.id) }
                     }
                 }
             }
@@ -309,14 +337,6 @@ struct DetailHero: View {
     let title: Item
     /// Where the page is: only needed to pull the image along.
     let state: HeaderState
-    /// The season currently open, for "Mark season as watched" in the More list.
-    ///
-    /// The call site used to pass a fixed `season: nil`, so macOS was the only
-    /// platform without that entry: iPhone (`Shared/SeriesView.swift`) and tvOS
-    /// (`tvOS/SeriesView.swift`) pass it through, and Linux has it too. The header does
-    /// not know the season itself; it lives one level down in `SeriesView`, so it comes
-    /// from there.
-    var season: Item? = nil
     /// What the download button does on a series page.
     ///
     /// On iPhone every movie and series page has a download button in the row below
@@ -345,17 +365,26 @@ struct DetailHero: View {
     /// already taut there.
     private var pull: CGFloat { min(max(0, -state.offset), 200) }
 
-    @State private var plan: PlaybackPlan?
-    @State private var playBarTitle: Item?
-    @State private var watchlist = false
-    @State private var watched = false
+    /// The title's own plan, if the core holds one (the download sheet reads its source and audio streams).
+    private var plan: PlaybackPlan? { film?.plan(app: model) }
     @State private var moreOpen = false
     @State private var loadPanelOpen = false
     @State private var message: String?
     @State private var overviewOpen = false
-    /// A series page leaves the description out, as in the design: its head ends at the buttons
-    /// and the tabs follow at once.
+    /// Film and series both show the description under the buttons (the series page had none).
     var showsOverview: Bool = true
+    /// The movie page's data owner (`DetailCore`): when set, label, chips, toggles, menu and what a press on
+    /// Play does come from the core.
+    var film: DetailCore? = nil
+    @State private var versionPick: VersionPick?
+    @State private var resolving = false
+    private var actions: ActionsPart? { film?.model.actions }
+    private var favoriteNow: Bool { actions?.favorite ?? seriesButton?.favorite ?? false }
+    private var watchedNow: Bool { actions?.watched ?? seriesButton?.watched ?? false }
+    /// The series page's data owner (`SeriesCore`): when set, label, chips, toggles, menu and what a press on
+    /// Play does come from the core's `SeriesVm`.
+    var seriesPage: SeriesCore? = nil
+    private var seriesButton: SeriesButtonPart? { seriesPage?.model.button }
     @Environment(PlayControls.self) private var controls
 
     // MARK: Downloads
@@ -421,42 +450,19 @@ struct DetailHero: View {
                     // height so it does not grow by a multiple of what is needed.
                     .scaleEffect(1 + pull / DetailPageMetric.heroImage, anchor: .bottom)
             }
-        // Also kept current: after the player closes, the same title comes back fresh.
-        .task(id: "\(title.id)|\(title.isWatched)|\(model.pagesRefresh)") {
-            watchlist = title.userData?.isFavorite ?? false
-            watched = title.isWatched
-            // Prefetched on tile hover: the evidence is available immediately.
-            if plan == nil, let already = PlanPreAdvice.plan(title.id, with: model) { plan = already }
-            if title.type == "Series" {
-                let state = await model.stateInSeries(title)
-                await InTravel.waitFor()
-                guard !Task.isCancelled else { return }
-                playBarTitle = state
+        .onChange(of: actions?.effectSeq) { _, _ in drain() }
+        .onChange(of: actions?.message) { _, new in if let new { notify(new) } }
+        .onChange(of: actions?.toggleError) { _, new in if let new { notify(new) } }
+        .onChange(of: seriesButton?.effectSeq) { _, _ in drainSeries() }
+        .onChange(of: seriesButton?.message) { _, new in if let new { notify(new) } }
+        .onChange(of: seriesButton?.toggleError) { _, new in if let new { notify(new) } }
+        .versionPick($versionPick) { choice, version in
+            if let seriesPage {
+                seriesPage.launch(seriesPage.episodeAction(choice.itemId, pick: version.id), since: choice.since,
+                                  controls: controls) { versionPick = $0 }
+                return
             }
-            // The playback plan belongs to the episode, not the series.
-            //
-            // This used `playBarTitle?.id ?? title.id` in its own `.task`, and
-            // `playBarTitle` was still `nil` at that point because the other `.task` sets
-            // it. The call went out with the series id. `AppModel.plan(for:)` documents this:
-            // for series and seasons the server names no MediaSource, so `nil` comes back,
-            // and since the `.task` had no key it never ran again. The Direct Play evidence
-            // therefore never showed on the series page.
-            //
-            // `PlaybackInfo` is a POST where the server touches the file, the most expensive
-            // call in the app, wasted here in the middle of the transition. iOS and tvOS both
-            // fetch it for the episode.
-            if let target = playBarTitle ?? (title.type == "Series" ? nil : title) {
-                let new = await model.plan(for: target.id)
-                PlanPreAdvice.remember(title.id, new)
-                await InTravel.waitFor()
-                guard !Task.isCancelled else { return }
-                plan = new
-            }
-        }
-        // The button follows the title, not the run of the task above: if the fresh page
-        // arrives after it, the state would otherwise not catch up.
-        .onChange(of: title.userData?.isFavorite) { _, new in
-            watchlist = new ?? false
+            launch(film?.pressPlay(pick: version.id), since: choice.since, picked: version.id)
         }
     }
 
@@ -486,7 +492,7 @@ struct DetailHero: View {
             buttonRail
                 .padding(.top, 20)
 
-            if let share = progressShare, let rest = (playBarTitle ?? title).remainingTimeText {
+            if let share = progressShare, let rest = actions?.play.remaining ?? seriesButton?.remaining {
                 VStack(alignment: .leading, spacing: 6) {
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.white.opacity(0.18))
@@ -509,17 +515,18 @@ struct DetailHero: View {
     /// How far into the film: the server's percentage, else computed from the resume point.
     /// Not for a series: the bar would describe the next episode, not the series.
     private var progressShare: Double? {
-        guard title.type != "Series", (playBarTitle ?? title).resumeFrom != nil else { return nil }
-        if let share = title.watchedShare { return share }
-        guard let total = title.runtimeSeconds, total > 0, let since = title.resumeFrom else { return nil }
-        return since / total
+        if let film { return film.model.actions.play.progress.flatMap { $0 > 0 ? Double($0) : nil } }
+        if let seriesButton { return seriesButton.progress.flatMap { $0 > 0 ? Double($0) : nil } }
+        return nil
     }
 
     /// The description at 620 wide, 14 quiet, two lines with an accent "Mehr" inline; one tap
     /// opens it in full. The cut is by characters because a button cannot sit inside running
     /// text, and a 620 pt line holds about 85 characters at this size.
     private var overview: some View {
-        let text = title.description ?? ""
+        // A series: the core's description of the series (not the episode the button plays).
+        let text = film?.model.hero.overview ?? seriesButton?.overview ?? title.description ?? ""
+        let directors = film?.model.hero.directors ?? title.direction
         let cut = 150
         let long = text.count > cut + 20
         return VStack(alignment: .leading, spacing: 8) {
@@ -544,10 +551,10 @@ struct DetailHero: View {
                 .onTapGesture { if long { withAnimation(Theme.leap) { overviewOpen.toggle() } } }
                 .accessibilityAddTraits(long ? .isButton : [])
             }
-            if !title.direction.isEmpty {
+            if !directors.isEmpty {
                 HStack(spacing: 8) {
                     Text("Regie").foregroundStyle(Theme.fontVeryQuiet)
-                    Text(verbatim: title.direction.joined(separator: ", ")).foregroundStyle(Theme.font)
+                    Text(verbatim: directors.joined(separator: ", ")).foregroundStyle(Theme.font)
                 }
                 .font(.app(size: 13))
                 .lineLimit(1)
@@ -558,12 +565,8 @@ struct DetailHero: View {
     /// Meta line: year, runtime, genres. A series has no runtime but a season count, so
     /// that takes the runtime's place (`secondaryLine` knows nothing of it).
     private var detailsRow: String {
-        guard title.type == "Series" else { return title.secondaryLine }
-        var parts: [String] = []
-        if let year = title.productionYear { parts.append(String(year)) }
-        if let count = title.childCount, count > 0 { parts.append(String(localized: "\(count) Staffeln")) }
-        if let genres = title.genres, !genres.isEmpty { parts.append(genres.prefix(2).joined(separator: ", ")) }
-        return parts.joined(separator: " · ")
+        if let seriesButton { return seriesButton.secondaryLine }
+        return film?.model.hero.secondaryLine ?? title.secondaryLine
     }
 
     /// Direct Play, rating, age: 26 high chips. **Fixed height even when empty**: the evidence
@@ -572,27 +575,26 @@ struct DetailHero: View {
         HStack(spacing: 8) {
             // The evidence is the one chip in accent: quiet surface, accent text. The warning
             // keeps its own color when the server transcodes.
-            if let plan {
-                if plan.isLossless {
+            if let proof = actions?.proof ?? seriesButton?.proof {
+                // The core's proof row: the Direct Play mark only once the plan is there (`visible`).
+                if proof.visible, proof.directPlay {
                     chip(symbol: "checkmark", text: String(localized: "Direct Play"),
                          color: Theme.accent, fill: Theme.accentQuiet)
                         .transition(.opacity)
-                } else {
-                    chip(symbol: "exclamationmark.triangle.fill", text: plan.method.rawValue,
+                } else if proof.visible, let hint = proof.hint {
+                    chip(symbol: "exclamationmark.triangle.fill", text: hint,
                          color: Theme.warning, fill: Theme.warning.opacity(0.15))
                         .transition(.opacity)
                 }
-            }
-            if let rating = title.communityRating {
-                chip(symbol: "star.fill",
-                     text: String(format: "%.1f", rating).replacingOccurrences(of: ".", with: ","),
-                     color: Theme.font, fill: Color.white.opacity(0.08))
-            }
-            if let age = title.ageRating {
-                chip(symbol: nil, text: ageText(age), color: Theme.font, fill: Color.white.opacity(0.08))
+                if let rating = proof.rating {
+                    chip(symbol: "star.fill", text: rating, color: Theme.font, fill: Color.white.opacity(0.08))
+                }
+                if let age = proof.ageRating {
+                    chip(symbol: nil, text: ageText(age), color: Theme.font, fill: Color.white.opacity(0.08))
+                }
             }
         }
-        .animation(.easeOut(duration: 0.2), value: plan != nil)
+        .animation(Theme.reveal, value: (actions?.proof ?? seriesButton?.proof)?.visible == true)
         .frame(height: 26, alignment: .leading)
     }
 
@@ -619,14 +621,9 @@ struct DetailHero: View {
     /// The label of the main button. A series continues with the episode the server names
     /// ("Weiter mit S1 · F3"); a title that was never started plays from the top.
     private var playLabel: String {
-        if title.type == "Series" {
-            if let episode = playBarTitle, let code = episode.episodeCode,
-               episode.resumeFrom != nil || (episode.parentIndexNumber ?? 1) > 1 || (episode.indexNumber ?? 1) > 1 {
-                return String(localized: "Weiter mit \(code)")
-            }
-            return String(localized: "Abspielen")
-        }
-        return (playBarTitle ?? title).resumeFrom != nil ? String(localized: "Fortsetzen") : String(localized: "Abspielen")
+        if let film { return film.model.actions.play.label }
+        if let seriesButton { return seriesButton.label }
+        return String(localized: "Abspielen")
     }
 
     /// Main button 280 x 56, then four icon buttons without a field. "Von vorn" and the
@@ -634,33 +631,36 @@ struct DetailHero: View {
     /// menu on the main button has them too.
     private var buttonRail: some View {
         HStack(spacing: 4) {
-            DetailPlayButton(label: playLabel) { start((playBarTitle ?? title).resumeFrom ?? 0) }
+            DetailPlayButton(label: playLabel) {
+                if let film { launch(film.pressPlay(), since: nil, picked: nil) }
+                else if let seriesPage {
+                    seriesPage.launch(seriesPage.model.playNext(), controls: controls) { versionPick = $0 }
+                }
+            }
                 // Right click: the title's tile menu, as on its tile.
-                .tileMenu(title, model: model, afterwards: { await refresh() })
+                .tileMenu(title, model: model)
             Color.clear.frame(width: 8, height: 1)
 
             if watchlistShown {
-                DetailIconButton(symbol: watchlist ? "bookmark.fill" : "bookmark",
-                                 title: "Merkliste", active: watchlist) {
-                    watchlist.toggle()
-                    Task {
-                        if let reason = await model.setWatchlist(title, an: watchlist) {
-                            watchlist.toggle()
-                            notify(reason)
-                        }
-                    }
+                DetailIconButton(symbol: favoriteNow ? "bookmark.fill" : "bookmark",
+                                 title: "Merkliste", active: favoriteNow) {
+                    if let film { film.model.setWatchlist(!favoriteNow); return }
+                    seriesPage?.model.setWatchlist(!favoriteNow)
                 }
             }
 
             // A series has no trailer field (its row is watchlist and watched); its trailer
             // stays in More.
             if title.type != "Series" {
-                DetailIconButton(symbol: "play.rectangle", title: "Trailer") { trailerStart() }
+                DetailIconButton(symbol: "play.rectangle", title: "Trailer") {
+                    film?.model.trailer()
+                }
             }
-            DetailIconButton(symbol: watched ? "checkmark.circle.fill" : "checkmark.circle",
-                             title: watched ? "Als ungesehen markieren" : "Als gesehen markieren",
-                             active: watched) {
-                watchState.perform()
+            DetailIconButton(symbol: watchedNow ? "checkmark.circle.fill" : "checkmark.circle",
+                             title: watchedNow ? "Als ungesehen markieren" : "Als gesehen markieren",
+                             active: watchedNow) {
+                if let film { film.model.setWatched(!watchedNow); return }
+                seriesPage?.model.setWatched(!watchedNow)
             }
 
             DetailIconButton(symbol: "ellipsis", title: "Mehr", active: moreOpen) {
@@ -711,86 +711,172 @@ struct DetailHero: View {
         .frame(height: DetailPageMetric.buttonHeight, alignment: .leading)
     }
 
-    /// Year, runtime and genre, from `Item.secondaryLine` in
-    /// `Sources/Shared/TitleDetails.swift`.
-    ///
-    /// The same computation used to be repeated here, character for character apart
-    /// from the `title.` prefix. It contains the `seconds > 0` check, which was once
-    /// missing on tvOS: series showed "0 Min." because the server returns 0 for them. A
-    /// second copy means it gets missed again next time.
-    /// **Play asks which version on press** when a title has several, as on iPhone; the
-    /// decision and the dialog live in ``PlayControls`` so every play button on the Mac
-    /// behaves the same. One version, or a copy on the device, starts at once.
-    private func start(_ since: Double) {
-        controls.launch(playBarTitle ?? title, since: since)
+    /// The More list: the core names the entries, the host runs what only it can.
+    private var moreActions: [TitleAction] {
+        if let film { return coreMenu(film) }
+        if let seriesPage { return seriesMenu(seriesPage) }
+        return []
     }
 
-    /// The same actions as on the other platforms, from `TitleActions`.
-    private var moreActions: [TitleAction] {
-        // Watched (and, for a movie, the trailer) sit in the button row now.
-        var list: [TitleAction] = title.type == "Series"
-            ? [.init(symbol: "film", text: "Trailer") { trailerStart() }]
-            : []
-        if title.type == "Series" {
-            list += TitleActions.forSeries(
-                title, state: playBarTitle, season: season, model: model,
-                episodeStart: { episode, since in controls.launch(episode, since: since) },
-                report: { notify($0) }, refresh: { await refresh() },
-                // Replaces "Nächste Folge abspielen" (play next episode), as on iPhone and iPad.
-                gemeinsam: SharedModel.shared.mayCreate
-                    ? { SharedModel.shared.createFor = $0 } : nil)
-        } else {
-            list += TitleActions.forMovie(
-                title, plan: plan, model: model,
-                start: { since in controls.launch(title, since: since) },
-                report: { notify($0) }, refresh: { await refresh() },
-                gemeinsam: SharedModel.shared.mayCreate
-                    ? { [title] in SharedModel.shared.createFor = title } : nil)
+    // MARK: The movie page on the core
+
+    /// The core names the entries, the host runs what only it can.
+    private func coreMenu(_ film: DetailCore) -> [TitleAction] {
+        film.model.moreMenu().map { entry in
+            let symbol: String =
+                switch entry.kind {
+                case .playOn: "tv"
+                case .playFromStart: "gobackward"
+                case .resetProgress: "arrow.counterclockwise.circle"
+                case .together: "person.2"
+                case .refreshMetadata: "arrow.clockwise"
+                case .download: loadCharacter
+                default: "ellipsis"
+                }
+            return TitleAction(symbol: symbol, wording: entry.text) {
+                switch entry.kind {
+                case .playFromStart: launch(film.model.playFromStart(), since: nil, picked: nil)
+                default: film.model.menu(entry.kind)
+                }
+            }
         }
-        // The download left the button row for this list. A series asks what to download first
-        // (season, episode); a movie opens its sheet under the More button.
-        if title.type == "Series", let loadSelection {
+    }
+
+    /// What the core tells the host to do (play, open a trailer, hand a title to another device ...).
+    /// The series page's menu: the core names the entries, the host runs what only it can; "Laden" opens the
+    /// episode selection.
+    private func seriesMenu(_ page: SeriesCore) -> [TitleAction] {
+        var list = page.model.moreMenu().map { entry in
+            let symbol: String =
+                switch entry.kind {
+                case .trailer: "film"
+                case .playOn: "tv"
+                case .playEpisodeFromStart: "gobackward"
+                case .together: "person.2"
+                case .nextEpisode: "forward.end.alt"
+                case .shuffle: "shuffle"
+                case .markSeasonWatched: "checkmark.circle"
+                case .refreshMetadata: "arrow.clockwise"
+                default: "ellipsis"
+                }
+            return TitleAction(symbol: symbol, wording: entry.text) { page.model.menu(entry.kind) }
+        }
+        if let loadSelection {
             list.append(.init(symbol: "arrow.down.circle", text: "Laden") { loadSelection() })
-        } else if title.type != "Series", model.downloadButtonShow {
-            list.append(.init(symbol: loadCharacter, text: "Laden") {
-                ringClick(loaded, model.downloads) { withAnimation(Theme.leap) { loadPanelOpen.toggle() } }
-            })
         }
-        list.insert(contentsOf: TitleActions.playOn(title.type == "Series" ? playBarTitle : title, model: model),
-                    at: 0)
         return list
     }
 
-    /// The shared watched toggle, so the row field and every menu do the same; see
-    /// `TitleAction.watchState`.
-    private var watchState: TitleAction {
-        .watchState(title, model: model, watched: $watched, report: { notify($0) })
-    }
-
-    private func trailerStart() {
-        Task {
-            // Same order as on every platform (``TrailerChoice``): files the server keeps,
-            // then the linked page in the browser. A file the server cannot describe is
-            // skipped for the next candidate.
-            let candidates = await model.trailerCandidates(for: title, canOpenWeb: true)
-            if candidates.isEmpty {
-                notify(String(localized: "Für diesen Titel liegt kein Trailer vor."))
-                return
+    private func drainSeries() {
+        guard let page = seriesPage else { return }
+        for effect in page.model.takeEffects() {
+            switch effect {
+            case .play(let action):
+                page.launch(action, controls: controls) { versionPick = $0 }
+            case .playTrailer(let id):
+                controls.launch(Item(id: id, name: title.name), since: 0)
+            case .openWeb(let address):
+                if let url = URL(string: address) { NSWorkspace.shared.open(url) }
+            case .menu(let kind):
+                let state = page.next ?? title
+                switch kind {
+                case .playOn(let id, _):
+                    guard let target = PlayOutputs.shared.targets.compactMap(PlayOutput.init(session:))
+                        .first(where: { $0.deviceID == id })
+                    else { continue }
+                    Task { await PlayOutputs.shared.play(state, to: target, model: model) }
+                case .together:
+                    SharedModel.shared.createFor = state
+                case .shuffle:
+                    Task {
+                        guard let first = await model.shuffleStart(title) else {
+                            notify(AppModel.episodeNotLoaded)
+                            return
+                        }
+                        controls.launch(first, since: 0)
+                    }
+                default:
+                    break
+                }
+            case .stateChanged:
+                SeriesCache.shared.forget(title.id)
+                model.noteWatchStateChanged()
+            case .watchlistChanged:
+                model.noteWatchlistChanged()
             }
-            await controls.launchTrailer(candidates) { NSWorkspace.shared.open($0) }
         }
     }
 
-    private func refresh() async {
-        if title.type == "Series" { playBarTitle = await model.stateInSeries(title) }
-        plan = await model.plan(for: playBarTitle?.id ?? title.id)
+    private func drain() {
+        guard let film else { return }
+        for effect in film.model.takeEffects() {
+            switch effect {
+            case .play(let action):
+                launch(action, since: nil, picked: nil)
+            case .playTrailer(let id):
+                controls.launch(Item(id: id, name: title.name), since: 0)
+            case .openWeb(let address):
+                if let url = URL(string: address) { NSWorkspace.shared.open(url) }
+            case .openDownload:
+                if model.downloadButtonShow {
+                    ringClick(loaded, model.downloads) { withAnimation(Theme.leap) { loadPanelOpen.toggle() } }
+                }
+            case .menu(let kind):
+                switch kind {
+                case .playOn(let id, _):
+                    guard let target = PlayOutputs.shared.targets.compactMap(PlayOutput.init(session:))
+                        .first(where: { $0.deviceID == id })
+                    else { continue }
+                    let item = title
+                    Task { await PlayOutputs.shared.play(item, to: target, model: model) }
+                case .together:
+                    SharedModel.shared.createFor = title
+                case .download:
+                    ringClick(loaded, model.downloads) { withAnimation(Theme.leap) { loadPanelOpen.toggle() } }
+                default:
+                    break
+                }
+            case .stateChanged:
+                SeriesCache.shared.forget(title.seriesId ?? title.id)
+                model.noteWatchStateChanged()
+            case .watchlistChanged:
+                model.noteWatchlistChanged()
+            }
+        }
+    }
+
+    /// What a press on Play (or a menu entry that plays) does, as the core decides it.
+    private func launch(_ action: PlayAction?, since: Double?, picked: String?) {
+        guard let film, let action else { return }
+        switch action {
+        case .wait:
+            return
+        case .choose(_, let at, let versions):
+            versionPick = VersionPick(
+                heading: film.model.actions.play.versionTitle, options: versions, since: since ?? at)
+        case .resolve(_, let at):
+            // The fresh title never came: fetch it once more and decide again; say so if that fails too.
+            guard !resolving else { return }
+            resolving = true
+            Task {
+                let again = await film.resolve(pick: picked)
+                resolving = false
+                if case .resolve = again {
+                    notify(String(localized: "Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal."))
+                } else {
+                    launch(again, since: since ?? at, picked: picked)
+                }
+            }
+        case .start(_, let at, let source):
+            controls.launch(film.item, since: since ?? at, sourceID: source)
+        }
     }
 
     private func notify(_ text: String) {
         message = text
         Task {
             try? await Task.sleep(for: .seconds(3))
-            withAnimation { message = nil }
+            withAnimation(Theme.leap) { message = nil }
         }
     }
 }

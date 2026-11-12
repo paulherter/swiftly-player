@@ -1,0 +1,4 @@
+# Built by `cargo run -p xtask -- apple`
+*.xcframework
+.build/
+.swiftpm/

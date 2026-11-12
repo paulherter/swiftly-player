@@ -1,0 +1,54 @@
+[package]
+name = "swiftly-vm"
+description = "View models of the Swiftly core: versioned parts, intents and change notification; first screen: HomeVm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swiftly-model = { path = "../swiftly-model" }
+swiftly-jellyfin = { path = "../swiftly-jellyfin", default-features = false }
+swiftly-library = { path = "../swiftly-library" }
+swiftly-cache = { path = "../swiftly-cache" }
+swiftly-net = { path = "../swiftly-net", default-features = false }
+swiftly-l10n = { path = "../swiftly-l10n" }
+swiftly-images = { path = "../swiftly-images" }
+swiftly-rules = { path = "../swiftly-rules" }
+swiftly-playback = { path = "../swiftly-playback" }
+swiftly-plex = { path = "../swiftly-plex", default-features = false }
+swiftly-settings = { path = "../swiftly-settings" }
+swiftly-accounts = { path = "../swiftly-accounts" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+swiftly-downloads = { path = "../swiftly-downloads" }
+swiftly-seerr = { path = "../swiftly-seerr" }
+swiftly-sync = { path = "../swiftly-sync" }
+futures-util = { version = "0.3", default-features = false, features = ["alloc", "std"] }
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[dev-dependencies]
+futures-executor = { version = "0.3", features = ["thread-pool"] }
+serde_json = "1"
+tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "time", "sync"] }
+
+# Engine comparison for the JSON decode (`cargo bench -p swiftly-vm --bench json_engines`); adopted
+# only if clearly faster with equal output.
+sonic-rs = "0.5"
+simd-json = "0.19"
+
+[[bench]]
+name = "core_speed"
+harness = false
+
+[[bench]]
+name = "json_engines"
+harness = false
+
+# Model checking of the lock-heavy internals: RUSTFLAGS="--cfg swiftly_loom" cargo test -p swiftly-vm --lib loom_
+[target.'cfg(swiftly_loom)'.dependencies]
+loom = { version = "0.7", features = ["futures"] }
+
+[lints]
+workspace = true

@@ -20,7 +20,7 @@ struct PlayerMetric {
     var fullScreen = false
     /// Top inset of the title block: below the traffic lights in a window, level with the icon
     /// row in full screen.
-    /// **The same place in a window and in full screen** (Paul 2026-11-05). macOS shows only
+    /// **The same place in a window and in full screen**. macOS shows only
     /// a snapshot during its full-screen animation, so anything that moves with the mode
     /// appears to jump when the animation ends. Nothing moves now: in full screen the
     /// traffic-light row simply stays free.
@@ -460,7 +460,7 @@ struct SettingLayer: View {
                 // nothing.
                 if let gemeinsam, let group = gemeinsam.group {
                     SelectionColumn(title: "Gemeinsam · \(group.name)") {
-                        ForEach(Array(group.participant.enumerated()), id: \.offset) { pair in
+                        ForEach(Array(gemeinsam.participants.enumerated()), id: \.offset) { pair in
                             ParticipantRow(name: pair.element)
                         }
                         Button(action: groupLeave) {

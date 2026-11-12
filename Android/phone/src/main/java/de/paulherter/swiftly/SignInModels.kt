@@ -147,7 +147,7 @@ class PlexSignInModel(private val app: SwiftlyApplication, private val scope: Co
     fun start(opened: (PlexStep.Waiting) -> Unit = {}) {
         step = PlexStep.Opening
         scope.launch {
-            val answer = ask { (if (tv) app.kern.plexStartTv() else app.kern.plexStart()).await() } ?: return@launch
+            val answer = ask { (if (tv) app.rk.plexStartTv() else app.rk.plexStart()).await() } ?: return@launch
             apply(answer)
             (step as? PlexStep.Waiting)?.let(opened)
         }
@@ -155,13 +155,13 @@ class PlexSignInModel(private val app: SwiftlyApplication, private val scope: Co
 
     fun loadServers() {
         step = PlexStep.LoadingServers
-        scope.launch { ask { app.kern.plexServers().await() }?.let { apply(it) } }
+        scope.launch { ask { app.rk.plexServers().await() }?.let { apply(it) } }
     }
 
     fun pickProfile(p: PlexProfile) {
         if (p.protected) { pinWrong = false; step = PlexStep.Pin(p); return }
         step = PlexStep.LoadingServers
-        scope.launch { ask { app.kern.plexPickProfile(p.id, "").await() }?.let { apply(it) } }
+        scope.launch { ask { app.rk.plexPickProfile(p.id, "").await() }?.let { apply(it) } }
     }
 
     fun submitPin(p: PlexProfile, pin: String) {
@@ -169,7 +169,7 @@ class PlexSignInModel(private val app: SwiftlyApplication, private val scope: Co
         pinChecking = true; pinWrong = false
         scope.launch {
             try {
-                val answer = ask { app.kern.plexPickProfile(p.id, pin).await() }
+                val answer = ask { app.rk.plexPickProfile(p.id, pin).await() }
                 if (answer != null && JSONObject(answer).getString("step") == "pinWrong") pinWrong = true
                 else if (answer != null) apply(answer)
             } finally { pinChecking = false }
@@ -182,7 +182,7 @@ class PlexSignInModel(private val app: SwiftlyApplication, private val scope: Co
         unreachable = unreachable - s.id
         scope.launch {
             try {
-                val answer = ask { app.kern.plexPickServer(s.id).await() } ?: return@launch
+                val answer = ask { app.rk.plexPickServer(s.id).await() } ?: return@launch
                 if (JSONObject(answer).getString("step") == "unreachable") unreachable = unreachable + s.id
                 else apply(answer)
             } finally { connecting = null }
@@ -190,7 +190,7 @@ class PlexSignInModel(private val app: SwiftlyApplication, private val scope: Co
     }
 
     fun otherAccount() {
-        app.kern.plexReset()
+        app.rk.plexReset()
         account = null; profileName = null; lastProfiles = null; unreachable = emptySet()
         step = PlexStep.Start
     }
@@ -203,7 +203,7 @@ class PlexSignInModel(private val app: SwiftlyApplication, private val scope: Co
             (s is PlexStep.Pin || s is PlexStep.Servers || s is PlexStep.LoadingServers)) {
             step = PlexStep.Profiles(profiles)
         } else {
-            app.kern.plexReset()
+            app.rk.plexReset()
             leave()
         }
     }
@@ -215,14 +215,14 @@ class PlexSignInModel(private val app: SwiftlyApplication, private val scope: Co
     suspend fun poll() {
         while (true) {
             withTimeoutOrNull(1000) { nudge.receive() }
-            val answer = ask { app.kern.plexPoll().await() } ?: return
+            val answer = ask { app.rk.plexPoll().await() } ?: return
             apply(answer)
             if (step !is PlexStep.Waiting) return
         }
     }
 
     /** What the flow holds in the core goes with the page, by whatever route. */
-    fun dispose() { app.kern.plexReset() }
+    fun dispose() { app.rk.plexReset() }
 }
 
 // MARK: Emby
@@ -267,7 +267,7 @@ class EmbySignInModel(private val app: SwiftlyApplication, private val scope: Co
         checking = true; problem = null
         verification = scope.launch {
             try {
-                val o = JSONObject(withContext(Dispatchers.IO) { app.kern.embyCheck(raw, headers.asJson()).await() })
+                val o = JSONObject(withContext(Dispatchers.IO) { app.rk.embyCheck(raw, headers.asJson()).await() })
                 when (o.getString("result")) {
                     "ok" -> {
                         // Store only now: an address where nothing answers leaves nothing behind.
@@ -297,8 +297,8 @@ class EmbySignInModel(private val app: SwiftlyApplication, private val scope: Co
         signingIn = true; signInError = null
         scope.launch {
             try {
-                val session = withContext(Dispatchers.IO) { app.kern.embySignIn(user, password).await() }
-                app.kern.onboardingCancel()
+                val session = withContext(Dispatchers.IO) { app.rk.embySignIn(user, password).await() }
+                app.rk.onboardingCancel()
                 app.sessionRecord(session)
                 finished()
             } catch (e: CancellationException) {
@@ -315,11 +315,11 @@ class EmbySignInModel(private val app: SwiftlyApplication, private val scope: Co
             server = null; signInError = null; password = ""
         } else {
             verification?.cancel()
-            app.kern.onboardingCancel()
+            app.rk.onboardingCancel()
             leave()
         }
     }
 
     /** The checked server waits in the core; it goes with the page, by whatever route. */
-    fun dispose() { app.kern.onboardingCancel() }
+    fun dispose() { app.rk.onboardingCancel() }
 }

@@ -2034,8 +2034,6 @@ final class App: @unchecked Sendable {
     /// the media key and the advance available; before, every episode counted as
     /// having a successor, including the finale.
     var prefetchedEpisode: Item?
-    /// Sections (by start second) already skipped on their own in this episode: once per section.
-    var autoSkipped: Set<Double> = []
     /// The running "Zufällig abspielen" order or playlist, if any; it applies as long as the playing
     /// title belongs to it.
     var shuffleRun: ShuffleRun?
@@ -5877,7 +5875,7 @@ final class App: @unchecked Sendable {
     /// | Nächste Folge | series poster | series | `episodeCode` |
     /// | Zuletzt hinzugefügt | poster | own name | `newArrivalsRow` |
     ///
-    /// For an episode the **series name** is on top, not the episode title. It was the other way round at first, which shows "Lilien in der Wüste" under a still where macOS shows "The Mentalist".
+    /// For an episode the **series name** is on top, not the episode title. It was the other way round at first, which shows "Lilien in der Wüste" under a still where macOS shows "The Lighthouse".
     private func tileBuild(_ item: Item, art: RailsKind) -> Widget! {
         let landscape = art == .continueWatching
         let width = landscape ? Theme.landscapeWidth : Theme.tileWidth

@@ -57,6 +57,8 @@ struct SearchView: View {
     private var last: [String] { SearchHistory.list(lastRaw) }
 
     /// The rules are in `SearchHistory`, the storage in `SearchHistoryStore` - the TV shows the same list.
+    // CORE-GAP: `SearchModel.recents` / `pick` / `clearRecents` export the same history (same
+    // `letzteSuchen.<account>` strings); the view still keeps its own copy for the TV, which shares it.
     private func historyLoad() {
         lastRaw = SearchHistoryStore.load(account: model.session?.accountKey)
     }
@@ -199,7 +201,7 @@ struct SearchView: View {
                         } else if disrupted, hit.isEmpty, seerrHit.isEmpty {
                             // The same text as in the library, including the server address - one cause,
                             // one diagnosis.
-                            EmptyState.serverDived(model, retry: { searching(term) })
+                            EmptyState.serverDived(model, trouble: model.rustScreens.searchTrouble, retry: { searching(term) })
                                 .padding(.top, 24)
                         } else if hit.isEmpty, seerrHit.isEmpty {
                             // **Both empty, not only the library.** This used `hit.isEmpty`, and that
@@ -554,7 +556,40 @@ struct SearchView: View {
         }
         hunts = true
         task = Task {
+            #if canImport(SwiftlyCore)
+            // The Rust core debounces and searches (`AppModel.coreServes`); the extra search keeps its
+            // own 0.3 s wait.
+            if model.coreServes {
+                async let foreignRust: [SeerrHit] = {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard !Task.isCancelled else { return [] }
+                    return await model.seerr.searching(clean)
+                }()
+                if let rustHits = await model.searchRust(clean) {
+                    guard !Task.isCancelled else { return }
+                    disrupted = false
+                    hit = ListRules.withoutDouble(rustHits)
+                    hunts = false
+                    let toIt = await foreignRust
+                    guard !Task.isCancelled else { return }
+                    withAnimation(Theme.reveal) {
+                        seerrHit = toIt.filter { !$0.state.alreadyPresent }
+                    }
+                    return
+                }
+                _ = await foreignRust
+                guard !Task.isCancelled else { return }
+                // The core is the only search of this session: its failure is the server out of reach.
+                disrupted = true
+                hunts = false
+                return
+            } else {
+                // CORE-GAP: the debounce and `model.search` below still serve tvOS/macOS.
+                try? await Task.sleep(for: .milliseconds(300))
+            }
+            #else
             try? await Task.sleep(for: .milliseconds(300))
+            #endif
             guard !Task.isCancelled else { return }
             // **Side by side, not one after the other.** The own server is the reason
             // anyone uses the app; it must not wait for an extra. So what it has is shown first.

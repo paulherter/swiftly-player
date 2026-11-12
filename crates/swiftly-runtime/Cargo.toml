@@ -1,0 +1,14 @@
+[package]
+name = "swiftly-runtime"
+description = "Single-threaded UI executor, worker pool, modal asks, channels and the UI root handle (std only)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[lints]
+workspace = true

@@ -1,5 +1,7 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.KernRules
+
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
@@ -56,7 +58,6 @@ import coil3.compose.AsyncImage
 import de.paulherter.swiftly.*
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -353,7 +354,7 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
         val key = de.paulherter.swiftly.startKey(e)
         try { runCatching {
             withContext(Dispatchers.IO) {
-                app.kern.home(e.newAccessDisconnected, e.startRails.toTypedArray(), e.startOut.toTypedArray(),
+                app.rk.home(e.newAccessDisconnected, e.startRails.toTypedArray(), e.startOut.toTypedArray(),
                                     app.store.rememberValue("bibliothek-movies").orEmpty(), app.store.rememberValue("bibliothek-tvshows").orEmpty(),
                                     e.startGenres.toTypedArray(), e.genreChips, e.startLibrariesJson()).await()
             }
@@ -387,7 +388,7 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            if (running == 0 && Kern.refreshDue(app.startLoaded)) load()
+            if (running == 0 && KernRules.refreshDue(app.startLoaded)) load()
         }
     }
 

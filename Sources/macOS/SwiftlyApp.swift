@@ -24,6 +24,10 @@ struct SwiftlyApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var delegateObj
 
     init() {
+        // The first line of the file log (container `Documents/swiftly.log`): which build wrote it.
+        let info = Bundle.main.infoDictionary
+        AppLog.writeOut("[App] macOS \(info?["CFBundleShortVersionString"] as? String ?? "?") "
+            + "(\(info?["CFBundleVersion"] as? String ?? "?")) gestartet · Log \(AppLog.path.path)")
         #if DEBUG
         // A look at the app's own work, see `WindowOffPull`. Development builds only, and
         // only a tick that watches one file.

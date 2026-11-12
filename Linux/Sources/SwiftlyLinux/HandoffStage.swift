@@ -450,7 +450,7 @@ extension App {
         return true
     }
 
-    /// "The Mentalist" and "Staffel 6 · Folge 7" (Apple `HandoffStyle.rows`).
+    /// "The Lighthouse" and "Staffel 6 · Folge 7" (Apple `HandoffStyle.rows`).
     private func handoffRowsSet(_ run: HandoffRun, _ title: Item) {
         var top = title.name
         var under: String?

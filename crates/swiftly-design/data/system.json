@@ -1,0 +1,918 @@
+{
+  "name": "Swiftly 1.1 design system",
+  "version": "1.1",
+  "checked": "2026-11-02, App-Design branch design-kit, iOS = Sources/Shared at 8bd1d4e7, macOS = Sources/macOS at fbe571f2 (identical to 8bd1d4e7 for macOS and Shared); tvOS = Sources/tvOS at 5d43f5ed (approved by Paul)",
+  "rule": "Code is the truth. Shared value = one entry in `all`. A platform value differs only for input, distance or window size (tvOS: remote, about 3 m) and names why. Paths are relative to Sources/.",
+  "font": {
+    "family": "Inter Variable",
+    "fallback": "system",
+    "source": "Shared/AppFont.swift:11, :28",
+    "icons": "Phosphor bold (iOS), SF Symbols names on macOS where Phosphor has no match; tvOS same Phosphor/SF rule"
+  },
+  "primitive": {
+    "gray.950": "#101010",
+    "gray.900": "#1E1E1E",
+    "gray.850": "#262626",
+    "gray.800": "#303030",
+    "gray.750": "#3A3A3A",
+    "gray.400": "#989898",
+    "gray.200": "#CCCCCC",
+    "white": "#FFFFFF",
+    "black": "#000000",
+    "teal.500": "#50D5DA",
+    "teal.300": "#7AE6EA",
+    "teal.900": "#113435",
+    "teal.990": "#061212",
+    "orange.500": "#E8833A",
+    "red.400": "#EF6567"
+  },
+  "color": {
+    "ground": {
+      "code": "Theme.reason",
+      "all": "gray.950",
+      "source": "Shared/Colors.swift:40",
+      "job": "page background"
+    },
+    "groupsArea": {
+      "code": "Theme.groupsArea",
+      "all": "gray.900",
+      "source": "Shared/Colors.swift:68",
+      "job": "settings groups, cards on ground"
+    },
+    "area": {
+      "code": "Theme.area",
+      "all": "gray.850",
+      "source": "Shared/Colors.swift:58",
+      "job": "controls, fields, chips, sidebar (Mac)"
+    },
+    "raised": {
+      "code": "Theme.raised",
+      "all": "gray.800",
+      "source": "Shared/Colors.swift:95",
+      "job": "active chip, hover on area, hint strip"
+    },
+    "pressed": {
+      "code": "Theme.pressedArea",
+      "all": "gray.750",
+      "source": "Shared/Colors.swift:176",
+      "job": "pressed area (touch)"
+    },
+    "selected": {
+      "code": "Theme.selected",
+      "all": "white 8%",
+      "source": "Shared/Colors.swift:162"
+    },
+    "translucent": {
+      "code": "Theme.surfaceTranslucent",
+      "all": "white 8%",
+      "source": "Shared/Colors.swift:267",
+      "job": "buttons on images"
+    },
+    "hover": {
+      "code": "Theme.hoverArea",
+      "macos": "white 6%",
+      "source": "macOS/Style.swift:92",
+      "why": "pointer only; also the keyboard focus surface"
+    },
+    "font": {
+      "code": "Theme.font",
+      "all": "white",
+      "source": "Shared/Colors.swift:112",
+      "job": "primary text, icons"
+    },
+    "fontQuiet": {
+      "code": "Theme.fontQuiet",
+      "all": "gray.200",
+      "source": "Shared/Colors.swift:113",
+      "job": "secondary text"
+    },
+    "fontVeryQuiet": {
+      "code": "Theme.fontVeryQuiet",
+      "all": "gray.400",
+      "source": "Shared/Colors.swift:138",
+      "job": "third line, placeholders, shortcuts"
+    },
+    "line": {
+      "code": "Theme.line",
+      "all": "white 7%",
+      "source": "Shared/Colors.swift:154",
+      "job": "separators, hairlines"
+    },
+    "margin": {
+      "code": "Theme.margin",
+      "all": "white 12%",
+      "source": "Shared/Colors.swift:155",
+      "job": "1 pt edge of panels and menus, toggle off"
+    },
+    "accent": {
+      "code": "Theme.accent",
+      "all": "teal.500",
+      "source": "Shared/Colors.swift:187",
+      "job": "chosen, progress, links. Comes from the active Look; teal is the original."
+    },
+    "accentLight": {
+      "code": "Theme.accentLight",
+      "all": "teal.300",
+      "source": "Shared/Colors.swift:195"
+    },
+    "accentQuiet": {
+      "code": "Theme.accentQuiet",
+      "all": "teal.900",
+      "source": "Shared/Colors.swift:199",
+      "job": "Direct Play chip fill"
+    },
+    "onAccent": {
+      "code": "Theme.onAccent",
+      "all": "teal.990",
+      "source": "Shared/Colors.swift:202"
+    },
+    "warning": {
+      "code": "Theme.warning",
+      "all": "orange.500",
+      "source": "Shared/Colors.swift:220"
+    },
+    "error": {
+      "code": "Theme.error",
+      "all": "red.400",
+      "source": "Shared/Colors.swift:228"
+    },
+    "primaryHover": {
+      "code": "Theme.primaryButtonHovers",
+      "macos": "white 88%",
+      "source": "macOS/Style.swift:272",
+      "why": "pointer only"
+    },
+    "focusArea": {
+      "code": "Theme.focusArea",
+      "tvos": "white 12%",
+      "source": "tvOS/Style.swift:434",
+      "why": "remote: focus on rows and chips, read from 3 m"
+    },
+    "focusFill": {
+      "code": "TVButtonStyle",
+      "tvos": "white, text ground",
+      "source": "tvOS/TVComponents.swift:61",
+      "why": "remote: one clear focused thing (buttons, tabs, keys, player icons)"
+    },
+    "selectedSection": {
+      "tvos": "accent 15%, focused 26%",
+      "source": "tvOS/TVSpec.swift:146-147",
+      "why": "settings section list"
+    }
+  },
+  "type": {
+    "titleLarge": {
+      "ios": {
+        "size": 34,
+        "weight": 700,
+        "tracking": -0.7,
+        "source": "Shared/Style.swift:440, :490"
+      },
+      "macos": {
+        "size": 30,
+        "weight": 700,
+        "tracking": -0.5,
+        "source": "macOS/Style.swift:277, :317",
+        "why": "window, read at desk distance"
+      },
+      "tvos": {
+        "size": 56,
+        "weight": 700,
+        "tracking": -1.176,
+        "source": "tvOS/Style.swift:490, :507",
+        "why": "3 m: about 2x iPhone"
+      }
+    },
+    "subpage": {
+      "ios": {
+        "size": 28,
+        "weight": 700,
+        "tracking": -0.4,
+        "source": "Shared/Style.swift:447"
+      },
+      "macos": {
+        "size": 28,
+        "weight": 700,
+        "tracking": -0.6,
+        "source": "macOS/Style.swift:284"
+      },
+      "tvos": {
+        "size": 44,
+        "weight": 600,
+        "tracking": -0.616,
+        "source": "tvOS/Style.swift:491, :509",
+        "why": "3 m: about 2x iPhone"
+      }
+    },
+    "detailTitle": {
+      "macos": {
+        "size": 44,
+        "weight": 800,
+        "tracking": -1.2,
+        "source": "macOS/DetailView.swift:446",
+        "why": "wide hero; iOS uses a logo or titleLarge"
+      }
+    },
+    "section": {
+      "ios": {
+        "size": 22,
+        "weight": 700,
+        "tracking": -0.308,
+        "source": "Shared/Style.swift:448; macOS/Style.swift:287"
+      },
+      "macos": {
+        "size": 22,
+        "weight": 700,
+        "tracking": -0.484,
+        "source": "Shared/Style.swift:448; macOS/Style.swift:287"
+      },
+      "job": "rail titles on Start, group titles",
+      "tvos": {
+        "size": 44,
+        "weight": 700,
+        "tracking": -0.528,
+        "source": "tvOS/Style.swift:495, :519",
+        "why": "3 m: about 2x iPhone"
+      }
+    },
+    "rail": {
+      "ios": {
+        "size": 20,
+        "weight": 600,
+        "tracking": -0.24,
+        "source": "Shared/Style.swift:442; macOS/Style.swift:285"
+      },
+      "macos": {
+        "size": 20,
+        "weight": 600,
+        "tracking": -0.24,
+        "source": "Shared/Style.swift:442; macOS/Style.swift:285"
+      },
+      "job": "empty state title, profile",
+      "tvos": {
+        "size": 44,
+        "weight": 700,
+        "tracking": -0.528,
+        "source": "tvOS/Style.swift:494, :518",
+        "why": "3 m: about 2x iPhone"
+      }
+    },
+    "category": {
+      "ios": {
+        "size": 17,
+        "weight": 600,
+        "tracking": -0.136,
+        "source": "Shared/Style.swift:449; macOS/Style.swift:289"
+      },
+      "macos": {
+        "size": 17,
+        "weight": 600,
+        "tracking": -0.136,
+        "source": "Shared/Style.swift:449; macOS/Style.swift:289"
+      },
+      "job": "sheet title, bar title iOS, primary button",
+      "tvos": {
+        "size": 34,
+        "weight": 600,
+        "tracking": -0.272,
+        "source": "tvOS/Style.swift:496, :511",
+        "why": "3 m: about 2x iPhone"
+      }
+    },
+    "listTitle": {
+      "ios": {
+        "size": 15,
+        "weight": 600,
+        "source": "Shared/Style.swift:450; macOS/Style.swift:292"
+      },
+      "macos": {
+        "size": 15,
+        "weight": 600,
+        "source": "Shared/Style.swift:450; macOS/Style.swift:292"
+      },
+      "tvos": {
+        "size": 30,
+        "weight": 600,
+        "source": "tvOS/Style.swift:30",
+        "why": "3 m: about 2x iPhone"
+      }
+    },
+    "body": {
+      "ios": {
+        "size": 15,
+        "weight": 400,
+        "source": "macOS/Style.swift:293"
+      },
+      "macos": {
+        "size": 15,
+        "weight": 400,
+        "source": "macOS/Style.swift:293"
+      },
+      "tvos": {
+        "size": 30,
+        "weight": 400,
+        "source": "tvOS/Style.swift:498",
+        "why": "3 m: about 2x iPhone"
+      }
+    },
+    "barTitle": {
+      "macos": {
+        "size": 14,
+        "weight": 600,
+        "source": "macOS/MacComponents.swift:1576",
+        "why": "toolbar title after scroll"
+      }
+    },
+    "tileCaption": {
+      "macos": {
+        "size": 14,
+        "weight": 600,
+        "source": "macOS/Style.swift:299",
+        "why": "bigger tile on Mac"
+      }
+    },
+    "tile": {
+      "ios": {
+        "size": 13,
+        "weight": 500,
+        "source": "macOS/Style.swift:295"
+      },
+      "macos": {
+        "size": 13,
+        "weight": 500,
+        "source": "macOS/Style.swift:295"
+      },
+      "tvos": {
+        "size": 26,
+        "weight": 500,
+        "source": "tvOS/Style.swift:499",
+        "why": "3 m: about 2x iPhone"
+      }
+    },
+    "small": {
+      "ios": {
+        "size": 12,
+        "weight": 400,
+        "source": "macOS/Style.swift:301"
+      },
+      "macos": {
+        "size": 12,
+        "weight": 400,
+        "source": "macOS/Style.swift:301"
+      },
+      "tvos": {
+        "size": 24,
+        "weight": 400,
+        "source": "tvOS/Style.swift:501",
+        "why": "3 m: about 2x iPhone"
+      }
+    },
+    "group": {
+      "ios": {
+        "size": 11,
+        "weight": 600,
+        "tracking": 1.54,
+        "case": "upper",
+        "source": "macOS/Style.swift:306"
+      },
+      "macos": {
+        "size": 11,
+        "weight": 600,
+        "tracking": 1.54,
+        "case": "upper",
+        "source": "macOS/Style.swift:306"
+      },
+      "tvos": {
+        "size": 22,
+        "weight": 600,
+        "tracking": 3.08,
+        "case": "upper",
+        "source": "tvOS/Style.swift:502, :513",
+        "why": "3 m: about 2x iPhone"
+      }
+    },
+    "badge": {
+      "ios": {
+        "size": 10,
+        "weight": 600,
+        "tracking": 1.0,
+        "source": "macOS/Style.swift:304"
+      },
+      "macos": {
+        "size": 10,
+        "weight": 600,
+        "tracking": 1.0,
+        "source": "macOS/Style.swift:304"
+      },
+      "tvos": {
+        "size": 20,
+        "weight": 600,
+        "tracking": 2.0,
+        "source": "tvOS/Style.swift:503, :515",
+        "why": "3 m: about 2x iPhone"
+      }
+    },
+    "tileFocused": {
+      "tvos": {
+        "size": 26,
+        "weight": 600,
+        "source": "tvOS/Style.swift:500",
+        "why": "focused tile caption turns semibold and white"
+      }
+    },
+    "button": {
+      "tvos": {
+        "size": 30,
+        "weight": 600,
+        "source": "tvOS/Style.swift:497",
+        "why": "remote buttons"
+      }
+    },
+    "playerTitle": {
+      "tvos": {
+        "size": 56,
+        "weight": 700,
+        "tracking": -1.2,
+        "source": "tvOS/PlayerLayers.swift:12, :24",
+        "why": "3 m"
+      }
+    }
+  },
+  "space": {
+    "page": {
+      "ios": 18,
+      "macos": 36,
+      "code": "edgeSpacing",
+      "source": "Shared/Style.swift; macOS/Style.swift:212; tvOS/TVSpec.swift:6",
+      "why": "wider window; TV safe area",
+      "tvos": 80
+    },
+    "contentTop": {
+      "macos": 58,
+      "code": "contentTop",
+      "source": "macOS/Style.swift:174; tvOS/Style.swift:233",
+      "why": "Mac under the 52 toolbar; TV under the 68 top bar at 60",
+      "tvos": 196
+    },
+    "headerTop": {
+      "ios": 28,
+      "code": "headerTop",
+      "source": "Shared/Style.swift; tvOS/TVSpec.swift:7",
+      "tvos": 60
+    },
+    "tileGap": {
+      "ios": 12,
+      "macos": 16,
+      "code": "tileSpacing",
+      "source": "macOS/Style.swift:222; tvOS/Style.swift:164",
+      "why": "bigger tiles; TV room for focus scale",
+      "tvos": 40
+    },
+    "railGap": {
+      "code": "railsSpacing",
+      "source": "macOS/Style.swift:223; tvOS/Style.swift:341",
+      "ios": 40,
+      "macos": 40,
+      "tvos": 72,
+      "why": "TV: 3 m"
+    },
+    "valueGap": {
+      "all": 44,
+      "code": "valueRailsDistance",
+      "source": "macOS/Style.swift:229"
+    },
+    "sheet": {
+      "all": 24,
+      "code": "sheetInset",
+      "source": "macOS/Style.swift:210"
+    },
+    "gridRow": {
+      "ios": 32,
+      "macos": 24,
+      "source": "Shared/Style.swift; macOS/LibraryView.swift:378; tvOS/Style.swift:374",
+      "tvos": 58
+    },
+    "groupTop": {
+      "ios": 48,
+      "macos": 18,
+      "source": "Shared/Style.swift; macOS/ProfileView.swift; tvOS/TVSpec.swift:19",
+      "tvos": 36
+    },
+    "cardGap": {
+      "ios": 32,
+      "macos": 14,
+      "source": "Shared/Style.swift; macOS/ProfileView.swift"
+    },
+    "separatorCard": {
+      "ios": 34,
+      "macos": 52,
+      "source": "macOS/Style.swift:218"
+    },
+    "settingsColumns": {
+      "tvos": 72,
+      "source": "tvOS/TVSpec.swift:21",
+      "why": "two-pane settings"
+    },
+    "titleGap": {
+      "tvos": 28,
+      "source": "tvOS/Style.swift:345"
+    },
+    "topBar": {
+      "tvos": 68,
+      "code": "topBar",
+      "source": "tvOS/TVSpec.swift:8",
+      "why": "tabs at the top instead of sidebar or tab bar"
+    }
+  },
+  "radius": {
+    "small": {
+      "ios": 8,
+      "macos": 8,
+      "tvos": 14,
+      "code": "cornerSmall"
+    },
+    "control": {
+      "ios": 10,
+      "macos": 10,
+      "tvos": 16,
+      "code": "corner",
+      "job": "buttons",
+      "why": "TV: everything ~1.6x larger"
+    },
+    "tile": {
+      "ios": 10,
+      "macos": 10,
+      "tvos": 18,
+      "code": "cornerTile"
+    },
+    "field": {
+      "ios": 10,
+      "macos": 12,
+      "code": "cornerField",
+      "why": "pointer field, matches menus"
+    },
+    "panel": {
+      "macos": 12,
+      "job": "menus, popups, episode row, setting row"
+    },
+    "card": {
+      "ios": 16,
+      "macos": 14,
+      "code": "cornerCard",
+      "tvos": 16
+    },
+    "area": {
+      "ios": 16,
+      "macos": 16,
+      "tvos": 24,
+      "code": "cornerArea",
+      "job": "groups",
+      "why": "TV: everything ~1.6x larger"
+    },
+    "sheet": {
+      "all": 28,
+      "code": "cornerSheet"
+    },
+    "pill": {
+      "all": 999
+    },
+    "source": "Shared/Style.swift:195-225; macOS/Style.swift:197-208; tvOS/TVSpec.swift:10-14"
+  },
+  "size": {
+    "poster": {
+      "ios": [
+        116,
+        174
+      ],
+      "macos": [
+        150,
+        225
+      ],
+      "source": "macOS/Style.swift:232; tvOS/Style.swift:151-152",
+      "tvos": [
+        208,
+        312
+      ]
+    },
+    "landscape": {
+      "source": "macOS/Style.swift:236; tvOS/Style.swift:156, :159",
+      "ios": [
+        280,
+        158
+      ],
+      "macos": [
+        280,
+        158
+      ],
+      "tvos": [
+        448,
+        252
+      ]
+    },
+    "hero": {
+      "ios": 350,
+      "macos": 454,
+      "source": "Shared/Style.swift:239; macOS/DetailView.swift:892; tvOS/Style.swift:176",
+      "note": "Mac home hero constant is 350 too (macOS/Style.swift:247); the detail backdrop is 454",
+      "tvos": 510
+    },
+    "control": {
+      "ios": 56,
+      "macos": 40,
+      "code": "controlHeight / buttonField",
+      "why": "finger vs pointer; TV chips 56",
+      "tvos": 56
+    },
+    "primary": {
+      "ios": 56,
+      "macos": 48,
+      "source": "macOS/Style.swift:261; tvOS/Style.swift:384",
+      "tvos": 76
+    },
+    "row": {
+      "ios": 60,
+      "macos": 52,
+      "note": "Mac row 52, 60 with subtitle; sidebar row 32",
+      "source": "macOS/SettingRows.swift:89-142; tvOS/TVSpec.swift:9",
+      "tvos": 84
+    },
+    "rowIcon": {
+      "all": 20,
+      "column": 26
+    },
+    "toggle": {
+      "ios": [
+        46,
+        28,
+        22
+      ],
+      "macos": [
+        38,
+        22,
+        16
+      ],
+      "note": "width, height, knob",
+      "tvos": [
+        84,
+        50,
+        40
+      ]
+    },
+    "progress": {
+      "dragging": 6,
+      "ios": 4,
+      "macos": 4,
+      "tvos": 8
+    },
+    "sidebar": {
+      "macos": 220
+    },
+    "toolbar": {
+      "macos": 52
+    },
+    "window": {
+      "macos": [
+        900,
+        560
+      ],
+      "design": [
+        1280,
+        800
+      ]
+    },
+    "phone": {
+      "ios": [
+        402,
+        874
+      ]
+    },
+    "readWidth": {
+      "all": 700
+    },
+    "formWidth": {
+      "all": 420
+    },
+    "searchField": {
+      "ios": "full width x 56",
+      "macos": [
+        520,
+        40
+      ]
+    },
+    "chip": {
+      "ios": 30,
+      "macos": 30,
+      "tvos": 56,
+      "source": "tvOS/Style.swift:386"
+    },
+    "iconButton": {
+      "macos": [
+        48,
+        56
+      ],
+      "player": 44,
+      "tvos": [
+        60,
+        60
+      ],
+      "tvosPlayer": 88
+    },
+    "navArrow": {
+      "macos": [
+        30,
+        28
+      ],
+      "pair": 62
+    },
+    "tab": {
+      "tvos": 68,
+      "source": "tvOS/Style.swift:381"
+    },
+    "searchKey": {
+      "tvos": 64,
+      "columns": 5,
+      "gap": 8,
+      "source": "tvOS/TVSpec.swift:129-136"
+    },
+    "alphabetRail": {
+      "tvos": {
+        "width": 56,
+        "row": 43,
+        "focusCircle": 40
+      },
+      "source": "tvOS/TVAlphabetRail.swift:28-79"
+    },
+    "episodeCard": {
+      "all": 600,
+      "ratio": "16:9",
+      "radius": 24,
+      "source": "JellyfinKit EpisodesCard.swift:93"
+    },
+    "screen": {
+      "tvos": [
+        1920,
+        1080
+      ]
+    },
+    "grid": {
+      "tvos": "7 columns poster, 5 in search",
+      "source": "tvOS/Style.swift:359; tvOS/SearchView.swift:302"
+    }
+  },
+  "shadow": {
+    "rule": "Light and clean. Tiles, cards, groups, sidebar and panels have no shadow: a 1 pt `margin` edge separates them. Shadows only lift a floating thing above a picture or above the page. Apple TV: almost no shadow (Paul, rounds 2-3): one `lift` only while focused; tabs have none.",
+    "tooltip": {
+      "color": "black 50%",
+      "blur": 9,
+      "y": 6,
+      "source": "macOS/PlayerLayers.swift:86"
+    },
+    "small": {
+      "color": "black 25%",
+      "blur": 6,
+      "y": 4,
+      "source": "Shared/SupportProfileParts.swift:116"
+    },
+    "card": {
+      "color": "black 60% x rest",
+      "blur": "17 x rest",
+      "y": "14 x rest",
+      "source": "Shared/EpisodeCardParts.swift:41",
+      "note": "episode card over the player, scales with how far it rests; on tvOS this is still heavier than lift (see inventory/tvos-1.1.md E)"
+    },
+    "sheet": {
+      "color": "black 50%",
+      "blur": 20,
+      "y": 18,
+      "source": "Shared/SupportGrowSheet.swift:572"
+    },
+    "gift": {
+      "color": "ground 50%",
+      "blur": 28,
+      "y": 12,
+      "source": "Shared/LookGiftSheet.swift:381"
+    },
+    "lift": {
+      "tvos": {
+        "color": "black 12%",
+        "blur": 6,
+        "y": 2,
+        "when": "focused only"
+      },
+      "source": "tvOS/TVComponents.swift:133",
+      "note": "used by buttons, tiles, chips, keys, setting rows, player icons"
+    }
+  },
+  "motion": {
+    "rule": "Press answers on touch down. Very frequent actions do not animate. Exits faster than entries. Reduce Motion turns movement into a 0.14 linear fade. Apple TV: focus moves are frequent, so focus is a short easeOut; the A-Z rail appears without animation.",
+    "press": {
+      "all": "none on press, easeOut 0.12 on release",
+      "code": "pressCurve",
+      "source": "Shared/Style.swift:85; macOS/Style.swift:103; tvOS/Style.swift:39-41",
+      "tvos": "none on press, linear 0.12 on release"
+    },
+    "hover": {
+      "macos": "easeOut 0.12",
+      "code": "timeFloat",
+      "source": "macOS/Style.swift:333"
+    },
+    "toggle": {
+      "all": "easeOut 0.10",
+      "source": "macOS/Style.swift:108",
+      "tvos": "0.15"
+    },
+    "leap": {
+      "all": "snappy 0.22",
+      "source": "macOS/Style.swift:113"
+    },
+    "select": {
+      "all": "smooth 0.25",
+      "source": "Shared/Motion.swift:33"
+    },
+    "change": {
+      "all": "smooth 0.28",
+      "source": "Shared/Motion.swift:28"
+    },
+    "sheet": {
+      "all": "spring response 0.35 damping 0.86",
+      "source": "Shared/Motion.swift:22"
+    },
+    "land": {
+      "all": "spring response 0.45 damping 0.86",
+      "source": "Shared/Motion.swift:39"
+    },
+    "section": {
+      "ios": "snappy 0.20, scale 0.995",
+      "macos": "easeIn out / easeOut in, scale 0.996",
+      "source": "Shared/Style.swift:32; macOS/Style.swift:373"
+    },
+    "page": {
+      "macos": "easeOut 0.18",
+      "source": "macOS/Style.swift:385"
+    },
+    "push": {
+      "macos": "easeInOut 0.45, page below moves -30% and dims ground 28%",
+      "source": "macOS/Style.swift:400, :409"
+    },
+    "expand": {
+      "macos": "scale 0.94 + opacity from the anchor corner; reduced: opacity",
+      "source": "macOS/MacComponents.swift:1680"
+    },
+    "reduced": {
+      "all": "linear 0.14",
+      "source": "Shared/Style.swift:21; macOS/Style.swift:26",
+      "tvos": "linear 0.14"
+    },
+    "focus": {
+      "tvos": "easeOut 0.14 (reduced linear 0.10)",
+      "source": "tvOS/Style.swift:441-443",
+      "why": "remote: focus moves often"
+    },
+    "controlsFade": {
+      "tvos": "easeInOut 0.2; player controls hide after 8 s while playing",
+      "source": "tvOS/Style.swift:470; tvOS/PlayerScreen.swift:606"
+    },
+    "tabs": {
+      "tvos": "easeInOut 0.25",
+      "source": "tvOS/Style.swift:478-480"
+    },
+    "backdrop": {
+      "tvos": "easeInOut 0.4 fade in, ambient colour never before the picture",
+      "source": "tvOS/TVComponents.swift:1439-1481"
+    },
+    "alphabetRail": {
+      "tvos": "appears with no animation (.transition(.identity)); letter change smooth 0.25",
+      "source": "tvOS/LibraryView.swift:197-203; tvOS/TVAlphabetRail.swift:83"
+    }
+  },
+  "state": {
+    "rule": "Every interactive part has: normal, hover (Mac), pressed, focus, selected, disabled, loading where it applies. A state changes surface, scale or opacity, never the layout or the font weight. Apple TV has no hover; focus is the main state.",
+    "pressed": {
+      "all": "scale 0.97 + opacity 0.85 (PressButton); rows: fill white 6%, no scale",
+      "source": "Shared/Style.swift:94-125; macOS/Style.swift:38-86",
+      "tvos": "scale 0.97 (A-Z letter 0.7)"
+    },
+    "hover": {
+      "macos": "tiles: picture scale 1.04, no ring, text stays; rows and buttons: hover surface white 6%",
+      "source": "macOS/MacComponents.swift:314, :383, :428"
+    },
+    "focus": {
+      "ios": "Nicht geprüft (iPad keyboard focus not read)",
+      "macos": "hover surface white 6%, no ring. Rings only on the search field (accent 1 + halo 6 at 35%), the active account card (accent 55% 1.5) and the app icon pick (accent 2)",
+      "source": "macOS/Style.swift:48, :73, :79; tvOS/TVSpec.swift:138-141; tvOS/Style.swift:418-434",
+      "tvos": "the main state. Scale 1.10 small (icons, keys) / 1.06 base (tiles, buttons, tabs, chips) / 1.03 wide (rows); fill white with ground text (buttons, tabs, keys, player icons) or focusArea white 12% (rows, chips); lift shadow; no ring, no parallax, no flash. Profile button only: accent ring 4"
+    },
+    "selected": {
+      "all": "accent text; Mac sidebar adds accent 12% fill; tabs: 2 pt white underline",
+      "tvos": "tab: accent underline 4, hidden while that tab has focus; chip accent; section accent 15%"
+    },
+    "disabled": {
+      "all": "opacity 0.35 (nav arrows) / 0.4 (form buttons); text fontVeryQuiet",
+      "source": "macOS/MacComponents.swift:920-941"
+    },
+    "loading": {
+      "all": "LoadField: area pulsing opacity 0.5 to 1, easeInOut 0.9 repeat; placeholders keep the final size",
+      "source": "macOS/MacComponents.swift:494"
+    }
+  }
+}

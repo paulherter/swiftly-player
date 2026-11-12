@@ -1,0 +1,1935 @@
+{
+ "Items": [
+  {
+   "Id": "e01_1_3",
+   "IndexNumber": 3,
+   "Name": "Folge 3",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900103"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s01",
+   "SeriesName": "Serie 01",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-02T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 7200000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e01_1_4",
+   "IndexNumber": 4,
+   "Name": "Folge 4",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900104"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s01",
+   "SeriesName": "Serie 01",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-02T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 1800000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e01_1_5",
+   "IndexNumber": 5,
+   "Name": "Folge 5",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900105"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s01",
+   "SeriesName": "Serie 01",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e01_2_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "900101"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s01",
+   "SeriesName": "Serie 01",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-02T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 3000000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e01_3_45",
+   "IndexNumber": 45,
+   "Name": "Folge 45",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "900145"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s01",
+   "SeriesName": "Serie 01",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e01_3_46",
+   "IndexNumber": 46,
+   "Name": "Folge 46",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "900146"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s01",
+   "SeriesName": "Serie 01",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e02_1_7",
+   "IndexNumber": 7,
+   "Name": "Folge 7",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900207"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s02",
+   "SeriesName": "Serie 02",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-03T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 12000000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e02_1_8",
+   "IndexNumber": 8,
+   "Name": "Folge 8",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900208"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s02",
+   "SeriesName": "Serie 02",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-03T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 1200000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e02_1_9",
+   "IndexNumber": 9,
+   "Name": "Folge 9",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900209"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s02",
+   "SeriesName": "Serie 02",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e02_3_48",
+   "IndexNumber": 48,
+   "Name": "Folge 48",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "900248"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s02",
+   "SeriesName": "Serie 02",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e03_1_5",
+   "IndexNumber": 5,
+   "Name": "Folge 5",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900305"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s03",
+   "SeriesName": "Serie 03",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-04T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 4800000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e03_1_5b",
+   "IndexNumber": 5,
+   "Name": "Folge 5",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900305"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s03b",
+   "SeriesName": "Serie 03",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-04T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 4800000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e03_1_6",
+   "IndexNumber": 6,
+   "Name": "Folge 6",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900306"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s03",
+   "SeriesName": "Serie 03",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e03_1_6b",
+   "IndexNumber": 6,
+   "Name": "Folge 6",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900306"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s03b",
+   "SeriesName": "Serie 03",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e03_3_47",
+   "IndexNumber": 47,
+   "Name": "Folge 47",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "900347"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s03",
+   "SeriesName": "Serie 03",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e03_3_60b",
+   "IndexNumber": 60,
+   "Name": "Folge 60",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "900360"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s03b",
+   "SeriesName": "Serie 03",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e04_1_2",
+   "IndexNumber": 2,
+   "Name": "Folge 2",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900402"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s04",
+   "SeriesName": "Serie 04",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-05T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 5400000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e04_3_74",
+   "IndexNumber": 74,
+   "Name": "Folge 74",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "900474"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s04",
+   "SeriesName": "Serie 04",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e05_1_3",
+   "IndexNumber": 3,
+   "Name": "Folge 3",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900503"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s05",
+   "SeriesName": "Serie 05",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-06T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 6000000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e05_1_3b",
+   "IndexNumber": 3,
+   "Name": "Folge 3",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900503"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s05b",
+   "SeriesName": "Serie 05",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-06T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 6000000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e05_1_4",
+   "IndexNumber": 4,
+   "Name": "Folge 4",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900504"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s05",
+   "SeriesName": "Serie 05",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e05_3_75",
+   "IndexNumber": 75,
+   "Name": "Folge 75",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "900575"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s05",
+   "SeriesName": "Serie 05",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e06_1_4",
+   "IndexNumber": 4,
+   "Name": "Folge 4",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900604"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s06",
+   "SeriesName": "Serie 06",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-07T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 6600000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e06_1_4b",
+   "IndexNumber": 4,
+   "Name": "Folge 4",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900604"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s06b",
+   "SeriesName": "Serie 06",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e06_3_76",
+   "IndexNumber": 76,
+   "Name": "Folge 76",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "900676"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s06",
+   "SeriesName": "Serie 06",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e07_1_5",
+   "IndexNumber": 5,
+   "Name": "Folge 5",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900705"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s07",
+   "SeriesName": "Serie 07",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-08T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 7200000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e07_1_5b",
+   "IndexNumber": 5,
+   "Name": "Folge 5",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900705"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s07b",
+   "SeriesName": "Serie 07",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-08T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 7200000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e07_3_77",
+   "IndexNumber": 77,
+   "Name": "Folge 77",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "900777"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s07",
+   "SeriesName": "Serie 07",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e08_1_1b",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900801"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s08b",
+   "SeriesName": "Serie 08",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e08_1_2",
+   "IndexNumber": 2,
+   "Name": "Folge 2",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900802"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s08",
+   "SeriesName": "Serie 08",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-01T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 7800000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e08_3_78",
+   "IndexNumber": 78,
+   "Name": "Folge 78",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "900878"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s08",
+   "SeriesName": "Serie 08",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e09_1_3",
+   "IndexNumber": 3,
+   "Name": "Folge 3",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "900903"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s09",
+   "SeriesName": "Serie 09",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-02T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 8400000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e09_3_79",
+   "IndexNumber": 79,
+   "Name": "Folge 79",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "900979"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s09",
+   "SeriesName": "Serie 09",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e10_1_4",
+   "IndexNumber": 4,
+   "Name": "Folge 4",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "901004"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s10",
+   "SeriesName": "Serie 10",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-03T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 9000000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e10_3_80",
+   "IndexNumber": 80,
+   "Name": "Folge 80",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "901080"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s10",
+   "SeriesName": "Serie 10",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e11_1_5",
+   "IndexNumber": 5,
+   "Name": "Folge 5",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "901105"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s11",
+   "SeriesName": "Serie 11",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-04T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 9600000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e11_3_81",
+   "IndexNumber": 81,
+   "Name": "Folge 81",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "901181"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s11",
+   "SeriesName": "Serie 11",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e12_1_2",
+   "IndexNumber": 2,
+   "Name": "Folge 2",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "901202"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s12",
+   "SeriesName": "Serie 12",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-05T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 10200000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e12_3_82",
+   "IndexNumber": 82,
+   "Name": "Folge 82",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "901282"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s12",
+   "SeriesName": "Serie 12",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e13_1_3",
+   "IndexNumber": 3,
+   "Name": "Folge 3",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "901303"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s13",
+   "SeriesName": "Serie 13",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-06T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 10800000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e13_3_83",
+   "IndexNumber": 83,
+   "Name": "Folge 83",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "901383"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s13",
+   "SeriesName": "Serie 13",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e14_1_4",
+   "IndexNumber": 4,
+   "Name": "Folge 4",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "901404"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s14",
+   "SeriesName": "Serie 14",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-07T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 11400000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e14_3_84",
+   "IndexNumber": 84,
+   "Name": "Folge 84",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "901484"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s14",
+   "SeriesName": "Serie 14",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e15_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "901501"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s15",
+   "SeriesName": "Serie 15",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e15_3_85",
+   "IndexNumber": 85,
+   "Name": "Folge 85",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "901585"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s15",
+   "SeriesName": "Serie 15",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e16_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "901601"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s16",
+   "SeriesName": "Serie 16",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e16_3_86",
+   "IndexNumber": 86,
+   "Name": "Folge 86",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "901686"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s16",
+   "SeriesName": "Serie 16",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e17_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "901701"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s17",
+   "SeriesName": "Serie 17",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e17_3_87",
+   "IndexNumber": 87,
+   "Name": "Folge 87",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "901787"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s17",
+   "SeriesName": "Serie 17",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e18_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "901801"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s18",
+   "SeriesName": "Serie 18",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e18_3_88",
+   "IndexNumber": 88,
+   "Name": "Folge 88",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "901888"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s18",
+   "SeriesName": "Serie 18",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e19_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "901901"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s19",
+   "SeriesName": "Serie 19",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e19_3_89",
+   "IndexNumber": 89,
+   "Name": "Folge 89",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "901989"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s19",
+   "SeriesName": "Serie 19",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e20_1_10",
+   "IndexNumber": 10,
+   "Name": "Folge 10",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902010"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s20",
+   "SeriesName": "Serie 20",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e20_1_9",
+   "IndexNumber": 9,
+   "Name": "Folge 9",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902009"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s20",
+   "SeriesName": "Serie 20",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": true,
+    "PlayedPercentage": 100.0
+   }
+  },
+  {
+   "Id": "e21_2_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "902101"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s21",
+   "SeriesName": "Serie 21",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": true,
+    "PlayedPercentage": 100.0
+   }
+  },
+  {
+   "Id": "e22_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902201"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s22",
+   "SeriesName": "Serie 22",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-07T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 5400000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e23_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902301"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s23",
+   "SeriesName": "Serie 23",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-08T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 5400000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e23_1_2",
+   "IndexNumber": 2,
+   "Name": "Folge 2",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902302"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s23",
+   "SeriesName": "Serie 23",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e24_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902401"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s24",
+   "SeriesName": "Serie 24",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-01T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 5400000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e25_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902501"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s25",
+   "SeriesName": "Serie 25",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-02T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 5400000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e25_1_2",
+   "IndexNumber": 2,
+   "Name": "Folge 2",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902502"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s25",
+   "SeriesName": "Serie 25",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": true,
+    "PlayedPercentage": 100.0
+   }
+  },
+  {
+   "Id": "e26_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902601"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s26",
+   "SeriesName": "Serie 26",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-03T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 5400000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e26_1_2",
+   "IndexNumber": 2,
+   "Name": "Folge 2",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902602"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s26",
+   "SeriesName": "Serie 26",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": true,
+    "PlayedPercentage": 100.0
+   }
+  },
+  {
+   "Id": "e27_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902701"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s27",
+   "SeriesName": "Serie 27",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-04T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 5400000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e27_1_2",
+   "IndexNumber": 2,
+   "Name": "Folge 2",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902702"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s27",
+   "SeriesName": "Serie 27",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": true,
+    "PlayedPercentage": 100.0
+   }
+  },
+  {
+   "Id": "e27_3_44",
+   "IndexNumber": 44,
+   "Name": "Folge 44",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "902744"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s27",
+   "SeriesName": "Serie 27",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e28_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902801"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s28",
+   "SeriesName": "Serie 28",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-05T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 5400000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e28_1_2",
+   "IndexNumber": 2,
+   "Name": "Folge 2",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902802"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s28",
+   "SeriesName": "Serie 28",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": true,
+    "PlayedPercentage": 100.0
+   }
+  },
+  {
+   "Id": "e28_3_42",
+   "IndexNumber": 42,
+   "Name": "Folge 42",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "902842"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s28",
+   "SeriesName": "Serie 28",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e29_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "902901"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s29",
+   "SeriesName": "Serie 29",
+   "Type": "Episode",
+   "UserData": {
+    "LastPlayedDate": "2026-11-06T20:00:00.0000000Z",
+    "PlaybackPositionTicks": 5400000000,
+    "Played": false,
+    "PlayedPercentage": 40.0
+   }
+  },
+  {
+   "Id": "e29_3_41",
+   "IndexNumber": 41,
+   "Name": "Folge 41",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "902941"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s29",
+   "SeriesName": "Serie 29",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e30_1_1",
+   "IndexNumber": 1,
+   "Name": "Folge 1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "903001"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s30",
+   "SeriesName": "Serie 30",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e30_3_40",
+   "IndexNumber": 40,
+   "Name": "Folge 40",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "903040"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s30",
+   "SeriesName": "Serie 30",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "e30_3_43",
+   "IndexNumber": 43,
+   "Name": "Folge 43",
+   "ParentIndexNumber": 3,
+   "ProviderIds": {
+    "Tvdb": "903043"
+   },
+   "RunTimeTicks": 27000000000,
+   "SeriesId": "s30",
+   "SeriesName": "Serie 30",
+   "Type": "Episode",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "m01",
+   "Name": "Film 01",
+   "ProductionYear": 2011,
+   "ProviderIds": {
+    "Imdb": "tt0007001",
+    "Tmdb": "5001"
+   },
+   "RunTimeTicks": 66000000000,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "m01b",
+   "Name": "Film 01",
+   "ProductionYear": 2011,
+   "ProviderIds": {
+    "Imdb": "tt0007001",
+    "Tmdb": "5001"
+   },
+   "RunTimeTicks": 66000000000,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "m02",
+   "Name": "Film 02",
+   "ProductionYear": 2012,
+   "ProviderIds": {
+    "Imdb": "tt0007002",
+    "Tmdb": "5002"
+   },
+   "RunTimeTicks": 66000000000,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 7200000000,
+    "Played": false,
+    "PlayedPercentage": 30.0
+   }
+  },
+  {
+   "Id": "m02b",
+   "Name": "Film 02",
+   "ProductionYear": 2012,
+   "ProviderIds": {
+    "Imdb": "tt0007002",
+    "Tmdb": "5002"
+   },
+   "RunTimeTicks": 66000000000,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 7200000000,
+    "Played": false,
+    "PlayedPercentage": 30.0
+   }
+  },
+  {
+   "Id": "m03",
+   "Name": "Film 03",
+   "ProductionYear": 2013,
+   "ProviderIds": {
+    "Imdb": "tt0007003",
+    "Tmdb": "5003"
+   },
+   "RunTimeTicks": 66000000000,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 7800000000,
+    "Played": false,
+    "PlayedPercentage": 30.0
+   }
+  },
+  {
+   "Id": "m04",
+   "Name": "Film 04",
+   "ProductionYear": 2014,
+   "ProviderIds": {
+    "Imdb": "tt0007004",
+    "Tmdb": "5004"
+   },
+   "RunTimeTicks": 66000000000,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 8400000000,
+    "Played": false,
+    "PlayedPercentage": 30.0
+   }
+  },
+  {
+   "Id": "m04b",
+   "Name": "Film 04",
+   "ProductionYear": 2014,
+   "ProviderIds": {
+    "Imdb": "tt0007004",
+    "Tmdb": "5004"
+   },
+   "RunTimeTicks": 66000000000,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 8400000000,
+    "Played": false,
+    "PlayedPercentage": 30.0
+   }
+  },
+  {
+   "Id": "m05",
+   "Name": "Film 05",
+   "ProductionYear": 2015,
+   "ProviderIds": {
+    "Imdb": "tt0007005",
+    "Tmdb": "5005"
+   },
+   "RunTimeTicks": 66000000000,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 9000000000,
+    "Played": false,
+    "PlayedPercentage": 30.0
+   }
+  },
+  {
+   "Id": "m06",
+   "Name": "Film 06",
+   "ProductionYear": 2016,
+   "ProviderIds": {
+    "Imdb": "tt0007006",
+    "Tmdb": "5006"
+   },
+   "RunTimeTicks": 66000000000,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 9600000000,
+    "Played": false,
+    "PlayedPercentage": 30.0
+   }
+  },
+  {
+   "Id": "m08",
+   "Name": "Film 08",
+   "ProductionYear": 2018,
+   "ProviderIds": {
+    "Imdb": "tt0007008",
+    "Tmdb": "5008"
+   },
+   "RunTimeTicks": 66000000000,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": true,
+    "PlayedPercentage": 100.0
+   }
+  },
+  {
+   "Id": "m09",
+   "Name": "Film 09",
+   "ProductionYear": 2019,
+   "ProviderIds": {
+    "Imdb": "tt0007009",
+    "Tmdb": "5009"
+   },
+   "RunTimeTicks": 66000000000,
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 0.0
+   }
+  },
+  {
+   "Id": "s01",
+   "Name": "Serie 01",
+   "ProductionYear": 2001,
+   "ProviderIds": {
+    "Tmdb": "2001",
+    "Tvdb": "1001"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s01b",
+   "Name": "Serie 01",
+   "ProductionYear": 2001,
+   "ProviderIds": {
+    "Tmdb": "2001",
+    "Tvdb": "1001"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s02",
+   "Name": "Serie 02",
+   "ProductionYear": 2002,
+   "ProviderIds": {
+    "Tmdb": "2002",
+    "Tvdb": "1002"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s02b",
+   "Name": "Serie 02",
+   "ProductionYear": 2002,
+   "ProviderIds": {
+    "Tvdb": "1002"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s03",
+   "Name": "Serie 03",
+   "ProductionYear": 2003,
+   "ProviderIds": {
+    "Tmdb": "2003",
+    "Tvdb": "1003"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s03b",
+   "Name": "Serie 03",
+   "ProductionYear": 2003,
+   "ProviderIds": {
+    "Tmdb": "2003",
+    "Tvdb": "1003"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s04",
+   "Name": "Serie 04",
+   "ProductionYear": 2004,
+   "ProviderIds": {
+    "Tmdb": "2004",
+    "Tvdb": "1004"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s04b",
+   "Name": "Serie 04",
+   "ProductionYear": 2004,
+   "ProviderIds": {
+    "Tvdb": "1004"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s05",
+   "Name": "Serie 05",
+   "ProductionYear": 2005,
+   "ProviderIds": {
+    "Tmdb": "2005",
+    "Tvdb": "1005"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s05b",
+   "Name": "Serie 05",
+   "ProductionYear": 2005,
+   "ProviderIds": {
+    "Tmdb": "2005",
+    "Tvdb": "1005"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s06",
+   "Name": "Serie 06",
+   "ProductionYear": 2006,
+   "ProviderIds": {
+    "Tmdb": "2006",
+    "Tvdb": "1006"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s06b",
+   "Name": "Serie 06",
+   "ProductionYear": 2006,
+   "ProviderIds": {
+    "Tvdb": "1006"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s07",
+   "Name": "Serie 07",
+   "ProductionYear": 2007,
+   "ProviderIds": {
+    "Tmdb": "2007",
+    "Tvdb": "1007"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s07b",
+   "Name": "Serie 07",
+   "ProductionYear": 2007,
+   "ProviderIds": {
+    "Tmdb": "2007",
+    "Tvdb": "1007"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s08",
+   "Name": "Serie 08",
+   "ProductionYear": 2008,
+   "ProviderIds": {
+    "Tmdb": "2008",
+    "Tvdb": "1008"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s08b",
+   "Name": "Serie 08",
+   "ProductionYear": 2008,
+   "ProviderIds": {
+    "Tvdb": "1008"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s09",
+   "Name": "Serie 09",
+   "ProductionYear": 2009,
+   "ProviderIds": {
+    "Tmdb": "2009",
+    "Tvdb": "1009"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s10",
+   "Name": "Serie 10",
+   "ProductionYear": 2010,
+   "ProviderIds": {
+    "Tmdb": "2010",
+    "Tvdb": "1010"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s11",
+   "Name": "Serie 11",
+   "ProductionYear": 2011,
+   "ProviderIds": {
+    "Tmdb": "2011",
+    "Tvdb": "1011"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s12",
+   "Name": "Serie 12",
+   "ProductionYear": 2012,
+   "ProviderIds": {
+    "Tmdb": "2012",
+    "Tvdb": "1012"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s13",
+   "Name": "Serie 13",
+   "ProductionYear": 2013,
+   "ProviderIds": {
+    "Tmdb": "2013",
+    "Tvdb": "1013"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s14",
+   "Name": "Serie 14",
+   "ProductionYear": 2014,
+   "ProviderIds": {
+    "Tmdb": "2014",
+    "Tvdb": "1014"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s15",
+   "Name": "Serie 15",
+   "ProductionYear": 2015,
+   "ProviderIds": {
+    "Tmdb": "2015",
+    "Tvdb": "1015"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s16",
+   "Name": "Serie 16",
+   "ProductionYear": 2016,
+   "ProviderIds": {
+    "Tmdb": "2016",
+    "Tvdb": "1016"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s17",
+   "Name": "Serie 17",
+   "ProductionYear": 2017,
+   "ProviderIds": {
+    "Tmdb": "2017",
+    "Tvdb": "1017"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s18",
+   "Name": "Serie 18",
+   "ProductionYear": 2018,
+   "ProviderIds": {
+    "Tmdb": "2018",
+    "Tvdb": "1018"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s19",
+   "Name": "Serie 19",
+   "ProductionYear": 2019,
+   "ProviderIds": {
+    "Tmdb": "2019",
+    "Tvdb": "1019"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s20",
+   "Name": "Serie 20",
+   "ProductionYear": 2020,
+   "ProviderIds": {
+    "Tmdb": "2020",
+    "Tvdb": "1020"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s21",
+   "Name": "Serie 21",
+   "ProductionYear": 2021,
+   "ProviderIds": {
+    "Tmdb": "2021",
+    "Tvdb": "1021"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s22",
+   "Name": "Serie 22",
+   "ProductionYear": 2022,
+   "ProviderIds": {
+    "Tmdb": "2022",
+    "Tvdb": "1022"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s23",
+   "Name": "Serie 23",
+   "ProductionYear": 2023,
+   "ProviderIds": {
+    "Tmdb": "2023",
+    "Tvdb": "1023"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s24",
+   "Name": "Serie 24",
+   "ProductionYear": 2024,
+   "ProviderIds": {
+    "Tmdb": "2024",
+    "Tvdb": "1024"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s25",
+   "Name": "Serie 25",
+   "ProductionYear": 2025,
+   "ProviderIds": {
+    "Tmdb": "2025",
+    "Tvdb": "1025"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s26",
+   "Name": "Serie 26",
+   "ProductionYear": 2026,
+   "ProviderIds": {
+    "Tmdb": "2026",
+    "Tvdb": "1026"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s27",
+   "Name": "Serie 27",
+   "ProductionYear": 2027,
+   "ProviderIds": {
+    "Tmdb": "2027",
+    "Tvdb": "1027"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s28",
+   "Name": "Serie 28",
+   "ProductionYear": 2028,
+   "ProviderIds": {
+    "Tmdb": "2028",
+    "Tvdb": "1028"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s29",
+   "Name": "Serie 29",
+   "ProductionYear": 2029,
+   "ProviderIds": {
+    "Tmdb": "2029",
+    "Tvdb": "1029"
+   },
+   "Type": "Series"
+  },
+  {
+   "Id": "s30",
+   "Name": "Serie 30",
+   "ProductionYear": 2030,
+   "ProviderIds": {
+    "Tmdb": "2030",
+    "Tvdb": "1030"
+   },
+   "Type": "Series"
+  }
+ ],
+ "TotalRecordCount": 124
+}

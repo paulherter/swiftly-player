@@ -93,4 +93,44 @@ struct SubtitleFilesForAVPlayerTests {
                                              serverExtracts: false)
         #expect(files.map(\.index) == [5])
     }
+
+    private func styledStreams() throws -> [MediaStream] {
+        let json = """
+        [{"Index":3,"Type":"Subtitle","Codec":"ass","IsExternal":false},
+         {"Index":6,"Type":"Subtitle","Codec":"ass","IsExternal":true,"DeliveryUrl":"/Videos/x/y/Subtitles/6/0/Stream.ssa"},
+         {"Index":7,"Type":"Subtitle","Codec":"subrip","IsExternal":true,"DeliveryUrl":"/Videos/x/y/Subtitles/7/0/Stream.srt"}]
+        """
+        return try JSONDecoder().decode([MediaStream].self, from: Data(json.utf8))
+    }
+
+    /// "Keep the file's style" on: an external styled file is handed over as the file itself (its colours, bold,
+    /// italic), not as the server's SRT, which has none of them. It was always the SRT, so the file's look never showed.
+    @Test func keepingTheFileStyleHandsOverTheStyledFileItself() throws {
+        let files = SubtitleFile.forAVPlayer(streams: try styledStreams(), itemID: "item", source: "src",
+                                             server: URL(string: "https://s.example")!, key: "k",
+                                             serverExtracts: true, keepFileStyle: true)
+        #expect(files.map(\.index) == [3, 6, 7])
+        #expect(files[1].address.absoluteString == "https://s.example/Videos/x/y/Subtitles/6/0/Stream.ssa?ApiKey=k")
+        // A track inside the file (transcode) comes from the server as ASS, not SRT.
+        #expect(files[0].address.absoluteString == "https://s.example/Videos/item/src/Subtitles/3/0/Stream.ass?ApiKey=k")
+        #expect(files[2].address.absoluteString.contains("Stream.srt"))
+    }
+
+    @Test func notKeepingTheFileStyleAsksForSRT() throws {
+        let files = SubtitleFile.forAVPlayer(streams: try styledStreams(), itemID: "item", source: "src",
+                                             server: URL(string: "https://s.example")!, key: "k",
+                                             serverExtracts: true, keepFileStyle: false)
+        #expect(files.allSatisfy { $0.address.absoluteString.contains("Stream.srt") })
+    }
+
+    /// Plex (no server conversion): a styled file is handed over when the engine keeps the style.
+    @Test func withoutExtractionAStyledFileGoesToAnEngineThatKeepsTheStyle() throws {
+        let server = URL(string: "https://s.example")!
+        let kept = SubtitleFile.forAVPlayer(streams: try styledStreams(), itemID: "item", source: "src", server: server,
+                                            key: "k", serverExtracts: false, keepFileStyle: true)
+        #expect(kept.map(\.index) == [6, 7])
+        let flat = SubtitleFile.forAVPlayer(streams: try styledStreams(), itemID: "item", source: "src", server: server,
+                                            key: "k", serverExtracts: false)
+        #expect(flat.map(\.index) == [7])
+    }
 }

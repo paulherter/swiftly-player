@@ -70,3 +70,8 @@ Assets/SupporterIcons/macos/
 Assets/SupporterIcons/tvos/
 Assets/SupporterIcons/android/
 Assets/SupporterIcons/preview/
+target/
+# Machine hardening scratch (coverage report, files pulled back from the PC)
+/cov.json
+/hp*-out/
+/crates/swiftly-hardening/oracle-*/

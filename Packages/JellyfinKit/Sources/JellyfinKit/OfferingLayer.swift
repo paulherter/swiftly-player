@@ -113,6 +113,12 @@ public struct OfferingLayer: Sendable, Equatable {
     /// cancel the card (Android, Linux, Windows).
     public var cardWaitsControls = false
 
+    /// "Skip intro and outro automatically": the skip button then runs a countdown (its
+    /// fill, ``skipShare``) over ``buttonDuration`` and the platform presses it when it ends
+    /// (``takeAutoSkip()``). Closing cancels it. Off: the button waits for the user.
+    public var autoSkip = false
+    private var autoSkipDue = false
+
     private var cardGedeckt: Bool { controlsCover }
 
     /// The card is currently counting its countdown (visible or covered by the
@@ -152,6 +158,8 @@ public struct OfferingLayer: Sendable, Equatable {
         case .nobody: newOccasion = .nobody
         }
         if newOccasion != occasion {
+            // A skip countdown that fired belongs to its section; a new offer starts clean.
+            if case .skip = occasion { triggered = false; autoSkipDue = false }
             occasion = newOccasion
             run = 0
             buttonRun = 0
@@ -162,6 +170,10 @@ public struct OfferingLayer: Sendable, Equatable {
 
         if case .skip = occasion, running, elapsed > 0, !closed {
             buttonRun += elapsed
+            if autoSkip, !triggered, buttonRun >= Self.buttonDuration + Self.postRun {
+                triggered = true
+                autoSkipDue = true
+            }
         }
 
         // **At the end of the file it keeps counting although nothing plays**,
@@ -218,7 +230,23 @@ public struct OfferingLayer: Sendable, Equatable {
     /// The skip button has had its time without controls and the controls are closed:
     /// it is not shown.
     private var buttonExpired: Bool {
-        buttonRun >= Self.buttonDuration && !controlsOpen
+        // With auto-skip the button stays until its countdown (fill) has run out.
+        let shown = autoSkip ? Self.buttonDuration + Self.postRun : Self.buttonDuration
+        return buttonRun >= shown && !controlsOpen
+    }
+
+    /// The fill of the skip button's countdown, 0 to 1: only with auto-skip on and a skip
+    /// button showing, otherwise `nil` (the button just waits for the user).
+    public var skipShare: Double? {
+        guard autoSkip, !closed, !triggered, case .skip = occasion else { return nil }
+        return min(buttonRun / Self.buttonDuration, 1)
+    }
+
+    /// `true` exactly once when the skip countdown has run out: the platform then does what a
+    /// press on the button does.
+    public mutating func takeAutoSkip() -> Bool {
+        defer { autoSkipDue = false }
+        return autoSkipDue
     }
 
     /// How long the fill of the currently shown card runs.
@@ -259,9 +287,10 @@ public struct OfferingLayer: Sendable, Equatable {
     /// A new episode plays: forget everything, including a cancel. Only whether the
     /// controls are open stays, since the view stays the same.
     public mutating func newEpisode() {
-        let opened = controlsOpen, beside = onlyBeside, waits = cardWaitsControls
+        let opened = controlsOpen, beside = onlyBeside, waits = cardWaitsControls, auto = autoSkip
         self = OfferingLayer()
         cardWaitsControls = waits
+        autoSkip = auto
         controlsOpen = opened
         onlyBeside = beside
     }

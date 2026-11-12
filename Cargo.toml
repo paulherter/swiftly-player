@@ -1,0 +1,50 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "workspace-hack", "xtask"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MPL-2.0"
+publish = false
+
+[workspace.dependencies]
+swiftly-runtime = { path = "crates/swiftly-runtime" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(swiftly_loom)"] }
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+clone_on_ref_ptr = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+await_holding_refcell_ref = "deny"
+await_holding_lock = "deny"
+
+# Smaller target folders (the Mac volume is tight): no debug info for dependencies.
+[profile.dev.package."*"]
+debug = 0
+
+# The frame goldens render whole screens in software; unoptimised that takes minutes.
+[profile.dev.package.swiftly-render]
+opt-level = 3
+
+[profile.dev.package.swiftly-desktop]
+opt-level = 2
+
+[profile.dev]
+split-debuginfo = "unpacked"
+# Workspace crates: line tables only (smaller binaries and target folders, backtraces keep file:line).
+debug = "line-tables-only"
+
+# Release builds feed the Apple staticlibs: small and stripped, panics still unwind (UniFFI catches them).
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

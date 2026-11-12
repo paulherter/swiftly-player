@@ -1,0 +1,24 @@
+[package]
+name = "swiftly-support"
+description = "Looks (colours, seasons, try-on, gifts), supporter rules and copy, subtitle look and licence data, ported from JellyfinKit and the Apple app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Offline supporter-key check (direct builds). The Play build leaves it off.
+supporter-key = ["dep:ed25519-dalek"]
+
+[dependencies]
+ed25519-dalek = { version = "2", default-features = false, optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Already in the lock file; ICU-only corners (`\b`, `\s`) are handled by hand in log_ring.rs.
+regex-lite = "0.1"
+swiftly-settings = { path = "../swiftly-settings" }
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[lints]
+workspace = true

@@ -32,7 +32,7 @@ import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
 import de.paulherter.swiftly.SwiftlyApplication
-import de.paulherter.swiftly.core.Kern
+import de.paulherter.swiftly.KernRules
 import de.paulherter.swiftly.shared.PrimaryButton
 import de.paulherter.swiftly.shared.SecondaryButton
 import de.paulherter.swiftly.shared.Theme
@@ -236,7 +236,7 @@ private class PlayChannel(private val app: SwiftlyApplication, private val suppo
                 // A tip: thanks only, no standing and no plan.
                 if (thanks) support.thanksDue.value = true
             } else {
-                support.becameSupporter(Kern.supportStoreStatus(purchase.purchaseTime), fresh = thanks, plan = plan)
+                support.becameSupporter(KernRules.supportStoreStatus(purchase.purchaseTime), fresh = thanks, plan = plan)
             }
             owned = owned + purchase.products
             purchase.products.forEach { started.remove(it) }
@@ -263,7 +263,7 @@ private class PlayChannel(private val app: SwiftlyApplication, private val suppo
         if (simulated) {
             val plan = PlayPurchases.plan(listOf(productId))
             if (plan.isEmpty()) support.thanksDue.value = true
-            else support.becameSupporter(Kern.supportStoreStatus(System.currentTimeMillis()), fresh = true, plan = plan)
+            else support.becameSupporter(KernRules.supportStoreStatus(System.currentTimeMillis()), fresh = true, plan = plan)
             return
         }
         val c = client ?: return

@@ -452,8 +452,7 @@ struct LibraryView: View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: Theme.latticeRow) {
             ForEach(state.items) { item in
                 NavigationLink(value: item) {
-                    TileContent(image: model.imageURL(for: item, maxHeight: 600,
-                                                      portrait: true),
+                    TileContent(image: model.portraitURL(item),
                                  title: item.name,
                                  progress: item.userData?.playedPercentage
                                      .map { $0 / 100 },
@@ -496,10 +495,11 @@ struct LibraryView: View {
     @ViewBuilder
     private var empty: some View {
         if state.disrupted {
+            let words = state.trouble.copy(server: model.serverAddress ?? String(localized: "Der Server"))
             EmptyState(
                 symbol: "externaldrive.badge.xmark",
-                title: "Server ist abgetaucht",
-                hint: "\(model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                title: words.title,
+                hint: words.text,
                 button: ("Erneut versuchen", { Task { await load() } }))
             .frame(height: 500)
         } else {
@@ -684,7 +684,7 @@ struct LibraryView: View {
     private func updateTopLetter() {
         guard let alphabet = shownAlphabet,
               let item = state.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
-        let letter = alphabet.key(of: item)
+        let letter = state.key(of: item, in: alphabet)
         if letter != topLetter { topLetter = letter }
     }
 }

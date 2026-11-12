@@ -1,6 +1,7 @@
 import Foundation
 import JellyfinKit
 import Observation
+import SwiftlyCore
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
@@ -11,8 +12,8 @@ import AppKit
 /// display preferences. The rules (keys, encoding, who wins) are in the package
 /// (`SettingsSync`); this class only watches the device and talks to the server.
 ///
-/// - Starts on every account change (launch, sign-in, switch) and when the app
-///   comes to the front, never in the way: everything runs in a task of its own and
+/// - Starts on every account change (launch, sign-in, switch), when the app
+///   comes to the front, every 20 seconds while it is in front, before a title starts, never in the way: everything runs in a task of its own and
 ///   a failure (offline, old server, no right) is logged quietly and forgotten.
 /// - A local change is noticed in `UserDefaults` itself, so the three settings the views
 ///   keep with `@AppStorage` are covered like the ones in `AppModel`.
@@ -66,10 +67,38 @@ final class SettingsSyncRun {
         #endif
         observers.append(center.addObserver(forName: front, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, Date().timeIntervalSince(self.lastRun) > 60 else { return }
+                guard let self, Date().timeIntervalSince(self.lastRun) > Self.frontGap else { return }
                 self.request(after: nil)
             }
         })
+        // A change made on another device (the subtitle look, the languages) reaches a running app within a
+        // minute, not only at launch or when the window comes to the front.
+        poll = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.pollEvery))
+                guard let self else { return }
+                self.pollOnce()
+            }
+        }
+    }
+
+    /// The window coming to the front fetches when the last fetch is older than this (seconds).
+    nonisolated static let frontGap: TimeInterval = 10
+    /// While the app is in front a fetch runs this often (seconds), and a title that starts fetches when the
+    /// last one is older than ``startGap``.
+    nonisolated static let pollEvery: Double = 20
+    nonisolated static let startGap: TimeInterval = 10
+    @ObservationIgnored private var poll: Task<Void, Never>?
+
+    private func pollOnce() {
+        #if canImport(UIKit)
+        guard UIApplication.shared.applicationState == .active else { return }
+        #else
+        guard NSApplication.shared.isActive else { return }
+        #endif
+        guard on, client != nil, !running, waiting == nil,
+              Date().timeIntervalSince(lastRun) > Self.pollEvery - 5 else { return }
+        request(after: nil)
     }
 
     /// From `AppModel.client`'s `didSet`: every sign-in, switch, restore and sign-out.
@@ -123,26 +152,32 @@ final class SettingsSyncRun {
         if on { request(after: .seconds(1)) }
     }
 
-    /// The fields to write for Seerr, or nothing; takes the server's connection over when
-    /// it is newer. Only while the Seerr model is on this session's server.
-    private func seerrRun(_ prefs: [String: String], session: Session, leaving: Bool) -> [String: String] {
-        guard let seerr = model?.seerr, seerr.server == session.serverIdentity else { return [:] }
-        let store = UserDefaults.standard
+    /// The Seerr connection of this session's server as the core takes it (JSON, `nil` = none), and
+    /// when it last changed here. Only while the Seerr model is on this server; otherwise neither,
+    /// so the run can neither push nor take a connection for the wrong server.
+    private func seerrState(session: Session) -> (json: String?, changed: Double?, onServer: Bool) {
+        guard let seerr = model?.seerr, seerr.server == session.serverIdentity else { return (nil, nil, false) }
+        let json = seerr.access.flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) }
+        let ms = UserDefaults.standard.object(forKey: seerrTimeKey(session)) as? Double
+        return (json, ms.map { $0 / 1000 }, true)
+    }
+
+    /// What the core says about Seerr: take the server's connection over, or remember the time of the push.
+    private func seerrDone(_ outcome: SeerrSyncOutcome, session: Session, onServer: Bool, leaving: Bool) {
+        guard onServer, let seerr = model?.seerr else { return }
         let key = seerrTimeKey(session)
-        let mine = (store.object(forKey: key) as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
-        switch SettingsSync.seerrStep(remote: prefs, localChanged: mine, hasLocal: seerr.access != nil) {
-        case .adopt(let access, let changed):
-            guard !leaving else { return [:] }
-            seerr.adopt(access)
-            store.set(changed.timeIntervalSince1970 * 1000, forKey: key)
+        let store = UserDefaults.standard
+        switch outcome {
+        case .adopt(let json, let changed):
+            guard !leaving else { return }
+            seerr.adopt(json.isEmpty ? nil : try? JSONDecoder().decode(SeerrAccess.self, from: Data(json.utf8)))
+            store.set(changed * 1000, forKey: key)
             AppLog.writeOut("[Abgleich] Seerr vom Server übernommen")
-            return [:]
-        case .push:
-            let stamp = mine ?? Date()
-            store.set(stamp.timeIntervalSince1970 * 1000, forKey: key)
-            return SettingsSync.seerrFields(seerr.access, changed: stamp)
+        case .pushed(let changed):
+            store.set(changed * 1000, forKey: key)
+            AppLog.writeOut("[Abgleich] Seerr zum Server geschrieben")
         case .nothing:
-            return [:]
+            break
         }
     }
 
@@ -194,6 +229,30 @@ final class SettingsSyncRun {
             await runOnce(client: client, session: session)
         } while again
         running = false
+        let done = idleWaiters.values
+        idleWaiters = [:]
+        for waiter in done { waiter.resume() }
+    }
+
+    @ObservationIgnored private var idleWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+
+    /// **Before a title starts:** if a run is under way (the launch's or the account's first one), wait for its end
+    /// so the saved subtitle look, language and the rest are the ones of the other devices when the player reads
+    /// them. At most `timeout`: a slow or silent server never holds a title back. Nothing under way: returns at once.
+    func settled(timeout: Duration = .seconds(2)) async {
+        guard on, client != nil else { return }
+        // Nothing under way and the last fetch is not fresh: fetch now, so a look or language changed on another
+        // device a minute ago is the one this title starts with (it used to arrive at the next launch).
+        if !running, waiting == nil, Date().timeIntervalSince(lastRun) > Self.startGap { request(after: nil) }
+        guard running || waiting != nil else { return }
+        let id = UUID()
+        await withCheckedContinuation { (waiter: CheckedContinuation<Void, Never>) in
+            idleWaiters[id] = waiter
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: timeout)
+                self?.idleWaiters.removeValue(forKey: id)?.resume()
+            }
+        }
     }
 
     /// What the leaving account still had to send, read before the switch.
@@ -201,72 +260,79 @@ final class SettingsSyncRun {
 
     /// `pending`: the account is already being left; then only its pending change goes out,
     /// nothing is taken in and no local stamp is touched (they belong to the new account).
+    ///
+    /// The run itself (fetch, decide, write, Seerr in the same write) is the core's
+    /// `SettingsSyncModel.runWithSeerr`; this only reads the device before and keeps the stamps after.
     private func runOnce(client: any DisplayPreferencesServer, session: Session, leaving pending: Pending? = nil) async {
         let leaving = pending != nil
         let localChanged = pending.map(\.changed) ?? self.localChanged
         lastRun = Date()
+        #if DEBUG
+        LiveRun.note(["kind": "sync-run", "what": "start", "leaving": leaving])
+        #endif
         let store = UserDefaults.standard
         let started = store.object(forKey: Self.timeKey) as? Double
+        guard let account = AppCore.shared.account(session),
+              let core = try? AppCore.shared.raw.settingsSyncModel(account: account, locale: AppCore.language)
+        else { return }
+        let current = pending?.values ?? values(for: session)
+        let seerr = seerrState(session: session)
+        let accountKey = session.accountKey
+        let other = store.string(forKey: Self.accountKey) != accountKey
+        let round: SettingsSyncRound
         do {
-            let copy = try await client.displayPreferences()
-            guard leaving || client === self.client else { return }
-            let remote = SettingsSync.remote(from: copy.customPrefs)
-            if let seen = remote.changed, !leaving {
-                store.set(seen.timeIntervalSince1970 * 1000, forKey: Self.remoteKey)
-            }
-            let account = session.accountKey
-            let other = store.string(forKey: Self.accountKey) != account
-            var decision = SettingsSync.decide(remote: remote, localChanged: localChanged, otherAccount: other)
-            // Changed here while the answer was on its way: that change must not be overwritten.
-            if decision == .apply, (store.object(forKey: Self.timeKey) as? Double) != started {
-                decision = .push
-            }
-            // Seerr first, so its fields go out in the same write: two writes from the
-            // same copy would undo each other.
-            let seerrFields = seerrRun(copy.customPrefs, session: session, leaving: leaving)
-            if decision != .push, !seerrFields.isEmpty {
-                try await client.saveDisplayPreferences(copy, setting: seerrFields)
-                AppLog.writeOut("[Abgleich] Seerr zum Server geschrieben")
-                guard leaving || client === self.client else { return }
-            }
-            if leaving, decision != .push { return }
-            switch decision {
-            case .apply:
-                guard let changed = remote.changed else { break }
-                apply(remote.values, changed: changed)
-                store.set(account, forKey: Self.accountKey)
-                AppLog.writeOut("[Abgleich] Einstellungen vom Server übernommen")
-            case .push:
-                let current = pending?.values ?? values(for: session)
-                guard !current.isEmpty else {
-                    if !seerrFields.isEmpty {
-                        try await client.saveDisplayPreferences(copy, setting: seerrFields)
-                    }
-                    if !leaving { store.set(account, forKey: Self.accountKey) }
-                    break
-                }
-                let remoteSeen = store.object(forKey: Self.remoteKey) as? Double
-                let stamp = localChanged ?? SettingsSync.changeTime(
-                    now: Date(), lastKnownRemote: remoteSeen.map { Date(timeIntervalSince1970: $0 / 1000) })
-                try await client.saveDisplayPreferences(
-                    copy, setting: SettingsSync.fields(for: current, changed: stamp)
-                        .merging(seerrFields) { _, seerr in seerr })
-                guard !leaving else {
-                    AppLog.writeOut("[Abgleich] Einstellungen des alten Kontos geschrieben")
-                    return
-                }
-                store.set(stamp.timeIntervalSince1970 * 1000, forKey: Self.timeKey)
-                store.set(stamp.timeIntervalSince1970 * 1000, forKey: Self.remoteKey)
-                store.set(account, forKey: Self.accountKey)
-                AppLog.writeOut("[Abgleich] Einstellungen zum Server geschrieben")
-            case .nothing:
-                store.set(account, forKey: Self.accountKey)
-            }
+            round = try await core.runWithSeerr(
+                local: current.map { SyncSetting(name: $0.key, value: $0.value.encoded) },
+                localChanged: localChanged.map(\.timeIntervalSince1970),
+                remoteSeen: (store.object(forKey: Self.remoteKey) as? Double).map { $0 / 1000 },
+                otherAccount: other, now: Date().timeIntervalSince1970,
+                seerr: seerr.json, seerrChanged: seerr.changed)
         } catch {
+            AppLog.writeOut("[Abgleich] übersprungen: \(error.localizedDescription)")
+            return
+        }
+        guard leaving || client === self.client else { return }
+        if !leaving, round.remoteChanged > 0 { store.set(round.remoteChanged * 1000, forKey: Self.remoteKey) }
+        seerrDone(round.seerr, session: session, onServer: seerr.onServer, leaving: leaving)
+        #if DEBUG
+        LiveRun.note(["kind": "sync-run", "what": "answer", "result": "\(round.settings)".prefix(24).description])
+        #endif
+        switch round.settings {
+        case .unreachable:
             // Offline, an old server or no right: nothing to tell anyone. The next run
             // (account change, front, next change) tries again.
-            AppLog.writeOut("[Abgleich] übersprungen: \(error.localizedDescription)")
+            AppLog.writeOut("[Abgleich] übersprungen: Server antwortet nicht")
+        case .apply(let remote, let changed):
+            guard !leaving else { return }
+            // Changed here while the answer was on its way: that change must not be overwritten. The run
+            // starts again; the device is newer then and goes out.
+            if (store.object(forKey: Self.timeKey) as? Double) != started { again = true; return }
+            apply(Self.values(of: remote), changed: Date(timeIntervalSince1970: changed))
+            store.set(accountKey, forKey: Self.accountKey)
+            AppLog.writeOut("[Abgleich] Einstellungen vom Server übernommen")
+        case .pushed(let changed):
+            guard !leaving else {
+                AppLog.writeOut("[Abgleich] Einstellungen des alten Kontos geschrieben")
+                return
+            }
+            store.set(changed * 1000, forKey: Self.timeKey)
+            store.set(changed * 1000, forKey: Self.remoteKey)
+            store.set(accountKey, forKey: Self.accountKey)
+            AppLog.writeOut("[Abgleich] Einstellungen zum Server geschrieben")
+        case .nothing:
+            if !leaving { store.set(accountKey, forKey: Self.accountKey) }
         }
+    }
+
+    /// The core's text values back to typed ones; what does not fit its kind is dropped.
+    nonisolated static func values(of settings: [SyncSetting]) -> [String: SettingsSync.Value] {
+        var out: [String: SettingsSync.Value] = [:]
+        for s in settings {
+            guard let entry = SettingsSync.entries.first(where: { $0.name == s.name }),
+                  let value = SettingsSync.Value.decode(s.value, as: entry.kind) else { continue }
+            out[s.name] = value
+        }
+        return out
     }
 
     private func apply(_ values: [String: SettingsSync.Value], changed: Date) {

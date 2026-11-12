@@ -1,15 +1,18 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.rustcore.legacyOwnHeadersLoad
+import de.paulherter.swiftly.rustcore.legacyOwnHeadersNames
+import de.paulherter.swiftly.rustcore.legacyOwnHeadersRegistered
+import de.paulherter.swiftly.rustcore.legacyOwnHeadersSet
+import de.paulherter.swiftly.rustcore.legacyOwnHeadersStore
 import android.app.Application
 import android.content.Context
 import android.os.Build
 import de.paulherter.swiftly.shared.Texts
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import coil3.request.crossfade
 import kotlinx.coroutines.future.await
-import org.swift.swiftkit.core.SwiftArena
 import java.io.File
 import java.util.UUID
 
@@ -18,7 +21,8 @@ import java.util.UUID
  * The core lives as long as the app, like `AppModel` on Apple.
  */
 class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
-    lateinit var kern: Kern
+    /** The Rust core behind the moved `Kern` calls (Home, Library, Search, Detail, Series, download rules). */
+    lateinit var rk: RustKern
         private set
     lateinit var store: Store
         private set
@@ -104,7 +108,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     val discordHintDue = androidx.compose.runtime.mutableStateOf(false)
 
     /** The URLs from the package; they are typed only there. */
-    fun communityAddress(art: String): String = Kern.communityAddress(art, VersionRow + " · Media3 1.9.4",
+    fun communityAddress(art: String): String = KernRules.communityAddress(art, VersionRow + " · Media3 1.9.4",
         (if (isTv) "Android TV " else "Android ") + android.os.Build.VERSION.RELEASE)
 
     /** Opens a URL in the browser. Does nothing on a TV without a browser, where the URL is shown to type in. */
@@ -122,10 +126,10 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
      * Same keys as `UserDefaults` on iOS. TV never asks for a rating: there is no prompt, as on tvOS.
      */
     fun doneWatch(position: Double, duration: Double) {
-        if (!Kern.ratingCounts(position, duration)) return
+        if (!KernRules.ratingCounts(position, duration)) return
         val done = (store.rememberValue("bewertungFertig")?.toIntOrNull() ?: 0) + 1
         store.remember("bewertungFertig", done.toString())
-        when (Kern.communityTrigger(done.toLong(), store.rememberValue("bewertungFassung").orEmpty(), BuildConfigVersion,
+        when (KernRules.communityTrigger(done.toLong(), store.rememberValue("bewertungFassung").orEmpty(), BuildConfigVersion,
                                        store.rememberValue("discordHinweisGezeigt") == "1", !isTv)) {
             "bewertung" -> {
                 store.remember("bewertungFassung", BuildConfigVersion)
@@ -175,7 +179,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     /** One access per Jellyfin server, so Seerr survives a switch to another server. */
     private fun seerrKey(): String = "seerr|" + seerrServer()
     /** The active server as the Seerr entries name it: lower case, no trailing slash (`SeerrModel.serverForm`). */
-    fun seerrServer(): String = store.accounts?.let { Kern.bundleActive(it) }?.let {
+    fun seerrServer(): String = store.accounts?.let { KernRules.bundleActive(it) }?.let {
         runCatching { org.json.JSONObject(it).optString("serverURL") }.getOrNull()
     }.orEmpty().lowercase().trimEnd('/')
     /** This server's access as stored, for the settings sync. */
@@ -189,21 +193,21 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         if (old == access || (old == null && access.isEmpty())) return
         val address = { a: String? -> a?.let { runCatching { org.json.JSONObject(it).optString("adresse") }.getOrNull() } }
         // Another address: the old one's cookies must not stay behind.
-        if (old != null && address(old) != address(access.ifEmpty { null })) kern.seerrDisconnect()
+        if (old != null && address(old) != address(access.ifEmpty { null })) rk.seerrDisconnect()
         if (access.isEmpty()) {
-            store.vaultWrite(seerrKey(), null); kern.seerrDisconnect(); seerrConnected.value = false
+            store.vaultWrite(seerrKey(), null); rk.seerrDisconnect(); seerrConnected.value = false
         } else {
-            store.vaultWrite(seerrKey(), access); kern.seerrSet(access); seerrConnected.value = true
+            store.vaultWrite(seerrKey(), access); rk.seerrSet(access); seerrConnected.value = true
         }
     }
 
     fun seerrLoad() {
         val access = store.vaultRead(seerrKey())
-        if (access != null) kern.seerrSet(access) else kern.seerrDisconnect()
+        if (access != null) rk.seerrSet(access) else rk.seerrDisconnect()
         seerrConnected.value = access != null
     }
     fun seerrRemember(access: String) { store.vaultWrite(seerrKey(), access); seerrConnected.value = true; seerrChanged?.invoke() }
-    fun seerrDisconnect() { store.vaultWrite(seerrKey(), null); kern.seerrDisconnect(); seerrConnected.value = false; seerrChanged?.invoke() }
+    fun seerrDisconnect() { store.vaultWrite(seerrKey(), null); rk.seerrDisconnect(); seerrConnected.value = false; seerrChanged?.invoke() }
     fun seerrAddress(): String? = store.vaultRead(seerrKey())?.let {
         runCatching { org.json.JSONObject(it).optString("adresse") }.getOrNull()
     }
@@ -227,7 +231,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     val downloads by lazy { DownloadManager(this) }
 
     /** The `userID` of the current account; downloads and pending reports hang off it. */
-    fun accountId(): String = store.accounts?.let { Kern.bundleActive(it) }?.let {
+    fun accountId(): String = store.accounts?.let { KernRules.bundleActive(it) }?.let {
         runCatching { org.json.JSONObject(it).optString("userID") }.getOrNull()
     }.orEmpty()
 
@@ -235,7 +239,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     fun playbackEnd(position: Double) {
         run.launch {
             val message = runCatching {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.playbackEnd(position).await() }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { rk.playbackEnd(position).await() }
             }.getOrDefault("")
             toStop(message)
             support.watchSave(force = true)
@@ -250,7 +254,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
 
     /** Store a pending report from the core, on close and on episode change. */
     fun pendingReportStore(message: String) {
-        store.remember(PendingReports, Kern.pendingReportRecord(store.rememberValue(PendingReports) ?: "[]", message))
+        store.remember(PendingReports, KernRules.pendingReportRecord(store.rememberValue(PendingReports) ?: "[]", message))
     }
 
     /**
@@ -262,7 +266,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     fun toStop(message: String?) {
         if (!message.isNullOrEmpty()) pendingReportStore(message)
         val o = runCatching {
-            org.json.JSONObject(kern.stoppsProcess(store.rememberValue(PendingReports) ?: "[]", downloads.listJson(), settings.loadNextEpisode))
+            org.json.JSONObject(rk.stoppsProcess(store.rememberValue(PendingReports) ?: "[]", downloads.listJson(), settings.loadNextEpisode))
         }.getOrNull() ?: return
         store.remember(PendingReports, o.getString("ablage"))
         val a = o.getJSONArray("posten")
@@ -271,7 +275,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
 
     /** The core's log lines (start, stopped, switch) go to logcat under "Swiftly". */
     fun logWrite() {
-        kern.logFetch().takeIf { it.isNotEmpty() }?.lines()?.forEach { AppLog.writeOut("[Melden] $it") }
+        rk.logFetch().takeIf { it.isNotEmpty() }?.lines()?.forEach { AppLog.writeOut("[Melden] $it") }
     }
 
     /**
@@ -282,9 +286,9 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         if (serverName.value == null) return
         // **Report first, then read**, or the server list returns the state from before the flight.
         val raw = store.rememberValue(PendingReports) ?: "[]"
-        if (raw != "[]") runCatching { kern.pendingSubmit(raw).await() }.getOrNull()?.let { completed ->
+        if (raw != "[]") runCatching { rk.pendingSubmit(raw).await() }.getOrNull()?.let { completed ->
             // From the store as it is now; a new one may have arrived while waiting.
-            store.remember(PendingReports, Kern.pendingDone(store.rememberValue(PendingReports) ?: "[]", completed))
+            store.remember(PendingReports, KernRules.pendingDone(store.rememberValue(PendingReports) ?: "[]", completed))
         }
         logWrite()
         downloads.follow()
@@ -319,7 +323,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         messageRightInTimesAsk()
         val beginning = android.os.SystemClock.uptimeMillis()
         run.launch {
-            val raw = runCatching { kern.downloadItem(ids.toTypedArray()).await() }.getOrNull() ?: return@launch
+            val raw = runCatching { rk.downloadItem(ids.toTypedArray()).await() }.getOrNull() ?: return@launch
             val a = org.json.JSONArray(raw)
             val newOne = mutableListOf<DownloadItem>()
             val images = mutableMapOf<String, String>()
@@ -328,11 +332,11 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
                 // The quality comes with the load selection: Matroska and estimated size.
                 val raw1 = o.getJSONObject("posten")
                 val p = if (quality == "original") DownloadItem.read(raw1)
-                        else DownloadItem.read(org.json.JSONArray(Kern.downloadInQuality("[$raw1]", quality)).getJSONObject(0))
+                        else DownloadItem.read(org.json.JSONArray(KernRules.downloadInQuality("[$raw1]", quality)).getJSONObject(0))
                 if (downloads.entries(p.id) != null) continue
                 // The audio choice from the selection: the server builds the file with that one track.
                 newOne += if (audio == "all") p
-                          else DownloadItem.read(org.json.JSONArray(kern.downloadWithAudio("[${p.json()}]", audio)).getJSONObject(0))
+                          else DownloadItem.read(org.json.JSONArray(rk.downloadWithAudio("[${p.json()}]", audio)).getJSONObject(0))
                 o.fieldText("bild")?.let { images[p.id] = it }
                 p.seriesIdentifier?.let { sid -> o.fieldText("serienbild")?.let { images[sid] = it } }
             }
@@ -341,7 +345,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
             // area (mirrors `SeriesView.loadImages`).
             for (sid in newOne.mapNotNull { it.seriesIdentifier }.distinct()) {
                 if (downloads.headerImage(sid) != null) continue
-                val address = runCatching { kern.downloadHeaderImage(sid, headerImageWidth()).await() }.getOrNull()
+                val address = runCatching { rk.downloadHeaderImage(sid, headerImageWidth()).await() }.getOrNull()
                 if (!address.isNullOrEmpty()) images[downloads.headerId(sid)] = address
             }
             val rest = waitFor - (android.os.SystemClock.uptimeMillis() - beginning)
@@ -373,7 +377,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         if (serverName.value != null) return
         try {
             serverName.value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                kern.serverName().await()
+                rk.serverName().await()
             }
         } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) {}
     }
@@ -395,27 +399,28 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     // MARK: Custom headers (mirrors `LoginModel.swift`)
 
     /** The current account's base URL, or `null` when signed out. */
-    fun activeServer(): String? = store.accounts?.let { Kern.bundleActive(it) }?.let {
+    fun activeServer(): String? = store.accounts?.let { KernRules.bundleActive(it) }?.let {
         runCatching { org.json.JSONObject(it).optString("serverURL") }.getOrNull()
     }?.takeIf { it.isNotEmpty() }
 
     /** What is entered for a server, for "Advanced". JSON `[{"name","wert"}]`. */
-    fun ownHeaders(server: String?): String = server?.let { Kern.ownHeadersRegistered(it) } ?: "[]"
+    fun ownHeaders(server: String?): String = server?.let { legacyOwnHeadersRegistered(it) } ?: "[]"
 
     /**
      * The whole table goes into the vault, **not into settings**: the values are credentials like
      * the device identifier itself. After every successful connection with headers and after "Save".
      */
     fun storeOwnHeaders() {
-        val panel = Kern.ownHeadersStore()
+        val panel = legacyOwnHeadersStore()
         store.vaultWrite(OwnHeaders, if (panel == "{}") null else panel)
     }
 
     /** Set and store. An empty list removes the server. Only the names go to the log. */
     fun ownHeadersSafe(headers: String, server: String) {
-        Kern.ownHeadersSet(server, headers)
+        // The core's table answers; the Swift one is kept in step while Swift `Kern` still makes requests (Plex).
+        legacyOwnHeadersSet(server, headers)
         storeOwnHeaders()
-        AppLog.writeOut("Eigene Header gesichert: " + Kern.ownHeadersNames(server))
+        AppLog.writeOut("Eigene Header gesichert: " + legacyOwnHeadersNames(server))
     }
 
     override fun onCreate() {
@@ -441,15 +446,9 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         Certificates.readySet(this)
         Certificates.observe(this)
         // **Before the session.** Behind a gateway even the first request needs the custom headers.
-        Kern.ownHeadersLoad(store.vaultRead(OwnHeaders).orEmpty())
+        store.vaultRead(OwnHeaders).orEmpty().let { legacyOwnHeadersLoad(it) }
         val language = Texts.language
-        // Before the first package string, or the keys show instead.
-        Kern.packageLanguageSet(packageLanguageUnpack().absolutePath, language)
-        // "Android" in the program name lets other devices recognise a phone (or the TV).
-        kern = Kern.init(store.devicesIdentifier(), Build.MODEL ?: "Android", BuildConfigVersion,
-                         if (isTv) "Swiftly Player Android TV" else "Swiftly Player Android", SwiftArena.ofAuto())
-        // Where the core writes images it makes itself (trickplay sheets of servers that have none to fetch).
-        Kern.cacheFolderSet(cacheDir.absolutePath)
+        rk = RustKern(this)
         qualityReport()
         sessionEventsListen()
         sharedListen(run)
@@ -467,8 +466,8 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
 
     /** Direct Play, bitrate and the subtitle look's file switch to the facade, at startup, on every change and before each start. */
     fun qualityReport() {
-        kern.playbackSelection(settings.alwaysDirectPlay, settings.bitratesLimit.toLong())
-        kern.subtitleLookReport(settings.subtitleLook)
+        rk.playbackSelection(settings.alwaysDirectPlay, settings.bitratesLimit.toLong())
+        rk.subtitleLookReport(settings.subtitleLook)
     }
 
 
@@ -478,11 +477,11 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
      */
     fun sessionAgainFromSet(): Boolean {
         if (store.accounts == null) {
-            store.session?.let { alt -> Kern.bundleFromSession(alt).takeIf { it.isNotEmpty() }?.let { store.accounts = it } }
+            store.session?.let { alt -> KernRules.bundleFromSession(alt).takeIf { it.isNotEmpty() }?.let { store.accounts = it } }
         }
         val bundle = store.accounts ?: return false
-        val active = Kern.bundleActive(bundle).takeIf { it.isNotEmpty() } ?: return false
-        return try { kern.sessionSet(active); true } catch (e: Exception) { false }
+        val active = KernRules.bundleActive(bundle).takeIf { it.isNotEmpty() } ?: return false
+        return try { rk.sessionSet(active); true } catch (e: Exception) { false }
     }
 
     /**
@@ -506,7 +505,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         accountPreGiftFetch()
         run.launch {
             val applies = runCatching {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.sessionApplies().await() }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { rk.sessionApplies().await() }
             }.getOrDefault(true)
             if (applies) return@launch
             revokedSignOff()
@@ -516,8 +515,8 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     /** The token no longer opens the server: sign this account out and say why (as after a failed check). */
     private suspend fun revokedSignOff() {
         val name = username()
-        val rest = store.accounts?.let { Kern.bundleRemoved(it, Kern.bundleActiveId(it)) }.orEmpty()
-        val proceed = rest.takeIf { it.isNotEmpty() }?.let { Kern.bundleActive(it) }
+        val rest = store.accounts?.let { KernRules.bundleRemoved(it, KernRules.bundleActiveId(it)) }.orEmpty()
+        val proceed = rest.takeIf { it.isNotEmpty() }?.let { KernRules.bundleActive(it) }
             ?.let { runCatching { org.json.JSONObject(it).optString("userName") }.getOrNull() }
         val sentence = if (proceed.isNullOrEmpty()) de.paulherter.swiftly.shared.translated("Die Anmeldung gilt nicht mehr. Bitte neu anmelden.")
                    else de.paulherter.swiftly.shared.translated("Die Anmeldung von %@ gilt nicht mehr. Jetzt angemeldet als %@.", name, proceed)
@@ -537,17 +536,17 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         run.launch {
             while (true) {
                 kotlinx.coroutines.delay(4000)
-                if (kern.kind() != "plex") continue
+                if (rk.kind() != "plex") continue
                 val events = runCatching {
-                    org.json.JSONObject(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.sessionEvents().await() })
+                    org.json.JSONObject(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { rk.sessionEvents().await() })
                 }.getOrNull() ?: continue
                 val moved = events.optString("moved")
                 if (moved.isNotEmpty()) store.accounts?.let { bundle ->
                     // A late event of an account that was left meanwhile only updates its address;
                     // recording makes the account current, so the one that is current stays so.
-                    val current = Kern.bundleActiveId(bundle)
-                    var next = Kern.bundleRecord(moved, bundle)
-                    if (current.isNotEmpty() && Kern.bundleActiveId(next) != current) next = Kern.bundleSwitch(next, current)
+                    val current = KernRules.bundleActiveId(bundle)
+                    var next = KernRules.bundleRecord(moved, bundle)
+                    if (current.isNotEmpty() && KernRules.bundleActiveId(next) != current) next = KernRules.bundleSwitch(next, current)
                     store.accounts = next
                 }
                 if (events.optBoolean("revoked")) revokedSignOff()
@@ -556,10 +555,10 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     }
 
     /** Whether the current server can do this (`ServerCapability`, e.g. "quickConnect"); the screens show only what it can. */
-    fun can(capability: String): Boolean = if (::kern.isInitialized) kern.can(capability) else true
+    fun can(capability: String): Boolean = if (::rk.isInitialized) rk.can(capability) else true
 
     /** The current account's kind: "jellyfin", "emby" or "plex". */
-    fun kind(): String = if (::kern.isInitialized) kern.kind().ifEmpty { "jellyfin" } else "jellyfin"
+    fun kind(): String = if (::rk.isInitialized) rk.kind() else "jellyfin"
 
     /**
      * What the current account dictates: `EnableNextEpisodeAutoPlay` and the download right
@@ -575,7 +574,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         settings.downloadQualityAccount = ""
         run.launch {
             val parts = runCatching {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.accountDefaults().await() }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { rk.accountDefaults().await() }
             }.getOrDefault("||").split("|")
             settings.nextAutomaticAccount = parts.getOrElse(0) { "" }
             settings.downloadRightAccount = parts.getOrElse(1) { "" }
@@ -585,7 +584,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     }
 
     /** The current account's name, for the profile badge. */
-    fun username(): String = store.accounts?.let { Kern.bundleActive(it) }?.let {
+    fun username(): String = store.accounts?.let { KernRules.bundleActive(it) }?.let {
         runCatching { org.json.JSONObject(it).optString("userName") }.getOrNull()
     }.orEmpty().ifEmpty { "?" }
 
@@ -602,10 +601,10 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     /** Takes a fresh session; if accounts already existed, this is a switch. */
     fun sessionRecord(session: String) {
         val before = store.accounts
-        val bundle = Kern.bundleRecord(session, before.orEmpty())
+        val bundle = KernRules.bundleRecord(session, before.orEmpty())
         fun adopt() {
             store.accounts = bundle
-            kern.sessionSet(session)
+            rk.sessionSet(session)
             if (before != null) afterSwitch() else { settings.librariesNewRead(); accountPreGiftFetch() }
         }
         // A further account plays the switch motion on the phone, like iPhone. The first sign-in adopts at
@@ -616,7 +615,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
 
     /** Identifier, name and picture of the active account of a bundle. */
     private fun signedInAccount(bundle: String): Triple<String, String, String?>? {
-        val cards = org.json.JSONArray(Kern.bundleOverview(bundle))
+        val cards = org.json.JSONArray(KernRules.bundleOverview(bundle))
         for (i in 0 until cards.length()) {
             val card = cards.getJSONObject(i)
             if (!card.getBoolean("aktiv")) continue
@@ -655,10 +654,10 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
 
     private fun accountSwitchNow(identifier: String) {
         val bundle = store.accounts ?: return
-        if (Kern.bundleActiveId(bundle) == identifier) return
-        val new = Kern.bundleSwitch(bundle, identifier)
+        if (KernRules.bundleActiveId(bundle) == identifier) return
+        val new = KernRules.bundleSwitch(bundle, identifier)
         store.accounts = new
-        kern.sessionSet(Kern.bundleActive(new))
+        KernRules.bundleActive(new).let { rk.sessionSet(it) }
         afterSwitch()
     }
 
@@ -672,9 +671,10 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
 
     private suspend fun signOutNow() {
         playbackPreSwitchEnd()
-        runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { kern.signOff().await() } }
+        runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { rk.signOff().await() } }
+        rk.sessionClear()
         val bundle = store.accounts
-        val rest = bundle?.let { Kern.bundleRemoved(it, Kern.bundleActiveId(it)) }.orEmpty()
+        val rest = bundle?.let { KernRules.bundleRemoved(it, KernRules.bundleActiveId(it)) }.orEmpty()
         if (rest.isEmpty()) {
             store.accounts = null
             store.session = null
@@ -682,7 +682,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
             signedOut.intValue++
         } else {
             store.accounts = rest
-            kern.sessionSet(Kern.bundleActive(rest))
+            KernRules.bundleActive(rest).let { rk.sessionSet(it) }
             afterSwitch()
         }
     }
@@ -697,7 +697,7 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
 
     private fun clearIntermediates() {
         // The socket belongs to the previous account; the main view starts it for the new one.
-        run.launch { runCatching { kern.remoteControlEnd().await() } }
+        run.launch { runCatching { rk.remoteControlEnd().await() } }
         startRails = null
         settings.librariesNewRead()
         libraries.clear(); titleCache.clear(); seriesCache.clear(); episodesCache.clear(); peopleCache.clear()
@@ -708,25 +708,6 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
         // on the TV home screen keeps showing the previous account's films and series, visible to
         // everyone in the room.
         de.paulherter.swiftly.tv.TvContinueWatchingShelf.wipe(this)
-    }
-
-    /** Assets cannot give a file path, but `Bundle(path:)` needs one, so extract once. */
-    private fun packageLanguageUnpack(): File {
-        val target = File(filesDir, "paketsprache")
-        target.deleteRecursively()
-        copy("paketsprache", target)
-        return target
-    }
-
-    private fun copy(path: String, target: File) {
-        val children = assets.list(path) ?: emptyArray()
-        if (children.isEmpty()) {
-            target.parentFile?.mkdirs()
-            assets.open(path).use { on -> target.outputStream().use { on.copyTo(it) } }
-        } else {
-            target.mkdirs()
-            children.forEach { copy("$path/$it", File(target, it)) }
-        }
     }
 
     companion object {

@@ -11,6 +11,7 @@
 # same network and switched on.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+DD="$HOME/Library/Caches/swiftly-dd/$(basename "$(pwd)")-tv"  # persistent per working tree: warm builds
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 
 # **Release is the honest comparison.** A Debug build makes VLC write its own
@@ -18,7 +19,7 @@ export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Develope
 # lock and a file write. Measuring how evenly frames arrive with that on
 # partly measures the measuring. Other players and App Store builds run as
 # Release.
-KONFIG=Debug
+KONFIG=Release
 ARGS=()
 for a in "$@"; do
   case "$a" in
@@ -52,13 +53,15 @@ if [ -z "${UDID:-}" ]; then
 fi
 echo "Geraet: ${NAME:-Apple TV} ($UDID)"
 
+# ARCHS=arm64: built for one device, Xcode 27 picks arm64e on an A15 Apple TV, and the
+# Rust core framework only has an arm64 tvOS slice ("no library for this platform").
 xcodebuild -project Swiftly.xcodeproj -scheme Swiftly-tvOS \
-  -destination "id=$UDID" -derivedDataPath build/DD-tv \
-  -configuration "$KONFIG" \
+  -destination "id=$UDID" -derivedDataPath "$DD" \
+  -configuration "$KONFIG" ARCHS=arm64 \
   DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic \
   OTHER_SWIFT_FLAGS='$(inherited) -DDEVLOG' build
 
-APP=$(find "build/DD-tv/Build/Products/$KONFIG-appletvos" -name "Swiftly-tvOS.app" -maxdepth 1 | head -1)
+APP=$(find "$DD/Build/Products/$KONFIG-appletvos" -name "Swiftly-tvOS.app" -maxdepth 1 | head -1)
 echo "Installiere $APP"
 xcrun devicectl device install app --device "$ID" "$APP"
 

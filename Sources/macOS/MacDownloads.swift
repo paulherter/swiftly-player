@@ -1,4 +1,5 @@
 import JellyfinKit
+import SwiftlyCore
 import SwiftUI
 
 // **The Mac version of Downloads.**
@@ -974,7 +975,10 @@ private struct Dim: ButtonStyle {
     private struct BodyShell<ContentBody: View>: View {
         let pressed: Bool
         @ViewBuilder let content: ContentBody
-        @Environment(\.isFocused) private var focused
+        @Environment(\.isFocused) private var focusedRaw
+        @Environment(\.keyboardMarkShown) private var markShown
+        /// Focus is drawn only after keyboard navigation started, see `KeyboardFocus`.
+        private var focused: Bool { focusedRaw && markShown }
 
         var body: some View {
             content
@@ -1026,21 +1030,9 @@ struct MacLoadSelection: View {
     /// quality.
     let proceed: ([Item], DownloadQuality, DownloadAudioChoice) -> Void
 
-    @State private var episodes: [String: [Item]] = [:]
-    /// `nil` until someone picks: then the audio language from the settings applies.
-    @State private var audioChosen: DownloadAudioChoice?
-    @State private var selected: Set<String> = []
+    /// The selection logic lives in the core (`LoadSelectionState` wraps `LoadSelectionModel`).
+    @State private var sheet = LoadSelectionState()
     @State private var openSeason: String?
-    @State private var onlyUnwatched = false
-    @State private var loads = true
-    /// Original, until someone clicks the badge and picks something else.
-    @State private var quality: DownloadQuality = .original
-    /// **The failure case is part of it.** If loading fails, the selection must
-    /// not show up empty; nobody would know whether the series has no episodes or
-    /// the server is not answering.
-    @State private var disrupted = false
-
-    private var allEpisodes: [Item] { seasons.compactMap { episodes[$0.id] }.flatMap { $0 } }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1055,7 +1047,7 @@ struct MacLoadSelection: View {
                 .padding(.top, 14)
                 .padding(.bottom, 10)
 
-            if disrupted, allEpisodes.isEmpty {
+            if sheet.disrupted, sheet.allEpisodes.isEmpty {
                 DisturbHint(model: model, retry: { Task { await loadAll() } },
                              spacingTop: 10)
                     .padding(.bottom, 16)
@@ -1083,6 +1075,7 @@ struct MacLoadSelection: View {
             form.fill(Theme.raised).overlay { form.strokeBorder(Theme.margin, lineWidth: 1) }
         }
         .task(id: opened) { if opened { await loadAll() } }
+        .onChange(of: model.downloads.free) { _, new in sheet.spaceChanged(new) }
     }
 
     @State private var contentHeight: CGFloat = 0
@@ -1099,72 +1092,30 @@ struct MacLoadSelection: View {
         withAnimation(Theme.leap) { contentHeight = new }
     }
 
-    /// **What a check takes.** Without the switch, everything; with it, only
-    /// what is still open. What is already on disk is never taken.
-    private func takeable(_ list: [Item]) -> [Item] {
-        list.filter { episode in
-            guard model.downloads.entries(for: episode.id) == nil else { return false }
-            guard onlyUnwatched else { return true }
-            return !(episode.userData?.played ?? false)
-        }
-    }
-
-    private var selectedEpisodes: [Item] { allEpisodes.filter { selected.contains($0.id) } }
-    /// Audio as languages, because the same language sits at a different index in
-    /// every file. Only offered when the selected files hold more than one.
-    private var audioOptions: [DownloadAudioOption] {
-        DownloadAudio.languageOptions(selectedEpisodes.map { $0.mediaSources?.first?.mediaStreams ?? [] })
-    }
-    private var audioOffered: Bool {
-        DownloadAudio.offered(selection: selectedEpisodes.map { $0.mediaSources?.first?.mediaStreams ?? [] })
-    }
-    private var audio: DownloadAudioChoice {
-        let wished = audioChosen ?? .language(model.audioLanguage)
-        return audioOffered && audioOptions.contains { $0.choice == wished } ? wished : .all
-    }
-    /// The footer calculates in the chosen quality, as on iPhone.
-    private var bytes: Int64 { bytes(in: quality) }
-
-    private func bytes(in q: DownloadQuality) -> Int64 {
-        selectedEpisodes.reduce(0) {
-            $0 + q.estimatedBytes(original: Int64($1.mediaSources?.first?.size ?? 0),
-                                    runtimeTicks: $1.runTimeTicks)
-        }
-    }
-
-    private var offered: [DownloadQuality] {
-        let base = selectedEpisodes.isEmpty ? allEpisodes : selectedEpisodes
-        return DownloadQuality.offered(
-            selectable: model.downloadQualitySelectable,
-            sourceBitrateOf: DownloadQuality.sourceBitrateOf(base.map {
-                (Int64($0.mediaSources?.first?.size ?? 0), $0.runTimeTicks)
-            }))
-    }
-
     // MARK: The cards
 
     private var seriesCard: some View {
         VStack(spacing: 0) {
-            row(box: stateAll, title: Text("Ganze Serie"),
-                  right: seriesRight) {
-                toggle(allEpisodes)
+            row(box: sheet.all, title: Text("Ganze Serie"),
+                  right: sheet.seriesRight) {
+                withAnimation(Theme.toggle) { sheet.toggleAll() }
             }
             SheetLine()
             VStack(alignment: .leading, spacing: 3) {
                 // A button, not a tap gesture: otherwise the switch is unreachable without
                 // a mouse and VoiceOver does not read it.
-                Button { onlyUnwatched.toggle() } label: {
+                Button { sheet.onlyUnwatched.toggle() } label: {
                     HStack(spacing: 13) {
                         Text("Nur ungesehene")
                             .font(Theme.listTitle)
                             .foregroundStyle(Theme.font)
                         Spacer(minLength: 12)
-                        ToggleSwitch(an: onlyUnwatched)
+                        ToggleSwitch(an: sheet.onlyUnwatched)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(Theme.PressRow())
-                .accessibilityRepresentation { Toggle(isOn: $onlyUnwatched) { Text("Nur ungesehene") } }
+                .accessibilityRepresentation { Toggle(isOn: $sheet.onlyUnwatched) { Text("Nur ungesehene") } }
                 Text("Entscheidet, was ein Haken auswählt.")
                     .font(Theme.small)
                     .foregroundStyle(Theme.fontVeryQuiet)
@@ -1177,51 +1128,36 @@ struct MacLoadSelection: View {
         .padding(.horizontal, 16)
         // Toggling the switch changes not the selection but its base set, so it is
         // recomputed.
-        .onChange(of: onlyUnwatched) { _, _ in newCompute() }
-    }
-
-    /// **"Ganze Serie" counts only what is still missing.** What is already on
-    /// the Mac does not count.
-    private var seriesRight: String {
-        if loads { return String(localized: "wird gelesen …") }
-        if stateAll == .present { return String(localized: "alles da") }
-        if !allEpisodes.isEmpty, visible(allEpisodes).isEmpty {
-            return String(localized: "alles gesehen")
-        }
-        return numberAndSize(takeable(allEpisodes).count, bytesFrom(allEpisodes))
     }
 
     private var seasonCard: some View {
         VStack(spacing: 0) {
-            ForEach(Array(seasons.enumerated()), id: \.element.id) { nr, season in
-                let ownOnes = visible(episodes[season.id] ?? [])
-                let box = state(ownOnes)
-                row(box: box, title: Text(verbatim: season.name),
-                      right: seasonRight(episodes[season.id], visible: ownOnes, box),
+            ForEach(Array(sheet.seasons.enumerated()), id: \.element.id) { nr, season in
+                let own = sheet.row(season.id)
+                row(box: own?.check ?? .empty, title: Text(verbatim: season.name),
+                      right: sheet.seasonRight(season.id),
                       expanded: openSeason == season.id) {
-                    toggle(ownOnes)
+                    withAnimation(Theme.toggle) { sheet.toggleSeason(season.id) }
                 } expand: {
                     withAnimation(Theme.leap) {
                         openSeason = openSeason == season.id ? nil : season.id
                     }
                 }
                 if openSeason == season.id {
-                    // **Only indented, no second fill.** In dark mode depth goes upward;
-                    // something darker inside a light card looks like a hole.
-                    ForEach(ownOnes) { episode in
+                    ForEach(own?.episodes ?? [], id: \.id) { episode in
                         SheetLine()
                         let entries = model.downloads.entries(for: episode.id)
                         row(box: entries != nil ? .present
-                                      : (selected.contains(episode.id) ? .full : .empty),
-                              title: Text(verbatim: episode.name),
+                                      : (episode.selected ? .full : .empty),
+                              title: Text(verbatim: episode.title),
                               right: entries.map(loadState) ?? episodesRight(episode),
                               small: true, inset: 38,
-                              quiet: watched(episode)) {
-                            toggle([episode])
+                              quiet: episode.watched) {
+                            withAnimation(Theme.toggle) { sheet.toggleEpisode(episode.id) }
                         }
                     }
                 }
-                if nr < seasons.count - 1 { SheetLine() }
+                if nr < sheet.seasons.count - 1 { SheetLine() }
             }
         }
         .background(Theme.area,
@@ -1229,41 +1165,7 @@ struct MacLoadSelection: View {
         .padding(.horizontal, 16)
         // The switch removes episodes from the list. They leave softly rather than
         // abruptly, and the popover shrinks along the same curve.
-        .animation(Theme.leap, value: onlyUnwatched)
-    }
-
-    /// **What is in the list.** With "Nur ungesehene", watched episodes are not
-    /// shown at all and count nowhere. Before, they stayed visible and were just
-    /// no longer selectable. As on iPhone.
-    private func visible(_ list: [Item]) -> [Item] {
-        onlyUnwatched ? list.filter { !watched($0) } : list
-    }
-
-    private func watched(_ episode: Item) -> Bool { episode.userData?.played ?? false }
-
-    /// **"Watched" is shown before choosing.** Without the switch, watched
-    /// episodes stay selectable: a circle like any other, but a quiet title and
-    /// "gesehen" on the right before the size. The circle distinguishes it from
-    /// the quiet checkmark of downloaded episodes.
-    private func episodesRight(_ episode: Item) -> String {
-        watched(episode) ? String(localized: "gesehen") + " · " + size(episode)
-                       : size(episode)
-    }
-
-    /// Right side of the season row: what a check there would still take.
-    /// **"alles da" only if true**, so not while the season is still being read,
-    /// and not when "Nur ungesehene" excludes everything.
-    private func seasonRight(_ all: [Item]?, visible ownOnes: [Item],
-                               _ box: CheckboxState) -> String {
-        guard let all else {
-            return loads ? String(localized: "wird gelesen …") : "—"
-        }
-        if all.isEmpty { return String(localized: "Keine Folgen") }
-        if ownOnes.isEmpty { return String(localized: "alles gesehen") }
-        if box == .present { return String(localized: "alles da") }
-        let free = takeable(ownOnes)
-        if free.isEmpty { return String(localized: "alles da") }
-        return String(localized: "\(free.count) Folgen")
+        .animation(Theme.leap, value: sheet.onlyUnwatched)
     }
 
     /// **A downloaded episode says it is there.** Before, it showed an empty
@@ -1283,9 +1185,9 @@ struct MacLoadSelection: View {
         VStack(spacing: 10) {
             SheetLine()
             HStack(spacing: 10) {
-                Text(verbatim: selected.isEmpty
+                Text(verbatim: sheet.selectedCount == 0
                      ? String(localized: "Nichts gewählt")
-                     : numberAndSize(selected.count, bytes))
+                     : sheet.numberAndSize(sheet.selectedCount, sheet.bytes))
                     .font(Theme.tile)
                     .monospacedDigit()
                     .foregroundStyle(Theme.font)
@@ -1297,28 +1199,26 @@ struct MacLoadSelection: View {
             // original file; at 35 GB that explains the number above it and is not a
             // footnote. If the server may transcode, the badge is also the choice of a
             // smaller version.
-            MacQualityBadge(choice: $quality, offered: offered,
+            MacQualityBadge(choice: $sheet.quality, offered: sheet.qualities,
                                   selectable: model.downloadQualitySelectable,
-                                  size: { selected.isEmpty ? 0 : bytes(in: $0) })
+                                  size: { q in sheet.selectedEpisodes.reduce(0) {
+                                      $0 + q.estimatedBytes(original: Int64($1.mediaSources?.first?.size ?? 0),
+                                                            runtimeTicks: $1.runTimeTicks) } })
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
-                .onChange(of: offered) { _, new in
-                    if !new.contains(quality) { quality = .original }
-                }
-            if audioOffered {
-                MacAudioBadge(choice: Binding(get: { audio }, set: { audioChosen = $0 }),
-                              options: audioOptions)
+            if sheet.audioOffered {
+                MacAudioBadge(choice: $sheet.audioChoice, options: sheet.audioOptions)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
             }
 
-            PrimaryButton(label: selected.isEmpty ? "Laden"
-                                                     : LocalizedStringKey("\(selectedNumber) laden"),
+            PrimaryButton(label: sheet.selectedCount == 0 ? "Laden"
+                                                     : LocalizedStringKey("\(sheet.episodesNumber(sheet.selectedCount)) laden"),
                        symbol: "arrow.down") {
                 opened = false
-                proceed(selectedEpisodes, quality, audio)
+                proceed(sheet.selectedEpisodes, sheet.quality, sheet.audio)
             }
-            .disabled(selected.isEmpty)
+            .disabled(sheet.selectedCount == 0)
             .padding(.horizontal, 16)
         }
         .padding(.top, 4)
@@ -1332,7 +1232,7 @@ struct MacLoadSelection: View {
     /// reserve as the hint shown afterwards. As on iPhone.
     @ViewBuilder
     private var spaceDetail: some View {
-        switch DownloadRules.footSpace(for: bytes, free: model.downloads.free) {
+        switch sheet.snap?.foot ?? .free(bytes: 0) {
         case .free(let rest):
             Text(verbatim: String(localized: "Danach \(DownloadRules.size(rest)) frei"))
                 .font(Theme.small)
@@ -1351,37 +1251,11 @@ struct MacLoadSelection: View {
         }
     }
 
-    private var selectedNumber: String {
-        let n = selected.count
-        return n == 1 ? String(localized: "1 Folge") : String(localized: "\(n) Folgen")
-    }
-
-    private func numberAndSize(_ count: Int, _ bytes: Int64) -> String {
-        let figure = count == 1 ? String(localized: "1 Folge")
-                               : String(localized: "\(count) Folgen")
-        return figure + " · " + DownloadRules.size(bytes)
-    }
-
     // MARK: The box and the row
 
     /// Four states: the three of the selection, and **da** for what is already
     /// on the Mac and can no longer be chosen.
-    private enum CheckboxState { case empty, part, full, present }
-
-    private func state(_ all: [Item], presentCounts: Bool = true) -> CheckboxState {
-        let list = visible(all)
-        if presentCounts, !list.isEmpty,
-           list.allSatisfy({ model.downloads.entries(for: $0.id) != nil }) {
-            return .present
-        }
-        let free = takeable(list)
-        guard !free.isEmpty else { return .empty }
-        let an = free.filter { selected.contains($0.id) }.count
-        return an == 0 ? .empty : (an == free.count ? .full : .part)
-    }
-    /// Until every season has been read, the series is not "da", even if the
-    /// first one read happens to be fully downloaded.
-    private var stateAll: CheckboxState { state(allEpisodes, presentCounts: !loads) }
+    private typealias CheckboxState = LoadCheck
 
     private func row(box: CheckboxState, title: Text, right: String,
                        small: Bool = false, inset: CGFloat = 16,
@@ -1428,6 +1302,12 @@ struct MacLoadSelection: View {
         .frame(minHeight: small ? 52 : 58)
     }
 
+    private func episodesRight(_ episode: LoadEpisodeRow) -> String {
+        let own = size(episode.id)
+        return episode.watched ? String(localized: "gesehen") + " · " + own : own
+    }
+
+
     @ViewBuilder
     private func boxImage(_ k: CheckboxState) -> some View {
         ZStack {
@@ -1467,29 +1347,8 @@ struct MacLoadSelection: View {
 
     // MARK: Selection and data
 
-    private func toggle(_ list: [Item]) {
-        let free = takeable(list)
-        guard !free.isEmpty else { return }
-        let allAn = free.allSatisfy { selected.contains($0.id) }
-        withAnimation(Theme.toggle) {
-            for f in free {
-                if allAn { selected.remove(f.id) } else { selected.insert(f.id) }
-            }
-        }
-    }
-
-    /// After the switch: everything that can no longer be taken drops out.
-    private func newCompute() {
-        let allowed = Set(takeable(allEpisodes).map(\.id))
-        withAnimation(Theme.toggle) { selected.formIntersection(allowed) }
-    }
-
-    private func bytesFrom(_ list: [Item]) -> Int64 {
-        takeable(list).reduce(0) { $0 + Int64($1.mediaSources?.first?.size ?? 0) }
-    }
-
-    private func size(_ episode: Item) -> String {
-        guard let b = episode.mediaSources?.first?.size, b > 0 else { return "—" }
+    private func size(_ id: String) -> String {
+        guard let b = sheet.allEpisodes.first(where: { $0.id == id })?.mediaSources?.first?.size, b > 0 else { return "—" }
         return DownloadRules.size(Int64(b))
     }
 
@@ -1503,22 +1362,15 @@ struct MacLoadSelection: View {
     /// **`nil` means failed, `[]` means empty.** Failed requests are not cached,
     /// otherwise the empty list would later stand as fact.
     private func loadAll() async {
-        loads = true
-        disrupted = false
         model.downloads.spaceRefresh()
-        episodes = preloaded
-        for season in seasons where episodes[season.id] == nil {
-            guard let list = await model.episodes(series: series.id, season: season.id) else {
-                disrupted = true
-                continue
-            }
-            episodes[season.id] = list
-            SeriesCache.shared.remember(series.id) { $0.episodes[season.id] = list }
-        }
-        loads = false
-        // Whatever was downloaded since last opening is no longer selectable;
-        // otherwise the footer would still count it.
-        newCompute()
+        let model = model
+        let seriesIdentifier = series.id
+        await sheet.load(
+            seasons: seasons, preloaded: preloaded, audioLanguage: model.audioLanguage,
+            selectQuality: model.downloadQualitySelectable, free: model.downloads.free,
+            isPresent: { model.downloads.entries(for: $0) != nil },
+            learned: { id, list in SeriesCache.shared.remember(seriesIdentifier) { $0.episodes[id] = list } },
+            fetch: { await model.episodes(series: seriesIdentifier, season: $0) })
     }
 }
 

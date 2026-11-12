@@ -54,29 +54,30 @@ final class QuickConnectModel {
         }
     }
 
-    /// **The flow lives in the package** (`QuickConnectWait`): deadline on the
-    /// clock, polling on a tick and immediately after returning from the browser, a
-    /// network error does not end the wait. Before, the first failed request aborted
+    /// **The flow lives in the core** (`AccountsModel.quickConnectWait`): deadline on the
+    /// clock, polling on a tick, a network error does not end the wait, and the sign-in
+    /// happens there the moment someone approves. Before, the first failed request aborted
     /// everything, on the iPhone exactly when coming back from Safari with the
     /// connection dropped in the background.
     private func wait(on preGait: LoginCode, run myOwn: Int, model: AppModel) async {
-        let atNew = newServer
-        let feed = QuickConnectWait.flow {
-            await (atNew ? model.quickConnectAskAgainAtNewServer(preGait)
-                           : model.quickConnectAskAgain(preGait))
-        }
-        for await event in feed {
-            guard myOwn == run, !Task.isCancelled else { return }
-            switch event {
-            case let .rest(seconds):
-                secondsLeft = seconds
-            case .released:
-                run += 1
-                released = preGait
-            case let .end(last):
-                secondsLeft = 0
-                error = QuickConnectDeadline.endText(last: last)
+        let outcome = await model.quickConnectWait(preGait, atNewServer: newServer) { [weak self] seconds in
+            Task { @MainActor in
+                guard let self, myOwn == self.run else { return }
+                self.secondsLeft = Int(seconds)
             }
+        }
+        guard myOwn == run, !Task.isCancelled else { return }
+        switch outcome {
+        case .approved:
+            run += 1
+            released = preGait
+        case let .ended(text):
+            secondsLeft = 0
+            error = text
+        case let .failed(text):
+            error = text
+        case .stopped:
+            break
         }
     }
 

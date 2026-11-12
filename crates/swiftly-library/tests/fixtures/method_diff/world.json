@@ -1,0 +1,6745 @@
+{
+ "ancestors": {
+  "bs1": [
+   {
+    "Id": "L-BOX",
+    "Name": "L-BOX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "bs2": [
+   {
+    "Id": "L-BOX",
+    "Name": "L-BOX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "bs3": [
+   {
+    "Id": "L-BOX",
+    "Name": "L-BOX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m00": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m00b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m01": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m01b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m02": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m02b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m03": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m03b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m04": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m05": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m06": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m07": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m08": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m09": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m10": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m11": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m12": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m12b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m13": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m13b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m14": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m15": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m16": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m17": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m18": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m19": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m20": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m21": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m22": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "m23": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "pl1": [
+   {
+    "Id": "L-PL",
+    "Name": "L-PL",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "pl2": [
+   {
+    "Id": "L-PL",
+    "Name": "L-PL",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "pl3": [
+   {
+    "Id": "L-PL",
+    "Name": "L-PL",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s0": [
+   {
+    "Id": "L-TV",
+    "Name": "L-TV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s0-0-1b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s0-0-2b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s0-0-3b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s0-1-1b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s0b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s1": [
+   {
+    "Id": "L-TV",
+    "Name": "L-TV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s1-0-1b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s1-0-2b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s1-0-3b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s1-1-1b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s1b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s2": [
+   {
+    "Id": "L-TV",
+    "Name": "L-TV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s3": [
+   {
+    "Id": "L-TV",
+    "Name": "L-TV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s4": [
+   {
+    "Id": "L-TV",
+    "Name": "L-TV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s5": [
+   {
+    "Id": "L-TV",
+    "Name": "L-TV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s5b": [
+   {
+    "Id": "L-MIX",
+    "Name": "L-MIX",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s6": [
+   {
+    "Id": "L-TV",
+    "Name": "L-TV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "s7": [
+   {
+    "Id": "L-TV",
+    "Name": "L-TV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "w01": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "w02": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "w03": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "w04": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "w05": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "w06": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "w07": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "w08": [
+   {
+    "Id": "L-MOV",
+    "Name": "L-MOV",
+    "Type": "CollectionFolder"
+   }
+  ],
+  "x1": [
+   {
+    "Id": "L-TV"
+   }
+  ],
+  "x2": [
+   {
+    "Id": "L-MIX"
+   }
+  ]
+ },
+ "catalog": [
+  {
+   "DateCreated": "2024-01-01T10:00:00.0000000Z",
+   "Genres": [
+    "Action"
+   ],
+   "Id": "m00",
+   "MediaType": "Video",
+   "Name": "The Matrix",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    },
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    }
+   ],
+   "ProductionYear": 1990,
+   "ProviderIds": {
+    "Imdb": "tt0000000",
+    "Tmdb": "1000"
+   },
+   "RunTimeTicks": 60000000000,
+   "SortName": "the matrix",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-02-02T10:00:00.0000000Z",
+   "Genres": [
+    "Action,Adventure"
+   ],
+   "Id": "m01",
+   "MediaType": "Video",
+   "Name": "Ärger im Paradies",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 1991,
+   "ProviderIds": {
+    "Imdb": "tt0000001",
+    "Tmdb": "1001"
+   },
+   "RunTimeTicks": 60000000001,
+   "SortName": "ärger im paradies",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": true,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-03T10:00:00.0000000Z",
+   "Genres": [
+    "Drama",
+    "Action"
+   ],
+   "Id": "m02",
+   "MediaType": "Video",
+   "Name": "Zorro",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p3",
+     "Name": "Eva Extra",
+     "Role": "Friend",
+     "Type": "Actor"
+    },
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 1992,
+   "ProviderIds": {
+    "Imdb": "tt0000002",
+    "Tmdb": "1002"
+   },
+   "RunTimeTicks": 60000000002,
+   "SortName": "zorro",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-04T10:00:00.0000000Z",
+   "Genres": [],
+   "Id": "m03",
+   "MediaType": "Video",
+   "Name": "10 Cloverfield Lane",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 1993,
+   "ProviderIds": {
+    "Imdb": "tt0000003",
+    "Tmdb": "1003"
+   },
+   "RunTimeTicks": 60000000003,
+   "SortName": "10 cloverfield lane",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "PlaybackPositionTicks": 3000000000,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-05-05T10:00:00.0000000Z",
+   "Genres": [
+    "Comedy"
+   ],
+   "Id": "m04",
+   "MediaType": "Video",
+   "Name": "007 Skyfall",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    },
+    {
+     "Id": "p3",
+     "Name": "Eva Extra",
+     "Role": "Friend",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 1994,
+   "ProviderIds": {
+    "Imdb": "tt0000004",
+    "Tmdb": "1004"
+   },
+   "RunTimeTicks": 60000000004,
+   "SortName": "007 skyfall",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-06-06T10:00:00.0000000Z",
+   "Genres": [
+    "Action"
+   ],
+   "Id": "m05",
+   "MediaType": "Video",
+   "Name": "Éclair",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 1995,
+   "ProviderIds": {
+    "Imdb": "tt0000005",
+    "Tmdb": "1005"
+   },
+   "RunTimeTicks": 60000000005,
+   "SortName": "éclair",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": true,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-07-07T10:00:00.0000000Z",
+   "Genres": [
+    "Action,Adventure"
+   ],
+   "Id": "m06",
+   "MediaType": "Video",
+   "Name": "Äpfel",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    },
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    }
+   ],
+   "ProductionYear": 1996,
+   "ProviderIds": {
+    "Imdb": "tt0000006",
+    "Tmdb": "1006"
+   },
+   "RunTimeTicks": 60000000006,
+   "SortName": "äpfel",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-08-08T10:00:00.0000000Z",
+   "Genres": [
+    "Drama",
+    "Action"
+   ],
+   "Id": "m07",
+   "MediaType": "Video",
+   "Name": "中文电影",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 1997,
+   "ProviderIds": {
+    "Imdb": "tt0000007",
+    "Tmdb": "1007"
+   },
+   "RunTimeTicks": 60000000007,
+   "SortName": "中文电影",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-09-09T10:00:00.0000000Z",
+   "Genres": [],
+   "Id": "m08",
+   "MediaType": "Video",
+   "Name": "Яблоко",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p3",
+     "Name": "Eva Extra",
+     "Role": "Friend",
+     "Type": "Actor"
+    },
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 1998,
+   "ProviderIds": {
+    "Imdb": "tt0000008",
+    "Tmdb": "1008"
+   },
+   "RunTimeTicks": 60000000008,
+   "SortName": "яблоко",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-10-10T10:00:00.0000000Z",
+   "Genres": [
+    "Comedy"
+   ],
+   "Id": "m09",
+   "MediaType": "Video",
+   "Name": "Straße",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 1999,
+   "ProviderIds": {
+    "Imdb": "tt0000009",
+    "Tmdb": "1009"
+   },
+   "RunTimeTicks": 60000000009,
+   "SortName": "straße",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": true,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-11-11T10:00:00.0000000Z",
+   "Genres": [
+    "Action"
+   ],
+   "Id": "m10",
+   "MediaType": "Video",
+   "Name": "X-Men 2",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    },
+    {
+     "Id": "p3",
+     "Name": "Eva Extra",
+     "Role": "Friend",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2000,
+   "ProviderIds": {
+    "Imdb": "tt0000010",
+    "Tmdb": "1010"
+   },
+   "RunTimeTicks": 60000000010,
+   "SortName": "x-men 2",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "PlaybackPositionTicks": 3000000000,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-12-12T10:00:00.0000000Z",
+   "Genres": [
+    "Action,Adventure"
+   ],
+   "Id": "m11",
+   "MediaType": "Video",
+   "Name": "X-Men 10",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2001,
+   "ProviderIds": {
+    "Imdb": "tt0000011",
+    "Tmdb": "1011"
+   },
+   "RunTimeTicks": 60000000011,
+   "SortName": "x-men 10",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-13T10:00:00.0000000Z",
+   "Genres": [
+    "Drama",
+    "Action"
+   ],
+   "Id": "m12",
+   "MediaType": "Video",
+   "Name": "X-Men 9",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    },
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    }
+   ],
+   "ProductionYear": 2002,
+   "ProviderIds": {
+    "Imdb": "tt0000012",
+    "Tmdb": "1012"
+   },
+   "RunTimeTicks": 60000000012,
+   "SortName": "x-men 9",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-14T10:00:00.0000000Z",
+   "Genres": [],
+   "Id": "m13",
+   "MediaType": "Video",
+   "Name": "A Quiet Place",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2003,
+   "ProviderIds": {
+    "Imdb": "tt0000013",
+    "Tmdb": "1013"
+   },
+   "RunTimeTicks": 60000000013,
+   "SortName": "a quiet place",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": true,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-15T10:00:00.0000000Z",
+   "Genres": [
+    "Comedy"
+   ],
+   "Id": "m14",
+   "MediaType": "Video",
+   "Name": "Der Pate",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p3",
+     "Name": "Eva Extra",
+     "Role": "Friend",
+     "Type": "Actor"
+    },
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2004,
+   "ProviderIds": {
+    "Imdb": "tt0000014",
+    "Tmdb": "1014"
+   },
+   "RunTimeTicks": 60000000014,
+   "SortName": "der pate",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-16T10:00:00.0000000Z",
+   "Genres": [
+    "Action"
+   ],
+   "Id": "m15",
+   "MediaType": "Video",
+   "Name": "der kleine Prinz",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2005,
+   "ProviderIds": {
+    "Imdb": "tt0000015",
+    "Tmdb": "1015"
+   },
+   "RunTimeTicks": 60000000015,
+   "SortName": "der kleine prinz",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-05-17T10:00:00.0000000Z",
+   "Genres": [
+    "Action,Adventure"
+   ],
+   "Id": "m16",
+   "MediaType": "Video",
+   "Name": "Ölprinz",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    },
+    {
+     "Id": "p3",
+     "Name": "Eva Extra",
+     "Role": "Friend",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2006,
+   "ProviderIds": {
+    "Imdb": "tt0000016",
+    "Tmdb": "1016"
+   },
+   "RunTimeTicks": 60000000016,
+   "SortName": "ölprinz",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-06-18T10:00:00.0000000Z",
+   "Genres": [
+    "Drama",
+    "Action"
+   ],
+   "Id": "m17",
+   "MediaType": "Video",
+   "Name": "Ice Age 3",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2007,
+   "ProviderIds": {
+    "Imdb": "tt0000017",
+    "Tmdb": "1017"
+   },
+   "RunTimeTicks": 60000000017,
+   "SortName": "ice age 3",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": true,
+    "PlaybackPositionTicks": 3000000000,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-07-19T10:00:00.0000000Z",
+   "Genres": [],
+   "Id": "m18",
+   "MediaType": "Video",
+   "Name": "Ice Age 12",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    },
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    }
+   ],
+   "ProductionYear": 2008,
+   "ProviderIds": {
+    "Imdb": "tt0000018",
+    "Tmdb": "1018"
+   },
+   "RunTimeTicks": 60000000018,
+   "SortName": "ice age 12",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-08-20T10:00:00.0000000Z",
+   "Genres": [
+    "Comedy"
+   ],
+   "Id": "m19",
+   "MediaType": "Video",
+   "Name": "Alpha",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2009,
+   "ProviderIds": {
+    "Imdb": "tt0000019",
+    "Tmdb": "1019"
+   },
+   "RunTimeTicks": 60000000019,
+   "SortName": "alpha",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-09-21T10:00:00.0000000Z",
+   "Genres": [
+    "Action"
+   ],
+   "Id": "m20",
+   "MediaType": "Video",
+   "Name": "alpha",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p3",
+     "Name": "Eva Extra",
+     "Role": "Friend",
+     "Type": "Actor"
+    },
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2010,
+   "ProviderIds": {
+    "Imdb": "tt0000020",
+    "Tmdb": "1020"
+   },
+   "RunTimeTicks": 60000000020,
+   "SortName": "alpha",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-10-22T10:00:00.0000000Z",
+   "Genres": [
+    "Action,Adventure"
+   ],
+   "Id": "m21",
+   "MediaType": "Video",
+   "Name": "Beta",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2011,
+   "ProviderIds": {
+    "Imdb": "tt0000021",
+    "Tmdb": "1021"
+   },
+   "RunTimeTicks": 60000000021,
+   "SortName": "beta",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": true,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-11-23T10:00:00.0000000Z",
+   "Genres": [
+    "Drama",
+    "Action"
+   ],
+   "Id": "m22",
+   "MediaType": "Video",
+   "Name": "Über uns",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    },
+    {
+     "Id": "p3",
+     "Name": "Eva Extra",
+     "Role": "Friend",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2012,
+   "ProviderIds": {
+    "Imdb": "tt0000022",
+    "Tmdb": "1022"
+   },
+   "RunTimeTicks": 60000000022,
+   "SortName": "über uns",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-12-24T10:00:00.0000000Z",
+   "Genres": [],
+   "Id": "m23",
+   "MediaType": "Video",
+   "Name": "Mad Max",
+   "ParentId": "L-MOV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2013,
+   "ProviderIds": {
+    "Imdb": "tt0000023",
+    "Tmdb": "1023"
+   },
+   "RunTimeTicks": 60000000023,
+   "SortName": "mad max",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-01T10:00:00.0000000Z",
+   "Genres": [
+    "Action"
+   ],
+   "Id": "m00b",
+   "MediaType": "Video",
+   "Name": "The Matrix",
+   "ParentId": "L-MIX",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    },
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    }
+   ],
+   "ProductionYear": 1990,
+   "ProviderIds": {
+    "Imdb": "tt0000000",
+    "Tmdb": "1000"
+   },
+   "RunTimeTicks": 60000000000,
+   "SortName": "the matrix",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-02T10:00:00.0000000Z",
+   "Genres": [
+    "Action,Adventure"
+   ],
+   "Id": "m01b",
+   "MediaType": "Video",
+   "Name": "Ärger im Paradies",
+   "ParentId": "L-MIX",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 1991,
+   "ProviderIds": {
+    "Imdb": "tt0000001",
+    "Tmdb": "1001"
+   },
+   "RunTimeTicks": 60000000001,
+   "SortName": "ärger im paradies",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-03T10:00:00.0000000Z",
+   "Genres": [
+    "Drama",
+    "Action"
+   ],
+   "Id": "m02b",
+   "MediaType": "Video",
+   "Name": "Zorro",
+   "ParentId": "L-MIX",
+   "People": [
+    {
+     "Id": "p3",
+     "Name": "Eva Extra",
+     "Role": "Friend",
+     "Type": "Actor"
+    },
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 1992,
+   "ProviderIds": {
+    "Imdb": "tt0000002",
+    "Tmdb": "1002"
+   },
+   "RunTimeTicks": 60000000002,
+   "SortName": "zorro",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-04T10:00:00.0000000Z",
+   "Genres": [],
+   "Id": "m03b",
+   "MediaType": "Video",
+   "Name": "10 Cloverfield Lane",
+   "ParentId": "L-MIX",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 1993,
+   "ProviderIds": {
+    "Imdb": "tt0000003",
+    "Tmdb": "1003"
+   },
+   "RunTimeTicks": 60000000003,
+   "SortName": "10 cloverfield lane",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-13T10:00:00.0000000Z",
+   "Genres": [
+    "Drama",
+    "Action"
+   ],
+   "Id": "m12b",
+   "MediaType": "Video",
+   "Name": "X-Men 9",
+   "ParentId": "L-MIX",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    },
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    }
+   ],
+   "ProductionYear": 2002,
+   "ProviderIds": {
+    "Imdb": "tt0000012",
+    "Tmdb": "1012"
+   },
+   "RunTimeTicks": 60000000012,
+   "SortName": "x-men 9",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-14T10:00:00.0000000Z",
+   "Genres": [],
+   "Id": "m13b",
+   "MediaType": "Video",
+   "Name": "A Quiet Place",
+   "ParentId": "L-MIX",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2003,
+   "ProviderIds": {
+    "Imdb": "tt0000013",
+    "Tmdb": "1013"
+   },
+   "RunTimeTicks": 60000000013,
+   "SortName": "a quiet place",
+   "Type": "Movie",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "w01",
+   "Name": "Float year",
+   "ProductionYear": 2019.0,
+   "ProviderIds": {
+    "Tmdb": "5001"
+   },
+   "SortName": "float year",
+   "Type": "Movie"
+  },
+  {
+   "Id": "w02",
+   "Name": "Exponent runtime",
+   "ProviderIds": {
+    "Tmdb": "5002"
+   },
+   "RunTimeTicks": 72000000000.0,
+   "SortName": "exponent runtime",
+   "Type": "Movie"
+  },
+  {
+   "Id": "w03",
+   "Name": "Half year",
+   "ProductionYear": 2019.5,
+   "Type": "Movie"
+  },
+  {
+   "Id": "w04",
+   "Type": "Movie"
+  },
+  {
+   "Id": "w05",
+   "Name": "Percent too high",
+   "SortName": "percent too high",
+   "Type": "Movie",
+   "UserData": {
+    "PlaybackPositionTicks": 5,
+    "Played": false,
+    "PlayedPercentage": 250.0
+   }
+  },
+  {
+   "CommunityRating": "7.5",
+   "Id": "w06",
+   "Name": "Numbers as strings",
+   "ProductionYear": "2020",
+   "SortName": "numbers as strings",
+   "Type": "Movie"
+  },
+  {
+   "Genres": null,
+   "Id": "w07",
+   "ImageTags": null,
+   "Name": "Null fields",
+   "People": null,
+   "ProviderIds": null,
+   "SortName": null,
+   "Type": "Movie",
+   "UserData": null
+  },
+  {
+   "ChildCount": 3.0,
+   "CommunityRating": 8,
+   "CriticRating": 70,
+   "Id": "w08",
+   "Name": "Rating as int",
+   "SortName": "rating as int",
+   "Type": "Movie"
+  },
+  {
+   "ChildCount": 3,
+   "DateCreated": "2023-01-15T08:00:00.0000000Z",
+   "Genres": [
+    "Action"
+   ],
+   "Id": "s0",
+   "Name": "Breaking Point",
+   "ParentId": "L-TV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2000,
+   "ProviderIds": {
+    "Tmdb": "2000",
+    "Tvdb": "3000"
+   },
+   "SortName": "breaking point",
+   "Type": "Series",
+   "UserData": {
+    "IsFavorite": true,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s0-0",
+   "IndexNumber": 0,
+   "Name": "Specials",
+   "ParentId": "s0",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-11T08:00:00.0000000Z",
+   "Id": "s0-0-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s0-0-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s0-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9001"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-0",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-01-12T08:00:00.0000000Z",
+   "Id": "s0-0-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s0-0-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s0-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9002"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-0",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-01-13T08:00:00.0000000Z",
+   "Id": "s0-0-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s0-0-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s0-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9003"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-0",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s0-1",
+   "IndexNumber": 1,
+   "Name": "Staffel 1",
+   "ParentId": "s0",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-11T08:00:00.0000000Z",
+   "Id": "s0-1-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s0-1-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s0-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9021"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-1",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-01-12T08:00:00.0000000Z",
+   "Id": "s0-1-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s0-1-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s0-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9022"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-1",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-01-13T08:00:00.0000000Z",
+   "Id": "s0-1-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s0-1-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s0-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9023"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-1",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "Id": "s0-2",
+   "IndexNumber": 2,
+   "Name": "Staffel 2",
+   "ParentId": "s0",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-11T08:00:00.0000000Z",
+   "Id": "s0-2-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s0-2-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s0-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9041"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-2",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-01-12T08:00:00.0000000Z",
+   "Id": "s0-2-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s0-2-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s0-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9042"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-2",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-01-13T08:00:00.0000000Z",
+   "Id": "s0-2-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s0-2-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s0-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9043"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-2",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-14T08:00:00.0000000Z",
+   "Id": "s0-2-4",
+   "IndexNumber": 4,
+   "MediaSources": [
+    {
+     "Id": "s0-2-4-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 4",
+   "ParentId": "s0-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9044"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-2",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 4",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-15T08:00:00.0000000Z",
+   "Id": "s0-2-5",
+   "IndexNumber": 5,
+   "MediaSources": [
+    {
+     "Id": "s0-2-5-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 5",
+   "ParentId": "s0-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9045"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-2",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 5",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-16T08:00:00.0000000Z",
+   "Id": "s0-2-6",
+   "IndexNumber": 6,
+   "MediaSources": [
+    {
+     "Id": "s0-2-6-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 6",
+   "ParentId": "s0-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9046"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-2",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 6",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-17T08:00:00.0000000Z",
+   "Id": "s0-2-7",
+   "IndexNumber": 7,
+   "MediaSources": [
+    {
+     "Id": "s0-2-7-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 7",
+   "ParentId": "s0-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9047"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-2",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 7",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-18T08:00:00.0000000Z",
+   "Id": "s0-2-8",
+   "IndexNumber": 8,
+   "MediaSources": [
+    {
+     "Id": "s0-2-8-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 8",
+   "ParentId": "s0-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9048"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-2",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 8",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-19T08:00:00.0000000Z",
+   "Id": "s0-2-9",
+   "IndexNumber": 9,
+   "MediaSources": [
+    {
+     "Id": "s0-2-9-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 9",
+   "ParentId": "s0-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9049"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-2",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 9",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-20T08:00:00.0000000Z",
+   "Id": "s0-2-10",
+   "IndexNumber": 10,
+   "MediaSources": [
+    {
+     "Id": "s0-2-10-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 10",
+   "ParentId": "s0-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9050"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-2",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 10",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-21T08:00:00.0000000Z",
+   "Id": "s0-2-11",
+   "IndexNumber": 11,
+   "MediaSources": [
+    {
+     "Id": "s0-2-11-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 11",
+   "ParentId": "s0-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9051"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-2",
+   "SeriesId": "s0",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 11",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "ChildCount": 3,
+   "DateCreated": "2023-02-15T08:00:00.0000000Z",
+   "Genres": [
+    "Action,Adventure"
+   ],
+   "Id": "s1",
+   "Name": "Die Serie",
+   "ParentId": "L-TV",
+   "People": [
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    }
+   ],
+   "ProductionYear": 2001,
+   "ProviderIds": {
+    "Tmdb": "2001",
+    "Tvdb": "3001"
+   },
+   "SortName": "die serie",
+   "Type": "Series",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s1-0",
+   "IndexNumber": 0,
+   "Name": "Specials",
+   "ParentId": "s1",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-11T08:00:00.0000000Z",
+   "Id": "s1-0-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s1-0-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s1-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9101"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-0",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-02-12T08:00:00.0000000Z",
+   "Id": "s1-0-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s1-0-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s1-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9102"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-0",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-02-13T08:00:00.0000000Z",
+   "Id": "s1-0-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s1-0-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s1-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9103"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-0",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s1-1",
+   "IndexNumber": 1,
+   "Name": "Staffel 1",
+   "ParentId": "s1",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-11T08:00:00.0000000Z",
+   "Id": "s1-1-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s1-1-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s1-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9121"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-1",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-02-12T08:00:00.0000000Z",
+   "Id": "s1-1-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s1-1-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s1-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9122"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-1",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-02-13T08:00:00.0000000Z",
+   "Id": "s1-1-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s1-1-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s1-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9123"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-1",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "Id": "s1-2",
+   "IndexNumber": 2,
+   "Name": "Staffel 2",
+   "ParentId": "s1",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-11T08:00:00.0000000Z",
+   "Id": "s1-2-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s1-2-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s1-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9141"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-2",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-02-12T08:00:00.0000000Z",
+   "Id": "s1-2-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s1-2-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s1-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9142"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-2",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-02-13T08:00:00.0000000Z",
+   "Id": "s1-2-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s1-2-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s1-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9143"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-2",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-14T08:00:00.0000000Z",
+   "Id": "s1-2-4",
+   "IndexNumber": 4,
+   "MediaSources": [
+    {
+     "Id": "s1-2-4-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 4",
+   "ParentId": "s1-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9144"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-2",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 4",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-15T08:00:00.0000000Z",
+   "Id": "s1-2-5",
+   "IndexNumber": 5,
+   "MediaSources": [
+    {
+     "Id": "s1-2-5-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 5",
+   "ParentId": "s1-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9145"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-2",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 5",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-16T08:00:00.0000000Z",
+   "Id": "s1-2-6",
+   "IndexNumber": 6,
+   "MediaSources": [
+    {
+     "Id": "s1-2-6-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 6",
+   "ParentId": "s1-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9146"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-2",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 6",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-17T08:00:00.0000000Z",
+   "Id": "s1-2-7",
+   "IndexNumber": 7,
+   "MediaSources": [
+    {
+     "Id": "s1-2-7-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 7",
+   "ParentId": "s1-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9147"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-2",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 7",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-18T08:00:00.0000000Z",
+   "Id": "s1-2-8",
+   "IndexNumber": 8,
+   "MediaSources": [
+    {
+     "Id": "s1-2-8-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 8",
+   "ParentId": "s1-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9148"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-2",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 8",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-19T08:00:00.0000000Z",
+   "Id": "s1-2-9",
+   "IndexNumber": 9,
+   "MediaSources": [
+    {
+     "Id": "s1-2-9-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 9",
+   "ParentId": "s1-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9149"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-2",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 9",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-20T08:00:00.0000000Z",
+   "Id": "s1-2-10",
+   "IndexNumber": 10,
+   "MediaSources": [
+    {
+     "Id": "s1-2-10-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 10",
+   "ParentId": "s1-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9150"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-2",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 10",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-21T08:00:00.0000000Z",
+   "Id": "s1-2-11",
+   "IndexNumber": 20,
+   "MediaSources": [
+    {
+     "Id": "s1-2-11-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 11",
+   "ParentId": "s1-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9151"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-2",
+   "SeriesId": "s1",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 11",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "ChildCount": 3,
+   "DateCreated": "2023-03-15T08:00:00.0000000Z",
+   "Genres": [
+    "Drama",
+    "Action"
+   ],
+   "Id": "s2",
+   "Name": "Åre Krimi",
+   "ParentId": "L-TV",
+   "People": [
+    {
+     "Id": "p3",
+     "Name": "Eva Extra",
+     "Role": "Friend",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2002,
+   "ProviderIds": {
+    "Tmdb": "2002",
+    "Tvdb": "3002"
+   },
+   "SortName": "åre krimi",
+   "Type": "Series",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s2-0",
+   "IndexNumber": 0,
+   "Name": "Specials",
+   "ParentId": "s2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-11T08:00:00.0000000Z",
+   "Id": "s2-0-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s2-0-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s2-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9201"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-0",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-03-12T08:00:00.0000000Z",
+   "Id": "s2-0-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s2-0-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s2-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9202"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-0",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-03-13T08:00:00.0000000Z",
+   "Id": "s2-0-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s2-0-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s2-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9203"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-0",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s2-1",
+   "IndexNumber": 1,
+   "Name": "Staffel 1",
+   "ParentId": "s2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-11T08:00:00.0000000Z",
+   "Id": "s2-1-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s2-1-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s2-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9221"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-1",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-03-12T08:00:00.0000000Z",
+   "Id": "s2-1-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s2-1-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s2-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9222"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-1",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-03-13T08:00:00.0000000Z",
+   "Id": "s2-1-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s2-1-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s2-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9223"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-1",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "Id": "s2-2",
+   "IndexNumber": 2,
+   "Name": "Staffel 2",
+   "ParentId": "s2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-11T08:00:00.0000000Z",
+   "Id": "s2-2-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s2-2-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s2-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9241"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-03-12T08:00:00.0000000Z",
+   "Id": "s2-2-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s2-2-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s2-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9242"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-03-13T08:00:00.0000000Z",
+   "Id": "s2-2-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s2-2-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s2-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9243"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-14T08:00:00.0000000Z",
+   "Id": "s2-2-4",
+   "IndexNumber": 4,
+   "MediaSources": [
+    {
+     "Id": "s2-2-4-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 4",
+   "ParentId": "s2-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9244"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 4",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-15T08:00:00.0000000Z",
+   "Id": "s2-2-5",
+   "IndexNumber": 5,
+   "MediaSources": [
+    {
+     "Id": "s2-2-5-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 5",
+   "ParentId": "s2-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9245"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 5",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-16T08:00:00.0000000Z",
+   "Id": "s2-2-6",
+   "IndexNumber": 6,
+   "MediaSources": [
+    {
+     "Id": "s2-2-6-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 6",
+   "ParentId": "s2-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9246"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 6",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-17T08:00:00.0000000Z",
+   "Id": "s2-2-7",
+   "IndexNumber": 7,
+   "MediaSources": [
+    {
+     "Id": "s2-2-7-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 7",
+   "ParentId": "s2-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9247"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 7",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-18T08:00:00.0000000Z",
+   "Id": "s2-2-8",
+   "IndexNumber": 8,
+   "MediaSources": [
+    {
+     "Id": "s2-2-8-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 8",
+   "ParentId": "s2-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9248"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 8",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-19T08:00:00.0000000Z",
+   "Id": "s2-2-9",
+   "IndexNumber": 9,
+   "MediaSources": [
+    {
+     "Id": "s2-2-9-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 9",
+   "ParentId": "s2-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9249"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 9",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-20T08:00:00.0000000Z",
+   "Id": "s2-2-10",
+   "IndexNumber": 10,
+   "MediaSources": [
+    {
+     "Id": "s2-2-10-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 10",
+   "ParentId": "s2-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9250"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 10",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-03-21T08:00:00.0000000Z",
+   "Id": "s2-2-11",
+   "IndexNumber": 11,
+   "MediaSources": [
+    {
+     "Id": "s2-2-11-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 11",
+   "ParentId": "s2-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9251"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s2-2",
+   "SeriesId": "s2",
+   "SeriesName": "Åre Krimi",
+   "SortName": "folge 11",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "ChildCount": 3,
+   "DateCreated": "2023-04-15T08:00:00.0000000Z",
+   "Genres": [],
+   "Id": "s3",
+   "Name": "Show 2",
+   "ParentId": "L-TV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2003,
+   "ProviderIds": {
+    "Tmdb": "2003",
+    "Tvdb": "3003"
+   },
+   "SortName": "show 2",
+   "Type": "Series",
+   "UserData": {
+    "IsFavorite": true,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s3-0",
+   "IndexNumber": 0,
+   "Name": "Specials",
+   "ParentId": "s3",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-11T08:00:00.0000000Z",
+   "Id": "s3-0-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s3-0-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s3-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9301"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-0",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-04-12T08:00:00.0000000Z",
+   "Id": "s3-0-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s3-0-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s3-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9302"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-0",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-04-13T08:00:00.0000000Z",
+   "Id": "s3-0-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s3-0-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s3-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9303"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-0",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s3-1",
+   "IndexNumber": 1,
+   "Name": "Staffel 1",
+   "ParentId": "s3",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-11T08:00:00.0000000Z",
+   "Id": "s3-1-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s3-1-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s3-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9321"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-1",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-04-12T08:00:00.0000000Z",
+   "Id": "s3-1-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s3-1-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s3-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9322"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-1",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-04-13T08:00:00.0000000Z",
+   "Id": "s3-1-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s3-1-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s3-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9323"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-1",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "Id": "s3-2",
+   "IndexNumber": 2,
+   "Name": "Staffel 2",
+   "ParentId": "s3",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-11T08:00:00.0000000Z",
+   "Id": "s3-2-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s3-2-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s3-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9341"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-2",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-04-12T08:00:00.0000000Z",
+   "Id": "s3-2-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s3-2-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s3-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9342"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-2",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-04-13T08:00:00.0000000Z",
+   "Id": "s3-2-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s3-2-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s3-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9343"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-2",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-14T08:00:00.0000000Z",
+   "Id": "s3-2-4",
+   "IndexNumber": 4,
+   "MediaSources": [
+    {
+     "Id": "s3-2-4-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 4",
+   "ParentId": "s3-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9344"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-2",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 4",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-15T08:00:00.0000000Z",
+   "Id": "s3-2-5",
+   "IndexNumber": 5,
+   "MediaSources": [
+    {
+     "Id": "s3-2-5-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 5",
+   "ParentId": "s3-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9345"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-2",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 5",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-16T08:00:00.0000000Z",
+   "Id": "s3-2-6",
+   "IndexNumber": 6,
+   "MediaSources": [
+    {
+     "Id": "s3-2-6-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 6",
+   "ParentId": "s3-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9346"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-2",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 6",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-17T08:00:00.0000000Z",
+   "Id": "s3-2-7",
+   "IndexNumber": 7,
+   "MediaSources": [
+    {
+     "Id": "s3-2-7-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 7",
+   "ParentId": "s3-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9347"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-2",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 7",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-18T08:00:00.0000000Z",
+   "Id": "s3-2-8",
+   "IndexNumber": 8,
+   "MediaSources": [
+    {
+     "Id": "s3-2-8-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 8",
+   "ParentId": "s3-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9348"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-2",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 8",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-19T08:00:00.0000000Z",
+   "Id": "s3-2-9",
+   "IndexNumber": 9,
+   "MediaSources": [
+    {
+     "Id": "s3-2-9-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 9",
+   "ParentId": "s3-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9349"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-2",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 9",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-20T08:00:00.0000000Z",
+   "Id": "s3-2-10",
+   "IndexNumber": 10,
+   "MediaSources": [
+    {
+     "Id": "s3-2-10-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 10",
+   "ParentId": "s3-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9350"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-2",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 10",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-04-21T08:00:00.0000000Z",
+   "Id": "s3-2-11",
+   "IndexNumber": 11,
+   "MediaSources": [
+    {
+     "Id": "s3-2-11-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 11",
+   "ParentId": "s3-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9351"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s3-2",
+   "SeriesId": "s3",
+   "SeriesName": "Show 2",
+   "SortName": "folge 11",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "ChildCount": 3,
+   "DateCreated": "2023-05-15T08:00:00.0000000Z",
+   "Genres": [
+    "Comedy"
+   ],
+   "Id": "s4",
+   "Name": "Show 10",
+   "ParentId": "L-TV",
+   "People": [
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    }
+   ],
+   "ProductionYear": 2004,
+   "ProviderIds": {
+    "Tmdb": "2004",
+    "Tvdb": "3004"
+   },
+   "SortName": "show 10",
+   "Type": "Series",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s4-0",
+   "IndexNumber": 0,
+   "Name": "Specials",
+   "ParentId": "s4",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-05-11T08:00:00.0000000Z",
+   "Id": "s4-0-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s4-0-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s4-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9401"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-0",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-05-12T08:00:00.0000000Z",
+   "Id": "s4-0-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s4-0-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s4-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9402"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-0",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-05-13T08:00:00.0000000Z",
+   "Id": "s4-0-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s4-0-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s4-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9403"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-0",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s4-1",
+   "IndexNumber": 1,
+   "Name": "Staffel 1",
+   "ParentId": "s4",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-05-11T08:00:00.0000000Z",
+   "Id": "s4-1-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s4-1-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s4-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9421"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-1",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-05-12T08:00:00.0000000Z",
+   "Id": "s4-1-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s4-1-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s4-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9422"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-1",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-05-13T08:00:00.0000000Z",
+   "Id": "s4-1-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s4-1-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s4-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9423"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-1",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "Id": "s4-2",
+   "IndexNumber": 2,
+   "Name": "Staffel 2",
+   "ParentId": "s4",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-05-11T08:00:00.0000000Z",
+   "Id": "s4-2-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s4-2-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s4-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9441"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-2",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-05-12T08:00:00.0000000Z",
+   "Id": "s4-2-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s4-2-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s4-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9442"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-2",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-05-13T08:00:00.0000000Z",
+   "Id": "s4-2-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s4-2-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s4-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9443"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-2",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-05-14T08:00:00.0000000Z",
+   "Id": "s4-2-4",
+   "IndexNumber": 4,
+   "MediaSources": [
+    {
+     "Id": "s4-2-4-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 4",
+   "ParentId": "s4-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9444"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-2",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 4",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-05-15T08:00:00.0000000Z",
+   "Id": "s4-2-5",
+   "IndexNumber": 5,
+   "MediaSources": [
+    {
+     "Id": "s4-2-5-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 5",
+   "ParentId": "s4-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9445"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-2",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 5",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-05-16T08:00:00.0000000Z",
+   "Id": "s4-2-6",
+   "IndexNumber": 6,
+   "MediaSources": [
+    {
+     "Id": "s4-2-6-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 6",
+   "ParentId": "s4-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9446"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-2",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 6",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-05-17T08:00:00.0000000Z",
+   "Id": "s4-2-7",
+   "IndexNumber": 7,
+   "MediaSources": [
+    {
+     "Id": "s4-2-7-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 7",
+   "ParentId": "s4-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9447"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-2",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 7",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-05-18T08:00:00.0000000Z",
+   "Id": "s4-2-8",
+   "IndexNumber": 8,
+   "MediaSources": [
+    {
+     "Id": "s4-2-8-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 8",
+   "ParentId": "s4-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9448"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-2",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 8",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-05-19T08:00:00.0000000Z",
+   "Id": "s4-2-9",
+   "IndexNumber": 9,
+   "MediaSources": [
+    {
+     "Id": "s4-2-9-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 9",
+   "ParentId": "s4-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9449"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-2",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 9",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-05-20T08:00:00.0000000Z",
+   "Id": "s4-2-10",
+   "IndexNumber": 10,
+   "MediaSources": [
+    {
+     "Id": "s4-2-10-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 10",
+   "ParentId": "s4-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9450"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-2",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 10",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-05-21T08:00:00.0000000Z",
+   "Id": "s4-2-11",
+   "IndexNumber": 11,
+   "MediaSources": [
+    {
+     "Id": "s4-2-11-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 11",
+   "ParentId": "s4-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9451"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s4-2",
+   "SeriesId": "s4",
+   "SeriesName": "Show 10",
+   "SortName": "folge 11",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "ChildCount": 3,
+   "DateCreated": "2023-06-15T08:00:00.0000000Z",
+   "Genres": [
+    "Action"
+   ],
+   "Id": "s5",
+   "Name": "the wire tap",
+   "ParentId": "L-TV",
+   "People": [
+    {
+     "Id": "p3",
+     "Name": "Eva Extra",
+     "Role": "Friend",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2005,
+   "ProviderIds": {
+    "Tmdb": "2005",
+    "Tvdb": "3005"
+   },
+   "SortName": "the wire tap",
+   "Type": "Series",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s5-0",
+   "IndexNumber": 0,
+   "Name": "Specials",
+   "ParentId": "s5",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-06-11T08:00:00.0000000Z",
+   "Id": "s5-0-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s5-0-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s5-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9501"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-0",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-06-12T08:00:00.0000000Z",
+   "Id": "s5-0-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s5-0-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s5-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9502"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-0",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-06-13T08:00:00.0000000Z",
+   "Id": "s5-0-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s5-0-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s5-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9503"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-0",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s5-1",
+   "IndexNumber": 1,
+   "Name": "Staffel 1",
+   "ParentId": "s5",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-06-11T08:00:00.0000000Z",
+   "Id": "s5-1-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s5-1-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s5-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9521"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-1",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-06-12T08:00:00.0000000Z",
+   "Id": "s5-1-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s5-1-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s5-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9522"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-1",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-06-13T08:00:00.0000000Z",
+   "Id": "s5-1-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s5-1-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s5-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9523"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-1",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "Id": "s5-2",
+   "IndexNumber": 2,
+   "Name": "Staffel 2",
+   "ParentId": "s5",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-06-11T08:00:00.0000000Z",
+   "Id": "s5-2-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s5-2-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s5-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9541"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-2",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-06-12T08:00:00.0000000Z",
+   "Id": "s5-2-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s5-2-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s5-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9542"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-2",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-06-13T08:00:00.0000000Z",
+   "Id": "s5-2-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s5-2-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s5-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9543"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-2",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-06-14T08:00:00.0000000Z",
+   "Id": "s5-2-4",
+   "IndexNumber": 4,
+   "MediaSources": [
+    {
+     "Id": "s5-2-4-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 4",
+   "ParentId": "s5-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9544"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-2",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 4",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-06-15T08:00:00.0000000Z",
+   "Id": "s5-2-5",
+   "IndexNumber": 5,
+   "MediaSources": [
+    {
+     "Id": "s5-2-5-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 5",
+   "ParentId": "s5-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9545"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-2",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 5",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-06-16T08:00:00.0000000Z",
+   "Id": "s5-2-6",
+   "IndexNumber": 6,
+   "MediaSources": [
+    {
+     "Id": "s5-2-6-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 6",
+   "ParentId": "s5-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9546"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-2",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 6",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-06-17T08:00:00.0000000Z",
+   "Id": "s5-2-7",
+   "IndexNumber": 7,
+   "MediaSources": [
+    {
+     "Id": "s5-2-7-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 7",
+   "ParentId": "s5-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9547"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-2",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 7",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-06-18T08:00:00.0000000Z",
+   "Id": "s5-2-8",
+   "IndexNumber": 8,
+   "MediaSources": [
+    {
+     "Id": "s5-2-8-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 8",
+   "ParentId": "s5-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9548"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-2",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 8",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-06-19T08:00:00.0000000Z",
+   "Id": "s5-2-9",
+   "IndexNumber": 9,
+   "MediaSources": [
+    {
+     "Id": "s5-2-9-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 9",
+   "ParentId": "s5-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9549"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-2",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 9",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-06-20T08:00:00.0000000Z",
+   "Id": "s5-2-10",
+   "IndexNumber": 10,
+   "MediaSources": [
+    {
+     "Id": "s5-2-10-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 10",
+   "ParentId": "s5-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9550"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-2",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 10",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-06-21T08:00:00.0000000Z",
+   "Id": "s5-2-11",
+   "IndexNumber": 11,
+   "MediaSources": [
+    {
+     "Id": "s5-2-11-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 11",
+   "ParentId": "s5-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9551"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s5-2",
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "SortName": "folge 11",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "ChildCount": 3,
+   "DateCreated": "2023-07-15T08:00:00.0000000Z",
+   "Genres": [
+    "Action,Adventure"
+   ],
+   "Id": "s6",
+   "Name": "Zeit",
+   "ParentId": "L-TV",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2006,
+   "ProviderIds": {
+    "Tmdb": "2006",
+    "Tvdb": "3006"
+   },
+   "SortName": "zeit",
+   "Type": "Series",
+   "UserData": {
+    "IsFavorite": true,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s6-0",
+   "IndexNumber": 0,
+   "Name": "Specials",
+   "ParentId": "s6",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-07-11T08:00:00.0000000Z",
+   "Id": "s6-0-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s6-0-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s6-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9601"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-0",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-07-12T08:00:00.0000000Z",
+   "Id": "s6-0-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s6-0-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s6-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9602"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-0",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-07-13T08:00:00.0000000Z",
+   "Id": "s6-0-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s6-0-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s6-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9603"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-0",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s6-1",
+   "IndexNumber": 1,
+   "Name": "Staffel 1",
+   "ParentId": "s6",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-07-11T08:00:00.0000000Z",
+   "Id": "s6-1-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s6-1-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s6-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9621"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-1",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-07-12T08:00:00.0000000Z",
+   "Id": "s6-1-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s6-1-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s6-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9622"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-1",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-07-13T08:00:00.0000000Z",
+   "Id": "s6-1-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s6-1-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s6-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9623"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-1",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "Id": "s6-2",
+   "IndexNumber": 2,
+   "Name": "Staffel 2",
+   "ParentId": "s6",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-07-11T08:00:00.0000000Z",
+   "Id": "s6-2-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s6-2-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s6-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9641"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-2",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-07-12T08:00:00.0000000Z",
+   "Id": "s6-2-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s6-2-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s6-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9642"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-2",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-07-13T08:00:00.0000000Z",
+   "Id": "s6-2-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s6-2-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s6-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9643"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-2",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-07-14T08:00:00.0000000Z",
+   "Id": "s6-2-4",
+   "IndexNumber": 4,
+   "MediaSources": [
+    {
+     "Id": "s6-2-4-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 4",
+   "ParentId": "s6-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9644"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-2",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 4",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-07-15T08:00:00.0000000Z",
+   "Id": "s6-2-5",
+   "IndexNumber": 5,
+   "MediaSources": [
+    {
+     "Id": "s6-2-5-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 5",
+   "ParentId": "s6-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9645"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-2",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 5",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-07-16T08:00:00.0000000Z",
+   "Id": "s6-2-6",
+   "IndexNumber": 6,
+   "MediaSources": [
+    {
+     "Id": "s6-2-6-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 6",
+   "ParentId": "s6-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9646"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-2",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 6",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-07-17T08:00:00.0000000Z",
+   "Id": "s6-2-7",
+   "IndexNumber": 7,
+   "MediaSources": [
+    {
+     "Id": "s6-2-7-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 7",
+   "ParentId": "s6-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9647"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-2",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 7",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-07-18T08:00:00.0000000Z",
+   "Id": "s6-2-8",
+   "IndexNumber": 8,
+   "MediaSources": [
+    {
+     "Id": "s6-2-8-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 8",
+   "ParentId": "s6-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9648"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-2",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 8",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-07-19T08:00:00.0000000Z",
+   "Id": "s6-2-9",
+   "IndexNumber": 9,
+   "MediaSources": [
+    {
+     "Id": "s6-2-9-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 9",
+   "ParentId": "s6-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9649"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-2",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 9",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-07-20T08:00:00.0000000Z",
+   "Id": "s6-2-10",
+   "IndexNumber": 10,
+   "MediaSources": [
+    {
+     "Id": "s6-2-10-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 10",
+   "ParentId": "s6-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9650"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-2",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 10",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-07-21T08:00:00.0000000Z",
+   "Id": "s6-2-11",
+   "IndexNumber": 11,
+   "MediaSources": [
+    {
+     "Id": "s6-2-11-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 11",
+   "ParentId": "s6-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9651"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s6-2",
+   "SeriesId": "s6",
+   "SeriesName": "Zeit",
+   "SortName": "folge 11",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "ChildCount": 3,
+   "DateCreated": "2023-08-15T08:00:00.0000000Z",
+   "Genres": [
+    "Drama",
+    "Action"
+   ],
+   "Id": "s7",
+   "Name": "Lost Time",
+   "ParentId": "L-TV",
+   "People": [
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    }
+   ],
+   "ProductionYear": 2007,
+   "ProviderIds": {
+    "Tmdb": "2007",
+    "Tvdb": "3007"
+   },
+   "SortName": "lost time",
+   "Type": "Series",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s7-0",
+   "IndexNumber": 0,
+   "Name": "Specials",
+   "ParentId": "s7",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-08-11T08:00:00.0000000Z",
+   "Id": "s7-0-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s7-0-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s7-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9701"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-0",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-08-12T08:00:00.0000000Z",
+   "Id": "s7-0-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s7-0-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s7-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9702"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-0",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-08-13T08:00:00.0000000Z",
+   "Id": "s7-0-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s7-0-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s7-0",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9703"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-0",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "s7-1",
+   "IndexNumber": 1,
+   "Name": "Staffel 1",
+   "ParentId": "s7",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-08-11T08:00:00.0000000Z",
+   "Id": "s7-1-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s7-1-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s7-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9721"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-1",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-08-12T08:00:00.0000000Z",
+   "Id": "s7-1-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s7-1-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s7-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9722"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-1",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-08-13T08:00:00.0000000Z",
+   "Id": "s7-1-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s7-1-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s7-1",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9723"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-1",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "Id": "s7-2",
+   "IndexNumber": 2,
+   "Name": "Staffel 2",
+   "ParentId": "s7",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-08-11T08:00:00.0000000Z",
+   "Id": "s7-2-1",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s7-2-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s7-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9741"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-2",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-08-12T08:00:00.0000000Z",
+   "Id": "s7-2-2",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s7-2-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s7-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9742"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-2",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-08-13T08:00:00.0000000Z",
+   "Id": "s7-2-3",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s7-2-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s7-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9743"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-2",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-08-14T08:00:00.0000000Z",
+   "Id": "s7-2-4",
+   "IndexNumber": 4,
+   "MediaSources": [
+    {
+     "Id": "s7-2-4-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 4",
+   "ParentId": "s7-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9744"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-2",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 4",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-08-15T08:00:00.0000000Z",
+   "Id": "s7-2-5",
+   "IndexNumber": 5,
+   "MediaSources": [
+    {
+     "Id": "s7-2-5-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 5",
+   "ParentId": "s7-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9745"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-2",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 5",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-08-16T08:00:00.0000000Z",
+   "Id": "s7-2-6",
+   "IndexNumber": 6,
+   "MediaSources": [
+    {
+     "Id": "s7-2-6-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 6",
+   "ParentId": "s7-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9746"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-2",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 6",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-08-17T08:00:00.0000000Z",
+   "Id": "s7-2-7",
+   "IndexNumber": 7,
+   "MediaSources": [
+    {
+     "Id": "s7-2-7-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 7",
+   "ParentId": "s7-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9747"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-2",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 7",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-08-18T08:00:00.0000000Z",
+   "Id": "s7-2-8",
+   "IndexNumber": 8,
+   "MediaSources": [
+    {
+     "Id": "s7-2-8-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 8",
+   "ParentId": "s7-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9748"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-2",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 8",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-08-19T08:00:00.0000000Z",
+   "Id": "s7-2-9",
+   "IndexNumber": 9,
+   "MediaSources": [
+    {
+     "Id": "s7-2-9-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 9",
+   "ParentId": "s7-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9749"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-2",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 9",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-08-20T08:00:00.0000000Z",
+   "Id": "s7-2-10",
+   "IndexNumber": 10,
+   "MediaSources": [
+    {
+     "Id": "s7-2-10-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 10",
+   "ParentId": "s7-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9750"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-2",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 10",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-08-21T08:00:00.0000000Z",
+   "Id": "s7-2-11",
+   "IndexNumber": 11,
+   "MediaSources": [
+    {
+     "Id": "s7-2-11-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 11",
+   "ParentId": "s7-2",
+   "ParentIndexNumber": 2,
+   "ProviderIds": {
+    "Tvdb": "9751"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s7-2",
+   "SeriesId": "s7",
+   "SeriesName": "Lost Time",
+   "SortName": "folge 11",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "ChildCount": 3,
+   "DateCreated": "2023-01-15T08:00:00.0000000Z",
+   "Genres": [
+    "Action"
+   ],
+   "Id": "s0b",
+   "Name": "Breaking Point",
+   "ParentId": "L-MIX",
+   "People": [
+    {
+     "Id": "p1",
+     "Name": "Ada Actor",
+     "Role": "Lead",
+     "Type": "Actor"
+    }
+   ],
+   "ProductionYear": 2000,
+   "ProviderIds": {
+    "Tmdb": "2000",
+    "Tvdb": "3000"
+   },
+   "SortName": "breaking point",
+   "Type": "Series",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-11T08:00:00.0000000Z",
+   "Id": "s0-0-1b",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s0-0-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s0b",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9001"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-0",
+   "SeriesId": "s0b",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-01-12T08:00:00.0000000Z",
+   "Id": "s0-0-2b",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s0-0-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s0b",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9002"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-0",
+   "SeriesId": "s0b",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-01-13T08:00:00.0000000Z",
+   "Id": "s0-0-3b",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s0-0-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s0b",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9003"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-0",
+   "SeriesId": "s0b",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-01-11T08:00:00.0000000Z",
+   "Id": "s0-1-1b",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s0-1-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s0b",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9021"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s0-1",
+   "SeriesId": "s0b",
+   "SeriesName": "Breaking Point",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "ChildCount": 3,
+   "DateCreated": "2023-02-15T08:00:00.0000000Z",
+   "Genres": [
+    "Action,Adventure"
+   ],
+   "Id": "s1b",
+   "Name": "Die Serie",
+   "ParentId": "L-MIX",
+   "People": [
+    {
+     "Id": "p2",
+     "Name": "Dan Director",
+     "Type": "Director"
+    }
+   ],
+   "ProductionYear": 2001,
+   "ProviderIds": {
+    "Tmdb": "2001",
+    "Tvdb": "3001"
+   },
+   "SortName": "die serie",
+   "Type": "Series",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-11T08:00:00.0000000Z",
+   "Id": "s1-0-1b",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s1-0-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s1b",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9101"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-0",
+   "SeriesId": "s1b",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-02-12T08:00:00.0000000Z",
+   "Id": "s1-0-2b",
+   "IndexNumber": 2,
+   "MediaSources": [
+    {
+     "Id": "s1-0-2-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 2",
+   "ParentId": "s1b",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9102"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-0",
+   "SeriesId": "s1b",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 2",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "DateCreated": "2024-02-13T08:00:00.0000000Z",
+   "Id": "s1-0-3b",
+   "IndexNumber": 3,
+   "MediaSources": [
+    {
+     "Id": "s1-0-3-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 3",
+   "ParentId": "s1b",
+   "ParentIndexNumber": 0,
+   "ProviderIds": {
+    "Tvdb": "9103"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-0",
+   "SeriesId": "s1b",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 3",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "DateCreated": "2024-02-11T08:00:00.0000000Z",
+   "Id": "s1-1-1b",
+   "IndexNumber": 1,
+   "MediaSources": [
+    {
+     "Id": "s1-1-1-src",
+     "Name": "v1"
+    }
+   ],
+   "Name": "Folge 1",
+   "ParentId": "s1b",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {
+    "Tvdb": "9121"
+   },
+   "RunTimeTicks": 25000000000,
+   "SeasonId": "s1-1",
+   "SeriesId": "s1b",
+   "SeriesName": "Die Serie",
+   "SortName": "folge 1",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": true
+   }
+  },
+  {
+   "Id": "s5b",
+   "Name": "the wire tap",
+   "ParentId": "L-MIX",
+   "ProviderIds": {
+    "Tmdb": "2005",
+    "Tvdb": "3005"
+   },
+   "SortName": "the wire tap",
+   "Type": "Series",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "x1",
+   "IndexNumber": 1,
+   "Name": "Pilot",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {},
+   "SeriesId": "s5",
+   "SeriesName": "the wire tap",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "x2",
+   "IndexNumber": 1,
+   "Name": "Pilot",
+   "ParentIndexNumber": 1,
+   "ProviderIds": {},
+   "SeriesId": "s5b",
+   "SeriesName": "the wire tap",
+   "Type": "Episode",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "bs1",
+   "Name": "Sammlung bs1",
+   "ParentId": "L-BOX",
+   "SortName": "sammlung bs1",
+   "Type": "BoxSet",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "bs2",
+   "Name": "Sammlung bs2",
+   "ParentId": "L-BOX",
+   "SortName": "sammlung bs2",
+   "Type": "BoxSet",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "bs3",
+   "Name": "Leere Sammlung",
+   "ParentId": "L-BOX",
+   "Type": "BoxSet",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "a1",
+   "MediaType": "Audio",
+   "Name": "Song",
+   "Type": "Audio"
+  },
+  {
+   "Id": "a2",
+   "MediaType": "Audio",
+   "Name": "Song 2",
+   "Type": "Audio"
+  },
+  {
+   "Id": "pl1",
+   "MediaType": "Video",
+   "Name": "Liste pl1",
+   "ParentId": "L-PL",
+   "SortName": "liste pl1",
+   "Type": "Playlist",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "pl2",
+   "MediaType": "Audio",
+   "Name": "Liste pl2",
+   "ParentId": "L-PL",
+   "SortName": "liste pl2",
+   "Type": "Playlist",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  },
+  {
+   "Id": "pl3",
+   "MediaType": "Video",
+   "Name": "Liste pl3",
+   "ParentId": "L-PL",
+   "SortName": "liste pl3",
+   "Type": "Playlist",
+   "UserData": {
+    "IsFavorite": false,
+    "Played": false
+   }
+  }
+ ],
+ "children": {
+  "L-BOX": [
+   "bs1",
+   "bs2",
+   "bs3"
+  ],
+  "L-MIX": [
+   "m00b",
+   "m01b",
+   "m02b",
+   "m03b",
+   "m12b",
+   "m13b",
+   "s0b",
+   "s1b",
+   "s5b"
+  ],
+  "L-MOV": [
+   "m00",
+   "m01",
+   "m02",
+   "m03",
+   "m04",
+   "m05",
+   "m06",
+   "m07",
+   "m08",
+   "m09",
+   "m10",
+   "m11",
+   "m12",
+   "m13",
+   "m14",
+   "m15",
+   "m16",
+   "m17",
+   "m18",
+   "m19",
+   "m20",
+   "m21",
+   "m22",
+   "m23",
+   "w01",
+   "w02",
+   "w03",
+   "w04",
+   "w05",
+   "w06",
+   "w07",
+   "w08"
+  ],
+  "L-PL": [
+   "pl1",
+   "pl2",
+   "pl3"
+  ],
+  "L-TV": [
+   "s0",
+   "s1",
+   "s2",
+   "s3",
+   "s4",
+   "s5",
+   "s6",
+   "s7"
+  ],
+  "bs1": [
+   "m00",
+   "m01",
+   "s0",
+   "m05b"
+  ],
+  "bs2": [
+   "m02"
+  ],
+  "s0": [
+   "s0-0",
+   "s0-1",
+   "s0-2"
+  ],
+  "s0-0": [
+   "s0-0-1",
+   "s0-0-2",
+   "s0-0-3"
+  ],
+  "s0-1": [
+   "s0-1-1",
+   "s0-1-2",
+   "s0-1-3"
+  ],
+  "s0-2": [
+   "s0-2-1",
+   "s0-2-2",
+   "s0-2-3",
+   "s0-2-4",
+   "s0-2-5",
+   "s0-2-6",
+   "s0-2-7",
+   "s0-2-8",
+   "s0-2-9",
+   "s0-2-10",
+   "s0-2-11"
+  ],
+  "s0b": [
+   "s0-0-1b",
+   "s0-0-2b",
+   "s0-0-3b",
+   "s0-1-1b"
+  ],
+  "s1": [
+   "s1-0",
+   "s1-1",
+   "s1-2"
+  ],
+  "s1-0": [
+   "s1-0-1",
+   "s1-0-2",
+   "s1-0-3"
+  ],
+  "s1-1": [
+   "s1-1-1",
+   "s1-1-2",
+   "s1-1-3"
+  ],
+  "s1-2": [
+   "s1-2-1",
+   "s1-2-2",
+   "s1-2-3",
+   "s1-2-4",
+   "s1-2-5",
+   "s1-2-6",
+   "s1-2-7",
+   "s1-2-8",
+   "s1-2-9",
+   "s1-2-10",
+   "s1-2-11"
+  ],
+  "s1b": [
+   "s1-0-1b",
+   "s1-0-2b",
+   "s1-0-3b",
+   "s1-1-1b"
+  ],
+  "s2": [
+   "s2-0",
+   "s2-1",
+   "s2-2"
+  ],
+  "s2-0": [
+   "s2-0-1",
+   "s2-0-2",
+   "s2-0-3"
+  ],
+  "s2-1": [
+   "s2-1-1",
+   "s2-1-2",
+   "s2-1-3"
+  ],
+  "s2-2": [
+   "s2-2-1",
+   "s2-2-2",
+   "s2-2-3",
+   "s2-2-4",
+   "s2-2-5",
+   "s2-2-6",
+   "s2-2-7",
+   "s2-2-8",
+   "s2-2-9",
+   "s2-2-10",
+   "s2-2-11"
+  ],
+  "s3": [
+   "s3-0",
+   "s3-1",
+   "s3-2"
+  ],
+  "s3-0": [
+   "s3-0-1",
+   "s3-0-2",
+   "s3-0-3"
+  ],
+  "s3-1": [
+   "s3-1-1",
+   "s3-1-2",
+   "s3-1-3"
+  ],
+  "s3-2": [
+   "s3-2-1",
+   "s3-2-2",
+   "s3-2-3",
+   "s3-2-4",
+   "s3-2-5",
+   "s3-2-6",
+   "s3-2-7",
+   "s3-2-8",
+   "s3-2-9",
+   "s3-2-10",
+   "s3-2-11"
+  ],
+  "s4": [
+   "s4-0",
+   "s4-1",
+   "s4-2"
+  ],
+  "s4-0": [
+   "s4-0-1",
+   "s4-0-2",
+   "s4-0-3"
+  ],
+  "s4-1": [
+   "s4-1-1",
+   "s4-1-2",
+   "s4-1-3"
+  ],
+  "s4-2": [
+   "s4-2-1",
+   "s4-2-2",
+   "s4-2-3",
+   "s4-2-4",
+   "s4-2-5",
+   "s4-2-6",
+   "s4-2-7",
+   "s4-2-8",
+   "s4-2-9",
+   "s4-2-10",
+   "s4-2-11"
+  ],
+  "s5": [
+   "s5-0",
+   "s5-1",
+   "s5-2"
+  ],
+  "s5-0": [
+   "s5-0-1",
+   "s5-0-2",
+   "s5-0-3"
+  ],
+  "s5-1": [
+   "s5-1-1",
+   "s5-1-2",
+   "s5-1-3",
+   "x1"
+  ],
+  "s5-2": [
+   "s5-2-1",
+   "s5-2-2",
+   "s5-2-3",
+   "s5-2-4",
+   "s5-2-5",
+   "s5-2-6",
+   "s5-2-7",
+   "s5-2-8",
+   "s5-2-9",
+   "s5-2-10",
+   "s5-2-11"
+  ],
+  "s5b": [
+   "x2"
+  ],
+  "s6": [
+   "s6-0",
+   "s6-1",
+   "s6-2"
+  ],
+  "s6-0": [
+   "s6-0-1",
+   "s6-0-2",
+   "s6-0-3"
+  ],
+  "s6-1": [
+   "s6-1-1",
+   "s6-1-2",
+   "s6-1-3"
+  ],
+  "s6-2": [
+   "s6-2-1",
+   "s6-2-2",
+   "s6-2-3",
+   "s6-2-4",
+   "s6-2-5",
+   "s6-2-6",
+   "s6-2-7",
+   "s6-2-8",
+   "s6-2-9",
+   "s6-2-10",
+   "s6-2-11"
+  ],
+  "s7": [
+   "s7-0",
+   "s7-1",
+   "s7-2"
+  ],
+  "s7-0": [
+   "s7-0-1",
+   "s7-0-2",
+   "s7-0-3"
+  ],
+  "s7-1": [
+   "s7-1-1",
+   "s7-1-2",
+   "s7-1-3"
+  ],
+  "s7-2": [
+   "s7-2-1",
+   "s7-2-2",
+   "s7-2-3",
+   "s7-2-4",
+   "s7-2-5",
+   "s7-2-6",
+   "s7-2-7",
+   "s7-2-8",
+   "s7-2-9",
+   "s7-2-10",
+   "s7-2-11"
+  ]
+ },
+ "episodes": {
+  "s0": [
+   "s0-0-1",
+   "s0-0-2",
+   "s0-0-3",
+   "s0-1-1",
+   "s0-1-2",
+   "s0-1-3",
+   "s0-2-1",
+   "s0-2-2",
+   "s0-2-3",
+   "s0-2-4",
+   "s0-2-5",
+   "s0-2-6",
+   "s0-2-7",
+   "s0-2-8",
+   "s0-2-9",
+   "s0-2-10",
+   "s0-2-11"
+  ],
+  "s1": [
+   "s1-0-1",
+   "s1-0-2",
+   "s1-0-3",
+   "s1-1-1",
+   "s1-1-2",
+   "s1-1-3",
+   "s1-2-1",
+   "s1-2-2",
+   "s1-2-3",
+   "s1-2-4",
+   "s1-2-5",
+   "s1-2-6",
+   "s1-2-7",
+   "s1-2-8",
+   "s1-2-9",
+   "s1-2-10",
+   "s1-2-11"
+  ],
+  "s2": [
+   "s2-0-1",
+   "s2-0-2",
+   "s2-0-3",
+   "s2-1-1",
+   "s2-1-2",
+   "s2-1-3",
+   "s2-2-1",
+   "s2-2-2",
+   "s2-2-3",
+   "s2-2-4",
+   "s2-2-5",
+   "s2-2-6",
+   "s2-2-7",
+   "s2-2-8",
+   "s2-2-9",
+   "s2-2-10",
+   "s2-2-11"
+  ],
+  "s3": [
+   "s3-0-1",
+   "s3-0-2",
+   "s3-0-3",
+   "s3-1-1",
+   "s3-1-2",
+   "s3-1-3",
+   "s3-2-1",
+   "s3-2-2",
+   "s3-2-3",
+   "s3-2-4",
+   "s3-2-5",
+   "s3-2-6",
+   "s3-2-7",
+   "s3-2-8",
+   "s3-2-9",
+   "s3-2-10",
+   "s3-2-11"
+  ],
+  "s4": [
+   "s4-0-1",
+   "s4-0-2",
+   "s4-0-3",
+   "s4-1-1",
+   "s4-1-2",
+   "s4-1-3",
+   "s4-2-1",
+   "s4-2-2",
+   "s4-2-3",
+   "s4-2-4",
+   "s4-2-5",
+   "s4-2-6",
+   "s4-2-7",
+   "s4-2-8",
+   "s4-2-9",
+   "s4-2-10",
+   "s4-2-11"
+  ],
+  "s5": [
+   "s5-0-1",
+   "s5-0-2",
+   "s5-0-3",
+   "s5-1-1",
+   "s5-1-2",
+   "s5-1-3",
+   "s5-2-1",
+   "s5-2-2",
+   "s5-2-3",
+   "s5-2-4",
+   "s5-2-5",
+   "s5-2-6",
+   "s5-2-7",
+   "s5-2-8",
+   "s5-2-9",
+   "s5-2-10",
+   "s5-2-11"
+  ],
+  "s6": [
+   "s6-0-1",
+   "s6-0-2",
+   "s6-0-3",
+   "s6-1-1",
+   "s6-1-2",
+   "s6-1-3",
+   "s6-2-1",
+   "s6-2-2",
+   "s6-2-3",
+   "s6-2-4",
+   "s6-2-5",
+   "s6-2-6",
+   "s6-2-7",
+   "s6-2-8",
+   "s6-2-9",
+   "s6-2-10",
+   "s6-2-11"
+  ],
+  "s7": [
+   "s7-0-1",
+   "s7-0-2",
+   "s7-0-3",
+   "s7-1-1",
+   "s7-1-2",
+   "s7-1-3",
+   "s7-2-1",
+   "s7-2-2",
+   "s7-2-3",
+   "s7-2-4",
+   "s7-2-5",
+   "s7-2-6",
+   "s7-2-7",
+   "s7-2-8",
+   "s7-2-9",
+   "s7-2-10",
+   "s7-2-11"
+  ]
+ },
+ "extras": {
+  "m00": [
+   "m01"
+  ],
+  "m02": []
+ },
+ "genres": [
+  {
+   "Id": "g1",
+   "Name": "Action"
+  },
+  {
+   "Id": "g2",
+   "Name": "Action,Adventure"
+  },
+  {
+   "Id": "g3",
+   "Name": "Drama"
+  }
+ ],
+ "nextup": [
+  "s0-2-3",
+  "s2-2-3",
+  "x1",
+  "x2"
+ ],
+ "nextup_series": {
+  "s0": [
+   "s0-2-3"
+  ],
+  "s1": [],
+  "s2": [
+   "s2-2-3"
+  ],
+  "s3": [],
+  "s4": [
+   "s4-2-3"
+  ],
+  "s5": [],
+  "s6": [
+   "s6-2-3"
+  ],
+  "s7": []
+ },
+ "playlists": {
+  "pl1": [
+   "m04",
+   "s1",
+   "m00",
+   "a1",
+   "m09"
+  ],
+  "pl2": [
+   "a1",
+   "a2"
+  ],
+  "pl3": []
+ },
+ "resume": [
+  "m03",
+  "s0-2-3",
+  "s0-2-3b",
+  "m03b",
+  "s1-2-3"
+ ],
+ "seasons": {
+  "s0": [
+   "s0-0",
+   "s0-1",
+   "s0-2"
+  ],
+  "s1": [
+   "s1-0",
+   "s1-1",
+   "s1-2"
+  ],
+  "s2": [
+   "s2-0",
+   "s2-1",
+   "s2-2"
+  ],
+  "s3": [
+   "s3-0",
+   "s3-1",
+   "s3-2"
+  ],
+  "s4": [
+   "s4-0",
+   "s4-1",
+   "s4-2"
+  ],
+  "s5": [
+   "s5-0",
+   "s5-1",
+   "s5-2"
+  ],
+  "s6": [
+   "s6-0",
+   "s6-1",
+   "s6-2"
+  ],
+  "s7": [
+   "s7-0",
+   "s7-1",
+   "s7-2"
+  ]
+ },
+ "similar": {
+  "m00": [
+   "m00",
+   "m00b",
+   "m01",
+   "m01b",
+   "m02",
+   "m04",
+   "m05"
+  ],
+  "m05": [
+   "m00",
+   "m01"
+  ],
+  "s0": [
+   "s0",
+   "s0b",
+   "s1"
+  ]
+ },
+ "trailers": {
+  "m00": [
+   "m03"
+  ]
+ },
+ "views": [
+  {
+   "CollectionType": "movies",
+   "Id": "L-MOV",
+   "Name": "Filme",
+   "Type": "CollectionFolder"
+  },
+  {
+   "CollectionType": "tvshows",
+   "Id": "L-TV",
+   "Name": "Serien",
+   "Type": "CollectionFolder"
+  },
+  {
+   "CollectionType": "movies",
+   "Id": "L-MIX",
+   "Name": "Kopie",
+   "Type": "CollectionFolder"
+  },
+  {
+   "CollectionType": "boxsets",
+   "Id": "L-BOX",
+   "Name": "Sammlungen",
+   "Type": "CollectionFolder"
+  },
+  {
+   "CollectionType": "playlists",
+   "Id": "L-PL",
+   "Name": "Playlists",
+   "Type": "UserView"
+  }
+ ]
+}

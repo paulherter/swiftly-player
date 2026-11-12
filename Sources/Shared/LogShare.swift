@@ -1,6 +1,7 @@
 #if os(iOS) || os(macOS)
 import JellyfinKit
 import SwiftUI
+import enum SwiftlyCore.LogShareText
 #if os(iOS)
 import UIKit
 #endif
@@ -18,20 +19,13 @@ struct LogFile: Identifiable {
     @MainActor
     static func write() -> LogFile? {
         let v = ProcessInfo.processInfo.operatingSystemVersion
-        var rows = [
-            "Swiftly \(Version.withBase)",
-            system(v),
-            "Stand \(ISO8601DateFormatter().string(from: Date()))",
-            "",
-        ]
-        let excerpt = LogRing.shared.excerpt(seconds: 3600)
-        rows += excerpt.isEmpty
-            ? ["(no lines in the last hour — reproduce the problem first, then share without closing the app)"]
-            : excerpt
+        let text = LogShareText.text(
+            version: Version.withBase, system: system(v), now: Date(),
+            excerpt: LogRing.shared.excerpt(seconds: 3600))
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Swiftly-Protokoll.txt")
+            .appendingPathComponent(LogShareText.fileName)
         do {
-            try Data(rows.joined(separator: "\n").utf8).write(to: url, options: .atomic)
+            try Data(text.utf8).write(to: url, options: .atomic)
         } catch {
             AppLog.writeOut("[Protokoll] Datei ließ sich nicht schreiben: \(error.localizedDescription)")
             return nil
@@ -41,9 +35,9 @@ struct LogFile: Identifiable {
 
     private static func system(_ v: OperatingSystemVersion) -> String {
         #if os(iOS)
-        "iOS \(v.majorVersion).\(v.minorVersion).\(v.patchVersion) · \(UIDevice.current.model)"
+        LogShareText.systemIOS(v, model: UIDevice.current.model)
         #else
-        "macOS \(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
+        LogShareText.systemMacOS(v)
         #endif
     }
 }

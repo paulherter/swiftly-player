@@ -1,0 +1,18 @@
+[package]
+name = "swiftly-accounts"
+description = "Saved accounts of the Swiftly core: AccountBundle, per-kind bundles, secret store seam, account switch curve"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swiftly-jellyfin = { path = "../swiftly-jellyfin", default-features = false }
+swiftly-plex = { path = "../swiftly-plex", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[lints]
+workspace = true

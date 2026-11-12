@@ -1,5 +1,8 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.rustcore.imageToneColor
+import de.paulherter.swiftly.rustcore.imageTonePoints
+import de.paulherter.swiftly.rustcore.imageTones
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapShader
@@ -38,7 +41,6 @@ import coil3.request.allowHardware
 import coil3.toBitmap
 import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.Theme
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -105,7 +107,7 @@ object ImageTone {
                 rgba[i * 4] = (p shr 16).toByte(); rgba[i * 4 + 1] = (p shr 8).toByte()
                 rgba[i * 4 + 2] = p.toByte(); rgba[i * 4 + 3] = (p ushr 24).toByte()
             }
-            Kern.imageTones(rgba).toList()
+            imageTones(rgba).toList()
         }
     }
 }
@@ -120,10 +122,10 @@ class ImageColorArea(val image: ImageBitmap, val columns: Int, val rows: Int) {
                 since: Double, runOut: Double): ImageColorArea? {
             if (tones.isEmpty()) return null
             val points = runCatching {
-                Kern.imageTonePoints(tones.toDoubleArray(), columns.toLong(), rows.toLong(), height, colorHeight, since, runOut)
+                imageTonePoints(tones, columns.toLong(), rows.toLong(), height, colorHeight, since, runOut)
             }.getOrNull() ?: return null
             if (points.size != columns * rows) return null
-            val bitMap = Bitmap.createBitmap(points, columns, rows, Bitmap.Config.ARGB_8888)
+            val bitMap = Bitmap.createBitmap(points.toIntArray(), columns, rows, Bitmap.Config.ARGB_8888)
             return ImageColorArea(bitMap.asImageBitmap(), columns, rows)
         }
     }
@@ -229,7 +231,7 @@ fun buttonArea(onImage: Boolean): Color = if (onImage) surfaceTranslucent else T
 
 /** The page color at one position (`ImageTone.farbe(_, at: (0.2 · 0.55))`), for the season list. */
 fun imageColor(tones: List<Double>, x: Double, y: Double): Color =
-    Color(Kern.imageToneColor(tones.toDoubleArray(), x, y))
+    Color(imageToneColor(tones, x, y))
 
 /**
  * The ground under the detail page (`MoodReason`): attached to the scroll content so the

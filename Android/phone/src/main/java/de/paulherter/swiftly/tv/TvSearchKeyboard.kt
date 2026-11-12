@@ -1,5 +1,7 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.KernRules
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,7 +38,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import de.paulherter.swiftly.core.Kern
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.shared.Symbol
@@ -55,7 +56,7 @@ internal data class SearchKey(val kind: String, val character: String, val span:
 
 /** The rows of the grid. The layout is the package's, so both TVs type on the same keyboard. */
 internal fun searchKeyRows(speech: Boolean): List<List<SearchKey>> =
-    JSONArray(Kern.searchKeyRows(speech)).let { rows ->
+    JSONArray(KernRules.searchKeyRows(speech)).let { rows ->
         (0 until rows.length()).map { r ->
             rows.getJSONArray(r).let { row ->
                 (0 until row.length()).map { c ->
@@ -113,11 +114,11 @@ internal fun TvSearchKeyboard(term: String, change: (String) -> Unit, focus: Sea
             // the focused key had its turn, so Enter and the D-pad still press the key.
             .onPreviewKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                if (e.key == Key.Backspace || e.key == Key.Delete) { change(Kern.searchKeyDelete(term)); return@onPreviewKeyEvent true }
+                if (e.key == Key.Backspace || e.key == Key.Delete) { change(KernRules.searchKeyDelete(term)); return@onPreviewKeyEvent true }
                 val n = e.nativeKeyEvent
                 if (n.isCtrlPressed || n.isAltPressed || n.isMetaPressed) return@onPreviewKeyEvent false
                 val typed = n.unicodeChar.takeIf { it > 0 }?.let { String(Character.toChars(it)) } ?: return@onPreviewKeyEvent false
-                val next = Kern.searchKeyHardware(typed, term)
+                val next = KernRules.searchKeyHardware(typed, term)
                 if (next == term) return@onPreviewKeyEvent false
                 change(next)
                 true
@@ -200,7 +201,7 @@ private fun Caret() {
 private fun KeyButton(key: SearchKey, term: String, change: (String) -> Unit, focus: SearchFocus,
                       speaking: Boolean, speak: (() -> Unit)?, tall: Boolean = false) {
     val muted = when (key.kind) {
-        "space" -> !Kern.searchKeySpaceFits(term)
+        "space" -> !KernRules.searchKeySpaceFits(term)
         "delete" -> false
         else -> false
     }
@@ -219,9 +220,9 @@ private fun KeyButton(key: SearchKey, term: String, change: (String) -> Unit, fo
         lengthy = if (key.kind == "delete") ({ if (term.isNotEmpty()) change("") }) else null,
         perform = {
             when (key.kind) {
-                "letter" -> change(Kern.searchKeyTyped(key.character, term))
-                "space" -> change(Kern.searchKeySpace(term))
-                "delete" -> change(Kern.searchKeyDelete(term))
+                "letter" -> change(KernRules.searchKeyTyped(key.character, term))
+                "space" -> change(KernRules.searchKeySpace(term))
+                "delete" -> change(KernRules.searchKeyDelete(term))
                 "speak" -> speak?.invoke()
             }
         }) { focused ->

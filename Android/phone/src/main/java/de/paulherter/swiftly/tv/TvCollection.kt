@@ -52,12 +52,12 @@ fun TvCollectionTile(app: SwiftlyApplication, s: CollectionTile, art: String, mo
 fun TvCollection(app: SwiftlyApplication, target: Destination, open: (Destination) -> Unit) {
     val state = remember(target.id, target.role) { CollectionState(target.id, target.role) }
     val run = rememberCoroutineScope()
-    LaunchedEffect(state, state.sorting, state.filter) { state.load(app.kern) }
-    de.paulherter.swiftly.WatchStateChange(app) { state.load(app.kern) }
+    LaunchedEffect(state, state.sorting, state.filter) { state.load(app.rk) }
+    de.paulherter.swiftly.WatchStateChange(app) { state.load(app.rk) }
     val focus = firstFocus(!state.loads)
     val lattice = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     Box(Modifier.fillMaxSize().background(Theme.reason)) {
-        TvGrid(state.items, { run.launch { state.loadMore(app.kern) } }, focus, open, loads = state.loads, withUnderRow = false,
+        TvGrid(state.items, { run.launch { state.loadMore(app.rk) } }, focus, open, loads = state.loads, withUnderRow = false,
                  lattice = lattice, header = {
             Column(Modifier.padding(bottom = 10.dp)) {
                 // The name comes from the server and is not translated, like the genre page title.
@@ -71,10 +71,10 @@ fun TvCollection(app: SwiftlyApplication, target: Destination, open: (Destinatio
                         app.sheet.value = SheetRequest(translated("Sortieren"), Choices.sortings, state.sorting) { state.sorting = it }
                     }
                 }
-                if (state.disrupted) TvDisruption(app, buttonModifier = Modifier.focusRequester(focus), retry = { run.launch { state.load(app.kern) } })
+                if (state.disrupted) TvDisruption(app, buttonModifier = Modifier.focusRequester(focus), retry = { run.launch { state.load(app.rk) } })
                 else if (!state.loads && state.items.isEmpty()) {
                     if (state.filter == "alle") TvEmpty(translated("Hier ist noch nichts"), translated("Sobald in dieser Sammlung etwas liegt, taucht es hier auf."),
-                        symbol = Glyph.Store, button = translated("Aktualisieren") to { run.launch { state.load(app.kern) } }, buttonModifier = Modifier.focusRequester(focus))
+                        symbol = Glyph.Store, button = translated("Aktualisieren") to { run.launch { state.load(app.rk) } }, buttonModifier = Modifier.focusRequester(focus))
                     else TvEmpty(translated("Nichts gefunden"), translated("Unter diesem Filter liegt gerade nichts."),
                         symbol = Glyph.Filter, button = translated("Filter zurücksetzen") to { state.filter = "alle" }, buttonModifier = Modifier.focusRequester(focus))
                 }
@@ -87,8 +87,8 @@ fun TvCollection(app: SwiftlyApplication, target: Destination, open: (Destinatio
             }
             TvAlphabetRail(state.letters, current,
                            Modifier.align(Alignment.TopEnd)
-                               .padding(end = (TvTheme.edgePage - TvAlphabetRailWidth) / 2, top = 120.dp, bottom = 24.dp)) { letter ->
-                run.launch { state.jumpTarget(app.kern, letter)?.let { lattice.animateScrollToItem(it + 1) } }
+                               .padding(end = (TvTheme.edgePage - TvAlphabetRailWidth) / 2, top = 120.dp, bottom = 24.dp), toGrid = focus) { letter ->
+                run.launch { state.jumpTarget(app.rk, letter)?.let { lattice.animateScrollToItem(it + 1) } }
             }
         }
     }

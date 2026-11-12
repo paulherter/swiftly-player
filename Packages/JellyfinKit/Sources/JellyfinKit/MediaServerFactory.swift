@@ -16,7 +16,8 @@ public enum MediaServerFactory {
         clientVersion: String = VersionNumber.outBundle,
         program: String = "Swiftly Player",
         session: Session? = nil,
-        urlSession: URLSession = .localNetworkCapable
+        urlSession: URLSession = .localNetworkCapable,
+        plexResolver: PlexClient.Resolver? = nil
     ) -> (any MediaServer)? {
         switch kind {
         case .jellyfin:
@@ -32,7 +33,7 @@ public enum MediaServerFactory {
             // is known (e.g. to ask the server who it is).
             PlexClient.make(session: session, baseURL: baseURL, deviceID: deviceID,
                             deviceName: deviceName, clientVersion: clientVersion,
-                            program: program, urlSession: urlSession)
+                            program: program, urlSession: urlSession, resolver: plexResolver)
         }
     }
 
@@ -43,10 +44,11 @@ public enum MediaServerFactory {
         deviceName: String,
         clientVersion: String = VersionNumber.outBundle,
         program: String = "Swiftly Player",
-        urlSession: URLSession = .localNetworkCapable
+        urlSession: URLSession = .localNetworkCapable,
+        plexResolver: PlexClient.Resolver? = nil
     ) -> (any MediaServer)? {
         make(kind: session.kind, baseURL: session.serverURL, deviceID: deviceID,
              deviceName: deviceName, clientVersion: clientVersion, program: program,
-             session: session, urlSession: urlSession)
+             session: session, urlSession: urlSession, plexResolver: plexResolver)
     }
 }

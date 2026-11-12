@@ -62,9 +62,6 @@ struct SubtitleLookView: View {
     /// Under the picture, wide only; narrow it is the foot of the group.
     @ViewBuilder
     private var notes: some View {
-        if VLCPlayerView.playersOpen {
-            Footer("Gilt ab dem nächsten Video.")
-        }
         Footer("Gilt für Untertitel aus Text. Die von Blu-rays sind Bilder und bleiben, wie sie sind.")
     }
 
@@ -73,11 +70,6 @@ struct SubtitleLookView: View {
     private var rows: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if !wide, VLCPlayerView.playersOpen {
-                    Footer("Gilt ab dem nächsten Video.")
-                        .padding(.horizontal, Theme.margin(wide: false))
-                        .padding(.top, 8)
-                }
                 appearance
                 if !wide {
                     Footer("Gilt für Untertitel aus Text. Die von Blu-rays sind Bilder und bleiben, wie sie sind.")

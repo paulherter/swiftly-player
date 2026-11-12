@@ -7,7 +7,7 @@ import JellyfinKit
 //
 // `EmbySignInModel` and `PlexSignInModel` (SignInModels.swift) only hold what the screen
 // shows and a set of closures; this file fills the closures. The result of both flows is
-// one `Session` of the right kind, handed to ``accountAdd(_:)``: from there on it is an
+// the account the core saved, handed to ``accountAdded()``: from there on it is an
 // ordinary account, in the bundle of its kind.
 
 /// What a flow holds between its steps, so the model stays a plain value holder.
@@ -16,35 +16,7 @@ private final class EmbyHeld {
     var server: (any MediaServer)?
 }
 
-@MainActor
-private final class PlexHeld {
-    var pin: PlexPin?
-    var expires = Date.distantFuture
-    var polling: Task<Void, Never>?
-    var handled = false
-    var accountToken: String?
-    var accountUserID = ""
-    var accountName = ""
-    var accountThumb: String?
-    var homeUsers: [PlexHomeUser] = []
-    var profile: PlexHomeUser?
-    var profileToken: String?
-    var servers: [PlexServerResource] = []
-}
-
 extension AppModel {
-
-    /// A new account of any kind: the first one starts the app, a further one switches to it.
-    func accountAdd(_ s: Session) {
-        let first = session == nil
-        signInTransition(s) { [self] in
-            if first {
-                sessionAdopt(s, signedInWith: Self.makeServer(session: s))
-            } else {
-                serverRecord(s)
-            }
-        }
-    }
 
     /// **Signing in plays the same overlay as the switch in the profile**: the
     /// page slides away, the new account's picture flies to the corner, the rows
@@ -111,60 +83,40 @@ extension AppModel {
         model.checking = true
         model.problem = nil
         defer { model.checking = false }
-        guard let url = Self.normalizeServerURL(raw) else {
-            model.problem = .other(String(localized: "Die Adresse konnte nicht gelesen werden."))
-            return
-        }
-        var candidates = [url]
-        if !raw.contains("://"), let different = AppModelURLNormalizer.reversed(url) {
-            candidates.append(different)
-        }
+        // The HTTP client reads the app's header table, so the new headers go in before the core asks.
         let new = OwnHeaders.cleaned(headers)
-        var lastError: (any Error)?
-        for address in candidates {
-            guard let client = Self.makeServer(kind: .emby, baseURL: address) else { continue }
-            let before = OwnHeaders.registered(for: address)
-            if !new.isEmpty { OwnHeaders.setDown(new, for: address) }
-            let info: PublicSystemInfo
-            do { info = try await client.checkReachability() } catch {
-                lastError = error
-                if !new.isEmpty { OwnHeaders.setDown(before, for: address) }
-                if !AddressCheck.fallbackPaysOff(to: error) { break }
-                continue
+        let target = Self.normalizeServerURL(raw)
+        let before = target.map { OwnHeaders.registered(for: $0) } ?? []
+        if let target, !new.isEmpty { OwnHeaders.setDown(new, for: target) }
+        let found = await AccountsHost.shared.embyCheck(raw)
+        func undo() { if let target, !new.isEmpty { OwnHeaders.setDown(before, for: target) } }
+        guard let found else { undo(); model.problem = .unreachable(address: raw); return }
+        switch found.result {
+        case "ok":
+            guard let address = URL(string: found.adresse), let client = Self.makeServer(kind: .emby, baseURL: address) else {
+                undo(); model.problem = .unreachable(address: raw); return
             }
-            // Emby and Jellyfin answer the same route and look alike from outside.
-            if info.looksLikeJellyfin {
-                if !new.isEmpty { OwnHeaders.setDown(before, for: address) }
-                model.problem = .notEmby(kindFound: ServerKind.jellyfin.displayName)
-                return
-            }
+            // The core may have used the other scheme: the headers belong to the address that answered.
+            if address != target { undo(); if !new.isEmpty { OwnHeaders.setDown(new, for: address) } }
             if !new.isEmpty { ownHeadersSafe(new, for: address) }
             held.server = client
-            model.address = address.absoluteString
+            model.address = found.adresse
             model.users = nil
-            model.step = .signIn(serverName: info.serverName ?? address.host() ?? String(localized: "Server"),
-                                 version: info.version ?? "?")
-            model.users = await embyUsers(of: client)
-            return
+            model.step = .signIn(serverName: found.name, version: found.version)
+            model.users = found.konten.map { EmbyUserChoice(id: $0.id, name: $0.name, image: $0.image.flatMap(URL.init(string:))) }
+        case "notEmby":
+            undo()
+            model.problem = .notEmby(kindFound: ServerKind.jellyfin.displayName)
+        case "badAddress":
+            undo()
+            model.problem = .other(String(localized: "Die Adresse konnte nicht gelesen werden."))
+        case "other":
+            undo()
+            model.problem = .other(found.message ?? readable(JellyfinError.notAuthenticated))
+        default:
+            undo()
+            model.problem = .unreachable(address: raw)
         }
-        if let j = lastError as? JellyfinError, case let .transport(text) = j,
-           text == OwnHeaders.loginPageText {
-            model.problem = .other(text)
-            return
-        }
-        model.problem = .unreachable(address: raw)
-    }
-
-    /// The accounts the server offers on its own sign-in page; empty when it shows none.
-    private func embyUsers(of client: any MediaServer) async -> [EmbyUserChoice] {
-        guard let source = client as? any QuickSignIn,
-              let found = try? await source.publicUser() else { return [] }
-        var list: [EmbyUserChoice] = []
-        for user in found {
-            list.append(EmbyUserChoice(id: user.id, name: user.name,
-                                       image: await source.userImage(user, border: 180)))
-        }
-        return list
     }
 
     private func embySignIn(user: String, password: String, model: EmbySignInModel,
@@ -174,8 +126,9 @@ extension AppModel {
         model.signInError = nil
         defer { model.signingIn = false }
         do {
-            let s = try await client.authenticate(username: user, password: password)
-            accountAdd(s)
+            try await AccountsHost.shared.signIn(
+                address: client.baseURL, kind: .emby, user: user, password: password)
+            accountAdded()
             finished()
         } catch {
             model.signInError = readable(error)
@@ -190,11 +143,13 @@ extension AppModel {
     func plexSignInModel(finished: @escaping () -> Void,
                          back: @escaping () -> Void) -> PlexSignInModel {
         let model = PlexSignInModel()
-        let held = PlexHeld()
-        let service = PlexAccountService(
-            identity: .thisDevice(clientID: Self.deviceID, deviceName: Self.deviceName))
+        guard let flow = try? AccountsHost.shared.plexSignIn() else {
+            model.step = .failed(.plexUnreachable)
+            model.actions.cancel = back
+            return model
+        }
         // Everything the actions need, once, so each closure stays one line.
-        let run = PlexRun(app: self, model: model, held: held, service: service, finished: finished)
+        let run = PlexRun(app: self, model: model, flow: flow, finished: finished)
 
         model.actions.start = { Task { await run.start() } }
         model.actions.browserClosed = { _ in Task { await run.pollOnce() } }
@@ -205,279 +160,5 @@ extension AppModel {
         model.actions.otherAccount = { run.otherAccount() }
         model.actions.cancel = { run.stop(); back() }
         return model
-    }
-}
-
-// MARK: - The Plex steps
-
-/// The Plex flow as one object, so the closures of the model hold it (and through it the
-/// app) for as long as the page lives.
-@MainActor
-private final class PlexRun {
-    let app: AppModel
-    let model: PlexSignInModel
-    let held: PlexHeld
-    let service: PlexAccountService
-    let finished: () -> Void
-
-    init(app: AppModel, model: PlexSignInModel, held: PlexHeld, service: PlexAccountService,
-         finished: @escaping () -> Void) {
-        self.app = app; self.model = model; self.held = held
-        self.service = service; self.finished = finished
-    }
-
-    func stop() { held.polling?.cancel(); held.polling = nil }
-
-    // MARK: Browser sign-in
-
-    func start() async {
-        stop()
-        held.handled = false
-        model.step = .opening
-        do {
-            #if os(tvOS)
-            // The TV has no browser: a short code the person types at plex.tv/link on
-            // another device, shown next to a QR code of that page.
-            let pin = try await service.startPin(strong: false)
-            let url = service.linkPage
-            #else
-            let pin = try await service.startPin(strong: true)
-            guard let url = service.authURL(for: pin) else {
-                throw PlexError.pinExpired
-            }
-            #endif
-            held.pin = pin
-            held.expires = Date().addingTimeInterval(TimeInterval(pin.expiresIn ?? 900))
-            model.step = .waiting(prompt(url))
-            held.polling = Task { [weak self] in await self?.poll(url) }
-        } catch {
-            fail(error)
-        }
-    }
-
-    // No forwardUrl: plex.tv documents https addresses there, and with a custom scheme
-    // the page was seen landing on the Watch start page. The poll sees the token anyway.
-
-    private func prompt(_ url: URL) -> PlexPinPrompt {
-        // The code of the browser sign-in is long and not made for typing; only the
-        // countdown is shown. On the TV the code is the short one and is the point.
-        #if os(tvOS)
-        let code = held.pin?.code
-        #else
-        let code: String? = nil
-        #endif
-        return PlexPinPrompt(url: url, callbackScheme: "swiftly", code: code,
-                      secondsLeft: max(Int(held.expires.timeIntervalSinceNow.rounded(.up)), 0))
-    }
-
-    /// About once a second until the token is there or the code is gone.
-    private func poll(_ url: URL) async {
-        var failures = 0
-        while !Task.isCancelled, !held.handled {
-            if Date() >= held.expires { model.step = .failed(.expired); return }
-            switch await check() {
-            case .token(let token): await signedIn(token: token); return
-            case .waiting: failures = 0
-            case .failed(let error):
-                if let plex = error as? PlexError, plex == .pinExpired { fail(error); return }
-                failures += 1
-                if failures >= 5 { fail(error); return }
-            }
-            if case .waiting = model.step { model.step = .waiting(prompt(url)) }
-            try? await Task.sleep(for: .seconds(1))
-        }
-    }
-
-    /// The browser window closed: look right now instead of waiting for the next beat.
-    func pollOnce() async {
-        guard case .waiting = model.step else { return }
-        if case .token(let token) = await check() { await signedIn(token: token) }
-    }
-
-    private enum Poll { case token(String), waiting, failed(any Error) }
-
-    private func check() async -> Poll {
-        guard let pin = held.pin, !held.handled else { return .waiting }
-        do {
-            if let token = try await service.checkPin(pin).authToken, !token.isEmpty {
-                return .token(token)
-            }
-            return .waiting
-        } catch JellyfinError.http(let status, _) where status == 404 || status == 410 {
-            return .failed(PlexError.pinExpired)
-        } catch {
-            return .failed(error)
-        }
-    }
-
-    // MARK: After the token
-
-    private func signedIn(token: String) async {
-        // The timer and a closing browser window can both see the token; one wins.
-        guard !held.handled else { return }
-        held.handled = true
-        // Not `stop()`: when the timer's own task got us here, cancelling it would cancel
-        // the requests below. The loop ends by itself once `handled` is set.
-        held.polling = nil
-        model.step = .loading(.profiles)
-        do {
-            guard case .valid(let account) = try await service.validate(token: token) else {
-                throw PlexError.pinExpired
-            }
-            held.accountToken = token
-            held.accountUserID = account.id
-            held.accountName = account.title
-            held.accountThumb = account.thumb
-            model.account = account.title
-            let users = (try? await service.homeUsers(token: token)) ?? []
-            held.homeUsers = users
-            if users.count > 1 {
-                let choices = users.map {
-                    PlexProfileChoice(id: $0.uuid, name: $0.title, image: $0.thumb.flatMap(URL.init(string:)),
-                                      protected: $0.isProtected)
-                }
-                model.lastProfiles = choices
-                model.step = .profiles(choices)
-            } else {
-                held.profile = users.first
-                held.profileToken = token
-                model.step = .loading(.servers)
-                await loadServers()
-            }
-        } catch {
-            fail(error)
-        }
-    }
-
-    func pickProfile(_ choice: PlexProfileChoice) async {
-        guard let user = held.homeUsers.first(where: { $0.uuid == choice.id }) else { return }
-        if choice.protected { model.pinWrong = false; model.step = .pin(choice); return }
-        await switchTo(user, choice: choice, pin: nil)
-    }
-
-    func submitPin(_ choice: PlexProfileChoice, pin: String) async {
-        guard let user = held.homeUsers.first(where: { $0.uuid == choice.id }) else { return }
-        model.pinChecking = true
-        model.pinWrong = false
-        await switchTo(user, choice: choice, pin: pin)
-        model.pinChecking = false
-    }
-
-    private func switchTo(_ user: PlexHomeUser, choice: PlexProfileChoice, pin: String?) async {
-        guard let account = held.accountToken else { return }
-        do {
-            let token = try await service.switchUser(user, pin: pin, token: account)
-            held.profile = user
-            held.profileToken = token
-            model.profile = choice
-            model.step = .loading(.servers)
-            await loadServers()
-        } catch PlexError.profilePinWrong {
-            // A wrong PIN stays on the PIN page; an unprotected profile that is refused
-            // has nothing to retry, so it goes back to the list.
-            if pin != nil { model.pinWrong = true } else { fail(PlexError.profilePinWrong) }
-        } catch {
-            fail(error)
-        }
-    }
-
-    // MARK: Servers
-
-    func loadServers() async {
-        guard let token = held.profileToken ?? held.accountToken else { return }
-        model.step = .loading(.servers)
-        model.unreachable = []
-        do {
-            let found = try await service.servers(token: token)
-            held.servers = found
-            model.step = .servers(found.map {
-                PlexServerChoice(id: $0.machineIdentifier, name: $0.name,
-                                 sharedBy: $0.owned ? nil : ($0.sourceTitle ?? String(localized: "einem anderen Konto")),
-                                 local: $0.connections.contains { $0.isLocal }, online: $0.presence)
-            })
-        } catch {
-            fail(error)
-        }
-    }
-
-    func pickServer(_ choice: PlexServerChoice) async {
-        guard model.connecting == nil,
-              let server = held.servers.first(where: { $0.machineIdentifier == choice.id }),
-              let accountToken = held.accountToken else { return }
-        let profileToken = held.profileToken ?? accountToken
-        model.connecting = choice.id
-        model.unreachable.remove(choice.id)
-        defer { model.connecting = nil }
-        // The server's own token is the one that opens it; the profile's token asks plex.tv.
-        let key = server.accessToken ?? profileToken
-        let connector = PlexConnector(identity: service.identity, token: key,
-                                      machineIdentifier: server.machineIdentifier)
-        do {
-            let connection = try await connect(connector, to: server)
-            let user = held.profile
-            let s = Session(plexServer: server, connection: connection, accountToken: profileToken,
-                            userID: user?.id ?? held.accountUserID,
-                            userName: user?.title ?? held.accountName,
-                            homeUserUUID: user?.uuid,
-                            userImage: (user?.thumb ?? held.accountThumb).flatMap(URL.init(string:)))
-            app.accountAdd(s)
-            finished()
-        } catch {
-            model.unreachable.insert(choice.id)
-        }
-    }
-
-    /// One try; when it failed at once (the system's local-network question still on the
-    /// screen refuses the LAN addresses in a blink) a second after a moment. A server that
-    /// is really gone fails slowly and is not asked twice.
-    private func connect(_ connector: PlexConnector,
-                         to server: PlexServerResource) async throws -> PlexChosenConnection {
-        let started = ContinuousClock.now
-        do {
-            return try await connector.choose(from: server)
-        } catch {
-            guard ContinuousClock.now - started < .seconds(2) else { throw error }
-            try await Task.sleep(for: .seconds(1.5))
-            return try await connector.choose(from: server)
-        }
-    }
-
-    func otherAccount() {
-        stop()
-        held.pin = nil
-        held.accountToken = nil
-        held.profileToken = nil
-        held.profile = nil
-        held.homeUsers = []
-        held.servers = []
-        model.account = nil
-        model.profile = nil
-        model.lastProfiles = nil
-        model.step = .start
-    }
-
-    // MARK: Errors
-
-    /// The sentences are in `DESIGN-AUSWAHL.md`: plex.tv gone, code expired, anything else
-    /// with its own words.
-    private func fail(_ error: any Error) {
-        stop()
-        if let plex = error as? PlexError {
-            switch plex {
-            case .pinExpired: model.step = .failed(.expired)
-            case .noServer: model.step = .servers([])
-            default: model.step = .failed(.other(app.readable(error)))
-            }
-            return
-        }
-        if error is URLError {
-            model.step = .failed(.plexUnreachable)
-            return
-        }
-        if let j = error as? JellyfinError, case .transport = j {
-            model.step = .failed(.plexUnreachable)
-            return
-        }
-        model.step = .failed(.other(app.readable(error)))
     }
 }

@@ -1,5 +1,7 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.KernRules
+
 import de.paulherter.swiftly.support.SupporterAvatarHeart
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
@@ -52,7 +54,6 @@ import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.*
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
@@ -92,6 +93,9 @@ internal object SettingsLook {
 /** The rows are drawn in the settings design (white focus surface over the group, hairline in the row). Only `TvProfile`
  *  switches it on; the same rows on other pages (subtitle look) keep the old look, as `settingsLook` on tvOS. */
 internal val LocalSettingsLook = compositionLocalOf { false }
+
+/** Set when the subtitle appearance page is opened from here: Back lands on that row again, not on the section list. */
+private var lookPageOpened = false
 
 /** A group title of the settings: 44 pt bold, no inset (`SettingsHeading`). */
 @Composable
@@ -140,6 +144,15 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
     var rightHasFocus by remember { mutableStateOf(false) }
     val left = firstFocus()
     val right = remember { FocusRequester() }
+    val lookRow = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        if (!lookPageOpened) return@LaunchedEffect
+        lookPageOpened = false
+        // After the page and the first focus have settled (`firstFocus` waits twice the deadline).
+        kotlinx.coroutines.delay(3 * TvTheme.focusDeadline)
+        leftFocus = false
+        runCatching { lookRow.requestFocus() }
+    }
     // The value row that is open (its title is the key), at most one; closed when the section changes (tvOS: `opened`).
     var opened by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(compartment) { opened = null }
@@ -167,23 +180,23 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
     BackHandler(enabled = !leftFocus) { runCatching { left.requestFocus() } }
 
     var frameRateAdapt by remember { mutableStateOf(app.store.rememberValue("bildrateAnpassen") != "0") }
-    val bitrates = remember { selectionRead(Kern.bitrateLevels()) }
+    val bitrates = remember { selectionRead(KernRules.bitrateLevels()) }
     val passthrough = remember { listOf(
         Choice("auto", translated("Automatisch")),
         Choice("off", translated("Aus (nur PCM)")),
         Choice("ac3", translated("Nur Dolby Digital")),
         Choice("all", translated("Alle erzwingen (auch DTS, TrueHD)"))) }
     val dv7 = remember { listOf(Choice("auto", translated("Automatisch")), Choice("off", translated("Aus (spielt als HDR10)"))) }
-    val buffer = remember { JSONArray(Kern.bufferLevels()).let { a -> (0 until a.length()).map { a.getJSONObject(it).let { o -> Choice(o.getString("wert"), o.getString("text")) } } } }
-    val seconds = remember { JSONArray(Kern.span()).let { a -> (0 until a.length()).map { a.getInt(it) } } }
-    val audioChoice = remember { selectionRead(Kern.languages("")) }
-    val subtitleSelection = remember { selectionRead(Kern.languages(translated("Aus"))) }
+    val buffer = remember { JSONArray(KernRules.bufferLevels()).let { a -> (0 until a.length()).map { a.getJSONObject(it).let { o -> Choice(o.getString("wert"), o.getString("text")) } } } }
+    val seconds = remember { JSONArray(KernRules.span()).let { a -> (0 until a.length()).map { a.getInt(it) } } }
+    val audioChoice = remember { selectionRead(KernRules.languages("")) }
+    val subtitleSelection = remember { selectionRead(KernRules.languages(translated("Aus"))) }
     fun secondsSelection() = seconds.map { Choice(it.toString(), translated("%lld s", it)) }
 
     var server by remember { mutableStateOf<Pair<String, String>?>(null) }
     LaunchedEffect(Unit) {
         try {
-            val o = JSONObject(withContext(Dispatchers.IO) { app.kern.serverInfo().await() })
+            val o = JSONObject(withContext(Dispatchers.IO) { app.rk.serverInfo().await() })
             server = o.optString("name") to o.optString("version")
         } catch (x: CancellationException) { throw x } catch (_: Exception) {}
     }
@@ -192,7 +205,7 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
     var genresDisturbed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         allGenres = try {
-            JSONArray(withContext(Dispatchers.IO) { app.kern.genres().await() }).let { a -> (0 until a.length()).map { a.getString(it) } }
+            JSONArray(withContext(Dispatchers.IO) { app.rk.genres().await() }).let { a -> (0 until a.length()).map { a.getString(it) } }
         } catch (x: CancellationException) { throw x } catch (_: Exception) { genresDisturbed = true; emptyList() }
     }
     // For "Bibliothek hinzufuegen": libraries and collections not yet chosen (`LibrarySelectionPage`).
@@ -201,7 +214,7 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
     LaunchedEffect(selectedIds) { freeLibraries = de.paulherter.swiftly.startSelectionLoad(app) }
     var verification by remember { mutableStateOf<String?>(null) }
     val cards = remember(app.accountSwitch.intValue) {
-        app.store.accounts?.let { b -> runCatching { JSONArray(Kern.bundleOverview(b)).let { a -> (0 until a.length()).map { a.getJSONObject(it) } } }.getOrNull() }.orEmpty()
+        app.store.accounts?.let { b -> runCatching { JSONArray(KernRules.bundleOverview(b)).let { a -> (0 until a.length()).map { a.getJSONObject(it) } } }.getOrNull() }.orEmpty()
     }
     val host = cards.firstOrNull { it.optBoolean("aktiv") }?.optString("host").orEmpty()
     val serverRow = listOfNotNull(server?.first?.ifEmpty { null } ?: app.serverName.value,
@@ -310,8 +323,9 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                 TvToggleRow(translated("Untertitel automatisch"), e.subtitleAutomatic, Glyph.TextLeft) { e.subtitleAutomatic = !e.subtitleAutomatic }
                                 SeparatorLine()
                                 // Own page with the live picture (Apple TV: `TVSubtitleLookEntryRow`).
-                                TvAction(translated("Aussehen der Untertitel"), Glyph.SizeText,
+                                TvAction(translated("Aussehen der Untertitel"), Glyph.SizeText, modifier = Modifier.focusRequester(lookRow),
                                          value = with(de.paulherter.swiftly.SubtitleFacts.of(e.subtitleLook, true)) { entryValue() }) {
+                                    lookPageOpened = true
                                     open(Destination("untertitelaussehen", translated("Aussehen der Untertitel"), "Untertitelaussehen"))
                                 }
                             }
@@ -362,9 +376,9 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             }
                             }
                             TvGroup(translated("Startseite")) {
-                            val rails = remember(e.startRails, e.newAccessDisconnected) { selectionRead(Kern.startRails(e.startRails.toTypedArray(), e.newAccessDisconnected)) }
+                            val rails = remember(e.startRails, e.newAccessDisconnected) { selectionRead(KernRules.startRails(e.startRails.toTypedArray(), e.newAccessDisconnected)) }
                             fun move(r: Choice, step: Int) {
-                                e.startRails = JSONArray(Kern.startRailShifted(r.value, step.toLong(), e.startRails.toTypedArray(), e.newAccessDisconnected))
+                                e.startRails = JSONArray(KernRules.startRailShifted(r.value, step.toLong(), e.startRails.toTypedArray(), e.newAccessDisconnected))
                                     .let { a -> (0 until a.length()).map { a.getString(it) } }
                             }
                             rails.forEachIndexed { index, r ->
@@ -446,7 +460,7 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                 verification = translated("Moment…")
                                 run.launch {
                                     verification = try {
-                                        val o = JSONObject(withContext(Dispatchers.IO) { app.kern.serverInfo().await() })
+                                        val o = JSONObject(withContext(Dispatchers.IO) { app.rk.serverInfo().await() })
                                         translated("Erreichbar — Jellyfin %@", o.optString("version"))
                                     } catch (x: CancellationException) { throw x } catch (x: Exception) { errorString(app, x) }
                                 }
@@ -820,7 +834,7 @@ private fun AccountsStrip(cards: List<JSONObject>, record: () -> Unit, switchTo:
 }
 
 /** The image of another account, otherwise its initial: the same pattern as `ProfileImage`, only for
- *  an account that is not the current one (own address instead of `app.kern`). */
+ *  an account that is not the current one (own address instead of `app.rk`). */
 @Composable
 internal fun AccountCircle(name: String, image: String?, size: Dp) {
     SubcomposeAsyncImage(model = image, contentDescription = name, contentScale = ContentScale.Crop,

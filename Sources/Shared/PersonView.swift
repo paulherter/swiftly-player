@@ -1,4 +1,5 @@
 import JellyfinKit
+import SwiftlyCore
 import SwiftUI
 
 /// **A person: who this is, and what exists for them.**
@@ -22,27 +23,19 @@ struct PersonView: View {
 
     @Environment(\.dismiss) private var back
     @Environment(\.wide) private var wide
-    @State private var inquiry: Item?
-    @State private var title: [Item] = []
-    /// Entries the server has in total, and how many are already fetched (not
-    /// `title.count`: duplicates drop out per page).
-    @State private var total = 0
-    @State private var retrieved = 0
-    @State private var loadsPost = false
-    @State private var requestable: [SeerrHit] = []
-    @State private var loaded = false
-    /// **`nil` means failed.** With a silent server it used to say "Nothing else on
-    /// your server with ...", a statement about a collection the page never saw.
-    @State private var disrupted = false
-    /// Seerr has answered; only then does "there is nothing else" hold.
-    @State private var seerrReady = false
-    @State private var wholeBiography = false
+    @State private var core: PersonController?
     @State private var offset: CGFloat = 0
-    @State private var banner: [URL] = []
-    @State private var bannerPoint = 0
+    /// The banner stays on the first picture.
+    private let bannerPoint = 0
+
+    private var page: SwiftlyCore.PersonPage? { core?.page }
+    private var loaded: Bool { page?.loaded ?? false }
+    private var disrupted: Bool { page?.disrupted ?? false }
+    private var title: [SwiftlyCore.Tile] { page?.titles ?? [] }
+    private var requestable: [JellyfinKit.SeerrHit] { page?.seerrHits ?? [] }
 
     private var person: Person { route.person }
-    private var bannerNow: URL? { banner.isEmpty ? nil : banner[bannerPoint % banner.count] }
+    private var bannerNow: URL? { page?.bannerURL }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -72,6 +65,9 @@ struct PersonView: View {
                 // loading.
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, 32)
+                // The controller assigns the page with no transaction; shipping faded the result in.
+                .animation(Theme.reveal, value: loaded)
+                .animation(Theme.reveal, value: page?.biography == nil)
             }
             .scrollIndicators(.hidden)
             .coordinateSpace(.named("blatt"))
@@ -144,20 +140,14 @@ struct PersonView: View {
     /// the hand.
     private var headerSize: CGFloat { wide ? 104 : Theme.castSize }
 
-    private var birthRow: String? {
-        guard let tag = inquiry?.daysDate, let date = Calendar.current.date(from: tag) else { return nil }
-        return String(localized: "Geboren \(date.formatted(date: .long, time: .omitted))")
-    }
+    private var birthRow: String? { page?.bornLine }
 
-    private var place: String? {
-        guard let place = inquiry?.productionLocations?.first, !place.isEmpty else { return nil }
-        return place
-    }
+    private var place: String? { page?.place }
 
     @ViewBuilder
     private var roleRow: some View {
-        if let role = person.role, !role.isEmpty, let origin = route.origin {
-            Text("\(role) in \(origin)")
+        if let line = page?.roleLine {
+            Text(verbatim: line)
                 // 13 Medium is `Theme.tile`; the number stood here.
                 .font(Theme.tile)
                 .foregroundStyle(Theme.fontQuiet)
@@ -169,17 +159,17 @@ struct PersonView: View {
     /// open the page; it should not push the titles down before you want it.
     @ViewBuilder
     private var biography: some View {
-        if let text = inquiry?.description {
+        if let text = page?.biography {
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: text)
                     .font(Theme.body)
                     .lineSpacing(3)
                     .foregroundStyle(Theme.fontQuiet)
-                    .lineLimit(wholeBiography ? nil : 4)
+                    .lineLimit(page?.biographyExpanded == true ? nil : 4)
                 Button {
-                    withAnimation(Theme.leap) { wholeBiography.toggle() }
+                    withAnimation(Theme.leap) { core?.toggleBiography() }
                 } label: {
-                    Text(wholeBiography ? LocalizedStringKey("Weniger") : LocalizedStringKey("Mehr"))
+                    Text(verbatim: page?.biographyToggle ?? "")
                 }
                 .buttonStyle(Theme.PressButton())
                 // The same "More" as in `CollapsibleText`, so the same level: 13 Medium. Semibold at
@@ -214,17 +204,14 @@ struct PersonView: View {
             if !title.isEmpty {
                 Segment(title: "Auf deinem Server") {
                     LazyHStack(alignment: .top, spacing: Theme.tileSpacing) {
-                        ForEach(title) { item in
+                        ForEach(title, id: \.id) { tile in
+                            let item = Item(rust: tile)
                             NavigationLink(value: item) {
-                                PosterTile(model: model, item: item)
+                                PosterTile(model: model, item: item, coreLook: RustTileLook(tile))
                             }
                             .buttonStyle(Theme.PressButton())
                             .tileMenu(item, model: model)
-                            .onAppear {
-                                guard ListRules.postLoadSection(item.id, in: title, columns: 1)
-                                else { return }
-                                Task { await loadMore() }
-                            }
+                            .onAppear { Task { try? await core?.titleVisible(tile.id) } }
                         }
                     }
                     .padding(.horizontal, Theme.margin(wide: wide))
@@ -250,8 +237,8 @@ struct PersonView: View {
                 // answer.
                 DisturbHint(model: model, retry: { Task { await load() } },
                              spacingTop: 26)
-            } else if title.isEmpty, requestable.isEmpty, seerrReady {
-                Text("Auf deinem Server gibt es sonst nichts mit \(person.name).")
+            } else if let empty = page?.emptyText {
+                Text(verbatim: empty)
                     .font(Theme.body)
                     .foregroundStyle(Theme.fontQuiet)
                     .padding(.horizontal, Theme.margin(wide: wide))
@@ -263,65 +250,7 @@ struct PersonView: View {
     // MARK: Laden
 
     private func load() async {
-        // **The own server first, Seerr beside it.** For a filmography Seerr asks TMDB
-        // first and sometimes needs seconds; the whole page used to wait for that. Now
-        // the page appears once the server has answered, and "Can be requested" is added
-        // below, below so nothing above shifts.
-        async let ownOnes = model.titleWithNumber(person: person.id)
-        let a = await model.item(id: person.id)
-        async let foreignOnes = filmography(tmdb: a?.tmdbId)
-        let fetched = await ownOnes
-        // Failed: the page keeps what it had and says so.
-        let b = fetched?.items ?? title
-
-        // Only real landscape images cycle; if none of the titles has one, the banner
-        // takes what the first offers as a substitute.
-        var images = b.compactMap { model.landscapeImageReal(for: $0) }
-        if images.isEmpty, let firstOne = b.first, let substitute = model.headerImageURL(for: firstOne) {
-            images = [substitute]
-        }
-
-        // Everything from the server in one go, and softly. Opacity only: the column
-        // keeps its width, and what is new fades in at its place.
-        withAnimation(Theme.reveal) {
-            inquiry = a
-            disrupted = fetched == nil
-            title = b
-            if let fetched {
-                total = fetched.total
-                retrieved = AppModel.pagesSize
-            }
-            banner = images
-            loaded = true
-        }
-
-        // **Only what is not already there.** Seerr knows what it manages itself; what
-        // reached the server another way shows as open there. The name catches it.
-        let ownNames = Set(b.map { $0.name.lowercased() })
-        let new = await foreignOnes.filter { !$0.state.alreadyPresent && !ownNames.contains($0.title.lowercased()) }
-        withAnimation(Theme.reveal) {
-            requestable = new
-            seerrReady = true
-        }
-    }
-
-    /// The next page of the filmography; people in big series have more than one.
-    private func loadMore() async {
-        guard retrieved < total, !loadsPost, loaded else { return }
-        loadsPost = true
-        defer { loadsPost = false }
-        let since = retrieved
-        guard let page = await model.titleWithNumber(person: person.id, startIndex: since),
-              since == retrieved else { return }
-        // The page only merges its own duplicates; across pages, appending catches them
-        // by id.
-        title = ListRules.append(page.items, an: title)
-        total = page.total
-        retrieved = since + AppModel.pagesSize
-    }
-
-    private func filmography(tmdb: Int?) async -> [SeerrHit] {
-        guard model.seerr.connected, let tmdb else { return [] }
-        return await model.seerr.filmography(person: tmdb)
+        if core == nil { core = try? AppCore.shared.person(session: model.session, person: person, origin: route.origin) }
+        await core?.run(app: model)
     }
 }

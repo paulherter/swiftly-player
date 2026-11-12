@@ -70,7 +70,7 @@ struct SeerrRoute: Hashable {}
 
 
 /// A person's page. `origin` is the title you came through, where it
-/// says "Patrick Jane in The Mentalist".
+/// says "Patrick Jane in The Lighthouse".
 struct PersonRoute: Hashable {
     let person: Person
     let origin: String?

@@ -59,7 +59,6 @@ import coil3.request.allowHardware
 import coil3.toBitmap
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -156,7 +155,7 @@ class HandoffStatus(json: String) {
 
 private fun list(vararg d: Double) = d.joinToString(",", "[", "]")
 
-/** Title and episode under the card (`HandoffStyle.rows`): "The Mentalist" and "Staffel 6 · Folge 7". */
+/** Title and episode under the card (`HandoffStyle.rows`): "The Lighthouse" and "Staffel 6 · Folge 7". */
 internal fun handoffRows(name: String, series: String?, season: Int?, episode: Int?): Pair<String, String?> =
     if (!series.isNullOrEmpty()) series to (if (season != null && episode != null) translated("Staffel %lld · Folge %lld", season, episode) else name)
     else name to null
@@ -168,7 +167,7 @@ object Handoff {
     fun ownName(app: SwiftlyApplication) = if (app.isTv) "Android TV" else "Android"
 
     /** The timings, read once; they do not depend on the screen. */
-    val times: HandoffTimes by lazy { HandoffStatus(Kern.handoffStates(1920.0, 1080.0, false)).times }
+    val times: HandoffTimes by lazy { HandoffStatus(KernRules.handoffStates(1920.0, 1080.0, false)).times }
 
     // MARK: Receiver
 
@@ -229,13 +228,13 @@ object Handoff {
         val alt = e.size
         if (alt != null && kotlin.math.abs(alt.first - width) < 0.5 && kotlin.math.abs(alt.second - height) < 0.5) return
         e.size = width to height
-        val new = HandoffStatus(Kern.handoffStates(width, height, e.tv))
+        val new = HandoffStatus(KernRules.handoffStates(width, height, e.tv))
         val before = e.situations
         e.situations = new
         if (before == null) {
             val u = e.provenance
             e.from = if (u != null && !e.calm) doubleArrayOf(u.x.toDouble(), u.y.toDouble(), badgeWidth(e.tv)) else new.idle
-            e.coverage = HandoffPath(Kern.handoffLane("""{"art":"deckung","fernseher":${e.tv}}"""))
+            e.coverage = HandoffPath(KernRules.handoffLane("""{"art":"deckung","fernseher":${e.tv}}"""))
             // Also at rest: the path from the rest position, read only at 0 where it stands still.
             e.wait = lane(e, "warten", 0.0)
             return
@@ -244,7 +243,7 @@ object Handoff {
         if (e.zoomOff != null) return
         if (e.calm) { e.from = new.idle; e.wait = lane(e, "warten", 0.0); return }
         val t = e.now()
-        val now = HandoffPath(Kern.handoffLane("""{"art":"neu","fernseher":${e.tv},"von":${list(*e.from)},""" +
+        val now = HandoffPath(KernRules.handoffLane("""{"art":"neu","fernseher":${e.tv},"von":${list(*e.from)},""" +
             """"ruhe":${list(*before.idle)},"flugAb":${e.transitionOut},"ab":$t}"""))
         now.status?.let { e.from = doubleArrayOf(it[0].toDouble(), it[1].toDouble(), it[2].toDouble()) }
         e.transitionOut = t
@@ -253,7 +252,7 @@ object Handoff {
 
     private fun lane(e: Arrival, art: String, since: Double): HandoffPath {
         val l = e.situations!!
-        return HandoffPath(Kern.handoffLane("""{"art":"$art","fernseher":${e.tv},"von":${list(*e.from)},""" +
+        return HandoffPath(KernRules.handoffLane("""{"art":"$art","fernseher":${e.tv},"von":${list(*e.from)},""" +
             """"ruhe":${list(*l.idle)},"voll":${list(*l.full)},"flugAb":${e.transitionOut},"ab":$since,"bis":${times.waitUntil}}"""))
     }
 
@@ -375,7 +374,7 @@ object Handoff {
             val rb = r.width / density.toDouble(); val rh = r.height / density.toDouble()
             val vb = minOf(rb, rh * pages)
             val full = doubleArrayOf(r.center.x / density.toDouble(), r.center.y / density.toDouble(), vb)
-            val situations = HandoffStatus(Kern.handoffStates(screenB, screenH, app.isTv))
+            val situations = HandoffStatus(KernRules.handoffStates(screenB, screenH, app.isTv))
             val (title, under) = plan?.let { p ->
                 if (p.episode) handoffRows(p.title, p.headerLine, p.seasonNr, p.episodeNr) else p.title to null
             } ?: ("" to null)
@@ -385,7 +384,7 @@ object Handoff {
                 lane = null
                 out = times.fadeOut
             } else {
-                val top = Kern.handoffToTop(ownName(app), target)
+                val top = KernRules.handoffToTop(ownName(app), target)
                 val g = heaviness?.measurement()
                 val status = when (runCatching { area.display?.rotation }.getOrNull()) {
                     Surface.ROTATION_180 -> "kopfueber"
@@ -397,7 +396,7 @@ object Handoff {
                                 // itself in g (upright y = -1). So flip and divide.
                 val gravity = g?.let { ",\"schwerkraft\":${list(-it[0] / 9.81, -it[1] / 9.81)},\"oberflaeche\":\"$status\"" } ?: ""
                 if (g != null) time("Schwerkraft ${"%.2f, %.2f, %.2f".format(-g[0] / 9.81, -g[1] / 9.81, -g[2] / 9.81)} · Oberfläche $status")
-                lane = HandoffPath(Kern.handoffLane("""{"art":"abgang","fernseher":${app.isTv},"voll":${list(*full)},""" +
+                lane = HandoffPath(KernRules.handoffLane("""{"art":"abgang","fernseher":${app.isTv},"voll":${list(*full)},""" +
                     """"schirm":${list(screenB, screenH)},"nachOben":$top$gravity}"""))
                 out = lane.out ?: 2.0
                 time("fliegt nach ${if (top) "oben" else "unten"}, draußen nach ${(out * 1000).toInt()} ms")

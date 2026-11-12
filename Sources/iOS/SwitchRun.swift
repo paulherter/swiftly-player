@@ -19,7 +19,7 @@ enum SwitchRun {
 
     static func wish(_ model: AppModel) async -> PlayRequest? {
         guard let client = model.client else { log("nicht angemeldet"); return nil }
-        guard let series = await model.search("The Mentalist")?.first(where: { $0.type == "Series" })
+        guard let series = await model.search("The Lighthouse")?.first(where: { $0.type == "Series" })
         else { log("keine Serie"); return nil }
         let all = await model.episodes(series: series.id, season: nil) ?? []
         guard let f10 = all.first(where: { $0.parentIndexNumber == 6 && $0.indexNumber == 10 }),

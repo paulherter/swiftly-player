@@ -1,5 +1,7 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.KernRules
+
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -58,7 +60,6 @@ import de.paulherter.swiftly.GridTile
 import de.paulherter.swiftly.CountMark
 import de.paulherter.swiftly.LoadField
 import de.paulherter.swiftly.SeparatorLine
-import de.paulherter.swiftly.core.Kern
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.Symbol
@@ -89,13 +90,13 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
 
     var historyRaw by remember { mutableStateOf(SearchState.historyRead(app)) }
     val history = remember(historyRaw) {
-        runCatching { JSONArray(Kern.searchHistoryList(historyRaw)).let { a -> (0 until a.length()).map { a.getString(it) } } }.getOrDefault(emptyList())
+        runCatching { JSONArray(KernRules.searchHistoryList(historyRaw)).let { a -> (0 until a.length()).map { a.getString(it) } } }.getOrDefault(emptyList())
     }
     fun historySet(raw: String) { historyRaw = raw; SearchState.historyWrite(app, raw) }
 
     // An answer has arrived since the page was cleared. After coming back from a title the hits are still
     // in the state, so this starts out true when the last search belongs to the term.
-    var answered by remember { mutableStateOf(st.searched.isNotEmpty() && Kern.searchTermFits(st.term.trim())) }
+    var answered by remember { mutableStateOf(st.searched.isNotEmpty() && KernRules.searchTermFits(st.term.trim())) }
     // The first answer takes longer than 300 ms. Only then the placeholder shows: before that nothing
     // flickers between two letters.
     var waited by remember { mutableStateOf(false) }
@@ -108,7 +109,7 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
     // searched does not search it once more.
     LaunchedEffect(st.term, attempt) {
         val clean = st.term.trim()
-        if (!Kern.searchTermFits(clean)) {
+        if (!KernRules.searchTermFits(clean)) {
             // Below two characters nothing is searched, and the hits give way to the history.
             st.hit = emptyList(); st.seerr = emptyList(); st.disrupted = false; st.hunts = false; st.searched = ""
             answered = false; waited = false
@@ -124,7 +125,7 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
     // Watched/watchlist state changed elsewhere: the tile should not show the old state. Hits stay until new ones arrive.
     de.paulherter.swiftly.WatchStateChange(app) {
         val clean = st.term.trim()
-        if (Kern.searchTermFits(clean)) st.searching(app, clean, pause = 0)
+        if (KernRules.searchTermFits(clean)) st.searching(app, clean, pause = 0)
     }
     // The placeholder only after 300 ms, and only while nothing at all is on screen.
     val empty = st.hit.isEmpty() && st.seerr.isEmpty()
@@ -134,11 +135,11 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
     }
 
     val disrupted = st.disrupted && !de.paulherter.swiftly.AccountSwitchTransition.waits
-    val screen = Kern.searchScreen(st.term, history.size.toLong(), !empty, answered, disrupted, waited)
+    val screen = KernRules.searchScreen(st.term, history.size.toLong(), !empty, answered, disrupted, waited)
 
     val splitSeries = st.hit.filter { it.type == "Series" }
     val splitFilms = st.hit.filter { it.type == "Movie" }
-    val titles = Kern.searchTitlesShown(splitSeries.size.toLong(), splitFilms.size.toLong(), st.seerr.size.toLong())
+    val titles = KernRules.searchTitlesShown(splitSeries.size.toLong(), splitFilms.size.toLong(), st.seerr.size.toLong())
     val hitIds = (splitSeries + splitFilms).map { it.id }
     val landing: FocusRequester? = when (screen) {
         "hits" -> (focus.lastHit?.takeIf { it in hitIds } ?: hitIds.firstOrNull())?.let { focus.hit(it) }
@@ -217,8 +218,8 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
                         .onFocusChanged {
                             inResults = it.hasFocus
                             if (it.hasFocus) {
-                                if (zone[0] == 1 && Kern.searchTermFits(st.term.trim()) && st.hit.isNotEmpty()) {
-                                    historySet(Kern.searchHistoryRemember(st.term, historyRaw))
+                                if (zone[0] == 1 && KernRules.searchTermFits(st.term.trim()) && st.hit.isNotEmpty()) {
+                                    historySet(KernRules.searchHistoryRemember(st.term, historyRaw))
                                 }
                                 zone[0] = 2
                             }
@@ -231,7 +232,7 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             "blank" -> Box(Modifier.height(1.dp))
                             "loading" -> Loading()
                             "history" -> Recent(history, focus, onPick = { w ->
-                                historySet(Kern.searchHistoryRemember(w, historyRaw))
+                                historySet(KernRules.searchHistoryRemember(w, historyRaw))
                                 immediate[0] = true
                                 st.term = w
                                 focus.toKeys()
@@ -245,7 +246,7 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                         translated("Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe."),
                                         symbol = Glyph.Magnifier, top = 35.dp)
                                 if (history.isNotEmpty()) Recent(history, focus, onPick = { w ->
-                                    historySet(Kern.searchHistoryRemember(w, historyRaw))
+                                    historySet(KernRules.searchHistoryRemember(w, historyRaw))
                                     immediate[0] = true
                                     st.term = w
                                     focus.toKeys()

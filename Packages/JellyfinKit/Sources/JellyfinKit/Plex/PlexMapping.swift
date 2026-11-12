@@ -229,7 +229,9 @@ public struct PlexMapper: Sendable {
             title: s.title,
             // The path only; the token is added by the client (see PlexClient.subtitleURL).
             deliveryUrl: s.streamType == 3 ? s.key : nil,
-            isHearingImpaired: s.hearingImpaired)
+            isHearingImpaired: s.hearingImpaired,
+            // Plex's `index` is the stream's place in the file (the engine's track number); `index` above is the id.
+            containerIndex: s.index)
     }
 
     /// Plex has no "range type"; derive it from transfer function and Dolby Vision.

@@ -72,7 +72,7 @@ fun ServerPage(app: SwiftlyApplication, back: (() -> Unit)? = null, presetAddres
         val checked = address
         verification = scope.launch {
             try {
-                val json = withContext(Dispatchers.IO) { app.kern.linkUp(checked, headers.asJson()).await() }
+                val json = withContext(Dispatchers.IO) { app.rk.linkUp(checked, headers.asJson()).await() }
                 // Store only now: for an address where nothing answers, nothing is left behind.
                 if (headers.isNotEmpty()) app.storeOwnHeaders()
                 val answer = JSONObject(json)
@@ -142,10 +142,10 @@ fun rememberFoundServers(app: SwiftlyApplication, except: List<String> = emptyLi
     var found by remember { mutableStateOf(emptyList<FoundServer>()) }
     LaunchedEffect(except) {
         val taken = JSONArray(except).toString()
-        val pause = app.kern.serverSearchPause().toLong()
+        val pause = app.rk.serverSearchPause().toLong()
         var known = "[]"
         while (true) {
-            known = withContext(Dispatchers.IO) { app.kern.serverSearch(known, taken).await() }
+            known = withContext(Dispatchers.IO) { app.rk.serverSearch(known, taken).await() }
             val list = JSONArray(known)
             found = (0 until list.length()).map { i ->
                 list.getJSONObject(i).let { FoundServer(it.getString("name"), it.getString("adresse"), it.getString("kurz")) }

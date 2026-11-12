@@ -73,12 +73,13 @@ struct HomeView: View {
 
     /// The posters of a row from a genre or library.
     @ViewBuilder
-    private func postern(_ items: [Item]) -> some View {
+    private func postern(_ items: [Item], rail: String? = nil) -> some View {
         ForEach(items, id: \.id) { title in
+                            let look = rail.flatMap { coreLook($0, title) }
                             Button { navigator.openIt(.title(title), in: section) } label: {
-                                PosterCell(title: title.name,
-                                             secondLine: title.productionYear.map { "\($0)" },
-                                             image: model.imageURL(for: title, portrait: true),
+                                PosterCell(title: look?.title ?? title.name,
+                                             secondLine: look != nil ? look?.subtitle : title.productionYear.map { "\($0)" },
+                                             image: look?.image ?? model.imageURL(for: title, portrait: true),
                                              progress: progress(title),
                                              symbolText: symbolText(title),
                                              prefetch: {
@@ -145,7 +146,7 @@ struct HomeView: View {
                 }
                 ForEach(Array(state.genreRails.enumerated()), id: \.element.id) { j, genre in
                     Rail(name: genre.name) {
-                        postern(genre.items)
+                        postern(genre.items, rail: "genre:\(genre.name)")
                     }
                     .railEntrance(fixedRails.count + libraries.count + 1 + j, present: showItem)
                 }
@@ -162,10 +163,11 @@ struct HomeView: View {
                 // the user to the server instead of the network. Wording and icon are the server
                 // message used identically everywhere.
                 if loaded, state.disrupted {
+                    let words = state.trouble.copy(server: model.serverAddress ?? String(localized: "Der Server"))
                     EmptyState(
                         symbol: "externaldrive.badge.xmark",
-                        headerLine: "Server ist abgetaucht",
-                        text: "\(model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                        headerLine: words.title,
+                        text: words.text,
                         primaryButton: ("Erneut versuchen", { Task { await load() } }))
                         .padding(.top, 120)
                 } else if loaded, state.allEmpty {
@@ -331,11 +333,12 @@ struct HomeView: View {
                         // **The line shows the remaining time**, as on iPhone: "S2 · F5 · noch 12 Min."
                         // (season 2, episode 5, 12 min left). The image stays free, and the text sits where
                         // the season/episode label was anyway.
-                        LandscapeTile(title: header(title),
-                                   secondLine: title.continueWatchingRow ?? title.contextLine,
+                        let look = coreLook(StartRail.continueWatching.rawValue, title)
+                        LandscapeTile(title: look?.title ?? header(title),
+                                   secondLine: look != nil ? look?.subtitle : title.continueWatchingRow ?? title.contextLine,
                                    // **If the landscape image is missing, the poster steps in**: cropped, but still
                                    // the cover and not a still frame. Same as on iPhone.
-                                   image: model.landscapeImageURL(for: title)
+                                   image: look?.image ?? model.landscapeImageURL(for: title)
                                        ?? model.imageURL(for: title, portrait: true),
                                    progress: progress(title),
                                    symbolText: symbolText(title),
@@ -361,9 +364,10 @@ struct HomeView: View {
                 Rail(title: "Nächste Folge") {
                     ForEach(next, id: \.id) { episode in
                         Button { navigator.openIt(.title(episode), in: section) } label: {
-                            PosterCell(title: header(episode),
-                                         secondLine: episode.episodeCode,
-                                         image: model.imageURL(for: episode, portrait: true),
+                            let look = coreLook(StartRail.nextEpisode.rawValue, episode)
+                            PosterCell(title: look?.title ?? header(episode),
+                                         secondLine: look != nil ? look?.subtitle : episode.episodeCode,
+                                         image: look?.image ?? model.imageURL(for: episode, portrait: true),
                                          symbolText: symbolText(episode),
                                          prefetch: {
                 SeriesCache.shared.prefetch(episode, with: model)
@@ -379,16 +383,16 @@ struct HomeView: View {
         // independently: someone who wants series on top and movies below can have that.
         // Whether they exist is decided by "Neuzugänge getrennt" (new additions split).
         case .newMovies:
-            newAccessRail(title: "Zuletzt hinzugefügte Filme", state.newMovies, jump: rail.libraryJump)
+            newAccessRail(title: "Zuletzt hinzugefügte Filme", rail: .newMovies, state.newMovies, jump: rail.libraryJump)
         case .newSeries:
-            newAccessRail(title: "Zuletzt hinzugefügte Serien", state.newSeries, jump: rail.libraryJump)
+            newAccessRail(title: "Zuletzt hinzugefügte Serien", rail: .newSeries, state.newSeries, jump: rail.libraryJump)
         case .newArrivals:
-            newAccessRail(title: "Zuletzt hinzugefügt", new)
+            newAccessRail(title: "Zuletzt hinzugefügt", rail: .newArrivals, new)
         }
     }
 
     @ViewBuilder
-    private func newAccessRail(title: LocalizedStringKey, _ items: [Item],
+    private func newAccessRail(title: LocalizedStringKey, rail: StartRail, _ items: [Item],
                                jump: LibraryJump? = nil) -> some View {
         if !items.isEmpty {
             // The heading of new movies and new series opens their library in this order.
@@ -397,9 +401,10 @@ struct HomeView: View {
                     Button { navigator.openIt(.title(entryRecord), in: section) } label: {
                         // **The series name, not the episode name**, as in `Tile` on iPhone.
                         // `Items/Latest` returns episodes, which would otherwise show the episode title.
-                        PosterCell(title: entryRecord.seriesName ?? entryRecord.name,
-                                     secondLine: entryRecord.newArrivalsRow,
-                                     image: model.imageURL(for: entryRecord, portrait: true),
+                        let look = coreLook(rail.rawValue, entryRecord)
+                        PosterCell(title: look?.title ?? entryRecord.seriesName ?? entryRecord.name,
+                                     secondLine: look != nil ? look?.subtitle : entryRecord.newArrivalsRow,
+                                     image: look?.image ?? model.imageURL(for: entryRecord, portrait: true),
                                      symbolText: symbolText(entryRecord),
                                      prefetch: {
                 SeriesCache.shared.prefetch(entryRecord, with: model)
@@ -441,6 +446,11 @@ struct HomeView: View {
 
     private func header(_ title: Item) -> String {
         title.seriesName ?? title.name
+    }
+
+    /// What the Rust core says for this tile (`AppModel.coreServes`), by rail and title id; `nil` otherwise.
+    private func coreLook(_ rail: String, _ title: Item) -> RustTileLook? {
+        state.rustTileLooks(rail: rail, on: model.coreServes)?[title.id]
     }
 
     /// **From `Item.watchedShare`** (`Sources/Shared/TitleDetails.swift`).
@@ -494,7 +504,11 @@ struct HomeView: View {
         // are built, so every platform gets it instead of three having to implement it
         // separately. `recent` is included; without that line the normal case fell
         // through, because `newSeries` is only filled when the rows are split.
-        await state.load(model)
+        if model.coreServes {
+            await state.loadRust(model)
+        } else {
+            await state.load(model)
+        }
     }
 
 }

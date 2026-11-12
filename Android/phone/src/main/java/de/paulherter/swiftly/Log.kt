@@ -1,5 +1,8 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.rustcore.logRedact
+import de.paulherter.swiftly.rustcore.logExcerpt
+import de.paulherter.swiftly.rustcore.logAppend
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
@@ -7,7 +10,6 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.util.Log
 import androidx.core.content.FileProvider
-import de.paulherter.swiftly.core.Kern
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -24,7 +26,7 @@ import kotlin.concurrent.thread
 object AppLog {
     fun writeOut(text: String) {
         Log.i("Swiftly", text)
-        runCatching { Kern.logAppend(text) }
+        runCatching { logAppend(text) }
     }
 }
 
@@ -46,7 +48,7 @@ object LogFile {
             "Stand ${Instant.now()}",
             "",
         )
-        val excerpt = runCatching { Kern.logExcerpt(3600.0) }.getOrDefault("")
+        val excerpt = runCatching { logExcerpt(3600.0, (java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 1000).toLong()) }.getOrDefault("")
         rows += if (excerpt.isBlank())
             listOf("(no lines in the last hour — reproduce the problem first, then share without closing the app)")
         else excerpt.lines()
@@ -75,7 +77,7 @@ object LogFile {
         val text = p.inputStream.bufferedReader().readText()
         p.waitFor()
         text.lines().filter { it.isNotBlank() && !it.startsWith("-----") }.takeLast(2000)
-            .map { Kern.logRedact(it) }
+            .map { logRedact(it) }
     }.getOrDefault(emptyList())
 }
 
@@ -93,7 +95,7 @@ object NetworkProbe {
         if (schema != "http" && schema != "https") return
         val host = u.host ?: return
         val port = if (u.port > 0) u.port else if (schema == "https") 443 else 80
-        AppLog.writeOut("[Netzprobe] Strom: ${Kern.logRedact(address)}")
+        AppLog.writeOut("[Netzprobe] Strom: ${logRedact(address)}")
         thread(name = "Netzprobe", isDaemon = true) {
             leg(context)
             val addresses = try { InetAddress.getAllByName(host).toList() } catch (e: Exception) {

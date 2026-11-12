@@ -56,6 +56,16 @@ final class AccountSwitchTransition {
     private(set) var transition: Transition?
     /// Between tap and release - the home page holds its rows back meanwhile.
     private(set) var waits = false
+
+    /// Returns once no switch is running (at once when none is). The home page's first run waits here
+    /// when the page was built inside a sign-in: that run has no counter change to load on later.
+    func untilIdle() async {
+        while waits, !Task.isCancelled {
+            await withCheckedContinuation { done in
+                withObservationTracking { _ = waits } onChange: { done.resume() }
+            }
+        }
+    }
     /// Increments after the tap: `MainView` uses it to clear the stacks, without
     /// animation, under the snapshot.
     private(set) var back = 0

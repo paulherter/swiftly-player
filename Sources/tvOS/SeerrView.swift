@@ -174,19 +174,8 @@ struct SeerrDetailView: View {
     let model: AppModel
     let hit: SeerrHit
 
-    @State private var state: SeerrState
-    @State private var detail: SeerrDetail?
-    /// The difference the page didn't know: with a silent Jellyseerr `detail` stayed `nil`,
-    /// and description, seasons, cast and similar vanished without a word.
-    @State private var detailDisturbed = false
-    @State private var running = false
-    @State private var requested = false
-    @State private var error: String?
-    @State private var selected: Set<Int> = []
-    @State private var seasonsOpen = false
-    @State private var confirmed = false
-    /// Which of the four confirmations is currently on the button.
-    @State private var version = 0
+    /// State, words, button, season panel and the second tap live in the core (`SeerrScreen`).
+    @State private var flow: SeerrCore.Flow?
     /// Focus must move into the panel on opening; tvOS doesn't do it while the trigger stays.
     @FocusState private var firstRow: Int?
     /// The request row: focus lands here if no season is available. Otherwise the panel opened and nothing in it held focus.
@@ -196,10 +185,14 @@ struct SeerrDetailView: View {
     /// More button of the detail page.
     @FocusState private var atButton: Bool
 
+    private var page: SeerrCore.Page? { flow?.page }
+    /// The server knows better than the search hit from before; the core keeps the newer one.
+    private var state: SeerrState { page.map { SeerrCore.state($0.hit.state) } ?? hit.state }
+    private var seasonsOpen: Bool { page?.sheetOpen ?? false }
+
     init(model: AppModel, hit: SeerrHit) {
         self.model = model
         self.hit = hit
-        _state = State(initialValue: hit.state)
     }
 
     var body: some View {
@@ -225,10 +218,10 @@ struct SeerrDetailView: View {
                         castStrip
                     }
                 }
-                if detailDisturbed {
+                if flow == nil || page?.disturbed == true {
                     // Jellyseerr's address, not the user's own server's: that one runs, or we wouldn't be on this page.
                     DisturbState(model: model, address: model.seerr.address,
-                                 retry: { Task { await detailLoad() } })
+                                 retry: { Task { await load() } })
                         .frame(height: Theme.posterHeight)
                 }
             }
@@ -252,17 +245,14 @@ struct SeerrDetailView: View {
             seasonPanel.transition(.opacity)
         }
         .animation(Theme.focusAnimation, value: seasonsOpen)
-        .task { await detailLoad() }
+        .task { await load() }
     }
 
-    private func detailLoad() async {
-        let fetched = await model.seerr.detail(hit)
-        detailDisturbed = fetched == nil
-        if let fetched {
-            detail = fetched
-            // The server knows better than the search hit from before.
-            if let new = fetched.state { state = new }
-        }
+    private func load() async {
+        guard let client = model.seerr.coreClient else { return }
+        let made = flow ?? SeerrCore.Flow(model: client)
+        flow = made
+        await made.open(SeerrCore.coreHit(hit))
     }
 
     /// The same header as on a real detail page.
@@ -310,7 +300,7 @@ struct SeerrDetailView: View {
             .frame(height: 34)
             .padding(.top, 14)
 
-            Text(verbatim: detail?.description ?? "")
+            Text(verbatim: page?.description ?? "")
                 .font(Theme.body)
                 .lineSpacing(Theme.descriptionPadding)
                 .foregroundStyle(Theme.fontVeryQuiet)
@@ -325,91 +315,49 @@ struct SeerrDetailView: View {
     }
 
     private var secondaryLine: String {
-        var parts: [String] = []
-        if let year = hit.year { parts.append("\(year)") }
-        if hit.isSeries {
-            let n = detail?.seasons.count ?? 0
-            if n > 0 { parts.append(n == 1 ? String(localized: "1 Staffel")
-                                           : String(localized: "\(n) Staffeln")) }
-        } else if let m = detail?.runtime, m > 0 {
-            parts.append(String(localized: "\(m) Min."))
-        }
-        let genres = detail?.genres ?? []
-        if !genres.isEmpty { parts.append(genres.joined(separator: ", ")) }
-        if parts.isEmpty {
-            parts.append(hit.isSeries ? String(localized: "Serie")
-                                          : String(localized: "Film"))
-        }
-        return parts.joined(separator: " · ")
+        page?.secondaryLine ?? (hit.isSeries ? String(localized: "Serie") : String(localized: "Film"))
     }
 
     /// Status and rating in the same shell, like on the iPhone, where both go through the same `ProofRow`.
     private var proofRow: some View {
         ProofRow(directPlayFlag: false,
-                   rating: (detail?.rating).flatMap { $0 > 0 ? $0 : nil },
+                   rating: page?.rating.flatMap { $0 > 0 ? $0 : nil },
                    own: (state.symbol, state.word, state.color))
     }
 
     /// A status is not a button. What is waiting or loading can't be requested again; there is information instead.
     @ViewBuilder
     private var action: some View {
-        if requested {
-            inquiry(String(localized: "Angefragt. Sobald sie freigegeben ist, lädt sie von selbst."))
-        } else if state.requestable {
+        if let page, page.canRequest {
             VStack(alignment: .leading, spacing: 20) {
-                Button(buttonText) { pressed() }
+                Button(buttonText(page)) { pressed(page) }
                     .buttonStyle(ThemedButtonStyle())
                     .focused($atButton)
                     .panelTrigger("staffeln")
-                if let error {
+                if let error = page.error {
                     // A failed request is an error, not a warning.
                     Text(verbatim: error).font(Theme.small).foregroundStyle(Theme.error)
                 }
             }
         } else {
-            inquiry(state.hint)
+            inquiry(page?.note ?? state.hint)
         }
     }
 
-    /// The second step says what to do.
-    ///
-    /// It used to read "Really request?" and users didn't understand that they had to press
-    /// again. A button showing a question is a question without an answer: one can't tell if
-    /// pressing confirms or cancels. So every variant starts with "Again": the instruction
-    /// first, the punchline after it.
-    ///
-    /// Four variants, and the dice are rolled once, on press, otherwise the text would change
-    /// under the remote whenever the view redraws. The same one never comes twice in a row.
-    ///
-    /// Verbatim with `Shared/SeerrDetailView`. A copy would be a mistake, but the catalog key is
-    /// the same, so the wording can't drift apart unnoticed.
-    private static let confirmations: [LocalizedStringKey] = [
-        "Nochmal, dann läuft’s", "Nochmal — ab die Post",
-        "Nochmal, dann frag ich", "Nochmal, her damit"
-    ]
-
-    private var buttonText: LocalizedStringKey {
-        if running { return "Wird angefragt…" }
-        if hit.isSeries { return "Staffeln wählen" }
-        return confirmed ? Self.confirmations[version] : "Anfragen"
+    /// The second step says what to do: the wording (four variants, rolled once on press, never the same
+    /// twice) comes from the core, the same on every platform.
+    private func buttonText(_ page: SeerrCore.Page) -> String {
+        if page.running { return String(localized: "Wird angefragt…") }
+        if hit.isSeries { return String(localized: "Staffeln wählen") }
+        return page.buttonText
     }
 
     /// Two steps, and the second is the actual order. With a remote a click happens especially fast.
-    ///
     /// For a series the panel takes over the second step: the choice is made there and the last
-    /// row triggers. The button used to carry both steps ("Choose seasons", then "Request") and
-    /// the list hung below as an ordinary block in the flow.
-    private func pressed() {
-        guard !running else { return }
-        if hit.isSeries { seasonsOpen = true; return }
-        guard confirmed else {
-            // Roll once, and not the same as last time.
-            let other = (0 ..< Self.confirmations.count).filter { $0 != version }
-            version = other.randomElement() ?? 0
-            confirmed = true
-            return
-        }
-        Task { await askFor() }
+    /// row triggers. The core decides what the press does.
+    private func pressed(_ page: SeerrCore.Page) {
+        guard !page.running else { return }
+        Task { await flow?.press() }
     }
 
     /// The season choice is a panel, not a block in the flow.
@@ -431,11 +379,10 @@ struct SeerrDetailView: View {
             // outside it and is always visible.
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(detail?.seasons ?? []) { st in
+                    ForEach(page?.seasons ?? [], id: \.number) { st in
                         Button {
-                            guard st.state.requestable else { return }
-                            if selected.contains(st.number) { selected.remove(st.number) }
-                            else { selected.insert(st.number) }
+                            guard st.requestable else { return }
+                            flow?.toggleSeason(Int(st.number))
                         } label: {
                             seasonRow(st)
                         }
@@ -443,9 +390,9 @@ struct SeerrDetailView: View {
                         // Selected is the accent color of the whole row, as `seasonRow` says, and VoiceOver
                         // doesn't see color. Without the trait the selected season sounds like any other, and a
                         // multiple choice you can't hear isn't one.
-                        .accessibilityAddTraits(selected.contains(st.number)
+                        .accessibilityAddTraits(st.selected
                                                 ? [.isButton, .isSelected] : .isButton)
-                        .focused($firstRow, equals: st.number)
+                        .focused($firstRow, equals: Int(st.number))
                     }
                 }
             }
@@ -456,18 +403,17 @@ struct SeerrDetailView: View {
 
             // Never send empty. Without seasons the request means "all" to Seerr, a case nobody should
             // trigger by accident. While nothing is selected the row says so too.
+            let enabled = page?.sheetButtonEnabled ?? false
             Button {
-                guard !selected.isEmpty else { return }
-                seasonsOpen = false
-                Task { await askFor() }
+                guard enabled else { return }
+                Task { await flow?.confirmSeasons() }
             } label: {
                 HStack(spacing: 22) {
                     Image(icon: "plus").frame(width: 38)
-                    Text(selected.isEmpty ? "Staffel wählen"
-                                          : "\(selected.count) anfragen")
+                    Text(verbatim: page?.sheetButton ?? "")
                     Spacer(minLength: 0)
                 }
-                .foregroundStyle(selected.isEmpty ? Theme.fontVeryQuiet : Theme.font)
+                .foregroundStyle(enabled ? Theme.font : Theme.fontVeryQuiet)
             }
             .buttonStyle(RowsStyle())
             .focused($atJob)
@@ -480,57 +426,53 @@ struct SeerrDetailView: View {
         .task {
             if let first = firstSelectable { firstRow = first } else { atJob = true }
         }
-        .onExitCommand { seasonsOpen = false }
+        .onExitCommand { flow?.closeSheet() }
     }
 
     /// The row itself as its own building block so the compiler can check it in finite time;
     /// as one expression in the `label` it gave up.
-    private func seasonRow(_ st: SeerrSeason) -> some View {
-        let an = selected.contains(st.number)
-        let free = st.state.requestable
+    private func seasonRow(_ st: SeerrCore.SeasonRow) -> some View {
+        let an = st.selected
+        let free = st.requestable
         return HStack(spacing: 22) {
             Image(icon: symbolText(for: st))
                 .frame(width: 38)
                 .foregroundStyle(an ? Theme.accent : Theme.fontQuiet)
                 // The icon is only an image; "selected" is carried by the button's trait, "already there" stands as a suffix on the row.
                 .accessibilityHidden(true)
-            Text("Staffel \(st.number)")
+            Text(verbatim: st.title)
             Spacer(minLength: 0)
-            if st.episodes > 0 {
-                Text("\(st.episodes) Folgen")
+            if let episodes = st.episodes {
+                Text(verbatim: episodes)
                     .foregroundStyle(Theme.fontQuiet)
             }
         }
-        // What is already there is not an offer, and what is selected doesn't say so only with a
-        // small box: the whole row takes the accent color. `schriftLeise` instead of
-        // `schriftSehrLeise`: on the panel background (`erhoeht`) the very quiet text is 3.12:1,
-        // and in focus, where the surface gets lighter, it doesn't improve. An already requested
-        // season should be quieter, not unreadable.
+        // What is already there is not an offer; what is selected takes the accent color of the whole row.
+        // `fontQuiet` and not very quiet: on the raised surface the very quiet text is 3.12:1.
         .foregroundStyle(an ? Theme.accent : (free ? Theme.font : Theme.fontQuiet))
         // The box icon is hidden, so the status must stand as a word or the only information vanishes.
-        // `ansage` is the same sentence as on the detail page (`SeerrMark.swift`).
-        .accessibilityHint(free ? Text("") : Text(st.state.announcement))
+        .accessibilityHint(free ? Text("") : Text(verbatim: st.note ?? ""))
     }
 
     /// At most four rows, below that it scrolls. With fewer seasons the panel is exactly as tall as it has rows.
     private var panelHeight: CGFloat {
-        let count = min(detail?.seasons.count ?? 0, 4)
+        let count = min(page?.seasons.count ?? 0, 4)
         return CGFloat(max(count, 1)) * Theme.rowsHeight
     }
 
     /// Box, checkmark, or the circle for what is already there.
-    private func symbolText(for st: SeerrSeason) -> String {
-        guard st.state.requestable else { return "checkmark.circle" }
-        return selected.contains(st.number) ? "checkmark.square.fill" : "square"
+    private func symbolText(for st: SeerrCore.SeasonRow) -> String {
+        guard st.requestable else { return "checkmark.circle" }
+        return st.selected ? "checkmark.square.fill" : "square"
     }
 
     /// Where focus lands when the panel opens: the first season that can be had at all.
     private var firstSelectable: Int? {
-        (detail?.seasons ?? []).first { $0.state.requestable }?.number
+        (page?.seasons ?? []).first { $0.requestable }.map { Int($0.number) }
     }
 
-    private var cast: [SeerrPerson] { Array((detail?.cast ?? []).prefix(12)) }
-    private var similarOne: [SeerrHit] { Array((detail?.similarOne ?? []).prefix(20)) }
+    private var cast: [SeerrPerson] { (page?.cast ?? []).prefix(12).map(SeerrCore.person) }
+    private var similarOne: [SeerrHit] { (page?.similar ?? []).prefix(20).map { SeerrCore.hit($0.hit) } }
 
     /// Every tile is a focus target, but not a button.
     ///
@@ -540,7 +482,7 @@ struct SeerrDetailView: View {
     /// the same limit as on the iPhone, where they only stand there.
     private var castStrip: some View {
         strip {
-            ForEach(cast) { person in
+            ForEach(Array(cast.enumerated()), id: \.offset) { _, person in
                 WatchTile {
                     CastTile(image: person.image(width: 300),
                                      name: person.name, role: person.role)
@@ -567,35 +509,6 @@ struct SeerrDetailView: View {
             .frame(width: 900, alignment: .leading)
             .padding(.vertical, 20).padding(.horizontal, 24)
             .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous))
-    }
-
-    private func askFor() async {
-        error = nil
-        running = true
-        defer { running = false }
-        do {
-            // Empty means all; Seerr understands the word `all`.
-            // Never empty. `nil` means "all seasons" to Seerr, a case nobody should trigger by
-            // accident: whoever only checks which exist would otherwise request the whole series.
-            // Only for series. A movie has no seasons, `selected` is empty there, and the request was silently dropped.
-            let seasons: [Int]?
-            if hit.isSeries {
-                guard !selected.isEmpty else { return }
-                seasons = Array(selected).sorted()
-            } else {
-                seasons = nil
-            }
-            try await model.seerr.askFor(hit, seasons: seasons)
-            // Read the status, don't assume. For someone who may approve, the request loads at once, so
-            // "waiting for approval" would be wrong. Seerr says it in search; seasons come anew with the
-            // detail page. If Seerr is silent, the assumption stays.
-            selected = []
-            await detailLoad()
-            if state.requestable { state = .waitsSharing }
-            requested = state == .waitsSharing
-        } catch {
-            self.error = readableError(error)
-        }
     }
 }
 

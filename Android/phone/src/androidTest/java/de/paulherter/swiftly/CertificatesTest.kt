@@ -65,11 +65,11 @@ class CertificatesTest {
         try {
             // Without a bundle: system store only; it does not know the test CA.
             Os.unsetenv(VARIABLE)
-            val rejected = runCatching { app.kern.linkUp(address!!, "[]").get(30, TimeUnit.SECONDS) }
+            val rejected = runCatching { app.rk.linkUp(address!!, "[]").get(30, TimeUnit.SECONDS) }
             assertTrue("ohne Buendel darf der Kern der Test-CA nicht trauen", rejected.isFailure)
             val file = File(app.cacheDir, "test-ca.pem").apply { writeBytes(java.util.Base64.getDecoder().decode(ca)) }
             Os.setenv(VARIABLE, file.absolutePath, true)
-            val answer = app.kern.linkUp(address!!, "[]").get(30, TimeUnit.SECONDS)
+            val answer = app.rk.linkUp(address!!, "[]").get(30, TimeUnit.SECONDS)
             assertTrue(answer, answer.contains("Zertifikatstest"))
         } finally {
             if (before != null) Os.setenv(VARIABLE, before, true) else Os.unsetenv(VARIABLE)
@@ -82,7 +82,7 @@ class CertificatesTest {
         assumeTrue("kein Testserver angegeben", address != null)
         assumeTrue("keine eigene Zertifizierungsstelle eingetragen", ownCertificates().isNotEmpty())
         Certificates.readySet(app)
-        val answer = app.kern.linkUp(address!!, "[]").get(30, TimeUnit.SECONDS)
+        val answer = app.rk.linkUp(address!!, "[]").get(30, TimeUnit.SECONDS)
         assertTrue(answer, answer.contains("Zertifikatstest"))
     }
 }

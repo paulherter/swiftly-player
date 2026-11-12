@@ -64,6 +64,8 @@ if [ "$fast" = false ]; then
     # A single target's own build only checks its own half: many lines in
     # project.yml appear verbatim in several target blocks, and a search and
     # replace hits all of them. Hence always all three.
+    # The Rust core's binary framework is git-ignored; the project cannot be generated without it.
+    [ -d Packages/SwiftlyCore/SwiftlyCoreFFI.xcframework ] || Werkzeuge/rust-kern.sh --framework >/dev/null 2>&1
     xcodegen generate >/dev/null 2>&1
     # The log goes completely into a file and only through xcbeautify to the
     # screen. Otherwise a failure would show only the word FEHLGESCHLAGEN and
@@ -146,27 +148,6 @@ for branch in ios ipad mac tvos linux windows; do
         report "${ref#refs/*/}" "${green}nichts offen${reset} ($behind hinterher)"
     fi
 done
-
-echo
-echo "── Verdrahtung ────────────────────────────────────────"
-# Skills and agents are linked into ~/.claude, and a link pointing at a path
-# with a literal backslash breaks silently. No build or test notices: the
-# session keeps running, only without that knowledge. Hence here.
-# The private links in the repository root are optional: a clone without them
-# passes; only a link that exists and points nowhere counts as an error.
-tot=0
-for l in CLAUDE.md VERHALTEN.md GESTALTUNG.md Erfahrungen.md Fallen; do
-    [ -L "$l" ] && [ ! -e "$l" ] && { report "$l" "${red}zeigt ins Leere${reset}"; tot=$((tot+1)); }
-done
-for l in ~/.claude/skills/* ~/.claude/agents/*; do
-    [ -L "$l" ] && [ ! -e "$l" ] && { report "$(basename "$l")" "${red}zeigt ins Leere${reset}"; tot=$((tot+1)); }
-done
-if [ "$tot" -eq 0 ]; then
-    report "Symlinks" "${green}alle loesen auf${reset}"
-else
-    report "Symlinks" "${red}$tot tot${reset}"
-    error=1
-fi
 
 echo
 echo "── Katalog ────────────────────────────────────────────"

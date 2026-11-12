@@ -41,11 +41,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
+import de.paulherter.swiftly.KernRules
 import de.paulherter.swiftly.SubtitleFacts
 import de.paulherter.swiftly.SubtitlePreview
 import de.paulherter.swiftly.SubtitleSteps
 import de.paulherter.swiftly.SwiftlyApplication
-import de.paulherter.swiftly.core.Kern
 import de.paulherter.swiftly.entryValue
 import de.paulherter.swiftly.fileStyleLine
 import de.paulherter.swiftly.shared.Glyph
@@ -87,17 +87,16 @@ fun TvSubtitleLook(app: SwiftlyApplication, back: () -> Unit) {
     var undoFocused by remember { mutableStateOf(false) }
     var focusReset by remember { mutableStateOf(false) }
 
-    fun store(next: String) { e.subtitleLook = Kern.subtitleLookNormalise(next); app.qualityReport() }
-    fun set(field: String, value: String) {
-        val next = Kern.subtitleLookChange(look, field, value)
-        if (next != Kern.subtitleLookNormalise(look)) store(next)
-    }
+    // Every choice builds on the look as it is NOW, not on the `look` of the composition that made the callback
+    // (a second choice before the page recomposed lost the first; see `SubtitleLookEditor`).
+    val editor = remember(app) { de.paulherter.swiftly.SubtitleLookEditor({ app.settings.subtitleLook }, { app.settings.subtitleLook = it; app.qualityReport() },
+        KernRules::subtitleLookNormalise, KernRules::subtitleLookChange) }
+    fun store(next: String) = editor.store(next)
+    fun set(field: String, value: String) = editor.set(field, value)
     fun reset() {
         if (facts.standard) return
-        val before = Kern.subtitleLookNormalise(look)
         // The file switch is part of the look and goes back with it (spec).
-        store(Kern.subtitleLookStandard())
-        undo = before
+        undo = editor.reset(KernRules.subtitleLookStandard())
     }
     fun takeBack() {
         val before = undo ?: return
@@ -131,10 +130,13 @@ fun TvSubtitleLook(app: SwiftlyApplication, back: () -> Unit) {
     // The swatches do not depend on the look: computed once, not through the core on every recomposition
     // (each focus move or trial step recomposes this page).
     val colourSwatches = remember {
-        SubtitleSteps.colours.associateWith { word -> SubtitleFacts.of(Kern.subtitleLookChange("", "colour", word), true).color }
+        SubtitleSteps.colours.associateWith { word -> SubtitleFacts.of(KernRules.subtitleLookChange("", "colour", word), true).color }
     }
     val colourSteps = SubtitleSteps.colours.map { word -> Step(word, subtitleColourName(word), colourSwatches[word], word == facts.colour) }
     val shown = trial ?: look
+    // Same focus as the Profile page the user came from: a solid white row (the 12 % grey of the plain rows was hard to see at
+    // three meters on the dark page).
+    androidx.compose.runtime.CompositionLocalProvider(LocalSettingsLook provides true) {
     Box(Modifier.fillMaxSize().background(Theme.reason)) {
         Row(Modifier.fillMaxSize().padding(horizontal = TvTheme.edgePage, vertical = TvTheme.edgeTop),
             horizontalArrangement = Arrangement.spacedBy(TvSpec.subtitleColumnGap), verticalAlignment = Alignment.Top) {
@@ -181,7 +183,7 @@ fun TvSubtitleLook(app: SwiftlyApplication, back: () -> Unit) {
                              trialLost = { owner -> if (trialOwner == owner) { trialOwner = null; trial = null } })
 
                 Box(Modifier.padding(top = TvSpec.subtitleGroupTop)) { GroupTitle(translated("Aufwendige Untertitel")) }
-                val adjustable = app.kern.subtitleFileStyleAdjustable()
+                val adjustable = app.rk.subtitleFileStyleAdjustable()
                 TvToggleRow(translated("Gestaltung aus der Datei übernehmen"), facts.keepFileStyle || !adjustable, enabled = adjustable) {
                     set("keepFileStyle", (!facts.keepFileStyle).toString())
                 }
@@ -197,6 +199,7 @@ fun TvSubtitleLook(app: SwiftlyApplication, back: () -> Unit) {
                 }
             }
         }
+    }
     }
 }
 
@@ -239,21 +242,21 @@ private fun UnfoldingRow(key: String, title: String, value: String, opened: Stri
                     val owner = "$key/${step.word}"
                     FocusArea(Modifier.fillMaxWidth().semantics { this.selected = step.current }, magnifier = 1f,
                         focusChanged = { focus ->
-                            if (focus) trialSet(owner, Kern.subtitleLookChange(look, field, step.word)) else trialLost(owner)
+                            if (focus) trialSet(owner, KernRules.subtitleLookChange(look, field, step.word)) else trialLost(owner)
                         },
                         perform = {
                             set(field, step.word); trialLost(owner); setOpened(null); runCatching { header.requestFocus() }
                         }) { focus ->
                         Row(Modifier.fillMaxWidth().height(TvTheme.rowsHeight).clip(RoundedCornerShape(TvTheme.corner))
-                                .background(tvFocusSurface(focus)).padding(horizontal = TvSpec.rowInset),
+                                .background(if (focus) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color.Transparent).padding(horizontal = TvSpec.rowInset),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TvSpec.rowSpacing)) {
                             // The check mark is in the type colour, not the accent (spec).
                             Box(Modifier.width(TvSpec.choiceCheckWidth), contentAlignment = Alignment.Center) {
-                                if (step.current) Symbol(Glyph.Checkmark, TvSpec.valueIcon, color = Theme.font, strength = Strength.Semibold)
+                                if (step.current) Symbol(Glyph.Checkmark, TvSpec.valueIcon, color = if (focus) Theme.reason else Theme.font, strength = Strength.Semibold)
                             }
                             step.swatch?.let { Box(Modifier.size(TvSpec.subtitleSwatch).clip(CircleShape).background(it)) }
                             Text(step.name, style = TvTheme.body.copy(fontWeight = if (focus) FontWeight.SemiBold else FontWeight.Medium),
-                                 color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                 color = if (focus) Theme.reason else Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         }
                     }
                 }

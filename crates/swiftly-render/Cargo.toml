@@ -1,0 +1,24 @@
+[package]
+name = "swiftly-render"
+description = "Drawing foundation of the shared Swiftly Rust UI: draw list, CPU reference renderer, wgpu renderer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# GPU: pinned exactly (rerun the golden comparison on every machine before a bump); MIT OR Apache-2.0.
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "wgsl", "metal", "vulkan", "gles", "dx12"] }
+# Blocks on the adapter and device futures; MIT OR Apache-2.0.
+pollster = "1.0.1"
+# PNG writer and reader for the golden images; MIT OR Apache-2.0.
+png = "0.18.1"
+log = "0.4"
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[dev-dependencies]
+swiftly-design = { path = "../swiftly-design" }
+
+[lints]
+workspace = true

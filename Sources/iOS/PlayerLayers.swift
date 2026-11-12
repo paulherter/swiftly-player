@@ -442,7 +442,7 @@ struct SettingLayer: View {
                 // The names do nothing.
                 if let gemeinsam, let group = gemeinsam.group {
                     SelectionColumn(title: "Gemeinsam · \(group.name)", mass: mass) {
-                        ForEach(Array(group.participant.enumerated()), id: \.offset) { pair in
+                        ForEach(Array(gemeinsam.participants.enumerated()), id: \.offset) { pair in
                             ParticipantRow(name: pair.element, mass: mass)
                         }
                         Button(action: groupLeave) {

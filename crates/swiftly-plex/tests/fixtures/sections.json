@@ -1,0 +1,4 @@
+{"MediaContainer":{"size":3,"Directory":[
+  {"key":"1","type":"movie","title":"Filme","uuid":"u1"},
+  {"key":"2","type":"show","title":"Serien","uuid":"u2"},
+  {"key":"3","type":"artist","title":"Musik","uuid":"u3"}]}}

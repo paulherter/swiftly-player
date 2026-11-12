@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug builds only: a black full-screen host for the subtitle contract test (`SubtitleContractTest`). -->
+        <activity android:name="de.paulherter.swiftly.ProbeActivity" android:exported="true" />
+    </application>
+</manifest>

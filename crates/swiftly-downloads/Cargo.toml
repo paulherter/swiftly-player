@@ -1,0 +1,19 @@
+[package]
+name = "swiftly-downloads"
+description = "Download rules and the pure download-manager state machine of the Swiftly core, ported 1:1 from Swift (DownloadManager, Downloads.swift, LoadSelection)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swiftly-model = { path = "../swiftly-model" }
+swiftly-rules = { path = "../swiftly-rules" }
+swiftly-playback = { path = "../swiftly-playback" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[lints]
+workspace = true

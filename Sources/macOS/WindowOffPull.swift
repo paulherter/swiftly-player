@@ -118,7 +118,7 @@ enum WindowOffPull {
     /// **A page drawn in a window nobody sees.** `abzug.jetzt` holding a page name
     /// ("filme", "film", "allgemein" …) opens a second, borderless `MainView` far outside
     /// every screen, walks it to that page and writes `abzug-<page>.png` after a few
-    /// seconds. The visible window is not touched, so this works while Paul uses the app.
+    /// seconds. The visible window is not touched, so this works while the app is in use.
     static func stage(_ script: String) {
         let parts = script.split(separator: " ", maxSplits: 1).map(String.init)
         let page = parts[0]
@@ -476,7 +476,7 @@ struct BareSame: View {
     }
 }
 
-/// **The transitions Paul felt hanging, measured one by one.**
+/// **The transitions that felt hanging, measured one by one.**
 ///
 /// Like ``ScrollProbe`` it drives its own app, through the same commands the menu sends,
 /// and only when the environment asks:

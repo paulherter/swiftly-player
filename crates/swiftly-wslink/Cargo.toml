@@ -1,0 +1,21 @@
+[package]
+name = "swiftly-wslink"
+description = "Desktop WebSocket link (tungstenite) for the control channel and SyncPlay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swiftly-uniffi = { path = "../swiftly-uniffi" }
+async-trait = "0.1"
+tungstenite = { version = "0.30", default-features = false, features = ["handshake", "rustls-tls-native-roots"] }
+tokio = { version = "1", default-features = false, features = ["sync", "rt"] }
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["rt", "macros", "time"] }
+
+[lints]
+workspace = true

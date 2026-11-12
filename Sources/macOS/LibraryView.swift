@@ -173,10 +173,11 @@ struct LibraryView: View {
                         if choice == .playlists { playlistTiles } else { collectionTiles }
                     } else {
                     ForEach(shelf.items, id: \.id) { entryRecord in
+                        let look = shelf.coreLook(entryRecord.id)
                         Button { navigator.openIt(.title(entryRecord), in: section) } label: {
-                            PosterCell(title: entryRecord.name,
-                                         secondLine: entryRecord.productionYear.map { "\($0)" },
-                                         image: model.imageURL(for: entryRecord, portrait: true),
+                            PosterCell(title: look?.title ?? entryRecord.name,
+                                         secondLine: look != nil ? look?.subtitle : entryRecord.productionYear.map { "\($0)" },
+                                         image: look?.image ?? model.imageURL(for: entryRecord, portrait: true),
                                          progress: entryRecord.userData?.playedPercentage
                                              .map { $0 / 100 },
                                          mark: DisplayRules.tileMark(
@@ -239,10 +240,11 @@ struct LibraryView: View {
                 // no loading or empty state there.
                 if shelf.items.isEmpty, !shelf.loads, !showsCollections {
                     if shelf.disrupted {
+                        let words = shelf.trouble.copy(server: model.serverAddress ?? String(localized: "Der Server"))
                         EmptyState(
                             symbol: "externaldrive.badge.xmark",
-                            headerLine: "Server ist abgetaucht",
-                            text: "\(model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                            headerLine: words.title,
+                            text: words.text,
                             primaryButton: ("Erneut versuchen", { newLoad() }))
                             .padding(.top, 80)
                     } else {
@@ -410,7 +412,7 @@ struct LibraryView: View {
             onScreen.letterPending = false
             guard let alphabet = shownAlphabet,
                   let item = shelf.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
-            let letter = alphabet.key(of: item)
+            let letter = shelf.key(of: item, in: alphabet)
             if letter != topLetter { topLetter = letter }
         }
     }

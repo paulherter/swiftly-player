@@ -57,7 +57,6 @@ import coil3.compose.SubcomposeAsyncImage
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
@@ -85,7 +84,7 @@ fun gridTileRead(k: JSONObject) = GridTile(
 
 /** The words for sorting and filtering come from the package, the same as on Apple and Linux. */
 object Choices {
-    private val json by lazy { JSONObject(Kern.labels()) }
+    private val json by lazy { JSONObject(KernRules.labels()) }
     val sortings: List<Choice> by lazy { read("sortierung") }
     val filter: List<Choice> by lazy { read("filter") }
     private fun read(inputField: String): List<Choice> = json.getJSONArray(inputField).let { a ->
@@ -163,7 +162,7 @@ class LibraryState(val art: String, private val store: Store) {
         offering.firstOrNull { it.category }?.let { mapOf(it.value to translated("Bibliotheken")) }.orEmpty()
 
     /** Reads the offer and checks the remembered choice against it. `false`: the server was silent. */
-    private suspend fun offeringRead(kern: Kern): Boolean = try {
+    private suspend fun offeringRead(kern: RustKern): Boolean = try {
         val o = JSONObject(withContext(Dispatchers.IO) {
             kern.sectionOffering(art, store.rememberValue("bibliothek-$art") ?: "alle").await()
         })
@@ -178,7 +177,7 @@ class LibraryState(val art: String, private val store: Store) {
         true
     } catch (e: CancellationException) { throw e } catch (_: Exception) { false }
 
-    suspend fun load(kern: Kern) {
+    suspend fun load(kern: RustKern) {
         disrupted = false
         if (!offeringRead(kern)) {
             // No server and no content look the same here; told apart by whether the offer arrived at all.
@@ -195,7 +194,7 @@ class LibraryState(val art: String, private val store: Store) {
          * for them. If that changes what "Alle" reads or what may be chosen, it reloads, like
          * `onChange(of: offeringId)` on iOS.
          */
-    private suspend fun lookUp(kern: Kern) {
+    private suspend fun lookUp(kern: RustKern) {
         try { withContext(Dispatchers.IO) { kern.offeringLoad().await() } }
         catch (e: CancellationException) { throw e } catch (_: Exception) { return }
         try {
@@ -212,7 +211,7 @@ class LibraryState(val art: String, private val store: Store) {
         if (identifier != before || choice != oldSelection) pageLoad(kern)
     }
 
-    private suspend fun pageLoad(kern: Kern) {
+    private suspend fun pageLoad(kern: RustKern) {
         // The list is already in memory: "Sammlungen" appears in the menu only if there are any.
         if (listSelected) { loads = false; return }
         loads = items.isEmpty()
@@ -245,7 +244,7 @@ class LibraryState(val art: String, private val store: Store) {
     }
 
     /** `count`: a jump in the letter strip asks for more than a page. */
-    suspend fun loadMore(kern: Kern, count: Long = PAGE) {
+    suspend fun loadMore(kern: RustKern, count: Long = PAGE) {
         if (!stillMorePresent || loadsPost || loads) return
         loadsPost = true
         try {
@@ -265,10 +264,10 @@ class LibraryState(val art: String, private val store: Store) {
      * Mirrors `LibraryModel.jumpTarget`: the index of the first title of a letter, loading up to it
      * in steps sized by where the letter starts in the list.
      */
-    suspend fun jumpTarget(kern: Kern, letter: String): Int? =
+    suspend fun jumpTarget(kern: RustKern, letter: String): Int? =
         alphabetJumpTarget(letter, letters, { items }, { stillMorePresent }, { loadsPost || loads }) { loadMore(kern, it) }
 
-    private suspend fun page(kern: Kern, since: Int, count: Long = PAGE): Pair<List<GridTile>, Int> {
+    private suspend fun page(kern: RustKern, since: Int, count: Long = PAGE): Pair<List<GridTile>, Int> {
         val o = JSONObject(withContext(Dispatchers.IO) {
             kern.sectionPage(art, choice, sorting, filter, since.toLong(), count).await()
         })
@@ -287,11 +286,11 @@ class LibraryState(val art: String, private val store: Store) {
 fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelection: List<String>, open: (Destination) -> Unit) {
     val state = remember(art) { app.libraries.getOrPut(art) { LibraryState(art, app.store) } }
     val section = rememberCoroutineScope()
-    LaunchedEffect(state.sorting, state.filter) { state.load(app.kern) }
+    LaunchedEffect(state.sorting, state.filter) { state.load(app.rk) }
     // Mirrors `LibraryFilter.kept(in:)`: a filter the page no longer offers (the watchlist, switched off)
     // must not keep narrowing the list with no pill left to undo it.
     LaunchedEffect(filterSelection) { if (state.filter !in filterSelection) state.filterSet("alle") }
-    WatchStateChange(app) { state.load(app.kern) }
+    WatchStateChange(app) { state.load(app.rk) }
     val grid = rememberLazyGridState()
     val density = LocalDensity.current
     // The hairline under the header hangs on this.
@@ -314,7 +313,7 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
         LaunchedEffect(grid, count) {
             snapshotFlow { (grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1) to state.items.size }
                 .collect { (lastOne, loaded) ->
-                    if (loaded > 0 && lastOne >= loaded - count * 3) state.loadMore(app.kern)
+                    if (loaded > 0 && lastOne >= loaded - count * 3) state.loadMore(app.rk)
                 }
         }
         val collections = state.listSelected
@@ -358,7 +357,7 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
                                                                   top = headerDp + 8.dp, bottom = 12.dp)) { letter ->
                 section.launch {
                     // A short glide to the first title of the letter (`ScrollJump`).
-                    state.jumpTarget(app.kern, letter)?.let { grid.animateScrollToItem(it) }
+                    state.jumpTarget(app.rk, letter)?.let { grid.animateScrollToItem(it) }
                 }
             }
         }
@@ -377,14 +376,14 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
                         // Same meaning, the platform's icon.
             EmptyState(Glyph.WlanDisruption, translated("Server ist abgetaucht"),
                 translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serverAddress()),
-                primaryButton = translated("Erneut versuchen") to { section.launch { state.load(app.kern) } })
+                primaryButton = translated("Erneut versuchen") to { section.launch { state.load(app.rk) } })
         } else if (state.items.isEmpty() && !state.loads) {
             val all = state.filter == "alle"
             EmptyState(if (all) Glyph.Store else Glyph.Filter,
                 translated(if (all) "Hier ist noch nichts" else "Nichts gefunden"),
                 if (all) translated("Sobald in dieser Bibliothek etwas liegt, taucht es hier auf.")
                 else translated("Unter „%@“ liegt gerade nichts. Nimm einen anderen Filter.", Choices.text(Choices.filter, state.filter)),
-                quietButton = if (all) translated("Aktualisieren") to { section.launch { state.load(app.kern) } }
+                quietButton = if (all) translated("Aktualisieren") to { section.launch { state.load(app.rk) } }
                                else translated("Filter zurücksetzen") to { state.filterSet("alle") })
         }
 
@@ -414,7 +413,7 @@ private fun LibraryHeader(app: SwiftlyApplication, state: LibraryState, title: S
                                                           state.choice, categories = state.categories) { new ->
                                 if (new != state.choice) {
                                     state.select(new)
-                                    section.launch { state.load(app.kern) }
+                                    section.launch { state.load(app.rk) }
                                 }
                             }
                         },

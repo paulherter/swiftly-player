@@ -36,11 +36,7 @@ struct SettingsView: View {
                         // Only servers that keep display preferences (`ServerCapability.settingsSync`).
                         if model.can(.settingsSync) {
                             SettingGroup(title: "Synchronisierung", topGap: 28) {
-                                ToggleRow(symbol: "arrow.triangle.2.circlepath",
-                                          title: Text("Auf allen Geräten gleich"),
-                                          under: Text("Liegt auf deinem Server"),
-                                          an: Binding(get: { model.settingsSync.on },
-                                                      set: { model.settingsSync.on = $0 }))
+                                switchRow("einstellungenSync", "arrow.triangle.2.circlepath")
                             }
                         }
                     }
@@ -63,6 +59,7 @@ struct SettingsView: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.never)
+        .onChange(of: feed.facts(model), initial: true) { _, new in feed.apply(new, model) }
         // ‹ › and, once scrolled, the page name.
         .overlay(alignment: .top) {
             StateBar(title: "Allgemein", state: headerState, back: back)
@@ -86,55 +83,44 @@ struct SettingsView: View {
     /// Off by default, so exactly one row appears here.
     private var offline: some View {
         SettingGroup(title: "Offline") {
-            ToggleRow(symbol: "arrow.down.circle",
-                          title: Text("Downloads"),
-                          under: Text("Titel offline schauen"),
-                          an: Binding(get: { model.downloadsAn },
-                                      set: { an in
-                                          if an || model.downloads.entries.isEmpty {
-                                              model.downloadsAn = an
-                                          } else {
-                                              disablePrompt = true
-                                          }
-                                      }))
-            if model.downloadsAn {
+            switchRow("downloadsAn", "arrow.down.circle")
+            if feed.isOn("downloadsAn") {
                 GroupLine()
-                ToggleRow(symbol: "wifi",
-                              title: Text("Nur über WLAN"),
-                              under: Text("Downloads warten, bis du im WLAN bist"),
-                              an: Binding(get: { model.onlyOverWLAN },
-                                          set: { model.onlyOverWLAN = $0 }))
+                switchRow("nurUeberWLAN", "wifi")
                 GroupLine()
-                ToggleRow(symbol: "play.square.stack",
-                              title: Text("Nächste Folge laden"),
-                              under: Text("Lädt die nächste, löscht die gesehene"),
-                              an: Binding(get: { model.downloads.nextAuto },
-                                          set: { model.downloads.nextAuto = $0 }))
+                switchRow("naechsteFolgeLaden", "play.square.stack")
                 GroupLine()
-                ValuesRow(symbol: "internaldrive",
-                           title: Text("Speicher"),
-                           under: Text("\(model.downloads.entries.count) Titel auf diesem Mac"),
-                           value: DownloadRules.size(
-                               DownloadRules.allocation(model.downloads.entries).bytes))
+                if let row = feed.row("downloadsSpeicher") {
+                    ValuesRow(symbol: "internaldrive", title: feed.title("downloadsSpeicher"),
+                              under: feed.under("downloadsSpeicher"), value: feed.shown("downloadsSpeicher"))
+                        .disabled(!row.enabled)
+                }
             }
         }
         // **Switching off never deletes anything unasked.** On the Mac the confirmation is
         // a system dialog instead of a sheet: the question belongs to the window, not to a
         // row in it.
         .confirmationDialog(Text("Downloads ausschalten?"),
-                            isPresented: $disablePrompt) {
-            Button("Behalten") { model.downloadsAn = false }
-            Button("Alles entfernen", role: .destructive) {
-                model.downloads.allRemove()
-                model.downloadsAn = false
-            }
+                            isPresented: Binding(get: { feed.asksAboutDownloads },
+                                                 set: { if !$0 { feed.dismissQuestion() } })) {
+            Button("Behalten") { feed.answerDisable(delete: false) }
+            Button("Alles entfernen", role: .destructive) { feed.answerDisable(delete: true) }
             Button("Abbrechen", role: .cancel) {}
         } message: {
             Text(verbatim: disableText)
         }
     }
 
-    @State private var disablePrompt = false
+    /// Rows, second lines, dimming and the "turn Downloads off" question come from the Rust core;
+    /// symbols, groups and the Mac wording (`SettingsWording`) stay here.
+    private let feed = SettingsRowsFeed.shared
+
+    @ViewBuilder private func switchRow(_ key: String, _ symbol: String) -> some View {
+        if let row = feed.row(key) {
+            ToggleRow(symbol: symbol, title: feed.title(key), under: feed.under(key), an: feed.binding(key))
+                .disabled(!row.enabled)
+        }
+    }
 
     private var disableText: String {
         let b = DownloadRules.allocation(model.downloads.entries)
@@ -147,8 +133,8 @@ struct SettingsView: View {
     @ViewBuilder private var serviceRows: some View {
         if model.can(.seerr) {
             GroupLine()
-            ValuesRow(symbol: "sparkle.magnifyingglass", title: Text("Seerr"),
-                       under: Text("Anfragen, was noch nicht da ist"),
+            ValuesRow(symbol: "sparkle.magnifyingglass", title: feed.title("seerr"),
+                       under: feed.under("seerr"),
                        value: model.seerr.connected ? String(localized: "Verbunden") : nil,
                        action: { navigator.openIt(.seerr, in: section) })
         }
@@ -192,8 +178,8 @@ struct SettingsView: View {
             // Custom headers for a service in front of the server (issue #4): the editor opens
             // in place under the row.
             Button { withAnimation(Theme.timeFloat) { headersOpen.toggle() } } label: {
-                ValuesRow(symbol: "key", title: Text("Eigene Header"),
-                           under: Text("Für einen Dienst vor dem Server"),
+                ValuesRow(symbol: "key", title: feed.title("eigeneHeader"),
+                           under: feed.under("eigeneHeader"),
                            arrow: true, hoverable: true)
             }
             .buttonStyle(Theme.PressRow())

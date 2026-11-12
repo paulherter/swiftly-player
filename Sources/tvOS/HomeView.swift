@@ -66,9 +66,10 @@ struct HomeView: View {
             } else if state.disrupted {
                 // Same wording as on every other device: names the server address and asks the
                 // question that helps, which "check the connection" does not.
+                let words = state.trouble.copy(server: model.serverAddress ?? String(localized: "Der Server"))
                 EmptyState(symbol: "externaldrive.badge.xmark",
-                            title: "Server ist abgetaucht",
-                            hint: "\(model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                            title: words.title,
+                            hint: words.text,
                             button: ("Erneut versuchen", { Task { await load() } }))
             } else if state.allEmpty {
                 EmptyState(symbol: "play.rectangle",
@@ -119,7 +120,14 @@ struct HomeView: View {
         .task(id: "\(model.newAccessDisconnected)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startLibraries.map(\.id).joined(separator: "|"))") {
             // While an account switch runs it does the loading, not the return to the page that
             // coincides with it.
-            if AccountSwitchTransition.shared.waits { return }
+            let counter = model.accountSwitch
+            if AccountSwitchTransition.shared.waits {
+                // A first sign-in builds the page inside the switch and the counter does not move,
+                // so `onChange(of: model.accountSwitch)` never loads it: wait the switch out and
+                // load here. When the counter moved, that handler does.
+                await AccountSwitchTransition.shared.untilIdle()
+                guard !Task.isCancelled, counter == model.accountSwitch, state.firstLoadOwed else { return }
+            }
             await load()
         }
         .onChange(of: phase) { _, new in
@@ -158,7 +166,7 @@ struct HomeView: View {
     /// image is already cached there.
     private var backdropsURL: URL? {
         guard let t = inImage else { return nil }
-        return model.landscapeImageURL(for: t, width: 1600) ?? model.headerImageURL(for: t)
+        return heroURL(t)
     }
 
     /// What the page opens on: the first "Continue Watching" entry, else the first at all.
@@ -166,6 +174,31 @@ struct HomeView: View {
         state.continueWatching.first ?? state.nextEpisode.first ?? state.recent.first
             ?? state.newMovies.first ?? state.newSeries.first
             ?? state.genreRails.lazy.compactMap(\.items.first).first
+    }
+
+    /// What the Rust core says for the tiles of a row (`AppModel.coreServes`); `nil` for rows that
+    /// still come from the Swift loader (the chosen libraries).
+    private func looks(_ rail: RailsId) -> [String: RustTileLook]? {
+        let key: String
+        switch rail {
+        case .continueWatching: key = StartRail.continueWatching.rawValue
+        case .nextEpisode: key = StartRail.nextEpisode.rawValue
+        case .recent: key = StartRail.newArrivals.rawValue
+        case .newMovies: key = StartRail.newMovies.rawValue
+        case .newSeries: key = StartRail.newSeries.rawValue
+        case let .genre(name): key = "genre:\(name)"
+        case .library: return nil
+        }
+        return state.rustTileLooks(rail: key, on: model.coreServes)
+    }
+
+    /// The wide picture of a title for the header zone and the backdrop: where the core serves, from
+    /// the core's own landscape chain; the stand-in `Item` has no image marks of its own.
+    private func heroURL(_ t: Item) -> URL? {
+        if model.coreServes {
+            return state.rustHeroURL(for: t.id, width: 1600) ?? model.headerImageURL(for: t)
+        }
+        return model.landscapeImageURL(for: t, width: 1600) ?? model.headerImageURL(for: t)
     }
 
     private func list(_ rail: RailsId) -> [Item] {
@@ -390,7 +423,8 @@ struct HomeView: View {
                         } content: {
                             Strip(model: model, items: genre.items,
                                      rail: .genre(genre.name),
-                                     atTitle: $atTitle, frontmost: frontmost)
+                                     atTitle: $atTitle, frontmost: frontmost,
+                                     looks: looks(.genre(genre.name)))
                         }
                         .railEntrance(fixedRails.count + libraries.count + 2 + j, present: showItem)
                     }
@@ -444,7 +478,7 @@ struct HomeView: View {
                     Strip(model: model, items: state.continueWatching,
                              rail: .continueWatching, landscape: true,
                              direct: launch, atTitle: $atTitle,
-                             frontmost: frontmost)
+                             frontmost: frontmost, looks: looks(.continueWatching))
                 }
             }
         case .nextEpisode:
@@ -452,7 +486,7 @@ struct HomeView: View {
                 segment("Nächste Folge") {
                     Strip(model: model, items: state.nextEpisode,
                              rail: .nextEpisode, atTitle: $atTitle,
-                             frontmost: frontmost)
+                             frontmost: frontmost, looks: looks(.nextEpisode))
                 }
             }
         case .newMovies:
@@ -470,7 +504,8 @@ struct HomeView: View {
         if !items.isEmpty {
             segment(title) {
                 Strip(model: model, items: items, rail: rail,
-                         newAccess: true, atTitle: $atTitle, frontmost: frontmost)
+                         newAccess: true, atTitle: $atTitle, frontmost: frontmost,
+                         looks: looks(rail))
             }
         }
     }
@@ -579,8 +614,7 @@ struct HomeView: View {
         // from title to title. The detail page does not need them.
         ZStack {
             if let t = inImage {
-                Backdrop(url: model.landscapeImageURL(for: t, width: 1600)
-                             ?? model.headerImageURL(for: t))
+                Backdrop(url: heroURL(t))
                     .id(t.id)
                     .transition(.opacity)
             }
@@ -632,7 +666,11 @@ struct HomeView: View {
     private func load() async {
         AccountSwitchTransition.note("startseite: laden (konto \(model.accountSwitch))")
         let a = Date()
-        await state.load(model)
+        if model.coreServes {
+            await state.loadRust(model)
+        } else {
+            await state.load(model)
+        }
         AccountSwitchTransition.note("startseite: geladen nach \(Int(Date().timeIntervalSince(a) * 1000)) ms")
         // Failed query and nothing there: do not overwrite a good preview with an empty one.
         if !(state.disrupted && state.allEmpty) { shelfWrite() }
@@ -661,15 +699,17 @@ struct HomeView: View {
     /// Eight entries per category: the Top Shelf shows no more at a glance, and the file
     /// stays small.
     private func shelfWrite() {
-        func entries(_ items: [Item], landscape: Bool) -> [ShelfEntry] {
-            items.prefix(8).map { item in
+        func entries(_ items: [Item], landscape: Bool, rail: RailsId) -> [ShelfEntry] {
+            let railLooks = looks(rail)
+            return items.prefix(8).map { item in
                 ShelfEntry(
                     id: item.id,
                     title: item.seriesName ?? item.name,
                     subline: item.episodeCode,
-                    image: landscape ? (model.landscapeImageURL(for: item, width: 900)
+                    image: railLooks?[item.id]?.image
+                        ?? (landscape ? (model.landscapeImageURL(for: item, width: 900)
                                   ?? model.imageURL(for: item, maxHeight: 600, portrait: true))
-                               : model.imageURL(for: item, maxHeight: 600, portrait: true),
+                               : model.imageURL(for: item, maxHeight: 600, portrait: true)),
                     progress: item.watchedShare)
             }
         }
@@ -677,25 +717,25 @@ struct HomeView: View {
         var categories: [ShelfCategory] = []
         if !state.continueWatching.isEmpty {
             categories.append(.init(title: String(localized: "Weiterschauen"), landscape: true,
-                                  entries: entries(state.continueWatching, landscape: true)))
+                                  entries: entries(state.continueWatching, landscape: true, rail: .continueWatching)))
         }
         if !state.nextEpisode.isEmpty {
             categories.append(.init(title: String(localized: "Nächste Folge"), landscape: false,
-                                  entries: entries(state.nextEpisode, landscape: false)))
+                                  entries: entries(state.nextEpisode, landscape: false, rail: .nextEpisode)))
         }
         if !state.recent.isEmpty {
             categories.append(.init(title: String(localized: "Zuletzt hinzugefügt"), landscape: false,
-                                  entries: entries(state.recent, landscape: false)))
+                                  entries: entries(state.recent, landscape: false, rail: .recent)))
         }
         // Separate new additions: `recent` is then empty, the home page shows movies and series
         // individually, and so does the shelf.
         if !state.newMovies.isEmpty {
             categories.append(.init(title: String(localized: "Zuletzt hinzugefügte Filme"), landscape: false,
-                                  entries: entries(state.newMovies, landscape: false)))
+                                  entries: entries(state.newMovies, landscape: false, rail: .newMovies)))
         }
         if !state.newSeries.isEmpty {
             categories.append(.init(title: String(localized: "Zuletzt hinzugefügte Serien"), landscape: false,
-                                  entries: entries(state.newSeries, landscape: false)))
+                                  entries: entries(state.newSeries, landscape: false, rail: .newSeries)))
         }
         // Off the main actor. Reading, comparing and writing the file used to sit on the main
         // actor after every home page load, exactly while the rows fade in.
@@ -765,6 +805,8 @@ private struct Strip: View {
     @FocusState.Binding var atTitle: TileMark?
     /// Registers here what is at the front of this row.
     let frontmost: PreEdges
+    /// Texts and picture from the Rust core (`AppModel.coreServes`), by title id; `nil` otherwise.
+    var looks: [String: RustTileLook]? = nil
 
     /// The tile at the leading edge, reported by the scroll view.
     @State private var ahead: String?
@@ -826,8 +868,8 @@ private struct Strip: View {
     }
 
     private func tile(_ item: Item) -> some View {
-        TileContent(image: imageUrl(item),
-                     title: item.seriesName ?? item.name,
+        TileContent(image: looks?[item.id]?.image ?? imageUrl(item),
+                     title: looks?[item.id]?.title ?? item.seriesName ?? item.name,
                      subline: subline(item),
                      landscape: landscape,
                      progress: progress(item),
@@ -844,6 +886,9 @@ private struct Strip: View {
     /// "S2 · E5 · 12 min left": the image stays clear and the detail sits where the
     /// abbreviation was anyway. The line comes from the package (`continueWatchingRow`).
     private func subline(_ item: Item) -> String? {
+        if let look = looks?[item.id] {
+            return rail == .continueWatching ? (look.remaining ?? look.subtitle) : look.subtitle
+        }
         if rail == .continueWatching, let row = item.continueWatchingRow { return row }
         return newAccess ? item.newArrivalsRow : item.episodeCode
     }

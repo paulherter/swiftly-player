@@ -13,8 +13,8 @@
 name: Linux-Pakete
 
 on:
-  push:
-    tags: ['v*']
+  # **Manual only.** This pipeline builds the previous Linux app (`Linux/`, SwiftPM) and its package repository. A
+  # release tag must not start it; the Rust desktop packages are attached to the release by `Werkzeuge/package-desktop.sh`.
   workflow_dispatch:
     inputs:
       fassung:

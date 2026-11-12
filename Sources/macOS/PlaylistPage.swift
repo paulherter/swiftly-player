@@ -1,4 +1,5 @@
 import JellyfinKit
+import SwiftlyCore
 import SwiftUI
 
 /// **A video playlist as a subpage.** Template: `PlaylistView` in
@@ -18,12 +19,13 @@ struct PlaylistPage: View {
     @Environment(Navigator.self) private var navigator
     @Environment(PlayControls.self) private var controls
     @Environment(\.section) private var section
-    @State private var entries: [Item] = []
-    @State private var loads = true
-    @State private var disrupted = false
+    @State private var core: PlaylistController?
     @State private var headerState = HeaderState()
 
-    private var shown: [Item] { AppModel.playlistShown(entries, art: art) }
+    private var page: SwiftlyCore.PlaylistPage? { core?.page }
+    private var shown: [SwiftlyCore.Tile] { page?.shown ?? [] }
+    private var loads: Bool { page?.loading ?? true }
+    private var disrupted: Bool { page?.disrupted ?? false }
 
     private var columns: [GridItem] {
         [GridItem(.adaptive(minimum: Theme.tileWidth, maximum: Theme.tileWidth),
@@ -40,7 +42,7 @@ struct PlaylistPage: View {
                         .tracking(Theme.lockTitle)
                         .foregroundStyle(Theme.font)
                     Spacer()
-                    if !shown.isEmpty { CountMark(count: shown.count) }
+                    if !shown.isEmpty { CountMark(count: Int(page?.count ?? 0)) }
                 }
 
                 HStack {
@@ -58,11 +60,12 @@ struct PlaylistPage: View {
                 }
 
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 20) {
-                    ForEach(shown, id: \.id) { item in
+                    ForEach(shown, id: \.id) { tile in
+                        let item = Item(rust: tile)
                         Button { navigator.openIt(.title(item), in: section) } label: {
-                            PosterCell(title: item.name,
-                                         secondLine: item.productionYear.map { "\($0)" },
-                                         image: model.imageURL(for: item, portrait: true),
+                            PosterCell(title: tile.title,
+                                         secondLine: tile.subtitle,
+                                         image: tile.image.flatMap { URL(string: $0.address) },
                                          progress: item.userData?.playedPercentage.map { $0 / 100 },
                                          mark: DisplayRules.tileMark(
                                             art: item.type,
@@ -111,19 +114,13 @@ struct PlaylistPage: View {
     }
 
     private func load() async {
-        let found = await model.playlistEntries(playlist)
-        if let found {
-            entries = found
-            disrupted = false
-        } else {
-            disrupted = entries.isEmpty
-        }
-        loads = false
+        if core == nil { core = try? AppCore.shared.playlist(session: model.session, playlist: playlist, art: art) }
+        try? await core?.load()
     }
 
     /// From the first entry on; the rest follows through the player's "next episode".
     private func start() {
-        guard let first = model.playlistStart(shown) else { return }
+        guard core?.start() != nil, let first = model.playlistStart(shown.map { Item(rust: $0) }) else { return }
         controls.launch(first)
     }
 }

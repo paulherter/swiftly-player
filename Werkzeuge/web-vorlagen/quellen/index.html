@@ -722,7 +722,7 @@ p { margin: 0; }
 /* ================= Downloads ================= */
 
 /* ---------------------------------------------------------------
-   Downloads, neu am 17.09. Paul: "Fuenf Knoepfe auf einem Haufen,
+   Downloads, neu am 17.09. Feedback: "Fuenf Knoepfe auf einem Haufen,
    sieht nicht clean aus." Vorher lagen fuenf gleich grosse Kapseln
    in zwei Spalten, jede in einer anderen Plattformfarbe, die letzte
    allein in der Mitte. Das ist jetzt eine Hierarchie:
@@ -737,7 +737,7 @@ p { margin: 0; }
    --------------------------------------------------------------- */
 .ladenblock { max-width: 620px; margin: 52px auto 0; }
 .laden__haupt { display: grid; }
-/* Paul, 17.09. spaeter: "Der grosse App-Store-Knopf ist zu schwer." Eine
+/* Feedback, 17.09. spaeter: "Der grosse App-Store-Knopf ist zu schwer." Eine
    vollflaechig weisse Kapsel neben sonst zurueckhaltendem Inhalt sticht
    heraus wie ein Scheinwerfer. Der Hauptweg liegt jetzt auf derselben
    ruhigen Flaeche wie die uebrigen, nur eine Stufe betonter: getoent mit
@@ -958,7 +958,7 @@ html { scrollbar-color: #303030 var(--grund); }
 
 
 
-  /* Paul: die Merkmale sollen mobil von links nach rechts laufen,
+  /* Feedback: die Merkmale sollen mobil von links nach rechts laufen,
      nicht von oben nach unten. Die Spur legt sich also flach. */
   .merkmale__raster { grid-template-columns: 1fr; gap: 44px; margin-top: 48px; }
   .spur {
@@ -1143,7 +1143,7 @@ html { scrollbar-color: #303030 var(--grund); }
 }
 
 /* =====================================================================
-   Verhalten, 17.09. Paul: "Jeder Knopf hat eine andere Animation ...
+   Verhalten, 17.09. Feedback: "Jeder Knopf hat eine andere Animation ...
    such dir die beste aus und mach bei allen dieselbe."
 
    Vorbild ist die ruhigste der vorhandenen Varianten, der Kartenhover:
@@ -2236,7 +2236,7 @@ h2 { font-size: clamp(32px, 3.9vw, 56px); letter-spacing: -.021em; }
   }
 
   /* Der Klick braucht kein eigenes Skript mehr: Hover, Druck und Fokus
-     stehen fuer alle Elemente im Stilblatt unter "Verhalten" (Paul,
+     stehen fuer alle Elemente im Stilblatt unter "Verhalten" (Feedback,
      17.09.: "Such dir die beste aus und mach bei allen dieselbe"). Eine
      Groesse, die per Skript huepft, war dabei die lauteste Variante. */
 
@@ -2245,7 +2245,7 @@ h2 { font-size: clamp(32px, 3.9vw, 56px); letter-spacing: -.021em; }
      Rahmenbild. Fehlen width und height am img, ist der Kasten null hoch,
      bis das Bild da ist. Weil das Geraet mittig sitzt (translate -50%),
      stand es dann eine halbe Kartenhoehe zu tief und sprang beim Laden
-     nach oben -- genau der Fehler, den Paul bei Quick Connect und Offline
+     nach oben -- genau der Fehler, den wir bei Quick Connect und Offline
      gesehen hat. Mit den Massen kennt der Browser das Seitenverhaeltnis
      vor dem ersten Byte. Die Werte sind an den Dateien gemessen. */
   var bildmasse = {

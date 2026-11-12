@@ -1,5 +1,6 @@
 import JellyfinKit
 import SwiftUI
+import SwiftlyCore
 
 /// App settings.
 ///
@@ -40,23 +41,27 @@ struct SettingsView: View {
             // **turning it off deletes nothing unasked.** Silently deleting forty
             // gigabytes someone downloaded over a week would be the worst variant. Kept
             // files reappear as soon as the switch is flipped again.
-            ActionSheet(opened: $disableSheet, title: disableTitle, actions: [
+            ActionSheet(opened: Binding(get: { feed.asksAboutDownloads },
+                                        set: { if !$0 { feed.dismissQuestion() } }),
+                        title: disableTitle, actions: [
                 TitleAction(symbol: "tray.and.arrow.down", text: "Behalten") {
-                    model.downloadsAn = false
+                    feed.answerDisable(delete: false)
                 },
                 TitleAction(symbol: "trash", text: "Alles entfernen", cautionary: true) {
-                    model.downloads.allRemove()
-                    model.downloadsAn = false
+                    feed.answerDisable(delete: true)
                 },
             ])
         }
+        .onChange(of: feed.facts(model), initial: true) { _, new in feed.apply(new, model) }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .background(SwipeBack())
         #endif
     }
 
-    @State private var disableSheet = false
+    /// The rows, their texts, dimming and the question come from the Rust core; the symbols and the
+    /// layout stay here.
+    private let feed = SettingsRowsFeed.shared
 
     private var disableTitle: String {
         let b = DownloadRules.allocation(model.downloads.entries)
@@ -121,40 +126,26 @@ struct SettingsView: View {
     /// **** off by default, and then exactly one row appears here.
     private var offline: some View {
         SettingGroup(title: "Offline") {
-            ChoiceRow(symbol: "arrow.down.circle",
-                      title: Text("Downloads"),
-                      under: Text("Titel offline schauen"),
-                      an: Binding(get: { model.downloadsAn },
-                                  set: { an in
-                                      if an { model.downloadsAn = true }
-                                      // turning it off deletes nothing unasked. If nothing is stored, there
-                                      // is nothing to ask.
-                                      else if model.downloads.entries.isEmpty { model.downloadsAn = false }
-                                      else { disableSheet = true }
-                                  }))
-            if model.downloadsAn {
-                SheetLine()
-                ChoiceRow(symbol: "wifi",
-                          title: Text("Nur über WLAN"),
-                          under: Text("Downloads warten auf WLAN"),
-                          an: Binding(get: { model.onlyOverWLAN },
-                                      set: { model.onlyOverWLAN = $0 }))
-                SheetLine()
-                ChoiceRow(symbol: "play.square.stack",
-                          title: Text("Nächste Folge vorab laden"),
-                          under: Text("Lädt die nächste, löscht die gesehene"),
-                          an: Binding(get: { model.downloads.nextAuto },
-                                      set: { model.downloads.nextAuto = $0 }))
-                SheetLine()
-                // **The number is in the row, not behind it.** Anyone who wants to know how
-                // much is used should not have to tap; it is the only piece of information
-                // here.
-                ValueRow(symbol: "internaldrive",
-                          title: Text("Speicher"),
-                          under: Text("\(model.downloads.entries.count) Titel auf diesem Gerät"),
-                          value: DownloadRules.size(
-                              DownloadRules.allocation(model.downloads.entries).bytes))
+            if let rows = feed.section("Offline")?.rows {
+                ForEach(Array(rows.enumerated()), id: \.element.key) { index, row in
+                    if index > 0 { SheetLine() }
+                    coreRow(row)
+                }
             }
+        }
+    }
+
+    /// A switch or info row of the core, in the look of the old rows. **The number is in the row,
+    /// not behind it** (storage): anyone who wants to know how much is used should not have to tap.
+    @ViewBuilder private func coreRow(_ row: SwiftlyCore.SettingsRow) -> some View {
+        switch row.control {
+        case .switch:
+            ChoiceRow(symbol: SettingsRowsFeed.symbol(row.key), title: row.titleText,
+                      under: row.underText, an: feed.binding(row.key))
+                .disabled(!row.enabled)
+        default:
+            ValueRow(symbol: SettingsRowsFeed.symbol(row.key), title: row.titleText,
+                     under: row.underText, value: feed.shown(row.key), dimmedDown: !row.enabled)
         }
     }
 
@@ -176,43 +167,36 @@ struct SettingsView: View {
             NavigationLink {
                 OwnHeadersPage(model: model)
             } label: {
-                ValueRow(symbol: "key", title: Text("Eigene Header"),
-                          under: Text("Für einen Dienst vor dem Server"),
-                          value: model.ownHeaders(for: model.session?.serverURL).isEmpty
-                              ? nil : String(model.ownHeaders(for: model.session?.serverURL).count),
-                          chevron: true)
+                linkRow("eigeneHeader")
             }
             .buttonStyle(Theme.PressRow())
             // Seerr signs in with the media server's user name and password; not every kind
             // has that (`ServerCapability.seerr`).
-            if model.can(.seerr) {
+            if feed.row("seerr") != nil {
                 SheetLine()
                 NavigationLink(value: SeerrRoute()) {
-                    ValueRow(symbol: "sparkle.magnifyingglass", title: Text("Seerr"),
-                              under: Text("Anfragen, was noch nicht da ist"),
-                              value: model.seerr.connected ? String(localized: "Verbunden") : nil,
-                              chevron: true)
+                    linkRow("seerr")
                 }
                 .buttonStyle(Theme.PressRow())
             }
         }
     }
 
-    /// **Settings follow the account to every device** (`SettingsSyncRun`). On by default.
-    @ViewBuilder private var sync: some View {
-        // Only servers that keep display preferences (`ServerCapability.settingsSync`).
-        if model.can(.settingsSync) {
-            syncGroup
+    @ViewBuilder private func linkRow(_ key: String) -> some View {
+        if let row = feed.row(key) {
+            ValueRow(symbol: SettingsRowsFeed.symbol(key), title: row.titleText, under: row.underText,
+                     value: feed.shown(key), chevron: true)
         }
     }
 
-    private var syncGroup: some View {
-        SettingGroup(title: "Synchronisierung") {
-            ChoiceRow(symbol: "arrow.triangle.2.circlepath",
-                      title: Text("Auf allen Geräten gleich"),
-                      under: Text("Liegt auf deinem Server"),
-                      an: Binding(get: { model.settingsSync.on },
-                                  set: { model.settingsSync.on = $0 }))
+    /// **Settings follow the account to every device** (`SettingsSyncRun`). On by default.
+    @ViewBuilder private var sync: some View {
+        // Only servers that keep display preferences (`ServerCapability.settingsSync`); the core
+        // leaves the section out otherwise.
+        if let rows = feed.section("Synchronisierung")?.rows {
+            SettingGroup(title: "Synchronisierung") {
+                ForEach(rows, id: \.key) { coreRow($0) }
+            }
         }
     }
 

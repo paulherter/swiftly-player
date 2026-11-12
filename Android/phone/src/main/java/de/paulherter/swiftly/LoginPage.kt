@@ -73,7 +73,7 @@ fun LoginPage(app: SwiftlyApplication, serverName: String, version: String,
     var knownOnes by remember { mutableStateOf<List<Triple<String, String, String?>>>(emptyList()) }
     LaunchedEffect(Unit) {
         knownOnes = runCatching {
-            JSONArray(withContext(Dispatchers.IO) { app.kern.publicUser(false).await() }).let { a ->
+            JSONArray(withContext(Dispatchers.IO) { app.rk.publicUser(false).await() }).let { a ->
                 (0 until a.length()).map { a.getJSONObject(it) }.map { Triple(it.getString("kennung"), it.getString("name"), it.fieldText("bild")) }
             }
         }.getOrDefault(emptyList())
@@ -94,7 +94,7 @@ fun LoginPage(app: SwiftlyApplication, serverName: String, version: String,
         running = true; error = null
         scope.launch {
             try {
-                val session = withContext(Dispatchers.IO) { app.kern.signIn(user, password).await() }
+                val session = withContext(Dispatchers.IO) { app.rk.signIn(user, password).await() }
                 app.sessionRecord(session)
                 signedIn()
             } catch (e: Throwable) {

@@ -25,7 +25,6 @@ import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.asJson
 import de.paulherter.swiftly.shared.Wordmark
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -74,7 +73,7 @@ fun TvServerPage(app: SwiftlyApplication, presetAddress: String? = null, back: (
         val checked = address
         verification = run.launch {
             try {
-                val answer = JSONObject(withContext(Dispatchers.IO) { app.kern.linkUp(checked, headers.asJson()).await() })
+                val answer = JSONObject(withContext(Dispatchers.IO) { app.rk.linkUp(checked, headers.asJson()).await() })
                 // Store only now: for an address where nothing answers, nothing is left behind.
                 if (headers.isNotEmpty()) app.storeOwnHeaders()
                 app.store.lastServer = checked
@@ -163,7 +162,7 @@ fun TvLoginPage(app: SwiftlyApplication, serverName: String, version: String,
         running = true; error = null
         run.launch {
             try {
-                val session = withContext(Dispatchers.IO) { app.kern.signIn(user, passphrase).await() }
+                val session = withContext(Dispatchers.IO) { app.rk.signIn(user, passphrase).await() }
                 app.sessionRecord(session)
                 signedIn()
             } catch (e: CancellationException) {
@@ -219,7 +218,7 @@ fun TvLoginPage(app: SwiftlyApplication, serverName: String, version: String,
  */
 @Composable
 fun TvQuickConnectPage(app: SwiftlyApplication, newServer: Boolean = false, close: () -> Unit, signedIn: (String) -> Unit) {
-    val deadline = remember { JSONArray(Kern.quickConnectDeadline()) }
+    val deadline = remember { JSONArray(de.paulherter.swiftly.KernRules.quickConnectDeadline()) }
     val seconds = deadline.getInt(0)
     var code by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -230,24 +229,24 @@ fun TvQuickConnectPage(app: SwiftlyApplication, newServer: Boolean = false, clos
     LaunchedEffect(run) {
         code = null; error = null
         try {
-            code = withContext(Dispatchers.IO) { app.kern.quickConnectStart(newServer).await() }
+            code = withContext(Dispatchers.IO) { app.rk.quickConnectStart(newServer).await() }
             // **The waiting lives in the package** (`QuickConnectWait`, via the core): deadline on the clock,
             // ask immediately after returning from the browser, a network error does not end the waiting.
             // Here only show the time left and accept the result.
             val c = code.orEmpty()
             rest = seconds
-            val display = launch { while (true) { delay(1000); rest = app.kern.quickConnectRest().toInt() } }
+            val display = launch { while (true) { delay(1000); rest = app.rk.quickConnectRest().toInt() } }
             try {
-                val result = withContext(Dispatchers.IO) { app.kern.quickConnectWait(newServer).await() }
+                val result = withContext(Dispatchers.IO) { app.rk.quickConnectWait(newServer).await() }
                 display.cancel()
                 when {
-                    result == "freigegeben" -> signedIn(withContext(Dispatchers.IO) { app.kern.quickConnectSignIn(newServer).await() })
+                    result == "freigegeben" -> signedIn(withContext(Dispatchers.IO) { app.rk.quickConnectSignIn(newServer).await() })
                     result.isNotEmpty() -> { rest = 0; error = result }
                 }
             } finally {
                 display.cancel()
                 // Page closed or new code: stop asking, otherwise a late approval would sign in.
-                app.kern.quickConnectWaitEnd(c)
+                app.rk.quickConnectWaitEnd(c)
             }
         } catch (e: CancellationException) {
             throw e

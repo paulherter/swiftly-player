@@ -48,118 +48,80 @@ struct PlaybackSettingsView: View {
         // background to the left it showed as a bar. Anything the framework adds unasked
         // has to be switched off just like anything we add ourselves.
         .pagesScroll()
+        .onChange(of: feed.facts(model), initial: true) { _, new in feed.apply(new, model) }
     }
 
     // MARK: Groups
 
-    private var quality: some View {
-        // If the server does not transcode, there is nothing to choose: Direct Play is
-        // fixed on and the bitrate is locked.
-        let free = model.convertAllowed
-        let directPlay = model.alwaysDirectPlay || !free
+    /// Rows, titles, second lines, dimming, options and validation come from the Rust core; the
+    /// symbols, the groups and the Mac wording (`SettingsWording`) stay here.
+    private let feed = SettingsRowsFeed.shared
 
-        return SettingGroup(title: "Qualität") {
-            ToggleRow(symbol: "play.fill", title: Text("Immer Direct Play"),
-                          under: Text("Der Server wandelt nie um, es läuft immer die Originaldatei"),
-                          an: Binding(get: { directPlay },
-                                      set: { model.alwaysDirectPlay = $0 }))
-                .disabled(!free)
-            SheetLine().padding(.leading, Theme.separatorInsetCard)
-            ValuesRow(symbol: "chart.bar", title: Text("Höchste Bitrate"),
-                       value: Bitrate.text(model.bitratesLimit),
-                       arrow: true, action: { toggle(.bitrate) })
-                .disabled(directPlay)
-                .opacity(directPlay ? 0.4 : 1)
-            if openList == .bitrate {
-                ValuesList(entries: Bitrate.levels,
-                           label: { Bitrate.text($0.value) },
-                           isSelected: { $0.value == model.bitratesLimit },
-                           select: { model.bitratesLimit = $0.value; close() })
+    @ViewBuilder private func switchRow(_ key: String, _ symbol: String) -> some View {
+        if let row = feed.row(key) {
+            ToggleRow(symbol: symbol, title: feed.title(key), under: feed.under(key), an: feed.binding(key))
+                .disabled(!row.enabled)
+        }
+    }
+
+    /// A row with a value whose list opens below it.
+    @ViewBuilder private func listRow(_ key: String, _ symbol: String, _ kind: ListKind) -> some View {
+        if let row = feed.row(key) {
+            ValuesRow(symbol: symbol, title: feed.title(key), under: feed.under(key),
+                      value: feed.shown(key), arrow: true, action: { toggle(kind) })
+                .disabled(!row.enabled)
+                .opacity(row.enabled ? 1 : 0.4)
+            if openList == kind {
+                ValuesList(entries: feed.choices(key), label: { $0.label }, isSelected: { $0.selected },
+                           select: { feed.choose(key, $0.value); close() })
             }
+        }
+    }
+
+    private var quality: some View {
+        SettingGroup(title: "Qualität") {
+            switchRow("immerDirectPlay", "play.fill")
+            SheetLine().padding(.leading, Theme.separatorInsetCard)
+            listRow("bitratenGrenze", "chart.bar", .bitrate)
         }
     }
 
     private var language: some View {
         SettingGroup(title: "Sprache") {
-            ValuesRow(symbol: "speaker.wave.2", title: Text("Ton"),
-                       value: model.audioLanguage, arrow: true, action: { toggle(.audio) })
-            if openList == .audio {
-                ValuesList(entries: LanguageSelection.all, label: { $0.name },
-                           isSelected: { $0.name == model.audioLanguage },
-                           select: { model.audioLanguage = $0.value; close() })
-            }
+            listRow("tonSprache", "speaker.wave.2", .audio)
             SheetLine().padding(.leading, Theme.separatorInsetCard)
-            ValuesRow(symbol: "captions.bubble", title: Text("Untertitel"),
-                       value: model.subtitleLanguage, arrow: true,
-                       action: { toggle(.subtitle) })
-            if openList == .subtitle {
-                ValuesList(entries: LanguageSelection.all(from: String(localized: "Aus")),
-                           label: { $0.name },
-                           isSelected: { $0.name == model.subtitleLanguage },
-                           select: { model.subtitleLanguage = $0.value; close() })
-            }
+            listRow("utSprache", "captions.bubble", .subtitle)
             SheetLine().padding(.leading, Theme.separatorInsetCard)
-            ToggleRow(symbol: "text.alignleft", title: Text("Untertitel automatisch"),
-                          under: Text("Nur wenn der Ton nicht in der gewählten Sprache läuft"),
-                          an: Binding(get: { model.subtitleAutomatic },
-                                      set: { model.subtitleAutomatic = $0 }))
+            switchRow("utAuto", "text.alignleft")
             SheetLine().padding(.leading, Theme.separatorInsetCard)
             // The page for size, colour, outline and so on (spec: subtitle look, section 1).
-            ValuesRow(symbol: "textformat.size", title: Text("Aussehen der Untertitel"),
-                      value: model.subtitleLook.entryValue, arrow: true,
+            ValuesRow(symbol: "textformat.size", title: feed.title("utAussehen"),
+                      value: feed.shown("utAussehen") ?? "", arrow: true,
                       action: { navigator.openIt(.subtitleLook, in: section) })
         }
     }
 
-    @AppStorage("technikschild") private var techBadge = false
-    @AppStorage(PlayerEndTime.key) private var showsEnd = PlayerEndTime.standard
-    @AppStorage("introAbspannAuto") private var skipAutomatic = false
-
     private var behavior: some View {
         SettingGroup(title: "Verhalten") {
-            ToggleRow(symbol: "forward.end.fill",
-                          title: Text("Nächste Folge automatisch"),
-                          an: Binding(get: { model.nextAutomatic },
-                                      set: { model.nextAutomatic = $0 }))
+            switchRow("naechsteAuto", "forward.end.fill")
             SheetLine().padding(.leading, Theme.separatorInsetCard)
-            ToggleRow(symbol: "forward.fill",
-                          title: Text("Intro und Abspann automatisch überspringen"),
-                          an: $skipAutomatic)
+            switchRow("introAbspannAuto", "forward.fill")
             SheetLine().padding(.leading, Theme.separatorInsetCard)
             // **The switch for the technical badge.**
             //
             // It lives under "Verhalten" rather than with the picture options: it changes
             // nothing about playback, it only shows what playback does. Off by default, like
             // downloads and Seerr.
-            ToggleRow(symbol: "waveform.badge.magnifyingglass",
-                          title: Text("Technische Daten im Player"),
-                          an: $techBadge)
+            switchRow("technikschild", "waveform.badge.magnifyingglass")
             SheetLine().padding(.leading, Theme.separatorInsetCard)
             // "Endet um 18:38" instead of the remaining time; off by default (`PlayerEndTime`).
-            ToggleRow(symbol: "clock",
-                          title: Text("Endzeit im Player"),
-                          an: $showsEnd)
+            switchRow("endzeitImPlayer", "clock")
             SheetLine().padding(.leading, Theme.separatorInsetCard)
-            ValuesRow(symbol: "gobackward", title: Text("Zurückspulen"),
-                       value: "\(model.backSeconds) s", arrow: true,
-                       action: { toggle(.back) })
-            if openList == .back {
-                ValuesList(entries: Span.levels, label: { "\($0.value) s" },
-                           isSelected: { $0.value == model.backSeconds },
-                           select: { model.backSeconds = $0.value; close() })
-            }
+            listRow("zurueckSek", "gobackward", .back)
             SheetLine().padding(.leading, Theme.separatorInsetCard)
-            ValuesRow(symbol: "goforward", title: Text("Vorspulen"),
-                       value: "\(model.forwardSeconds) s", arrow: true,
-                       action: { toggle(.forward) })
-            if openList == .forward {
-                ValuesList(entries: Span.levels, label: { "\($0.value) s" },
-                           isSelected: { $0.value == model.forwardSeconds },
-                           select: { model.forwardSeconds = $0.value; close() })
-            }
+            listRow("vorSek", "goforward", .forward)
         }
     }
-
 
     private func toggle(_ list: ListKind) {
         withAnimation(Theme.leap) {

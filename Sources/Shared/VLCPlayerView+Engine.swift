@@ -1,5 +1,6 @@
 import AVFoundation
 import JellyfinKit
+import SwiftlyCore
 
 /// **Starting the Aether engine and what it reports back.**
 ///
@@ -15,23 +16,17 @@ extension VLCPlayerView {
         let start = JumpTarget.seconds(offSeconds) ?? 0
         let wish = trackRequest
         // A download has no server description: the engine plays the file with the tracks it finds.
-        let request = wish?.engine ?? EngineRequest(itemID: "", source: Self.emptySource,
+        let request = wish?.engine ?? EngineRequest(itemID: "", source: Self.fileSource(url, wish?.coreStart),
                                                     subtitleFiles: subtitle)
         let streams = request.source.mediaStreams ?? []
-        let memory = TrackMemory()
-        let audio = TrackRule.audio(streams: streams,
-                                    remembered: wish?.title.flatMap { memory.audio(for: $0) },
-                                    preferredLanguage: wish?.audio ?? "",
-                                    serverPreGift: request.source.defaultAudioStreamIndex,
-                                    ordered: wish?.ordered?.audio)
-        let choice = TrackRule.subtitle(streams: streams,
-                                        remembered: wish?.title.flatMap { memory.subtitle(for: $0) },
-                                        serverPreGift: request.source.defaultSubtitleStreamIndex,
-                                        automatic: wish?.automatic ?? false, audioIndex: audio,
-                                        tonwunsch: wish?.audio ?? "", preferredLanguage: wish?.subtitle ?? "",
-                                        ordered: wish?.ordered?.subtitle)
-        var subtitleIndex = -1
-        if case .feed(let index) = choice { subtitleIndex = index }
+        // The core's rule (`StartTracks`): remembered choice, order from another device, language wish, server default.
+        let chosen = StartTracks.choose(
+            streams: streams, defaultAudio: request.source.defaultAudioStreamIndex,
+            defaultSubtitle: request.source.defaultSubtitleStreamIndex, audioLanguage: wish?.audio ?? "",
+            subtitleLanguage: wish?.subtitle ?? "", automatic: wish?.automatic ?? false, title: wish?.title,
+            ordered: wish?.ordered)
+        let audio = chosen.audio
+        let subtitleIndex = chosen.subtitle
 
         pausedSince = nil
         trackSource = nil
@@ -42,6 +37,32 @@ extension VLCPlayerView {
 
         let effectiveAudio = audio ?? request.source.defaultAudioStreamIndex
             ?? streams.first(where: { $0.type == "Audio" })?.index
+        // **The core plays server titles** (``PlayerWay``): the same engine, but the commands, the state and the
+        // reports go through `PlayerVm`, Plex included.
+        if PlayerWay.core, let context = wish?.coreStart {
+            do {
+                avEngine = try CorePlaybackBackend(
+                    host: self, request: request, url: url, item: context.item, plan: context.plan,
+                    app: context.model, startAt: start, audioIndex: effectiveAudio, subtitleIndex: subtitleIndex,
+                    trackTitle: wish?.title, fill: fillWish, volume: requestVolume, tempo: tempoWish,
+                    subtitleDelay: subtitleDelay, audioDelay: audioDelay)
+                if coreQualityWish {
+                    coreQualityWish = false
+                    (avEngine as? CorePlaybackBackend)?.afterQualitySwitch()
+                }
+                if let backend = avEngine as? CorePlaybackBackend {
+                    if let corePendingChapters { backend.adopt(chapters: corePendingChapters) }
+                    if let corePendingTrickplay { backend.adopt(trickplay: corePendingTrickplay) }
+                }
+                if corePendingNext != nil || corePendingSections != nil {
+                    coreAdopt(next: corePendingNext, sections: corePendingSections)
+                }
+                AppLog.writeOut("[Engine] Aether (Kern): ab \(Int(start)) s")
+                return
+            } catch {
+                AppLog.writeOut("[Engine] Kern nicht möglich (\(error)), alter Weg")
+            }
+        }
         do {
             let engine = try AetherPlayerEngine(host: self, request: request, url: url,
                                                 audioIndex: effectiveAudio, subtitleIndex: subtitleIndex)
@@ -65,6 +86,15 @@ extension VLCPlayerView {
         try! JSONDecoder().decode(MediaSource.self, from: Data("{}".utf8))
     }()
 
+    /// The description of a file on the device: the stored runtime (a built download has no duration in its header, so the
+    /// engine then cannot plan segments) and the subtitle streams the download stored (`info.json` and the files next to
+    /// it, see ``DownloadedSubtitles``): the track list of a stored title. Audio comes from the engine's own tracks.
+    static func fileSource(_ url: URL, _ start: CoreStart?) -> MediaSource {
+        guard url.isFileURL, let start else { return emptySource }
+        let ticks = start.model.downloads.entries(for: start.item.id)?.runtimeTicks ?? start.item.runTimeTicks
+        return DownloadedSubtitles.source(runtimeTicks: ticks, folder: DownloadFiles.subtitleFolder(to: url)) ?? emptySource
+    }
+
     // MARK: Events from the engine
 
     /// The engine's clock started or stopped; the play button follows it.
@@ -77,6 +107,8 @@ extension VLCPlayerView {
     /// shows its start-error message while no picture has been shown.
     func avFailed(_ reason: String) {
         AppLog.writeOut("[Aether] Fehler gemeldet: \(reason)")
+        // A downloaded file that does not open: the screen plays the stream instead (if it can).
+        if fileFailed?(reason) == true { return }
         startErrorReported?(reason)
     }
 
@@ -123,21 +155,14 @@ extension VLCPlayerView {
         trackSource = source
         trackOriginal = originalLanguage
         let streams = source?.mediaStreams ?? engine.request.source.mediaStreams ?? []
-        let memory = TrackMemory()
-        let audioIndex = TrackRule.audio(streams: streams,
-                                         remembered: title.flatMap { memory.audio(for: $0) },
-                                         preferredLanguage: audio,
-                                         serverPreGift: source?.defaultAudioStreamIndex,
-                                         ordered: trackRequest?.ordered?.audio) ?? engine.audioIndex
-        let choice = TrackRule.subtitle(streams: streams,
-                                        remembered: title.flatMap { memory.subtitle(for: $0) },
-                                        serverPreGift: source?.defaultSubtitleStreamIndex,
-                                        automatic: automatic, audioIndex: audioIndex,
-                                        tonwunsch: audio, preferredLanguage: subtitle,
-                                        ordered: trackRequest?.ordered?.subtitle)
-        var wantedSubtitle = -1
-        if case .feed(let index) = choice { wantedSubtitle = index }
-        AppLog.writeOut("[Spuren] \(engine.label): Ton \(audioIndex.map(String.init) ?? "Datei") · Untertitel \(choice)")
+        let chosen = StartTracks.choose(
+            streams: streams, defaultAudio: source?.defaultAudioStreamIndex,
+            defaultSubtitle: source?.defaultSubtitleStreamIndex, audioLanguage: audio, subtitleLanguage: subtitle,
+            automatic: automatic, title: title, ordered: trackRequest?.ordered, audioFallback: engine.audioIndex)
+        let audioIndex = chosen.audio
+        let wantedSubtitle = chosen.subtitle
+        AppLog.writeOut("[Spuren] \(engine.label): Ton \(audioIndex.map(String.init) ?? "Datei") · Untertitel "
+            + (wantedSubtitle < 0 ? "off" : "feed(\(wantedSubtitle))"))
         if let audioIndex, audioIndex != engine.audioIndex { engine.switchAudio(to: audioIndex) }
         var shownSubtitle = wantedSubtitle
         if wantedSubtitle != engine.subtitleIndex, !engine.selectSubtitle(wantedSubtitle) {
@@ -152,8 +177,7 @@ extension VLCPlayerView {
         guard let stream = surface.stream, let index = stream.index else { return }
         if let trackTitle {
             let streams = engine.request.source.mediaStreams ?? []
-            TrackMemory().rememberAudio(TrackImprint(feed: stream, in: streams, name: surface.trackName),
-                                        for: trackTitle)
+            StartTracks.remember(.audio, streams: streams, index: index, name: surface.trackName, title: trackTitle)
             AppLog.writeOut("[Spuren] Ton von Hand: \(index)")
         }
         engine.switchAudio(to: index)
@@ -162,7 +186,10 @@ extension VLCPlayerView {
 
     func avSubtitleChosen(_ engine: any PlaybackBackend, _ surface: SurfaceTrack?) {
         guard let stream = surface?.stream, let index = stream.index else {
-            if let trackTitle { TrackMemory().rememberSubtitle(.off, for: trackTitle) }
+            if let trackTitle {
+                StartTracks.remember(.subtitle, streams: engine.request.source.mediaStreams ?? [], index: nil, name: nil,
+                                     title: trackTitle)
+            }
             engine.selectSubtitle(-1)
             AppLog.writeOut("[Spuren] Untertitel von Hand: aus")
             trackIndicesReport(TrackIndices(audio: reportedTracks.audio, subtitle: -1))
@@ -170,8 +197,7 @@ extension VLCPlayerView {
         }
         if let trackTitle {
             let streams = engine.request.source.mediaStreams ?? []
-            TrackMemory().rememberSubtitle(
-                .track(TrackImprint(feed: stream, in: streams, name: surface?.trackName)), for: trackTitle)
+            StartTracks.remember(.subtitle, streams: streams, index: index, name: surface?.trackName, title: trackTitle)
             AppLog.writeOut("[Spuren] Untertitel von Hand: \(index)")
         }
         if engine.selectSubtitle(index) {

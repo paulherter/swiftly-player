@@ -1,0 +1,44 @@
+[package]
+name = "swiftly-ios"
+description = "iPhone, iPad and Apple TV comparison shell of the shared Swiftly Rust UI: a staticlib a thin UIKit host links (Metal layer, touch, presses, text, frames)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+swiftly-desktop = { path = "../swiftly-desktop", default-features = false }
+swiftly-ui = { path = "../swiftly-ui" }
+swiftly-text = { path = "../swiftly-text" }
+swiftly-render = { path = "../swiftly-render" }
+swiftly-layout = { path = "../swiftly-layout" }
+swiftly-net = { path = "../swiftly-net" }
+swiftly-accounts = { path = "../swiftly-accounts" }
+swiftly-player-surface = { path = "../swiftly-player-surface" }
+swiftly-playback = { path = "../swiftly-playback" }
+swiftly-rules = { path = "../swiftly-rules" }
+url = "2"
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[target.'cfg(any(target_os = "ios", target_os = "tvos"))'.dependencies]
+# Same pin as swiftly-render; Metal only here.
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "wgsl", "metal"] }
+pollster = "1.0.1"
+
+# Unsafe only in `ffi.rs` (the C boundary and the CAMetalLayer pointer), as the architecture's unsafe list allows.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+clone_on_ref_ptr = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+await_holding_refcell_ref = "deny"
+await_holding_lock = "deny"

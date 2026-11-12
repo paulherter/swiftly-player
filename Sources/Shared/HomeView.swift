@@ -1,3 +1,4 @@
+import enum SwiftlyCore.HomeRowOrder
 import JellyfinKit
 import SwiftUI
 
@@ -127,7 +128,14 @@ struct HomeView: View {
         .task(id: "\(model.newAccessDisconnected)|\(model.genreChips)|\(model.startGenres.joined(separator: "|"))|\(model.startLibraries.map(\.id).joined(separator: "|"))") {
             // If an account switch is running, it does the loading, not the return to the
             // page that coincides with it (otherwise it would fetch the old account again).
-            if AccountSwitchTransition.shared.waits { return }
+            let counter = model.accountSwitch
+            if AccountSwitchTransition.shared.waits {
+                // The page of a first sign-in is built inside the switch and the counter does not
+                // move, so `onChange(of: model.accountSwitch)` never loads it: this run waits the
+                // switch out and does it. When the counter moved, that handler does.
+                await AccountSwitchTransition.shared.untilIdle()
+                guard !Task.isCancelled, counter == model.accountSwitch, state.firstLoadOwed else { return }
+            }
             await load()
         }
         // **Do not hang it on `phase`.** During an account switch it is already
@@ -201,7 +209,7 @@ struct HomeView: View {
         // layout anyway.
         HeaderReader(distance: distance) {
             HStack(alignment: .center, spacing: 0) {
-                // 36, not 30 (Paul 2026-11-05): the letters now match the 34 pt bold page
+                // 36, not 30: the letters now match the 34 pt bold page
                 // titles of Movies, Series and Downloads. The row stays 44 high (header targets).
                 Wordmark(height: 36)
                 Spacer(minLength: 0)
@@ -234,7 +242,7 @@ struct HomeView: View {
     /// only said something had failed.
     @ViewBuilder private var notPresent: some View {
         if state.disrupted {
-            EmptyState.serverDived(model, loads: loadsNew,
+            EmptyState.serverDived(model, loads: loadsNew, trouble: state.trouble,
                                          retry: { newTry() },
                                          switchTo: { signOutSheet = true })
         } else {
@@ -290,32 +298,27 @@ struct HomeView: View {
                 if model.genreChips, !model.startGenres.isEmpty {
                     genreChips.railEntrance(0, present: showItem)
                 }
-                // **The fixed rows in the configured order**, without the hidden ones;
-                // Settings → Appearance → Home.
-                ForEach(Array(fixedRails.enumerated()), id: \.element.id) { i, rail in
-                    pinned(rail)
-                        .railEntrance(i + 1, present: showItem)
-                }
-                // The chosen genres as their own rows, after the fixed ones.
-                //
-                // **They fade in instead of appearing.** They arrive one network round trip
-                // after the fixed rows; without a transition there was first nothing and then
-                // everything at once.
-                // **Before them, the chosen libraries and collections** (Appearance → Home →
-                // "+"): the title is their name, the header opens them. With no selection the
-                // list is empty and this line costs nothing.
-                ForEach(Array(libraries.enumerated()), id: \.element.id) { j, r in
-                    Rail(model: model, title: "", name: r.name, items: r.items,
-                          target: CollectionRoute(collection: model.startLibraries.first { $0.id == r.id }?.item
-                                                ?? Item(id: r.id, name: r.name), art: nil),
-                          allLink: true)
-                        .transition(.opacity)
-                        .railEntrance(fixedRails.count + 1 + j, present: showItem)
+                // **The fixed rows, libraries and collections in ONE configured order**
+                // (Settings → Appearance → Home; the core heals the stored list). A library row
+                // has its name as the title and opens the library or collection.
+                ForEach(Array(orderedRows.enumerated()), id: \.element.id) { i, row in
+                    switch row {
+                    case .fixed(let rail):
+                        pinned(rail).railEntrance(i + 1, present: showItem)
+                    case .library(let r):
+                        Rail(model: model, title: "", name: r.name, items: r.items,
+                              target: CollectionRoute(collection: model.startLibraries.first { $0.id == r.id }?.item
+                                                    ?? Item(id: r.id, name: r.name), art: nil),
+                              allLink: true)
+                            .transition(.opacity)
+                            .railEntrance(i + 1, present: showItem)
+                    }
                 }
                 ForEach(Array(state.genreRails.enumerated()), id: \.element.id) { j, r in
-                    Rail(model: model, title: "", name: r.name, items: r.items)
+                    Rail(model: model, title: "", name: r.name, items: r.items,
+                          looks: state.rustTileLooks(rail: "genre:\(r.name)", on: model.coreServes))
                         .transition(.opacity)
-                        .railEntrance(fixedRails.count + libraries.count + 1 + j, present: showItem)
+                        .railEntrance(orderedRows.count + 1 + j, present: showItem)
                 }
                 // **At the very end, after the last row.** Never above content: whoever
                 // came to watch sees the rows first. Rules in `SupportPrompt`.
@@ -399,30 +402,35 @@ struct HomeView: View {
         case .continueWatching:
             if !state.continueWatching.isEmpty {
                 Rail(model: model, title: "Weiterschauen",
-                      items: state.continueWatching, landscape: true, remainingTime: true, direct: launch)
+                      items: state.continueWatching, landscape: true, remainingTime: true, direct: launch,
+                      looks: state.rustTileLooks(rail: rail.rawValue, on: model.coreServes))
             }
         case .nextEpisode:
             if !state.nextEpisode.isEmpty {
                 // Without 'direkt': an episode not yet started should be looked at first, not
                 // started immediately. Only 'Weiterschauen' jumps straight into playback.
-                Rail(model: model, title: "Nächste Folge", items: state.nextEpisode)
+                Rail(model: model, title: "Nächste Folge", items: state.nextEpisode,
+                      looks: state.rustTileLooks(rail: rail.rawValue, on: model.coreServes))
             }
         // Here the tap leads to the page: what you have not started you want to look at
         // first.
         case .newMovies:
             if !state.newMovies.isEmpty {
                 Rail(model: model, title: "Zuletzt hinzugefügte Filme",
-                      items: state.newMovies, jump: rail.libraryJump, allLink: true, newAccess: true)
+                      items: state.newMovies, jump: rail.libraryJump, allLink: true, newAccess: true,
+                      looks: state.rustTileLooks(rail: rail.rawValue, on: model.coreServes))
             }
         case .newSeries:
             if !state.newSeries.isEmpty {
                 Rail(model: model, title: "Zuletzt hinzugefügte Serien",
-                      items: state.newSeries, jump: rail.libraryJump, allLink: true, newAccess: true)
+                      items: state.newSeries, jump: rail.libraryJump, allLink: true, newAccess: true,
+                      looks: state.rustTileLooks(rail: rail.rawValue, on: model.coreServes))
             }
         case .newArrivals:
             if !state.recent.isEmpty {
                 Rail(model: model, title: "Zuletzt hinzugefügt",
-                      items: state.recent, newAccess: true)
+                      items: state.recent, newAccess: true,
+                      looks: state.rustTileLooks(rail: rail.rawValue, on: model.coreServes))
             }
         }
     }
@@ -456,13 +464,39 @@ struct HomeView: View {
         AccountSwitchTransition.note("startseite: laden (konto \(model.accountSwitch))")
         let interval = AccountSwitchTransition.symbolText.beginInterval("startseiteLaden")
         let a = CACurrentMediaTime()
-        await state.load(model)
+        if model.coreServes {
+            await state.loadRust(model)
+        } else {
+            await state.load(model)
+        }
         AccountSwitchTransition.symbolText.endInterval("startseiteLaden", interval)
         AccountSwitchTransition.note("startseite: geladen nach \(Int((CACurrentMediaTime() - a) * 1000)) ms")
     }
 
     private var libraries: [Home.LibraryRail] {
         state.libraryRails(for: model.startLibraries)
+    }
+
+    private enum OrderedRow: Identifiable {
+        case fixed(StartRail)
+        case library(Home.LibraryRail)
+        var id: String {
+            switch self {
+            case .fixed(let rail): rail.rawValue
+            case .library(let r): HomeRowOrder.libraryId(r.id)
+            }
+        }
+    }
+
+    /// The visible rows in the combined order: hidden or non-fitting fixed rows and libraries without
+    /// content drop out.
+    private var orderedRows: [OrderedRow] {
+        let fixed = Set(fixedRails)
+        let byId = Dictionary(libraries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return model.rowOrder.compactMap { id in
+            if let lib = HomeRowOrder.library(of: id) { return byId[lib].map(OrderedRow.library) }
+            return StartRail(rawValue: id).flatMap { fixed.contains($0) ? OrderedRow.fixed($0) : nil }
+        }
     }
 
     private var fixedRails: [StartRail] {
@@ -513,6 +547,8 @@ private struct Rail: View {
     var direct: ((Item) -> Void)? = nil
     /// The tile that is starting: dimmed, with a spinner.
     var loads: String? = nil
+    /// Texts and picture address from the Rust core (`AppModel.coreServes`), by title id; `nil` otherwise.
+    var looks: [String: RustTileLook]? = nil
     // After "watched/unwatched" the home page refreshes itself: it listens to
     // `pagesRefresh` (`nachholen` above). A separate call here loaded it a
     // second time.
@@ -565,7 +601,8 @@ private struct Rail: View {
                     ForEach(items) { item in
                         if let direct {
                             Button { direct(item) } label: {
-                                Tile(model: model, item: item, landscape: landscape, newAccess: newAccess, remainingTime: remainingTime)
+                                Tile(model: model, item: item, landscape: landscape, newAccess: newAccess, remainingTime: remainingTime,
+                                     look: looks?[item.id])
                                     .opacity(loads == item.id ? 0.5 : 1)
                                     .overlay {
                                         if loads == item.id {
@@ -579,7 +616,8 @@ private struct Rail: View {
                             .tileMenu(item, model: model, continueWatching: true, landscape: landscape)
                         } else {
                             NavigationLink(value: item) {
-                                Tile(model: model, item: item, landscape: landscape, newAccess: newAccess, remainingTime: remainingTime)
+                                Tile(model: model, item: item, landscape: landscape, newAccess: newAccess, remainingTime: remainingTime,
+                                     look: looks?[item.id])
                             }
                             .buttonStyle(Theme.PressButton())
                             .tileMenu(item, model: model, landscape: landscape)
@@ -603,6 +641,8 @@ private struct Tile: View {
     var landscape = false
     var newAccess = false
     var remainingTime = false
+    /// What the Rust core says for this tile; takes the place of the three expressions below.
+    var look: RustTileLook? = nil
 
     /// Horizontal 16:9, as wide as two posters side by side; otherwise the row looks
     /// empty.
@@ -615,8 +655,8 @@ private struct Tile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picture(url: landscape ? model.landscapeImageURL(for: item, width: 1000)
-                           : model.imageURL(for: item, maxHeight: 600, portrait: true),
+            Picture(url: look?.image ?? (landscape ? model.landscapeImageURL(for: item, width: 1000)
+                           : model.imageURL(for: item, maxHeight: 600, portrait: true)),
                  width: width, height: height, corner: Theme.cornerTile,
                  progress: progress) {
                 // If the title has no landscape image, the poster steps in: cropped, but still
@@ -648,7 +688,7 @@ private struct Tile: View {
             #endif
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.seriesName ?? item.name)
+                Text(look?.title ?? item.seriesName ?? item.name)
                     .font(Theme.tile)
                     .frame(height: 16, alignment: .leading)
                     .foregroundStyle(Theme.font)
@@ -684,6 +724,7 @@ private struct Tile: View {
     /// time, "S2 · E5 · 12 min left": the image stays free, the detail sits where
     /// the code stood anyway.
     private var subline: String? {
+        if let look { return remainingTime ? (look.remaining ?? look.subtitle) : look.subtitle }
         if remainingTime, let row = item.continueWatchingRow { return row }
         return newAccess ? item.newArrivalsRow : item.episodeCode
     }

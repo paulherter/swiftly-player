@@ -96,7 +96,10 @@ struct CountdownRing: View {
                 Image(icon: "play.fill", size: d * 0.3)
                     .font(.app(size: d * 0.3))
                     .foregroundStyle(Theme.font)
-                    .offset(x: d * 0.03)
+                    // Optical centring of the triangle. The custom symbol (iPhone, iPad, Mac, TV) already sits 0.03 d right
+                    // inside its own box (margin 28 left, 7 right on the 112-wide template), which is the same nudge:
+                    // a second one put the triangle 0.06 d off centre. Only the plain SF Symbol needs it.
+                    .offset(x: AppIcon.asset(for: "play.fill", size: d * 0.3) == nil ? d * 0.03 : 0)
             }
             .frame(width: d, height: d)
         }

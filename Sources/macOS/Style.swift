@@ -41,7 +41,10 @@ extension Theme {
         private struct BodyShell<ContentBody: View>: View {
             let pressed: Bool
             @ViewBuilder let content: ContentBody
-            @Environment(\.isFocused) private var focused
+            @Environment(\.isFocused) private var focusedRaw
+            @Environment(\.keyboardMarkShown) private var markShown
+            /// Focus is drawn only after keyboard navigation started, see `KeyboardFocus`.
+            private var focused: Bool { focusedRaw && markShown }
 
             var body: some View {
                 content
@@ -60,7 +63,10 @@ extension Theme {
         private struct BodyShell<ContentBody: View>: View {
             let pressed: Bool
             @ViewBuilder let content: ContentBody
-            @Environment(\.isFocused) private var focused
+            @Environment(\.isFocused) private var focusedRaw
+            @Environment(\.keyboardMarkShown) private var markShown
+            /// Focus is drawn only after keyboard navigation started, see `KeyboardFocus`.
+            private var focused: Bool { focusedRaw && markShown }
 
             var body: some View {
                 content

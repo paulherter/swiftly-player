@@ -1,0 +1,30 @@
+[package]
+name = "swiftly-jellyfin"
+description = "Jellyfin and Emby client of the Swiftly core over the HttpTransport seam: requests, Emby path rewrite, sign-in, Quick Connect, reporting, pending reports"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["reqwest"]
+# Forwarded to swiftly-net: the default reqwest transport.
+reqwest = ["swiftly-net/reqwest"]
+
+[dependencies]
+swiftly-net = { path = "../swiftly-net", default-features = false }
+swiftly-model = { path = "../swiftly-model" }
+swiftly-rules = { path = "../swiftly-rules" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+unicode-segmentation = "1"
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[dev-dependencies]
+futures-executor = "0.3"
+tokio = { version = "1", features = ["rt"] }
+
+[lints]
+workspace = true

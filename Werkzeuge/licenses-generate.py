@@ -47,8 +47,9 @@ def generate(doc):
         z.append(f"### {since['titel']}\n")
         for p in since["absaetze"]:
             z.append(p + "\n")
-    groups = [("player", "Player"), ("app", "Application and fonts"),
-               ("in-vlckit", "Libraries built into VLCKit (Apple)")]
+    groups = [("player", "Player"), ("app", "Application, fonts and Rust core"),
+               ("frueher", "Earlier versions: VLCKit and libVLC"),
+               ("frueher-in-vlckit", "Earlier versions: libraries built into VLCKit (Apple)")]
     for g, title in groups:
         rows = [b for b in doc["bausteine"] if b["gruppe"] == g]
         z.append(f"## {title}\n")

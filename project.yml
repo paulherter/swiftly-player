@@ -18,6 +18,10 @@ packages:
   # because AetherEngine's optional parts are package traits and XcodeGen cannot set them.
   SwiftlyAether:
     path: Packages/SwiftlyAether
+  # The Rust core (home page behind the `rustKern` switch). The binary framework inside is
+  # git-ignored: `Werkzeuge/rust-kern.sh` builds it, and must run before `xcodegen generate`.
+  SwiftlyCore:
+    path: Packages/SwiftlyCore
   # For the launch animation. The source asset is a Lottie export from After
   # Effects; the keyframes carry individual bezier easing, which is error-prone
   # to rebuild by hand. Airbnb's implementation is the standard one.
@@ -40,7 +44,7 @@ settings:
     # The counter applies per version, so it restarts at 1 for a new version.
     # Before resetting it, check the highest build number already uploaded for
     # that version on all platforms in App Store Connect.
-    CURRENT_PROJECT_VERSION: "46"
+    CURRENT_PROJECT_VERSION: "47"
     # Same identifier as in the free-account days: Apple converted the personal
     # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9
@@ -69,6 +73,7 @@ targets:
     dependencies:
       - package: JellyfinKit
       - package: SwiftlyAether
+      - package: SwiftlyCore
       - package: Lottie
     info:
       path: Sources/iOS/Info.plist
@@ -174,6 +179,9 @@ targets:
         SKIncludeConsumableInAppPurchaseHistory: true
     settings:
       base:
+        # The Rust core (`Packages/SwiftlyCore`) is built for arm64 only. A generic build must not ask
+        # for x86_64; Intel simulators are gone. Open for the Mac before release: add an x86_64 slice.
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
         # iPhone and iPad. The former reasons to exclude iPad are resolved:
         # PortraitUpsideDown is in the orientations above, and views read their
@@ -286,8 +294,23 @@ targets:
       - path: Sources/Shared/PlaybackHub.swift
       # Offline self-test (`-offlinelauf`), only active in Debug builds.
       - path: Sources/Shared/OfflineRun.swift
+      # The running-app matrix (DEBUG only), driven by `Werkzeuge/live-lauf.py tv` in the tvOS simulator.
+      - path: Sources/Shared/LiveRun.swift
       - path: Sources/Shared/DiscordIndicator.swift
       - path: Sources/Shared/HomePageModel.swift
+      - path: Sources/Shared/AppCore.swift
+      - path: Sources/Shared/AccountsHost.swift
+      - path: Sources/Shared/ServerSearchHost.swift
+      - path: Sources/Shared/ShuffleRunCore.swift
+      - path: Sources/Shared/LoadSelectionState.swift
+      - path: Sources/Shared/PlexSignInRun.swift
+      - path: Sources/Shared/CoreErrorText.swift
+      - path: Sources/Shared/SeerrCoreBridge.swift
+      - path: Sources/Shared/WhatsNewPage.swift
+      - path: Sources/Shared/SettingsRowsFeed.swift
+      - path: Sources/Shared/RustHome.swift
+      - path: Sources/Shared/DetailCore.swift
+      - path: Sources/Shared/SeriesCore.swift
       # Seerr - the integration itself; views stay platform-specific.
       - path: Sources/Shared/SeerrModel.swift
       - path: Sources/Shared/SeerrMark.swift
@@ -312,8 +335,18 @@ targets:
       - path: Sources/Shared/VLCPlayer.swift
       - path: Sources/Shared/VLCPlayerView+Engine.swift
       - path: Sources/Shared/SubtitleOverlay.swift
+      - path: Sources/Shared/SubtitleScript.swift
       - path: Sources/Shared/AetherPlayerEngine.swift
       - path: Sources/Shared/PlaybackBackend.swift
+      - path: Sources/Shared/StartTracks.swift
+      - path: Sources/Shared/ReportRoute.swift
+      - path: Sources/Shared/CoreAetherPort.swift
+      - path: Sources/Shared/CorePlaybackBackend.swift
+      - path: Sources/Shared/VersionKeeping.swift
+      - path: Sources/Shared/PlanFromCore.swift
+      - path: Sources/Shared/HardwareAV1.swift
+      - path: Sources/Shared/PlayExtras.swift
+      - path: Sources/Shared/DelayCarry.swift
       - path: Sources/Shared/AppModel+Engine.swift
       # The subtitle look page: the preview picture and the words every platform shares.
       - path: Sources/Shared/SubtitlePreview.swift
@@ -354,6 +387,7 @@ targets:
     dependencies:
       - package: JellyfinKit
       - package: SwiftlyAether
+      - package: SwiftlyCore
       - package: Lottie
       # The Top Shelf is a separate target and is embedded.
       - target: Swiftly-TopShelf
@@ -437,6 +471,9 @@ targets:
           an address like 192.168.1.5.
     settings:
       base:
+        # The Rust core (`Packages/SwiftlyCore`) is built for arm64 only. A generic build must not ask
+        # for x86_64; Intel simulators are gone. Open for the Mac before release: add an x86_64 slice.
+        "EXCLUDED_ARCHS[sdk=appletvsimulator*]": x86_64
         MARKETING_VERSION: "1.1.0"
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
         # Same reason as on iOS: without the access group the keychain refuses
@@ -507,6 +544,74 @@ targets:
         MARKETING_VERSION: "1.1.0"
         CODE_SIGN_ENTITLEMENTS: Sources/TopShelf/TopShelf.entitlements
 
+  # **Comparison app for the Rust UI .** A separate app next to the real one, never a
+  # replacement: a thin UIKit host (Metal layer, display link, touches, text bridge) around the shared Rust UI. The
+  # static library comes from `cargo run -p xtask -- apple-ui` (Werkzeuge/rust-kern.sh --ui); build it before this target.
+  SwiftlyRust-iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/RustUI
+        excludes:
+          - Info-tvOS.plist
+    info:
+      path: Sources/RustUI/Info-iOS.plist
+      properties:
+        CFBundleDevelopmentRegion: en
+        CFBundleDisplayName: Swiftly Rust
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen:
+          UIColorName: ""
+        # Without this key iOS caps the app at 60 Hz on iPhone (see the real app).
+        CADisableMinimumFrameDurationOnPhone: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        "UISupportedInterfaceOrientations~ipad":
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        ITSAppUsesNonExemptEncryption: false
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: Swiftly Rust looks for your Jellyfin server on your home network.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly.rustui
+        PRODUCT_NAME: Swiftly Rust
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/RustUI/SwiftlyRust.h
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+        "OTHER_LDFLAGS[sdk=iphoneos*]": $(inherited) -lc++ -lresolv -framework Metal -framework QuartzCore -framework CoreFoundation -framework Security -framework SystemConfiguration $(SRCROOT)/target/aarch64-apple-ios/release/libswiftly_ios.a
+        "OTHER_LDFLAGS[sdk=iphonesimulator*]": $(inherited) -lc++ -lresolv -framework Metal -framework QuartzCore -framework CoreFoundation -framework Security -framework SystemConfiguration $(SRCROOT)/target/aarch64-apple-ios-sim/release/libswiftly_ios.a
+
+  SwiftlyRust-tvOS:
+    type: application
+    platform: tvOS
+    sources:
+      - path: Sources/RustUI
+        excludes:
+          - Info-iOS.plist
+    info:
+      path: Sources/RustUI/Info-tvOS.plist
+      properties:
+        CFBundleDevelopmentRegion: en
+        CFBundleDisplayName: Swiftly Rust
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: Swiftly Rust looks for your Jellyfin server on your home network.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly.rustui
+        PRODUCT_NAME: Swiftly Rust
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/RustUI/SwiftlyRust.h
+        "EXCLUDED_ARCHS[sdk=appletvsimulator*]": x86_64
+        "OTHER_LDFLAGS[sdk=appletvos*]": $(inherited) -lc++ -lresolv -framework Metal -framework QuartzCore -framework CoreFoundation -framework Security -framework SystemConfiguration $(SRCROOT)/target/aarch64-apple-tvos/release/libswiftly_ios.a
+        "OTHER_LDFLAGS[sdk=appletvsimulator*]": $(inherited) -lc++ -lresolv -framework Metal -framework QuartzCore -framework CoreFoundation -framework Security -framework SystemConfiguration $(SRCROOT)/target/aarch64-apple-tvos-sim/release/libswiftly_ios.a
+
   # The Mac version.
   #
   # As with TV, **not** all of `Sources/Shared`: it contains swipe gestures, the
@@ -535,6 +640,20 @@ targets:
       # drift apart: the Mac version had rebuilt it and lost
       # `naechsteFolge(ohne:)`, so started titles appeared twice on the page.
       - path: Sources/Shared/HomePageModel.swift
+      - path: Sources/Shared/AppCore.swift
+      - path: Sources/Shared/AccountsHost.swift
+      - path: Sources/Shared/ServerSearchHost.swift
+      - path: Sources/Shared/ShuffleRunCore.swift
+      - path: Sources/Shared/LoadSelectionState.swift
+      - path: Sources/Shared/PlexSignInRun.swift
+      - path: Sources/Shared/CoreErrorText.swift
+      - path: Sources/Shared/SeerrCoreBridge.swift
+      - path: Sources/Shared/WhatsNewPage.swift
+      - path: Sources/Shared/SettingsRowsFeed.swift
+      - path: Sources/Shared/RustHome.swift
+      - path: Sources/Shared/RustDetail.swift
+      - path: Sources/Shared/DetailCore.swift
+      - path: Sources/Shared/SeriesCore.swift
       # Seerr - the integration itself; views stay platform-specific.
       - path: Sources/Shared/SeerrModel.swift
       - path: Sources/Shared/SeerrMark.swift
@@ -616,11 +735,22 @@ targets:
       # All platforms share the playback machinery: the same `mkv_trusted`
       # trick, the same stall detection. Picture-in-Picture in it is excluded
       # with `#if os(iOS)`; on the Mac it does not work anyway.
+      - path: Sources/Shared/LiveRun.swift
       - path: Sources/Shared/VLCPlayer.swift
       - path: Sources/Shared/VLCPlayerView+Engine.swift
       - path: Sources/Shared/SubtitleOverlay.swift
+      - path: Sources/Shared/SubtitleScript.swift
       - path: Sources/Shared/AetherPlayerEngine.swift
       - path: Sources/Shared/PlaybackBackend.swift
+      - path: Sources/Shared/StartTracks.swift
+      - path: Sources/Shared/ReportRoute.swift
+      - path: Sources/Shared/CoreAetherPort.swift
+      - path: Sources/Shared/CorePlaybackBackend.swift
+      - path: Sources/Shared/VersionKeeping.swift
+      - path: Sources/Shared/PlanFromCore.swift
+      - path: Sources/Shared/HardwareAV1.swift
+      - path: Sources/Shared/PlayExtras.swift
+      - path: Sources/Shared/DelayCarry.swift
       - path: Sources/Shared/AppModel+Engine.swift
       # The subtitle look page: the preview picture and the words every platform shares.
       - path: Sources/Shared/SubtitlePreview.swift
@@ -670,6 +800,7 @@ targets:
     dependencies:
       - package: JellyfinKit
       - package: SwiftlyAether
+      - package: SwiftlyCore
       # For the launch animation - same asset as iPhone and TV. Without it the
       # Mac would start without the animation.
       - package: Lottie
@@ -773,12 +904,18 @@ targets:
         SKIncludeConsumableInAppPurchaseHistory: true
     settings:
       base:
+        # **The Mac links `SwiftlyCore` too.** LibDovi (inside AetherEngine) and the core each carry a copy
+        # of Rust's std and both define `_rust_eh_personality` ("duplicate symbol"). `cargo xtask apple`
+        # renames that one definition in the core's macOS library (`hide_eh_personality` in xtask), so the
+        # linker keeps LibDovi's copy. Do not put an unpatched macOS slice into the xcframework.
         # **No separate Mac build number.** All three platforms share the global
         # counter; two places for the same number are one too many. It must stay
         # higher than any build already uploaded for the Mac.
         # So that the file itself is also called "Swiftly.app" and not after the
         # build target - see `CFBundleName`.
         PRODUCT_NAME: Swiftly
+        # The core's macOS library is fat (arm64 + x86_64, `cargo xtask apple` joins them with lipo), so the Mac
+        # builds universal; no ARCHS override.
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly
         # Same reason as on iOS and tvOS: without the access group the keychain
         # refuses writes (-34018) and the login would be lost on every launch.
@@ -787,3 +924,71 @@ targets:
         # otherwise it looks larger than its neighbors in the Dock. iOS is the
         # opposite, hence a separate asset.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  # **The running-app matrix** (see `LiveTests/` and `Werkzeuge/live-lauf.sh`): drives the DEBUG app signed in to the
+  # fixture server and takes screenshots; judged by `Werkzeuge/live-pixel.py`. One target per platform, one source folder.
+  SwiftlyLiveTests-iOS:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: LiveTests
+        optional: true # the running-app tests are not part of the public tree
+    dependencies:
+      - target: Swiftly-iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly.livetests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+
+  SwiftlyLiveTests-macOS:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: LiveTests
+        optional: true # the running-app tests are not part of the public tree
+    dependencies:
+      - target: Swiftly-macOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly.livetests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  # The app schemes are spelled out: once a shared scheme exists, Xcode stops making the automatic ones that
+  # Werkzeuge/to-iphone.sh and the release scripts build.
+  Swiftly-iOS:
+    build:
+      targets:
+        Swiftly-iOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  Swiftly-macOS:
+    build:
+      targets:
+        Swiftly-macOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  SwiftlyLive-iOS:
+    build:
+      targets:
+        Swiftly-iOS: all
+        SwiftlyLiveTests-iOS: [test]
+    test:
+      config: Debug
+      targets:
+        - SwiftlyLiveTests-iOS
+  SwiftlyLive-macOS:
+    build:
+      targets:
+        Swiftly-macOS: all
+        SwiftlyLiveTests-macOS: [test]
+    test:
+      config: Debug
+      targets:
+        - SwiftlyLiveTests-macOS

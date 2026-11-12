@@ -1,0 +1,51 @@
+[package]
+name = "swiftly-uniffi"
+description = "The exported UniFFI surface of the Swiftly core (Swift and Kotlin bindings)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["staticlib", "lib"]
+
+[features]
+# Direct builds only: the offline supporter-key check. The Play build leaves it off.
+supporter-key = ["swiftly-support/supporter-key"]
+
+[dependencies]
+# `tokio` makes UniFFI run exported async fns through `async-compat` (see RUNTIME in README.md).
+uniffi = { version = "0.32", features = ["tokio"] }
+async-compat = "0.2"
+tokio = { version = "1", default-features = false, features = ["sync", "time", "rt", "rt-multi-thread", "macros"] }
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+swiftly-vm = { path = "../swiftly-vm" }
+swiftly-cache = { path = "../swiftly-cache" }
+swiftly-accounts = { path = "../swiftly-accounts" }
+swiftly-sync = { path = "../swiftly-sync" }
+swiftly-seerr = { path = "../swiftly-seerr" }
+swiftly-support = { path = "../swiftly-support" }
+swiftly-net = { path = "../swiftly-net", default-features = false }
+async-trait = "0.1"
+swiftly-jellyfin = { path = "../swiftly-jellyfin", default-features = false }
+swiftly-library = { path = "../swiftly-library" }
+swiftly-images = { path = "../swiftly-images" }
+swiftly-l10n = { path = "../swiftly-l10n" }
+swiftly-model = { path = "../swiftly-model" }
+swiftly-plex = { path = "../swiftly-plex", default-features = false }
+swiftly-playback = { path = "../swiftly-playback" }
+swiftly-rules = { path = "../swiftly-rules" }
+swiftly-settings = { path = "../swiftly-settings" }
+swiftly-downloads = { path = "../swiftly-downloads" }
+serde_json = "1"
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["rt", "macros", "time", "sync", "net", "io-util", "test-util"] }
+futures-executor = "0.3"
+# The runtime test talks to a local server with the reqwest transport; the library itself does not.
+swiftly-net = { path = "../swiftly-net", features = ["reqwest"] }
+
+[lints]
+workspace = true

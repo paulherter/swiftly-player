@@ -118,6 +118,95 @@ struct PlexMappingTests {
         #expect(streams[4].deliveryUrl == nil)
     }
 
+    /// Recorded shape of a real server's film with a German PGS track: the stream ids are large and unrelated to the
+    /// file, the `index` is the stream's place in the file (what the engine calls the track).
+    @Test("Untertitel PGS: die Engine kennt die Spur unter ihrer Stelle in der Datei, nicht unter der Stream-ID")
+    func pgsTrackNumberForTheEngine() throws {
+        let json = #"""
+        {"MediaContainer":{"size":1,"Metadata":[{"ratingKey":"215995","type":"movie","title":"PGS-Film","duration":7000000,
+          "Media":[{"id":100,"container":"mkv","Part":[{"id":170040,"key":"/library/parts/170040/1/file.mkv","container":"mkv",
+           "Stream":[
+            {"id":412900,"streamType":1,"codec":"h264","index":0,"height":1080,"width":1920},
+            {"id":412905,"streamType":2,"selected":true,"codec":"truehd","index":1,"channels":8,"languageCode":"eng"},
+            {"id":412907,"streamType":2,"codec":"ac3","index":2,"channels":6,"languageCode":"deu"},
+            {"id":412906,"streamType":3,"selected":true,"codec":"pgs","index":3,"languageCode":"deu","displayTitle":"Deutsch (PGS)"},
+            {"id":412908,"streamType":3,"codec":"srt","index":4,"languageCode":"eng","key":"/library/streams/412908"}]}]}]}]}}
+        """#
+        let item = PlexMapper().item(try decodeMetadata(json))
+        let source = try #require(item.mediaSources?.first)
+        // The server's own number stays the stream id (progress and track choice go by it) ...
+        #expect(source.defaultSubtitleStreamIndex == 412906)
+        #expect(source.mediaStreams?.map(\.index) == [412900, 412905, 412907, 412906, 412908])
+        // ... and the engine is asked by the place in the file.
+        #expect(source.engineTrackIndex(forServerIndex: 412906) == 3)
+        #expect(source.engineTrackIndex(forServerIndex: 412905) == 1)
+        #expect(source.engineTrackIndex(forServerIndex: 412907) == 2)
+        // A source without the field (Jellyfin) keeps its own number, and an unknown number passes through.
+        let jellyfin = MediaSource(id: "j", name: nil, container: "mkv", size: nil, supportsDirectPlay: true,
+                                   supportsDirectStream: false, supportsTranscoding: false, transcodingUrl: nil,
+                                   mediaStreams: [MediaStream(codec: "subrip", type: "Subtitle", language: "deu", displayTitle: nil,
+                                                              channels: nil, isDefault: nil, index: 7, height: nil, width: nil)],
+                                   defaultAudioStreamIndex: nil, defaultSubtitleStreamIndex: nil, runTimeTicks: nil)
+        #expect(jellyfin.engineTrackIndex(forServerIndex: 7) == 7)
+        #expect(jellyfin.engineTrackIndex(forServerIndex: 99) == 99)
+    }
+
+    /// Recorded from a real server's AV1 Dolby Vision 10.0 film (the stream fields only): the iPhone showed it green.
+    @Test("AV1 Dolby Vision 10.0 ohne Basisebene wird erkannt, 10.1 und HEVC nicht")
+    func dolbyVisionWithoutBaseLayer() throws {
+        func source(codec: String, profile: Int, compat: Int) throws -> MediaSource {
+            let json = """
+            {"MediaContainer":{"size":1,"Metadata":[{"ratingKey":"9","type":"movie","title":"DV","duration":7000000,
+              "Media":[{"id":1,"container":"mkv","Part":[{"id":2,"key":"/library/parts/2/1/file.mkv","container":"mkv",
+               "Stream":[{"id":3,"streamType":1,"codec":"\(codec)","index":0,"height":2160,"width":3840,"colorTrc":"smpte2084",
+                          "DOVIPresent":true,"DOVIProfile":\(profile),"DOVIBLCompatID":\(compat)}]}]}]}]}}
+            """
+            return try #require(PlexMapper().item(try decodeMetadata(json)).mediaSources?.first)
+        }
+        #expect(try source(codec: "av1", profile: 10, compat: 0).isAV1DolbyVisionWithoutBaseLayer)
+        #expect(try !source(codec: "av1", profile: 10, compat: 1).isAV1DolbyVisionWithoutBaseLayer)
+        #expect(try !source(codec: "av1", profile: 10, compat: 4).isAV1DolbyVisionWithoutBaseLayer)
+        #expect(try !source(codec: "hevc", profile: 5, compat: 0).isAV1DolbyVisionWithoutBaseLayer)
+        #expect(try !source(codec: "hevc", profile: 8, compat: 1).isAV1DolbyVisionWithoutBaseLayer)
+    }
+
+    @Test("AV1 Dolby Vision 10.0: Umkodier-Adresse des Plex-Servers und sein Ja/Nein")
+    func dolbyVisionTranscodePlan() throws {
+        let json = """
+        {"MediaContainer":{"size":1,"Metadata":[{"ratingKey":"9","type":"movie","title":"DV","duration":7000000,
+          "Media":[{"id":1,"container":"mkv","Part":[{"id":2,"key":"/library/parts/2/1/file.mkv","container":"mkv",
+           "Stream":[{"id":3,"streamType":1,"codec":"av1","index":0,"height":2160,"width":3840,"colorTrc":"smpte2084",
+                      "DOVIPresent":true,"DOVIProfile":10,"DOVIBLCompatID":0}]}]}]}]}}
+        """
+        let metadata = try decodeMetadata(json)
+        let playback = PlexPlayback(base: try #require(URL(string: "http://plex.test:32400")), token: "TOK")
+        let direct = try playback.plan(for: metadata, sessionID: "sess")
+        #expect(direct.method == .directPlay)
+        #expect(direct.source?.isAV1DolbyVisionWithoutBaseLayer == true)
+        let file = try #require(PlexPlayback.file(of: metadata, mediaSourceID: nil))
+        let plan = try #require(playback.transcodePlan(from: direct, metadata: metadata, file: file, sessionID: "sess",
+                                                       identity: [("X-Plex-Client-Identifier", "abc")]))
+        #expect(plan.method == .transcode)
+        #expect(plan.reasons.map(\.kind) == [.video])
+        let text = plan.url.absoluteString
+        #expect(text.hasPrefix("http://plex.test:32400/video/:/transcode/universal/start.m3u8?"))
+        for part in ["path=%2Flibrary%2Fmetadata%2F9", "protocol=hls", "directPlay=0", "directStream=0",
+                     "mediaIndex=0", "partIndex=0", "session=sess", "X-Plex-Client-Identifier=abc", "X-Plex-Token=TOK"] {
+            #expect(text.contains(part), "\(part) fehlt in \(text)")
+        }
+        // No subtitle chosen: the transcode sends none. A chosen one (a PGS track, stream id 411748) is burned in.
+        #expect(text.contains("subtitles=none") && !text.contains("subtitleStreamID"))
+        let withSubtitle = try #require(playback.transcodePlan(from: direct, metadata: metadata, file: file, sessionID: "sess",
+                                                               identity: [], subtitleStreamID: 411748))
+        #expect(withSubtitle.url.absoluteString.contains("subtitles=burn"))
+        #expect(withSubtitle.url.absoluteString.contains("subtitleStreamID=411748"))
+        // The server's verdict: 1xxx yes (also as text), 2xxx no, junk no.
+        #expect(PlexPlayback.decisionAllowsTranscode(Data(#"{"MediaContainer":{"generalDecisionCode":1001}}"#.utf8)))
+        #expect(PlexPlayback.decisionAllowsTranscode(Data(#"{"MediaContainer":{"generalDecisionCode":"1000"}}"#.utf8)))
+        #expect(!PlexPlayback.decisionAllowsTranscode(Data(#"{"MediaContainer":{"generalDecisionCode":2000}}"#.utf8)))
+        #expect(!PlexPlayback.decisionAllowsTranscode(Data("nope".utf8)))
+    }
+
     @Test("Eine Folge kennt Serie, Staffel und ist gesehen")
     func episode() throws {
         let item = PlexMapper().item(try decodeMetadata(PlexFixtures.episode))

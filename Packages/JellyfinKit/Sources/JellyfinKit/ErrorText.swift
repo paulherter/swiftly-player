@@ -3,6 +3,12 @@ import Foundation
 import FoundationNetworking
 #endif
 
+/// **The Apple app's core wording for a network error.** The Rust core owns the sentences of an
+/// `NSURLErrorDomain` code (and a certificate cause read from code and text); the app installs this at
+/// launch (`CoreErrorText`). Arguments: the code, the system's own `localizedDescription`. Unset (Linux,
+/// Windows, Android, tests) the Swift sentences below apply.
+nonisolated(unsafe) public var readableNetworkTextFromCore: (@Sendable (_ code: Int, _ systemDescription: String) -> String)?
+
 /// **What the user is told instead of "Error Domain=… Code=-1004".**
 ///
 /// `localizedDescription` of a `URLError` is usable; that of a hand-built
@@ -14,7 +20,11 @@ import FoundationNetworking
 public func readableError(_ error: any Error) -> String {
     if let j = error as? JellyfinError {
         switch j {
-        case let .network(code):           return networkText(code: code, otherwise: nil)
+        case let .network(code):
+            if let core = readableNetworkTextFromCore {
+                return core(code, URLError(URLError.Code(rawValue: code) ?? .unknown).localizedDescription)
+            }
+            return networkText(code: code, otherwise: nil)
         case let .certificate(reason):    return certificateText(reason)
         case let .transport(text):      return text
         case .notAuthenticated:         return translated("Nicht angemeldet.")
@@ -54,6 +64,7 @@ public func readableError(_ error: any Error) -> String {
     // `Error Domain=NSURLErrorDomain Code=-1001 "(null)"` on screen.
     let ns = error as NSError
     if ns.domain == NSURLErrorDomain {
+        if let core = readableNetworkTextFromCore { return core(ns.code, error.localizedDescription) }
         if let reason = certificateReason(code: ns.code, text: error.localizedDescription) {
             return certificateText(reason)
         }

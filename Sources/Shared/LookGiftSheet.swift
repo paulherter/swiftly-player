@@ -1,4 +1,5 @@
 import JellyfinKit
+import func SwiftlyCore.whatsNewDecide
 import SwiftUI
 #if os(iOS)
 import UIKit
@@ -29,7 +30,7 @@ final class GiftFlow {
     static let shared = GiftFlow()
 
     enum Stage: Equatable {
-        case whatsNew(WhatsNewEntry)
+        case whatsNew(WhatsNewPage)
         case offer(Look)
         /// "Grab it" was pressed: the short animation before the looks sheet.
         case claiming(Look)
@@ -84,14 +85,13 @@ final class GiftFlow {
 
         // What's New first: it carries the gift itself when there is one.
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        let entry = WhatsNewEntry.bundled(for: version)
         let defaults = UserDefaults.standard
-        switch WhatsNew.decide(lastSeen: defaults.string(forKey: WhatsNew.lastSeenKey),
-                               usedBefore: SupportModel.shared.usedBeforeThisLaunch,
-                               current: version, hasEntry: entry != nil) {
+        switch whatsNewDecide(lastSeen: defaults.string(forKey: WhatsNew.lastSeenKey),
+                              usedBefore: SupportModel.shared.usedBeforeThisLaunch,
+                              current: version, entryJson: WhatsNewPage.bundledJson(for: version)) {
         case .show:
             defaults.set(version, forKey: WhatsNew.lastSeenKey)
-            if let entry {
+            if let entry = WhatsNewPage.bundled(for: version) {
                 if let gift = entry.giftLook, giftDue(gift, store: store) { markOffered(gift) }
                 show(.whatsNew(entry))
                 return
@@ -231,7 +231,7 @@ final class GiftFlow {
             try? await Task.sleep(for: .seconds(4))
             switch step {
             case "whatsnew":
-                if let entry = WhatsNewEntry.bundled(for: "1.0.8") { shared.show(.whatsNew(entry)) }
+                if let entry = WhatsNewPage.bundled(for: "1.0.8") { shared.show(.whatsNew(entry)) }
             case "offer":
                 shared.show(.offer(.halloween))
             case "looks":

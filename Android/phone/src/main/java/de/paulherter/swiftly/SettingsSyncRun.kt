@@ -1,7 +1,6 @@
 package de.paulherter.swiftly
 
 import androidx.compose.runtime.mutableStateOf
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -133,7 +132,7 @@ class SettingsSyncRun(private val app: SwiftlyApplication, private val run: Coro
         val seerrKey = seerrTimeKey()
         val seerrStarted = store.rememberValue(seerrKey)
         val raw = runCatching {
-            app.kern.settingsSyncRun(JSONObject(values()).toString(), number(TIME), number(REMOTE), other,
+            app.rk.settingsSyncRun(JSONObject(values()).toString(), number(TIME), number(REMOTE), other,
                                      app.seerrStored().orEmpty(), number(seerrKey)).await()
         }.getOrNull() ?: return
         // The account changed while the answer was on its way: that answer belongs to the one that left.

@@ -252,7 +252,7 @@ internal fun tileMenuAct(app: SwiftlyApplication, w: TileMenuRequest, was: Strin
                 // Fetch fresh: the position in the list entry is often stale. For a series, the episode you are
                 // on.
                 if (w.type == "Series") {
-                    val state = runCatching { JSONObject(withContext(Dispatchers.IO) { app.kern.series(w.id).await() }).optJSONObject("stand") }.getOrNull()
+                    val state = runCatching { JSONObject(withContext(Dispatchers.IO) { app.rk.series(w.id).await() }).optJSONObject("stand") }.getOrNull()
                     if (state == null) { app.message.value = translated("Danach kommt nichts mehr."); return@launch }
                     playAsking(app, state.getString("id"), if (state.isNull("ab")) null else state.getDouble("ab"))
                 } else {
@@ -261,11 +261,11 @@ internal fun tileMenuAct(app: SwiftlyApplication, w: TileMenuRequest, was: Strin
             }
             "uebersicht" -> open(Destination(w.id, w.name, w.type))
             "gesehen", "ungesehen" -> {
-                val reason = withContext(Dispatchers.IO) { app.kern.watched(w.id, was == "gesehen").await() }
+                val reason = withContext(Dispatchers.IO) { app.rk.watched(w.id, was == "gesehen").await() }
                 if (reason.isNotEmpty()) app.message.value = errorString(app, Exception(reason)) else { app.watchStateChanged.intValue++; afterwards?.invoke() }
             }
             "entfernen" -> {
-                val reason = withContext(Dispatchers.IO) { app.kern.fromContinueWatchingTake(w.id).await() }
+                val reason = withContext(Dispatchers.IO) { app.rk.fromContinueWatchingTake(w.id).await() }
                 if (reason.isNotEmpty()) app.message.value = errorString(app, Exception(reason)) else { app.watchStateChanged.intValue++; afterwards?.invoke() }
             }
             "laden" -> app.downloadsCreate(listOf(w.id), w.name)

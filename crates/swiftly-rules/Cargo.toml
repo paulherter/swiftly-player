@@ -1,0 +1,22 @@
+[package]
+name = "swiftly-rules"
+description = "Pure rule files of the Swiftly Jellyfin client ported 1:1 from Swift (JellyfinKit): ordering, delay, downloads, chapters, playback tick, episode switch"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+icu_collator = "2"
+icu_locale_core = "2"
+unicode-normalization = "0.1"
+unicode-segmentation = "1"
+futures-util = { version = "0.3", default-features = false }
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[dev-dependencies]
+futures-executor = "0.3"
+
+[lints]
+workspace = true

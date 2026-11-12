@@ -20,6 +20,8 @@ struct SearchView: View {
     /// What Seerr knows and the own server does not; empty if nothing is connected.
     @State private var seerrHit: [SeerrHit] = []
     @State private var searched = false
+    /// What the Rust core says for the tiles of this search (`AppModel.coreServes`), by title id.
+    @State private var looks: [String: RustTileLook] = [:]
     /// The last search term; the empty-state text names this term, not whatever is
     /// currently in the field.
     @State private var searchedHandle = ""
@@ -123,7 +125,7 @@ struct SearchView: View {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 20) {
                 ForEach(entries, id: \.id) { entryRecord in
                     Button { navigator.openIt(.title(entryRecord), in: section) } label: {
-                        SearchPoster(model: model, entry: entryRecord)
+                        SearchPoster(model: model, entry: entryRecord, look: looks[entryRecord.id])
                     }
                     .buttonStyle(Theme.PressButton())
                     .tileMenu(entryRecord, model: model)
@@ -226,10 +228,11 @@ struct SearchView: View {
                 } else if searched, disrupted, !term.isEmpty, seerrHit.isEmpty {
                     // Same text as in the library, including the server address: one cause, one
                     // diagnosis.
+                    let words = model.rustScreens.searchTrouble.copy(server: model.serverAddress ?? String(localized: "Der Server"))
                     EmptyState(
                         symbol: "externaldrive.badge.xmark",
-                        headerLine: "Server ist abgetaucht",
-                        text: "\(model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                        headerLine: words.title,
+                        text: words.text,
                         primaryButton: ("Erneut versuchen", { stillInTimes() }))
                         .padding(.top, 120)
                 } else if searched, !term.isEmpty, seerrHit.isEmpty {
@@ -299,6 +302,34 @@ struct SearchView: View {
                 hit = []; seerrHit = []; searched = false
                 disrupted = false; loads = false; return
             }
+            #if canImport(SwiftlyCore)
+            // The Rust core debounces and searches (`AppModel.coreServes`); the extra search keeps its
+            // own 0.3 s wait, as on iPhone.
+            if model.coreServes {
+                loads = true
+                let clean = term.trimmingCharacters(in: .whitespacesAndNewlines)
+                async let foreignRust: [SeerrHit] = {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard !Task.isCancelled else { return [] }
+                    return await model.seerr.searching(clean)
+                }()
+                var found: [String: RustTileLook] = [:]
+                let rustHits = await model.rustScreens.hits(clean, session: model.session, looks: &found)
+                guard !Task.isCancelled else { return }
+                // The core is the only search of this session: its failure is the server out of reach.
+                disrupted = rustHits == nil
+                looks = found
+                hit = ListRules.withoutDouble(rustHits ?? [])
+                searchedHandle = clean
+                if !hit.isEmpty { searched = true }
+                let b = await foreignRust
+                guard !Task.isCancelled else { return }
+                seerrHit = b.filter { !$0.state.alreadyPresent }
+                searched = true
+                loads = false
+                return
+            }
+            #endif
             // Debounce instead of querying on every keystroke.
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
@@ -333,11 +364,13 @@ struct SearchView: View {
 private struct SearchPoster: View {
     let model: AppModel
     let entry: Item
+    /// The core's wording of this tile; `nil` keeps the Swift one.
+    var look: RustTileLook? = nil
     @State private var hovers = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ImageArea(image: model.imageURL(for: entry, portrait: true),
+            ImageArea(image: look?.image ?? model.imageURL(for: entry, portrait: true),
                       width: 120, height: 180,
                       progress: entry.userData?.playedPercentage.map { $0 / 100 },
                       symbolText: entry.tileCharacter)
@@ -353,12 +386,13 @@ private struct SearchPoster: View {
                 }
                 .scaleEffect(hovers ? 1.04 : 1)
             VStack(alignment: .leading, spacing: 1) {
-                Text(verbatim: entry.name)
+                Text(verbatim: look?.title ?? entry.name)
                     .font(.app(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.font)
                     .lineLimit(1)
-                if !entry.hitInfo.isEmpty {
-                    Text(verbatim: entry.hitInfo)
+                let info = look != nil ? (look?.subtitle ?? "") : entry.hitInfo
+                if !info.isEmpty {
+                    Text(verbatim: info)
                         .font(.app(size: 12))
                         .foregroundStyle(Theme.fontVeryQuiet)
                         .lineLimit(1)

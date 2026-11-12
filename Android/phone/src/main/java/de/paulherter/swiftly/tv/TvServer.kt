@@ -1,5 +1,6 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.KernRules
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -20,7 +21,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import de.paulherter.swiftly.core.Kern
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -48,17 +48,17 @@ fun TvServerOnboarding(app: SwiftlyApplication, preset: String?, kindPicked: Boo
     val headers = de.paulherter.swiftly.rememberHeaderRow()
     // Without the servers already in the bundle: another account there is "Konto hinzufügen".
     val found = de.paulherter.swiftly.rememberFoundServers(app, remember {
-        JSONArray(app.store.accounts?.let { Kern.bundleServers(it) } ?: "[]").let { a -> (0 until a.length()).map(a::getString) }
+        JSONArray(app.store.accounts?.let { KernRules.bundleServers(it) } ?: "[]").let { a -> (0 until a.length()).map(a::getString) }
     })
 
-    fun cancel() { app.kern.onboardingCancel(); back() }
-    fun record(session: String) { app.kern.onboardingCancel(); app.sessionRecord(session); back() }
+    fun cancel() { app.rk.onboardingCancel(); back() }
+    fun record(session: String) { app.rk.onboardingCancel(); app.sessionRecord(session); back() }
     fun check() {
         if (address.isBlank() || examine) return
         examine = true; error = null
         run.launch {
             try {
-                val o = JSONObject(withContext(Dispatchers.IO) { app.kern.onboardingConnect(address, headers.asJson()).await() })
+                val o = JSONObject(withContext(Dispatchers.IO) { app.rk.onboardingConnect(address, headers.asJson()).await() })
                 if (headers.isNotEmpty()) app.storeOwnHeaders()
                 server = o.getString("name") to o.getString("version")
             } catch (x: CancellationException) { throw x } catch (x: Exception) { error = errorString(app, x) }
@@ -69,7 +69,7 @@ fun TvServerOnboarding(app: SwiftlyApplication, preset: String?, kindPicked: Boo
         if (user.isBlank() || running) return
         running = true; error = null
         run.launch {
-            try { record(withContext(Dispatchers.IO) { app.kern.onboardingSignIn(user, password).await() }) }
+            try { record(withContext(Dispatchers.IO) { app.rk.onboardingSignIn(user, password).await() }) }
             catch (x: CancellationException) { throw x } catch (x: Exception) { error = errorString(app, x) }
             running = false
         }

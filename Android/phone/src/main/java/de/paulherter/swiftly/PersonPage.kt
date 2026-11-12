@@ -78,7 +78,7 @@ fun PersonPage(app: SwiftlyApplication, target: Destination, open: (Destination)
     LaunchedEffect(target.id, attempt) {
         failed = false
         try {
-            val new = personRead(withContext(Dispatchers.IO) { app.kern.person(target.id).await() })
+            val new = personRead(withContext(Dispatchers.IO) { app.rk.person(target.id).await() })
             state = new
             app.peopleCache[target.id] = new
         } catch (e: CancellationException) { throw e } catch (_: Exception) { failed = true }
@@ -92,7 +92,7 @@ fun PersonPage(app: SwiftlyApplication, target: Destination, open: (Destination)
         if (tmdb == null || !seerrPresent) return@LaunchedEffect
         val ownOnes = s?.title.orEmpty().mapTo(HashSet()) { it.title.lowercase() }
         requestable = try {
-            seerrTilesRead(withContext(Dispatchers.IO) { app.kern.seerrFilmography(tmdb.toLong()).await() })
+            seerrTilesRead(withContext(Dispatchers.IO) { app.rk.seerrFilmography(tmdb.toLong()).await() })
                 .filter { it.title.lowercase() !in ownOnes }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
     }

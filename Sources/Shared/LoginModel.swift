@@ -75,20 +75,15 @@ extension AppModel {
 
     /// Empty does not mean "error" here but "the server does not give the list"; then you just type the name.
     func publicUser() async -> [PublicUser] {
-        guard let client = client as? any QuickSignIn else { return [] }
-        return (try? await client.publicUser()) ?? []
+        guard let client, client is any QuickSignIn else { return [] }
+        let found = await AccountsHost.shared.publicUsers(address: client.baseURL)
+        userImages = found.images
+        return found.users
     }
 
-    /// Building the address is pure computation, but the client is an actor, so
-    /// asynchronous, and the result is taken along when the list loads instead of being
-    /// asked again on every draw.
+    /// The image addresses came with the list; the core builds them.
     func imageAddresses(_ folks: [PublicUser]) async -> [String: URL] {
-        guard let client = client as? any QuickSignIn else { return [:] }
-        var card: [String: URL] = [:]
-        for person in folks {
-            if let u = await client.userImage(person) { card[person.id] = u }
-        }
-        return card
+        userImages.filter { key, _ in folks.contains { $0.id == key } }
     }
 
     // MARK: - Quick Connect as a sign-in path
@@ -96,38 +91,47 @@ extension AppModel {
     /// Whether the server has Quick Connect switched on; a page that offers only what
     /// works asks before showing the button. Only Jellyfin has it at all.
     func quickConnectOffered() async -> Bool {
+        #if DEBUG
+        if Self.snapshotQuickConnect { return true }
+        #endif
         guard let client = client as? JellyfinClient else { return false }
-        return await client.quickConnectAddBar()
+        return await AccountsHost.shared.quickConnectOffered(address: client.baseURL)
     }
 
     func quickConnectStart() async throws -> LoginCode {
-        guard let client = client as? any QuickSignIn else { throw JellyfinError.notAuthenticated }
-        return try await client.quickConnectStart()
+        guard let client, client is any QuickSignIn else { throw JellyfinError.notAuthenticated }
+        return try await AccountsHost.shared.quickStart(address: client.baseURL)
     }
 
-    /// A poll that never throws; see `QuickConnectWait` in the package.
-    func quickConnectAskAgain(_ preGait: LoginCode) async -> QuickConnectState {
-        guard let client = client as? any QuickSignIn else { return .failed }
-        return await client.quickConnectAskAgain(preGait)
+    /// How a wait for approval ended: the core signs in itself when the code is approved.
+    enum QuickConnectOutcome {
+        case approved
+        case ended(String)
+        case stopped
+        case failed(String)
     }
 
-    func signInWithQuickConnect(_ preGait: LoginCode) async {
-        // For "Add another account" on a fresh client; see `loginClient()`.
-        guard let signInClient = loginClient() as? any QuickSignIn else { return }
-        isWorking = true
-        defer { isWorking = false }
-        errorMessage = nil
+    /// Waits for the approval of `preGait` (at the server being added, or the one the app is connected
+    /// to). `rest` hears the seconds left. On `.approved` the account is saved; the view then calls
+    /// ``signInWithQuickConnect(_:)`` (or the new-server twin) to take it over.
+    func quickConnectWait(_ preGait: LoginCode, atNewServer: Bool,
+                          rest: @escaping @Sendable (Int64) -> Void) async -> QuickConnectOutcome {
+        guard let server = atNewServer ? onboardingServer : client else { return .failed(readable(JellyfinError.notAuthenticated)) }
         do {
-            let s = try await signInClient.signInWithQuickConnect(preGait)
-            // **Do not load additionally if it was a switch.** Then `sessionAdopt`
-            // already cleans up and triggers the reload; a second run alongside races the
-            // first, and whoever loses writes something half-finished.
-            signInTransition(s) { [self] in
-                if !sessionAdopt(s, signedInWith: signInClient) { Task { await loadViews() } }
+            switch try await AccountsHost.shared.quickWait(address: server.baseURL, code: preGait, rest: rest) {
+            case .approved: return .approved
+            case .ended(let text): return .ended(text)
+            case .stopped: return .stopped
             }
         } catch {
-            errorMessage = readable(error)
+            return .failed(readable(error))
         }
+    }
+
+    /// The core signed in when the code was approved (`quickConnectWait`): takes the account over.
+    func signInWithQuickConnect(_ preGait: LoginCode) async {
+        errorMessage = nil
+        adoptSignedIn()
     }
 
     /// Errors the way you would tell someone.

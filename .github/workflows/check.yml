@@ -56,6 +56,18 @@ jobs:
       - name: XcodeGen
         run: brew install xcodegen
 
+      # **The Rust core framework is not checked in** (`Packages/SwiftlyCore/SwiftlyCoreFFI.xcframework`, built
+      # from `crates/`). The package graph does not resolve without it, so `xcodebuild -list` would fail. One
+      # slice (macOS arm64) is enough for what is checked here; the full set is a release-time build.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.0"
+      - uses: Swatinem/rust-cache@v2
+      - name: Rust-Kern-Framework (nur macOS-Slice)
+        env:
+          SWIFTLY_SLICES: macos
+        run: cargo run --locked -p xtask -- apple
+
       # **The .xcodeproj is not checked in** and is generated from
       # `project.yml`. Without this step there is no target to build.
       - name: Projekt erzeugen

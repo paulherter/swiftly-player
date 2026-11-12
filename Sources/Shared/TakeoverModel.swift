@@ -1,6 +1,7 @@
 import Foundation
 import JellyfinKit
 import Observation
+import SwiftlyCore
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -20,9 +21,13 @@ final class TakeoverModel {
 
     /// Everything that can be taken over, most recent activity first.
     private(set) var offerings: [RemoteSession] = []
-    /// The last reason written, so the same message does not repeat in the log
-    /// every ten seconds.
-    private var lastReason: String?
+    /// The core's polling and hand-over flow (nil while not polling).
+    private var flow: SwiftlyCore.HandoffFlowModel?
+    /// The last sessions answer, decoded, by id: the core names sessions by id only.
+    private var answered: [String: RemoteSession] = [:]
+    private var lastAnswer: [RemoteSession] = []
+    /// The session being taken over (its id is looked up in the fresh answer).
+    private var adopting: RemoteSession?
 
     /// The first of them, for when there is only one.
     var offering: RemoteSession? { offerings.first }
@@ -76,9 +81,17 @@ final class TakeoverModel {
     static let tickSeconds: Double = 5
 
     /// If the app is not in front (background, Mac: window inactive or minimized),
-    /// the timer rests (`Vordergrund.wait`) and asks once immediately on return.
+    /// the timer rests (`Foreground.wait`) and asks once immediately on return.
+    ///
+    /// **The rules live in the core** (`HandoffFlowModel`, one state machine: when to ask,
+    /// what an answer offers, hint, stop, wait for the exact position). This type only does
+    /// the network and the timer and feeds the results back.
     func start(_ model: AppModel) {
         guard tick == nil else { return }
+        flow = model.session.flatMap { AppCore.shared.account($0) }
+            .map { AppCore.shared.raw.handoffFlow(account: $0) }
+        guard let flow else { return }
+        _ = try? flow.step(event: .start)
         tick = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.inTimesAsk(model)
@@ -90,158 +103,138 @@ final class TakeoverModel {
     func finish() {
         tick?.cancel()
         tick = nil
+        _ = try? flow?.step(event: .finish)
+        flow = nil
         offerings = []
+    }
+
+    /// What one run of the flow collected for its caller.
+    private struct Run {
+        var plan: PlaybackPlan?
+        var played: (id: String, since: Double)?
+        var failed = false
+        var clock = ContinuousClock.now
     }
 
     private func inTimesAsk(_ model: AppModel) async {
-        // **Whoever is watching does not ask.**
-        //
-        // In the player the picture matters, and the server would have one more request
-        // every five seconds to answer. This used to hang on the home page
-        // (`.task(id: play == nil)`) and so only applied to playbacks started
-        // there. Here it applies to every one.
-        guard !PlayState.playerRuns else { return }
-        // `model.session` instead of `client.currentSession()`: the client is an actor,
-        // and the session already lives on the main actor here.
-        guard let client = model.remoteServer,
-              let user = model.session?.userID else { offerings = []; return }
-        let sessions: [RemoteSession]
-        do {
-            sessions = try await client.remoteSession()
-        } catch {
-            // **Quiet outwardly, loud in the log.** It asks every ten seconds; an error
-            // message on the home page would be noise. But the difference between "nothing
-            // is playing" and "the question did not arrive" has to be recorded somewhere,
-            // otherwise the next person searches for it from scratch.
-            AppLog.writeOut("[Uebernahme] Abfrage fehlgeschlagen: \(error)")
-            offerings = []
-            return
-        }
-        if PlayTargets.mustReport(sessions, ownDevicesIdentifier: AppModel.deviceID) {
-            AppLog.writeOut("[Abspielen auf] eigene Sitzung fehlt, Fähigkeiten neu gemeldet")
-            try? await client.reportCapabilities()
-        }
-        offerings = Takeover.offerings(from: sessions,
-                                       ownDevicesIdentifier: AppModel.deviceID,
-                                       ownUserIdentifier: user)
-        // **The same answer feeds "Übergeben an"**: a second timer asking the same
-        // question for the player's list would double the requests for nothing.
-        PlayOutputs.shared.take(sessions, user: user)
-        // **Why nothing is offered must be readable.** Five reasons look the same from
-        // outside: the badge is simply missing. In release builds this drops out.
-        if offerings.isEmpty {
-            let grounds = sessions.map { s in
-                let wer = s.deviceName ?? s.program ?? "?"
-                let why = Takeover.whyNot(s, ownDevicesIdentifier: AppModel.deviceID,
-                                                  ownUserIdentifier: user) ?? "taugt"
-                return "\(wer): \(why)"
+        // Whoever is watching does not ask: the core decides (`tick`).
+        var run = Run()
+        await pump(.tick(playerRuns: PlayState.playerRuns,
+                         signedIn: model.remoteServer != nil && model.session != nil),
+                   model: model, run: &run)
+    }
+
+    /// Feeds an event to the flow, performs what it asks for and feeds the results back, until
+    /// nothing is left to do.
+    private func pump(_ first: HandoffEvent, model: AppModel, run: inout Run) async {
+        guard let flow else { return }
+        var pending = [first]
+        while !pending.isEmpty {
+            let event = pending.removeFirst()
+            guard let effects = try? flow.step(event: event) else { continue }
+            for effect in effects {
+                if let next = await perform(effect, model: model, run: &run) { pending.append(next) }
             }
-            let row = "[Uebernahme] \(sessions.count) Sitzungen, kein Angebot"
-                + (grounds.isEmpty ? "" : " — " + grounds.joined(separator: " · "))
-            // **Only on change.** It asks every ten seconds and the answer is almost always
-            // the same: "1 sessions, no offer, Mac: ourselves". The line used to appear
-            // dozens of times at one-second pace and drowned everything else in the log.
-            // Repeating a message that often makes it unreadable.
-            if row != lastReason {
-                lastReason = row
-                AppLog.writeOut(row)
-            }
-        } else {
-            lastReason = nil
-            cardImagePreload(model)
         }
     }
 
-    /// Stop the other device and continue here.
-    ///
-    /// **End it over there first, then start here, and do not swallow the error.**
-    /// If it keeps running there while the same starts here, two audio tracks fill
-    /// the room and nobody knows why. So if it fails, nothing is started here.
-    ///
-    /// **End, not pause.** Paused, the connection to the server stays open, the
-    /// session remains in the overview, and on the other device the player still
-    /// covers everything; it would have to be closed by hand.
-    ///
-    /// **First check that something starts here, then end it over there.** The other
-    /// way round the TV stopped, and if the plan then failed, nothing played
-    /// anywhere, with no message.
-    ///
-    /// **The position after ending:** the session query lags up to ten seconds
-    /// behind. The other device reports its exact position when ending; that is
-    /// waited for briefly (`Takeover.startPoint`).
-    ///
-    /// - Returns: title, position and plan, or `nil` with a message.
-    /// - Parameter sitzung: which one to take over. With several, the UI asked; with
-    ///   one it is simply that one.
-    func adopt(_ session: RemoteSession,
-                     model: AppModel) async -> (item: Item, since: Double, plan: PlaybackPlan)? {
-        guard let title = session.running,
-              let client = model.remoteServer, !takesOver else { return nil }
-        takesOver = true
-        defer { takesOver = false }
-        // **Each step with its time since the tap.** The card floats until the first
-        // frame is up; how long that takes and what it depends on is in the log.
-        let clock = ContinuousClock.now
-        func time(_ was: String) {
-            let d = ContinuousClock.now - clock
-            let ms = Int(d.components.seconds * 1000 + d.components.attoseconds / 1_000_000_000_000_000)
-            AppLog.writeOut("[Uebergabe] +\(ms) ms \(was)")
-        }
-        time("Tipp auf \(session.deviceName ?? "?")")
+    private func time(_ was: String, _ run: Run) {
+        let d = ContinuousClock.now - run.clock
+        let ms = Int(d.components.seconds * 1000 + d.components.attoseconds / 1_000_000_000_000_000)
+        AppLog.writeOut("[Uebergabe] +\(ms) ms \(was)")
+    }
 
-        async let planFetch = model.plan(for: title.id)
-        async let savedFetch = model.item(id: title.id)
-        async let sessionsFetch = try? client.remoteSession()
-        guard let plan = await planFetch else {
+    private func perform(_ effect: HandoffEffect, model: AppModel, run: inout Run) async -> HandoffEvent? {
+        switch effect {
+        case .ask:
+            guard let client = model.remoteServer else { return .askFailed(error: "kein Server") }
+            do {
+                let data = try await client.remoteSessionData()
+                // The same answer, decoded for the views that still read `RemoteSession`.
+                let list = (try? JSONDecoder().decode([RemoteSession].self, from: data)) ?? []
+                answered = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+                lastAnswer = list
+                return .answered(sessionsJson: data, now: Date().timeIntervalSince1970)
+            } catch {
+                return .askFailed(error: "\(error)")
+            }
+        case .reportCapabilities:
+            try? await model.remoteServer?.reportCapabilities()
+        case .offer(let ids):
+            offerings = ids.compactMap { answered[$0] }
+        case .publishSessions:
+            if let user = model.session?.userID { PlayOutputs.shared.take(lastAnswer, user: user) }
+        case .preload:
+            cardImagePreload(model)
+        case .log(let line):
+            AppLog.writeOut(line)
+        case .prepare(let itemId):
+            guard let client = model.remoteServer else { return .prepared(plan: false, savedBefore: nil, freshPoint: nil) }
+            // Plan, saved position and fresh sessions at the same time.
+            async let planFetch = model.plan(for: itemId)
+            async let savedFetch = model.item(id: itemId)
+            async let sessionsFetch = try? client.remoteSession()
+            run.plan = await planFetch
+            time("Plan da", run)
+            let before = await savedFetch?.userData?.playbackPositionTicks
+            let id = adopting?.id
+            let fresh = await sessionsFetch?.first { $0.id == id }?.state?.spot
+            return .prepared(plan: run.plan != nil, savedBefore: before, freshPoint: fresh)
+        case .sendHint(let id):
+            do {
+                try await model.remoteServer?.handoffHint(an: id, device: Self.ownName)
+                time("Hinweis gesendet", run)
+                return .hintDone(error: nil)
+            } catch {
+                return .hintDone(error: "\(error)")
+            }
+        case .sendStop(let id):
+            do {
+                try await model.remoteServer?.foreignCommand(.finish, an: id)
+                time("Stopp angenommen", run)
+                return .stopAccepted
+            } catch {
+                return .stopFailed(text: readableError(error))
+            }
+        case .readPosition(let itemId):
+            // In steps of 100 ms instead of 250: every oversleeping step delayed the start.
+            try? await Task.sleep(for: .milliseconds(100))
+            return .position(ticks: await model.item(id: itemId)?.userData?.playbackPositionTicks)
+        case .play(let itemId, let since, let unreported, let point):
+            time(unreported ? "Stelle nicht gemeldet" : "Stelle gemeldet", run)
+            AppLog.writeOut("[Uebernahme] Sitzung \(Int(point)) s → ab \(Int(since)) s")
+            run.played = (itemId, since)
+        case .noPlan:
             let wo = model.serverName ?? String(localized: "dem Server")
             errorShow(String(localized: "Die Wiedergabe hat nicht geklappt. Von \(wo) kamen keine Daten zum Abspielen."),
-                         model: model)
-            return nil
+                      model: model)
+            run.failed = true
+        case .showError(let text):
+            errorShow(text, model: model)
+            run.failed = true
         }
-        time("Plan da")
-        let before = await savedFetch?.userData?.playbackPositionTicks
-        // The freshest position the session knows; the one from the badge may be a
-        // query old.
-        let freshValue = await sessionsFetch?.first { $0.id == session.id }?.state?.spot
-        let sessionPoint = freshValue ?? session.state?.spot ?? 0
+        return nil
+    }
 
-        // **First the notice, then the stop.** Only this way does the sender know its
-        // stop is a handover: then its picture leaves as a card and it shows where
-        // playback continues. If the notice fails it simply closes as with a stop from
-        // the dashboard; the handover itself does not depend on it.
-        if Takeover.takesHint(session) {
-            do {
-                try await client.handoffHint(an: session.id, device: Self.ownName)
-                time("Hinweis gesendet")
-            } catch {
-                AppLog.writeOut("[Uebergabe] Hinweis nicht gesendet: \(error)")
-            }
-        }
-        do {
-            try await client.foreignCommand(.finish, an: session.id)
-        } catch {
-            errorShow(readableError(error), model: model)
-            return nil
-        }
-        time("Stopp angenommen")
-
-        // Wait for the other device's stop, at most one and a half seconds. If nothing
-        // comes, the session position applies. In steps of 100 ms instead of 250: every
-        // oversleeping step delayed the start.
-        var afterwards: Int64?
-        for _ in 0..<15 {
-            try? await Task.sleep(for: .milliseconds(100))
-            let now = await model.item(id: title.id)?.userData?.playbackPositionTicks
-            if now != before { afterwards = now; break }
-        }
-        let since = Takeover.startPoint(session: sessionPoint, savedBefore: before,
-                                        savedAfterwards: afterwards)
-        time(afterwards == nil ? "Stelle nicht gemeldet" : "Stelle gemeldet")
-        AppLog.writeOut("[Uebernahme] Sitzung \(Int(sessionPoint)) s, nach Stopp "
-            + "\(afterwards.map { String(Int(Double($0) / 10_000_000)) } ?? "—") s → ab \(Int(since)) s")
-        // So the badge does not linger for another tick.
-        offerings = []
-        return (title, since, plan)
+    /// Takes over one session: title, position and plan, or `nil` with a message.
+    ///
+    /// **First check that something starts here, then end it over there.** The other way round
+    /// the TV stopped, and if the plan then failed, nothing played anywhere, with no message.
+    /// **First the notice, then the stop**, so the sender shows where playback continues. Then
+    /// the sender's exact stop position is waited for briefly (`Takeover.startPoint` in the
+    /// core). The order is the flow's, see `handoff_flow.rs`.
+    func adopt(_ session: RemoteSession,
+                     model: AppModel) async -> (item: Item, since: Double, plan: PlaybackPlan)? {
+        guard let title = session.running, model.remoteServer != nil, !takesOver, flow != nil else { return nil }
+        takesOver = true
+        defer { takesOver = false; adopting = nil }
+        adopting = session
+        answered[session.id] = session
+        var run = Run()
+        time("Tipp auf \(session.deviceName ?? "?")", run)
+        await pump(.adopt(sessionId: session.id), model: model, run: &run)
+        guard let played = run.played, let plan = run.plan, !run.failed else { return nil }
+        return (title, played.since, plan)
     }
 
     /// What this device is called in the notice to the sender (shown in their log).

@@ -48,7 +48,7 @@ suspend fun watchersLoad(app: SwiftlyApplication, id: String): List<Watcher> {
     val s = app.settings
     if (!s.watchersShow || s.watchersPlugin == "0") return emptyList()
     return try {
-        val raw = withContext(Dispatchers.IO) { app.kern.watchers(id).await() }
+        val raw = withContext(Dispatchers.IO) { app.rk.watchers(id).await() }
         when (raw) {
             "" -> emptyList()
             "absent" -> { s.watchersPluginSet(false); emptyList() }

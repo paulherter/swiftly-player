@@ -1,0 +1,19 @@
+[package]
+name = "swiftly-ui"
+description = "Retained UI tree, gestures, scrolling and frame loop of the shared Swiftly Rust UI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swiftly-layout = { path = "../swiftly-layout" }
+swiftly-motion = { path = "../swiftly-motion" }
+swiftly-render = { path = "../swiftly-render" }
+swiftly-text = { path = "../swiftly-text" }
+swiftly-design = { path = "../swiftly-design" }
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[lints]
+workspace = true

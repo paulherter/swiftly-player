@@ -22,6 +22,7 @@ let package = Package(
         .target(
             name: "SwiftlyAether",
             dependencies: [.product(name: "AetherEngine", package: "AetherEngine")]
-        )
+        ),
+        .testTarget(name: "SwiftlyAetherTests", dependencies: ["SwiftlyAether"])
     ]
 )

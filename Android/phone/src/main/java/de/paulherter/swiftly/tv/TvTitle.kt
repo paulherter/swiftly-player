@@ -237,7 +237,7 @@ fun TvCast(p: WithAct, perform: () -> Unit) {
 /**
  * Mirrors tvOS `DetailView`: 510 high, not 1080. Backdrop right, text left, rows below start at
  * the same height as on the home screen. No back arrow (the remote handles Back). One main button
- * with text, then three square ones (restart, watchlist, more); "Watched" is in the panel. Initial
+ * with text, then three square ones (restart, watchlist, more); "Watched", "Watch together" (and "Shuffle" on series) sit in the row, not in the panel. Initial
  * focus is on the main button.
  *
  * The trailer is first in the extras, not a sixth pill: five labelled buttons were too many for
@@ -260,7 +260,7 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
     val playsNow = app.play.value != null
 
     suspend fun newLoad() {
-        try { t = titleRead(withContext(Dispatchers.IO) { app.kern.title(target.id).await() }).also { app.titleCache[target.id] = it } }
+        try { t = titleRead(withContext(Dispatchers.IO) { app.rk.title(target.id).await() }).also { app.titleCache[target.id] = it } }
         catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
     /**
@@ -271,11 +271,11 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
      */
     suspend fun load() {
         coroutineScope {
-            val a = async { try { titleRead(withContext(Dispatchers.IO) { app.kern.title(target.id).await() }) }
+            val a = async { try { titleRead(withContext(Dispatchers.IO) { app.rk.title(target.id).await() }) }
                             catch (e: CancellationException) { throw e } catch (_: Exception) { null } }
-            val b = async { try { JSONObject(withContext(Dispatchers.IO) { app.kern.titleField(target.id).await() }) }
+            val b = async { try { JSONObject(withContext(Dispatchers.IO) { app.rk.titleField(target.id).await() }) }
                             catch (e: CancellationException) { throw e } catch (_: Exception) { null } }
-            val d = async { collectionRailsLoad(app.kern, target.id) }
+            val d = async { collectionRailsLoad(app.rk, target.id) }
             val e = async { watchersLoad(app, target.id) }
             val new = a.await(); val surroundings = b.await(); val rails = d.await(); val seen = e.await()
             // The trailer lives in the extras, not as a sixth pill; see the doc comment above.
@@ -359,7 +359,7 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                             title?.let { t = it.copy(remembered = an) }
                             // Like "Watched": revert and report. Before, the mark silently jumped back.
                             run.launch {
-                                val reason = withContext(Dispatchers.IO) { app.kern.remember(target.id, an).await() }
+                                val reason = withContext(Dispatchers.IO) { app.rk.remember(target.id, an).await() }
                                 if (reason.isNotEmpty()) { title?.let { t = it }; message = errorString(reason) }
                             }
                         }
@@ -369,40 +369,41 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                     val tt = title
                     if (tt != null) {
                         val watchedNow = tt.watched
+                        val row = TvRowActions.forMovie(tt.planPresent, app.gemeinsam.value.mayCreate)
+                        // Watched and Watch together sit in the row; the panel leaves them out.
+                        TvButton(null, if (watchedNow) Glyph.CheckmarkCircleFilled else Glyph.CheckmarkCircle,
+                                description = translated("Gesehen"), active = watchedNow) {
+                            run.launch {
+                                t = tt.copy(watched = !watchedNow)
+                                val reason = withContext(Dispatchers.IO) { app.rk.watched(target.id, !watchedNow).await() }
+                                if (reason.isNotEmpty()) { t = tt.copy(watched = watchedNow); message = errorString(reason) }
+                            }
+                        }
+                        if (row.together) TvButton(null, Glyph.Cluster, description = translated("Gemeinsam schauen")) {
+                            tvCreateOpen(app, target.id, tt.name)
+                        }
                         // `TitleActions.forMovie`: "Watched" first (reachable from the button row, see
                         // `gesehenHandlung`), "Restart"/"Reset" only with progress.
                         val entries = buildList {
-                            add(Choice("gesehen", translated(if (watchedNow) "Als ungesehen merken" else "Als gesehen merken")))
                             if (tt.planPresent && tt.resumeFrom != null) {
                                 add(Choice("vonvorn", translated("Von vorn abspielen")))
                                 add(Choice("zuruecksetzen", translated("Fortschritt zurücksetzen")))
                             }
-                            // Only with a file and permission (`TitleActions.forMovie`, `gemeinsam`).
-                            if (tt.planPresent && app.gemeinsam.value.mayCreate) add(Choice("gemeinsam", translated("Gemeinsam schauen")))
                             add(Choice("metadaten", translated("Metadaten neu einlesen")))
                         }
                         TvMoreButton(entries,
-                            mapOf("gesehen" to Glyph.CheckmarkCircleFilled, "vonvorn" to Glyph.Rewind,
-                                  "zuruecksetzen" to Glyph.ResetCircle, "gemeinsam" to Glyph.Cluster,
+                            mapOf("vonvorn" to Glyph.Rewind, "zuruecksetzen" to Glyph.ResetCircle,
                                   "metadaten" to Glyph.Reload)) { choice ->
-                            if (choice == "gemeinsam") { tvCreateOpen(app, target.id, tt.name); return@TvMoreButton }
                             run.launch {
                                 when (choice) {
-                                    // Mirrors `gesehenHandlung` in `DetailView.swift`: toggle immediately, revert and report on
-                                    // failure.
-                                    "gesehen" -> {
-                                        t = tt.copy(watched = !watchedNow)
-                                        val reason = withContext(Dispatchers.IO) { app.kern.watched(target.id, !watchedNow).await() }
-                                        if (reason.isNotEmpty()) { t = tt.copy(watched = watchedNow); message = errorString(reason) }
-                                    }
                                     "vonvorn" -> de.paulherter.swiftly.playAsking(app, target.id, null, title)
                                     "zuruecksetzen" -> {
-                                        val reason = withContext(Dispatchers.IO) { app.kern.watched(target.id, false).await() }
+                                        val reason = withContext(Dispatchers.IO) { app.rk.watched(target.id, false).await() }
                                         if (reason.isNotEmpty()) message = errorString(reason)
                                         else { message = translated("Der Fortschritt ist zurückgesetzt."); newLoad() }
                                     }
                                     "metadaten" -> {
-                                        val reason = withContext(Dispatchers.IO) { app.kern.metadataRefresh(target.id).await() }
+                                        val reason = withContext(Dispatchers.IO) { app.rk.metadataRefresh(target.id).await() }
                                         message = if (reason.isEmpty()) translated("Der Server liest die Metadaten neu ein.") else errorString(reason)
                                     }
                                 }
@@ -458,7 +459,7 @@ fun TvPerson(app: SwiftlyApplication, target: Destination, open: (Destination) -
     de.paulherter.swiftly.WatchStateChange(app) { attempt++ }
     LaunchedEffect(target.id, attempt) {
         failed = false
-        try { state = personRead(withContext(Dispatchers.IO) { app.kern.person(target.id).await() }).also { app.peopleCache[target.id] = it } }
+        try { state = personRead(withContext(Dispatchers.IO) { app.rk.person(target.id).await() }).also { app.peopleCache[target.id] = it } }
         catch (e: CancellationException) { throw e } catch (_: Exception) { failed = true }
     }
     val s = state
@@ -469,7 +470,7 @@ fun TvPerson(app: SwiftlyApplication, target: Destination, open: (Destination) -
         if (tmdb == null || !seerrPresent) return@LaunchedEffect
         val ownOnes = s?.title.orEmpty().mapTo(HashSet()) { it.title.lowercase() }
         requestable = try {
-            seerrTilesRead(withContext(Dispatchers.IO) { app.kern.seerrFilmography(tmdb.toLong()).await() }).filter { it.title.lowercase() !in ownOnes }
+            seerrTilesRead(withContext(Dispatchers.IO) { app.rk.seerrFilmography(tmdb.toLong()).await() }).filter { it.title.lowercase() !in ownOnes }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
     }
     val seerrReady = requestable != null || !seerrPresent || (s != null && tmdb == null)
@@ -570,7 +571,7 @@ fun TvGenre(app: SwiftlyApplication, target: Destination, open: (Destination) ->
     LaunchedEffect(target.id, attempt) {
         disrupted = false
         try {
-            title = JSONArray(withContext(Dispatchers.IO) { app.kern.genre(target.id).await() }).let { a -> (0 until a.length()).map { gridTileRead(a.getJSONObject(it)) } }
+            title = JSONArray(withContext(Dispatchers.IO) { app.rk.genre(target.id).await() }).let { a -> (0 until a.length()).map { gridTileRead(a.getJSONObject(it)) } }
         } catch (e: CancellationException) { throw e } catch (_: Exception) {
             // What is already shown stays; the failure does not replace an existing list.
             if (title.isNullOrEmpty()) { disrupted = true; title = emptyList() }

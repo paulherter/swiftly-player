@@ -1,6 +1,9 @@
 import Foundation
 import JellyfinKit
 import Observation
+#if canImport(SwiftlyCore)
+import SwiftlyCore
+#endif
 
 /// What the home page shows and how it loads it - for both platforms.
 ///
@@ -45,6 +48,8 @@ final class HomeModel {
     /// None of the three calls got through - so it is the server, not an
     /// empty library.
     private(set) var disrupted = false
+    /// Why it is disrupted, for the page's own wording; `.unreachable` unless the core named another reason.
+    private(set) var trouble = Trouble.unreachable
 
     /// When last fetched. Basis for `Refresh`.
     ///
@@ -53,12 +58,21 @@ final class HomeModel {
     /// current for half a minute though it is unchanged and old.
     private(set) var lastLoaded: Date?
 
+    /// The Rust core's bridge and the tile data it delivered, rail by rail and by title id. Both stay
+    /// empty where the old loading serves the session (`AppModel.coreServes`); see `loadRust`.
+    #if canImport(SwiftlyCore)
+    private var rustFeed: RustHomeFeed?
+    #endif
+    private var rustLooks: [String: [String: RustTileLook]] = [:]
+
     /// **How many runs are in flight.** Only for
     /// ``needsRefresh``: while one runs, nothing is due.
     private var runningRuns = 0
 
     /// Which account state the content belongs to.
     private var forAccount = 0
+    /// The account the chosen library rows were fetched for (core path).
+    private var forAccountLibraries = 0
     /// Counts every load run. **Only the latest writes.** Triggers come from
     /// several places - account switch, setting, return from the player,
     /// pull to refresh - and runs overtake each other: an older one arriving later
@@ -309,6 +323,7 @@ final class HomeModel {
         libraryRails = []
         loaded = false
         disrupted = false
+        trouble = .unreachable
         lastLoaded = nil
         // After an account switch or sign-out this applies again: what comes from
         // storage is refreshed from the server alongside.
@@ -326,4 +341,174 @@ final class HomeModel {
     var needsRefresh: Bool {
         runningRuns == 0 && Refresh.dueReturn(recent: lastLoaded)
     }
+
+    /// Nothing was ever fetched for this page and no run is in flight: the first load is still owed.
+    var firstLoadOwed: Bool { !loaded && runningRuns == 0 }
 }
+
+// MARK: - Rust core (`AppModel.coreServes`)
+//
+// CORE-GAP: `load` above (HomeLoader, HomeStore) still serves tvOS/macOS, whose tile views read `Item`
+// images. It goes when those tiles read `RustTileLook` (Plex is a core account now).
+
+#if canImport(SwiftlyCore)
+extension HomeModel {
+    /// What the tiles of one row show, from the core; `nil` while the old loading feeds the page
+    /// (`on` is the switch, so looks left over from an earlier run never reach real titles).
+    func rustTileLooks(rail: String, on: Bool) -> [String: RustTileLook]? { on ? rustLooks[rail] : nil }
+
+    /// The wide picture for the head of the TV's home page, from the core: the landscape chain at
+    /// `width`, else the page-head chain. `nil` when the core has none (the page then searches on).
+    func rustHeroURL(for id: String, width: Int) -> URL? {
+        rustFeed?.currentModel?.heroImage(of: id, width: width).flatMap { URL(string: $0.address) }
+    }
+
+    /// The load of the home page where the core serves the session (`AppModel.coreServes`): `SwiftlyCore`'s
+    /// `HomeModel` stores and shows the preview, fetches, and decides what a row holds. This only moves
+    /// its rails into the arrays the view reads and keeps the follow-ups that other screens rely on
+    /// (libraries, collections, series prefetch). There is no second path: a core error shows as the
+    /// server being out of reach.
+    func loadRust(_ model: AppModel) async {
+        guard let session = model.session, let account = AccountRef(session) else { return }
+        let itAccount = model.accountSwitch
+        runningRuns += 1
+        defer { runningRuns -= 1 }
+        run += 1
+        let myOwn = run
+        func applies() -> Bool { myOwn == run && itAccount == model.accountSwitch }
+        if itAccount != forAccount, loaded || !allEmpty { wipe() }
+        // The tabs for Movies and Series need the libraries; `load` is what fetches them.
+        if model.views.isEmpty { await model.loadViews() }
+        guard applies() else { return }
+        let feed = rustFeed ?? RustHomeFeed()
+        rustFeed = feed
+        let prefs = HomePrefs(
+            disconnected: model.newAccessDisconnected, genreChips: model.genreChips,
+            startGenres: model.startGenres)
+        guard let home = try? feed.model(for: account, prefs: prefs) else {
+            disrupted = true
+            loaded = true
+            return
+        }
+        // The library and collection rows and their place among the fixed rows come from the core.
+        home.setStartLibraries(model.startLibraries.map {
+            HomeLibraryChoice(id: $0.id, name: $0.name, collection: $0.collection)
+        })
+        home.setRowOrder(model.startOrder.isEmpty ? [] : model.rowOrder)
+        await home.loadSettled {
+            if applies() { adoptRust(home, itAccount) }
+        }
+        guard applies(), !Task.isCancelled else { return }
+        adoptRust(home, itAccount)
+        if home.status.status == .ready {
+            lastLoaded = Date()
+            loadedServer = true
+            // Collections and shares of mixed libraries up front, as `load` does.
+            Task { await model.offeringLoad() }
+            #if os(iOS) && (DEBUG || SWIFTLY_SHADOW)
+            // The old Swift loader runs beside it, unseen, and the log says where the two differ.
+            let shadowRails: [(rail: String, items: [Item])] = [
+                ("continueWatching", continueWatching), ("nextEpisode", nextEpisode), ("recent", recent),
+                ("newMovies", newMovies), ("newSeries", newSeries),
+            ]
+            Task { await ShadowHome.run(model, rust: shadowRails) }
+            #endif
+            #if !os(tvOS)
+            SeriesCache.shared.prefetch(
+                continueWatching + nextEpisode + recent + newSeries, with: model)
+            #else
+            await enrichForHeader(model, home: home, applies: applies)
+            #endif
+        }
+    }
+
+    #if os(tvOS)
+    /// The header zone of the TV's home page (description, runtime, stars, age rating, remaining time of the
+    /// focused title) reads more than a lean tile knows. One request of the core for the ids of every row, once
+    /// the rows are up (low priority), puts those single facts on the stand-ins; looks and order stay the core's.
+    private func enrichForHeader(_ model: AppModel, home: SwiftlyCore.HomeModel, applies: () -> Bool) async {
+        let rows = [continueWatching, nextEpisode, recent, newMovies, newSeries] + genreRails.map(\.items)
+        let ids = Array(Set(rows.joined().map(\.id)))
+        guard !ids.isEmpty else { return }
+        let answer = await home.tileDetails(ids: ids)
+        guard !answer.isEmpty, applies() else { return }
+        let full = Dictionary(answer.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func upgraded(_ list: [Item]) -> [Item] { list.map { $0.withHeaderFacts(full[$0.id]) } }
+        continueWatching = upgraded(continueWatching)
+        nextEpisode = upgraded(nextEpisode)
+        recent = upgraded(recent)
+        newMovies = upgraded(newMovies)
+        newSeries = upgraded(newSeries)
+        genreRails = genreRails.map { GenreRail(name: $0.name, items: upgraded($0.items)) }
+        // Where to continue is in these rows; the series page's main button names it at once.
+        SeriesCache.shared.nextRemember(from: nextEpisode)
+        SeriesCache.shared.nextRemember(from: continueWatching)
+        for rail in [continueWatching, nextEpisode, recent] where !rail.isEmpty {
+            Task(priority: .utility) {
+                await SeriesCache.shared.prefetchBundle(rail, with: model)
+            }
+        }
+    }
+    #endif
+
+    /// Moves the core's rails and status into the arrays the view reads.
+    private func adoptRust(_ home: SwiftlyCore.HomeModel, _ itAccount: Int) {
+        let status = home.status
+        let rails = RustHomeFeed.rails(of: home)
+        // Nothing to show yet: the placeholders stay.
+        if status.status == .loading, rails.isEmpty { return }
+        var looks: [String: [String: RustTileLook]] = [:]
+        var continueWatching: [Item] = []
+        var nextEpisode: [Item] = []
+        var recent: [Item] = []
+        var newMovies: [Item] = []
+        var newSeries: [Item] = []
+        var genreRails: [GenreRail] = []
+        var libraries: [Home.LibraryRail] = []
+        for (rail, tiles) in rails {
+            let items = tiles.map(Item.init(rust:))
+            if let library = HomeRowOrder.library(of: rail.id) {
+                libraries.append(Home.LibraryRail(id: library, name: rail.title, items: items))
+                looks[rail.id] = Dictionary(
+                    tiles.map { ($0.id, RustTileLook($0)) }, uniquingKeysWith: { first, _ in first })
+                continue
+            }
+            looks[rail.id] = Dictionary(
+                tiles.map { ($0.id, RustTileLook($0)) }, uniquingKeysWith: { first, _ in first })
+            switch rail.kind {
+            case .continueWatching: continueWatching = items
+            case .nextEpisode: nextEpisode = items
+            case .newArrivals: recent = items
+            case .newMovies: newMovies = items
+            case .newSeries: newSeries = items
+            case .genre: genreRails.append(GenreRail(name: rail.title, items: items))
+            }
+        }
+        rustLooks = looks
+        self.continueWatching = continueWatching
+        self.nextEpisode = nextEpisode
+        self.recent = recent
+        self.newMovies = newMovies
+        self.newSeries = newSeries
+        self.genreRails = genreRails
+        libraryRails = libraries
+        forAccountLibraries = itAccount
+        forAccount = itAccount
+        disrupted = status.status == .offline
+        trouble = disrupted ? Trouble(home.loadState) : .unreachable
+        loaded = true
+    }
+}
+#endif
+
+#if DEBUG
+extension HomeModel {
+    /// Snapshot tests only (`Tests/SwiftUIParity`): fills the three rails without a server.
+    func seedForSnapshot(continueWatching: [Item], nextEpisode: [Item], recent: [Item]) {
+        self.continueWatching = continueWatching
+        self.nextEpisode = nextEpisode
+        self.recent = recent
+        loaded = true
+    }
+}
+#endif

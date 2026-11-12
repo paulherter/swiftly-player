@@ -200,9 +200,10 @@ extension App {
         if runningTitle != nil { offeringLayer.controls(opened: controlsPresent, through: .beside) }
         var countdown: Double?
         if case let .card(share) = offeringLayer.display { countdown = share }
-        offeringClock.set(share: countdown,
+        // The card's countdown, or the skip button's with automatic skipping.
+        offeringClock.set(share: countdown ?? offeringLayer.skipShare,
                             running: playState.running && playerLoadingScreen == nil && !atSlider,
-                            length: offeringLayer.countdownLength)
+                            length: countdown != nil ? offeringLayer.countdownLength : OfferingLayer.buttonDuration)
         // In the footer only the space: invisible and not clickable.
         playerNext?.setDown(currentOffering, visible: true)
         if let footer = playerNext?.button {
@@ -231,7 +232,8 @@ extension App {
             }
         }
         let before = gtk_widget_get_opacity(layer.button) > 0.5 && gtk_widget_get_visible(layer.button) != 0
-        layer.setDown(currentOffering, visible: showItem, fillContent: nil, fade: true)
+        layer.setDown(currentOffering, visible: showItem,
+                      fillContent: offeringLayer.skipShare != nil ? offeringClock : nil, fade: true)
         if before != showItem {
             AppLog.writeOut("[Angebot] Einblendung \(showItem ? "an" : "aus"): \(currentOffering.label)\(countdown != nil ? " mit Countdown" : "") bei \(Int(playState.position)) s, Steuerung \(controlsPresent ? "offen" : "zu")")
             fflush(nil)

@@ -568,11 +568,11 @@ extension View {
 extension View {
     /// **The Jellyfin servers on the local network, while the page is open.**
     ///
-    /// The search itself is in the package (``ServerDiscovery``); the page only says
+    /// The search itself is in the core (`LegacyLogin.serverSearch`); the page only says
     /// how long it runs. `.task` ends it when the page goes away.
     func serverSearch(_ found: Binding<[FoundServer]>) -> some View {
         task {
-            for await list in ServerDiscovery.watch() { found.wrappedValue = list }
+            for await list in AccountsHost.watchServers() { found.wrappedValue = list }
         }
     }
 }

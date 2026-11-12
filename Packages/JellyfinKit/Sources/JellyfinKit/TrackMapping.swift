@@ -139,22 +139,31 @@ public struct SubtitleFile: Sendable, Equatable {
     /// the server's SRT under its own index (`.../Subtitles/{index}/0/Stream.srt`), ASS and
     /// SSA included. Without (Plex) only external files with a delivery address are offered,
     /// and not ASS. Image tracks (PGS, VobSub, DVB) are never in the list.
+    /// `keepFileStyle`: the engine draws the file's own style (Aether), so styled files are handed over as they are.
     public static func forAVPlayer(streams: [MediaStream], itemID: String, source: String?,
                                    server: URL, key: String?, keyName: String = "ApiKey",
-                                   serverExtracts: Bool) -> [SubtitleFile] {
+                                   serverExtracts: Bool, keepFileStyle: Bool = false) -> [SubtitleFile] {
         let external = from(streams: streams, server: server, key: key, keyName: keyName)
         var files: [SubtitleFile] = []
         for feed in streams where feed.type == "Subtitle" {
             guard let index = feed.index, textSuffix(feed.codec) != nil else { continue }
+            let styled = ["ass", "ssa"].contains(feed.codec?.lowercased() ?? "")
+            let file = external.first(where: { $0.index == index })
             if serverExtracts, let source, !source.isEmpty {
+                // An external styled file stays itself while the file's style is kept: the server's SRT of it has no
+                // colours, bold or italic (it was always asked for as SRT, so the file's look never showed).
+                if keepFileStyle, styled, let file {
+                    files.append(file)
+                    continue
+                }
+                let suffix = textSuffix(feed.codec, keepFileStyle: keepFileStyle) ?? "srt"
                 var parts = URLComponents(
-                    url: server.appendingPathComponent("Videos/\(itemID)/\(source)/Subtitles/\(index)/0/Stream.srt"),
+                    url: server.appendingPathComponent("Videos/\(itemID)/\(source)/Subtitles/\(index)/0/Stream.\(suffix)"),
                     resolvingAgainstBaseURL: false)
                 if let key { parts?.queryItems = [URLQueryItem(name: keyName, value: key)] }
                 if let address = parts?.url { files.append(SubtitleFile(index: index, address: address, attribute: nil)) }
-            } else if let file = external.first(where: { $0.index == index }),
-                      !["ass", "ssa"].contains(file.address.pathExtension.lowercased()),
-                      !["ass", "ssa"].contains(feed.codec?.lowercased() ?? "") {
+            } else if let file,
+                      keepFileStyle || (!["ass", "ssa"].contains(file.address.pathExtension.lowercased()) && !styled) {
                 files.append(file)
             }
         }

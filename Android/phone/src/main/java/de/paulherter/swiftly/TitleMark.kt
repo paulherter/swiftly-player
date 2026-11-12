@@ -1,5 +1,8 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.rustcore.titleMarkSize
+import de.paulherter.swiftly.rustcore.titleMarkDark
+import de.paulherter.swiftly.rustcore.titleMarkMeasure
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.animation.core.animateFloatAsState
@@ -32,7 +35,6 @@ import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.toBitmap
 import de.paulherter.swiftly.shared.Theme
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -102,10 +104,10 @@ object TitleLogoCache {
                     rgba[i * 4 + 2] = ((p and 0xFF) * a / 255).toByte()
                     rgba[i * 4 + 3] = a.toByte()
                 }
-                val m = Kern.titleMarkMeasure(rgba, b.toLong(), h.toLong())
+                val m = titleMarkMeasure(rgba, b.toLong(), h.toLong())
                 if (m.size < 6) return@runCatching null
                 val toward = Bitmap.createBitmap(raw, m[0].toInt(), m[1].toInt(), m[2].toInt(), m[3].toInt())
-                TitleLogo(toward.asImageBitmap(), m[4], Kern.titleMarkDark(m[5]))
+                TitleLogo(toward.asImageBitmap(), m[4], titleMarkDark(m[5]))
             }.getOrNull()
         }
     }
@@ -136,7 +138,7 @@ fun TitleMark(title: String, logo: String?, row: Dp, modifier: Modifier = Modifi
         val maxWidth = maxWidth * 0.7f
         Box(Modifier.alpha(1f - visible).semantics { contentDescription = title; heading() }) { text() }
         if (m != null) {
-            val g = Kern.titleMarkSize(m.pagesRatio, m.density, row.value.toDouble(), maxWidth.value.toDouble())
+            val g = titleMarkSize(m.pagesRatio, m.density, row.value.toDouble(), maxWidth.value.toDouble())
             Image(m.image, contentDescription = title, modifier = Modifier.size(g[0].dp, g[1].dp).alpha(visible),
                   colorFilter = if (m.dark) ColorFilter.tint(Theme.font) else null)
         }

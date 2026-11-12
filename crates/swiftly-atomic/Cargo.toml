@@ -1,0 +1,14 @@
+[package]
+name = "swiftly-atomic"
+description = "Crash-safe file writes: temp file in the same folder, fsync, rename, fsync of the folder"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[lints]
+workspace = true

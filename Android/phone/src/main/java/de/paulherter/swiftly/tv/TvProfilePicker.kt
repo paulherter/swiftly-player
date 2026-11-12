@@ -1,6 +1,7 @@
 package de.paulherter.swiftly.tv
 
 import androidx.activity.compose.BackHandler
+import de.paulherter.swiftly.KernRules
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -41,7 +42,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.AccountSwitchTransition
 import de.paulherter.swiftly.SwiftlyApplication
-import de.paulherter.swiftly.core.Kern
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.motionReduced
 import de.paulherter.swiftly.shared.translated
@@ -66,7 +66,7 @@ object ProfilePickerRule {
     /** All accounts of all servers, with the server host. */
     fun accounts(app: SwiftlyApplication): List<Entry> {
         val bundle = app.store.accounts ?: return emptyList()
-        val cards = runCatching { JSONArray(Kern.bundleOverview(bundle)) }.getOrNull() ?: return emptyList()
+        val cards = runCatching { JSONArray(KernRules.bundleOverview(bundle)) }.getOrNull() ?: return emptyList()
         return (0 until cards.length()).flatMap { i ->
             val card = cards.getJSONObject(i)
             val list = card.optJSONArray("konten") ?: JSONArray()

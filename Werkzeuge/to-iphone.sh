@@ -16,6 +16,7 @@ TEAM="${1:-}"
 echo "Team: $TEAM"
 
 # **Two identifiers, and they are not the same.** `devicectl` knows each
+DD="$HOME/Library/Caches/swiftly-dd/$(basename "$(pwd)")-ios"  # persistent per working tree: warm builds
 # device under its own `identifier` UUID; `xcodebuild -destination` wants the
 # hardware UDID (`00008130-...`). Passing the first on gives "Unable to find
 # a destination matching the provided destination specifier".
@@ -45,13 +46,13 @@ echo "Geraet: ${NAME:-iPhone} ($UDID)"
 
 # CONFIG=Release for anything about speed: the unoptimised Debug build is far too slow for the
 # Aether engine (Dolby Vision rewrite, TrueHD decode).
-CONFIG="${CONFIG:-Debug}"
+CONFIG="${CONFIG:-Release}"
 xcodebuild -project Swiftly.xcodeproj -scheme Swiftly-iOS -configuration "$CONFIG" \
-  -destination "id=$UDID" -derivedDataPath build/DD \
+  -destination "id=$UDID" -derivedDataPath "$DD" \
   DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic \
-  OTHER_SWIFT_FLAGS='$(inherited) -DDEVLOG' build
+  OTHER_SWIFT_FLAGS='$(inherited) -DDEVLOG -DSWIFTLY_SHADOW' build
 
-APP=$(find build/DD/Build/Products/$CONFIG-iphoneos -name "Swiftly-iOS.app" -maxdepth 1 | head -1)
+APP=$(find "$DD"/Build/Products/$CONFIG-iphoneos -name "Swiftly-iOS.app" -maxdepth 1 | head -1)
 echo "Installiere $APP"
 xcrun devicectl device install app --device "$ID" "$APP"
 echo "Fertig. App auf dem iPhone starten."

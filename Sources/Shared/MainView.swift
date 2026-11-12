@@ -362,6 +362,20 @@ struct MainView: View {
             takeoverRequest = wish
             await OfflineRun.flow(model) { takeoverRequest = nil }
         }
+        // Close like the player's own button (`PlayerScreen.close`): through the frame on iPhone. Setting the
+        // binding to nil does not reach `PlayerCover` while the frame covers this view (SwiftUI pauses updates
+        // of a view that is not in a window), so a second title never opened.
+        .task {
+            LiveRun.start(model, open: { takeoverRequest = $0 },
+                          close: { if let frame = PlayerFrame.active { frame.close() } else { takeoverRequest = nil } },
+                          look: { show in
+                              // The page the way a user gets there: Settings > Playback > Subtitle look, pushed on the Home stack.
+                              let i = Region.start.rawValue
+                              if show {
+                                  paths[i].append(SettingsRoute()); paths[i].append(PlaybackRoute()); paths[i].append(SubtitleLookRoute())
+                              } else { paths[i] = NavigationPath() }
+                          })
+        }
         #endif
         .onDisappear { takeover.finish() }
         .playerCover(item: $takeoverRequest) { wish in
@@ -857,7 +871,7 @@ struct LibraryView: View {
                         .padding(.top, 20)
                 }
             }
-            // **iPhone: Apple's own scroll indicator instead of a strip** (Paul 2026-11-05).
+            // **iPhone: Apple's own scroll indicator instead of a strip**.
             // It can be grabbed and dragged, sticks to the finger and is as smooth as the
             // scroll itself; three tries at an own grip trembled against the jump logic.
             // Only for long lists: on a short one iOS draws a huge bar that cannot be grabbed.
@@ -953,7 +967,7 @@ struct LibraryView: View {
                 // The same text as on the home page, including the server address.
                 // Before it said "Nothing here yet": the same cause with two diagnoses,
                 // and the wrong one sends you to the server instead of the network.
-                EmptyState.serverDived(model, retry: { newLoad() })
+                EmptyState.serverDived(model, trouble: state.trouble, retry: { newLoad() })
                     .padding(.bottom, Theme.stripHeight)
             } else if state.items.isEmpty, !state.loads {
                 // **`!loads` is not decoration.** It was here while a spinner hung next
@@ -1183,7 +1197,7 @@ struct LibraryView: View {
     private func updateTopLetter() {
         guard let alphabet = shownAlphabet,
               let item = state.items.first(where: { onScreen.ids.contains($0.id) }) else { return }
-        let letter = alphabet.key(of: item)
+        let letter = state.key(of: item, in: alphabet)
         if letter != topLetter { topLetter = letter }
     }
 

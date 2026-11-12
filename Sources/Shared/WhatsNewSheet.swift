@@ -1,5 +1,6 @@
 import JellyfinKit
 import SwiftUI
+import struct SwiftlyCore.WhatsNewLine
 
 /// **"What's new": once after an update, filled from `whatsnew/<version>.json`.**
 ///
@@ -12,12 +13,11 @@ import SwiftUI
 /// Lives in the gift sheet (`GiftFlow`), so it never meets another sheet from below.
 /// Included in the iPhone/iPad and Mac targets.
 struct WhatsNewSheet: View {
-    let entry: WhatsNewEntry
+    let entry: WhatsNewPage
     /// The gift of the entry can still be picked up (in its window, not owned).
     let giftAvailable: Bool
     let icon: Namespace.ID
 
-    private var language: String { Bundle.main.preferredLocalizations.first ?? "en" }
     private var gift: Look? { giftAvailable ? entry.giftLook : nil }
 
     var body: some View {
@@ -26,7 +26,7 @@ struct WhatsNewSheet: View {
                 .giftFont(13, .semibold)
                 .foregroundStyle(Theme.fontVeryQuiet)
                 .padding(.top, 34)
-            Text(verbatim: entry.title.localized(language))
+            Text(verbatim: entry.title)
                 .giftFont(28, .bold)
                 .foregroundStyle(Theme.font)
                 .fixedSize(horizontal: false, vertical: true)
@@ -34,8 +34,8 @@ struct WhatsNewSheet: View {
                 .padding(.top, 6)
 
             VStack(alignment: .leading, spacing: 20) {
-                ForEach(entry.items.indices, id: \.self) { index in
-                    row(entry.items[index])
+                ForEach(entry.lines.indices, id: \.self) { index in
+                    row(entry.lines[index])
                 }
             }
             .padding(.top, 26)
@@ -78,7 +78,7 @@ struct WhatsNewSheet: View {
     /// One entry: the symbol in a fixed 28 pt square, centered on the text block beside it
     /// (the line when there is one, both lines when there are two). `firstTextBaseline`
     /// put the symbol's baseline on the title's and so the symbol above the middle.
-    private func row(_ item: WhatsNewEntry.Item) -> some View {
+    private func row(_ item: WhatsNewLine) -> some View {
         HStack(alignment: .center, spacing: 14) {
             Image(icon: item.symbol, size: 19)
                 .font(.app(size: 19, weight: .regular))
@@ -87,11 +87,11 @@ struct WhatsNewSheet: View {
                 .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(verbatim: item.title.localized(language))
+                Text(verbatim: item.title)
                     .giftFont(15, .semibold)
                     .foregroundStyle(Theme.font)
                 if let detail = item.detail {
-                    Text(verbatim: detail.localized(language))
+                    Text(verbatim: detail)
                         .giftFont(13)
                         .foregroundStyle(Theme.fontVeryQuiet)
                 }
@@ -103,7 +103,7 @@ struct WhatsNewSheet: View {
 
     private var primaryTitle: LocalizedStringKey {
         // Without the gift (window over, or picked up already) "Grab it" has nothing to do.
-        switch gift == nil && entry.primary.label == "grab" ? "continue" : entry.primary.label {
+        switch gift == nil && entry.primaryLabel == "grab" ? "continue" : entry.primaryLabel {
         case "grab": "Hol ihn dir"
         case "try": "Ausprobieren"
         case "tryLook": "Look ausprobieren"
@@ -112,7 +112,7 @@ struct WhatsNewSheet: View {
     }
 
     private func primary() {
-        let action = entry.primary.action
+        let action = entry.primaryAction
         if action.hasPrefix("applyLook:"), let gift {
             GiftFlow.shared.grab(gift)
         } else if action == "open:looks" {

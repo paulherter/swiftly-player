@@ -52,7 +52,6 @@ import de.paulherter.swiftly.shared.InputField
 import de.paulherter.swiftly.shared.PrimaryButton
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -130,7 +129,7 @@ fun ProfileCharacter(name: String, image: String?, size: Dp, highlighted: Boolea
  */
 @Composable
 fun QuickConnectLogin(app: SwiftlyApplication, newServer: Boolean, back: () -> Unit, signedIn: (String) -> Unit) {
-    val deadline = remember { JSONArray(Kern.quickConnectDeadline()) }
+    val deadline = remember { JSONArray(KernRules.quickConnectDeadline()) }
     val seconds = deadline.getInt(0)
     var code by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -144,25 +143,25 @@ fun QuickConnectLogin(app: SwiftlyApplication, newServer: Boolean, back: () -> U
         error = null
         try {
             android.util.Log.i("Swiftly", "QuickConnect: start (newServer=$newServer)")
-            code = withContext(Dispatchers.IO) { app.kern.quickConnectStart(newServer).await() }
+            code = withContext(Dispatchers.IO) { app.rk.quickConnectStart(newServer).await() }
             android.util.Log.i("Swiftly", "QuickConnect: code received")
             // **The waiting lives in the package** (`QuickConnectWait`, via the kernel): deadline on the
             // clock, ask at once after returning from the browser, a network error does not end the wait.
             // Here only show the remaining time and accept the result.
             val c = code.orEmpty()
             rest = seconds
-            val display = launch { while (true) { delay(1000); rest = app.kern.quickConnectRest().toInt() } }
+            val display = launch { while (true) { delay(1000); rest = app.rk.quickConnectRest().toInt() } }
             try {
-                val result = withContext(Dispatchers.IO) { app.kern.quickConnectWait(newServer).await() }
+                val result = withContext(Dispatchers.IO) { app.rk.quickConnectWait(newServer).await() }
                 display.cancel()
                 when {
-                    result == "freigegeben" -> signedIn(withContext(Dispatchers.IO) { app.kern.quickConnectSignIn(newServer).await() })
+                    result == "freigegeben" -> signedIn(withContext(Dispatchers.IO) { app.rk.quickConnectSignIn(newServer).await() })
                     result.isNotEmpty() -> { rest = 0; error = result }
                 }
             } finally {
                 display.cancel()
                 // Page closed or new code: stop polling, otherwise a late authorization signs in.
-                app.kern.quickConnectWaitEnd(c)
+                app.rk.quickConnectWaitEnd(c)
             }
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
             android.util.Log.w("Swiftly", "QuickConnect: failed (newServer=$newServer, ${e.javaClass.simpleName}): ${e.message}")
@@ -251,17 +250,17 @@ fun ServerOnboardingPage(app: SwiftlyApplication, preset: String?, kindPicked: B
     val run = rememberCoroutineScope()
     // Without the servers already in the bundle: another account there is "Konto hinzufügen".
     val found = rememberFoundServers(app, remember {
-        JSONArray(app.store.accounts?.let { Kern.bundleServers(it) } ?: "[]").let { a -> (0 until a.length()).map(a::getString) }
+        JSONArray(app.store.accounts?.let { KernRules.bundleServers(it) } ?: "[]").let { a -> (0 until a.length()).map(a::getString) }
     })
 
-    fun cancel() { app.kern.onboardingCancel(); back() }
-    fun record(session: String) { app.kern.onboardingCancel(); app.sessionRecord(session) }
+    fun cancel() { app.rk.onboardingCancel(); back() }
+    fun record(session: String) { app.rk.onboardingCancel(); app.sessionRecord(session) }
     fun check() {
         if (address.isBlank() || examine) return
         examine = true; error = null
         run.launch {
             try {
-                val o = JSONObject(withContext(Dispatchers.IO) { app.kern.onboardingConnect(address, headers.asJson()).await() })
+                val o = JSONObject(withContext(Dispatchers.IO) { app.rk.onboardingConnect(address, headers.asJson()).await() })
                 // Store only now: an address where nothing answers leaves nothing behind.
                 if (headers.isNotEmpty()) app.storeOwnHeaders()
                 server = o.getString("name") to o.getString("version")
@@ -273,7 +272,7 @@ fun ServerOnboardingPage(app: SwiftlyApplication, preset: String?, kindPicked: B
         if (user.isBlank() || running) return
         running = true; error = null
         run.launch {
-            try { record(withContext(Dispatchers.IO) { app.kern.onboardingSignIn(user, password).await() }) }
+            try { record(withContext(Dispatchers.IO) { app.rk.onboardingSignIn(user, password).await() }) }
             catch (e: CancellationException) { throw e } catch (e: Exception) { error = errorString(app, e) }
             running = false
         }
@@ -283,7 +282,7 @@ fun ServerOnboardingPage(app: SwiftlyApplication, preset: String?, kindPicked: B
     // **Before the early return below**: declared after it, switching to the Quick Connect page removed
     // this effect from the composition, `onDispose` ran and dropped the client being added, so
     // `quickConnectStart(newServer = true)` found none ("Nicht angemeldet.").
-    DisposableEffect(Unit) { onDispose { app.kern.onboardingCancel() } }
+    DisposableEffect(Unit) { onDispose { app.rk.onboardingCancel() } }
 
     if (quick) {
         QuickConnectLogin(app, newServer = true, back = { quick = false }) { record(it) }
@@ -365,7 +364,7 @@ private data class ServerCard(val address: String, val host: String, val active:
 fun AccountCards(app: SwiftlyApplication, server: Pair<String, String>?, open: (Destination) -> Unit) {
     val bundle = app.store.accounts.orEmpty()
     val cards = remember(bundle) {
-        JSONArray(Kern.bundleOverview(bundle)).let { a ->
+        JSONArray(KernRules.bundleOverview(bundle)).let { a ->
             (0 until a.length()).map { i ->
                 a.getJSONObject(i).let { o ->
                     ServerCard(o.getString("adresse"), o.getString("host"), o.getBoolean("aktiv"), ServerKind.from(o.optString("art")),

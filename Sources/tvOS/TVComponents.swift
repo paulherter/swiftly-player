@@ -600,7 +600,7 @@ struct HeaderBar: View {
     /// What is playing on other devices.
     var takeover: [RemoteSession] = []
     /// Open groups that can be joined (same badge, with a counter).
-    var groups: [SyncPlayGroup] = []
+    var groups: [SharedGroup] = []
     var badgePressed: () -> Void
     /// Increments when a panel of the badge closes, then focus belongs to it again (a panel
     /// is not a change of place).

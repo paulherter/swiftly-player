@@ -1,0 +1,20 @@
+# cargo-about config: generates LICENSES/rust-crates.txt (third-party Rust crates that ship in the apps).
+# Run: cargo about generate -c about.toml about.hbs -o LICENSES/rust-crates.txt
+# Policy lives in deny.toml; the accepted list here must match its allow list.
+accepted = [
+    "MIT", "MIT-0", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause", "ISC",
+    "MPL-2.0", "Unicode-3.0", "Zlib", "CC0-1.0", "BSL-1.0", "0BSD", "OpenSSL", "CDLA-Permissive-2.0", "IJG", "Unlicense",
+]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+private = { ignore = true }
+workarounds = ["ring"]
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-apple-ios",
+    "aarch64-apple-tvos",
+    "aarch64-linux-android",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+]

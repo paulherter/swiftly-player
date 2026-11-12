@@ -28,7 +28,11 @@ android {
     buildTypes {
         getByName("release") {
             if (signingPassword != null) signingConfig = signingConfigs.getByName("play")
-            isMinifyEnabled = false
+            // R8 on (shrinks code and resources); `-PnoR8=true` turns it off again for a quick comparison or a bisect.
+            val r8 = findProperty("noR8") != "true"
+            isMinifyEnabled = r8
+            isShrinkResources = r8
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
     // **Two ways to say thanks, two builds** (`Notizen/Supporter/PLAN-APPS.md`), same applicationId,
@@ -49,7 +53,7 @@ android {
         applicationId = "de.paulherter.swiftly"
         minSdk = 28
         targetSdk = 36
-        versionCode = 41
+        versionCode = 42
         versionName = "1.1.0"
         // **Switch-to-Play-Store build for the current beta testers** (`-PbetaRedirect=true`, never set
         // permanently): the app shows only a notice page (`BetaRedirectPage`). Off by default.
@@ -79,11 +83,11 @@ android {
 }
 
 dependencies {
-    implementation(project(":core"))
+    // The Rust core and its Kotlin hosts; the Swift core above stays until the last screen group has moved.
+    implementation(project(":rustcore"))
     implementation(project(":shared"))
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
-    implementation(libs.swiftkit.core)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -93,6 +97,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
     implementation(project(":ffmpeg"))
     implementation(libs.lottie.compose)
@@ -118,6 +123,15 @@ val copyStartAnimation by tasks.registering(Copy::class) {
 }
 android.sourceSets.getByName("main").assets.srcDir(file("build/generated/startanimation"))
 tasks.named("preBuild") { dependsOn(copyStartAnimation) }
+
+// **The subtitle typeface lives once in the repo** (`Sources/Shared/Assets/Inter-SemiBold.ttf`, the file the Apple overlay
+// draws with) and is shipped as an asset under `fonts/`; `TextCaptionView` reads it from there, so the letters are the same.
+val copySubtitleFont by tasks.registering(Copy::class) {
+    from(rootProject.file("../Sources/Shared/Assets/Inter-SemiBold.ttf"))
+    into(layout.buildDirectory.dir("generated/subtitlefont/fonts"))
+}
+android.sourceSets.getByName("main").assets.srcDir(file("build/generated/subtitlefont"))
+tasks.named("preBuild") { dependsOn(copySubtitleFont) }
 
 // **The licence texts live once in the repo** (`LICENSES/`) and are shipped as assets under
 // `licenses/` at build time; the "Open-source licences" page reads them from there.

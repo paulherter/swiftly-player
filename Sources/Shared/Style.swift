@@ -1,4 +1,5 @@
 import JellyfinKit
+import func SwiftlyCore.moodDecay
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
@@ -1169,9 +1170,19 @@ struct CardView<ContentBody: View>: View {
 /// heading was quieter than what it heads.
 struct GroupsTitle: View {
     let text: LocalizedStringKey
+    /// The title as the core words it (already in the user's language); wins over `text`.
+    var verbatim: String? = nil
+
+    init(text: LocalizedStringKey) { self.text = text }
+
+    init(verbatim: String) {
+        self.text = ""
+        self.verbatim = verbatim
+    }
+
     var body: some View {
         // Same size and color as a section title on every other page: same role, same look.
-        Text(text)
+        Group { if let verbatim { Text(verbatim: verbatim) } else { Text(text) } }
             .font(Theme.section)
             .tracking(Theme.lockSection)
             .foregroundStyle(Theme.font)
@@ -1556,10 +1567,23 @@ struct FileRow: View {
     /// Video, audio, subtitles: fixed labels.
     let designation: LocalizedStringKey
     let value: String
+    /// The label as the core words it (already in the user's language); wins over `designation`.
+    var label: String? = nil
+
+    init(designation: LocalizedStringKey, value: String) {
+        self.designation = designation
+        self.value = value
+    }
+
+    init(verbatim label: String, value: String) {
+        self.designation = ""
+        self.label = label
+        self.value = value
+    }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 14) {
-            Text(designation)
+            Group { if let label { Text(verbatim: label) } else { Text(designation) } }
                 .foregroundStyle(Theme.fontQuiet)
             Spacer(minLength: 0)
             Text(value)
@@ -2211,7 +2235,7 @@ private struct SectionButton: View {
 
     @ViewBuilder private var content: some View {
         let kern = VStack(spacing: iconOnly ? 4 : 3) {
-            // Bottom bar: our **filled** Phosphor symbols (Paul 2026-11-05); search keeps
+            // Bottom bar: our **filled** Phosphor symbols; search keeps
             // the outline glass, as Apple's bar does.
             Group {
                 if !iconOnly, let filled = section.tabAsset { Image(filled) }
@@ -3103,19 +3127,19 @@ struct HeaderBlur: View {
     var gift: CGFloat = 17
 
     var body: some View {
-        // **Dark on top of the blur, not the blur alone** (Paul 2026-11-05): every system
+        // **Dark on top of the blur, not the blur alone** : every system
         // material carries a light layer, so the blur on its own brightened the header to
         // light grey. Our ground tone over it, almost opaque at the top and fading out,
         // makes the edge darker and glassy instead.
         //
-        // **The dark tone leads, the blur follows** (Paul 2026-11-05: "the first millimetre
+        // **The dark tone leads, the blur follows** ("the first millimetre
         // flashes bright"). With both on the same ramp, the blur's light layer showed at
         // once while the tone did not cover yet. Now the tone is full after a third of the
         // ramp and the blur grows quadratically, so the edge can never be brighter than
         // before scrolling.
         ZStack {
             Blur(fullUntil: 0.3, strength: strength * strength)
-            // Darker at the top (Paul 2026-11-05: "noch ein Stück zu hell").
+            // Darker at the top ("noch ein Stück zu hell").
             LinearGradient(stops: [.init(color: Theme.reason.opacity(0.97), location: 0),
                                    .init(color: Theme.reason.opacity(0.78), location: 0.45),
                                    .init(color: Theme.reason.opacity(0), location: 1)],
@@ -3317,6 +3341,8 @@ struct ProofRow: View {
     var directPlayFlag: Bool = false
     var hint: String?
     var rating: Double?
+    /// The stars as the core words them ("8,1"); wins over `rating`.
+    var ratingText: String? = nil
     var sharing: String?
     /// **A free proof instead of the playback plan.**
     ///
@@ -3350,7 +3376,9 @@ struct ProofRow: View {
 
             // In the same shell as Direct Play: before, the rating was the only item in the
             // row standing bare.
-            if let rating {
+            if let ratingText {
+                mark("star.fill", Text(verbatim: ratingText), color: Theme.fontQuiet, weight: .semibold)
+            } else if let rating {
                 mark("star.fill",
                       Text(verbatim: String(format: "%.1f", rating).replacingOccurrences(of: ".", with: ",")),
                       color: Theme.fontQuiet, weight: .semibold)
@@ -3465,7 +3493,7 @@ struct DetailHeader: View {
         .padding(.bottom, 6)
         .background {
             // **Mood pages: the edge is the page's own background colour**, sampled from the
-            // same mesh at the scroll position, darker toward the top (Paul 2026-11-05: grey
+            // same mesh at the scroll position, darker toward the top (grey
             // clashed with the colour). No blur: a blur over a coloured page reads grey.
             // Other pages keep the dark fade with the soft blur.
             if let mood {
@@ -3522,7 +3550,7 @@ private struct MoodEdge: View {
     private var edge: some View {
         let since = Theme.heroHeightValue
         let y = Double(offset)
-        let f = AvComputation.decay(y: y, since: Double(since), runOut: Double(MoodReason.runOut))
+        let f = moodDecay(y: y, since: Double(since), runOut: Double(MoodReason.runOut))
         let row = min(1, y / Double(since + MoodReason.colorHeight))
         let colors = [0.0, 0.5, 1.0].map { ImageTone.color(tones, x: $0, y: row, decay: f) }
         // The same fall-off as `HeaderHistory`.
@@ -4583,15 +4611,14 @@ extension EmptyState {
     /// search. The same wording as `DisturbHint` below, only as a whole page. Without
     /// `erneut` no primary button, without `wechseln` no quiet one; while `loads`,
     /// neither.
-    static func serverDived(_ model: AppModel, loads: Bool = false,
+    static func serverDived(_ model: AppModel, loads: Bool = false, trouble: Trouble = .unreachable,
                                  retry: (() -> Void)?,
                                  switchTo: (() -> Void)? = nil) -> EmptyState {
-        EmptyState(
+        let (headerLine, text) = trouble.copy(server: model.serverAddress ?? String(localized: "Der Server"))
+        return EmptyState(
             symbol: "wifi.exclamationmark",
-            // A harmless error: nothing is lost, so the title may still say what's going on;
-            // the joke is in the second sentence. That is the tone for harmless errors.
-            headerLine: "Server ist abgetaucht",
-            text: "\(model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+            headerLine: headerLine,
+            text: text,
             loads: loads,
             primaryButton: loads ? nil : retry.map { (title: LocalizedStringKey("Erneut versuchen"), perform: $0) },
             quietButton: loads ? nil : switchTo.map { (title: LocalizedStringKey("Server wechseln"), perform: $0) })

@@ -1,0 +1,101 @@
+# Rust core: formatting, lints, tests, supply chain (audit + deny) and a short fuzz pass.
+#
+# **Why.** The Rust core is what every platform will run. A rotten dependency (known vulnerability, a licence the
+# stores cannot take, an unreviewed new build script) or a parser that panics must stop here, not on a phone.
+# Everything runs with `--locked`: the lockfile is the reviewed state, a change to it shows up in the diff.
+#
+# **Tool versions are pinned** so a new release of a checker cannot turn the main branch red by itself.
+
+name: Rust
+
+on:
+  push:
+    branches: [main, rust-umbau]
+    paths: ["crates/**", "xtask/**", "Cargo.toml", "Cargo.lock", "deny.toml", "clippy.toml", "rust-toolchain.toml", ".github/workflows/rust.yml"]
+  pull_request:
+    paths: ["crates/**", "xtask/**", "Cargo.toml", "Cargo.lock", "deny.toml", "clippy.toml", "rust-toolchain.toml", ".github/workflows/rust.yml"]
+  schedule:
+    # New advisories appear without any change of ours.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  lint-and-test:
+    name: ${{ matrix.os }} - fmt, clippy, tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.0"
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      # The text engine links fontconfig through pkg-config; the runner image does not promise the headers.
+      - name: System libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libfontconfig1-dev
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Tests
+        run: cargo test --workspace --locked
+
+  supply-chain:
+    name: cargo-audit and cargo-deny
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.0"
+      - uses: Swatinem/rust-cache@v2
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libfontconfig1-dev
+      - name: Install the checkers
+        run: cargo install --locked cargo-audit cargo-deny
+      - name: Known vulnerabilities, yanked and unmaintained crates
+        run: cargo audit --deny warnings
+      - name: Licences, bans, sources, advisories
+        run: cargo deny --locked check licenses bans sources advisories
+      - name: Security gate (unsafe allow list, lints, tests)
+        run: cargo run --locked -p xtask -- security
+
+  fuzz-smoke:
+    name: fuzz targets, short pass
+    runs-on: ubuntu-24.04
+    env:
+      # `rust-toolchain.toml` pins the stable toolchain; the sanitizers need nightly.
+      RUSTUP_TOOLCHAIN: nightly
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/swiftly-hardening/fuzz
+      - run: cargo install --locked cargo-fuzz
+      - name: Run every target for a short time
+        working-directory: crates/swiftly-hardening
+        run: |
+          for t in $(cargo fuzz list); do
+            cargo fuzz run "$t" -- -max_total_time=60 -rss_limit_mb=2048 -max_len=65536
+          done

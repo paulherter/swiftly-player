@@ -1,0 +1,15 @@
+{"Items":[
+ {"Id":"r1","Name":"Der Weg zurück","Type":"Movie","ProductionYear":2019,"RunTimeTicks":54000000000,
+  "ImageTags":{"Primary":"p-r1"},"BackdropImageTags":["b-r1"],
+  "UserData":{"PlaybackPositionTicks":21600000000,"PlayedPercentage":40.0,"Played":false}},
+ {"Id":"e1","Name":"Ankunft","Type":"Episode","SeriesId":"s1","SeriesName":"Dark Matter","ParentIndexNumber":1,"IndexNumber":3,
+  "RunTimeTicks":27000000000,"ImageTags":{"Primary":"p-e1"},"BackdropImageTags":["b-e1"],
+  "UserData":{"PlaybackPositionTicks":6750000000,"PlayedPercentage":25.0,"Played":false}},
+ {"Id":"e2","Name":"Stille","Type":"Episode","SeriesId":"s1","SeriesName":"Dark Matter","ParentIndexNumber":1,"IndexNumber":4,
+  "RunTimeTicks":27000000000,"ImageTags":{"Primary":"p-e2"},"BackdropImageTags":["b-e2"],"UserData":{"Played":false}},
+ {"Id":"s1","Name":"Dark Matter","Type":"Series","ProductionYear":2022,"ProviderIds":{"Tvdb":"100"},"ChildCount":3,
+  "ImageTags":{"Primary":"p-s1"},"UserData":{"UnplayedItemCount":5,"Played":false}},
+ {"Id":"m1","Name":"Nordlicht","Type":"Movie","ProductionYear":2021,"ImageTags":{"Primary":"p-m1"},"UserData":{"Played":false}},
+ {"Id":"m2","Name":"Sommerregen","Type":"Movie","ProductionYear":2020,"ImageTags":{"Primary":"p-m2"},"UserData":{"Played":true,"IsFavorite":true}},
+ {"Id":"m3","Name":"Die Brücke","Type":"Movie","ProductionYear":2018,"ImageTags":{"Primary":"p-m3"},"UserData":{"Played":false}}
+],"TotalRecordCount":7}

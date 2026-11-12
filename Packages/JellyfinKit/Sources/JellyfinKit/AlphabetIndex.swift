@@ -96,7 +96,8 @@ public struct AlphabetIndex: Sendable, Equatable {
         self.init(entries: built, count: items.count, sorting: sorting, monthly: monthly)
     }
 
-    private init(entries: [Entry], count: Int, sorting: Sorting, monthly: Bool) {
+    /// A strip that is already built (the Rust core hands out entries, count, order and month flag).
+    public init(entries: [Entry], count: Int, sorting: Sorting, monthly: Bool) {
         self.entries = entries
         self.count = count
         self.sorting = sorting

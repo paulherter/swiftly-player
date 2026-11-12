@@ -72,7 +72,7 @@ fun GenrePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
     LaunchedEffect(target.id, attempt) {
         disrupted = false
         try {
-            title = JSONArray(withContext(Dispatchers.IO) { app.kern.genre(target.id).await() })
+            title = JSONArray(withContext(Dispatchers.IO) { app.rk.genre(target.id).await() })
                 .let { a -> (0 until a.length()).map { gridTileRead(a.getJSONObject(it)) } }
         } catch (e: CancellationException) { throw e } catch (_: Exception) {
             // What is already shown stays; the failure does not replace an existing list.

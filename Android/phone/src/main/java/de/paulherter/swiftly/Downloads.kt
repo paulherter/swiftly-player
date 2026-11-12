@@ -17,7 +17,15 @@ import android.os.StatFs
 import android.os.SystemClock
 import androidx.compose.runtime.mutableStateOf
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
+import de.paulherter.swiftly.rustcore.DownloadFollow
+import de.paulherter.swiftly.rustcore.DownloadImage
+import de.paulherter.swiftly.rustcore.DownloadRequest
+import de.paulherter.swiftly.rustcore.DownloadWatchState
+import de.paulherter.swiftly.rustcore.DownloadsIntent
+import de.paulherter.swiftly.rustcore.DownloadsVm
+import de.paulherter.swiftly.rustcore.host.AndroidDownloadHost
+import de.paulherter.swiftly.shared.Texts
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -63,6 +71,8 @@ data class DownloadItem(
     val replaces: String? = null,
     /** Watched to the end, successor not looked up yet. */
     val nextPending: Boolean? = null,
+    /** Codec of the video track of the loaded file (`bildcodec`); passed through so the core keeps it. */
+    val videoCodec: String? = null,
 ) {
     /**
      * Account and id, plus the container extension so VLC guesses the demuxer. Must match
@@ -89,11 +99,11 @@ data class DownloadItem(
         sections?.let { put("abschnitte", JSONArray(it)) }
         putOpt("stelleTicks", pointTicks); putOpt("zuletzt", recent)
         putOpt("tonIndex", audioIndex); putOpt("tonSprache", audioLanguage); putOpt("ersetzt", replaces)
-        putOpt("naechsteOffen", nextPending)
+        putOpt("naechsteOffen", nextPending); putOpt("bildcodec", videoCodec)
     }
 
     /** Where the list starts playing (`DownloadItem.resumeFrom`); `null` means from the start. */
-    val resumeFrom: Double? get() = Kern.downloadResumeFrom(json().toString()).takeIf { it > 0 }
+    val resumeFrom: Double? get() = KernRules.downloadResumeFrom(json().toString()).takeIf { it > 0 }
 
     /** Takes over the watch state from another state of the same item; the core computed it. */
     fun withWatchState(from: DownloadItem) = copy(watched = from.watched, pointTicks = from.pointTicks, recent = from.recent)
@@ -115,47 +125,53 @@ data class DownloadItem(
             o.optDouble("zuletzt").takeIf { o.has("zuletzt") && !o.isNull("zuletzt") },
             o.optInt("tonIndex").takeIf { o.has("tonIndex") && !o.isNull("tonIndex") },
             o.fieldText("tonSprache"), o.fieldText("ersetzt"),
-            o.optBoolean("naechsteOffen").takeIf { o.has("naechsteOffen") && !o.isNull("naechsteOffen") })
+            o.optBoolean("naechsteOffen").takeIf { o.has("naechsteOffen") && !o.isNull("naechsteOffen") },
+            o.fieldText("bildcodec"))
 
         fun list(entries: List<DownloadItem>): String = JSONArray().apply { entries.forEach { put(it.json()) } }.toString()
     }
 }
 
-/** The message is already the sentence for the screen, never a code or a type name. */
-private class LoadError(reason: String) : Exception(reason)
-
 /**
- * Mirrors `DownloadManager` in `Sources/Shared/DownloadManager.swift`.
+ * The download manager of the app: **the core's `DownloadsVm` over [AndroidDownloadHost]**, with the old public surface so
+ * the Compose screens did not change. The queue, the rules (one at a time, Wi-Fi only, space, next episode, replaced
+ * episode, watch state, sections) and the list file are the core's; this class feeds it what only Android knows (network,
+ * the two settings, the account) and turns its list into the [DownloadItem]s the screens read.
  *
- * **Only one item downloads at a time**, and `tick()` is the **only** place that starts a download,
- * after every change, every network change and at launch. The list holds all accounts, only the
- * current one is visible. Progress is written on pause and at the end, not on every chunk.
- * Resuming uses `Range` on the partial `.part` file.
+ * Same files as before: `files/Downloads`, `<account>-<id>.<ext>` and `.teil`, images `<account>-<id>.jpg`, the index
+ * `liste.json` (the core's `downloads.list` key lands there through `DownloadIndexStore`, see [RustKern]), so a build with
+ * the old manager and this one read each other's downloads.
  */
 class DownloadManager(private val app: SwiftlyApplication) {
     val folder = File(app.filesDir, "Downloads").apply { mkdirs() }
-    private val listFile = File(folder, "liste.json")
-    private var all: List<DownloadItem> = read()
 
     /** The items of the current account. */
     val entries = mutableStateOf<List<DownloadItem>>(emptyList())
     /** Any network at all, for "Waiting for network" and "No network". */
     val network = mutableStateOf(true)
     /**
-     * Taken immediately from the current network, not `true` until the first callback, which only
-     * arrives after the first `tick()`. With `true`, a waiting download started on mobile data at
-     * launch and the callback stopped it again right away.
+     * Taken immediately from the current network, not `true` until the first callback. With `true`, a waiting download
+     * started on mobile data at launch and the callback stopped it again right away.
      */
     private var wLAN = runCatching {
         val v = app.getSystemService(ConnectivityManager::class.java)
         v.getNetworkCapabilities(v.activeNetwork)?.let { isWLAN(it) } ?: false
     }.getOrDefault(false)
     private var account = ""
+    private var accountClient = false
 
     private val run = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var task: Job? = null
-    private var ongoing: String? = null
+    /** One thread keeps the commands to the core in order. */
+    private val io = Dispatchers.IO.limitedParallelism(1)
+    private val hooks = AppDownloadHooks(app)
+    private val host = AndroidDownloadHost(folder, hooks)
+    private val ready = CompletableDeferred<DownloadsVm>()
+    private var sentWlanRule: Boolean? = null
+    private var sentNextAuto: Boolean? = null
+    private var knownSignature = ""
+    private var serviceId: String? = null
     private var reportedAround = 0L
+    private val estimated = HashSet<String>()
 
     init {
         val connection = app.getSystemService(ConnectivityManager::class.java)
@@ -163,10 +179,25 @@ class DownloadManager(private val app: SwiftlyApplication) {
             connection.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
                 override fun onCapabilitiesChanged(n: Network, c: NetworkCapabilities) {
                     val wlan = isWLAN(c)
-                    run.launch { network.value = true; wLAN = wlan; coreReport(); tick() }
+                    run.launch { network.value = true; wLAN = wlan; send(DownloadsIntent.NetworkChanged(wlan, false)); coreReport() }
                 }
-                override fun onLost(n: Network) { run.launch { network.value = false; wLAN = false; coreReport(); tick() } }
+                override fun onLost(n: Network) { run.launch { network.value = false; wLAN = false; send(DownloadsIntent.NetworkChanged(false, true)); coreReport() } }
             })
+        }
+        run.launch(io) {
+            val vm = runCatching {
+                app.rk.core().downloadsVm(host, Texts.language, app.settings.onlyOverWLAN, app.settings.loadNextEpisode)
+            }.onFailure { AppLog.writeOut("[Download] Kern startet nicht: ${it.message}"); ready.completeExceptionally(it) }.getOrNull() ?: return@launch
+            sentWlanRule = app.settings.onlyOverWLAN; sentNextAuto = app.settings.loadNextEpisode
+            host.sink = { runCatching { vm.send(it) }.onFailure { e -> AppLog.writeOut("[Download] ${e.message}") } }
+            ready.complete(vm)
+            var seen = vm.version()
+            refresh(vm)
+            while (true) {
+                val change = runCatching { vm.changed(seen) }.getOrNull() ?: break
+                seen = change.version
+                refresh(vm)
+            }
         }
     }
 
@@ -174,72 +205,98 @@ class DownloadManager(private val app: SwiftlyApplication) {
     private fun isWLAN(c: NetworkCapabilities) =
         c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
 
-    private fun read(): List<DownloadItem> = runCatching {
-        JSONArray(listFile.readText()).let { a -> (0 until a.length()).map { DownloadItem.read(a.getJSONObject(it)) } }
-    }.getOrDefault(emptyList())
-        // Whoever was loading when the app quit now waits; what is loaded is what is on disk.
-        .map { if (it.state == "laedt") it.copy(state = "wartet", loaded = part(it).length()) else it }
-
-    /** One writer thread keeps the writes in order; the list is serialised here, so the file work stays off the main thread. */
-    private val writer = Dispatchers.IO.limitedParallelism(1)
-
-    private fun persist() {
-        val text = DownloadItem.list(all)
-        run.launch(writer) {
-            runCatching {
-                val new = File(folder, "liste.json.neu")
-                new.writeText(text)
-                new.renameTo(listFile)
-            }
+    /** Commands go to the core in order, off the main thread; a command it refuses (unknown item, wrong state) is only logged. */
+    private fun send(vararg intents: DownloadsIntent) {
+        run.launch(io) {
+            val vm = runCatching { ready.await() }.getOrNull() ?: return@launch
+            for (i in intents) runCatching { vm.send(i) }.onFailure { AppLog.writeOut("[Download] ${it.message}") }
         }
     }
 
-    private fun showItem(toCore: Boolean = true) {
-        entries.value = all.filter { it.account == account }
-        if (toCore) coreReport()
+    private fun sendSynced(vararg intents: DownloadsIntent) = send(*(syncSettings() + intents))
+
+    // ---- the list the screens read ----------------------------------------------------------------------------------
+
+    private fun refresh(vm: DownloadsVm) {
+        val list = runCatching {
+            val a = JSONArray(String(vm.itemsJson()))
+            // What waits, is paused or failed has exactly what is in its `.teil` file (the old manager read it the same way);
+            // the core only knows the last progress it was told.
+            (0 until a.length()).map { DownloadItem.read(a.getJSONObject(it)) }.map { p ->
+                if (p.state == "wartet" || p.state == "angehalten" || p.state == "fehler") part(p).takeIf { it.exists() }?.let { p.copy(loaded = it.length()) } ?: p else p
+            }
+        }.getOrNull() ?: return
+        run.launch { show(list) }
     }
 
-    /** The core needs the list for "Next episode", chapters and watch state without a server. */
+    private fun show(list: List<DownloadItem>) {
+        val before = entries.value
+        entries.value = list
+        // The legacy estimator of the progress rows (`DownloadsPage`) follows what the core reports.
+        val now = SystemClock.elapsedRealtime()
+        val loading = list.firstOrNull { it.state == "laedt" }
+        for (p in list) {
+            if (p.state == "laedt") { KernRules.downloadEstimatorReport(p.id, p.loaded, p.bytes); estimated += p.id }
+            else if (p.id in estimated) {
+                estimated -= p.id
+                if (p.state == "fertig") KernRules.downloadEstimatorForget(p.id) else KernRules.downloadEstimatorHalt(p.id)
+            }
+        }
+        (estimated - list.map { it.id }.toSet()).forEach { KernRules.downloadEstimatorForget(it); estimated -= it }
+        // The foreground service keeps the process alive while something loads.
+        if (loading == null) { if (serviceId != null) { serviceId = null }; DownloadService.from(app) }
+        else {
+            if (serviceId != loading.id) { serviceId = loading.id; DownloadService.an(app, loading.title, loading.share) }
+            else if (now - reportedAround > 1500) { reportedAround = now; DownloadService.report(app, loading.title, loading.share) }
+        }
+        val signature = list.joinToString("|") { "${it.id}:${it.state}:${it.watched}:${it.pointTicks}:${it.recent}:${it.sections != null}:${it.nextPending}" }
+        if (before.isEmpty() && list.isEmpty()) return
+        if (signature != knownSignature) { knownSignature = signature; coreReport() }
+    }
+
+    /**
+     * The Swift core (still the player's) needs the list for "Next episode", chapters and watch state without a server
+     * (`playbackFromTheSlab`). Goes when the player group is on the Rust core.
+     */
     private fun coreReport() {
-        runCatching { app.kern.downloadsKnown(DownloadItem.list(entries.value), folder.path, !network.value) }
+        runCatching { app.rk.downloadsKnown(DownloadItem.list(entries.value), folder.path, !network.value) }
     }
 
     private fun part(p: DownloadItem) = File(folder, p.fileName + ".teil")
     fun imageFile(identifier: String) = File(folder, "${PathPart.safe(account)}-${PathPart.safe(identifier)}.jpg")
 
-    fun mayLoad(): Boolean = Kern.downloadMayLoad(wLAN, app.settings.onlyOverWLAN)
+    fun mayLoad(): Boolean = KernRules.downloadMayLoad(wLAN, app.settings.onlyOverWLAN)
 
     fun free(): Long = runCatching { StatFs(folder.path).availableBytes }.getOrDefault(0L)
     fun total(): Long = runCatching { StatFs(folder.path).totalBytes }.getOrDefault(0L)
 
-    /** After sign-in, what belongs to this account applies. A running item of the old one stops. */
+    /** After sign-in, what belongs to this account applies. A running item of the old one stops (the core does that). */
     fun accountSet(new: String) {
-        if (new == account) return
-        ongoing?.let { id -> if (all.any { it.id == id && it.account != new }) halt(id) }
-        account = new
-        showItem()
-        tick()
+        val client = app.rk.account() != null
+        if (new == account && client == accountClient) return
+        account = new; accountClient = client
+        send(DownloadsIntent.SignIn(new.ifEmpty { null }, client))
     }
 
     fun entries(id: String): DownloadItem? = entries.value.firstOrNull { it.id == id }
 
     fun file(id: String): File? = entries(id)?.takeIf { it.state == "fertig" }?.let { File(folder, it.fileName) }?.takeIf { it.exists() }
 
-    private fun change(id: String, write: Boolean = true, toCore: Boolean = true, new: (DownloadItem) -> DownloadItem) {
-        all = all.map { if (it.id == id && it.account == account) new(it) else it }
-        showItem(toCore)
-        if (write) persist()
-    }
+    /** The entry as the list's JSON object (for the successor lookup). */
+    fun itemJson(id: String): String? = entries(id)?.json()?.toString()
 
     /** New items into the queue; what is already there is not added again. Images load too. */
     fun insert(newOne: List<DownloadItem>, images: Map<String, String>) {
-        val freshValue = newOne.filter { n -> all.none { it.id == n.id && it.account == n.account } }
-        if (freshValue.isEmpty()) return
-        all = all + freshValue
-        showItem(); persist()
-        run.launch(Dispatchers.IO) { images.forEach { (identifier, address) -> imageSafe(imageFile(identifier), address) } }
-        tick()
+        val fresh = newOne.filter { n -> entries.value.none { it.id == n.id } }
+        if (fresh.isEmpty()) return
+        // The header image keys of the screens (`<series>-kopf`) are the core's `kopf:<series>`.
+        val more = images.map { (key, url) -> DownloadImage(if (key.endsWith("-kopf")) "kopf:" + key.removeSuffix("-kopf") else key, url) }
+        sendSynced(DownloadsIntent.Start(fresh.map { it.request() }, more, false))
     }
+
+    /** Starts items that came as the core's own request (the Plex successor, see [AppDownloadHooks]). */
+    fun insertRaw(item: DownloadItem, image: String?) =
+        send(DownloadsIntent.Start(listOf(item.request()), listOfNotNull(image?.let { DownloadImage(item.id, it) }), false))
 
     /** Does not load what is already there; only a fully loaded file is moved into place. */
     private fun imageSafe(target: File, address: String): Boolean {
@@ -279,209 +336,43 @@ class DownloadManager(private val app: SwiftlyApplication) {
         }
     }
 
-    fun halt(id: String) {
-        if (ongoing == id) { task?.cancel(); task = null; ongoing = null }
-        // Pause takes effect immediately; the estimator does not keep counting over the pause.
-        Kern.downloadEstimatorHalt(id)
-        val p = all.firstOrNull { it.id == id } ?: return
-        change(id) { it.copy(state = "angehalten", loaded = part(p).length(), reason = null) }
-        tick()
-    }
+    fun halt(id: String) = send(DownloadsIntent.Pause(id))
 
     fun resume(id: String) {
-        change(id) { if (it.state == "fertig" || it.state == "laedt") it else it.copy(state = "wartet", reason = null) }
-        tick()
+        // Same as before: loaded or loading items stay what they are.
+        if (entries(id)?.state.let { it == "fertig" || it == "laedt" }) return
+        sendSynced(DownloadsIntent.Resume(id))
     }
 
     /** Running ones cancel, file and own image go; the series poster only with the last episode. */
-    fun remove(ids: Collection<String>) {
-        val distance = all.filter { it.account == account && it.id in ids }
-        if (ongoing in ids) { task?.cancel(); task = null; ongoing = null }
-        all = all - distance.toSet()
-        distance.forEach { p ->
-            File(folder, p.fileName).delete(); part(p).delete(); imageFile(p.id).delete()
-            Kern.downloadEstimatorForget(p.id)
-            val sid = p.seriesIdentifier
-            if (sid != null && all.none { it.account == account && it.seriesIdentifier == sid }) {
-                imageFile(sid).delete(); imageFile(headerId(sid)).delete()
-            }
-        }
-        showItem(); persist()
-        tick()
+    fun remove(ids: Collection<String>) = send(DownloadsIntent.Delete(ids.toList()))
+
+    fun allRemove() = send(DownloadsIntent.DeleteAll)
+
+    /** The two settings the core needs, when they changed since the last time it was told. */
+    private fun syncSettings(): Array<DownloadsIntent> {
+        val out = ArrayList<DownloadsIntent>()
+        val wlanRule = app.settings.onlyOverWLAN
+        if (sentWlanRule != null && sentWlanRule != wlanRule) out += DownloadsIntent.OnlyOverWlan(wlanRule)
+        sentWlanRule = wlanRule
+        val nextAuto = app.settings.loadNextEpisode
+        if (sentNextAuto != null && sentNextAuto != nextAuto) out += DownloadsIntent.NextAuto(nextAuto)
+        sentNextAuto = nextAuto
+        return out.toTypedArray()
     }
 
-    fun allRemove() = remove(entries.value.map { it.id })
-
-    /** The only place that starts. If Wi-Fi is missing and "Wi-Fi only" applies, the running one stops and waits. */
-    fun tick() {
-        val onlyWLAN = app.settings.onlyOverWLAN
-        val may = Kern.downloadMayLoad(wLAN, onlyWLAN)
-        ongoing?.let { id ->
-            if (!may) {
-                task?.cancel(); task = null; ongoing = null
-                val p = all.firstOrNull { it.id == id }
-                Kern.downloadEstimatorHalt(id)
-                if (p != null) change(id) { it.copy(state = "wartet", loaded = part(p).length()) }
-            }
-        }
-        if (ongoing == null && account.isNotEmpty()) {
-            val id = Kern.downloadNext(DownloadItem.list(entries.value), wLAN, onlyWLAN)
-            entries.value.firstOrNull { it.id == id }?.let { start(it) }
-        }
-        if (ongoing == null) DownloadService.from(app)
-    }
-
-    private fun start(p: DownloadItem) {
-        ongoing = p.id
-        change(p.id) { it.copy(state = "laedt", reason = null) }
-        DownloadService.an(app, p.title, p.share)
-        task = run.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { load(p) } }
-            // Cancelled does not arrive here: whoever cancels sets the state itself.
-            ongoing = null; task = null
-            val error = result.exceptionOrNull()
-            if (error == null) Kern.downloadEstimatorForget(p.id) else Kern.downloadEstimatorHalt(p.id)
-            when {
-                // Once transcoded, the estimate gives way to the real size.
-                error == null -> {
-                    change(p.id) {
-                        val real = result.getOrDefault(it.bytes)
-                        it.copy(state = "fertig", loaded = real, bytes = if (it.streamed) real else it.bytes, reason = null)
-                    }
-                    sectionsFetch(p.id)
-                    replacedRemove(p.id)
-                }
-                // Without network and with a partial file: paused, no error text, it continues there.
-                error is IOException && error !is LoadError && part(p).length() > 0 ->
-                    change(p.id) { it.copy(state = "angehalten", loaded = part(p).length()) }
-                else -> change(p.id) { it.copy(state = "fehler", reason = if (error is LoadError) error.message else errorString(app, error), loaded = part(p).length()) }
-            }
-            tick()
-        }
-    }
-
-    private suspend fun load(p: DownloadItem): Long {
-        val address = app.kern.downloadAddress(p.id, p.source.orEmpty(), p.quality ?: "original", (p.audioIndex ?: -1).toLong()).await()
-        val part = part(p)
-        val already = if (part.exists()) part.length() else 0L
-        val v = URL(address).openConnection() as HttpURLConnection
-        v.connectTimeout = 15000; v.readTimeout = 30000
-        // With the server's own headers; without an entry, the same request as before.
-        ownHeadersFields(address).forEach { (name, value) -> v.setRequestProperty(name, value) }
-        // A transcoded file accepts no range requests (`Accept-Ranges: none`) and restarts; the server
-        // then answers 200 and the `.part` file is overwritten below.
-        if (already > 0 && !p.streamed) v.setRequestProperty("Range", "bytes=$already-")
-        try {
-            val code = v.responseCode
-            // An error page is not a finished file.
-            if (code !in 200..299) throw LoadError(Kern.downloadErrorText(code.toLong()))
-            val append = code == 206
-            var loaded = if (append) already else 0L
-            val total = if (p.bytes > 0) p.bytes else v.contentLengthLong.takeIf { it > 0 }?.plus(loaded) ?: 0L
-            // **At most once per second** (`DownloadRules.progressShow`). Half a percent alone let
-            // five or more numbers per second through on a fast line, so the subtitle jittered instead of
-            // counting. In between the estimator keeps counting.
-            var reported = -1L
-            var reportedTime = 0L
-            v.inputStream.use { on ->
-                FileOutputStream(part, append).use { from ->
-                    val buffer = ByteArray(256 * 1024)
-                    while (true) {
-                        coroutineContext.ensureActive()
-                        val n = on.read(buffer)
-                        if (n < 0) break
-                        from.write(buffer, 0, n)
-                        loaded += n
-                        val now = SystemClock.elapsedRealtime()
-                        if (Kern.downloadProgressShow(loaded, total, reported,
-                                                           if (reported < 0) -1.0 else (now - reportedTime) / 1000.0)) {
-                            reported = loaded
-                            reportedTime = now
-                            val state = loaded
-                            withContext(Dispatchers.Main) { progress(p, state, total) }
-                        }
-                    }
-                }
-            }
-            coroutineContext.ensureActive()
-            if (!part.renameTo(File(folder, p.fileName))) throw LoadError(translated("Die Datei liess sich nicht ablegen."))
-            return loaded
-        } finally { v.disconnect() }
-    }
-
-    private fun progress(p: DownloadItem, loaded: Long, total: Long) {
-        if (ongoing != p.id) return
-        Kern.downloadEstimatorReport(p.id, loaded, if (total > 0) total else p.bytes)
-        // Once a second: the core reads only finished entries (`DownloadRules.episodePost`), so the byte count
-        // is not worth serializing the whole list across JNI on the main thread.
-        change(p.id, write = false, toCore = false) { it.copy(loaded = loaded) }
-        val now = SystemClock.elapsedRealtime()
-        if (now - reportedAround > 1500) { reportedAround = now; DownloadService.report(app, p.title, entries(p.id)?.share) }
-    }
-
-    /**
-     * **Fetch intro and outro segments** once the file is there (mirrors `sectionsFetch` in
-     * `DownloadManager.swift`). Without a response the field stays empty and `nachziehen` asks
-     * again on the next contact.
-     */
-    private fun sectionsFetch(id: String) {
-        run.launch {
-            val raw = runCatching { app.kern.downloadSections(id).await() }.getOrDefault("")
-            if (raw.isNotEmpty()) change(id) { it.copy(sections = raw) }
-        }
-    }
-
-    // MARK: Next episode (smart downloads, `DownloadManager.smartNext` on Apple)
-
-    private val searching = mutableSetOf<String>()
-
-    /**
-     * Queue the successor of a watched, downloaded episode. Wi-Fi only needs no extra code: the entry
-     * joins the queue like any other and `tick()` holds it back until the rule allows it.
-     */
-    fun smartNext(id: String) {
-        if (!app.settings.loadNextEpisode || id in searching) return
-        val watched = entries(id)?.takeIf { it.nextPending == true } ?: return
-        searching += id
-        run.launch {
-            val raw = runCatching { app.kern.downloadFollowing(watched.json().toString()).await() }.getOrNull().orEmpty()
-            searching -= id
-            // No answer (offline): stays pending.
-            if (raw.isEmpty()) return@launch
-            change(id) { it.copy(nextPending = null) }
-            // After the last episode the watched one simply stays.
-            val o = JSONObject(raw)
-            if (!o.has("posten")) return@launch
-            val follower = DownloadItem.read(o.getJSONObject("posten"))
-            if (entries(follower.id) != null || follower.bytes > free()) return@launch
-            val images = mutableMapOf<String, String>()
-            o.fieldText("bild")?.let { images[follower.id] = it }
-            insert(listOf(follower), images)
-            AppLog.writeOut("[Download] nächste Folge ${follower.id} nach $id")
-        }
-    }
-
-    /** Pick up what could not be looked up yet. Called on contact with the server. */
-    fun smartCatchUp() {
-        entries.value.filter { it.nextPending == true }.forEach { smartNext(it.id) }
-    }
-
-    /** The watched episode goes only now, with its successor safely on the device. */
-    private fun replacedRemove(id: String) {
-        val done = entries(id) ?: return
-        if (done.replaces == null) return
-        val old = if (app.settings.loadNextEpisode) Kern.downloadReplaced(done.json().toString(), listJson()) else ""
-        change(id) { it.copy(replaces = null) }
-        if (old.isNotEmpty()) remove(listOf(old))
-    }
+    /** After every change, every network change and at launch (also after a change of the two settings). */
+    fun tick() = sendSynced(DownloadsIntent.Tick)
 
     /** What the stops changed in the watch state (`Kern.stoppsProcess`), with and without network. */
     fun watchStateAdopt(new: List<DownloadItem>) {
         if (new.isEmpty()) return
-        val card = new.associateBy { it.id }
-        all = all.map { p -> if (p.account != account) p else card[p.id]?.let { p.withWatchState(it).copy(nextPending = it.nextPending ?: p.nextPending) } ?: p }
-        showItem(); persist()
-        new.filter { it.nextPending == true }.forEach { smartNext(it.id) }
+        // A stop is a position on this device: the core's `PlaybackRemembered` records it the same way the stop rule did
+        // (watched at the end, position between five and ninety percent) and queues the next episode when the rule wants it.
+        sendSynced(*new.map { p ->
+            val ticks = if (p.watched && (p.runtimeTicks ?: 0) > 0) p.runtimeTicks!! else p.pointTicks ?: 0L
+            DownloadsIntent.PlaybackRemembered(p.id, ticks, (p.recent ?: 0.0) + APPLE_EPOCH)
+        }.toTypedArray())
     }
 
     /** The current account's items as JSON, for the core. */
@@ -489,23 +380,30 @@ class DownloadManager(private val app: SwiftlyApplication) {
 
     /** Watch state and "still on the server": after every connect, only with a response. */
     suspend fun follow() {
-        val ownOnes = entries.value
-        if (ownOnes.isEmpty()) return
-        val new = runCatching {
-            JSONArray(app.kern.downloadsCatchUp(DownloadItem.list(ownOnes)).await())
-                .let { a -> (0 until a.length()).map { DownloadItem.read(a.getJSONObject(it)) } }
-        }.getOrNull() ?: return
-        val card = new.associateBy { it.id }
-        all = all.map { p ->
-            if (p.account != account) p
-            else card[p.id]?.let { p.withWatchState(it).copy(stillOnTheServer = it.stillOnTheServer) } ?: p
-        }
-        showItem(); persist()
-        // For everything downloaded before these fields existed or that got no response while loading.
-        entries.value.filter { it.state == "fertig" && it.sections == null }.forEach { sectionsFetch(it.id) }
-        smartCatchUp()
+        val own = entries.value
+        if (own.isEmpty()) return
+        val ids = own.map { it.id }
+        val d = app.rk.detail()
+        val px = app.rk.plexDetail()
+        val answer: DownloadFollow? = runCatching { px?.downloadFollowFetch(ids) ?: d?.downloadFollowFetch(ids) }.getOrNull()
+        // No answer: everything stays as it was (on the road no server answers, and every title would read "gone").
+        if (answer == null) return
+        sendSynced(DownloadsIntent.ServerFollow(answer.available, answer.states), DownloadsIntent.SectionsCatchUp, DownloadsIntent.SmartCatchUp)
+    }
+
+    /** Pick up what could not be looked up yet. Called on contact with the server. */
+    fun smartCatchUp() = sendSynced(DownloadsIntent.SmartCatchUp)
+
+    companion object {
+        /** Seconds between 1970 and 2001, the epoch of the numbers in `liste.json`. */
+        const val APPLE_EPOCH = 978307200.0
     }
 }
+
+/** A [DownloadItem] as the core's request to queue it. `created` is Unix seconds there. */
+internal fun DownloadItem.request() = DownloadRequest(
+    id, account, art == "folge", title, series, seriesIdentifier, season?.toLong(), episode?.toLong(), runtimeTicks, container, source,
+    bytes, created + DownloadManager.APPLE_EPOCH, null, quality, audioIndex?.toLong(), audioLanguage, videoCodec, replaces)
 
 /**
  * **Keeps the download alive** while the app is in the background; counterpart of the `URLSession`

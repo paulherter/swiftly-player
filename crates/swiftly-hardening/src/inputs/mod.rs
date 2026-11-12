@@ -1,0 +1,121 @@
+//! Input generators of the differential oracle. One module per domain; every generator is
+//! deterministic (fixed seed) so `oracle/<domain>.in.json` only changes when the generator does.
+//! Add a domain: new module, one line in [`all`], one `Domain_<Name>.swift` in `Tools/Oracle`,
+//! one test in `tests/oracle.rs`.
+
+use serde_json::Value;
+
+mod alphabet_index;
+mod counter;
+mod description;
+mod download_task;
+mod downloads;
+mod episode_switch;
+mod episodes;
+mod images;
+mod log_redaction;
+mod login;
+mod model_decode;
+mod natural_order;
+mod ordering;
+mod play_display;
+mod playback_c;
+mod playback_g;
+mod playback_tick;
+mod requests;
+mod requests_plex;
+mod search_keys;
+mod settings;
+mod small_rules;
+mod standard_compare;
+mod syncplay;
+mod text_c;
+mod title_marks;
+mod tracks;
+mod urls;
+
+pub fn all() -> Vec<(&'static str, Vec<Value>)> {
+    vec![
+        ("natural_order", natural_order::cases()),
+        ("alphabet_index", alphabet_index::cases()),
+        ("age_rating", small_rules::age_rating()),
+        ("whole_number", small_rules::whole_number()),
+        ("resume_point", small_rules::resume_point()),
+        ("download_quality", small_rules::download_quality()),
+        ("display_rules", small_rules::display_rules()),
+        ("episode_end", small_rules::episode_end()),
+        ("chapter_bar", small_rules::chapter_bar()),
+        ("download_task", download_task::cases()),
+        ("term_trim", small_rules::term_trim()),
+        ("language_rules", tracks::language_rules()),
+        ("track_language", tracks::track_language()),
+        ("play_display", play_display::play_display()),
+        ("original_audio", tracks::original_audio()),
+        ("color_selection", tracks::color_selection()),
+        ("track_rule", tracks::track_rule()),
+        ("track_mapping", tracks::track_mapping()),
+        ("model_decode", model_decode::cases()),
+        ("image_address", images::image_address()),
+        ("image_store_key", images::image_store_key()),
+        ("image_selection", images::image_selection()),
+        ("plural_category", text_c::plural_category()),
+        ("version_compare", text_c::version_compare()),
+        ("timestamp", text_c::timestamp()),
+        ("delay", playback_c::delay()),
+        ("buffer_level", playback_c::buffer_level()),
+        ("time_assumption", playback_c::time_assumption()),
+        ("fade_times", playback_c::fade_times()),
+        ("pause_prebuffer", playback_c::pause_prebuffer()),
+        ("server_url", urls::server_url()),
+        ("server_relative", urls::server_relative()),
+        ("address_secret", urls::address_secret()),
+        ("own_headers_clean", urls::own_headers_clean()),
+        ("own_headers_table", urls::own_headers_table()),
+        ("server_discovery", urls::server_discovery()),
+        ("standard_compare_de", standard_compare::cases()),
+        ("standard_compare_en", standard_compare::cases()),
+        ("standard_compare_ru", standard_compare::cases()),
+        ("start_rails", ordering::start_rails()),
+        ("start_libraries", ordering::start_libraries()),
+        ("search_history", ordering::search_history()),
+        ("library_genre", ordering::library_genre()),
+        ("library_filter", ordering::library_filter()),
+        ("list_rules", ordering::list_rules()),
+        ("title_filter", ordering::title_filter()),
+        ("section_logic", ordering::section_logic()),
+        ("device_profile", playback_g::device_profile()),
+        ("bitrates_limit", playback_g::bitrates_limit()),
+        ("download_right", playback_g::download_right()),
+        ("play_time", playback_g::play_time()),
+        ("trailer_choice", playback_g::trailer_choice()),
+        ("playback_plan", playback_g::playback_plan()),
+        ("episode_card", episodes::episode_card()),
+        ("season_choice", episodes::season_choice()),
+        ("watcher_ring", episodes::watcher_ring()),
+        ("media_versions", episodes::media_versions()),
+        ("stop_lock", episodes::stop_lock()),
+        ("settings_sync", settings::settings_sync()),
+        ("syncplay_read", syncplay::read()),
+        ("syncplay_misc", syncplay::misc()),
+        ("syncplay_clock", syncplay::clock()),
+        ("syncplay_buffer", syncplay::buffer()),
+        ("syncplay_time", syncplay::time()),
+        ("playback_tick", playback_tick::playback_tick()),
+        ("download_audio", downloads::download_audio()),
+        ("download_rules", downloads::download_rules()),
+        ("server_factory", downloads::server_factory()),
+        ("login_error", login::login_error()),
+        ("login_quick", login::login_quick()),
+        ("login_http", login::login_http()),
+        ("login_accounts", login::login_accounts()),
+        ("login_kind", login::login_kind()),
+        ("description", description::cases()),
+        ("counter", counter::cases()),
+        ("title_marks", title_marks::cases()),
+        ("search_keys", search_keys::cases()),
+        ("episode_switch", episode_switch::cases()),
+        ("requests_plex", requests_plex::requests_plex()),
+        ("log_redaction", log_redaction::cases()),
+        ("requests_http", requests::requests_http()),
+    ]
+}

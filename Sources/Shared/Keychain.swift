@@ -62,6 +62,9 @@ enum Keychain {
     /// Throws instead of failing silently; otherwise you only notice at the next
     /// launch that nothing was saved.
     static func save(_ data: Data, key: String) throws {
+        #if DEBUG
+        if snapshotBlind { return }
+        #endif
         let query = query(key)
 
         var add = query
@@ -97,7 +100,16 @@ enum Keychain {
         guard status == errSecSuccess else { throw Failure.write(status) }
     }
 
+    #if DEBUG
+    /// Snapshot tests only (`Tests/SwiftUIParity`): the key store is not touched, so a headless render never waits
+    /// on the system's key service. Does not exist in release builds.
+    nonisolated(unsafe) static var snapshotBlind = false
+    #endif
+
     static func load(key: String) -> Data? {
+        #if DEBUG
+        if snapshotBlind { return nil }
+        #endif
         if let data = read(key) { return data }
 
         #if os(macOS)
@@ -138,6 +150,9 @@ enum Keychain {
     /// would bring it back via the migration, leaving the user signed in again
     /// without doing anything.
     static func delete(key: String) {
+        #if DEBUG
+        if snapshotBlind { return }
+        #endif
         SecItemDelete(query(key) as CFDictionary)
         #if os(macOS)
         SecItemDelete(query(key, oldCache: true) as CFDictionary)

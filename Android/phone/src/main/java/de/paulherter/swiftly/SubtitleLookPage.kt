@@ -51,7 +51,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import de.paulherter.swiftly.core.Kern
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.Theme
@@ -77,19 +76,18 @@ fun SubtitleLookPage(app: SwiftlyApplication, back: () -> Unit) {
     var undo by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(undo) { if (undo != null) { delay(4000); undo = null } }
 
-    fun store(next: String) { e.subtitleLook = Kern.subtitleLookNormalise(next); app.qualityReport() }
-    fun set(field: String, value: String) {
-        val next = Kern.subtitleLookChange(look, field, value)
-        if (next != Kern.subtitleLookNormalise(look)) store(next)
-    }
+    // Every tap builds on the look as it is NOW (`e.subtitleLook` is read when the tap happens), never on the
+    // `look` of the composition that created the callback: a second tap before the page recomposed lost the first.
+    val editor = remember(app) { SubtitleLookEditor({ app.settings.subtitleLook }, { app.settings.subtitleLook = it; app.qualityReport() },
+        KernRules::subtitleLookNormalise, KernRules::subtitleLookChange) }
+    fun set(field: String, value: String) = editor.set(field, value)
     fun reset() {
         if (facts.standard) return
         jerk(Jerk.Lightweight)
-        val before = Kern.subtitleLookNormalise(look)
         // The file switch is part of the look and goes back with it (spec section 3).
-        store(Kern.subtitleLookStandard())
-        undo = before
+        undo = editor.reset(KernRules.subtitleLookStandard())
     }
+    fun store(next: String) = editor.store(next)
 
     // The picture height the player's text is sized against: the short side of the screen.
     val metrics = LocalContext.current.resources.displayMetrics
@@ -151,9 +149,9 @@ private fun Rows(app: SwiftlyApplication, facts: SubtitleFacts, playerOpen: Bool
                            { set("size", it) }) { word, chosen -> GlyphLetter(subtitleGlyphSize(word).sp, chosen, null) }
                 SeparatorLine()
                 SegmentRow(Glyph.Palette, translated("Farbe"), SubtitleSteps.colours, facts.colour, 48.dp, ::subtitleColourName,
-                           { set("colour", it) }) { word, _ -> GlyphLetter(17.sp, true, SubtitleFacts.of(Kern.subtitleLookChange("", "colour", word), app.isTv).color) }
+                           { set("colour", it) }) { word, _ -> GlyphLetter(17.sp, true, SubtitleFacts.of(KernRules.subtitleLookChange("", "colour", word), app.isTv).color) }
                 SeparatorLine()
-                SegmentRow(Glyph.TextOutline, translated("Rand"), SubtitleSteps.outlines, facts.outline, 70.dp, ::subtitleOutlineName,
+                SegmentRow(Glyph.TextOutline, translated("Rand"), SubtitleSteps.outlines, facts.outline, 60.dp, ::subtitleOutlineName,
                            { set("outline", it) }) { word, chosen -> SegmentWord(subtitleOutlineName(word), chosen) }
                 SeparatorLine()
                 ChoiceRow(Glyph.Shadow, translated("Schatten"), an = facts.shadow) { set("shadow", it.toString()) }
@@ -165,7 +163,7 @@ private fun Rows(app: SwiftlyApplication, facts: SubtitleFacts, playerOpen: Bool
             }
             if (!wide) Footer(translated("Gilt für Untertitel aus Text. Die von Blu-rays sind Bilder und bleiben, wie sie sind."))
             SettingGroup(translated("Aufwendige Untertitel")) {
-                val adjustable = app.kern.subtitleFileStyleAdjustable()
+                val adjustable = app.rk.subtitleFileStyleAdjustable()
                 ChoiceRow(Glyph.Document, translated("Gestaltung aus der Datei übernehmen"),
                           under = if (adjustable) facts.fileStyleLine() else translated("Bei Plex-Servern kommt die Gestaltung immer aus der Datei."),
                           an = facts.keepFileStyle || !adjustable, locked = !adjustable) { set("keepFileStyle", it.toString()) }
@@ -204,13 +202,30 @@ private fun SegmentRow(symbol: Glyph, title: String, options: List<String>, valu
                        name: (String) -> String, choose: (String) -> Unit,
                        label: @Composable (String, Boolean) -> Unit) {
     val strip = @Composable { GlyphSegments(title, options, value, each, name, choose, label) }
-    if (LocalDensity.current.fontScale > 1.3f) {
-        Column {
-            RowsLayout(symbol, title, null, Theme.font, Modifier) {}
-            Box(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).padding(bottom = 10.dp), contentAlignment = Alignment.CenterEnd) { strip() }
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = LocalDensity.current
+    val titleStyle = Theme.listTitle.copy(fontSize = Theme.rowTitleSize, fontWeight = FontWeight.Medium)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // The title never wraps ("Outlin / e"): when it does not fit beside the segments in one line, the
+        // segments go below, full width. Large system type does the same.
+        val titleDp = with(density) { measurer.measure(title, titleStyle, maxLines = 1, softWrap = false).size.width.toDp() }
+        val stacked = density.fontScale > 1.3f || SegmentRowFit.stacks(titleDp, maxWidth, each * options.size + 2.dp)
+        if (stacked) {
+            Column {
+                RowsLayout(symbol, title, null, Theme.font, Modifier) {}
+                Box(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing).padding(bottom = 10.dp), contentAlignment = Alignment.CenterEnd) { strip() }
+            }
+        } else {
+            RowsLayout(symbol, title, null, Theme.font, Modifier, verticalRight = 6) { strip() }
         }
-    } else {
-        RowsLayout(symbol, title, null, Theme.font, Modifier, verticalRight = 6) { strip() }
+    }
+}
+
+/** Whether a title fits in one line beside the segment strip. `row` is the card's width; inside it `RowsLayout` takes edge, icon, two 14 dp gaps. */
+object SegmentRowFit {
+    fun stacks(title: Dp, row: Dp, strip: Dp): Boolean {
+        val free = row - Theme.edgeSpacing * 2 - Theme.rowIconWidth - 14.dp * 2 - strip
+        return title > free
     }
 }
 
@@ -247,5 +262,31 @@ private fun GlyphSegments(group: String, options: List<String>, value: String, e
                     contentAlignment = Alignment.Center) { label(option, chosen) }
             }
         }
+    }
+}
+
+/**
+ * The writes of the look page. Reads the current look at call time, so a tap always builds on the latest look
+ * (tests: `SubtitleLookEditorTest`).
+ */
+class SubtitleLookEditor(
+    private val read: () -> String,
+    private val write: (String) -> Unit,
+    private val normalise: (String) -> String,
+    private val change: (String, String, String) -> String,
+) {
+    fun store(next: String) = write(normalise(next))
+
+    fun set(field: String, value: String) {
+        val now = read()
+        val next = change(now, field, value)
+        if (next != normalise(now)) store(next)
+    }
+
+    /** Stores [standard]; returns the look before, for "Undo". */
+    fun reset(standard: String): String {
+        val before = normalise(read())
+        store(standard)
+        return before
     }
 }

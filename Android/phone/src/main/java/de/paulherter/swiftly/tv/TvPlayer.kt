@@ -99,7 +99,7 @@ import de.paulherter.swiftly.episodesPreload
 import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
+import de.paulherter.swiftly.KernRules
 import de.paulherter.swiftly.seriesRead
 import de.paulherter.swiftly.selectionRead
 import de.paulherter.swiftly.timeText
@@ -248,7 +248,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
         // the command comes back, then for everyone at once.
         if (mediaWork.inGroup) {
             markDiscard()
-            if (should != mediaWork.running) app.kern.syncPlayPleaseToggle(mediaWork.running)
+            if (should != mediaWork.running) app.rk.syncPlayPleaseToggle(mediaWork.running)
             AppLog.writeOut("[Taste] $source: Bitte an die Gruppe")
             showItem()
             return
@@ -563,7 +563,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
                             contentDescription = translated("Abspielstelle")
                             // With chapter: "12:00 / 45:00, chapter name"; the name comes from the server, untranslated.
                             stateDescription = timeText(mediaWork.position) + " / " + timeText(mediaWork.duration) +
-                                (if (mediaWork.chapterCount > 0) app.kern.chapterName(mediaWork.position).let { if (it.isEmpty()) "" else ", $it" } else "")
+                                (if (mediaWork.chapterCount > 0) app.rk.chapterName(mediaWork.position).let { if (it.isEmpty()) "" else ", $it" } else "")
                         }) {
                     TvTimeBar(app, { mediaWork.position }, mediaWork.duration, seekTarget, mediaWork.running, asEnd, mediaWork.chapterCount) { mediaWork.trickplayImage(it) }
                 }
@@ -593,10 +593,11 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
                         }
                         true
                     }) {
+                val skipShare = mediaWork.buttonCountdown
                 TvOfferingPill(mediaWork.offerText,
-                    share = null,
-                    seconds = null,
-                    running = mediaWork.running, length = mediaWork.countdownLength,
+                    share = skipShare,
+                    seconds = skipShare?.let { kotlin.math.ceil((1 - it) * de.paulherter.swiftly.SKIP_BUTTON_SECONDS).toInt() },
+                    running = mediaWork.running, length = de.paulherter.swiftly.SKIP_BUTTON_SECONDS,
                     modifier = Modifier.focusRequester(offeringFocus)) {
                     AppLog.writeOut("Angebot: gedrückt (${mediaWork.offeringArt})")
                     mediaWork.offeringRun()
@@ -796,9 +797,9 @@ private fun TvTimeBar(app: SwiftlyApplication, position: () -> Double, duration:
             // segment containing the target rises to 6, the others stay at 4. Gap size as on the phone: tvOS
             // uses 4 pt at an 8 pt bar, here 2 dp at 4 dp.
             val bar = remember(chapterCount, duration, width) {
-                chapterBarRead(app.kern.chapterBar(duration, width.value.toDouble(), ChapterMass.minWidth, ChapterMass.gap))
+                chapterBarRead(app.rk.chapterBar(duration, width.value.toDouble(), ChapterMass.minWidth, ChapterMass.gap))
             }
-            val elevated = if (seeks) app.kern.chapterPiece(target.toDouble(), duration, width.value.toDouble(), ChapterMass.minWidth).toInt() else -1
+            val elevated = if (seeks) app.rk.chapterPiece(target.toDouble(), duration, width.value.toDouble(), ChapterMass.minWidth).toInt() else -1
             val fromState = width * minOf(state, target)
             bar.pieces.forEachIndexed { i, piece ->
                 key(i) {
@@ -837,7 +838,7 @@ private fun TvTimeBar(app: SwiftlyApplication, position: () -> Double, duration:
                     }
                     // **With a chapter its name precedes the time**, on one line and at most as wide as the thumbnail;
                     // a long name is truncated, never the time.
-                    val name = if (chapterCount > 0) app.kern.chapterName(shown) else ""
+                    val name = if (chapterCount > 0) app.rk.chapterName(shown) else ""
                     Row(Modifier.widthIn(max = 200.dp), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)) {
                         if (name.isNotEmpty()) {
@@ -1115,7 +1116,7 @@ private fun TvSettingLayer(mediaWork: PlayItem, app: SwiftlyApplication,
         // **Quality: Direct Play or a ceiling.** A ceiling means the server may transcode, so Direct Play
         // is off. Works like the setting in the app and reloads the film at the same position.
         if (qualityShow) {
-            val bitrates = remember { selectionRead(Kern.bitrateLevels()) }
+            val bitrates = remember { selectionRead(KernRules.bitrateLevels()) }
             // `-1`: Direct Play. Otherwise a bitrate limit, `0` means unlimited.
             fun select(megabit: Int) {
                 val before = e.alwaysDirectPlay to e.bitratesLimit
@@ -1181,20 +1182,20 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, title: Stri
     suspend fun episodesRefresh() {
         val g = selected ?: return
         try {
-            val f = episodesRead(withContext(Dispatchers.IO) { app.kern.episodes(seriesIdentifier, g).await() })
+            val f = episodesRead(withContext(Dispatchers.IO) { app.rk.episodes(seriesIdentifier, g).await() })
             if (selected == g) { episodes = f; app.episodesCache[g] = f }
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
 
     LaunchedEffect(seriesIdentifier) {
         try {
-            val s = seriesRead(withContext(Dispatchers.IO) { app.kern.series(seriesIdentifier).await() })
+            val s = seriesRead(withContext(Dispatchers.IO) { app.rk.series(seriesIdentifier).await() })
             app.seriesCache[seriesIdentifier] = s
             seasons = s.seasons
             if (selected == null || seasons.none { it.id == selected }) selected = matching(seasons, s.selected)
             val g = selected ?: return@LaunchedEffect
             if (episodes.isEmpty()) app.episodesCache[g]?.let { episodes = it }
-            val f = episodesRead(withContext(Dispatchers.IO) { app.kern.episodes(seriesIdentifier, g).await() })
+            val f = episodesRead(withContext(Dispatchers.IO) { app.rk.episodes(seriesIdentifier, g).await() })
             // If another season has been chosen in the meantime, its episodes are used.
             if (selected == g) { episodes = f; app.episodesCache[g] = f }
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
@@ -1226,14 +1227,14 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, title: Stri
             val remembered = app.episodesCache[s.id]
             if (remembered != null) episodes = remembered
             try {
-                val f = if (remembered != null) remembered else episodesRead(withContext(Dispatchers.IO) { app.kern.episodes(seriesIdentifier, s.id).await() })
+                val f = if (remembered != null) remembered else episodesRead(withContext(Dispatchers.IO) { app.rk.episodes(seriesIdentifier, s.id).await() })
                 if (selected == s.id) { episodes = f; app.episodesCache[s.id] = f }
             } catch (e: CancellationException) { throw e } catch (_: Exception) {}
             strip.scrollToItem(episodes.indexOfFirst { it.id == runningId }.coerceAtLeast(0))
             reveal.animateTo(1f, tween(250, easing = EaseOut))
             // Fresh from the server in case the cache was old.
             if (remembered != null) try {
-                val f = episodesRead(withContext(Dispatchers.IO) { app.kern.episodes(seriesIdentifier, s.id).await() })
+                val f = episodesRead(withContext(Dispatchers.IO) { app.rk.episodes(seriesIdentifier, s.id).await() })
                 if (selected == s.id) { episodes = f; app.episodesCache[s.id] = f }
             } catch (e: CancellationException) { throw e } catch (_: Exception) {}
         }

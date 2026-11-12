@@ -42,6 +42,7 @@ struct PlaybackSettingsView: View {
                 .fadingUnderSubpageHeader(title: String(localized: "Wiedergabe")) { back() }
             sheet
         }
+        .onChange(of: feed.facts(model), initial: true) { _, new in feed.apply(new, model) }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .background(SwipeBack())
@@ -72,94 +73,79 @@ struct PlaybackSettingsView: View {
         .padding(.bottom, 40)
     }
 
-    private var quality: some View {
-        // If the server does not convert, there is nothing to choose: Direct Play is
-        // fixed on, the bitrate is locked.
-        let free = model.convertAllowed
-        let directPlay = model.alwaysDirectPlay || !free
-        let select: (() -> Void)? = directPlay ? nil : { openIt(.bitrate) }
+    /// The rows, their texts, dimming and validation come from the Rust core; symbols and layout
+    /// stay here.
+    private let feed = SettingsRowsFeed.shared
 
-        return SettingGroup(title: "Qualität") {
-            ChoiceRow(symbol: "play", title: Text("Immer Direct Play"),
-                      under: Text("Der Server wandelt nie um"),
-                      an: Binding(get: { directPlay },
-                                  set: { model.alwaysDirectPlay = $0 }))
-                .disabled(!free)
+    /// A switch row of the core. Dimmed (and not operable) is the core's decision: "Always Direct
+    /// Play" is fixed on when the server cannot convert.
+    @ViewBuilder private func switchRow(_ key: String) -> some View {
+        if let row = feed.row(key) {
+            ChoiceRow(symbol: SettingsRowsFeed.symbol(key), title: row.titleText,
+                      under: row.underText, an: feed.binding(key))
+                .disabled(!row.enabled)
+        }
+    }
+
+    /// A row with a value that opens the list of its key.
+    @ViewBuilder private func listRow(_ key: String, _ kind: ListKind) -> some View {
+        if let row = feed.row(key) {
+            ValueRow(symbol: SettingsRowsFeed.symbol(key), title: row.titleText, under: row.underText,
+                     value: feed.shown(key), dimmedDown: !row.enabled,
+                     action: row.enabled ? { openIt(kind) } : nil)
+        }
+    }
+
+    private var quality: some View {
+        SettingGroup(title: "Qualität") {
+            switchRow("immerDirectPlay")
             SheetLine()
-            ValueRow(symbol: "speedometer", title: Text("Höchste Bitrate"),
-                      under: directPlay ? Text("Nicht nötig bei Direct Play") : nil,
-                      value: Bitrate.text(model.bitratesLimit),
-                      dimmedDown: directPlay, action: select)
+            listRow("bitratenGrenze", .bitrate)
         }
     }
 
     private var language: some View {
         SettingGroup(title: "Sprache") {
-            ValueRow(symbol: "speaker.wave.2", title: Text("Ton"),
-                      value: model.audioLanguage.isEmpty ? String(localized: "Wie die Datei") : model.audioLanguage,
-                      action: { openIt(.audio) })
+            listRow("tonSprache", .audio)
             SheetLine()
-            ValueRow(symbol: "captions.bubble", title: Text("Untertitel"),
-                      value: model.subtitleLanguage.isEmpty ? String(localized: "Aus") : model.subtitleLanguage,
-                      action: { openIt(.subtitle) })
+            listRow("utSprache", .subtitle)
             SheetLine()
-            ChoiceRow(symbol: "text.alignleft", title: Text("Untertitel automatisch"),
-                      under: Text("Wenn der Ton nicht deine Sprache ist"),
-                      an: Binding(get: { model.subtitleAutomatic },
-                                  set: { model.subtitleAutomatic = $0 }))
+            switchRow("utAuto")
             SheetLine()
             // The page for size, colour, outline and so on (spec: subtitle look, section 1).
             NavigationLink(value: SubtitleLookRoute()) {
-                ValueRow(symbol: "textformat.size", title: Text("Untertitel-Stil"),
-                         value: model.subtitleLook.entryValue, chevron: true)
+                if let row = feed.row("utAussehen") {
+                    ValueRow(symbol: SettingsRowsFeed.symbol("utAussehen"), title: row.titleText,
+                             value: feed.shown("utAussehen"), chevron: true)
+                }
             }
             .buttonStyle(Theme.PressRow())
         }
     }
 
-    @AppStorage("technikschild") private var techBadge = false
-    @AppStorage(PlayerEndTime.key) private var showsEnd = PlayerEndTime.standard
-    @AppStorage("introAbspannAuto") private var skipAutomatic = false
-
     private var behavior: some View {
         VStack(alignment: .leading, spacing: 0) {
         SettingGroup(title: "Ablauf") {
-            ChoiceRow(symbol: "forward.end", title: Text("Nächste Folge automatisch"),
-                      an: Binding(get: { model.nextAutomatic },
-                                  set: { model.nextAutomatic = $0 }))
+            switchRow("naechsteAuto")
             SheetLine()
-            ChoiceRow(symbol: "forward", title: Text("Intro und Abspann"),
-                      under: Text("Werden automatisch übersprungen"),
-                      an: $skipAutomatic)
+            switchRow("introAbspannAuto")
         }
         SettingGroup(title: "Im Player") {
-            ValueRow(symbol: "gobackward", title: Text("Zurückspulen"),
-                      value: "\(model.backSeconds) s",
-                      action: { openIt(.back) })
+            listRow("zurueckSek", .back)
             SheetLine()
-            ValueRow(symbol: "goforward", title: Text("Vorspulen"),
-                      value: "\(model.forwardSeconds) s",
-                      action: { openIt(.forward) })
+            listRow("vorSek", .forward)
             SheetLine()
-            // Moved here from Darstellung; missing on iPad on purpose, see `Orientierung`.
-            if Orientierung.landscapeLockPossible {
-                ChoiceRow(symbol: "rectangle.on.rectangle",
-                          title: Text("Querformat sperren"),
-                          an: Binding(get: { model.landscapeFixed },
-                                      set: { model.landscapeFixed = $0 }))
+            // Moved here from Darstellung; missing on iPad on purpose, see `Orientierung`: the core
+            // leaves the row out when it cannot be locked here.
+            if feed.row("querformatFest") != nil {
+                switchRow("querformatFest")
                 SheetLine()
             }
             // Shows what playback does, changes nothing about it. Off until someone looks for it.
-            ChoiceRow(symbol: "waveform.badge.magnifyingglass",
-                      title: Text("Technische Daten"),
-                      under: Text("Zeigt Format und Bitrate im Player"),
-                      an: $techBadge)
+            switchRow("technikschild")
             SheetLine()
             // "Endet um 18:38" instead of the remaining time; off by default (`PlayerEndTime`).
-            ChoiceRow(symbol: "clock",
-                      title: Text("Endzeit im Player"),
-                      under: Text("Zeigt, wann der Titel endet"),
-                      an: $showsEnd)
+            switchRow("endzeitImPlayer")
         }
         }
     }
@@ -220,60 +206,30 @@ struct PlaybackSettingsView: View {
                      select: { $0.perform() })
     }
 
+    private var sheetKey: String? {
+        switch shownList {
+        case .bitrate: "bitratenGrenze"
+        case .audio: "tonSprache"
+        case .subtitle: "utSprache"
+        case .back: "zurueckSek"
+        case .forward: "vorSek"
+        case nil: nil
+        }
+    }
+
     private var sheetTitle: LocalizedStringKey {
-        switch shownList {
-        case .bitrate:    "Höchste Bitrate"
-        case .audio:        "Ton"
-        case .subtitle: "Untertitel"
-        case .back:    "Zurückspulen"
-        case .forward:        "Vorspulen"
-        case nil:         ""
-        }
+        sheetKey.flatMap { feed.row($0) }.map { LocalizedStringKey($0.title) } ?? ""
     }
 
+    /// The options are the core's (labels and order), validated there when picked.
     private var sheetEntries: [SelectionEntry] {
-        switch shownList {
-        case .bitrate:
-            Bitrate.levels.map { rung in
-                SelectionEntry(id: "b\(rung.value)", text: Bitrate.text(rung.value),
-                               selected: rung.value == model.bitratesLimit) {
-                    model.bitratesLimit = rung.value
-                }
+        guard let key = sheetKey else { return [] }
+        return feed.options(key).map { option in
+            SelectionEntry(id: key + option.value, text: option.label, selected: option.selected) {
+                feed.choose(key, option.value)
             }
-        case .audio:
-            LanguageSelection.all.map { choice in
-                SelectionEntry(id: "t\(choice.value)", text: choice.name,
-                               selected: choice.name == model.audioLanguage) {
-                    model.audioLanguage = choice.value
-                }
-            }
-        case .subtitle:
-            LanguageSelection.all(from: String(localized: "Aus")).map { choice in
-                SelectionEntry(id: "u\(choice.value)", text: choice.name,
-                               selected: choice.name == model.subtitleLanguage) {
-                    model.subtitleLanguage = choice.value
-                }
-            }
-        case .back:
-            Span.levels.map { rung in
-                SelectionEntry(id: "z\(rung.value)", text: "\(rung.value) s",
-                               selected: rung.value == model.backSeconds) {
-                    model.backSeconds = rung.value
-                }
-            }
-        case .forward:
-            Span.levels.map { rung in
-                SelectionEntry(id: "v\(rung.value)", text: "\(rung.value) s",
-                               selected: rung.value == model.forwardSeconds) {
-                    model.forwardSeconds = rung.value
-                }
-            }
-        case nil:
-            []
         }
     }
-
-
 
 }
 

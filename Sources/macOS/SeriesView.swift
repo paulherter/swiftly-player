@@ -1,5 +1,6 @@
 import JellyfinKit
 import SwiftUI
+import SwiftlyCore
 
 /// Series page. Same header as the movie page, with three sections below:
 /// Episodes, Cast, Similar.
@@ -15,43 +16,65 @@ struct SeriesView: View {
     /// Season selected on open; set when the user arrived via an episode.
     var startSeasonID: String?
     /// The season **number** of the episode the user came from: the reliable key.
-    ///
-    /// The server may return no `SeasonId` for an episode. Id comparisons then find
-    /// nothing and the selection falls back to the first season. The number is
-    /// always present.
     var startSeasonNumber: Int?
     let back: () -> Void
     @Environment(Navigator.self) private var navigator
     @Environment(\.section) private var section
+    @Environment(PlayControls.self) private var controls
 
+    /// The page's data owner, the core's `SeriesVm` (`SeriesCore`); `nil` when there is no account.
+    @State private var page: SeriesCore?
     @State private var tab: PageTab = .episodes
-    @State private var seasons: [Item] = []
-    @State private var selected: Item?
-    @State private var episodes: [Item] = []
-    /// **Empty and failed are two different states.** Checking only the list made
-    /// "Keine Folgen" appear even when the server had not answered.
-    @State private var episodesDisturbed = false
-    @State private var seasonsDisturbed = false
-    @State private var similar: [Item] = []
-    @State private var similarDisturbed = false
-    /// Extras of the series; empty means no tab.
-    @State private var extras: [Item] = []
     @State private var seasonOpen = false
     @State private var seasonPanelOpen = false
     @State private var loadItem: [DownloadItem] = []
     /// What the header panel shows: "Staffel 5" or the name of an episode.
-    /// It used to be fixed to the season even when only one episode was loaded.
     @State private var loadTitle = ""
     /// The download selection: whole series, seasons, episodes.
     @State private var selectionOpen = false
+    @State private var versionPick: VersionPick?
     /// For the header image, which is saved along with a download on the Mac.
     @Environment(\.displayScale) private var pixelMetric
     @State private var pagesWidth: CGFloat = 0
+    @State private var headerState = HeaderState()
+
+    @MainActor init(model: AppModel, series: Item,
+                    startSeasonID: String? = nil, startSeasonNumber: Int? = nil,
+                    back: @escaping () -> Void) {
+        self.model = model
+        self.series = series
+        self.startSeasonID = startSeasonID
+        self.startSeasonNumber = startSeasonNumber
+        self.back = back
+        _page = State(initialValue: SeriesCore(
+            app: model, item: series, startSeasonID: startSeasonID, startSeasonNumber: startSeasonNumber))
+    }
+
+    private var current: Item { page?.item ?? series }
+    private var button: SeriesButtonPart? { page?.model.button }
+    private var seasonRows: [SwiftlyCore.SeasonRow] { page?.model.seasons.seasons ?? [] }
+    private var selectedSeasonID: String? { page?.model.seasons.selected }
+    private var more: MorePart? { page?.model.more }
+    private var extras: [Item] { (more?.extras ?? []).map(Item.init(rust:)) }
+    private var similar: [Item] { (more?.similar ?? []).map(Item.init(rust:)) }
+
+    /// The seasons as `Item`s for the picker and the download selection.
+    private var seasons: [Item] {
+        seasonRows.map { page?.item($0.id) ?? Item(id: $0.id, name: $0.name, type: "Season") }
+    }
+    private var selected: Item? { seasons.first { $0.id == selectedSeasonID } }
+    private var seasonBinding: Binding<Item?> {
+        Binding(get: { selected },
+                set: { if let id = $0?.id { page?.model.selectSeason(id) } })
+    }
+    private var episodes: [Item] {
+        let items = page?.episodeItems() ?? [:]
+        return (page?.model.episodes.rows ?? []).compactMap { items[$0.id] }
+    }
 
     // MARK: Downloads
 
-    /// A `DownloadItem` for an episode. **The same source the player would use**,
-    /// since it is the same file.
+    /// A `DownloadItem` for an episode. **The same source the player would use**, since it is the same file.
     private func entries(_ episode: Item) -> DownloadItem? {
         guard let account = model.session?.storageAccount else { return nil }
         let source = episode.mediaSources?.first
@@ -68,21 +91,15 @@ struct SeriesView: View {
     /// The series poster plus the landscape image of each episode being loaded.
     private var loadImages: [String: URL] {
         var card: [String: URL] = [:]
-        // Poster at 600 high instead of the 300 of a tile, as on the iPhone.
         if let poster = model.imageURL(for: series, maxHeight: 600, portrait: true) {
             card[series.id] = poster
         }
-        // **Header image at screen resolution**, for the series page in Downloads.
-        // There it is shown as `Backdrop`: 62 % of the width, `heroHeightValue * 1.62`
-        // high. A 16:9 image needs at least that much width for this. Multiplied by
-        // the display scale to stay sharp.
+        // Header image at screen resolution, for the series page in Downloads.
         if let header = model.headerImageURL(for: series, width: DownloadSeriesOverviewPage.headerPixel(
             pagesWidth: pagesWidth, pixelMetric: pixelMetric)) {
             card[DownloadManager.headerKey(series.id)] = header
         }
-        // **Every selected episode, not only those of the open season.** The download
-        // selection can take whole series, so `loadItem` holds episodes from seasons
-        // this page is not showing. The series store fetches their images.
+        // Every selected episode, not only those of the open season: the selection can take whole series.
         for p in loadItem {
             let f = episodes.first(where: { $0.id == p.id })
                 ?? SeriesCache.shared.state(series.id, with: model)?
@@ -94,12 +111,7 @@ struct SeriesView: View {
         return card
     }
 
-    // There is no `folgeGeklickt` and no download ring on each episode row, as on
-    // the iPhone. To download a single episode, tick it in the download selection,
-    // which also shows its size.
-
-    /// **The selection result goes to the download panel.** The panel still handles
-    /// free space, Wi-Fi and the normal case; the selection is a step before it.
+    /// The selection result goes to the download panel (free space, Wi-Fi and the normal case).
     private func selectionLoad(_ selectedEpisodes: [Item], _ quality: DownloadQuality,
                                _ audio: DownloadAudioChoice) {
         loadItem = selectedEpisodes.compactMap { episode in
@@ -110,50 +122,6 @@ struct SeriesView: View {
         loadTitle = series.name
         withAnimation(Theme.leap) { seasonPanelOpen = true }
     }
-    @State private var loads = true
-    /// Whether the first pass of `load()` has finished. **Without it the load ran
-    /// twice:** `.task(id: selected?.id)` fires on appear and fetched the episodes
-    /// alongside `load()`. When its response arrived shortly after, the whole list
-    /// was built a second time, in the middle of the push transition.
-    @State private var firstPull = false
-    /// The season whose episodes are shown or being fetched. When `load()` sets the
-    /// selection, `.task(id:)` sees the change and must not fetch again what the
-    /// same pass already delivered.
-    @State private var episodesFor: String?
-
-    /// **The initial state comes from the cache, not from nothing.**
-    ///
-    /// Same rule as in `NetworkImage` and on tvOS: a value supplied later arrives too
-    /// late. The empty pass has already happened, and that pass is the loader that
-    /// gets replaced by the list in the middle of the push transition.
-    @MainActor init(model: AppModel, series: Item,
-                    startSeasonID: String? = nil, startSeasonNumber: Int? = nil,
-                    back: @escaping () -> Void) {
-        self.model = model
-        self.series = series
-        self.startSeasonID = startSeasonID
-        self.startSeasonNumber = startSeasonNumber
-        self.back = back
-
-        let remembered = SeriesCache.shared.state(series.id, with: model)
-        let seasons = remembered?.seasons ?? []
-        _seasons = State(initialValue: seasons)
-
-        // **Only what was passed in.** If a hint is given it applies immediately, so the
-        // right season is already in the first frame. If none is given the selection
-        // stays open: `load` then asks which season the user is in, and that one
-        // applies. Taking `seasons.first` here would show season 1 and swap it for
-        // the current season a moment later, which is exactly the flicker this rule
-        // avoids.
-        let season = seasons.first { $0.id == startSeasonID }
-            ?? seasons.first { $0.indexNumber != nil && $0.indexNumber == startSeasonNumber }
-        _selected = State(initialValue: season)
-
-        let episodes = season.flatMap { remembered?.episodes[$0.id] } ?? []
-        _episodes = State(initialValue: episodes)
-        _loads = State(initialValue: episodes.isEmpty)
-    }
-    @State private var headerState = HeaderState()
 
     enum PageTab: String, CaseIterable {
         case episodes = "folgen", cast = "besetzung", similarOne = "aehnliches", extras
@@ -171,33 +139,25 @@ struct SeriesView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                DetailHero(model: model, title: series, state: headerState,
-                           season: selected,
-                           // **The download button sits in the row below the play button**, as on the
-                           // iPhone, not in a chip next to the season picker where nobody looks for it.
-                           // The selection itself stays here because it needs the seasons and the
-                           // preloaded episodes.
+                DetailHero(model: model, title: current, state: headerState,
+                           // The download button sits in the row below the play button, as on the iPhone;
+                           // the selection stays here because it needs the seasons and their episodes.
                            loadSelection: {
                                withAnimation(Theme.leap) { selectionOpen.toggle() }
                            },
                            selectionOpen: selectionOpen,
-                           // The design's series head ends at the buttons; the tabs follow.
-                           showsOverview: false)
-                    // **The header draws above what comes after it.**
-                    //
-                    // Without this the More menu ends up behind the tab row and the episode list:
-                    // they come after the header in the stack, so they draw later and therefore on
-                    // top. Both showed through each other.
+                           seriesPage: page)
+                    // The header draws above what comes after it (the More menu over the tabs).
                     .zIndex(1)
 
-                WatchersRow(model: model, item: series)
+                WatchersRow(model: model, item: series,
+                            fromCore: (more?.watchers ?? []).map(Watcher.init(core:)))
                     .padding(.horizontal, DetailPageMetric.left)
                     .padding(.top, 34)
 
                 TabRail(pick: $tab, cases: extras.isEmpty ? [.episodes, .cast, .similarOne]
                                                                     : SeriesView.PageTab.allCases,
-                        // As on the iPhone: the season choice lives in the first tab (selected
-                        // season name + chevron); a click on the open first tab opens the list.
+                        // The season choice lives in the first tab; a click on the open first tab opens the list.
                         firstLabel: seasons.isEmpty ? nil
                             : (selected?.name ?? String(localized: "Staffel")),
                         firstChevron: seasons.count > 1,
@@ -207,42 +167,19 @@ struct SeriesView: View {
                         })
                     .padding(.top, 34)
 
-                segment
+                segmentContent
                     .padding(.horizontal, DetailPageMetric.left)
                     .padding(.top, 14)
             }
             .padding(.bottom, 40)
-            // **The color of the header image under the page**, as on the movie page and the
-            // iPhone (`MoodReason`). It sits on the content so it scrolls with the
-            // header; buttons, season pill and list pick it up through `onImageTint`.
+            // The color of the header image under the page; it scrolls with the header.
             .background(alignment: .top) {
                 StretchedMood(url: model.headerImageURL(for: series), state: headerState)
             }
             .environment(\.onImageTint, true)
             .environment(\.imageColorSource, model.headerImageURL(for: series))
-            // **The download panel lives in the content, not on the page.**
-            //
-            // As an overlay over the whole page it had two problems: the catcher below it
-            // covered the scroll area, so the page could not scroll while the panel was
-            // open, and the panel stayed fixed in the window while the episode it belongs
-            // to scrolled away.
-            //
-            // In the content both go away: the wheel reaches the scroll area because the
-            // catcher is inside it.
-            //
-            // **There is no named coordinate space "serienseite" anymore.** It only carried
-            // the bottom edge of each episode row so the panel could open under the clicked
-            // download ring. The ring is gone, so the space is unused.
-            //
-            // **Left, not right: the panel opens under its button.** The button sits in the
-            // row below the play button, so on the left. A panel opening at the other end
-            // of the window leaves the user searching for what it refers to.
-            //
-            // `heroHeightValue + 8` is the bottom of the button row plus the same 8 pt gap the
-            // movie page's download panel has. It is tied to the page measurement and not
-            // to the button itself: the row shifts with the label length ("Fortsetzen" is
-            // longer than "Abspielen"), and a panel whose position changes from title to
-            // title would be more restless than one that always starts on the same line.
+            // The download panels live in the content, so the page keeps scrolling while they are open and
+            // they scroll along with the button they belong to. They open under that button, on the left.
             .overlay(alignment: .topLeading) {
                 if selectionOpen {
                     ZStack(alignment: .topLeading) {
@@ -276,8 +213,6 @@ struct SeriesView: View {
                                   title: loadTitle,
                                   images: loadImages,
                                   opened: $seasonPanelOpen)
-                            // Under the button that opened it. The download selection is the only way here,
-                            // so there is only one place.
                             .padding(.leading, DetailPageMetric.left)
                             .padding(.top, DetailPageMetric.railBottom + 8)
                     }
@@ -286,14 +221,7 @@ struct SeriesView: View {
             }
         }
         .scrollIndicators(.never)
-        // **The milky bar at the top edge.** macOS 26 puts it over every scroll view on
-        // its own. It was never in our code. Over the image it blended in; on plain
-        // background on the left it showed as a band.
-        //
-        // What the framework adds unasked has to be turned off just like what we write
-        // ourselves. This is the same window setting as the movie page. Without it, the
-        // window preference would flip back and forth when switching between the two
-        // pages, and AppKit recomputes layout on every flip.
+        // The window setting must match the movie page's; see there.
         .toolbar(.hidden)
         .toolbarBackground(.hidden, for: .windowToolbar)
         .pagesScroll()
@@ -306,165 +234,68 @@ struct SeriesView: View {
             DetailHeader(title: series.name, state: headerState, back: back,
                          mood: model.headerImageURL(for: series))
         }
-        .task { await load() }
-        // Reload the episodes after the player closes: it is a layer above the page, so
-        // the `.task(id:)` below does not rerun. See `AppModel.playbackEnded`.
-        .onChange(of: model.pagesRefresh) { _, _ in Task { await episodesLoad() } }
-        // **Only for a season change.** The first selection, with its episodes, comes
-        // in one pass from `load()`.
-        .task(id: selected?.id) {
-            guard firstPull, let season = selected?.id, season != episodesFor else { return }
-            episodesFor = season
-            // **And not while no season is selected.** Without a hint, `init` selects no
-            // season. When the seasons came from the cache, `seasonsPresent` was immediately
-            // true and this task fetched **all** episodes of the series with `season: nil`.
-            // The selection arrived shortly after, the task ran again, and the list was
-            // built a second time with different content, in the middle of the push
-            // transition. That is exactly what `seasonsPresent` was introduced to prevent.
-            //
-            // If the series has no seasons at all, `load()` fetches the episodes itself,
-            // so there is nothing to do here.
-            await episodesLoad()
+        // The core loads seasons, the open season's episodes, cast, extras, similar and watchers, and keeps the
+        // page current. Cancelled (page covered) is not a failure; the task restarts on return.
+        .task {
+            if page == nil {
+                page = SeriesCore(app: model, item: series, startSeasonID: startSeasonID,
+                                  startSeasonNumber: startSeasonNumber)
+            }
+            await page?.run(app: model)
+        }
+        // After the player closes the page refreshes (it is a layer above, so `.task` does not rerun).
+        .onChange(of: model.pagesRefresh) { _, _ in page?.model.refresh() }
+        .onChange(of: model.watchersShown) { _, _ in page?.send(options: model) }
+        .onChange(of: model.downloadButtonShow) { _, _ in page?.send(options: model) }
+        .onChange(of: PlayOutputs.shared.targets.map(\.id)) { _, _ in page?.send(options: model) }
+        .onChange(of: extras.isEmpty) { _, none in if none && tab == .extras { tab = .episodes } }
+        .versionPick($versionPick) { choice, version in
+            guard let page else { return }
+            page.launch(page.episodeAction(choice.itemId, pick: version.id), since: choice.since,
+                        controls: controls) { versionPick = $0 }
         }
     }
 
     // MARK: Sections
-
-    private var segment: some View {
-        // **No gate on the section.** Holding the section back until the page has
-        // settled looked like it would avoid rebuilds during the transition, but
-        // measured, the series page animates as smoothly as the movie page: 107 frames
-        // in 457 ms against 110 in 460, largest frame gap 26 against 14 ms.
-        //
-        // The gate made things worse: the page came in **empty**, with a loader instead
-        // of content, and jumped to full a moment later. The movie page never had a
-        // gate.
-        //
-        // What still matters is that switching itself must not jump. The loader fades
-        // into the list, and the season pill does not appear abruptly.
-        //
-        // **No animation on data arrival.** Animating the change from the 200 pt loader
-        // to the episode list is a height jump of about a thousand points. Over 250 ms
-        // it forces the `LazyVStack` to build its rows step by step during the push,
-        // each with its own image request. The iPhone version animates nothing on data
-        // arrival; the list just grows.
-        segmentContent
-    }
 
     @ViewBuilder
     private var segmentContent: some View {
         switch tab {
         case .episodes:
             VStack(alignment: .leading, spacing: 0) {
-                // **The picker shows as soon as there are seasons**, not only from two.
-                //
-                // It used to depend on `seasons.count > 1`, on the idea that a button with one
-                // choice is no button. The iPhone reference differs in two places:
-                // `SeriesView` shows it for `!seasons.isEmpty`, and so does the episode layer
-                // in the Mac player. The chip is not only for switching, it also says **which**
-                // season is showing. With a single season it would remove the only place that
-                // says so, and for "Specials" it would hide that the user is in the specials.
-                //
-                // **The download button is not a chip next to the season picker.** It would be
-                // the only way to download on this page, in a place nobody looks. On the iPhone
-                // it sits in the row below the play button, between Watchlist and Watched, and
-                // it opens the same `MacLadeauswahl` here. The row that held both side by side
-                // is gone; the picker stands alone, as on the iPhone.
+                // The picker shows as soon as there are seasons: it also says WHICH season is showing.
                 if !seasons.isEmpty {
-                    SeasonSelection(seasons: seasons, selected: $selected,
+                    SeasonSelection(seasons: seasons, selected: seasonBinding,
                                 opened: $seasonOpen, showsPill: false)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        // 14 as on the iPhone (`episodesList`), plus the 12 of the row: 26 up to the
-                        // first still image.
                         .padding(.bottom, 14)
                         // The open list sits above the episodes.
                         .zIndex(10)
                 }
-                if loads {
-                    // Three rows in their final shape instead of a spinner.
-                    VStack(spacing: 0) {
-                        ForEach(0 ..< 3, id: \.self) { _ in
-                            HStack(spacing: 16) {
-                                LoadField().frame(width: 160, height: 90)
-                                VStack(alignment: .leading, spacing: 8) {
-                                    LoadField(corner: 3).frame(width: 220, height: 14)
-                                    LoadField(corner: 3).frame(width: 90, height: 11)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.vertical, 10)
-                        }
-                    }
-                    .transition(.opacity)
-                } else if episodesDisturbed || (seasonsDisturbed && seasons.isEmpty) {
-                    DisturbHint(model: model) { Task { await episodesLoad() } }
-                        .frame(height: 200)
-                } else if episodes.isEmpty {
-                    EmptyHint(text: "Keine Folgen")
-                        .frame(height: 200)
-                } else {
-                    // **`VStack`, not `LazyVStack`.**
-                    //
-                    // A lazy list does not know the height of what it has not built. Scrolling up
-                    // over twenty-two episodes makes the scroll area jump to the end instead of
-                    // traveling the distance, and a fixed row height does not help because the list
-                    // only learns it when it builds the row.
-                    //
-                    // Twenty-two rows are no cost, so the exact content is worth more than the
-                    // saving. Images are decoded off the main path, and no animation moves the
-                    // height jump.
-                    //
-                    // **To the window edge.** The section applies its horizontal margin on the
-                    // outside, so the gray highlight also ended there on hover. A row in a list
-                    // highlights across the **full** width, so the row itself carries the margin,
-                    // see `EpisodesRow`.
-                    //
-                    // **Lazy only from 60 rows.** A season with 200 episodes (anime, daily shows)
-                    // would otherwise build all rows and all image requests at once. The row height
-                    // is fixed (`imageHeight + 24`), so the jump when scrolling up stays small where
-                    // laziness pays off.
-                    let rows = ForEach(episodes, id: \.id) { episode in
-                        EpisodesRow(model: model, episode: episode,
-                                    download: { withAnimation(Theme.leap) { selectionOpen.toggle() } })
-                            // **Right-click: the tile menu**, as on every tile (``TileMenu``).
-                            .tileMenu(episode, model: model,
-                                         afterwards: { await episodesLoad() })
-                        // No hairline between episodes; the iPhone separates them with space only.
-                    }
-                    Group {
-                        if episodes.count > 60 {
-                            LazyVStack(spacing: 6) { rows }
-                        } else {
-                            VStack(spacing: 6) { rows }
-                        }
-                    }
-                    // The image lines up with the page edge; only the hover fill reaches past it.
-                    .padding(.leading, -10)
-                    .transition(.opacity)
-                }
+                episodesList
             }
 
         case .cast:
-            // The tab is there even when the server holds no cast: say so instead of an empty page.
-            if series.actors.isEmpty {
-                EmptyHint(text: "Keine Besetzung hinterlegt.")
-                    .frame(height: 200)
+            let folks = (more?.cast ?? []).map(Person.init(core:))
+            if folks.isEmpty {
+                if more?.similarLoads == true {
+                    Color.clear.frame(height: 200)
+                } else {
+                    EmptyHint(text: "Keine Besetzung hinterlegt.")
+                        .frame(height: 200)
+                }
             } else {
-                CastRail(model: model, folks: series.actors,
-                                origin: series.name)
+                CastRail(model: model, folks: folks, origin: series.name)
             }
 
         case .extras:
-            TitleRail(title: "Extras", entries: extras, model: model, play: true)
+            TitleRail(title: "Extras", entries: extras, model: model, play: true, looks: looks)
 
         case .similarOne:
-            // Show empty hints only after loading has finished, as on the iPhone. Before
-            // that, "Nichts Ähnliches gefunden" was shown while the request was still
-            // running.
-            if !firstPull, similar.isEmpty {
+            if similar.isEmpty, more?.similarLoads == true {
                 Color.clear.frame(height: 200)
-            } else if similarDisturbed, similar.isEmpty {
-                DisturbHint(model: model) { Task { await similarLoad() } }
+            } else if similar.isEmpty, more?.similarFailed == true {
+                DisturbHint(model: model) { page?.model.refresh() }
                     .frame(height: 200)
             } else if similar.isEmpty {
                 EmptyHint(text: "Nichts Ähnliches gefunden")
@@ -476,10 +307,11 @@ struct SeriesView: View {
                                              alignment: .topLeading)],
                           alignment: .leading, spacing: 20) {
                     ForEach(similar, id: \.id) { entryRecord in
+                        let look = looks[entryRecord.id]
                         Button { navigator.openIt(.title(entryRecord), in: section) } label: {
-                            PosterCell(title: entryRecord.name,
-                                         secondLine: entryRecord.productionYear.map { "\($0)" },
-                                         image: model.imageURL(for: entryRecord, portrait: true),
+                            PosterCell(title: look?.title ?? entryRecord.name,
+                                         secondLine: look != nil ? look?.subtitle : entryRecord.productionYear.map { "\($0)" },
+                                         image: look?.image ?? model.imageURL(for: entryRecord, portrait: true),
                                          symbolText: "tv")
                         }
                         .buttonStyle(Theme.PressButton())
@@ -490,109 +322,119 @@ struct SeriesView: View {
         }
     }
 
-    // MARK: Download
+    /// The tiles under the page take their pictures and wording from the core, found by id.
+    private var looks: [String: RustTileLook] {
+        var out: [String: RustTileLook] = [:]
+        for tile in (more?.similar ?? []) + (more?.extras ?? []) { out[tile.id] = RustTileLook(tile) }
+        return out
+    }
 
-    /// **One pass, not five**, as on the iPhone (`SeriesDetailView`). Seasons,
-    /// selection, the episodes of the selected season and "Ähnliches" arrive
-    /// together and land on the page in the same transaction. Previously the seasons
-    /// appeared first, `.task(id:)` then fetched the episodes, and "Ähnliches" loaded
-    /// only when the tab was opened, so "Nichts Ähnliches gefunden" showed until
-    /// then.
-    ///
-    /// **No animation.** The Mac page animates nothing on data arrival; see
-    /// `abschnitt`. The placeholder is there from the first frame and the list
-    /// replaces it in one step.
-    private func load() async {
-        // **Side by side because they do not depend on each other.** The list needs the
-        // seasons, the selection needs the current position, and only when no hint was
-        // passed. In sequence the timeouts would add up; same reasoning as the episode
-        // switch in the player.
-        async let state: Item? = (selected == nil && withoutHint) ? await model.stateInSeries(series) : nil
-        async let list = model.seasons(series)
-        async let alike = model.similar(series)
-        async let extra = model.extras(series)
-        let fetched = await list
-        // On failure the seasons from the cache stay and nothing is recorded. The
-        // section reports it when none are shown.
-        let seasonsNow = fetched ?? seasons
-        // **Also when the seasons are already there from the cache.** The selection may
-        // be open: without a hint, `init` makes none. A selection that was made stays.
-        let choice: Item?
-        if let already = selected { choice = already } else { choice = choose(from: seasonsNow, state: await state) }
-        // Without seasons, all episodes of the series belong in the list; with seasons
-        // but no selection there is nothing to fetch.
-        let fetch = choice != nil || (fetched?.isEmpty ?? false)
-        let newEpisodes = fetch ? await model.episodes(series: series.id, season: choice?.id) : nil
-        let newSimilar = await alike
-        let newExtras = await extra
-        // Seasons, episode list and Similar rebuild half the page, so apply them only
-        // once the page has settled (`InTravel`).
-        await InTravel.waitFor()
-        guard !Task.isCancelled else { return }
-
-        seasonsDisturbed = fetched == nil
-        if let fetched { seasons = fetched }
-        similarDisturbed = newSimilar == nil
-        if let newSimilar { similar = newSimilar }
-        if let newExtras { extras = newExtras }
-        if extras.isEmpty && tab == .extras { tab = .episodes }
-        // If the user selected a season in the meantime, the list belongs to that
-        // selection, not to this response; `.task(id:)` fetches it.
-        if selected == nil || selected?.id == choice?.id {
-            selected = choice
-            episodesFor = choice?.id
-            if fetch { episodesAccept(newEpisodes) } else { loads = false }
+    @ViewBuilder
+    private var episodesList: some View {
+        let part = page?.model.episodes
+        if page?.model.seasons.disturbed == true && seasonRows.isEmpty {
+            DisturbHint(model: model) { page?.model.load() }
+                .frame(height: 200)
+        } else {
+            switch part?.status {
+            case .disturbed:
+                DisturbHint(model: model) { page?.model.retryEpisodes() }
+                    .frame(height: 200)
+            case .empty:
+                EmptyHint(text: seasonRows.isEmpty ? "Keine Folgen" : "Keine Folgen in dieser Staffel")
+                    .frame(height: 200)
+            case .ready:
+                episodeRows(part?.rows ?? [], more: part?.moreAvailable ?? false)
+            default:
+                // Three rows in their final shape instead of a spinner.
+                VStack(spacing: 0) {
+                    ForEach(0 ..< 3, id: \.self) { _ in
+                        HStack(spacing: 16) {
+                            LoadField().frame(width: 160, height: 90)
+                            VStack(alignment: .leading, spacing: 8) {
+                                LoadField(corner: 3).frame(width: 220, height: 14)
+                                LoadField(corner: 3).frame(width: 90, height: 11)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 10)
+                    }
+                }
+                .transition(.opacity)
+            }
         }
-        firstPull = true
-        if let fetched { SeriesCache.shared.remember(series.id) { $0.seasons = fetched } }
     }
 
-    /// Which season is shown. The chain is the same as in the shared version.
-    ///
-    /// First the hint the user arrived with: id, then **number**. The number is not
-    /// redundant: the server does not always return a `SeasonId` for an episode, and
-    /// then the id comparison finds nothing.
-    ///
-    /// If no hint came (from the library, from search), the **current** season
-    /// applies, not season 1. That requires asking where the user is in the series,
-    /// so that state is only fetched in this case.
-    private var withoutHint: Bool {
-        SeasonSelectionRule.needsState(hintID: startSeasonID, hintNumber: startSeasonNumber)
+    private func episodeRows(_ rows: [SwiftlyCore.EpisodeRow], more: Bool) -> some View {
+        let items = page?.episodeItems() ?? [:]
+        // A `VStack` up to 60 rows: a lazy list does not know the height it has not built, and scrolling up
+        // would jump. Lazy only for very long seasons.
+        let list = ForEach(rows, id: \.id) { row in
+            let episode = items[row.id] ?? Item(id: row.id, name: row.title, type: "Episode")
+            EpisodesRow(model: model, episode: episode,
+                        action: { _ in startEpisode(row.id) },
+                        download: { withAnimation(Theme.leap) { selectionOpen.toggle() } },
+                        look: RustEpisodeLook(row: row))
+                // Right-click: the tile menu, as on every tile.
+                .tileMenu(episode, model: model, afterwards: { page?.model.refresh() })
+        }
+        return VStack(alignment: .leading, spacing: 0) {
+            Group {
+                if rows.count > 60 {
+                    LazyVStack(spacing: 6) { list }
+                } else {
+                    VStack(spacing: 6) { list }
+                }
+            }
+            // The image lines up with the page edge; only the hover fill reaches past it.
+            .padding(.leading, -10)
+            if more {
+                Button {
+                    withAnimation(Theme.leap) { page?.model.moreEpisodes() }
+                } label: {
+                    Text("Mehr Folgen")
+                        .font(.app(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(Theme.PressButton())
+            }
+        }
+        .transition(.opacity)
     }
 
-    /// The computation itself lives in the package (`SeasonSelectionRule`), shared with
-    /// all platforms.
-    private func choose(from list: [Item], state: Item?) -> Item? {
-        SeasonSelectionRule.choose(from: list, hintID: startSeasonID,
-                                hintNumber: startSeasonNumber, state: state)
+    private func startEpisode(_ id: String) {
+        guard let page else { return }
+        page.launch(page.episodeAction(id, pick: nil), since: nil, controls: controls) { versionPick = $0 }
+    }
+}
+
+extension SeriesCore {
+    /// What a pick of a version does: the main button's episode goes through `playNext` so that it also works
+    /// when it lies in another season than the open one. Without a pick this is the plain press.
+    func episodeAction(_ id: String?, pick: String?) -> PlayAction? {
+        guard let id, id != model.button.nextEpisode else { return model.playNext(pick: pick) }
+        return model.playEpisode(id, pick: pick)
     }
 
-    private func similarLoad() async {
-        let fetched = await model.similar(series)
-        similarDisturbed = fetched == nil
-        if let fetched { similar = fetched }
-    }
-
-    private func episodesLoad() async {
-        // If something from the cache is already shown, do not reset to empty;
-        // otherwise the loader flashes anyway.
-        loads = episodes.isEmpty
-        let season = selected?.id
-        let fetched = await model.episodes(series: series.id, season: season)
-        // A different season was selected meanwhile: its request applies.
-        await InTravel.waitFor()
-        guard !Task.isCancelled else { return }
-        guard selected?.id == season else { return }
-        episodesAccept(fetched)
-    }
-
-    private func episodesAccept(_ fetched: [Item]?) {
-        loads = false
-        episodesDisturbed = fetched == nil
-        guard let newOne = fetched else { return }
-        episodes = newOne
-        if let season = selected?.id {
-            SeriesCache.shared.remember(series.id) { $0.episodes[season] = newOne }
+    /// What a press on Play (or a menu entry that plays) does, as the core decides it. `since` overrides the
+    /// core's start second; `choose` shows the version list.
+    func launch(_ action: PlayAction?, since: Double? = nil, controls: PlayControls,
+                choose: (VersionPick) -> Void) {
+        guard let action else { return }
+        switch action {
+        case .wait:
+            return
+        case .choose(let id, let at, let versions):
+            choose(VersionPick(heading: String(localized: "Fassung wählen"), options: versions,
+                               since: since ?? at, itemId: id))
+        case .resolve(let id, let at):
+            // The list entry has no `MediaSources`: the player fetches and asks itself.
+            guard let episode = item(id) else { return }
+            controls.launch(episode, since: since ?? at)
+        case .start(let id, let at, let source):
+            guard let episode = item(id) else { return }
+            controls.launch(episode, since: since ?? at, sourceID: source)
         }
     }
 }
@@ -894,6 +736,8 @@ struct EpisodesRow: View {
     var action: ((Item) -> Void)?
     /// Opens the page's download choice. Without it (the player) the hover shows no download.
     var download: (() -> Void)?
+    /// The core's wording of this row (`AppModel.coreServes`); `nil` shows the Swift one.
+    var look: RustEpisodeLook?
 
     @State private var hovers = false
     /// Overwritten by the episode's state once the task below has run; until then
@@ -922,7 +766,7 @@ struct EpisodesRow: View {
                     //
                     // **The thumbnail carries the watch state**: its flush bottom bar is full for
                     // a watched episode, so the inline check next to the title is the only mark.
-                    ImageArea(image: model.imageURL(for: episode, maxHeight: 220),
+                    ImageArea(image: look?.image ?? model.imageURL(for: episode, maxHeight: 220),
                                 width: imageWidth, height: imageHeight,
                                 progress: watched ? 1 : progress,
                                 symbolText: "tv")
@@ -934,7 +778,12 @@ struct EpisodesRow: View {
                                 .foregroundStyle(Theme.font)
                                 .lineLimit(2)
                             // **In progress: the remaining time instead of the runtime.**
-                            if let seconds = episode.runtimeSeconds {
+                            if let look, !look.secondaryLine.isEmpty {
+                                Text(verbatim: look.secondaryLine)
+                                    .font(.app(size: 12))
+                                    .foregroundStyle(Theme.fontVeryQuiet)
+                                    .lineLimit(1)
+                            } else if look == nil, let seconds = episode.runtimeSeconds {
                                 Text(verbatim: (watched ? nil : episode.remainingTimeText) ?? runtime(seconds))
                                     .font(.app(size: 12))
                                     .foregroundStyle(Theme.fontVeryQuiet)
@@ -1019,6 +868,7 @@ struct EpisodesRow: View {
     }
 
     private var headerLine: String {
+        if let look { return look.title }
         if let number = episode.indexNumber {
             return "\(number). \(episode.name)"
         }

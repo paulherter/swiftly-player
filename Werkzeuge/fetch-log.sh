@@ -12,7 +12,11 @@ trap 'rm -f "$DEVICES"' EXIT
 xcrun devicectl list devices --json-output "$DEVICES" >/dev/null 2>&1 || true
 UDID=$(python3 -c 'import json,sys
 for g in json.load(open(sys.argv[1]))["result"]["devices"]:
-    if g.get("connectionProperties",{}).get("tunnelState") != "unavailable":
+    # Real hardware UDIDs start with 0000 (simulators and other entries are plain UUIDs).
+    if g.get("hardwareProperties",{}).get("udid","").startswith("0000") \
+       and g.get("hardwareProperties",{}).get("platform") == "iOS" \
+       and g.get("hardwareProperties",{}).get("deviceType") == "iPhone" \
+       and g.get("connectionProperties",{}).get("tunnelState") != "unavailable":
         print(g["identifier"]); break' "$DEVICES" 2>/dev/null || true)
 [ -z "${UDID:-}" ] && { echo "Kein erreichbares Geraet." >&2; exit 1; }
 

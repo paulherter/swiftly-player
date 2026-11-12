@@ -1,0 +1,14 @@
+[package]
+name = "swiftly-layout"
+description = "SwiftUI propose/answer layout engine in pure Rust: stacks, frames, padding, ViewThatFits, lazy stacks, grids, scroll content"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[lints]
+workspace = true

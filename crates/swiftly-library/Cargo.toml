@@ -1,0 +1,30 @@
+[package]
+name = "swiftly-library"
+description = "Library and home logic of the Swiftly core ported 1:1 from Swift (JellyfinKit, Sources/Shared): home loader and store, start rails, sort and filter, paging, search history, collections, playlists, and the Home/Library state machines"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swiftly-model = { path = "../swiftly-model" }
+swiftly-rules = { path = "../swiftly-rules" }
+swiftly-jellyfin = { path = "../swiftly-jellyfin", default-features = false }
+swiftly-net = { path = "../swiftly-net", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+unicode-normalization = "0.1"
+unicode-segmentation = "1"
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[dev-dependencies]
+futures-executor = "0.3"
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "lists"
+harness = false

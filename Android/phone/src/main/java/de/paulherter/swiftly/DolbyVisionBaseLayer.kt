@@ -1,6 +1,7 @@
 package de.paulherter.swiftly
 
 import android.net.Uri
+import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
@@ -20,7 +21,7 @@ import androidx.media3.extractor.TrackOutput
  * track of the file is announced to Media3 as `video/hevc`. Profile 5 has no HDR10 base layer and is left alone.
  */
 @UnstableApi
-class DolbyVisionBaseLayerExtractors(private val off: () -> Boolean) : ExtractorsFactory {
+class DolbyVisionBaseLayerExtractors(private val off: () -> Boolean, private val cues: SubtitleCueTable? = null) : ExtractorsFactory {
     private val delegate = DefaultExtractorsFactory()
 
     override fun createExtractors(): Array<Extractor> = wrap(delegate.createExtractors())
@@ -28,13 +29,15 @@ class DolbyVisionBaseLayerExtractors(private val off: () -> Boolean) : Extractor
     override fun createExtractors(uri: Uri, responseHeaders: Map<String, List<String>>): Array<Extractor> =
         wrap(delegate.createExtractors(uri, responseHeaders))
 
-    private fun wrap(all: Array<Extractor>): Array<Extractor> = Array(all.size) { Base(all[it], off) }
+    private fun wrap(all: Array<Extractor>): Array<Extractor> = Array(all.size) { Base(all[it], off, cues) }
 
-    private class Base(private val inner: Extractor, private val off: () -> Boolean) : ForwardingExtractor(inner) {
+    private class Base(private val inner: Extractor, private val off: () -> Boolean, private val cues: SubtitleCueTable?) : ForwardingExtractor(inner) {
         override fun init(output: ExtractorOutput) {
             inner.init(object : ExtractorOutput by output {
                 override fun track(id: Int, type: Int): TrackOutput {
                     val real = output.track(id, type)
+                    // Text arrives here already parsed (`application/x-media3-cues`), one sample per cue with its real time.
+                    if (type == C.TRACK_TYPE_TEXT && cues != null) return CueTap(real, cues)
                     return object : TrackOutput by real {
                         override fun format(format: Format) {
                             real.format(if (off()) baseLayerOf(format) else format)

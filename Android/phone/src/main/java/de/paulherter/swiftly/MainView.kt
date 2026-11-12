@@ -99,7 +99,7 @@ fun MainScreen(app: SwiftlyApplication) {
         app.serverNameLoad()
         app.postConnect()
         // Remote control: buttons in the dashboard, and other devices see this session to take over.
-        app.kern.remoteControlStart().await()
+        app.rk.remoteControlStart().await()
     }
     // "Continue watching here": every five seconds while the app is in front. It looks for a session
     // that did not exist before, and that should not wait ten seconds.

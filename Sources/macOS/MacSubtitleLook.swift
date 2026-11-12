@@ -7,8 +7,7 @@ import SwiftUI
 /// pointer lights a segment, the arrow keys step through one when it has the keyboard.
 ///
 /// The look is written to `AppModel.subtitleLook` on every click. A player already open
-/// keeps the old one: the library is created once (`VLCPlayerView.library`), the foot
-/// under the picture says so.
+/// follows it at once (`SubtitleOverlay` watches the saved look).
 struct SubtitleLookView: View {
     let model: AppModel
     let back: () -> Void
@@ -28,9 +27,6 @@ struct SubtitleLookView: View {
             HStack(alignment: .top, spacing: Theme.edgeSpacing + 4) {
                 VStack(alignment: .leading, spacing: 10) {
                     SubtitlePreview(look: look, cornerRadius: Theme.cornerArea)
-                    if VLCPlayerView.playersOpen {
-                        note(Text("Gilt ab dem nächsten Video."))
-                    }
                     note(Text("Gilt für Untertitel aus Text. Die von Blu-rays sind Bilder und bleiben, wie sie sind."))
                     Spacer(minLength: 0)
                 }

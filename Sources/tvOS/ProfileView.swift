@@ -1,5 +1,7 @@
 import JellyfinKit
 import SwiftUI
+import enum SwiftlyCore.HomeRowOrder
+import struct SwiftlyCore.HomeRowMoveMode
 
 /// Profile and settings.
 ///
@@ -12,8 +14,9 @@ import SwiftUI
 /// row (Profile, Settings, Playback). Here they sit side by side because there is
 /// width and every saved jump counts on a remote.
 struct ProfileView: View {
-    @AppStorage("bildrateAnpassen") private var frameRateAdapt = true
-    @AppStorage("introAbspannAuto") private var skipAutomatic = false
+    /// Rows, titles, dimming, options and validation of the settings are the core's; the symbols,
+    /// the layout and the TV wording (`SettingsWording`) stay here.
+    private let feed = SettingsRowsFeed.shared
     let model: AppModel
 
     /// ProfileView is only ever drawn in the settings look.
@@ -21,8 +24,6 @@ struct ProfileView: View {
     @State private var section: SectionSelection = .playback
     /// Which value row currently shows its choice.
     @State private var opened: String?
-    @AppStorage("titelAlsLogo") private var titleAsLogo = false
-    @AppStorage(PlayerEndTime.key) private var showsEnd = PlayerEndTime.standard
     @State private var verification: String?
     /// Shows Quick Connect to add another account.
     @State private var accountRecord = false
@@ -70,35 +71,86 @@ struct ProfileView: View {
         allLibraries.filter { b in !model.startLibraries.contains { $0.id == b.id } }
     }
 
-    /// Moves a selected library by one position.
-    private func move(_ entryRecord: StartLibrary, um step: Int) {
-        guard let from = model.startLibraries.firstIndex(of: entryRecord) else { return }
-        let to = from + step
-        guard model.startLibraries.indices.contains(to) else { return }
-        withAnimation(Theme.reveal) { model.startLibraries.swapAt(from, to) }
-    }
-
     private var freeGenres: [String] {
         allGenres.filter { !model.startGenres.contains($0) }
     }
 
-    /// Which fixed rows exist: new movies and shows separately, or the combined one.
-    private var visibleRails: [StartRail] {
-        model.startRails.filter { $0.fits(disconnected: model.newAccessDisconnected) }
+    /// The rows of the combined Home list that fit right now, in the core's order. While a row is being
+    /// moved, the live order of the move mode.
+    private var visibleRows: [String] {
+        let ids = model.rowOrder.filter { id in
+            guard let rail = StartRail(rawValue: id) else { return true }
+            return rail.fits(disconnected: model.newAccessDisconnected)
+        }
+        return mover.movingRow == nil ? ids : mover.order.filter(ids.contains)
     }
 
-    /// Moving happens in the visible list. What is not shown at the moment (the
-    /// combined row when separate, or the reverse) is appended at the end and comes
-    /// back there when toggled.
-    private func move(_ rail: StartRail, um step: Int) {
-        var visible = visibleRails
-        guard let from = visible.firstIndex(of: rail) else { return }
-        let to = from + step
-        guard visible.indices.contains(to) else { return }
-        withAnimation(Theme.reveal) {
-            visible.swapAt(from, to)
-            model.startRails = visible + model.startRails.filter { !visible.contains($0) }
+    /// Move mode of the Home list (explicit state machine in the package: idle / moving, `reduce`).
+    @State private var mover = HomeRowMoveMode(order: [], visible: [])
+
+    private func leaveColumn() {
+        inside = false
+        left = section
+    }
+
+    /// Press on a row's move button: enter move mode, or commit while moving.
+    private func pressMover(_ id: String) {
+        if mover.movingRow == nil {
+            mover = HomeRowMoveMode(order: model.rowOrder, visible: visibleRows)
+            mover.reduce(.enter(row: id))
+        } else if let order = mover.reduce(.commit) {
+            model.storeOrder(order)
         }
+    }
+
+    @ViewBuilder private func homeRow(_ id: String) -> some View {
+        let moving = mover.movingRow == id
+        HStack(spacing: 24) {
+            if let library = HomeRowOrder.library(of: id) {
+                let entry = model.startLibraries.first { $0.id == library }
+                ActionRow(name: entry?.name ?? "", value: String(localized: "Entfernen")) {
+                    model.startLibraries.removeAll { $0.id == library }
+                }
+                .disabled(mover.movingRow != nil)
+            } else if let rail = StartRail(rawValue: id) {
+                Button {
+                    if model.startOut.contains(rail) { model.startOut.remove(rail) }
+                    else { model.startOut.insert(rail) }
+                } label: {
+                    HStack(spacing: 24) {
+                        Text(rail.name)
+                        Spacer(minLength: 40)
+                        ToggleSwitch(an: !model.startOut.contains(rail))
+                    }
+                }
+                .buttonStyle(SettingsRowsStyle())
+                .disabled(mover.movingRow != nil)
+                .accessibilityRepresentation {
+                    Toggle(isOn: .constant(!model.startOut.contains(rail))) { Text(rail.name) }
+                }
+            }
+            // Press: pick the row up. Up/Down on the remote move it (no animation: it repeats), press again
+            // keeps the place, Menu puts it back.
+            Button { pressMover(id) } label: {
+                Image(icon: moving ? "checkmark" : "arrow.up.arrow.down")
+                    .font(.app(size: TVSpec.valueIcon, weight: .semibold))
+            }
+            .buttonStyle(ThemedButtonStyle(onlySymbol: true, height: TVSpec.iconButtonHeight))
+            .disabled(mover.movingRow != nil && !moving)
+            .onMoveCommand { direction in
+                guard moving else { return }
+                switch direction {
+                case .up: mover.reduce(.up)
+                case .down: mover.reduce(.down)
+                default: break
+                }
+            }
+            .onExitCommand {
+                if moving { mover.reduce(.cancel) } else { leaveColumn() }
+            }
+            .accessibilityLabel(moving ? Text("Fertig") : Text("Verschieben"))
+        }
+        .padding(.trailing, look ? 0 : TVSpec.rowInset)
     }
 
     enum SectionSelection: String, CaseIterable, Identifiable {
@@ -131,6 +183,8 @@ struct ProfileView: View {
 
     var body: some View {
         page
+            // The rows of the playback and display areas come from the Rust core.
+            .onChange(of: feed.facts(model), initial: true) { _, new in feed.apply(new, model) }
             // **Come back collapsed.** Otherwise leaving settings and returning later would
             // show the previous choice still open, and a half-expanded list looks like a
             // state you left behind without knowing.
@@ -253,10 +307,7 @@ struct ProfileView: View {
                 // the column is no longer dimmed.
                 .disabled(!inside)
                 .focusSection()
-                .onExitCommand {
-                    inside = false
-                    left = section
-                }
+                .onExitCommand { leaveColumn() }
                 // **The safety net under the jump to the right.** `toInGo` sets focus one
                 // run later, because the column is still disabled in the same run. If it still
                 // has not taken effect one run later, this catches it: `onChange` runs when the
@@ -392,8 +443,8 @@ struct ProfileView: View {
         case .playback:
             // If the server does not transcode there is nothing to choose: Direct Play is
             // fixed on, bitrate is disabled, as on the other versions.
+            // Direct Play is fixed on when the server cannot convert (the core dims the rows).
             let free = model.convertAllowed
-            let directPlay = model.alwaysDirectPlay || !free
             // **The anchor hangs on the topmost row that is actually available.** It was
             // fixed on this one, which is disabled when the server forbids transcoding.
             // Focus on something disabled goes nowhere, so it stayed on the left: OK on
@@ -401,20 +452,13 @@ struct ProfileView: View {
             // whose top row is never disabled.
             //
             // If it is disabled here, Direct Play and bitrate move out together
-            // (`directPlay` is then fixed on) and "Buffer" is the first row you can touch.
+            // and "Ton" is the first row you can touch.
             // Same three boxes as on iPhone: quality, language, behaviour.
             TVGroup(title: "Qualität") {
-            ToggleRow(icon: "play", title: "Immer Direct Play", an: directPlay) {
-                model.alwaysDirectPlay.toggle()
-            }
-            .disabled(!free)
+            coreToggle("immerDirectPlay", icon: "play")
             .focused($right, equals: free ? .top : .proceed)
             SeparatorLine()
-            valueRow("Höchste Bitrate", icon: "speedometer", value: Bitrate.text(model.bitratesLimit),
-                      entries: Bitrate.levels, label: { Bitrate.text($0.value) },
-                      an: { $0.value == model.bitratesLimit },
-                      select: { model.bitratesLimit = $0.value })
-            .disabled(directPlay)
+            coreValueRow("bitratenGrenze", icon: "speedometer")
             SeparatorLine()
             // **The switch for frame-rate matching.**
             //
@@ -426,61 +470,34 @@ struct ProfileView: View {
             // 24 Hz native is right on paper: every frame stands equally long. On a TV whose
             // motion processing smooths at 60 Hz it can still look worse. That depends on
             // the device, not the file, so the viewer decides. On stays the default.
-            ToggleRow(icon: "film", title: "Bildrate an den Film anpassen",
-                          an: frameRateAdapt) {
-                frameRateAdapt.toggle()
-            }
+            coreToggle("bildrateAnpassen", icon: "film")
             }
             TVGroup(title: "Sprache") {
             // The topmost row you can touch when Direct Play is fixed (`free` is false).
-            valueRow("Ton", icon: "speaker.wave.2",
-                      value: model.audioLanguage.isEmpty ? String(localized: "Wie die Datei")
-                                                     : model.audioLanguage,
-                      entries: LanguageSelection.all, label: \.name,
-                      an: { $0.value == model.audioLanguage },
-                      select: { model.audioLanguage = $0.value }, top: !free)
+            coreValueRow("tonSprache", icon: "speaker.wave.2", top: !free)
             SeparatorLine()
-            valueRow("Untertitel", icon: "captions.bubble",
-                      value: model.subtitleLanguage.isEmpty ? String(localized: "Aus")
-                                                            : model.subtitleLanguage,
-                      entries: LanguageSelection.all(from: String(localized: "Aus")),
-                      label: \.name,
-                      an: { $0.value == model.subtitleLanguage },
-                      select: { model.subtitleLanguage = $0.value })
+            coreValueRow("utSprache", icon: "captions.bubble")
             SeparatorLine()
-            ToggleRow(icon: "text.alignleft", title: "Untertitel automatisch", an: model.subtitleAutomatic) {
-                model.subtitleAutomatic.toggle()
-            }
+            coreToggle("utAuto", icon: "text.alignleft")
             SeparatorLine()
-            ActionRow(icon: "textformat.size", title: "Aussehen der Untertitel", value: model.subtitleLook.entryValue) {
+            ActionRow(icon: "textformat.size", name: feed.titleString("utAussehen"),
+                      value: feed.shown("utAussehen")) {
                 subtitleLookOpen = true
             }
             }
             TVGroup(title: "Verhalten") {
-            ToggleRow(icon: "forward.end", title: "Nächste Folge automatisch", an: model.nextAutomatic) {
-                model.nextAutomatic.toggle()
-            }
+            coreToggle("naechsteAuto", icon: "forward.end")
             SeparatorLine()
-            ToggleRow(icon: "forward.end.alt", title: "Intro und Abspann automatisch überspringen", an: skipAutomatic) {
-                skipAutomatic.toggle()
-            }
+            coreToggle("introAbspannAuto", icon: "forward.end.alt")
             SeparatorLine()
-            valueRow("Zurückspulen", icon: "gobackward", value: "\(model.backSeconds) s",
-                      entries: Span.levels, label: { "\($0.value) s" },
-                      an: { $0.value == model.backSeconds },
-                      select: { model.backSeconds = $0.value })
+            coreValueRow("zurueckSek", icon: "gobackward")
             SeparatorLine()
-            valueRow("Vorspulen", icon: "goforward", value: "\(model.forwardSeconds) s",
-                      entries: Span.levels, label: { "\($0.value) s" },
-                      an: { $0.value == model.forwardSeconds },
-                      select: { model.forwardSeconds = $0.value })
+            coreValueRow("vorSek", icon: "goforward")
             SeparatorLine()
             // Applies from the next title; the same place and words as on iPhone.
             // Shared setting (`PlayerEndTime`): the player shows "Endet um …" instead of the
             // remaining time. tvOS has no "Technische Daten" row, so it sits under "Player".
-            ToggleRow(icon: "clock", title: "Endzeit im Player", an: showsEnd) {
-                showsEnd.toggle()
-            }
+            coreToggle("endzeitImPlayer", icon: "clock")
             }
 
         case .presentation:
@@ -492,65 +509,25 @@ struct ProfileView: View {
                     .focused($right, equals: .top)
                 SeparatorLine()
             }
-            ToggleRow(icon: "chart.bar", title: "Fortschritt auf Kacheln", an: model.progressOnTiles) {
-                model.progressOnTiles.toggle()
-            }
+            coreToggle("fortschritt", icon: "chart.bar")
             .focused($right, equals: looksShown ? nil : .top)
             SeparatorLine()
-            ToggleRow(icon: "bookmark", title: "Merkliste", an: model.watchlistShown) {
-                model.watchlistShown.toggle()
-            }
+            coreToggle("merklisteAn", icon: "bookmark")
             SeparatorLine()
-            if model.watchersPluginHere {
-                ToggleRow(icon: "eye", title: "Gesehen von",
-                          under: "Zeigt auf Titelseiten, wer einen Titel gesehen hat",
-                          an: model.watchersShown) {
-                    model.watchersShown.toggle()
-                }
+            if feed.row("gesehenVonAn") != nil {
+                coreToggle("gesehenVonAn", icon: "eye")
                 SeparatorLine()
             }
-            ToggleRow(icon: "textformat.abc", title: "Alphabetische Suche in Listen", an: model.alphabetShown) {
-                model.alphabetShown.toggle()
-            }
+            coreToggle("alphabetAn", icon: "textformat.abc")
             SeparatorLine()
-            ToggleRow(icon: "textformat", title: "Titel als Logo", an: titleAsLogo) { titleAsLogo.toggle() }
+            coreToggle("titelAlsLogo", icon: "textformat")
             }
 
-            // **Which rows are on the home page, and in which order.** They are moved with
-            // the arrows on the right: dragging a row by a handle is a pointer gesture, and
-            // the remote has none. Focus goes right to the arrows and a press moves the row.
+            // **Which rows are on the home page, and in which order**: fixed rows, libraries and
+            // collections in ONE list. The remote has no drag: the button on the right picks a row up.
             TVGroup(title: "Startseite") {
-            ForEach(visibleRails) { rail in
-                RailsRow(name: rail.name,
-                            an: !model.startOut.contains(rail),
-                            canHigh: visibleRails.first != rail,
-                            canGoDown: visibleRails.last != rail,
-                            toggle: {
-                                if model.startOut.contains(rail) { model.startOut.remove(rail) }
-                                else { model.startOut.insert(rail) }
-                            },
-                            shove: { step in move(rail, um: step) })
-                SeparatorLine()
-            }
-            ToggleRow(icon: "square.split.2x1", title: "Neuzugänge getrennt", an: model.newAccessDisconnected) {
-                model.newAccessDisconnected.toggle()
-            }
-            }
-
-            // **Own rows from the server**: libraries and collections, in the order of this
-            // list, after the fixed rows.
-            TVGroup(title: "Bibliotheken und Sammlungen") {
-            ForEach(model.startLibraries) { entryRecord in
-                StartLibraryRow(
-                    name: entryRecord.name,
-                    canHigh: model.startLibraries.first != entryRecord,
-                    canGoDown: model.startLibraries.last != entryRecord,
-                    remove: {
-                        withAnimation(Theme.reveal) {
-                            model.startLibraries.removeAll { $0.id == entryRecord.id }
-                        }
-                    },
-                    shove: { step in move(entryRecord, um: step) })
+            ForEach(visibleRows, id: \.self) { id in
+                homeRow(id)
                 SeparatorLine()
             }
             valueRow("Bibliothek hinzufügen", icon: "plus",
@@ -559,16 +536,14 @@ struct ProfileView: View {
                       label: \.name,
                       an: { _ in false },
                       select: { model.startLibraries.append(StartLibrary($0)) })
+            SeparatorLine()
+            coreToggle("neuGetrennt", icon: "square.split.2x1")
             }
 
             // **One list, two forms.** Which genres is set once; whether they show as rows
             // below or as chips on top is only the form.
             TVGroup(title: "Genres") {
-            valueRow("Form", icon: "capsule", value: model.genreChips ? String(localized: "Als Chips")
-                                                     : String(localized: "Als Reihen"),
-                      entries: GenreShape.allCases, label: \.name,
-                      an: { $0.chips == model.genreChips },
-                      select: { model.genreChips = $0.chips })
+            coreValueRow("genreChips", icon: "capsule")
             ForEach(model.startGenres, id: \.self) { name in
                 SeparatorLine()
                 ActionRow(name: name, value: String(localized: "Entfernen")) {
@@ -652,10 +627,7 @@ struct ProfileView: View {
             // Settings follow the account to every device (`SettingsSyncRun`).
             // Only servers that keep display preferences (`ServerCapability.settingsSync`).
             if model.can(.settingsSync) {
-                ToggleRow(icon: "arrow.triangle.2.circlepath", title: "Einstellungen auf allen Geräten gleich halten",
-                          an: model.settingsSync.on) {
-                    model.settingsSync.on.toggle()
-                }
+                coreToggle("einstellungenSync", icon: "arrow.triangle.2.circlepath")
                 .focused($right, equals: .top)
                 SeparatorLine()
             }
@@ -674,17 +646,55 @@ struct ProfileView: View {
         }
     }
 
+    /// A switch row of the core: its title, second line, dimming and write; the symbol is ours.
+    @ViewBuilder
+    private func coreToggle(_ key: String, icon: String) -> some View {
+        if let row = feed.row(key) {
+            ToggleRow(icon: icon, text: feed.title(key), underText: feed.under(key), an: feed.isOn(key)) {
+                feed.setSwitch(key, !feed.isOn(key))
+            }
+            .disabled(!row.enabled)
+        }
+    }
+
+    /// One choice of a core row, as the page lists it: the core's options, picked through the core.
+    private struct CoreOption: Identifiable {
+        let value: String
+        let label: String
+        let selected: Bool
+        var id: String { value }
+    }
+
+    /// A value row of the core that expands its options below it; dimmed when the core says so.
+    @ViewBuilder
+    private func coreValueRow(_ key: String, icon: String, top: Bool = false) -> some View {
+        if let row = feed.row(key) {
+            valueRow(named: feed.titleString(key), icon: icon, value: feed.shown(key) ?? "",
+                     entries: feed.options(key).map { CoreOption(value: $0.value, label: $0.label, selected: $0.selected) },
+                     label: \.label, an: { $0.selected }, select: { feed.choose(key, $0.value) }, top: top)
+            .disabled(!row.enabled)
+        }
+    }
+
+    private func valueRow<E: Identifiable>(named: String, icon: String? = nil, value: String,
+                                           entries: [E], label: @escaping (E) -> String,
+                                           an: @escaping (E) -> Bool, select: @escaping (E) -> Void,
+                                           top: Bool = false) -> some View {
+        valueRow("", named: named, icon: icon, value: value, entries: entries, label: label, an: an,
+                 select: select, top: top)
+    }
+
     /// Row with a value on the right. Pressing expands the choice below it instead of
     /// putting it in a sheet, which costs extra steps.
-    private func valueRow<E: Identifiable>(_ title: LocalizedStringKey, icon: String? = nil, value: String,
+    private func valueRow<E: Identifiable>(_ title: LocalizedStringKey, named: String? = nil, icon: String? = nil, value: String,
                                             entries: [E],
                                             label: @escaping (E) -> String,
                                             an: @escaping (E) -> Bool,
                                             select: @escaping (E) -> Void,
                                             top: Bool = false) -> some View {
-        let key = String(describing: title)
+        let key = named ?? String(describing: title)
         return VStack(alignment: .leading, spacing: 0) {
-            ActionRow(icon: icon, title: title, value: value,
+            ActionRow(icon: icon, title: title, name: named, value: value,
                            expanded: opened == key) {
                 // **One transaction for the whole list, not one per row.** A `.animation(…,
                 // value: offen)` on every value row animates each on its own: the two directly
@@ -940,11 +950,25 @@ private struct SettingsValue: View {
 /// not the switch; the row is what is pressed.
 struct ToggleRow: View {
     var icon: String? = nil
-    let title: LocalizedStringKey
+    let title: Text
     /// A quiet line under the title.
-    var under: LocalizedStringKey? = nil
+    var under: Text? = nil
     let an: Bool
     let action: () -> Void
+
+    init(icon: String? = nil, title: LocalizedStringKey, under: LocalizedStringKey? = nil, an: Bool,
+         action: @escaping () -> Void) {
+        self.init(icon: icon, text: Text(title), underText: under.map { Text($0) }, an: an, action: action)
+    }
+
+    /// A row whose texts the core served (already translated, or with the device's own wording).
+    init(icon: String? = nil, text: Text, underText: Text? = nil, an: Bool, action: @escaping () -> Void) {
+        self.icon = icon
+        self.title = text
+        self.under = underText
+        self.an = an
+        self.action = action
+    }
 
     @Environment(\.settingsLook) private var look
 
@@ -953,9 +977,9 @@ struct ToggleRow: View {
             HStack(spacing: look ? SettingsLook.rowGap : 24) {
                 RowSymbol(icon: icon)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
+                    title
                     if let under {
-                        Text(under).font(Theme.small).foregroundStyle(Theme.fontQuiet)
+                        under.font(Theme.small).foregroundStyle(Theme.fontQuiet)
                     }
                 }
                 Spacer(minLength: 40)
@@ -964,99 +988,9 @@ struct ToggleRow: View {
         }
         .buttonStyle(SettingsRowsStyle())
         .accessibilityRepresentation {
-            Toggle(isOn: .constant(an)) { Text(title) }
+            Toggle(isOn: .constant(an)) { title }
         }
     }
-}
-
-/// **A home-page row: on or off, and where it belongs.**
-///
-/// Three targets side by side instead of a drag handle. With a pointer you drag a
-/// row; with the remote there is nothing to grab. Focus goes right to the arrows,
-/// and a press moves the row one place.
-struct RailsRow: View {
-    let name: LocalizedStringKey
-    let an: Bool
-    let canHigh: Bool
-    let canGoDown: Bool
-    let toggle: () -> Void
-    let shove: (Int) -> Void
-    @Environment(\.settingsLook) private var look
-
-    var body: some View {
-        HStack(spacing: 24) {
-            Button(action: toggle) {
-                HStack(spacing: 24) {
-                    Text(name)
-                    Spacer(minLength: 40)
-                    ToggleSwitch(an: an)
-                }
-            }
-            .buttonStyle(SettingsRowsStyle())
-            .accessibilityRepresentation {
-                Toggle(isOn: .constant(an)) { Text(name) }
-            }
-
-            SlideButton(symbol: "chevron.up", an: canHigh) { shove(-1) }
-            SlideButton(symbol: "chevron.down", an: canGoDown) { shove(1) }
-        }
-        .padding(.trailing, look ? 0 : TVSpec.rowInset)
-    }
-}
-
-/// An arrow to the right of a row that can be moved.
-///
-/// **Disabled instead of hidden.** If the arrow disappeared on the top row, the
-/// neighbors' buttons would shift sideways and focus would jump to the wrong
-/// column when moving up.
-struct SlideButton: View {
-    let symbol: String
-    let an: Bool
-    let perform: () -> Void
-
-    var body: some View {
-        Button(action: perform) {
-            Image(icon: symbol)
-                .font(.app(size: TVSpec.valueIcon, weight: .semibold))
-        }
-        // **Not `.buttonStyle(.card)`.** Apple's card brings shadow, parallax and a
-        // flash; `tvOS/Style.swift` excludes it in its header. `ThemedButtonStyle` carries the
-        // same three states as every other button in the app, the disabled one included.
-        .buttonStyle(ThemedButtonStyle(onlySymbol: true, height: TVSpec.iconButtonHeight))
-        .disabled(!an)
-        .accessibilityLabel(symbol == "chevron.up" ? Text("Nach oben") : Text("Nach unten"))
-    }
-}
-
-/// A selected library or collection: a press on the name removes it, the arrows
-/// move it in the home-page order.
-struct StartLibraryRow: View {
-    let name: String
-    let canHigh: Bool
-    let canGoDown: Bool
-    let remove: () -> Void
-    let shove: (Int) -> Void
-    @Environment(\.settingsLook) private var look
-
-    var body: some View {
-        HStack(spacing: 24) {
-            ActionRow(name: name, value: String(localized: "Entfernen"), action: remove)
-            SlideButton(symbol: "chevron.up", an: canHigh) { shove(-1) }
-            SlideButton(symbol: "chevron.down", an: canGoDown) { shove(1) }
-        }
-        .padding(.trailing, look ? 0 : TVSpec.rowInset)
-    }
-}
-
-/// Whether genres appear as rows of their own or as chips on top.
-struct GenreShape: Identifiable, CaseIterable {
-    let chips: Bool
-    var id: Bool { chips }
-    var name: String {
-        chips ? String(localized: "Als Chips über den Reihen")
-              : String(localized: "Als eigene Reihen")
-    }
-    static var allCases: [GenreShape] { [.init(chips: false), .init(chips: true)] }
 }
 
 /// A server genre in the choice list.

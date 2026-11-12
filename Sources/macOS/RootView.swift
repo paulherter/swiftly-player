@@ -10,6 +10,8 @@ import SwiftUI
 struct RootView: View {
     @State private var model = AppModel.only
     @State private var curtainShown = true
+    /// Whether the keyboard focus mark shows; quiet until the first Tab, see ``KeyboardFocus``.
+    @State private var keyboardFocus = KeyboardFocusMonitor()
     /// Apple's review prompt; `Community.kickoff` decides when.
     @Environment(\.requestReview) private var rate
     @State private var discordHint = false
@@ -37,7 +39,9 @@ struct RootView: View {
             case let .needsLogin(serverName, version):
                 SignInView(model: model, serverName: serverName, version: version)
             case .ready:
+                // No focus in a view the launch curtain still covers.
                 MainView(model: model)
+                    .disabled(!KeyboardFocus.isReachable(playerOpen: false, curtainShown: curtainShown))
             }
 
             if curtainShown {
@@ -45,6 +49,9 @@ struct RootView: View {
             }
         }
         .background(WindowLine())
+        // The system focus ring and our focus surfaces show only after Tab / arrows.
+        .keyboardFocusMark(keyboardFocus.state)
+        .onAppear { keyboardFocus.start() }
         #if DEBUG
         // Logs the frame cadence, development builds only, see `FrameTick`. A view with
         // no size that draws nothing.

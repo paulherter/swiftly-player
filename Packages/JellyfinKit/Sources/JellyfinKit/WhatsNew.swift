@@ -67,11 +67,17 @@ public struct WhatsNewEntry: Sendable, Equatable, Decodable {
         return entry
     }
 
-    /// The file shipped for `version`, or `nil`.
-    public static func bundled(for version: String) -> WhatsNewEntry? {
+    /// The raw file shipped for `version` (the Apple app hands it to the core), or `nil`.
+    public static func bundledData(for version: String) -> Data? {
         let url = Bundle.module.url(forResource: version, withExtension: "json", subdirectory: "whatsnew")
             ?? Bundle.module.url(forResource: version, withExtension: "json")
-        guard let url, let data = try? Data(contentsOf: url) else { return nil }
+        guard let url else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
+    /// The file shipped for `version`, or `nil`.
+    public static func bundled(for version: String) -> WhatsNewEntry? {
+        guard let data = bundledData(for: version) else { return nil }
         return decoded(from: data)
     }
 }

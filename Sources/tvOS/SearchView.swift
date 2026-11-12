@@ -263,10 +263,11 @@ struct SearchView: View {
             // Failed is not "nothing found". `search` returns `nil` when the server doesn't answer.
             // Same text as in the library: one cause, one diagnosis. It also replaces old hits, which
             // belong to another word.
+            let words = model.rustScreens.searchTrouble.copy(server: model.serverAddress ?? String(localized: "Der Server"))
             EmptyState(
                 symbol: "externaldrive.badge.xmark",
-                title: "Server ist abgetaucht",
-                hint: "\(model.serverAddress ?? String(localized: "Der Server")) antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+                title: words.title,
+                hint: words.text,
                 button: ("Erneut versuchen", { searchRun?.cancel(); searchRun = Task { await searching() } }))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(width: SearchLayout.resultsWidth)
@@ -346,9 +347,7 @@ struct SearchView: View {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: Theme.latticeRow) {
                     ForEach(items) { item in
                         NavigationLink(value: item) {
-                            TileContent(image: model.imageURL(for: item,
-                                                              maxHeight: 600,
-                                                              portrait: true),
+                            TileContent(image: model.portraitURL(item),
                                          title: item.name,
                                          subline: item.hitInfo,
                                          progress: item.userData?
@@ -484,7 +483,12 @@ struct SearchView: View {
         }
         // Side by side, not one after the other. Seerr is an extra; if nothing comes from there or
         // it comes late, what the own server has still shows at once.
+        #if canImport(SwiftlyCore)
+        // The Rust core debounces nothing here (this view waits itself) but is the only search of a session it serves.
+        async let ownOnes = model.coreServes ? model.searchRust(word) : model.search(word)
+        #else
         async let ownOnes = model.search(word)
+        #endif
         async let foreignOnes = model.seerr.searching(word)
         let (a, b) = await (ownOnes, foreignOnes)
         // Overtaken: a newer term is already searching.

@@ -1,0 +1,27 @@
+[package]
+name = "swiftly-security"
+description = "Security tests of the core: planted-secret scans, parser limits, server address rules (no production code)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[dev-dependencies]
+serde_json = "1"
+swiftly-net = { path = "../swiftly-net" }
+swiftly-jellyfin = { path = "../swiftly-jellyfin", default-features = false }
+swiftly-plex = { path = "../swiftly-plex", default-features = false }
+swiftly-images = { path = "../swiftly-images" }
+swiftly-accounts = { path = "../swiftly-accounts" }
+swiftly-model = { path = "../swiftly-model" }
+swiftly-playback = { path = "../swiftly-playback" }
+swiftly-downloads = { path = "../swiftly-downloads" }
+swiftly-settings = { path = "../swiftly-settings" }
+tokio = { version = "1", default-features = false, features = ["rt", "net", "time"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,3 @@
+# Same exceptions as deny.toml (unmaintained notices without a vulnerability). See that file for the reasons.
+[advisories]
+ignore = ["RUSTSEC-2026-0374", "RUSTSEC-2026-0192", "RUSTSEC-2026-0370", "RUSTSEC-2026-0371", "RUSTSEC-2026-0372"]

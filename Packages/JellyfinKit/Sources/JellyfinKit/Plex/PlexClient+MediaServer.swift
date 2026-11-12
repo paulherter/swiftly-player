@@ -21,7 +21,8 @@ extension PlexClient: MediaServer {
     /// What ``MediaServerFactory`` calls: the device facts become Plex's headers, the
     /// session (if any) the account.
     static func make(session: Session?, baseURL: URL, deviceID: String, deviceName: String,
-                     clientVersion: String, program: String, urlSession: URLSession) -> PlexClient {
+                     clientVersion: String, program: String, urlSession: URLSession,
+                     resolver: PlexClient.Resolver? = nil) -> PlexClient {
         #if os(iOS)
         let platform = "iOS"
         #elseif os(tvOS)
@@ -37,7 +38,9 @@ extension PlexClient: MediaServer {
         #endif
         let identity = PlexIdentity(clientID: deviceID, product: program, version: clientVersion,
                                     platform: platform, device: platform, deviceName: deviceName)
-        if let session { return PlexClient(session: session, identity: identity, urlSession: urlSession) }
+        if let session {
+            return PlexClient(session: session, identity: identity, urlSession: urlSession, resolver: resolver)
+        }
         return PlexClient(baseURL: baseURL, token: "", identity: identity, urlSession: urlSession)
     }
 

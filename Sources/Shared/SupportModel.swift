@@ -2,6 +2,9 @@ import Foundation
 import JellyfinKit
 import Observation
 import StoreKit
+import class SwiftlyCore.SupportController
+import enum SwiftlyCore.SupportPlatformKind
+import struct SwiftlyCore.SupportStatusInfo
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
@@ -168,8 +171,11 @@ final class SupportModel {
     var forcePricesUnavailable = false
     #endif
 
-    @ObservationIgnored private let store = SupportStore(storage: UserDefaultsSupportStorage())
-    @ObservationIgnored private var counter: WatchTimeCounter
+    /// The rules and the stored records (status, usage, ask history, watch time) are the core's
+    /// `SupportModel`, over the same `UserDefaults` keys as before. The purchase plan is not in the core:
+    /// `plans` reads and writes just that one key.
+    @ObservationIgnored private let core = SupportController(model: AppCore.shared.raw.supportModel())
+    @ObservationIgnored private let plans = SupportStore(storage: UserDefaultsSupportStorage())
     @ObservationIgnored private let launchedAt = Date.now
     @ObservationIgnored private var started = false
     @ObservationIgnored private var updates: Task<Void, Never>?
@@ -184,12 +190,34 @@ final class SupportModel {
     @ObservationIgnored private(set) var usedBeforeThisLaunch = false
 
     private init() {
-        status = store.status
-        usedBeforeThisLaunch = store.usage.firstLaunch != nil
-        counter = WatchTimeCounter(totalSeconds: store.usage.watchedSeconds)
+        status = Self.status(core.status)
+        usedBeforeThisLaunch = plans.usage.firstLaunch != nil
         appIcon = SupporterIcon.current
-        plan = store.plan
+        plan = plans.plan
         LookStore.shared.setSupporter(isSupporter)
+    }
+
+    static var platformKind: SupportPlatformKind {
+        #if os(tvOS)
+        .appleTv
+        #elseif os(macOS)
+        .mac
+        #else
+        UIDevice.current.userInterfaceIdiom == .pad ? .iPad : .iPhone
+        #endif
+    }
+
+    private static func status(_ info: SupportStatusInfo) -> SupportStatus {
+        guard info.supporter else { return .none }
+        return .supporter(
+            source: info.source == "key" ? .key : .store, since: info.since.map { Date(timeIntervalSince1970: $0) })
+    }
+
+    private static func info(_ status: SupportStatus) -> SupportStatusInfo {
+        guard case let .supporter(source, since) = status else {
+            return SupportStatusInfo(supporter: false, source: nil, since: nil)
+        }
+        return SupportStatusInfo(supporter: true, source: source.rawValue, since: since?.timeIntervalSince1970)
     }
 
     static var platform: SupportPlatform {
@@ -234,7 +262,7 @@ final class SupportModel {
         return productsState == .ready && !pricesUnavailable
     }
 
-    var watchedHours: Int { counter.watchedHours }
+    var watchedHours: Int { Int(core.watchedHours) }
 
     // MARK: Start
 
@@ -243,7 +271,7 @@ final class SupportModel {
     func start() {
         guard !started else { return }
         started = true
-        store.recordLaunch(now: .now)
+        try? core.recordLaunch(now: Date.now.timeIntervalSince1970)
         updates = Task { [weak self] in
             for await update in Transaction.updates {
                 await self?.handle(update)
@@ -269,7 +297,7 @@ final class SupportModel {
         switch standing {
         case let .active(plan, since, renews):
             self.plan = plan
-            store.plan = plan
+            plans.plan = plan
             renewsOn = renews
             autoRenews = plan == .monthly ? await SupportStoreKit.willAutoRenew(products[SupportProductID.monthly]) : nil
             if status != .supporter(source: .store, since: since) {
@@ -280,7 +308,7 @@ final class SupportModel {
             autoRenews = nil
             if case .supporter(.store, _) = status {
                 plan = nil
-                store.plan = nil
+                plans.plan = nil
                 setStatus(.none)
             }
         case .unknown:
@@ -290,7 +318,7 @@ final class SupportModel {
 
     private func setStatus(_ new: SupportStatus) {
         status = new
-        store.status = new
+        try? core.setStatus(Self.info(new))
         if new.isSupporter { cardVisible = false }
         LookStore.shared.setSupporter(isSupporter)
         // Refunded or expired: a look's own app icon goes back with the look.
@@ -372,7 +400,7 @@ final class SupportModel {
                 // A tip is a thank-you only; it never changes the standing.
                 if choice.plan != .tip {
                     plan = choice.plan
-                    store.plan = choice.plan
+                    plans.plan = choice.plan
                     setStatus(.supporter(source: .store, since: transaction.purchaseDate))
                 }
                 await transaction.finish()
@@ -455,9 +483,7 @@ final class SupportModel {
     func sheetAppeared() {
         guard scheduledAsk else { return }
         scheduledAsk = false
-        var history = store.promptHistory
-        history.recordSheetShown(at: .now)
-        store.promptHistory = history
+        try? core.recordSheetShown(now: Date.now.timeIntervalSince1970)
         AppLog.writeOut("[Support] Blatt gezeigt")
     }
 
@@ -481,14 +507,12 @@ final class SupportModel {
 
     /// From `AppModel.reportProgress`, every few seconds while a title is open.
     func playbackProgress(isPlaying: Bool) {
-        counter.playbackProgress(isPlaying: isPlaying, at: .now)
-        if counter.needsSave { store.save(&counter) }
+        try? core.playbackProgress(isPlaying: isPlaying, at: Date.now.timeIntervalSince1970)
     }
 
     /// The title ended or the player closed.
     func playbackStopped() {
-        counter.playbackStopped(at: .now)
-        store.save(&counter)
+        try? core.playbackStopped(at: Date.now.timeIntervalSince1970)
     }
 
     /// The app goes to the background: whatever was counted is stored now, a
@@ -515,10 +539,10 @@ final class SupportModel {
     /// (rating, the Discord hint): one ask at a time, and never a tip next to a
     /// rating.
     func evaluate(isPlaying: Bool, sheetAllowed: Bool) {
-        let decision = SupportPrompt.decide(.init(
-            now: .now, status: status, usage: store.usage, history: store.promptHistory,
-            isPlaying: isPlaying, secondsSinceLaunch: Date.now.timeIntervalSince(launchedAt),
-            platform: Self.platform))
+        let decision = core.decide(
+            now: Date.now.timeIntervalSince1970, isPlaying: isPlaying,
+            secondsSinceLaunch: Date.now.timeIntervalSince(launchedAt), platform: Self.platformKind,
+            utcOffset: Int64(TimeZone.current.secondsFromGMT()))
         if decision.showsSheet, sheetAllowed, !presented {
             scheduledAsk = true
             open()
@@ -529,17 +553,13 @@ final class SupportModel {
 
     /// "Not now" on the card: back in 30 days.
     func snoozeCard() {
-        var history = store.promptHistory
-        history.snoozeCard(now: .now)
-        store.promptHistory = history
+        try? core.snoozeCard(now: Date.now.timeIntervalSince1970)
         cardVisible = false
     }
 
     /// "Don't show again" on the card.
     func dismissCard() {
-        var history = store.promptHistory
-        history.dismissCard()
-        store.promptHistory = history
+        try? core.dismissCard()
         cardVisible = false
     }
 
@@ -565,7 +585,7 @@ extension SupportModel {
 
     /// Supporter status without a purchase (key source, so the store history leaves it alone).
     func debugMarkSupporter() {
-        store.plan = .lifetime
+        plans.plan = .lifetime
         plan = .lifetime
         setStatus(.supporter(source: .key, since: .now))
     }
@@ -573,7 +593,7 @@ extension SupportModel {
     /// The simulated purchase is through: supporter, with its plan, and the thank-you page.
     /// Source `.key`, so the store history leaves the status alone.
     func debugCompletePurchase(_ plan: SupportPlan) {
-        store.plan = plan
+        plans.plan = plan
         self.plan = plan
         renewsOn = plan == .monthly ? Calendar.current.date(byAdding: .month, value: 1, to: .now) : nil
         autoRenews = plan == .monthly ? true : nil
@@ -592,14 +612,14 @@ extension SupportModel {
 
     /// Back to the state of a fresh install: no status, no ask history, regular icon.
     func debugReset() {
-        store.plan = nil
+        plans.plan = nil
         plan = nil
         renewsOn = nil
         autoRenews = nil
         purchasing = nil
         forcePricesUnavailable = false
         setStatus(.none)
-        store.promptHistory = SupportPromptHistory()
+        plans.promptHistory = SupportPromptHistory()
         cardVisible = false
         notice = nil
         showsThanks = false

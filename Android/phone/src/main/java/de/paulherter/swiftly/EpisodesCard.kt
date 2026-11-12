@@ -1,5 +1,8 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.rustcore.legacyEpisodeCardDragged
+import de.paulherter.swiftly.rustcore.legacyEpisodeCardSwipedAway
+import de.paulherter.swiftly.rustcore.legacyEpisodeCardFadeFrom
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.EaseOut
@@ -78,7 +81,6 @@ import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.motionReduced
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -177,7 +179,7 @@ fun EpisodeCard(mediaWork: PlayItem, present: Boolean, card: (width: Float, heig
     LaunchedEffect(change?.imageSince) {
         val w = mediaWork.cardsSwitch ?: return@LaunchedEffect
         val imageSince = w.imageSince ?: return@LaunchedEffect
-        val wait = Kern.episodeCardFadeFrom(imageSince / 1000.0) * 1000 - (android.os.SystemClock.elapsedRealtime() - w.beginning)
+        val wait = legacyEpisodeCardFadeFrom(imageSince / 1000.0) * 1000 - (android.os.SystemClock.elapsedRealtime() - w.beginning)
         if (wait > 0) delay(wait.toLong())
         image.animateTo(0f, if (calm) Motion.fadeReduced() else tween((m.imageFade * 1000).toInt(), easing = EaseInOut))
         AppLog.writeOut("[Karte] Ende nach ${android.os.SystemClock.elapsedRealtime() - w.beginning} ms")
@@ -197,7 +199,7 @@ fun EpisodeCard(mediaWork: PlayItem, present: Boolean, card: (width: Float, heig
         // How far the momentum would carry it (`predictedEndTranslation`): a quarter of the velocity.
         val sx = (distance.x + momentum.x * 0.25f) / density
         val sy = (distance.y + momentum.y * 0.25f) / density
-        if (Kern.episodeCardSwipedAway((distance.x / density).toDouble(), (distance.y / density).toDouble(), sx.toDouble(), sy.toDouble())) {
+        if (legacyEpisodeCardSwipedAway((distance.x / density).toDouble(), (distance.y / density).toDouble(), sx.toDouble(), sy.toDouble())) {
             AppLog.writeOut("[Karte] weggewischt")
             cancel()
         } else run.launch {
@@ -220,8 +222,8 @@ fun EpisodeCard(mediaWork: PlayItem, present: Boolean, card: (width: Float, heig
             tempo.resetTracking()
             tempo.addPosition(down.uptimeMillis, down.position)
             fun setDown() {
-                drag = Offset((Kern.episodeCardDragged((distance.x / density).toDouble()) * density).toFloat(),
-                                (Kern.episodeCardDragged((distance.y / density).toDouble()) * density).toFloat())
+                drag = Offset((legacyEpisodeCardDragged((distance.x / density).toDouble()) * density).toFloat(),
+                                (legacyEpisodeCardDragged((distance.y / density).toDouble()) * density).toFloat())
             }
             val start = awaitTouchSlopOrCancellation(down.id) { c, over -> c.consume(); distance += over } ?: return@awaitEachGesture
             setDown()

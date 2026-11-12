@@ -614,3 +614,14 @@ enum ImageStore {
     /// Once per launch, on the first write.
     private static let cleanedUp: Void = { _ = slab?.cleanUp() }()
 }
+
+#if DEBUG
+extension ImageCache {
+    /// Snapshot tests only (`Tests/SwiftUIParity`): an image that is already there, so an offscreen render shows
+    /// pictures without a network.
+    func seedForSnapshot(_ image: CGImage, for url: URL) {
+        let size = image.width * image.height * 4
+        remember(Record(image: Image(decorative: image, scale: 1), byte: size), for: key(url))
+    }
+}
+#endif

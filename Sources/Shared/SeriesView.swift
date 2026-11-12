@@ -2,146 +2,78 @@ import JellyfinKit
 import OSLog
 import SwiftUI
 
+import SwiftlyCore
+
 /// The series page.
 ///
-/// Its core is the one big button: it knows where you are. Jellyfin's NextUp
-/// answers both cases in one call: the episode in progress, or the next
-/// unwatched one if none is open.
+/// Its core is the one big button: it knows where you are. The episode in progress, or the next unwatched one if
+/// none is open, comes from the Rust core (`SeriesVm`, owned by `SeriesCore`); the page draws its parts (seasons,
+/// episode rows, head and main button, cast, extras, similar, watchers) and sends intents back.
 struct SeriesDetailView: View {
     let model: AppModel
     let series: Item
-    /// The production year from the freshly fetched series, for entries that arrive without one.
-    @State private var freshYear: Int?
-    /// Coming from an episode, that episode's season is preselected.
+    /// The season of the episode we came from, by ID and by number (some servers return no `SeasonId`); the core
+    /// picks the season from them and its own state.
     var startSeasonID: String? = nil
-    /// The season **number** of the episode we came from.
-    ///
-    /// **Because the ID can be missing.** Some servers return no `SeasonId` on an
-    /// episode, neither in the list entry nor in a single fetch, neither via
-    /// `Shows/NextUp` nor elsewhere. Both ID comparisons then miss and the choice
-    /// falls back to `seasons.first`: the button said "Play S6 E1" while season 5
-    /// was shown below.
-    ///
-    /// The number is always present: `parentIndexNumber` on the episode,
-    /// `indexNumber` on the season. It is the more reliable route, so it is an
-    /// equal-ranking step, not a fallback.
     var startSeasonNumber: Int? = nil
-
-    /// **Whatever is cached shows immediately**, otherwise there is an empty pass,
-    /// and that is what the user sees.
-    ///
-    /// `SeriesCache` is shared but was not used on iPhone and iPad, so the page
-    /// waited for the server on **every** open. On the Mac that was a measured 92 to
-    /// 174 ms of blank page, and filling in later comes too late.
-    ///
-    /// **A deliberate difference from the Mac version.** It always picks a season
-    /// from the cache, the first if necessary. Without a hint, `load()` knows a
-    /// better way: the season the user is currently in (`state?.seasonId`). So the
-    /// choice is only brought forward when a hint came along; otherwise the season
-    /// list shows immediately and only the selection lands a moment later. The empty
-    /// pass is gone either way.
-    @MainActor init(model: AppModel, series: Item,
-                    startSeasonID: String? = nil, startSeasonNumber: Int? = nil) {
-        self.model = model
-        self.series = series
-        self.startSeasonID = startSeasonID
-        self.startSeasonNumber = startSeasonNumber
-
-        let remembered = SeriesCache.shared.state(series.id, with: model)
-        let seasons = remembered?.seasons ?? []
-        _seasons = State(initialValue: seasons)
-
-        let hint = startSeasonID != nil || startSeasonNumber != nil
-        // With a hint, the season brought along; otherwise the one the page was on at
-        // the last visit.
-        let season = hint
-            ? seasons.first { $0.id == startSeasonID }
-                ?? seasons.first { $0.indexNumber != nil
-                                    && $0.indexNumber == startSeasonNumber }
-            : seasons.first { $0.id == remembered?.selectedSeason }
-        // Only with a cached episode is the progress state shown too; the plan belongs
-        // to exactly that episode (`stateForget` clears both).
-        _state = State(initialValue: remembered?.nextWith)
-        _stateResolved = State(initialValue: remembered?.nextWith != nil)
-        _plan = State(initialValue: remembered?.nextWith != nil ? remembered?.plan : nil)
-        _planPresent = State(initialValue: remembered?.nextWith != nil && remembered?.plan != nil)
-        _selectedSeason = State(initialValue: season)
-
-        let episodes = season.flatMap { remembered?.episodes[$0.id] } ?? []
-        _episodes = State(initialValue: episodes)
-        _loads = State(initialValue: episodes.isEmpty)
-        // Without cached episodes the placeholders show from the first frame, not only
-        // once the episode fetch starts.
-        _episodesLoads = State(initialValue: episodes.isEmpty)
-        _remembered = State(initialValue: series.userData?.isFavorite ?? false)
-        _watched = State(initialValue: series.userData?.played ?? false)
-    }
 
     @Environment(\.dismiss) private var back
     @Environment(\.wide) private var wide
     @Environment(\.broad) private var broad
     @Environment(\.watchlistShown) private var watchlistShown
     @Environment(\.displayScale) private var pixelMetric
-    /// For the header image that goes along with a download.
     @State private var pagesWidth: CGFloat = 0
 
-    /// How far the page has scrolled; the header fades in based on it.
-    /// See `ItemDetailView.distance`: as `@State`, every scroll step rebuilt the page.
+    /// How far it has scrolled; only `DetailHeaderReader` reads it, so a scroll step does not rebuild the page.
     @State private var distance = ScrollDistance()
 
-    @State private var state: Item?
-    /// **Whether the next episode has been resolved**, even if there is none. The
-    /// cache brings seasons and episodes but not the progress state; with cached
-    /// episodes `loads` was already done at the start, and the button said "No
-    /// episodes" for a second until the state arrived. Until then it now says
-    /// "Loading…".
-    @State private var stateResolved: Bool
-    /// The plan is answered, with or without a result. See `proofRow`.
-    @State private var planPresent: Bool
-    @State private var seasons: [Item] = []
-    /// **Three states, not two.** `[]` means "the series has no seasons", this flag
-    /// means "the server did not answer". Both used to look the same, and the page
-    /// claimed there was nothing on every network error.
-    @State private var seasonsDisturbed = false
-    @State private var selectedSeason: Item?
-    @State private var episodes: [Item] = []
-    /// The episode list had no loading, empty or failure branch: an empty season, a
-    /// failed fetch and a running fetch all looked the same.
-    /// Initial value is set in `init`.
-    @State private var episodesLoads: Bool
-    /// How many rows the list shows; with 500 episodes not all at once.
-    @State private var episodesCount = EpisodesSection.step
-    @State private var episodesDisturbed = false
+    /// The page's data owner, the core's `SeriesVm` (`SeriesCore`); `nil` when there is no account.
+    @State private var page: SeriesCore?
     @State private var loadSheet = false
     @State private var loadItem: [DownloadItem] = []
-    /// The step **before** the load sheet: what should be loaded?
     @State private var selectionOpen = false
     @State private var loadTitle = ""
-    @State private var similar: [Item] = []
-    @State private var similarDisturbed = false
-    /// Extras of the series (specials, behind the scenes…). Empty: no tab.
-    @State private var extras: [Item] = []
-    /// Similar titles arrive after the rest of the page; until then placeholders
-    /// instead of "Nothing similar found.".
-    @State private var similarLoads = true
-    @State private var loads = true
     @State private var play: PlayRequest?
     @State private var moreOpen = false
     @State private var message: String?
     @State private var prepares = false
-    /// An episode with several versions waiting for the pick.
+    /// An episode with several versions waiting for the pick ("Fassung wählen"), the core's list.
+    @State private var versionPick: VersionPick?
+    /// Same, for an episode whose versions the list did not carry: the app fetches the full title and asks.
     @State private var versionChoice: VersionChoice?
-    /// From `series.userData` in `init`; see `ItemDetailView`.
-    @State private var remembered: Bool
-    @State private var watched: Bool
-    @State private var plan: PlaybackPlan?
     @State private var tab = 0
-    /// Width of the grid under "Similar", from which the column count is derived,
-    /// as in Library, Search and Watchlist.
     @State private var gridWidth: CGFloat = 0
     @State private var seasonListOpen = false
-    /// Has the user picked a season themselves? Then nothing overrides it anymore.
-    @State private var selfSelected = false
+
+    @MainActor init(model: AppModel, series: Item, startSeasonID: String? = nil, startSeasonNumber: Int? = nil) {
+        self.model = model
+        self.series = series
+        self.startSeasonID = startSeasonID
+        self.startSeasonNumber = startSeasonNumber
+        _page = State(
+            initialValue: SeriesCore(
+                app: model, item: series, startSeasonID: startSeasonID, startSeasonNumber: startSeasonNumber))
+    }
+
+    private var current: Item { page?.item ?? series }
+    private var button: SeriesButtonPart? { page?.model.button }
+    private var seasonList: [SeasonRow] { page?.model.seasons.seasons ?? [] }
+    private var selectedSeason: SeasonRow? {
+        let id = page?.model.seasons.selected
+        return seasonList.first { $0.id == id }
+    }
+    private var more: MorePart? { page?.model.more }
+    private var title: String {
+        guard let name = button?.title, !name.isEmpty else { return series.name }
+        return name
+    }
+
+    private var headerImage: URL? {
+        button?.image.flatMap { URL(string: $0.address) } ?? model.headerImageURL(for: series)
+    }
+    private var logoImage: URL? {
+        button?.logo.flatMap { URL(string: $0.address) } ?? model.logoURL(for: series)
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -149,65 +81,62 @@ struct SeriesDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // The same header as on the movie page, as its own building block so it is not
-                    // written twice.
+                    // The same header as on the movie page, as its own building block so it is not written twice.
                     hero
                     VStack(alignment: .leading, spacing: Theme.blockGap) {
                         // Above the button, directly under the name.
                         proofRow
-                        // **Button and row are one block, so they sit closer.** The spacing was 14, as
-                        // large as to everything else, but horizontally the row's fields are only 8
-                        // apart. The gap above was then larger than the gap between fields, and the row
-                        // read as a separate thing instead of a continuation of the button.
+                        // **Button and row are one block, so they sit closer.** The spacing was 14, as large as
+                        // to everything else, but horizontally the row's fields are only 8 apart. The gap above
+                        // was then larger than the gap between fields, and the row read as a separate thing
+                        // instead of a continuation of the button.
                         VStack(alignment: .leading, spacing: Theme.actionGap) {
                             primaryButton
                             actionRail
                         }
-                            // The row has its labels close under the circles; without extra padding they
-                            // almost touch the text below.
-                            .padding(.bottom, 8)
+                        // The row has its labels close under the circles; without extra padding they almost
+                        // touch the text below.
+                        .padding(.bottom, 8)
                         description
                     }
                     .padding(.horizontal, Theme.margin(wide: wide))
                     .padding(.top, 4)
                     .padding(.bottom, 22)
 
-                    WatchersRow(model: model, item: series)
+                    WatchersRow(model: model, list: (more?.watchers ?? []).map(Watcher.init(core:)))
                         .padding(.bottom, 8)
 
-                    PageTab(title: extras.isEmpty ? ["Folgen", "Besetzung", "Ähnliches"]
+                    PageTab(title: (more?.extras.isEmpty ?? true) ? ["Folgen", "Besetzung", "Ähnliches"]
                                                  : ["Folgen", "Besetzung", "Ähnliches", "Extras"],
                            selected: $tab,
-                           firstLabel: seasons.isEmpty ? nil
+                           firstLabel: seasonList.isEmpty ? nil
                                : (selectedSeason?.name ?? String(localized: "Staffel")),
-                           firstChevron: seasons.count > 1,
+                           firstChevron: seasonList.count > 1,
                            chevronOpen: seasonListOpen,
                            onReselect: { _ in
-                               if seasons.count > 1 { withAnimation(Theme.leap) { seasonListOpen.toggle() } }
+                               if seasonList.count > 1 { withAnimation(Theme.leap) { seasonListOpen.toggle() } }
                            })
 
                     switch tab {
-                    case 0: episodesSection
+                    case 0: episodesList
                     case 1: cast
-                    case 3 where !extras.isEmpty: extrasSection
+                    case 3 where more?.extras.isEmpty == false: extrasSection
                     default: similarSection
                     }
                 }
-                // **Never wider than the screen.** If a child gets wider, the whole page does,
-                // and a page wider than its scroll area can be dragged sideways.
+                // **Never wider than the screen.** If a child gets wider, the whole page does, and a page wider
+                // than its scroll area can be dragged sideways.
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                // **The color of the header image beneath the page** (experiment
-                // `experiment-glas`), narrow and wide. When wide, `HeroHeader` carries its image
-                // as the background and fades it via `onImageTint` with a mask instead of
-                // `reason`; underneath lies the same mesh, computed from its minimum height
-                // (iPad).
+                // **The color of the header image beneath the page** (experiment `experiment-glas`), narrow and
+                // wide. When wide, `HeroHeader` carries its image as the background and fades it via
+                // `onImageTint` with a mask instead of `reason`; underneath lies the same mesh, computed from
+                // its minimum height (iPad).
                 .background(alignment: .top) {
-                    MoodReason(url: model.headerImageURL(for: series),
-                                   since: Theme.heroHeightValue)
+                    MoodReason(url: headerImage, since: Theme.heroHeightValue)
                 }
                 // Translucent instead of solid surfaces on top; see `Theme.flaecheDurchsichtig`.
                 .environment(\.onImageTint, true)
-                .environment(\.imageColorSource, model.headerImageURL(for: series))
+                .environment(\.imageColorSource, headerImage)
                 .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
@@ -218,61 +147,49 @@ struct SeriesDetailView: View {
             }
             .ignoresSafeArea(edges: .top)
 
-            // The same header as on the movie page. The old gradient with a free-standing
-            // arrow used to be here, which is why no bar ever faded in on the series page.
-            // The sheet hangs on an empty surface; without the `if`, wide windows would get
-            // two paths to the same actions.
-            ActionSheet(opened: $moreOpen, title: sheetTitle,
-                           actions: moreActions)
+            // The sheet hangs on an empty surface; without the `if`, wide windows would get two paths to the
+            // same actions.
+            ActionSheet(opened: $moreOpen, title: sheetTitle, actions: moreActions)
                 .zIndex(20)
-            // **The sheet is always in the tree, even when empty.**
-            //
-            // It used to hang on `if !loadItem.isEmpty`, and on the **first** open the
-            // items and `opened` were set in the same pass. The view was created at the
-            // moment it should already be open: there was no closed state to slide in from.
-            // The window appeared abruptly with its title in place; from the second time it
-            // animated because the view already existed.
-            //
-            // `LoadSheet` handles empty items fine: `bytes` is then 0, and closed it draws
-            // nothing anyway.
+            // **The sheet is always in the tree, even when empty.** It used to hang on `if !loadItem.isEmpty`,
+            // and on the **first** open the items and `opened` were set in the same pass: the view was created
+            // at the moment it should already be open, with no closed state to slide in from.
             LoadSheet(opened: $loadSheet, model: model, entries: loadItem,
                       title: loadTitle, images: loadImages,
                       failed: { message = $0 })
                 .zIndex(20)
-            // **The selection sits in front of the load sheet, not beside it.** It only
-            // collects episodes; space, Wi-Fi and size are still computed by `LoadSheet`.
-            LoadSelection(opened: $selectionOpen, model: model, series: series,
-                        seasons: seasons,
-                        preloaded: selectedSeason.map { [$0.id: episodes] } ?? [:]) { selected, quality, audio in
+            // **The selection sits in front of the load sheet, not beside it.** It only collects episodes;
+            // space, Wi-Fi and size are still computed by `LoadSheet`.
+            LoadSelection(opened: $selectionOpen, model: model, series: current,
+                        seasons: seasonItems,
+                        preloaded: selectedSeason.map { [$0.id: openEpisodes] } ?? [:]) { selected, quality, audio in
                 let newOne = selected.compactMap { episode in
                     entries(episode)?.inQuality(quality)
                         .withAudio(audio, streams: episode.mediaSources?.first?.mediaStreams ?? [])
                 }
                 guard !newOne.isEmpty else { return }
-                sheetShow(newOne, title: series.name)
+                sheetShow(newOne, title: current.name)
             }
             .zIndex(20)
             if let message {
-                HintStrip(text: message) { self.message = nil }
+                HintStrip(text: message) { self.message = nil; page?.model.dismissMessage() }
                     .zIndex(21)
             }
 
-            DetailHeaderReader(title: series.name, distance: distance, mood: model.headerImageURL(for: series)) { back() }
+            DetailHeaderReader(title: title, distance: distance, mood: headerImage) { back() }
         }
         .animation(Theme.sectionSwitch, value: tab)
-        // **Seasons in a sheet, not a dropdown in the page** (Paul 2026-11-05): a list
-        // hanging in the scroll area closed on every scroll, and on a short page (a
-        // season without episodes) its last entries could not be reached. The sheet
-        // scrolls on its own and always shows every season.
+        // **Seasons in a sheet, not a dropdown in the page**: a list hanging in the scroll
+        // area closed on every scroll, and on a short page (a season without episodes) its last entries could
+        // not be reached. The sheet scrolls on its own and always shows every season.
         .overlay(alignment: .topTrailing) {
             SelectionSheet(opened: $seasonListOpen,
                            title: "Staffel wählen",
-                           entries: seasons,
+                           entries: seasonList,
                            label: { $0.name },
                            isSelected: { $0.id == selectedSeason?.id },
                            select: { season in
-                               selfSelected = true
-                               seasonSwitch(season)
+                               withAnimation(Theme.reveal) { page?.model.selectSeason(season.id) }
                            })
         }
         #if os(iOS)
@@ -283,166 +200,55 @@ struct SeriesDetailView: View {
                          plan: wish.plan, startAt: wish.startAt)
         }
         #endif
+        .versionPick($versionPick) { choice, version in
+            launch(episodeAction(choice.itemId, pick: version.id), since: choice.since)
+        }
         .versionChoice($versionChoice) { choice, version in
-            launch(choice, picking: version)
+            PlayRequest.start(choice, picking: version, model: model, prepares: $prepares) { play = $0 }
         }
-        .task { await load() }
-        // **Refetch after the player**, and only once the end report has gone through;
-        // see `AppModel.playbackEnded`. Otherwise progress and "watched" would stay
-        // at their pre-playback state.
-        .catchUp(at: model.pagesRefresh) {
-            Task { await load(postPlayback: true) }
-        }
-        // **The season brought along can arrive late.**
-        //
-        // `SeasonTarget` refetches the episode because the list entry can carry an old
-        // season: when someone finishes a season and adds the next, the tile still shows
-        // the old one. That answer only arrives once the page is up and `load()` has
-        // made its choice. Without this line the refetch had no effect: "Play S6E1"
-        // above, season 5 below.
+        // The core loads the series, its seasons, the open season's episodes, the next episode with its plan,
+        // then cast, extras, similar and watchers, and keeps the page current. Cancelled (page covered) is not a
+        // failure; the task restarts on return.
+        .task { await page?.run(app: model) }
+        // **Refetch after the player**, and only once the end report has gone through; see
+        // `AppModel.playbackEnded`. Otherwise progress and "watched" would stay at their pre-playback state.
+        .catchUp(at: model.pagesRefresh) { page?.model.refresh() }
+        // What the core tells the host to do (play, open a trailer page, hand a title to another device ...).
+        .onChange(of: button?.effectSeq) { _, _ in drain() }
+        .onChange(of: button?.message) { _, new in if let new { message = new } }
+        .onChange(of: button?.toggleError) { _, new in if let new { message = new } }
+        // The tiles under the page take their wording from the core, like the home page's.
+        .onChange(of: more) { _, new in if let new { rememberLooks(new) } }
+        // **The season brought along can arrive late.** `SeasonTarget` refetches the episode because the list
+        // entry can carry an old season: when someone finishes a season and adds the next, the tile still shows
+        // the old one. That answer only arrives once the page is up; without this the refetch had no effect:
+        // "Play S6E1" above, season 5 below.
         .onChange(of: startSeasonID) { _, new in
-            guard !selfSelected, let new,
-                  let hit = seasons.first(where: { $0.id == new }),
-                  hit.id != selectedSeason?.id else { return }
-            seasonSwitch(hit)
+            guard let new, seasonList.contains(where: { $0.id == new }), new != selectedSeason?.id else { return }
+            page?.model.selectSeason(new)
         }
-    }
-
-    /// Fetch everything that can change.
-    ///
-    /// **One load function, not two.** There used to be a separate `auffrischen` that
-    /// rebuilt part of this and forgot the plan. After "mark season as watched" the
-    /// main button showed the new episode but carried the old plan, including a wrong
-    /// Direct Play verdict. The same bug was found on tvOS: `auffrischen` stood in
-    /// for "everything is fresh again" because it usually coincides with it. Usually.
-    /// `postPlayback`: only progress state, series and the episodes of the chosen
-    /// season. Seasons and similar titles do not change while watching; fetching them
-    /// (and the episodes again afterwards) cost several requests after every player
-    /// close, exactly when the end report runs.
-    private func load(postPlayback: Bool = false) async {
-        async let a = model.stateInSeries(series)
-        async let b = postPlayback ? nil : seasonsFetch()
-        async let c = postPlayback ? nil : similarFetch()
-        async let e = postPlayback ? nil : model.extras(series)
-        // **The series itself, fresh.** Remembered and watched came from the entry the
-        // page was opened with, and that never changes. After "mark series as watched"
-        // the page reloaded, read the old entry again, and the button fell back to "not
-        // watched"; a second tap marked everything again instead of resetting it. TV and
-        // Mac always fetch the series fresh here.
-        async let d = model.item(id: series.id)
-        // Remove duplicate IDs; see `ItemDetailView`.
-        //
-        // **`nil` is not an empty list.** If the server stays silent, the page keeps
-        // what it had and records the failure. Before, the same case set both lists to
-        // empty, the season picker vanished and below it stood "Nothing similar found".
-        // **Similar titles do not block.** That fetch is the slowest on large servers;
-        // state and seasons are enough for the episode list, similar titles come last.
-        let (freshState, freshSeasons) = await (a, b)
-        let seasonsNow = freshSeasons ?? seasons
-        // Coming from an episode, its season; otherwise the one visited last. On a
-        // refresh the choice already made stays.
-        // The chain lives in the package: first the hint (ID, then number), then the
-        // progress state. The old local copy checked the state's ID before the hint's
-        // number, so an episode without `SeasonId` showed the current season instead of
-        // its own.
-        let choice = selectedSeason
-            ?? SeasonSelectionRule.choose(from: seasonsNow,
-                                       hintID: startSeasonID,
-                                       hintNumber: startSeasonNumber,
-                                       state: freshState)
-
-        // **One fade-in, not five.** Season choice, episodes, state and similar titles
-        // arrive together in the same transaction. The page used to apply each answer
-        // separately: first the season choice without episodes (briefly "No episodes in
-        // this season"), then it waited for the plan, then placeholders, then the
-        // episodes. The plan now runs alongside and fades in only the detail line, whose
-        // space is already reserved.
-        async let p = fetchPlan(freshState?.id)
-        let fetched = await model.episodes(series: series.id, season: choice?.id)
-        // Cancelled is not a failure: set nothing, the page keeps its state.
-        if Task.isCancelled { return }
-        withAnimation(Theme.reveal) {
-            state = freshState
-            if !postPlayback { seasonsDisturbed = freshSeasons == nil }
-            seasons = seasonsNow
-            stateResolved = true
-            // If the user picked a season in the meantime, the list belongs to that choice,
-            // not to this answer.
-            if selectedSeason == nil || selectedSeason?.id == choice?.id {
-                selectedSeason = choice
-                episodesAccept(fetched)
-            }
-            loads = false
-        }
-        AppLog.writeOut("[Staffel] \(series.name): mitgebracht=\(startSeasonID ?? "-")/\(startSeasonNumber.map(String.init) ?? "-") "
-            + "stand=\(state.map { "S\($0.parentIndexNumber ?? -1)E\($0.indexNumber ?? -1) " + ($0.seasonId ?? "-") } ?? "-") "
-            + "gewaehlt=\(selectedSeason?.name ?? "-") "
-            + "vorhanden=[\(seasons.map { "\($0.name)=\($0.id)" }.joined(separator: " "))]")
-        // For the next visit to the same series, and for the route from an episode,
-        // which would otherwise refetch the series every time.
-        let current = await d ?? series
-        SeriesCache.shared.remember(current)
-        freshYear = current.productionYear
-        let selectedID = selectedSeason?.id
-        SeriesCache.shared.remember(series.id) {
-            $0.seasons = seasons
-            $0.selectedSeason = selectedID
-            if let freshState { $0.nextWith = freshState }
-        }
-        remembered = current.userData?.isFavorite ?? false
-        watched = current.userData?.played ?? false
-        // The plan without animation, only the fade-in with it: in the animated
-        // transaction the new Direct Play badge visibly pushed rating and certification
-        // to the right while the row slid in from the left.
-        if freshState != nil {
-            let freshPlan = await p
-            plan = freshPlan
-            SeriesCache.shared.remember(series.id) { $0.plan = freshPlan }
-        }
-        withAnimation(Theme.reveal) { planPresent = true }
-        // Similar titles last: nothing above waits for them. `nil` is not an empty
-        // list: the fetch did not run or failed.
-        if !postPlayback {
-            let freshSimilar = await c
-            // Failed or none: then the tab does not exist.
-            let freshExtras = await e
-            if Task.isCancelled { return }
-            withAnimation(Theme.reveal) {
-                if let freshExtras { extras = ListRules.withoutDouble(freshExtras) }
-                if extras.isEmpty && tab == 3 { tab = 0 }
-                similarLoads = false
-                similarDisturbed = freshSimilar == nil && similar.isEmpty
-                if let freshSimilar { similar = ListRules.withoutDouble(freshSimilar) }
-            }
-        }
-    }
-
-    private func seasonsFetch() async -> [Item]? { await model.seasons(series) }
-    private func similarFetch() async -> [Item]? { await model.similar(series) }
-
-    private func fetchPlan(_ episodeID: String?) async -> PlaybackPlan? {
-        guard let episodeID else { return nil }
-        return await model.plan(for: episodeID, still: true)
+        // What the core cannot know: settings, rights, devices in reach.
+        .onChange(of: model.watchersShown) { _, _ in page?.send(options: model) }
+        .onChange(of: model.downloadButtonShow) { _, _ in page?.send(options: model) }
+        .onChange(of: PlayOutputs.shared.targets.map(\.id)) { _, _ in page?.send(options: model) }
     }
 
     // MARK: Parts
 
     private var hero: some View {
-        HeroImage(url: model.headerImageURL(for: series))
-            .overlay(alignment: .bottom) { HeroRunOut(image: model.headerImageURL(for: series)) }
+        HeroImage(url: headerImage)
+            .overlay(alignment: .bottom) { HeroRunOut(image: headerImage) }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 4) {
                     #if os(iOS)
-                    TitleMark(title: series.name, logo: model.logoURL(for: series))
+                    TitleMark(title: title, logo: logoImage)
                     #else
-                    Text(series.name)
+                    Text(title)
                         .font(Theme.title)
                         .tracking(Theme.lockTitle)
                         .foregroundStyle(Theme.font)
                     #endif
-                    Text(secondaryLine)
-                        // Year, seasons and genre count as one entry: 12. It used to be 14, which
-                        // appears in no step of the scale.
+                    Text(button?.secondaryLine ?? "")
                         .font(Theme.small)
                         .foregroundStyle(Theme.fontQuiet)
                         .lineLimit(1)
@@ -452,260 +258,144 @@ struct SeriesDetailView: View {
             }
     }
 
-    private var secondaryLine: String {
-        var parts: [String] = []
-        // The entry the page was opened with often has no year; the fresh series brings it.
-        if let year = series.productionYear ?? freshYear { parts.append(String(year)) }
-        // Not `childCount`: that field means different things depending on the query and
-        // read one for a series with nineteen seasons. Once the seasons are loaded we
-        // count them ourselves.
-        // If only one season is in the library, we say which. "1 season" next to a
-        // button saying "S2 · E1" reads like a contradiction, when season 1 is simply
-        // missing on disk.
-        if seasons.count == 1, let only = seasons.first {
-            parts.append(only.name)
-        } else if let count = seasons.isEmpty ? series.childCount : seasons.count {
-            parts.append(String(localized: "\(count) Staffeln"))
-        }
-        if let genres = series.genres, !genres.isEmpty {
-            parts.append(genres.prefix(2).joined(separator: ", "))
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    /// **First with the plan, then as a whole.** Stars and age rating are there
-    /// immediately, the Direct Play badge only with the playback plan, and then it
-    /// pushed itself in front and the other two to the right. Now the row holds its
-    /// place but stays invisible until the plan is there, then fades in all at once.
-    /// If no plan comes, it fades in anyway, just without the badge.
+    /// Stars and age rating are there at once, the Direct Play mark only with the plan; the line holds its place
+    /// but stays invisible until the core says `visible`, then fades in at once.
     private var proofRow: some View {
-        ProofRow(directPlayFlag: plan?.isLossless ?? false,
-                   hint: plan.map { $0.isLossless ? nil : $0.method.rawValue } ?? nil,
-                   rating: series.communityRating,
-                   sharing: series.ageRating)
-            // **Fixed height, even when empty.** The row only arrives with the plan, and
-            // from the list often without rating and certification. Empty it had no height,
-            // so the button below sat higher and dropped when it filled. Always as tall as
-            // one badge.
-            // `height`, not `minHeight`: the switch to scaling type turned it into a
-            // minimum and invalidated the reasoning above; with a larger system font the row
-            // would have grown past 26 and the button would have jumped exactly as described.
-            // The row only carries badges, and badges stay fixed.
+        let proof = button?.proof
+        return ProofRow(directPlayFlag: proof?.directPlay ?? false, hint: proof?.hint,
+                        ratingText: proof?.rating, sharing: proof?.ageRating)
             .frame(height: 26, alignment: .leading)
-            // **Fades in, does not move.** Nothing inside is animated: when a badge is
-            // added the row is already complete; only the opacity underneath animates.
-            .transaction { $0.animation = nil }
-            .opacity(planPresent ? 1 : 0)
+            .opacity(proof?.visible == true ? 1 : 0)
+            .animation(Theme.reveal, value: proof?.visible)
     }
 
+    /// **One button.** The core words it ("Weiter mit S2 · F3", "Staffel 1 starten", ...); until it knows, the
+    /// button holds its place with a blank label.
     private var primaryButton: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                if let state { launch(state) }
+                launch(page?.model.playNext())
             } label: {
-                // **Empty until the episode is known, then the content fades in in place.**
-                // Before, "Loading…" stood there and switched to the episode; the label got
-                // wider and the icon moved left from the center. Now the whole content arrives
-                // at once and nothing moves. The invisible placeholder keeps the height so the
-                // button does not grow.
                 ZStack {
                     Text(verbatim: " ").hidden()
-                    if buttonReady {
+                    if button?.labelReady == true {
                         HStack(spacing: 8) {
                             Image(icon: "play.fill", size: 15).font(.app(size: 15))
                                 .opacity(prepares ? 0.5 : 1)
-                            Text(buttonText)
+                            Text(verbatim: button?.label ?? "")
                         }
                         .transition(.opacity)
                     }
                 }
-                .animation(Theme.reveal, value: buttonReady)
-                .accessibilityLabel(Text(buttonText))
+                .animation(Theme.reveal, value: button?.labelReady)
+                .accessibilityLabel(Text(verbatim: button?.label ?? ""))
             }
             .buttonStyle(PrimaryButtonStyle(stretches: true))
             // Long press: the series' tile menu, as on its tile.
-            .tileMenu(series, model: model)
-            // **While loading it stays enabled and shows "Loading…".**
-            //
-            // On tvOS a disabled button is not a focus target: coming from Search, where
-            // nothing is preloaded, the initial focus jumped to "Watchlist" and did not come
-            // back when the episode arrived. The same pattern applies here, only without a
-            // visible episode, since a finger finds its button itself. Kept identical so
-            // the platforms do not drift apart again.
-            //
-            // A press while loading does nothing; `starte` has the `guard` anyway.
-            .disabled(prepares || (state == nil && stateResolved && !loads))
+            .tileMenu(current, model: model)
+            // **Gray while the next episode is still being found** (the core enables it, and enables it again
+            // when the fresh load failed so that a press tries once more) and while a plan is on its way.
+            .disabled(prepares || button?.enabled != true)
 
-            if let state, let rest = remainingTime(state) {
-                // Remaining time counts as one entry: 12. It used to be 11; that step belongs
-                // to uppercase group titles, not body text.
-                Text(rest).growing(12).foregroundStyle(Theme.fontQuiet)
+            if let rest = button?.remaining {
+                Text(rest).growing(12).monospacedDigit().foregroundStyle(Theme.fontQuiet)
             }
-            // When wide, the progress sits at the poster in the header; here it would be the
-            // same thing twice, across the whole page.
-            if let state, let share = state.userData?.playedPercentage,
-               share > 0 {
-                ProgressBar(share: share / 100)
+            if let share = button?.progress, share > 0 {
+                ProgressBar(share: Double(share))
                     .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
             }
         }
     }
 
-    /// The same row as on the movie page: four icons with labels. Before there were
-    /// two wide buttons, which made the two pages look different.
     private var actionRail: some View {
-        HStack(spacing: 8) {
+        let remembered = button?.favorite ?? false
+        let watched = button?.watched ?? false
+        return HStack(spacing: 8) {
             if watchlistShown {
                 ActionButton(symbol: remembered ? "bookmark.fill" : "bookmark",
                              title: "Merkliste", active: remembered, stretches: true,
                              caption: remembered ? "Gemerkt" : "Merken") {
-                    remembered.toggle()
-                    Task {
-                        if let reason = await model.setWatchlist(series, an: remembered) {
-                            remembered.toggle()
-                            message = reason
-                        }
-                    }
+                    page?.model.setWatchlist(!remembered)
                 }
             }
-            // **Download is in the row, not in a hidden chip.**
-            //
-            // Download used to be scattered over three places, and the most prominent was a
-            // round chip beside the season picker that nobody looks at. It now has a place
-            // between Watchlist and Watched, as on Mac and TV. The trailer moves into the
-            // More sheet: a trailer is something to play, not a permanent guest in a row of
-            // four slots.
-            //
-            // With downloads off there is nothing to download and the trailer keeps its
-            // place.
+            // **The download button decides what sits here:** with it, "Laden" opens the episode selection
+            // (the trailer then lives in the More panel); without it, "Trailer".
             if model.downloadButtonShow {
                 ActionButton(symbol: "arrow.down", title: "Laden", stretches: true, caption: "Laden") {
-                    // **Always the selection sheet, even with one season.**
-                    //
-                    // It used to depend on `seasons.count > 1`; with a single season it went
-                    // straight to the load sheet and took the whole season. That was the gap:
-                    // picking single episodes was impossible. A series always has episodes, so there
-                    // is always something to choose.
                     selectionOpen = true
                 }
             } else {
                 ActionButton(symbol: "play.rectangle", title: "Trailer", stretches: true,
-                             caption: "Trailer") { trailerStart() }
+                             caption: "Trailer") { page?.model.trailer() }
             }
             ActionButton(symbol: watched ? "checkmark.circle.fill" : "checkmark.circle",
                          title: "Gesehen", active: watched, stretches: true,
                          caption: "Gesehen") {
-                watched.toggle()
-                Task {
-                    if let reason = await model.setWatched(series, an: watched) {
-                        watched.toggle()
-                        message = reason
-                    }
-                    // Refetching goes through `model.pagesRefresh`.
-                }
+                page?.model.setWatched(!watched)
             }
             ActionButton(symbol: "ellipsis", title: "Mehr", stretches: true, caption: "Mehr") { moreOpen = true }
                 .asActionAnchor()
         }
-        // No own padding anymore: the four fields share the row and end where the button
-        // above ends. The gaps that spread the circles across the width are gone.
     }
 
     @ViewBuilder
     private var description: some View {
-        if let text = series.description {
+        if let text = button?.overview ?? series.description {
             CollapsibleText(text: text)
         }
     }
 
-    private var episodesSection: some View {
-        // Full width, as on iPhone. The checkmark belongs at the right edge of the row;
-        // squeezed into a reading width it stood mid-page and looked unconnected.
-        episodesList
-    }
-
     @ViewBuilder
     private var episodesList: some View {
+        let part = page?.model.episodes
         VStack(alignment: .leading, spacing: 0) {
-            if seasonsDisturbed && seasons.isEmpty {
-                // Without seasons there are no episodes: the failure belongs at the start of the
-                // section, not under an empty season picker.
-                DisturbHint(model: model) { Task { await load() } }
-            } else if !seasons.isEmpty {
-            }
-
-            // **Four branches where there was one.** If the fetch failed, the page says so;
-            // while it runs the area stays empty; if the season really is empty, it says
-            // that. Before, all three were the same blank area.
-            if episodesDisturbed {
-                DisturbHint(model: model) { Task { await episodesLoad() } }
-            } else if episodesLoads && episodes.isEmpty {
-                // **No placeholders.** The list is the last thing on the page, nothing below
-                // jumps; the episodes fade in when they are there. Empty here only means
-                // "loading", never "no episodes".
-                EmptyView()
-            } else if episodes.isEmpty && !seasons.isEmpty && !loads {
-                // **No new wording.** "No episodes in this season" has long been in the catalog
-                // (tvOS uses it); a second sentence for the same situation would be a second
-                // entry that eventually sounds different in some language.
-                emptyHint("Keine Folgen in dieser Staffel")
+            if page?.model.seasons.disturbed == true && seasonList.isEmpty {
+                DisturbHint(model: model) { page?.model.load() }
             } else {
-            // Not lazy: each row is itself a scroll area since swiping was added, and nested
-            // inside, a LazyVStack can no longer estimate its height; only the first row
-            // remained. A season usually has around 25 episodes, which the plain stack
-            // handles easily. For anime with 500 episodes it does not: hence
-            // `EpisodesSection.schritt` first, more on request.
-            VStack(spacing: 0) {
-                ForEach(episodes.prefix(episodesCount)) { episode in
-                    let actualValue = episode.userData?.played ?? false
-                    SwipeRow(symbol: actualValue ? "arrow.uturn.backward" : "checkmark",
-                               label: actualValue ? "Ungesehen" : "Gesehen",
-                               action: { watchedToggle(episode) },
-                               onTap: { launch(episode) }) {
-                        // **No download ring per episode anymore.**
-                        //
-                        // It was one of three ways to download, and with the selection sheet it is the
-                        // worst: a column at the right edge of every row, 26 pt, offering the same thing
-                        // twenty-five times for twenty-five episodes. To get a single episode, tick it in
-                        // the sheet, where its size is visible too.
-                        EpisodesRow(model: model, episode: episode,
-                                    // **Only in the player.** There the larger image says "this is playing"; on the
-                                    // series page the big button at the top says it, and a row that stands out would
-                                    // be a second statement.
-                                    ongoing: false)
-                    }
-                    // **Long press: the tile menu**, as on every tile (``TileMenu``): play,
-                    // watched/unwatched, download, watch together. Before, only "Watch together"
-                    // was here.
-                    .tileMenu(episode, model: model, landscape: true)
-                    // **No divider anymore.** The still image already separates the rows; a hairline
-                    // beside it says the same thing twice. Where the list does need a marker, on the
-                    // running episode, it carries a surface, which lives in `EpisodesRow`.
-                }
-                if episodes.count > episodesCount {
-                    MoreEpisodesButton {
-                        withAnimation(Theme.reveal) {
-                            episodesCount += EpisodesSection.step
-                        }
+                switch part?.status {
+                case .disturbed:
+                    DisturbHint(model: model) { page?.model.retryEpisodes() }
+                case .empty:
+                    emptyHint(seasonList.isEmpty ? "Keine Folgen" : "Keine Folgen in dieser Staffel")
+                case .ready:
+                    episodeRows(part?.rows ?? [], more: part?.moreAvailable ?? false)
+                default:
+                    // The shape of the rows that are coming (shipping showed four), not a blank gap.
+                    VStack(spacing: 0) {
+                        ForEach(0 ..< 4, id: \.self) { _ in EpisodesPlaceholder() }
                     }
                 }
-            }
-            // **One season replaces the other, it does not blend with it.** Without its own
-            // identity SwiftUI considered the rows the same and only swapped their content;
-            // with it, the old list fades out and the new one in.
-            .id(selectedSeason?.id)
-            .transition(.opacity)
             }
         }
     }
 
+    private func episodeRows(_ rows: [EpisodeRow], more: Bool) -> some View {
+        let items = page?.episodeItems() ?? [:]
+        return VStack(spacing: 0) {
+            ForEach(rows, id: \.id) { row in
+                let episode = items[row.id] ?? Item(id: row.id, name: row.title, type: "Episode")
+                SwipeRow(symbol: row.watched ? "arrow.uturn.backward" : "checkmark",
+                         label: row.watched ? "Ungesehen" : "Gesehen",
+                         action: { page?.model.setEpisodeWatched(row.id, !row.watched) },
+                         onTap: { launch(page?.model.playEpisode(row.id)) }) {
+                    EpisodesRow(model: model, episode: episode, ongoing: false, look: RustEpisodeLook(row: row))
+                }
+                .tileMenu(episode, model: model, landscape: true)
+            }
+            if more {
+                MoreEpisodesButton {
+                    withAnimation(Theme.reveal) { page?.model.moreEpisodes() }
+                }
+            }
+        }
+        .id(selectedSeason?.id)
+        .transition(.opacity)
+    }
+
     @ViewBuilder
     private var cast: some View {
-        let folks = (state?.actors.isEmpty == false ? state!.actors : series.actors)
-        if folks.isEmpty && loads {
-            // A series from the list often carries no cast; that arrives with the state.
-            // Until then no "No cast", and **a row shaped like the tiles**, not one point of
-            // height: otherwise the tab grew by a whole row on arrival.
+        let folks = more?.cast ?? []
+        if folks.isEmpty && more?.similarLoads != false {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 84, maximum: 110), spacing: 14)],
                       spacing: Theme.gridRowGap) {
                 ForEach(0 ..< 4, id: \.self) { _ in
@@ -725,10 +415,10 @@ struct SeriesDetailView: View {
         } else {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 84, maximum: 110), spacing: 14)],
                       spacing: Theme.gridRowGap) {
-                ForEach(folks) { person in
-                    NavigationLink(value: PersonRoute(person: person, origin: series.name)) {
-                        CastTile(image: model.personImage(person),
-                                         name: person.name, role: person.role)
+                ForEach(folks, id: \.id) { person in
+                    NavigationLink(value: PersonRoute(person: Person(core: person), origin: series.name)) {
+                        CastTile(image: person.image.flatMap { URL(string: $0.address) },
+                                 name: person.name, role: person.role)
                     }
                     .buttonStyle(Theme.PressButton())
                 }
@@ -741,9 +431,9 @@ struct SeriesDetailView: View {
     private var extrasSection: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 12) {
-                ForEach(extras) { extra in
-                    ExtraTile(model: model, extra: extra, prepares: $prepares,
-                                missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") }) {
+                ForEach(more?.extras ?? [], id: \.id) { extra in
+                    ExtraTile(model: model, extra: Item(rust: extra), look: RustTileLook(extra), prepares: $prepares,
+                              missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") }) {
                         play = $0
                     }
                 }
@@ -755,10 +445,10 @@ struct SeriesDetailView: View {
 
     @ViewBuilder
     private var similarSection: some View {
-        if similarDisturbed && similar.isEmpty {
-            DisturbHint(model: model) { Task { await load() } }
-        } else if similar.isEmpty && (loads || similarLoads) {
-            // A row using the same column computation as the grid below.
+        let similar = more?.similar ?? []
+        if similar.isEmpty && more?.similarFailed == true {
+            DisturbHint(model: model) { page?.model.refresh() }
+        } else if similar.isEmpty && more?.similarLoads != false {
             GridPlaceholder(columns: Theme.columns(usableNow: gridWidth - 2 * Theme.margin(wide: wide),
                                                     wide: wide),
                               rails: 1)
@@ -768,17 +458,13 @@ struct SeriesDetailView: View {
         } else if similar.isEmpty {
             emptyHint("Nichts Ähnliches gefunden.")
         } else {
-            // **The same column computation as Library and Search.** There was an adaptive
-            // grid with a fixed minimum width per tile. On iPhone two fit side by side and a
-            // gap remained on the right, while everywhere else three stand in the same
-            // place. Reported by a tester.
             let usableNow = gridWidth - 2 * Theme.margin(wide: wide)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.tileSpacing),
                                      count: Theme.columns(usableNow: usableNow, wide: wide)),
                       alignment: .leading, spacing: Theme.gridRowGap) {
-                ForEach(similar) { title in
-                    NavigationLink(value: title) {
-                        PosterTile(model: model, item: title, width: nil)
+                ForEach(similar, id: \.id) { tile in
+                    NavigationLink(value: Item(rust: tile)) {
+                        PosterTile(model: model, item: Item(rust: tile), width: nil)
                     }
                     .buttonStyle(Theme.PressButton())
                 }
@@ -789,110 +475,51 @@ struct SeriesDetailView: View {
         }
     }
 
-    /// **`LocalizedStringKey`, not `String`.** `Text(someString)` is verbatim: Xcode
-    /// never extracts the text into the catalog and it stays German in every
-    /// language. That is how "Keine Besetzung hinterlegt." appeared in the middle of
-    /// an English page.
     private func emptyHint(_ text: LocalizedStringKey) -> some View {
         Text(text)
-            // Empty states follow the system font.
             .growing(15)
             .foregroundStyle(Theme.fontVeryQuiet)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, 40)
     }
 
-    // MARK: Derived values
-
-    /// The label is fixed: the episode is resolved and, if there is none, the season
-    /// load is over too.
-    private var buttonReady: Bool { stateResolved && (state != nil || !loads) }
-
-    private var buttonText: String {
-        Item.seriesButton(episode: state, loads: loads || !stateResolved)
-    }
-
-    private func remainingTime(_ episode: Item) -> String? { episode.remainingTimeText }
-
-
-    private func episodesLoad() async {
-        episodesLoads = true
-        let of = selectedSeason?.id
-        let fetched = await model.episodes(series: series.id, season: of)
-        // Cancelled (page left, new run) is not a failure.
-        if Task.isCancelled { return }
-        // Whoever has picked another season in the meantime does not get the old
-        // season's episodes under the new one's name.
-        guard selectedSeason?.id == of else { return }
-        withAnimation(Theme.reveal) { episodesAccept(fetched) }
-    }
-
-    /// **The old season's episodes go immediately.** They used to stay until the new
-    /// answer arrived: "Season 3" on top, the second season's episodes below.
-    /// Whatever is cached shows right away; otherwise the list is empty until the
-    /// episodes arrive.
-    private func seasonSwitch(_ season: Item) {
-        let remembered = SeriesCache.shared.state(series.id, with: model)?.episodes[season.id]
-        withAnimation(Theme.reveal) {
-            selectedSeason = season
-            episodes = remembered ?? []
-            episodesCount = EpisodesSection.step
-            episodesDisturbed = false
-            episodesLoads = remembered == nil
-        }
-        SeriesCache.shared.remember(series.id) { $0.selectedSeason = season.id }
-        Task { await episodesLoad() }
-    }
-
-    private func episodesAccept(_ fetched: [Item]?) {
-        episodesLoads = false
-        // Only an empty page shows the failure; if a list is already there it stays
-        // (dead zone after the player, cancelled task).
-        episodesDisturbed = fetched == nil && episodes.isEmpty
-        // Failed: the old list stays and nothing goes into the cache; a cached network
-        // error would be worse than none.
-        guard let fetched else { return }
-        episodes = fetched
-        if let id = selectedSeason?.id {
-            SeriesCache.shared.remember(series.id) { $0.episodes[id] = fetched }
-        }
-    }
-
     // MARK: Downloads
 
-    /// A `DownloadItem` from an episode. **The same source the player would use**:
-    /// it is the same file.
+    /// The seasons as the episode selection takes them.
+    private var seasonItems: [Item] {
+        seasonList.map { page?.item($0.id) ?? Item(id: $0.id, name: $0.name, type: "Season") }
+    }
+
+    /// The open season's episodes as `Item`s, in the list's order.
+    private var openEpisodes: [Item] {
+        let items = page?.episodeItems() ?? [:]
+        return (page?.model.episodes.rows ?? []).compactMap { items[$0.id] }
+    }
+
     private func entries(_ episode: Item) -> DownloadItem? {
         guard let account = model.session?.storageAccount else { return nil }
         let source = episode.mediaSources?.first
         return DownloadItem(
             id: episode.id, account: account, art: .episode, title: episode.name,
-            series: series.name, seriesIdentifier: series.id,
-            season: episode.parentIndexNumber ?? selectedSeason?.indexNumber,
+            series: current.name, seriesIdentifier: current.id,
+            season: episode.parentIndexNumber ?? selectedSeason?.number.map(Int.init),
             episode: episode.indexNumber,
             runtimeTicks: episode.runTimeTicks, container: source?.container,
             source: source?.id, bytes: source?.size ?? 0,
             watchState: episode.userData, videoCodec: source?.videoCodec)
     }
 
-    /// The series poster plus the landscape image of every episode being loaded, and
-    /// the large header image for the series page in Downloads.
-    ///
-    /// **The header image at screen resolution.** `Heldbild` is 300 high and fills
-    /// the width; a 16:9 image needs at least 533 pt of width for that, the full
-    /// width on iPad. Multiplied by the scale so it is sharp on the device. The
-    /// poster is 600 high instead of a tile's 300.
     private var loadImages: [String: URL] {
         var card: [String: URL] = [:]
-        if let poster = model.imageURL(for: series, maxHeight: 600, portrait: true) {
-            card[series.id] = poster
+        if let poster = model.imageURL(for: current, maxHeight: 600, portrait: true) {
+            card[current.id] = poster
         }
         let points = max(pagesWidth, Theme.heroHeightValue * 16 / 9)
-        if let header = model.headerImageURL(for: series, width: Int((points * pixelMetric).rounded(.up))) {
-            card[DownloadManager.headerKey(series.id)] = header
+        if let header = model.headerImageURL(for: current, width: Int((points * pixelMetric).rounded(.up))) {
+            card[DownloadManager.headerKey(current.id)] = header
         }
         for p in loadItem {
-            if let f = episodes.first(where: { $0.id == p.id }),
+            if let f = openEpisodes.first(where: { $0.id == p.id }),
                let image = model.imageURL(for: f, maxHeight: 220) {
                 card[p.id] = image
             }
@@ -900,53 +527,156 @@ struct SeriesDetailView: View {
         return card
     }
 
-    /// **Set the content first, then show it, one pass later.**
-    ///
-    /// The sheet slides in by its measured height. If the content is set in the same
-    /// pass in which `opened` flips, the **old** measurement still applies to the
-    /// motion: the card moves, the texts in it change meanwhile and then just appear.
-    /// The `Task` delays showing by one pass; in between the card is measured once
-    /// with its new content, closed and invisible.
-    ///
-    /// Same spot, same solution as for the selection sheets.
+    /// The selection closes first, then the load sheet slides in.
     private func sheetShow(_ newOne: [DownloadItem], title: String) {
         loadItem = newOne
         loadTitle = title
-        // **One sheet at a time.** If the call comes from the selection sheet, which is
-        // sliding down, both at once would be two cards crossing. A moment's delay is
-        // enough; the spring takes 0.35 s, and 0.26 s of that is seen as a handover, not
-        // as waiting.
         Task { @MainActor in
             if selectionOpen { try? await Task.sleep(for: .milliseconds(260)) }
             loadSheet = true
         }
     }
 
-    /// **Load a single episode, now via the selection sheet.**
-    ///
-    /// From a user report: an anime season has over a hundred episodes, and for a
-    /// train ride two of them should come along. A whole season is the wrong order of
-    /// magnitude.
-    ///
-    /// `Ladeauswahl` now covers this: tick the episodes and see their combined size.
-    /// The ring on every row that did the same individually is gone; it offered the
-    /// same thing twenty-five times for twenty-five episodes.
+    // MARK: What the core asks of the host
 
-    private func launch(_ episode: Item) {
-        guard !prepares else { return }
-        // On press, not after the fetch: a haptic tick half a second later feels
-        // unrelated.
-        Theme.jerk(.medium)
-        // **An episode with several versions asks, like a movie.** The list entries carry
-        // the versions; the one behind the main button is completed first if it does not.
-        PlayRequest.start(episode,
-                          ask: VersionAsk(choose: { versionChoice = $0 },
-                                          failed: { message = $0 }),
-                          model: model, prepares: $prepares) { play = $0 }
+    /// The tiles under the page: the core's own pictures and wording, found by id.
+    private func rememberLooks(_ part: MorePart) {
+        var looks: [String: RustTileLook] = [:]
+        for tile in part.similar + part.extras { looks[tile.id] = RustTileLook(tile) }
+        model.rustLooks.merge(looks) { _, new in new }
     }
 
-    private func launch(_ choice: VersionChoice, picking version: MediaSource) {
-        PlayRequest.start(choice, picking: version, model: model, prepares: $prepares) { play = $0 }
+    /// What a pick of a version does: the main button's episode goes through `playNext` so that it also works
+    /// when it lies in another season than the open one.
+    private func episodeAction(_ id: String?, pick: String) -> PlayAction? {
+        guard let page else { return nil }
+        guard let id, id != button?.nextEpisode else { return page.model.playNext(pick: pick) }
+        return page.model.playEpisode(id, pick: pick)
+    }
+
+    private func drain() {
+        guard let page else { return }
+        for effect in page.model.takeEffects() {
+            switch effect {
+            case .play(let action):
+                launch(action)
+            case .playTrailer(let id):
+                Theme.jerk(.medium)
+                PlayRequest.start(Item(id: id, name: current.name), freshValue: true, model: model, prepares: $prepares,
+                                  missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                                  play: { play = $0 })
+            case .openWeb(let address):
+                #if os(iOS)
+                if let url = URL(string: address) { Task { await UIApplication.shared.open(url) } }
+                #endif
+            case .menu(let kind):
+                hostMenu(kind)
+            case .stateChanged:
+                SeriesCache.shared.forget(current.id)
+                model.noteWatchStateChanged()
+            case .watchlistChanged:
+                model.noteWatchlistChanged()
+            }
+        }
+    }
+
+    /// The menu entries only the platform can carry out.
+    private func hostMenu(_ kind: MenuKind) {
+        let state = page?.next ?? current
+        switch kind {
+        case .playOn(let id, _):
+            guard let target = PlayOutputs.shared.targets.compactMap(PlayOutput.init(session:)).first(where: { $0.deviceID == id })
+            else { return }
+            Task { await PlayOutputs.shared.play(state, to: target, model: model) }
+        case .together:
+            SharedModel.shared.createFor = state
+        case .shuffle:
+            Task {
+                guard let first = await model.shuffleStart(current) else {
+                    message = AppModel.episodeNotLoaded
+                    return
+                }
+                episodeStart(first, since: 0)
+            }
+        default:
+            break
+        }
+    }
+
+    /// What a press on Play (or a menu entry that plays) does, as the core decides it.
+    ///
+    /// `since` overrides the core's start second.
+    private func launch(_ action: PlayAction?, since: Double? = nil) {
+        guard let page, let action else { return }
+        Theme.jerk(.medium)
+        switch action {
+        case .wait:
+            return
+        case .choose(let id, let at, let versions):
+            versionPick = VersionPick(
+                heading: String(localized: "Fassung wählen"), options: versions, since: since ?? at, itemId: id)
+        case .resolve(let id, let at):
+            // The list entry has no `MediaSources`: the app fetches the full episode and asks itself.
+            guard !prepares, let episode = page.item(id) else { return }
+            PlayRequest.start(episode, since: since ?? at,
+                              ask: VersionAsk(choose: { versionChoice = $0 }, failed: { message = $0 }),
+                              model: model, prepares: $prepares,
+                              missing: { message = AppModel.episodeNotLoaded }) { play = $0 }
+        case .start(let id, let at, let source):
+            guard let episode = page.item(id) else {
+                message = AppModel.episodeNotLoaded
+                return
+            }
+            let start = since ?? at
+            let downloaded = model.downloads.file(for: id) != nil
+            // The plan the page already holds (the next episode's), unless a version was picked or a copy on
+            // the device decides.
+            if source == nil, !downloaded, let plan = page.plan(app: model, for: id) {
+                play = PlayRequest(item: episode, plan: plan, startAt: start)
+                return
+            }
+            PlayRequest.start(episode, since: start, sourceID: source, model: model, prepares: $prepares,
+                              missing: { message = AppModel.episodeNotLoaded }) { play = $0 }
+        }
+    }
+
+    private func episodeStart(_ episode: Item, since: Double) {
+        PlayRequest.start(episode, since: since,
+                          ask: VersionAsk(choose: { versionChoice = $0 },
+                                          failed: { message = $0 }),
+                          model: model, prepares: $prepares,
+                          missing: { message = AppModel.episodeNotLoaded }) { play = $0 }
+    }
+
+    private var sheetTitle: String {
+        guard let state = page?.next, let st = state.parentIndexNumber, let fo = state.indexNumber else {
+            return title
+        }
+        return "\(title) · " + String(localized: "S\(st) · F\(fo)")
+    }
+
+    /// The long-press menu of the "Mehr" sheet: the core names the entries, the host runs what only it can.
+    private var moreActions: [TitleAction] {
+        guard let page else { return [] }
+        return page.model.moreMenu().map { entry in
+            TitleAction(symbol: Self.symbol(of: entry.kind), wording: entry.text) {
+                page.model.menu(entry.kind)
+            }
+        }
+    }
+
+    private static func symbol(of kind: MenuKind) -> String {
+        switch kind {
+        case .trailer: "film"
+        case .playOn: "tv"
+        case .playEpisodeFromStart: "gobackward"
+        case .together: "person.2"
+        case .nextEpisode: "forward.end.alt"
+        case .shuffle: "shuffle"
+        case .markSeasonWatched: "checkmark.circle"
+        case .refreshMetadata: "arrow.clockwise"
+        default: "ellipsis"
+        }
     }
 }
 
@@ -1027,8 +757,10 @@ struct EpisodesRow: View {
     /// others. That says the same without pulling a surface to the edge, and says it
     /// on the object itself.
     var ongoing = false
+    /// The core's wording (`AppModel.coreServes`); `nil` shows the Swift one.
+    var look: RustEpisodeLook?
 
-    private var watched: Bool { episode.userData?.played ?? false }
+    private var watched: Bool { look?.watched ?? episode.userData?.played ?? false }
     private var loaded: DownloadItem? { model.downloads.entries(for: episode.id) }
 
     var body: some View {
@@ -1046,8 +778,8 @@ struct EpisodesRow: View {
         // **No surface.** The episode the big button points at carried a white 8 %
         // surface; on the device it looked like a selection nobody made. What `ongoing`
         // does today is at the field: the image grows.
-        EpisodesRowsLayout(title: Text("\(episode.indexNumber.map { "\($0). " } ?? "")\(episode.name)"),
-                           secondaryLine: Text(secondaryLine),
+        EpisodesRowsLayout(title: Text(verbatim: look?.title ?? "\(episode.indexNumber.map { "\($0). " } ?? "")\(episode.name)"),
+                           secondaryLine: Text(secondaryLine).monospacedDigit(),
                            // **Watched recedes, it does not vanish.** The dimmed title is the third signal
                            // besides the darkened image and the checkmark on it.
                            titleColor: watched ? Theme.fontQuiet : Theme.font) {
@@ -1058,9 +790,12 @@ struct EpisodesRow: View {
         // separately, plus "checkmark" for the watched mark on the image, and whether the
         // episode is downloaded did not appear at all.
         .accessibilityElement(children: .ignore)
+        // The stand-in item of a row without its JSON has no index: the core's own title ("3. Name") then
+        // carries the number, so "Folge n" is never dropped.
         .accessibilityLabel(Text(verbatim: [
-            episode.indexNumber.map { String(localized: "Folge \($0)") },
-            episode.name,
+            look?.title ?? [
+                episode.indexNumber.map { String(localized: "Folge \($0)") }, episode.name,
+            ].compactMap { $0 }.joined(separator: ", "),
             secondaryLine.isEmpty ? nil : secondaryLine,
         ].compactMap { $0 }.joined(separator: ", ")))
         .accessibilityValue(Text(verbatim: [
@@ -1077,16 +812,17 @@ struct EpisodesRow: View {
     private var imageWidthValue: CGFloat { ongoing ? Theme.episodeWidthOngoing : Theme.episodeWidth }
 
     private var preview: some View {
-        Picture(url: model.imageURL(for: episode, maxHeight: 280),
+        Picture(url: look?.image ?? model.imageURL(for: episode, maxHeight: 280),
              width: imageWidthValue, height: imageWidthValue * Theme.episodeHeight / Theme.episodeWidth, corner: Theme.cornerTile,
              // A full bar **and** a checkmark would be the same information twice.
              progress: watched ? nil
-                                  : episode.userData?.playedPercentage.map { $0 / 100 })
+                                  : look?.progress ?? episode.userData?.playedPercentage.map { $0 / 100 })
             .watchedCheckmark(watched)
     }
 
 
     private var secondaryLine: String {
+        if let look { return look.secondaryLine }
         // `runtimeSeconds` is 0, not nil, for an episode without a value; the rule in
         // the package catches both. This exact check was once missing on TV, and the
         // series showed "0 min.".
@@ -1256,62 +992,5 @@ extension SeasonView {
                 episodes = freshValue
             }
         }
-    }
-}
-
-extension SeriesDetailView {
-    /// Toggle an episode's watched state and refresh the list.
-    func watchedToggle(_ episode: Item) {
-        let new = !(episode.userData?.played ?? false)
-        Task {
-            if let reason = await model.setWatched(episode, an: new) {
-                message = reason
-                return
-            }
-            await episodesLoad()
-        }
-    }
-}
-
-extension SeriesDetailView {
-
-    func trailerStart() {
-        TrailerStart.start(series, model: model,
-                             play: { play = $0 },
-                             report: { message = $0 })
-    }
-
-    /// What the sheet works on: the episode in progress, otherwise the series.
-    var sheetTitle: String {
-        guard let state else { return series.name }
-        if let st = state.parentIndexNumber, let fo = state.indexNumber {
-            return "\(series.name) · " + String(localized: "S\(st) · F\(fo)")
-        }
-        return series.name
-    }
-
-    var moreActions: [TitleAction] {
-        var list = TitleActions.forSeries(series, state: state, season: selectedSeason,
-                                              model: model,
-                                              episodeStart: { episodeStart($0, since: $1) },
-                                              report: { message = $0 },
-                                              gemeinsam: SharedModel.shared.mayCreate
-                                                  ? { SharedModel.shared.createFor = $0 } : nil)
-        list.insert(contentsOf: TitleActions.playOn(state, model: model), at: 0)
-        // The trailer, when Download has its place in the row. Not the other way round,
-        // or it would appear twice.
-        if model.downloadButtonShow {
-            list.insert(.init(symbol: "film", text: "Trailer") { trailerStart() }, at: 0)
-        }
-        return list
-    }
-
-    private func episodeStart(_ episode: Item, since: Double) {
-        // Through the same path as the main button, so the menu asks for the version too.
-        PlayRequest.start(episode, since: since,
-                          ask: VersionAsk(choose: { versionChoice = $0 },
-                                          failed: { message = $0 }),
-                          model: model, prepares: $prepares,
-                          missing: { message = AppModel.episodeNotLoaded }) { play = $0 }
     }
 }

@@ -170,13 +170,13 @@ struct MainView: View {
                         TileMessageStrip()
                     }
                     if let alt = gemeinsam.lastLeave {
-                        ReturnPathStrip(name: alt.name) { gemeinsam.againJoin() }
+                        ReturnPathStrip(name: alt) { gemeinsam.againJoin() }
                             .transition(.opacity)
                     }
                 }
                 .padding(.bottom, Theme.edgeSpacing)
             }
-            .animation(Theme.reveal, value: gemeinsam.lastLeave?.id)
+            .animation(Theme.reveal, value: gemeinsam.lastLeave)
             // **The content also stays in its column for clicks.**
             //
             // `clipped()` was used first. That clips only the **image**: the root was cut cleanly
@@ -235,6 +235,9 @@ struct MainView: View {
             else { takeover.finish() }
         }
         .onDisappear { takeover.finish() }
+        #if DEBUG
+        .task { LiveRun.start(model, open: { controls.wish = $0 }, close: { controls.close() }) }
+        #endif
         // **The card grows out of the badge** (as on iPhone): instead of fading in mid-window
         // it comes from the sidebar row that was clicked and shrinks back there on close. The
         // scrim only fades.
@@ -313,6 +316,9 @@ struct MainView: View {
             navigator.back(in: target, until: 0)
             section = target
         }
+        // The sidebar and the page lie under the player overlay: no focus there, or the first
+        // row keeps it and its ring shows through the player as an empty box.
+        .disabled(!KeyboardFocus.isReachable(playerOpen: controls.wish != nil, curtainShown: false))
         // **On the click in the profile page** (design D, as on iPhone) the page itself slides
         // out, profile included, and the picture flies into the sidebar. See
         // ``AccountSwitchStage``.
@@ -888,7 +894,7 @@ struct Sidebar: View {
     @State private var offeringFrame: CGRect = .zero
 
     /// Groups that can be joined; not if already in one.
-    private var groups: [SyncPlayGroup] {
+    private var groups: [SharedGroup] {
         gemeinsam.group == nil && gemeinsam.mayJoin ? gemeinsam.offerings : []
     }
 

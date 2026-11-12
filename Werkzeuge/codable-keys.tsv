@@ -255,8 +255,8 @@ Kit	LookSelection	codable	accent,glow,icon,look
 Kit	LookSelection.CodingKeys	codingkey	accent,glow,icon,look
 Kit	MediaSource	codable	Container,DefaultAudioStreamIndex,DefaultSubtitleStreamIndex,Id,MediaStreams,Name,RunTimeTicks,Size,SupportsDirectPlay,SupportsDirectStream,SupportsTranscoding,TranscodingUrl
 Kit	MediaSource.CodingKeys	codingkey	Container,DefaultAudioStreamIndex,DefaultSubtitleStreamIndex,Id,MediaStreams,Name,RunTimeTicks,Size,SupportsDirectPlay,SupportsDirectStream,SupportsTranscoding,TranscodingUrl
-Kit	MediaStream	codable	AspectRatio,AverageFrameRate,Channels,Codec,ColorPrimaries,ColorTransfer,DeliveryUrl,DisplayTitle,DvBlSignalCompatibilityId,DvProfile,Height,Index,IsDefault,IsExternal,IsForced,IsHearingImpaired,IsOriginal,Language,RealFrameRate,Title,Type,VideoRangeType,Width
-Kit	MediaStream.CodingKeys	codingkey	AspectRatio,AverageFrameRate,Channels,Codec,ColorPrimaries,ColorTransfer,DeliveryUrl,DisplayTitle,DvBlSignalCompatibilityId,DvProfile,Height,Index,IsDefault,IsExternal,IsForced,IsHearingImpaired,IsOriginal,Language,RealFrameRate,Title,Type,VideoRangeType,Width
+Kit	MediaStream	codable	AspectRatio,AverageFrameRate,Channels,Codec,ColorPrimaries,ColorTransfer,ContainerIndex,DeliveryUrl,DisplayTitle,DvBlSignalCompatibilityId,DvProfile,Height,Index,IsDefault,IsExternal,IsForced,IsHearingImpaired,IsOriginal,Language,RealFrameRate,Title,Type,VideoRangeType,Width
+Kit	MediaStream.CodingKeys	codingkey	AspectRatio,AverageFrameRate,Channels,Codec,ColorPrimaries,ColorTransfer,ContainerIndex,DeliveryUrl,DisplayTitle,DvBlSignalCompatibilityId,DvProfile,Height,Index,IsDefault,IsExternal,IsForced,IsHearingImpaired,IsOriginal,Language,RealFrameRate,Title,Type,VideoRangeType,Width
 Kit	MediaURL	codable	Name,Url
 Kit	MediaURL.CodingKeys	codingkey	Name,Url
 Kit	NameID	codable	Id,Name

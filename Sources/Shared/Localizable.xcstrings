@@ -1,6 +1,98 @@
 {
   "sourceLanguage": "de",
   "strings": {
+    "Mehr Folgen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mehr Folgen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "More episodes"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ещё серии"
+          }
+        }
+      }
+    },
+    "Verschieben": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verschieben"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Переместить"
+          }
+        }
+      }
+    },
+    "Zum Umsortieren eine Zeile ziehen oder mit dem Kontextmenü verschieben.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Umsortieren eine Zeile ziehen oder mit dem Kontextmenü verschieben."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drag a row or use the context menu to reorder."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Чтобы изменить порядок, перетащите строку или используйте контекстное меню."
+          }
+        }
+      }
+    },
+    "Dieses Video (Dolby Vision, Profil 10.0, AV1) zeigt dieses Gerät nicht richtig, und dein Server kann es nicht umrechnen. Wähle, wenn es sie gibt, eine andere Fassung.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Video (Dolby Vision, Profil 10.0, AV1) zeigt dieses Gerät nicht richtig, und dein Server kann es nicht umrechnen. Wähle, wenn es sie gibt, eine andere Fassung."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device can't show this video (Dolby Vision profile 10.0, AV1) correctly, and your server can't convert it. If there is another version, pick that one."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это устройство неправильно показывает это видео (Dolby Vision, профиль 10.0, AV1), а ваш сервер не может его перекодировать. Если есть другая версия, выберите её."
+          }
+        }
+      }
+    },
     " ": {
       "extractionState": "manual",
       "localizations": {
@@ -1255,15 +1347,39 @@
     "%lld Titel bleiben auf dem Gerät": {
       "localizations": {
         "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld Titel bleiben auf dem Gerät"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Titel bleibt auf dem Gerät"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Titel bleiben auf dem Gerät"
+                }
+              }
+            }
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld titles stay on the device"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld title stays on the device"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld titles stay on the device"
+                }
+              }
+            }
           }
         },
         "ru": {
@@ -1301,15 +1417,39 @@
     "%lld Titel bleiben auf diesem Mac": {
       "localizations": {
         "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld Titel bleiben auf diesem Mac"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Titel bleibt auf diesem Mac"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Titel bleiben auf diesem Mac"
+                }
+              }
+            }
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld titles stay on this Mac"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld title stays on this Mac"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld titles stay on this Mac"
+                }
+              }
+            }
           }
         },
         "ru": {
@@ -5544,29 +5684,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Использовать оформление из файла"
-          }
-        }
-      }
-    },
-    "Gilt ab dem nächsten Video.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gilt ab dem nächsten Video."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Applies from the next video."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Применится со следующего видео."
           }
         }
       }
@@ -10801,6 +10918,94 @@
         }
       }
     },
+    "Anmeldung abgelehnt": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anmeldung abgelehnt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in refused"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вход отклонён"
+          }
+        }
+      }
+    },
+    "Antwort unlesbar": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antwort unlesbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Answer unreadable"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ответ нечитаем"
+          }
+        }
+      }
+    },
+    "%@ hat die Anmeldung abgelehnt. Wechsel den Server oder melde dich neu an.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ hat die Anmeldung abgelehnt. Wechsel den Server oder melde dich neu an."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ refused the sign-in. Switch server or sign in again."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ отклонил вход. Смените сервер или войдите снова."
+          }
+        }
+      }
+    },
+    "%@ hat etwas geschickt, das die App nicht lesen kann. Versuch es gleich nochmal.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ hat etwas geschickt, das die App nicht lesen kann. Versuch es gleich nochmal."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ sent something the app cannot read. Try again in a moment."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ прислал данные, которые приложение не может прочитать. Попробуйте ещё раз чуть позже."
+          }
+        }
+      }
+    },
     "Server ist abgetaucht": {
       "extractionState": "manual",
       "localizations": {
@@ -15335,6 +15540,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Этот заголовок Swiftly задаёт сам."
+          }
+        }
+      }
+    },
+    "Rust-Kern (Test)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rust-Kern (Test)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rust core (test)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ядро на Rust (тест)"
           }
         }
       }
@@ -22270,6 +22498,144 @@
           "stringUnit": {
             "state": "translated",
             "value": "Автоматически"
+          }
+        }
+      }
+    },
+    "Surround-Ton durchreichen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Surround-Ton durchreichen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pass through surround sound"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Передавать объёмный звук"
+          }
+        }
+      }
+    },
+    "Dolby Vision Profil 7": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dolby Vision Profil 7"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dolby Vision profile 7"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dolby Vision профиль 7"
+          }
+        }
+      }
+    },
+    "Aus (nur PCM)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aus (nur PCM)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off (PCM only)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выкл. (только PCM)"
+          }
+        }
+      }
+    },
+    "Nur Dolby Digital": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur Dolby Digital"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dolby Digital only"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Только Dolby Digital"
+          }
+        }
+      }
+    },
+    "Alle erzwingen (auch DTS, TrueHD)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle erzwingen (auch DTS, TrueHD)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Force all (incl. DTS, TrueHD)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все принудительно (и DTS, TrueHD)"
+          }
+        }
+      }
+    },
+    "Aus (spielt als HDR10)": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aus (spielt als HDR10)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off (plays as HDR10)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выкл. (как HDR10)"
           }
         }
       }

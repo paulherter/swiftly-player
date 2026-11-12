@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.sp
 import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
@@ -62,7 +61,7 @@ class WatchlistState(private val store: Store) {
     fun genreSet(value: String) { genre = value; store.remember("gattung.merkliste", value) }
     fun forget() { items = emptyList(); total = 0; loads = true; disrupted = false; loadedFor = null }
 
-    suspend fun load(kern: Kern) {
+    suspend fun load(kern: RustKern) {
         loads = items.isEmpty()
         disrupted = false
         try {
@@ -83,7 +82,7 @@ class WatchlistState(private val store: Store) {
         loads = false
     }
 
-    suspend fun loadMore(kern: Kern) {
+    suspend fun loadMore(kern: RustKern) {
         if (!stillMorePresent || loadsPost || loads) return
         loadsPost = true
         try {
@@ -95,7 +94,7 @@ class WatchlistState(private val store: Store) {
         } finally { loadsPost = false }
     }
 
-    private suspend fun page(kern: Kern, since: Int, count: Int = 60): Pair<List<GridTile>, Int> {
+    private suspend fun page(kern: RustKern, since: Int, count: Int = 60): Pair<List<GridTile>, Int> {
         val o = JSONObject(withContext(Dispatchers.IO) { kern.watchlist(genre, sorting, since.toLong(), count.toLong()).await() })
         val a = o.getJSONArray("titel")
         return (0 until a.length()).map { gridTileRead(a.getJSONObject(it)) } to o.getInt("gesamt")
@@ -113,9 +112,9 @@ class WatchlistState(private val store: Store) {
 fun WatchlistPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -> Unit) {
     val state = app.watchlist
     // Fresh on every arrival; what was removed on a title page is gone then.
-    LaunchedEffect(state.sorting, state.genre) { state.load(app.kern) }
-    WatchStateChange(app) { state.load(app.kern) }
-    val genres = remember { selectionRead(Kern.savedGenres()) }
+    LaunchedEffect(state.sorting, state.genre) { state.load(app.rk) }
+    WatchStateChange(app) { state.load(app.rk) }
+    val genres = remember { selectionRead(KernRules.savedGenres()) }
     val grid = rememberLazyGridState()
     val section = rememberCoroutineScope()
 
@@ -145,7 +144,7 @@ fun WatchlistPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: ()
             val count = Theme.columns((maxWidth - Theme.edgeSpacing * 2).value)
             LaunchedEffect(grid, count) {
                 snapshotFlow { (grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1) to state.items.size }
-                    .collect { (lastOne, loaded) -> if (loaded > 0 && lastOne >= loaded - count * 3) state.loadMore(app.kern) }
+                    .collect { (lastOne, loaded) -> if (loaded > 0 && lastOne >= loaded - count * 3) state.loadMore(app.rk) }
             }
             LazyVerticalGrid(GridCells.Fixed(count), state = grid,
                 contentPadding = PaddingValues(start = Theme.edgeSpacing, end = Theme.edgeSpacing, top = headerDp + 8.dp, bottom = 24.dp),
@@ -164,7 +163,7 @@ fun WatchlistPage(app: SwiftlyApplication, open: (Destination) -> Unit, back: ()
             } else if (state.disrupted && state.items.isEmpty() && !state.loads) {
                 EmptyState(Glyph.WlanDisruption, translated("Server ist abgetaucht"),
                     translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serverAddress()),
-                    primaryButton = translated("Erneut versuchen") to { section.launch { state.load(app.kern) } })
+                    primaryButton = translated("Erneut versuchen") to { section.launch { state.load(app.rk) } })
             } else if (state.items.isEmpty() && !state.loads) {
                 EmptyState(Glyph.Bookmark, translated("Noch nichts gemerkt"),
                     translated("Tippe irgendwo auf das Lesezeichen. Dein Zukunfts-Ich freut sich."))

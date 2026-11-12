@@ -461,6 +461,11 @@ public enum DownloadRules {
         public let dispensableBytes: Int64
 
         /// Is it enough once everything expendable is gone?
+        public init(suffices: Bool, freeAfter: Int64, dispensable: [DownloadItem], dispensableBytes: Int64) {
+            self.suffices = suffices; self.freeAfter = freeAfter
+            self.dispensable = dispensable; self.dispensableBytes = dispensableBytes
+        }
+
         public var sufficesToCleanUp: Bool {
             suffices || freeAfter + dispensableBytes >= 0
         }

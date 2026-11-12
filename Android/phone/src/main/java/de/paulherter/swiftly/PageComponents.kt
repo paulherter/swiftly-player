@@ -350,7 +350,7 @@ fun HeaderTargets(app: SwiftlyApplication, open: (Destination) -> Unit, front: @
 @Composable
 fun ProfileImage(app: SwiftlyApplication, size: Dp) {
     SubcomposeAsyncImage(
-        model = app.kern.userImage((size.value * 3).toLong()).orElse(null), contentDescription = app.username(),
+        model = app.rk.userImage((size.value * 3).toLong()), contentDescription = app.username(),
         contentScale = ContentScale.Crop,
         modifier = Modifier.size(size).clip(CircleShape),
         error = {

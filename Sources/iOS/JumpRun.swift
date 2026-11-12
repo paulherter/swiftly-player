@@ -23,7 +23,7 @@ enum JumpRun {
 
     static func wish(_ model: AppModel) async -> PlayRequest? {
         guard let client = model.client else { AppLog.writeOut("[Sprunglauf] nicht angemeldet"); return nil }
-        guard let series = await model.search("The Mentalist")?.first(where: { $0.type == "Series" })
+        guard let series = await model.search("The Lighthouse")?.first(where: { $0.type == "Series" })
         else { AppLog.writeOut("[Sprunglauf] keine Serie"); return nil }
         for candidate in (await model.episodes(series: series.id, season: nil) ?? []).prefix(60) {
             let sections = await model.sections(for: candidate.id)

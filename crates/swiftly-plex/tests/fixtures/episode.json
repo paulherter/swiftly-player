@@ -1,0 +1,8 @@
+{"MediaContainer":{"size":1,"Metadata":[{
+  "ratingKey":"5","type":"episode","title":"Pilot","parentRatingKey":"4",
+  "grandparentRatingKey":"3","grandparentTitle":"Test Show","parentTitle":"Season 1",
+  "index":2,"parentIndex":1,"viewCount":1,"duration":60023,
+  "thumb":"/library/metadata/5/thumb/1","grandparentThumb":"/library/metadata/3/thumb/1",
+  "grandparentArt":"/library/metadata/3/art/1","parentThumb":"/library/metadata/4/thumb/1",
+  "Media":[{"id":3,"Part":[{"id":3,"key":"/library/parts/3/1/file.mkv","container":"mkv"}]}]
+}]}}

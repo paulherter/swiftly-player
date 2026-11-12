@@ -3,6 +3,13 @@ import Foundation
 import ImageIO
 import JellyfinKit
 import SwiftUI
+import func SwiftlyCore.moodColor
+import func SwiftlyCore.moodMesh
+import func SwiftlyCore.moodNoiseTile
+import func SwiftlyCore.pictureTones
+import func SwiftlyCore.toneAt
+import func SwiftlyCore.toneGrid
+import struct SwiftlyCore.ToneGridPoint
 
 /// **The hue of an image: only the tone, not the color.**
 ///
@@ -112,9 +119,8 @@ final class ImageTone {
         else { return [] }
         area.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-        // The histogram and peaks live in the package so Android computes the same
-        // hues (`AvComputation.tones`).
-        return AvComputation.tones(rgba: points)
+        // The histogram and peaks are the core's (`picture_tones`).
+        return pictureTones(rgba: Data(points))
     }
 
 }
@@ -147,26 +153,9 @@ extension ImageTone {
     ///
     /// Tiled at 96 x 96. Nothing is visible except that the bands are gone.
     static let noise: Image = {
+        // The tile itself (96 x 96, xorshift, black or white at random coverage) is the core's.
         let border = 96
-        var points = [UInt8](repeating: 0, count: border * border * 4)
-        var condition: UInt64 = 0x2545F4914F6CDD1D
-        for i in stride(from: 0, to: points.count, by: 4) {
-            // Xorshift: fast, evenly distributed enough, and independent of any random
-            // source that looks different on every run.
-            condition ^= condition << 13
-            condition ^= condition >> 7
-            condition ^= condition << 17
-            // **Both directions.** An earlier version was white with random opacity,
-            // which could only lighten, never darken. A one-sided push shifts the gradient
-            // instead of breaking up the step boundary. Here every point is randomly black
-            // or white, so the mean stays neutral.
-            let bright = (condition & 1) == 1
-            let coverage = UInt8(truncatingIfNeeded: condition >> 8)
-            // Premultiplied: black has zero color channels, white equals the opacity.
-            let channel: UInt8 = bright ? coverage : 0
-            points[i] = channel; points[i + 1] = channel; points[i + 2] = channel
-            points[i + 3] = coverage
-        }
+        var points = [UInt8](moodNoiseTile())
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         let area = CGContext(data: &points, width: border, height: border,
                                 bitsPerComponent: 8, bytesPerRow: border * 4,
@@ -212,26 +201,11 @@ extension ImageTone {
     /// it merges into the background. The remaining hues fill the middle so color
     /// actually changes across the surface.
     static func network(_ tones: [Double]) -> MeshGradient {
-        // **Five by five, not three by three.**
-        //
-        // Nine control points at 1920 x 1080 are nine islands of color, and the
-        // interpolation between them shows as a bump that cannot be damped away; as
-        // long as the points are that far apart, each carries its own cloud.
-        //
-        // 25 points sample the same color field densely enough that the patches merge
-        // into one surface. `farbe(at:)` is a continuous function of position, so the
-        // finer it is sampled, the smoother the result.
-        let page = 5
-        var points: [SIMD2<Float>] = []
-        for row in 0 ..< page {
-            for column in 0 ..< page {
-                points.append([Float(column) / Float(page - 1),
-                               Float(row) / Float(page - 1)])
-            }
-        }
-        return MeshGradient(width: page, height: page,
-                            points: points,
-                            colors: points.map { color(tones, at: $0) })
+        // Five by five control points; the colour at each is the core's (`tone_grid`).
+        let grid = toneGrid(tones: tones)
+        return MeshGradient(width: 5, height: 5,
+                            points: grid.map { [$0.x, $0.y] },
+                            colors: grid.map(color))
     }
 
     /// Which color sits at which point of the mesh.
@@ -245,31 +219,25 @@ extension ImageTone {
     /// Two things decide: proximity to the backdrop at the top right sets **how
     /// bright** it gets, the position in the mesh sets **which** hue.
     static func color(_ tones: [Double], at point: SIMD2<Float>) -> Color {
-        guard !tones.isEmpty else { return Theme.reason }
+        color(toneAt(tones: tones, x: Double(point.x), y: Double(point.y)))
+    }
 
-        // The computation lives in the package (`AvComputation.hsb`); the numbers
-        // are the style tokens in `Colors.swift`:
-        //
-        // saturation  0.38...0.58
-        // brightness  0.075...0.215
-        // falloff     proximity^1.6
-        //
-        // The falloff carries most of it: outside the image almost everything sits on
-        // the base tone, color appears only where the image is. The accent color stays
-        // out: this is a background, not a control, and dark enough for white text.
-        let t = AvComputation.hsb(tones, x: Double(point.x), y: Double(point.y))
-        return Color(hue: t.audio / 360, saturation: t.saturation, brightness: t.brightness)
+    /// A tone point of the core as a colour; no hues: the page colour.
+    private static func color(_ point: ToneGridPoint) -> Color {
+        guard let hue = point.hue, let saturation = point.saturation, let brightness = point.brightness
+        else { return Theme.reason }
+        return Color(hue: hue / 360, saturation: saturation, brightness: brightness)
     }
 
     /// Same color as ``farbe(_:at:)``, but `decay` (1 ... 0) leads it back to
     /// `reason`, **in OKLab**: lightness and chroma together, until at 0 exactly
     /// `reason` remains. An opacity over `reason` blended in sRGB, and where the color
     /// was darker than the background an edge showed while scrolling. Computed in
-    /// the package (`AvComputation.farbe`) so Android has the same fade.
+    /// the core (`mood_color`).
     static func color(_ tones: [Double], x: Double, y: Double, decay f: Double) -> Color {
         guard !tones.isEmpty else { return Theme.reason }
-        let from = AvComputation.color(tones, x: x, y: y, decay: f)
-        return Color(.sRGB, red: from.r, green: from.g, blue: from.b)
+        let from = moodColor(tones: tones, x: x, y: y, decay: f)
+        return Color(.sRGB, red: from.red, green: from.green, blue: from.blue)
     }
 
     /// **The mesh for a detail page that fades out into `reason`** (iPhone). At the
@@ -278,20 +246,11 @@ extension ImageTone {
     /// the fade, blended in a perceptually uniform color space.
     static func network(_ tones: [Double], height: Double, colorHeight: Double, since: Double,
                      runOut: Double) -> MeshGradient {
-        let columns = 5
-        var rows: [Double] = [0, since * 0.5, since]
-        for i in 1 ... 10 { rows.append(since + runOut * Double(i) / 10) }
-        rows.append(height)
-        var points: [SIMD2<Float>] = [], colors: [Color] = []
-        for y in rows {
-            let f = AvComputation.decay(y: y, since: since, runOut: runOut)
-            for s in 0 ..< columns {
-                let x = Double(s) / Double(columns - 1)
-                points.append([Float(x), Float(min(1, y / height))])
-                colors.append(color(tones, x: x, y: min(1, y / colorHeight), decay: f))
-            }
-        }
-        return MeshGradient(width: columns, height: rows.count, points: points, colors: colors,
+        let mesh = moodMesh(tones: tones, height: height, colorHeight: colorHeight, since: since,
+                            runOut: runOut)
+        return MeshGradient(width: Int(mesh.columns), height: Int(mesh.rows),
+                            points: mesh.points.map { [$0.x, $0.y] },
+                            colors: mesh.points.map { Color(.sRGB, red: $0.red, green: $0.green, blue: $0.blue) },
                             background: Theme.reason, smoothsColors: true, colorSpace: .perceptual)
     }
 

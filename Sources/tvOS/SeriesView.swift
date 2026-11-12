@@ -1,5 +1,6 @@
 import JellyfinKit
 import SwiftUI
+import SwiftlyCore
 
 /// The series page: the same header as a movie, then the episodes, cast and
 /// similar titles, each as its own `Section` row (no tabs).
@@ -9,128 +10,89 @@ import SwiftUI
 struct SeriesView: View {
     let model: AppModel
     let series: Item
-    /// When opened via a single episode, that episode's season is already selected.
     var startSeasonID: String?
-    /// **That episode is also where playback continues.**
-    /// The main button would otherwise wait for `stateInSeries`, a fetch whose
-    /// result the caller already holds. Coming from "Continue Watching" or
-    /// "Next Episode", the opened episode is exactly what the button should name.
-    /// Only an initial value: `load()` fetches the fresh state and overwrites it.
-    /// Opened directly from the library there is none, so the fetch stays, and
-    /// `SeriesCache` serves it the second time.
     var startEpisodeValue: Item?
 
-    /// **The initial state comes from the cache, not from nothing.**
-    /// Same reasoning as `ImageReason` and `Backdrop`: a value delivered later
-    /// arrives after the empty first pass, and that pass is the "Loading…". See
-    /// `SeriesCache`.
+    /// The page's data owner, the core's `SeriesVm` (`SeriesCore`); `nil` when there is no account.
+    @State private var page: SeriesCore?
+
     @MainActor init(model: AppModel, series: Item,
                     startSeasonID: String? = nil, startEpisodeValue: Item? = nil) {
         self.model = model
         self.series = series
         self.startSeasonID = startSeasonID
         self.startEpisodeValue = startEpisodeValue
-
-        let remembered = SeriesCache.shared.state(series.id, with: model)
-        _seasons = State(initialValue: remembered?.seasons ?? [])
-        // **Never a guessed episode, but the right one immediately.** `startEpisodeValue` is
-        // the tile the user came through: the right episode from "Continue Watching"
-        // and "Next Episode", but the newest one from "Recently Added", which showed
-        // the wrong "Play S5 E10" for a second until the real state said E1.
-        // So the cache comes first: the home page remembers the episodes from
-        // "Continue Watching" and "Next Episode", and a focused tile fetches its
-        // series state before the click (`SeriesCache.nextPreload`). A
-        // started start episode counts without it. Otherwise the button stays
-        // neutral until `load()` delivers the state.
-        let begun = (startEpisodeValue?.userData?.playbackPositionTicks ?? 0) > 0
-        let beginning = SeriesCache.shared.nextEpisode(series.id, with: model)
-            ?? (begun ? startEpisodeValue : nil)
-        _nextWith = State(initialValue: beginning)
-        _statePresent = State(initialValue: beginning != nil)
-
-        // The season `load()` would pick, so coming back shows the last watched
-        // season rather than the first. The next-episode rule from the package: the episode's hint
-        // (id, then number, since the server does not always send `SeasonId`) comes
-        // before the state.
-        let season = SeasonSelectionRule.choose(from: remembered?.seasons ?? [],
-                                              hintID: startSeasonID ?? startEpisodeValue?.seasonId,
-                                              hintNumber: startEpisodeValue?.parentIndexNumber,
-                                              state: beginning)
-        _selectedSeason = State(initialValue: season)
-
-        let episodes = season.flatMap { remembered?.episodes[$0.id] } ?? []
-        _episodes = State(initialValue: episodes)
-        _loadsEpisodes = State(initialValue: episodes.isEmpty)
+        // The season hint of the tile the user came through (id first, then number: the server does not
+        // always send `SeasonId`); the core picks the season like the old selection rule did.
+        _page = State(initialValue: SeriesCore(
+            app: model, item: series, startSeasonID: startSeasonID ?? startEpisodeValue?.seasonId,
+            startSeasonNumber: startEpisodeValue?.parentIndexNumber))
     }
 
-    /// **New content fades in on appearing, not on loading.**
-    /// The fade used to hang on data arriving. Since the caches, the data is
-    /// already there in the first pass, so there was nothing to animate: soft
-    /// the first time, hard from the second. Hanging it on appearing fades in
-    /// **every time**, whether or not the data is already there.
+    /// Rows and header fade in once the page is up, as before.
     @State private var inFade = false
-
-    @State private var freshValue: Item?
-    @State private var plan: PlaybackPlan?
-    @State private var seasons: [Item]
-    @State private var selectedSeason: Item?
-    /// **Did the user pick the season?** Only then it stays put on loading.
-    /// The `init` choice comes from the `SeriesCache`, i.e. old state: after
-    /// moving on to the next season the old one showed, `episodeFront` was `nil`
-    /// (the episode is not in the shown season), and the row began at E1.
-    @State private var seasonSelfSelected = false
-    @State private var episodes: [Item]
-    @State private var loadsEpisodes: Bool
-    @State private var remembered = false
-    @State private var watched = false
     @State private var message: String?
-    /// The player sits in the frame; see `MainView`.
     @Environment(\.playRequest) private var play
     @State private var prepares = false
     @State private var versionChoice: VersionChoice?
-    @State private var nextWith: Item?
-    /// Whether `nextWith` is a known state: from the cache, a started start
-    /// episode or the server. Until then the button reads "Abspielen".
-    @State private var statePresent: Bool
-    /// Counts the load runs of `load()`; only the newest writes.
-    @State private var loadRun = 0
-    @State private var similar: [Item] = []
-    /// Extras of the series; empty means no row.
-    @State private var extras: [Item] = []
-    /// **Empty and failed are two cases.** Without these flags the page said
-    /// "Keine Folgen in dieser Staffel" when the server had been silent, and the
-    /// "Ähnliches" row silently disappeared.
-    @State private var episodesDisturbed = false
-    @State private var similarDisturbed = false
+    @State private var versionPick: VersionPick?
     @State private var moreOpen = false
-    #if DEBUG
-    @State private var debugScroll = ScrollPosition()
-    #endif
     @State private var seasonSelectionOpen = false
-    /// Which episode tile has focus.
     @FocusState private var atEpisode: String?
-    /// Whether the main button has focus; it is the page's starting point.
     @FocusState private var atPrimaryButton: Bool
-    /// **Where focus returns when a panel closes.**
-    /// It used to jump to the main button, the page's initial focus, even though
-    /// the user stood at the More button or season pill. A panel is not a change
-    /// of place but something that opens above its button; closing it
-    /// returns to the button that opened it.
     @FocusState private var atMoreButton: Bool
     @FocusState private var atSeasonPill: Bool
-    /// **Where focus returns when the player closes.**
-    /// Same reason as `atMoreButton`/`atSeasonPill`. The player is a sibling in
-    /// the frame and the page stays mounted during playback, only `disabled`,
-    /// which resets the three focus variables. Without this memory tvOS picks
-    /// something geometrically on removal and lands on the first tab of the
-    /// header bar instead of the episode or button that opened the player.
     private enum FocusTarget: Equatable { case primaryButton, moreButton, episode(String) }
     @State private var lastFocus: FocusTarget = .primaryButton
 
-    private var current: Item { freshValue ?? series }
-    private var actors: [Person] { (current.people ?? []).filter(\.isCast) }
+    private var current: Item { page?.item ?? series }
+    private var button: SeriesButtonPart? { page?.model.button }
+    private var seasonList: [SeasonRow] { page?.model.seasons.seasons ?? [] }
+    private var selectedSeason: SeasonRow? {
+        let id = page?.model.seasons.selected
+        return seasonList.first { $0.id == id }
+    }
+    private var more: MorePart? { page?.model.more }
+    private var actors: [Person] { (more?.cast ?? []).map(Person.init(core:)) }
+    private var similar: [Item] { (more?.similar ?? []).map(Item.init(rust:)) }
+    private var extras: [Item] { (more?.extras ?? []).map(Item.init(rust:)) }
+    private var episodes: [Item] {
+        let items = page?.episodeItems() ?? [:]
+        return (page?.model.episodes.rows ?? []).map {
+            items[$0.id] ?? Item(id: $0.id, name: $0.title, type: "Episode")
+        }
+    }
 
     var body: some View {
+        layout
+            .defaultFocus($atPrimaryButton, true, priority: .userInitiated)
+            .onChange(of: moreOpen) { _, opened in if !opened { atMoreButton = true } }
+            .onChange(of: seasonSelectionOpen) { _, opened in if !opened { atSeasonPill = true } }
+            .onChange(of: atPrimaryButton) { _, an in if an { lastFocus = .primaryButton } }
+            .onChange(of: atMoreButton) { _, an in if an { lastFocus = .moreButton } }
+            .onChange(of: atEpisode) { _, now in if let now { lastFocus = .episode(now) } }
+            .onChange(of: play.wrappedValue == nil) { before, closed in
+                guard closed, before == false else { return }
+                focusBack()
+            }
+            .onChange(of: SharedModel.shared.createFor == nil) { before, toward in
+                guard toward, before == false, play.wrappedValue == nil else { return }
+                focusBack()
+            }
+            .modifier(CoreLifecycle(run: {
+                atPrimaryButton = true
+                withAnimation(Theme.motion(.timingCurve(0.23, 1, 0.32, 1, duration: 0.22))) { inFade = true }
+                await page?.run(app: model)
+            }))
+            .onChange(of: model.pagesRefresh) { _, _ in page?.model.refresh() }
+            .onChange(of: button?.effectSeq) { _, _ in drain() }
+            .onChange(of: button?.message) { _, new in if let new { message = new } }
+            .onChange(of: button?.toggleError) { _, new in if let new { message = new } }
+            .onChange(of: model.watchersShown) { _, _ in page?.send(options: model) }
+            .onChange(of: PlayOutputs.shared.targets.map(\.id)) { _, _ in page?.send(options: model) }
+    }
+
+    private var layout: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
@@ -138,8 +100,9 @@ struct SeriesView: View {
                 railsSection {
                     HStack(spacing: 24) {
                         RailTitle(text: "Folgen")
-                        if seasons.count > 1 || selectedSeason != nil {
-                            SeasonPill(name: selectedSeason?.name ?? seasons.first?.name ?? String(localized: "Staffel 1"), opened: $seasonSelectionOpen)
+                        if seasonList.count > 1 || selectedSeason != nil {
+                            SeasonPill(name: selectedSeason?.name ?? seasonList.first?.name ?? String(localized: "Staffel 1"),
+                                       opened: $seasonSelectionOpen)
                                 .focused($atSeasonPill)
                                 .panelTrigger("staffel")
                         }
@@ -149,7 +112,8 @@ struct SeriesView: View {
                 }
                 .opacity(inFade ? 1 : 0)
 
-                WatchersStrip(model: model, item: series)
+                WatchersStrip(model: model, item: series,
+                              fromCore: (more?.watchers ?? []).map(Watcher.init(core:)))
                     .opacity(inFade ? 1 : 0)
 
                 if !actors.isEmpty {
@@ -161,14 +125,11 @@ struct SeriesView: View {
                     .opacity(inFade ? 1 : 0)
                     .transition(.opacity)
                 }
-                if similarDisturbed, similar.isEmpty {
-                    // The row used to vanish silently here. A series with nothing related needs
-                    // no section, but a silent server does.
+                if more?.similarFailed == true, similar.isEmpty {
                     railsSection {
                         RailTitle(text: "Ähnliches")
                     } content: {
-                        DisturbState(model: model,
-                                     retry: { Task { await similarLoad() } })
+                        DisturbState(model: model, retry: { page?.model.refresh() })
                             .frame(height: Theme.posterHeight)
                     }
                     .opacity(inFade ? 1 : 0)
@@ -183,14 +144,13 @@ struct SeriesView: View {
                     .transition(.opacity)
                 }
                 if !extras.isEmpty {
-                    // Something to play: selecting starts the extra, as on the movie page.
                     railsSection {
                         RailTitle(text: "Extras")
                     } content: {
                         TitleStrip(model: model, items: extras) { extra in
                             PlayRequest.start(extra, since: 0, model: model, prepares: $prepares,
-                                                  missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
-                                                  play: { play.wrappedValue = $0 })
+                                              missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                                              play: { play.wrappedValue = $0 })
                         }
                     }
                     .opacity(inFade ? 1 : 0)
@@ -200,176 +160,73 @@ struct SeriesView: View {
             .padding(.bottom, Theme.completionPadding)
         }
         .scrollIndicators(.hidden)
-        #if DEBUG
-        .scrollPosition($debugScroll)
-        #endif
-        // Margins as on the movie page; see there.
         .ignoresSafeArea()
-        // **The whole page background tints to the backdrop.**
-        // **After `ignoresSafeArea`, not before.** Before, it got the area reduced
-        // by the safe area (1760 x 960 instead of 1920 x 1080). The mesh computes in
-        // fractions of its area, so it sat differently than on the home page, and
-        // opening showed the difference as shrinking. The home page applied it after
-        // `ignoresSafeArea` from the start.
-        // On the page and not on the header: otherwise the tint ends at its bottom
-        // edge and a seam crosses the screen. See `ImageReason`.
         .imageReason(url: model.landscapeImageURL(for: current, width: 1600)
                         ?? model.headerImageURL(for: current))
-        // The season picker lives on the **page**, not on the pill button; see
-        // `Handlungstafel.unterDemReihenkopf`.
-        // **While a panel is open, the rest is not a focus target.**
-        // `focusSection` does not hold focus, it only orders it. A left or right
-        // press used to jump out of the open panel into the episodes behind it, and
-        // the panel stayed until the page was left.
-        // Locking happens **before** the modifiers: the panels hang after and so
-        // stay operable themselves.
         .disabled(moreOpen || seasonSelectionOpen)
-        // Both sit under their button, at its edge; see `PanelAnchor`. Previously two
-        // numbers computed from the page layout landed offset by the safe margin and
-        // would have needed re-tuning with every added row.
         .panel(under: seasonSelectionOpen ? "staffel" : nil) {
             ActionPanel(actions: seasonActions, opened: $seasonSelectionOpen,
-                        start: seasons.firstIndex { $0.id == selectedSeason?.id } ?? 0)
+                        start: seasonList.firstIndex { $0.id == selectedSeason?.id } ?? 0)
                 .transition(.opacity)
         }
         .panel(under: moreOpen ? "mehr" : nil) {
             ActionPanel(actions: moreActions, opened: $moreOpen)
                 .transition(.opacity)
         }
-        .animation(Theme.motion(.easeInOut(duration: 0.18)), value: moreOpen)
-        .animation(Theme.motion(.easeInOut(duration: 0.18)), value: seasonSelectionOpen)
+        .animation(Theme.motion(.timingCurve(0.23, 1, 0.32, 1, duration: 0.22)), value: moreOpen)
+        .animation(Theme.motion(.timingCurve(0.23, 1, 0.32, 1, duration: 0.22)), value: seasonSelectionOpen)
         .versionChoice($versionChoice) { choice, version in
             PlayRequest.start(choice, picking: version, model: model, prepares: $prepares,
-                              missing: { message = String(localized: "Der Server hat keine Datei zu dieser Folge.") },
+                              missing: { message = AppModel.episodeNotLoaded },
                               play: { play.wrappedValue = $0 })
+        }
+        .versionPick($versionPick) { choice, version in
+            guard let page else { return }
+            let id = choice.itemId
+            let action = (id == nil || id == button?.nextEpisode)
+                ? page.model.playNext(pick: version.id) : page.model.playEpisode(id!, pick: version.id)
+            launch(action, since: choice.since)
         }
         .overlay(alignment: .top) {
             if let message {
-                HintStrip(text: message) { self.message = nil }
+                HintStrip(text: message) { self.message = nil; page?.model.dismissMessage() }
                     .padding(.top, Theme.edgeTop)
             }
         }
-        // **On opening, focus is on the running episode.**
-        // The strip is scrolled there anyway; without an assignment tvOS usually
-        // finds the front tile itself, but "usually" is not enough here.
-        // **Initial focus belongs on the main button, not on an episode.** This used
-        // to say the opposite, because the header had nothing focusable after the
-        // rebuild; that no longer holds now that the button row is back. As on the
-        // movie page, focus lands there, and the button rule defines what the button does: the
-        // episode where playback continues.
-        // `episodeFront` stays: it decides which episode sits **at the front** of the
-        // row. That is scroll position, not focus; the two had been confused.
-        .defaultFocus($atPrimaryButton, true, priority: .userInitiated)
-        #if DEBUG
-        // `-zeige serie`: focus on episode 3, no button focused (design: serie).
-        .task(id: episodes.count) {
-            guard DebugLaunch.has("-zeige", "serie"), episodes.count > 2 else { return }
-            for wait in [400, 900] {
-                try? await Task.sleep(for: .milliseconds(wait))
-                atEpisode = episodes[2].id
-            }
-            // Focus scrolls the page; the design shows it unscrolled.
-            try? await Task.sleep(for: .milliseconds(300))
-            debugScroll.scrollTo(y: 0)
-        }
-        #endif
-        .onChange(of: moreOpen) { _, opened in if !opened { atMoreButton = true } }
-        .onChange(of: seasonSelectionOpen) { _, opened in if !opened { atSeasonPill = true } }
-        .onChange(of: atPrimaryButton) { _, an in if an { lastFocus = .primaryButton } }
-        .onChange(of: atMoreButton) { _, an in if an { lastFocus = .moreButton } }
-        .onChange(of: atEpisode) { _, now in if let now { lastFocus = .episode(now) } }
-        // See `lastFocus`: the player leaves the same empty focus as an open
-        // panel or season picker, one level higher; the same assignment restores it.
-        .onChange(of: play.wrappedValue == nil) { before, closed in
-            guard closed, before == false else { return }
-            focusBack()
-        }
-        // **Same after "Gemeinsam schauen".** The panel sits above everything in the
-        // frame and locks the page like the player. If it closes without a player
-        // opening, focus returns to its trigger.
-        .onChange(of: SharedModel.shared.createFor == nil) { before, toward in
-            guard toward, before == false, play.wrappedValue == nil else { return }
-            focusBack()
-        }
-        .task {
-            // Set focus first, then fade in: a button at opacity 0 is no focus target
-            // on tvOS, and the initial focus would be lost.
-            atPrimaryButton = true
-            withAnimation(Theme.motion(.easeOut(duration: 0.3))) { inFade = true }
-            await load()
-        }
-        // **`load()` also fetches the first season's episodes**, not a separate
-        // `.task(id:)`. That ran alongside: the season header showed first and the
-        // episodes jerked in after. Later changes are loaded by the season picker
-        // itself; see `seasonActions`.
-        // **Reload after the player.** It is a layer above this page, which never
-        // disappears, and the `.task` above does not run twice, so progress and
-        // "watched" would keep their pre-playback state. See
-        // `AppModel.playbackEnded`.
-        .onChange(of: model.pagesRefresh) { _, _ in Task { await refresh() } }
+    }
+
+    private struct CoreLifecycle: ViewModifier {
+        let run: () async -> Void
+        func body(content: Content) -> some View { content.task { await run() } }
     }
 
     // MARK: Header
 
-    /// **Header as on the movie page: text and button row.**
-    /// "Continue · S2 E4", "From start", "Watchlist" and "Watched" sit in the
-    /// header, in the same order on every platform with one main button per page
-    ///. It turns white through focus, not a
-    /// custom style: `ThemedButtonStyle` paints the focused pill white and focus lands
-    /// on the row's first button on opening. Focus is white, as everywhere
-    /// here.
+    /// **One button, the core words it** ("Weiter mit S2 · F3", "Staffel 1 starten", ...); until it knows, the
+    /// button holds its place with a blank label.
     private var header: some View {
-        DetailHeader(model: model, item: current, plan: plan, heroTrim: 40) {
-            // **Instant applies only to what was already there.**
-            // Title, details, description, image and background were already on the home
-            // page: they appear at once and do not move. The button row was not, so it
-            // may fade in when it has something to say.
-            // **The main button is exempt, for two reasons.** Faded in, it looked wrong:
-            // the animation hung on the value, so the pill visibly grew from "Laedt…" to
-            // "Fortsetzen S1 • E3", a slide to the right instead of a fade. And at
-            // opacity 0 it is no focus target on tvOS, so the initial focus was lost.
-            // It must therefore be right from the start. On the usual path it is:
-            // coming in via an episode brings exactly the episode where playback
-            // continues; see `startEpisodeValue`.
+        let remembered = button?.favorite ?? false
+        return DetailHeader(model: model, item: current, plan: page?.next.flatMap { page?.plan(app: model, for: $0.id) },
+                            heroTrim: 40) {
             HStack(spacing: 24) {
-                Button { launch(nextWith) } label: {
-                    // **Without a state, reserve the width including the episode** so the pill
-                    // does not jump when it appears: the hidden placeholder "Abspielen S00 • F00"
-                    // sets the width, the word sits at its left.
+                Button { launch(page?.model.playNext()) } label: {
                     ZStack(alignment: .leading) {
-                        if !statePresent {
-                            Label(String(localized: "Abspielen \("S00 • F00")"),
-                                  icon: "play.fill")
-                                .hidden()
-                                .accessibilityHidden(true)
+                        Label(String(localized: "Abspielen \("S00 • F00")"), icon: "play.fill")
+                            .hidden()
+                            .accessibilityHidden(true)
+                        if button?.labelReady == true {
+                            Label(button?.label ?? "", icon: "play.fill")
                         }
-                        Label(primaryButtonText, icon: "play.fill")
                     }
                     .transaction { $0.animation = nil }
                 }
                 .buttonStyle(ThemedButtonStyle())
-                // **Do not disable while loading.**
-                // A disabled button is no focus target on tvOS. Coming from search, the main
-                // button was disabled while the episodes were still in flight (`nextWith`
-                // still nil), so the focus engine took the next one in the row, Watchlist.
-                // When the episode arrived the button became focusable again, but focus does
-                // not move back by itself. The usual paths hid this because there the
-                // episode is already cached. The same cause as the opacity 0 case above.
-                // `seriesButton` already has the right label for this moment, "Laedt…"; it
-                // was never shown because disabling made the button unreachable. Now it
-                // shows, the button is focusable from the start, and `starte` does nothing
-                // without an episode anyway. It stays disabled when there is truly nothing
-                // ("Keine Folgen") and during `prepares`, the short moment after the
-                // press.
-                .disabled(prepares || (nextWith == nil && statePresent && !loadsEpisodes))
+                .disabled(prepares || button?.enabled != true)
                 .focused($atPrimaryButton)
-                // Long press: the series' tile menu, as on its tile (``TileMenu``).
                 .tileMenu(current, model: model)
 
-                // Only when there is something to continue; otherwise "Von vorn" would mean
-                // the same as the button next to it.
                 if begun {
-                    Button { launch(nextWith, since: 0) } label: {
+                    Button { launch(page?.model.playNext(), since: 0) } label: {
                         Image(icon: "arrow.counterclockwise").font(Theme.button)
                     }
                     .buttonStyle(ThemedButtonStyle(onlySymbol: true))
@@ -377,9 +234,19 @@ struct SeriesView: View {
                     .disabled(prepares)
                 }
 
-                StateButtons(model: model, item: current,
-                                remembered: $remembered, watched: $watched,
-                                message: $message)
+                if model.watchlistShown {
+                    Button { page?.model.setWatchlist(!remembered) } label: {
+                        Image(icon: remembered ? "bookmark.fill" : "bookmark").font(Theme.button)
+                    }
+                    .buttonStyle(ThemedButtonStyle(onlySymbol: true, active: remembered))
+                    .accessibilityLabel(Text("Merkliste"))
+                    .accessibilityAddTraits(remembered ? [.isButton, .isSelected] : .isButton)
+                }
+
+                RowExtraButtons(watched: button?.watched ?? false, actions: rowActions,
+                                onWatched: { page?.model.setWatched(!(button?.watched ?? false)) },
+                                onShuffle: { page?.model.menu(.shuffle) },
+                                onTogether: { page?.model.menu(.together) })
 
                 MoreButton(opened: $moreOpen)
                     .focused($atMoreButton)
@@ -389,282 +256,195 @@ struct SeriesView: View {
         }
     }
 
-    /// Whether the episode where playback continues is already started.
-    private var begun: Bool {
-        (nextWith?.userData?.playbackPositionTicks ?? 0) > 0
-    }
+    private var rowActions: TVRowActions { TVRowActions(menu: page?.model.moreMenu() ?? []) }
 
-    /// "Fortsetzen S1 • E3", from `Titelangaben`, shared by all platforms. Lifted
-    /// into `Item.seriesButton(episode:loads:)` after iOS, before it became a third
-    /// copy (shared logic first in iOS, then adopted).
-    private var primaryButtonText: String {
-        // No state yet: neutral, without an episode. The episode joins with the
-        // state in the fade of `load()`.
-        guard statePresent else { return String(localized: "Abspielen") }
-        return Item.seriesButton(episode: nextWith, loads: loadsEpisodes)
+    /// Whether the next episode is already started: only then "Von vorn" is a button of its own.
+    private var begun: Bool {
+        (page?.next?.userData?.playbackPositionTicks ?? 0) > 0
     }
 
     // MARK: Episodes
 
     @ViewBuilder
     private var episodesStrip: some View {
-        // **A stack, so both share the same place.**
-        // During the crossfade the old and new rows are **both** in the layout.
-        // Stacked vertically, the new one would sit below the old and only slide up
-        // once the old is gone. In the `ZStack` they overlap. The fixed height
-        // holds the place even when nothing is shown; otherwise the page would
-        // contract during the change.
+        let height = Theme.landscapeHeight + 2 * Theme.railsPadding + 80
         ZStack(alignment: .topLeading) {
-            if loadsEpisodes {
-                // Only so the page does not shrink while nothing is shown; the strip brings
-                // its own height.
-                Color.clear
-                    .frame(height: Theme.landscapeHeight + 2 * Theme.railsPadding + 80)
-            } else if episodesDisturbed {
-                DisturbState(model: model, retry: { Task { await episodesLoad() } })
-                    .frame(height: Theme.landscapeHeight + 2 * Theme.railsPadding + 80)
-            } else if episodes.isEmpty {
-                // **A way out, not a dead end.** Without a button the user is stuck, which
-                // is worse with a remote than with a finger.
-                EmptyState(symbol: "rectangle.stack",
-                            title: "Keine Folgen in dieser Staffel",
-                            button: ("Erneut versuchen", { Task { await episodesLoad() } }))
-                    .frame(height: Theme.landscapeHeight + 2 * Theme.railsPadding + 80)
+            if page?.model.seasons.disturbed == true && seasonList.isEmpty {
+                DisturbState(model: model, retry: { page?.model.load() })
+                    .frame(height: height)
             } else {
+            switch page?.model.episodes.status {
+            case .ready:
                 EpisodesStrip(model: model, episodes: episodes,
-                               nextWith: episodeFront, atEpisode: $atEpisode) { episode in
-                    launch(episode)
+                              nextWith: episodeFront, atEpisode: $atEpisode) { episode in
+                    launch(page?.model.playEpisode(episode.id))
                 }
-                // Not on every page state change; see `EpisodesStrip.==`.
                 .equatable()
                 .id(episodes.first?.id ?? "leer")
                 .transition(.opacity)
+            case .disturbed:
+                DisturbState(model: model, retry: { page?.model.retryEpisodes() })
+                    .frame(height: height)
+            case .empty:
+                EmptyState(symbol: "rectangle.stack",
+                           title: seasonList.isEmpty ? "Keine Folgen" : "Keine Folgen in dieser Staffel",
+                           button: ("Erneut versuchen", { page?.model.retryEpisodes() }))
+                    .frame(height: height)
+            default:
+                // Landscape tiles in their final size instead of a blank strip.
+                HStack(spacing: 40) {
+                    ForEach(0 ..< 4, id: \.self) { _ in
+                        LoadField().frame(width: Theme.landscapeWidth, height: Theme.landscapeHeight)
+                    }
+                }
+                .padding(.top, Theme.railsPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Lädt")
+            }
             }
         }
-        // **No forced height.** It was meant against stacking during the crossfade
-        // but caused the difference itself: the horizontal strip is greedy, fills a
-        // given height, and centers its content. The content height depends on
-        // state, so it sat differently per season: centered (32 pt off), then at the
-        // top (season 1 too high), both symptoms of the same addition. The stack
-        // alone suffices: it overlaps old and new rows and takes its height from
-        // the content.
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    /// Which episode sits at the front.
-    /// Only if `nextWith` is **in the shown season**. Otherwise it would be the
-    /// wrong row: after a season change the user wants E1, not an episode from a
-    /// season that is not shown.
+    /// The next episode's id when it is in the open season: it gets the initial focus.
     private var episodeFront: String? {
-        guard let state = nextWith,
+        guard let state = page?.next,
               state.seasonId == selectedSeason?.id,
               episodes.contains(where: { $0.id == state.id })
         else { return nil }
         return state.id
     }
 
-    /// The seasons as a `Handlungstafel`, not a `Menu`, as everywhere in the app.
     private var seasonActions: [TitleAction] {
-        seasons.map { season in
-            TitleAction(symbol: selectedSeason?.id == season.id
-                                  ? "checkmark.circle.fill" : "circle",
-                          text: "\(season.name)") {
+        seasonList.map { season in
+            TitleAction(symbol: selectedSeason?.id == season.id ? "checkmark.circle.fill" : "circle",
+                        wording: season.name) {
                 guard selectedSeason?.id != season.id else { return }
-                seasonSelfSelected = true
-                selectedSeason = season
-                Task { await episodesLoad() }
+                page?.model.selectSeason(season.id)
             }
         }
     }
 
-    // MARK: Labels and loading
-
-    /// **One fade-in, not five.** As on the iPhone (`SeriesDetailView`): series,
-    /// state, seasons, similar and the selected season's episodes arrive together
-    /// in the same transaction. Before, each answer was set separately, the
-    /// season triggered its own `.task(id:)` for episodes, and "Ähnliches" came
-    /// last with its own fade. The plan runs alongside and fades in within
-    /// `DetailHeader`, which ties its fade to the plan itself.
-    private func load() async {
-        loadRun += 1
-        let myOwn = loadRun
-        async let freshSeries = model.item(id: series.id)
-        async let list = model.seasons(series)
-        async let state = model.stateInSeries(series)
-        async let alike = model.similar(series)
-        async let extra = model.extras(series)
-        async let preview = model.trailerCandidates(for: series, canOpenWeb: false)
-
-        let addedSeries = await freshSeries
-        // **`nil` means failed.** Writing an empty list into the `SeriesCache`
-        // would cache a network error, and the next view would take it for truth.
-        let fetchedSeasons = await list
-        let seasonsNow = fetchedSeasons ?? seasons
-        let newState = await state
-
-        // Came via an episode: its season goes first. Otherwise the one where
-        // playback continues, and only then the first (the next-episode rule, package). The old copy
-        // checked the state's id before the episode number; without `SeasonId` the
-        // running season showed. On refresh only a season the user picked stays; the
-        // cached one is chosen again with the fresh state; see
-        // `seasonSelfSelected`.
-        let choice = (seasonSelfSelected ? selectedSeason : nil)
-            ?? SeasonSelectionRule.choose(from: seasonsNow,
-                                       hintID: startSeasonID ?? startEpisodeValue?.seasonId,
-                                       hintNumber: startEpisodeValue?.parentIndexNumber,
-                                       state: newState)
-        async let p = fetchPlan(newState?.id)
-        // Without seasons, all episodes of the series belong in the list, as on the
-        // iPhone where `season: nil` stands for this.
-        let fetch = choice != nil || (fetchedSeasons?.isEmpty ?? false)
-        let fetchedEpisodes = fetch ? await model.episodes(series: series.id, season: choice?.id) : nil
-        let newSimilar = await alike
-        // The trailer leads the extras, as on the movie page (``TrailerChoice``).
-        let trailers = TrailerChoice.files(in: await preview)
-        let fetchedExtras = await extra
-        let newExtras = fetchedExtras == nil && trailers.isEmpty
-            ? nil : TrailerChoice.shelf(trailers: trailers, extras: fetchedExtras ?? [])
-        // A newer run has started: its state wins.
-        guard myOwn == loadRun else { return }
-
-        // **The state applies without motion.** Arriving late, the button said
-        // "Abspielen"; the episode now joins without the pill growing or neighbors
-        // sliding (a soft fade-in looked odd).
-        var immediate = Transaction()
-        immediate.disablesAnimations = true
-        withTransaction(immediate) {
-            nextWith = newState
-            statePresent = true
-        }
-        SeriesCache.shared.nextRemember(newState, for: series.id)
-        withAnimation(Theme.motion(.easeOut(duration: 0.3))) {
-            if let addedSeries { freshValue = addedSeries }
-            if let fetchedSeasons { seasons = fetchedSeasons }
-            similarDisturbed = newSimilar == nil
-            if let newSimilar { similar = ListRules.withoutDouble(newSimilar) }
-            if let newExtras { extras = ListRules.withoutDouble(newExtras) }
-            // If the user picked a season meanwhile, the list belongs to that choice,
-            // not this response.
-            if !seasonSelfSelected || selectedSeason?.id == choice?.id {
-                selectedSeason = choice
-                if fetch {
-                    episodesAccept(fetchedEpisodes, season: choice)
-                } else {
-                    loadsEpisodes = false
-                }
-            }
-        }
-        if fetchedSeasons != nil {
-            SeriesCache.shared.remember(series.id) {
-                $0.series = freshValue ?? series
-                $0.seasons = seasons
-                $0.nextWith = nextWith
-            }
-        }
-        remembered = current.userData?.isFavorite ?? false
-        watched = current.userData?.played ?? false
-        if newState != nil {
-            let newPlan = await p
-            if myOwn == loadRun { plan = newPlan }
-        }
-    }
-
-    private func fetchPlan(_ episodeID: String?) async -> PlaybackPlan? {
-        guard let episodeID else { return nil }
-        return await model.plan(for: episodeID)
-    }
-
-    private func similarLoad() async {
-        let newSimilar = await model.similar(series)
-        withAnimation(Theme.motion(.easeOut(duration: 0.3))) {
-            similarDisturbed = newSimilar == nil
-            if let newSimilar { similar = ListRules.withoutDouble(newSimilar) }
-        }
-    }
-
-    /// The selected season's episodes, on season change and "Erneut versuchen".
-    /// On opening, `load()` fetches them.
-    private func episodesLoad() async {
-        guard let season = selectedSeason else {
-            loadsEpisodes = false
-            return
-        }
-        if episodes.isEmpty { loadsEpisodes = true }
-        let answer = await model.episodes(series: series.id, season: season.id)
-        // A different season was picked meanwhile: its fetch wins. The `.task(id:)`
-        // cancelled the old fetch; a `Task` does not.
-        guard selectedSeason?.id == season.id else { return }
-
-        // One move, one curve. Driving the change by hand (fade out, wait, swap,
-        // fade in) was wrong: it flickered because the view was swapped under it.
-        // See the id on the strip.
-        withAnimation(Theme.motion(.easeInOut(duration: 0.28))) {
-            episodesAccept(answer, season: season)
-        }
-    }
-
-    private func episodesAccept(_ answer: [Item]?, season: Item?) {
-        episodesDisturbed = answer == nil
-        loadsEpisodes = false
-        guard let fetched = answer else { return }
-        episodes = fetched
-        if let season {
-            SeriesCache.shared.remember(series.id) { $0.episodes[season.id] = fetched }
-        }
-    }
-
-    /// Back to the button or episode where the user last stood.
     private func focusBack() {
         switch lastFocus {
         case .primaryButton: atPrimaryButton = true
         case .moreButton: atMoreButton = true
         case .episode(let id):
-            // The episode may have left the list (other season): then to the front
-            // episode, otherwise the main button.
             if episodes.contains(where: { $0.id == id }) { atEpisode = id }
             else if let front = episodeFront { atEpisode = front }
             else { atPrimaryButton = true }
         }
     }
 
+    // MARK: More panel
+
+    /// The core's menu without what the row shows as buttons; the host runs what only it can.
     private var moreActions: [TitleAction] {
-        // Watched sits first, as on the movie page, one level deeper than the
-        // button row. See `TitleAction.watchState`.
-        [TitleAction.watchState(current, model: model, watched: $watched,
-                                 report: { message = $0 })]
-        + TitleActions.forSeries(current, state: nextWith, season: selectedSeason,
-                                  model: model,
-                                  episodeStart: { episodeStart($0, since: $1) },
-                                  report: { message = $0 },
-                                  gemeinsam: SharedModel.shared.mayCreate
-                                      ? { SharedModel.shared.createFor = $0 } : nil)
+        guard let page else { return [] }
+        return rowActions.panel.map { entry in
+            TitleAction(symbol: Self.symbol(of: entry.kind), wording: entry.text) {
+                page.model.menu(entry.kind)
+            }
+        }
+    }
+
+    private static func symbol(of kind: MenuKind) -> String {
+        switch kind {
+        case .playOn: "tv"
+        case .playFromStart: "gobackward"
+        case .resetProgress: "arrow.counterclockwise.circle"
+        case .together: "person.2"
+        case .shuffle: "shuffle"
+        case .refreshMetadata: "arrow.clockwise"
+        default: "ellipsis"
+        }
+    }
+
+    // MARK: What the core asks of the host
+
+    private func drain() {
+        guard let page else { return }
+        for effect in page.model.takeEffects() {
+            switch effect {
+            case .play(let action):
+                launch(action)
+            case .playTrailer(let id):
+                PlayRequest.start(Item(id: id, name: current.name), freshValue: true, model: model, prepares: $prepares,
+                                  missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                                  play: { play.wrappedValue = $0 })
+            case .menu(let kind):
+                hostMenu(kind)
+            case .stateChanged:
+                SeriesCache.shared.forget(current.id)
+                model.noteWatchStateChanged()
+            case .watchlistChanged:
+                model.noteWatchlistChanged()
+            case .openWeb:
+                break
+            }
+        }
+    }
+
+    private func hostMenu(_ kind: MenuKind) {
+        let state = page?.next ?? current
+        switch kind {
+        case .playOn(let id, _):
+            guard let target = PlayOutputs.shared.targets.compactMap(PlayOutput.init(session:))
+                .first(where: { $0.deviceID == id })
+            else { return }
+            Task { await PlayOutputs.shared.play(state, to: target, model: model) }
+        case .together:
+            SharedModel.shared.createFor = state
+        case .shuffle:
+            Task {
+                guard let first = await model.shuffleStart(current) else {
+                    message = AppModel.episodeNotLoaded
+                    return
+                }
+                episodeStart(first, since: 0)
+            }
+        default:
+            break
+        }
+    }
+
+    /// What a press on Play (or a menu entry that plays) does, as the core decides it.
+    private func launch(_ action: PlayAction?, since: Double? = nil) {
+        guard let page, let action else { return }
+        switch action {
+        case .wait:
+            return
+        case .choose(let id, let at, let versions):
+            versionPick = VersionPick(
+                heading: String(localized: "Fassung wählen"), options: versions, since: since ?? at, itemId: id)
+        case .resolve(let id, let at):
+            // The list entry has no `MediaSources`: the app fetches the full episode and asks itself.
+            guard !prepares, let episode = page.item(id) else { return }
+            PlayRequest.start(episode, since: since ?? at,
+                              ask: VersionAsk(choose: { versionChoice = $0 }, failed: { message = $0 }),
+                              model: model, prepares: $prepares,
+                              missing: { message = AppModel.episodeNotLoaded }) { play.wrappedValue = $0 }
+        case .start(let id, let at, let source):
+            guard let episode = page.item(id) else {
+                message = AppModel.episodeNotLoaded
+                return
+            }
+            let start = since ?? at
+            let downloaded = model.downloads.file(for: id) != nil
+            if source == nil, !downloaded, let plan = page.plan(app: model, for: id) {
+                play.wrappedValue = PlayRequest(item: episode, plan: plan, startAt: start)
+                return
+            }
+            PlayRequest.start(episode, since: start, sourceID: source, model: model, prepares: $prepares,
+                              missing: { message = AppModel.episodeNotLoaded }) { play.wrappedValue = $0 }
+        }
     }
 
     private func episodeStart(_ episode: Item, since: Double) {
-        launch(episode, since: since)
-    }
-
-    /// **Reload everything, not just the series.**
-    /// The first attempt fetched title and episodes but not `nextWith`. After
-    /// "mark season watched" the main button would still offer to continue the
-    /// third episode though the server counts it watched, and the plan would
-    /// show the old episode. So it goes through `load()`: what is fetched on
-    /// opening must be fetched on refresh, or the two paths diverge. The picked
-    /// season stays; `load()` fetches its episodes itself.
-    private func refresh() async {
-        await load()
-    }
-
-    /// `since` overrides the remembered position; that is "From start".
-    /// Without it the position rule applies: an episode starts at **its own** position.
-    private func launch(_ episode: Item?, since: Double? = nil) {
-        guard let episode else { return }
-        // **An episode with several versions asks, like a movie** (see iPhone).
-        PlayRequest.start(episode, since: since, freshValue: true,
-                              ask: VersionAsk(choose: { versionChoice = $0 },
-                                              failed: { message = $0 }),
-                              model: model, prepares: $prepares,
-                              missing: { message = String(localized: "Der Server hat keine Datei zu dieser Folge.") },
-                              play: { play.wrappedValue = $0 })
+        PlayRequest.start(episode, since: since,
+                          ask: VersionAsk(choose: { versionChoice = $0 }, failed: { message = $0 }),
+                          model: model, prepares: $prepares,
+                          missing: { message = AppModel.episodeNotLoaded }) { play.wrappedValue = $0 }
     }
 }

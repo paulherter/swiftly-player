@@ -1,0 +1,26 @@
+// Program icon and the details Windows shows in Task Manager, the file dialog and "Open with".
+// ID 1: Windows uses the icon with the lowest ID as the program icon.
+1 ICON "swiftly-player.ico"
+
+1 VERSIONINFO
+FILEVERSION 0,1,0,0
+PRODUCTVERSION 0,1,0,0
+FILEOS 0x40004
+FILETYPE 1
+{
+  BLOCK "StringFileInfo"
+  {
+    BLOCK "040704B0"
+    {
+      VALUE "FileDescription", "Swiftly Player"
+      VALUE "ProductName", "Swiftly Player"
+      VALUE "InternalName", "swiftly-desktop"
+      VALUE "OriginalFilename", "swiftly-desktop.exe"
+      VALUE "CompanyName", "Paul Herter"
+    }
+  }
+  BLOCK "VarFileInfo"
+  {
+    VALUE "Translation", 0x0407, 0x04B0
+  }
+}

@@ -129,6 +129,9 @@ final class PlaybackHub {
         let back: () -> Void
         /// `nil` if there is no next episode.
         let next: (() -> Void)?
+        /// Set when the core plays the title: every play/pause command goes to it as ONE toggle intent and the
+        /// core answers with the opposite of its own transport (no second truth in the hub).
+        var coreToggle: (() -> Void)? = nil
     }
 
     private var handles: Handles?
@@ -390,7 +393,10 @@ final class PlaybackHub {
     /// meant is always "the opposite of now".
     private func toggle() {
         sinceCommand = Date()
-        if playCurrent { playCurrent = false; handles?.halt() }
+        if let coreToggle = handles?.coreToggle {
+            coreToggle()
+            playCurrent.toggle()
+        } else if playCurrent { playCurrent = false; handles?.halt() }
         else            { playCurrent = true;  handles?.play() }
         reportState(playCurrent)
     }

@@ -1,0 +1,24 @@
+[package]
+name = "swiftly-l10n"
+description = "Localisation core: German wording is the key; static catalogue generated from the Apple sources, CLDR plural rules, placeholder formatting"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+swiftly-net = { path = "../swiftly-net", default-features = false }
+# Swift's `Character` is a grapheme cluster: version/build digits are read per cluster.
+unicode-segmentation = "1"
+# Only the source parsers (generator and tests) use it; the runtime lookup does not.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[[bin]]
+name = "gen_catalog"
+path = "src/bin/gen_catalog.rs"
+
+[lints]
+workspace = true

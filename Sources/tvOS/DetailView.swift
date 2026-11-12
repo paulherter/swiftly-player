@@ -1,5 +1,6 @@
 import JellyfinKit
 import SwiftUI
+import SwiftlyCore
 
 // MARK: - Header shared by movie and series
 
@@ -96,7 +97,7 @@ struct DetailHeader<Buttons: View>: View {
             // mark jumped in there. Pinned here, the fade applies to every page that
             // carries the header, however it sets its plan. The mark is last in the line,
             // so nothing shifts.
-            .animation(Theme.motion(.easeOut(duration: 0.3)), value: plan != nil)
+            .animation(Theme.motion(.timingCurve(0.23, 1, 0.32, 1, duration: 0.22)), value: plan != nil)
 
             // The button row may grow wider than the text's 1000. The cap therefore sits
             // on the text, not on the whole block; once it sat outside and every label
@@ -110,6 +111,37 @@ struct DetailHeader<Buttons: View>: View {
 }
 
 // MARK: - Watchlist and watched
+
+/// **Watched, Shuffle and Watch together as symbol buttons** before "…" (the panel leaves them out).
+/// Shuffle and Watch together only when the core's menu offers them. No motion of their own: the
+/// button style's focus lift is all there is.
+struct RowExtraButtons: View {
+    let watched: Bool
+    let actions: TVRowActions
+    let onWatched: () -> Void
+    let onShuffle: () -> Void
+    let onTogether: () -> Void
+
+    var body: some View {
+        Button(action: onWatched) {
+            Image(icon: watched ? "checkmark.circle.fill" : "checkmark.circle").font(Theme.button)
+        }
+        .buttonStyle(ThemedButtonStyle(onlySymbol: true, active: watched))
+        .accessibilityLabel(Text("Gesehen"))
+        .accessibilityAddTraits(watched ? [.isButton, .isSelected] : .isButton)
+
+        if let entry = actions.shuffle {
+            Button(action: onShuffle) { Image(icon: "shuffle").font(Theme.button) }
+                .buttonStyle(ThemedButtonStyle(onlySymbol: true))
+                .accessibilityLabel(Text(verbatim: entry.text))
+        }
+        if let entry = actions.together {
+            Button(action: onTogether) { Image(icon: "person.2").font(Theme.button) }
+                .buttonStyle(ThemedButtonStyle(onlySymbol: true))
+                .accessibilityLabel(Text(verbatim: entry.text))
+        }
+    }
+}
 
 /// The watchlist button: **symbol only, no label.**
 /// The bookmark is one of the few symbols that stand alone, and filled versus
@@ -171,25 +203,11 @@ struct DetailView: View {
     let model: AppModel
     let item: Item
 
-    @State private var freshValue: Item?
-    @State private var plan: PlaybackPlan?
-    /// Counts the fetches of title and plan; only the newest writes (open and
-    /// refresh can overtake each other).
-    @State private var titleRun = 0
-    @State private var remembered = false
-    @State private var watched = false
+    /// The page's data owner, the core's `DetailVm` (`DetailCore`); `nil` when there is no account.
+    @State private var page: DetailCore?
     @State private var message: String?
     /// The player sits in the frame; see `MainView`.
     @Environment(\.playRequest) private var play
-    /// **Everything below the header is answered:** collection, similar, extras,
-    /// cast. Set in the same animated transaction as the data, so it fades in
-    /// every time, even when the caches already had everything. It used to hang
-    /// on the page appearing, so rows faded in separately as their data arrived,
-    /// and the collection row came last as its own fetch. Before that, the fade
-    /// hung on data arriving and was hard from the second opening. The shared
-    /// switch fixes both.
-    @State private var bottomPresent = false
-    @State private var collectionRails: [AppModel.CollectionRailsData] = []
     /// **Where focus returns when a panel closes.**
     /// It used to jump to the main button, the page's initial focus, though the
     /// user stood at the More button or season pill. A panel is not a change of
@@ -197,42 +215,51 @@ struct DetailView: View {
     /// that opened it.
     @FocusState private var atMoreButton: Bool
     /// **Initial focus belongs on the main button.**
-    /// It was set nowhere, so tvOS picked geometrically and arrivals from search
-    /// landed on "Merkliste". The series page now sets it explicitly; the movie
-    /// page had only happened to be right because focus mostly came from the top
-    /// left.
     @FocusState private var atPrimaryButton: Bool
     /// **Where focus returns when the player closes.**
-    /// Same reason as `atMoreButton`, for the player: it is a sibling in the
-    /// frame and the page stays mounted during playback, only `disabled`, which
-    /// resets `atPrimaryButton`/`atMoreButton` to `false`. Without this memory tvOS
-    /// picks something geometrically on removal and lands on the first tab of the
-    /// header bar.
+    /// The page stays mounted during playback, only `disabled`, which resets
+    /// `atPrimaryButton`/`atMoreButton` to `false`; without this memory tvOS lands on the
+    /// first tab of the header bar.
     private enum FocusTarget { case primaryButton, moreButton }
     @State private var lastFocus: FocusTarget = .primaryButton
 
     @State private var prepares = false
-    /// The title waiting for the version choice; `nil` while no dialog is open.
-    @State private var versionChoice: VersionChoice?
-    @State private var similar: [Item] = []
-    @State private var extras: [Item] = []
+    /// A title with several versions waiting for the pick; `nil` while no dialog is open.
+    @State private var versionChoice: VersionPick?
     @State private var moreOpen = false
 
-    private var current: Item { freshValue ?? item }
-    private var actors: [Person] { (current.people ?? []).filter(\.isCast) }
+    @MainActor init(model: AppModel, item: Item) {
+        self.model = model
+        self.item = item
+        _page = State(initialValue: DetailCore(app: model, item: item))
+    }
+
+    private var current: Item { page?.item ?? item }
+    private var actions: ActionsPart? { page?.model.actions }
+    private var bottom: BottomPart? { page?.model.bottom }
+    private var actors: [Person] { (bottom?.cast ?? []).map(Person.init(core:)) }
+    private var similar: [Item] { (bottom?.similar ?? []).map(Item.init(rust:)) }
+    private var extras: [Item] { (bottom?.extras ?? []).map(Item.init(rust:)) }
+    /// The "Part of the collection" rows, as the collection view takes them.
+    private var collectionRails: [AppModel.CollectionRailsData] {
+        (bottom?.collections ?? []).map { rail in
+            let collection = Item(id: rail.id, name: rail.title, type: "BoxSet")
+            return (ItemCollection(item: collection, members: []), rail.tiles.map(Item.init(rust:)))
+        }
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
 
-                // **Everything below the header arrives at once**, as on the iPhone
-                // (`bottomPresent` in `BrowseViews.swift`). Collection, similar, extras and cast
-                // used to arrive one by one, the collection row even loaded itself and came
-                // last. Now the page waits for all and fades them in together.
-                if bottomPresent {
+                // **Everything below the header arrives at once**, as on the iPhone: the core
+                // answers cast, extras, similar, collections and watchers together
+                // (`bottom.ready`) and the page fades them in together.
+                if bottom?.ready == true {
                     VStack(alignment: .leading, spacing: 0) {
-                        WatchersStrip(model: model, item: item)
+                        WatchersStrip(model: model, item: item,
+                                      fromCore: (bottom?.watchers ?? []).map(Watcher.init(core:)))
 
                         // Above "Ähnliche Filme": the collection is the closer relation. Only for
                         // titles that belong to one.
@@ -246,14 +273,13 @@ struct DetailView: View {
                             }
                         }
                         if !extras.isEmpty {
-                            // **The trailer lives here**, not as a sixth pill. A trailer is something to
-                            // play, not information; a shelf slot fits better than a line in the action
-                            // panel.
+                            // **The trailer lives here**, not as a sixth pill: a trailer is something
+                            // to play, and the shelf is the place for it.
                             railsSection {
                                 RailTitle(text: "Extras")
                             } content: {
                                 TitleStrip(model: model, items: extras) { extra in
-                                    launch(extra, since: 0)
+                                    launchExtra(extra)
                                 }
                             }
                         }
@@ -271,164 +297,116 @@ struct DetailView: View {
             .padding(.bottom, Theme.completionPadding)
         }
         .scrollIndicators(.hidden)
-        // **The side margin is granted once, not twice.**
-        // tvOS keeps 80 pt free left and right by itself, and the page adds
-        // `Theme.edgePage` (also 80): 160 together, twice the layout, which always
-        // measures from 80. So the system margin is dropped here, and `edgePage`
-        // measures from the screen edge afterwards.
-        //
-        // **On each page individually, not on the frame.** On the frame it has no
-        // effect: the `NavigationStack` in `stack(b)` resets the safe area for its
-        // content. Measured: the wordmark moved, the content below did not.
+        // **The side margin is granted once, not twice.** tvOS keeps 80 pt free left and right by
+        // itself, and the page adds `Theme.edgePage` (also 80). On each page individually, not on the
+        // frame: the `NavigationStack` resets the safe area for its content.
         .ignoresSafeArea()
-        // **The whole page background tints to the backdrop.**
-        // **After `ignoresSafeArea`, not before.** Before, it got the area reduced
-        // by the safe area (1760 x 960 instead of 1920 x 1080). The mesh computes in
-        // fractions of its area, so it sat differently than on the home page, and
-        // opening showed the difference as shrinking. The home page applied it after
-        // `ignoresSafeArea` from the start.
-        // On the page and not on the header: otherwise the tint ends at its bottom
-        // edge and a seam crosses the screen. See `ImageReason`.
+        // **The whole page background tints to the backdrop**, after `ignoresSafeArea` (see
+        // `ImageReason`).
         .imageReason(url: model.landscapeImageURL(for: current, width: 1600)
                         ?? model.headerImageURL(for: current))
-        // **While a panel is open, the rest is not a focus target.**
-        // `focusSection` does not hold focus, it only orders it. A left or right
-        // press used to jump out of the open panel into the content behind it, and
-        // the panel stayed until the page was left.
-        // Locking happens **before** the modifiers: the panels hang after and so
-        // stay operable themselves.
         .defaultFocus($atPrimaryButton, true, priority: .userInitiated)
         .onChange(of: moreOpen) { _, opened in if !opened { atMoreButton = true } }
         .onChange(of: atPrimaryButton) { _, an in if an { lastFocus = .primaryButton } }
         .onChange(of: atMoreButton) { _, an in if an { lastFocus = .moreButton } }
-        // See `lastFocus`: the player leaves the same empty focus as an open
-        // panel, one level higher; the same assignment restores it.
+        // See `lastFocus`: the player leaves the same empty focus as an open panel.
         .onChange(of: play.wrappedValue == nil) { before, closed in
             guard closed, before == false else { return }
             focusBack()
         }
-        // **Same after "Gemeinsam schauen".** The panel sits above everything in the
-        // frame and locks the page like the player. If it closes without a player
-        // opening, focus returns to its trigger.
+        // Same after "Gemeinsam schauen".
         .onChange(of: SharedModel.shared.createFor == nil) { before, toward in
             guard toward, before == false, play.wrappedValue == nil else { return }
             focusBack()
         }
+        // **While a panel is open, the rest is not a focus target.**
         .disabled(moreOpen)
-        // The remote's select opens the choice; the dialog takes the focus and gives
-        // it back to the button on close.
-        .versionChoice($versionChoice) { choice, version in
-            PlayRequest.start(choice, picking: version, model: model, prepares: $prepares,
-                              missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
-                              play: { play.wrappedValue = $0 })
+        // The remote's select opens the choice; the dialog takes the focus and gives it back on close.
+        .versionPick($versionChoice) { choice, version in
+            launch(page?.pressPlay(pick: version.id), since: choice.since, picked: version.id)
         }
-        // Under the More button, at its edge; see `PanelAnchor`. The button sits at
-        // the far right and the panel is wider, so `Handlungstafel.left` clamps it
-        // to the button's right edge instead of letting it run off screen.
+        // Under the More button, at its edge; see `PanelAnchor`.
         .panel(under: moreOpen ? "mehr" : nil) {
             ActionPanel(actions: moreActions, opened: $moreOpen)
                 .transition(.opacity)
         }
-        .animation(Theme.motion(.easeInOut(duration: 0.18)), value: moreOpen)
+        .animation(Theme.motion(.timingCurve(0.23, 1, 0.32, 1, duration: 0.22)), value: moreOpen)
         .overlay(alignment: .top) {
             if let message {
-                HintStrip(text: message) { self.message = nil }
+                HintStrip(text: message) { self.message = nil; page?.model.dismissMessage() }
                     .padding(.top, Theme.edgeTop)
             }
         }
-        // Reload after the player: it is a layer above, and `.task` does not run
-        // twice. See `AppModel.playbackEnded`.
-        .onChange(of: model.pagesRefresh) { _, _ in Task { await refresh() } }
-        .task {
-            titleRun += 1
-            let myOwn = titleRun
-            async let freshTitle = model.item(id: item.id)
-            async let planning = model.plan(for: item.id)
-            async let alike = model.similar(item)
-            async let extra = model.extras(item)
-            async let preview = model.trailerCandidates(for: item, canOpenWeb: false)
-            async let collection = model.collectionRails(toward: item)
-            // **Fade in once, not three times.**
-            // `.transition` alone does not work: it acts only when the change happens in
-            // an **animated transaction**, and values from `await` carry none. So at
-            // first everything appeared hard though the transitions were attached.
-            // Three separate `withAnimation` calls (title and plan, extras, episodes)
-            // then each faded on their own and overlapped into flicker. Now **everything
-            // is awaited and shown once**.
-            // Instant stays what was already on the home page: title, details,
-            // description, image, background. Only what is new is faded.
-            // **Title and plan first, immediately.** The main button, watchlist, watched
-            // and the Direct Play mark depend only on these two; they do not wait for
-            // trailer and collections.
-            let newTitle = await freshTitle
-            let newPlan = await planning
-            if myOwn == titleRun {
-                withAnimation(Theme.motion(.easeOut(duration: 0.32))) {
-                    if let newTitle { freshValue = newTitle }
-                    plan = newPlan
-                }
-                remembered = current.userData?.isFavorite ?? false
-                watched = current.isWatched
-            }
-            let newSimilar = ListRules.withoutDouble((await alike) ?? [])
-
-            // The trailer leads the extras: it was once its own pill, and the layout's
-            // button row has no room for it. Dropping it would be wrong; a trailer is
-            // something to play, and the shelf is the place for it.
-            let shelf = TrailerChoice.shelf(trailers: TrailerChoice.files(in: await preview),
-                                            extras: (await extra) ?? [])
-            let newCollections = await collection
-
-            withAnimation(Theme.motion(.easeOut(duration: 0.32))) {
-                similar = newSimilar
-                extras = shelf
-                collectionRails = newCollections
-                bottomPresent = true
+        // Reload after the player: it is a layer above, and `.task` does not run twice.
+        .overlay {
+            if let trouble = page?.trouble {
+                DisturbState(model: model, trouble: trouble, retry: { page?.model.load() })
+                    .background(Theme.reason)
+                    .transition(.opacity)
             }
         }
+        .animation(Theme.motion(.easeOut(duration: 0.22)), value: page?.trouble)
+        .onChange(of: model.pagesRefresh) { _, _ in page?.model.refresh() }
+        // The core loads the title with its plan, then cast, extras, similar and collections, and keeps
+        // the page current. Cancelled (page covered) is not a failure; the task restarts on return.
+        .task { await page?.run(app: model) }
+        .onChange(of: actions?.effectSeq) { _, _ in drain() }
+        .onChange(of: actions?.message) { _, new in if let new { message = new } }
+        .onChange(of: actions?.toggleError) { _, new in if let new { message = new } }
+        .onChange(of: model.watchersShown) { _, _ in page?.send(options: model) }
+        .onChange(of: PlayOutputs.shared.targets.map(\.id)) { _, _ in page?.send(options: model) }
     }
 
     /// Backdrop, text and button row.
-    /// **One labeled button, the rest are symbols.** That is also the one-main-button rule, one main
-    /// button per page, read more strictly: what is not the main button need not
-    /// spread like one. Five labeled pills were about 1400 pt wide and read as
-    /// five equal offers. Now "Fortsetzen" or "Abspielen" carries the text, next
-    /// to three square symbols: back, watchlist, more. Each names itself
-    /// explicitly for VoiceOver, since a symbol button inherits no label.
-    /// **Long press on the main button: the title's tile menu**, the same as on
-    /// its tile (``TileMenu``).
+    /// **One labeled button, the rest are symbols.** "Fortsetzen" or "Abspielen" carries the text,
+    /// next to square symbols: back to start, watchlist, more. Each names itself for VoiceOver.
+    /// **Long press on the main button: the title's tile menu**, the same as on its tile.
     private var header: some View {
-        DetailHeader(model: model, item: current, plan: plan) {
+        let watchlist = actions?.favorite ?? false
+        return DetailHeader(model: model, item: current, plan: page?.plan(app: model)) {
             HStack(spacing: 24) {
-                if let since = current.resumeFrom {
-                    Button { start(since: since) } label: {
+                if current.resumeFrom != nil {
+                    Button { launch(page?.pressPlay(), since: nil, picked: nil) } label: {
                         Label("Fortsetzen", icon: "play.fill")
                     }
                     .buttonStyle(ThemedButtonStyle())
-                    .disabled(prepares)
+                    .disabled(prepares || actions?.play.enabled != true)
                     .focused($atPrimaryButton)
                     .tileMenu(current, model: model)
 
                     // Explicit in the layout: otherwise someone who has started could only get
                     // back to the beginning through the panel.
-                    Button { start(since: 0) } label: {
+                    Button { launch(page?.model.playFromStart(), since: nil, picked: nil) } label: {
                         Image(icon: "arrow.counterclockwise").font(Theme.button)
                     }
                     .buttonStyle(ThemedButtonStyle(onlySymbol: true))
                     .accessibilityLabel(Text("Von vorn"))
-                    .disabled(prepares)
+                    .disabled(prepares || actions?.play.enabled != true)
                 } else {
-                    Button { start(since: 0) } label: {
+                    Button { launch(page?.pressPlay(), since: nil, picked: nil) } label: {
                         Label("Abspielen", icon: "play.fill")
                     }
                     .buttonStyle(ThemedButtonStyle())
-                    .disabled(prepares)
+                    .disabled(prepares || actions?.play.enabled != true)
                     .focused($atPrimaryButton)
                     .tileMenu(current, model: model)
                 }
 
-                StateButtons(model: model, item: current,
-                                remembered: $remembered, watched: $watched, message: $message)
+                // Switched off in Appearance, the bookmark is gone; the favourite itself stays on the server.
+                if model.watchlistShown {
+                    Button { page?.model.setWatchlist(!watchlist) } label: {
+                        Image(icon: watchlist ? "bookmark.fill" : "bookmark").font(Theme.button)
+                    }
+                    .buttonStyle(ThemedButtonStyle(onlySymbol: true, active: watchlist))
+                    .accessibilityLabel(Text("Merkliste"))
+                    .accessibilityAddTraits(watchlist ? [.isButton, .isSelected] : .isButton)
+                }
+
+                // Watched and Watch together sit in the row, not in the panel.
+                RowExtraButtons(watched: actions?.watched ?? false, actions: rowActions,
+                                onWatched: { page?.model.setWatched(!(actions?.watched ?? false)) },
+                                onShuffle: { page?.model.menu(.shuffle) },
+                                onTogether: { page?.model.menu(.together) })
 
                 MoreButton(opened: $moreOpen)
                     .focused($atMoreButton)
@@ -436,6 +414,8 @@ struct DetailView: View {
             }
         }
     }
+
+    private var rowActions: TVRowActions { TVRowActions(menu: page?.model.moreMenu() ?? []) }
 
     // MARK: Start
 
@@ -447,53 +427,105 @@ struct DetailView: View {
         }
     }
 
+    /// The core's menu without what the row shows as buttons; the host runs what only it can.
     private var moreActions: [TitleAction] {
-        // Watched sits first, as it is what the panel is now opened for most often.
-        // The shared list stays untouched.
-        [TitleAction.watchState(current, model: model, watched: $watched,
-                                 report: { message = $0 })]
-        + TitleActions.forMovie(current, plan: plan, model: model,
-                                   start: { launch(since: $0, asking: true) },
-                                   report: { message = $0 },
-                                   gemeinsam: SharedModel.shared.mayCreate
-                                       ? { [current] in SharedModel.shared.createFor = current } : nil)
+        guard let page else { return [] }
+        return rowActions.panel.map { entry in
+            TitleAction(symbol: Self.symbol(of: entry.kind), wording: entry.text) {
+                switch entry.kind {
+                case .playFromStart: launch(page.model.playFromStart(), since: nil, picked: nil)
+                default: page.model.menu(entry.kind)
+                }
+            }
+        }
     }
 
-    private func refresh() async {
-        // The plan too: it carries the Direct Play proof, and a state without its
-        // plan is half a state.
-        titleRun += 1
-        let myOwn = titleRun
-        async let freshTitle = model.item(id: item.id)
-        async let planning = model.plan(for: item.id)
-        let new = await freshTitle
-        let newPlan = await planning
-        guard myOwn == titleRun else { return }
-        if let new { freshValue = new }
-        plan = newPlan
-        remembered = current.userData?.isFavorite ?? false
-        watched = current.isWatched
+    private static func symbol(of kind: MenuKind) -> String {
+        switch kind {
+        case .playOn: "tv"
+        case .playFromStart: "gobackward"
+        case .resetProgress: "arrow.counterclockwise.circle"
+        case .together: "person.2"
+        case .refreshMetadata: "arrow.clockwise"
+        default: "ellipsis"
+        }
     }
 
-    /// **A title with several versions asks which one on press**, as on iPhone. One
-    /// version, or a copy on the device, starts at once. The preloaded `plan` is only
-    /// the proof row's; playback always fetches its own through `PlayRequest.start`,
-    /// so a picked version never plays the cheapest one's plan.
-    private func start(since: Double) {
-        launch(since: since, asking: true)
+    // MARK: What the core asks of the host
+
+    private func drain() {
+        guard let page else { return }
+        for effect in page.model.takeEffects() {
+            switch effect {
+            case .play(let action):
+                launch(action, since: nil, picked: nil)
+            case .playTrailer(let id):
+                PlayRequest.start(Item(id: id, name: current.name), freshValue: true, model: model, prepares: $prepares,
+                                  missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                                  play: { play.wrappedValue = $0 })
+            case .menu(let kind):
+                switch kind {
+                case .playOn(let id, _):
+                    guard let target = PlayOutputs.shared.targets.compactMap(PlayOutput.init(session:))
+                        .first(where: { $0.deviceID == id })
+                    else { continue }
+                    let title = current
+                    Task { await PlayOutputs.shared.play(title, to: target, model: model) }
+                case .together:
+                    SharedModel.shared.createFor = current
+                default:
+                    break
+                }
+            case .stateChanged:
+                SeriesCache.shared.forget(current.seriesId ?? current.id)
+                model.noteWatchStateChanged()
+            case .watchlistChanged:
+                model.noteWatchlistChanged()
+            case .openWeb, .openDownload:
+                break
+            }
+        }
     }
 
-    /// Freshly fetched: the position in the list entry is often stale.
-    private func launch(since: Double, asking: Bool = false) {
-        launch(current, since: since, freshValue: true, asking: asking)
+    /// An extra plays at once.
+    private func launchExtra(_ extra: Item) {
+        PlayRequest.start(extra, since: 0, model: model, prepares: $prepares,
+                          missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
+                          play: { play.wrappedValue = $0 })
     }
 
-    /// Start a title, the same one or an extra.
-    private func launch(_ title: Item, since: Double, freshValue: Bool = false, asking: Bool = false) {
-        PlayRequest.start(title, since: since, freshValue: freshValue,
-                              ask: asking ? VersionAsk(choose: { versionChoice = $0 }, failed: { message = $0 }) : nil,
-                              model: model, prepares: $prepares,
+    /// What a press on Play (or a menu entry that plays) does, as the core decides it.
+    private func launch(_ action: PlayAction?, since: Double?, picked: String?) {
+        guard let page, let action else { return }
+        switch action {
+        case .wait:
+            return
+        case .choose(_, let at, let versions):
+            versionChoice = VersionPick(
+                heading: page.model.actions.play.versionTitle, options: versions, since: since ?? at)
+        case .resolve(_, let at):
+            // The fresh title never came: fetch it once more and decide again; say so if that fails too.
+            guard !prepares else { return }
+            prepares = true
+            Task {
+                let again = await page.resolve(pick: picked)
+                prepares = false
+                if case .resolve = again {
+                    message = String(localized: "Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal.")
+                } else {
+                    launch(again, since: since ?? at, picked: picked)
+                }
+            }
+        case .start(_, let at, let source):
+            let start = since ?? at
+            let downloaded = model.downloads.file(for: current.id) != nil
+            if source == nil, !downloaded, let plan = page.plan(app: model) {
+                play.wrappedValue = PlayRequest(item: current, plan: plan, startAt: start)
+                return
+            }
+            PlayRequest.start(current, since: start, sourceID: source, model: model, prepares: $prepares,
                               missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
                               play: { play.wrappedValue = $0 })
+        }
     }
 }

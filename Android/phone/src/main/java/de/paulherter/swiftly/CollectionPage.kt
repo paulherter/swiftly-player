@@ -27,7 +27,6 @@ import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.translated
-import de.paulherter.swiftly.core.Kern
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
@@ -55,7 +54,7 @@ fun collectionTarget(id: String, name: String, art: String?) = Destination(id, n
  * "3 movies" or "3 series" under a collection tile; `countText` in `LibraryView`. The rule
  * lives in the package, not here (``ItemCollection.anzahltext(art:count:)``).
  */
-fun collectionCount(art: String?, n: Int): String = Kern.collectionCountText(art.orEmpty(), n.toLong())
+fun collectionCount(art: String?, n: Int): String = KernRules.collectionCountText(art.orEmpty(), n.toLong())
 
 /**
  * The posters of each collection's first titles, fetched once, then from memory: the grid
@@ -83,7 +82,7 @@ fun CollectionMosaic(app: SwiftlyApplication, id: String, art: String?, height: 
     LaunchedEffect(key) {
         if (MosaicCache.posters.containsKey(key)) return@LaunchedEffect
         val list = try {
-            JSONArray(withContext(Dispatchers.IO) { app.kern.collectionMosaic(id, art.orEmpty(), height.toLong()).await() })
+            JSONArray(withContext(Dispatchers.IO) { app.rk.collectionMosaic(id, art.orEmpty(), height.toLong()).await() })
                 .let { a -> (0 until a.length()).map { if (a.isNull(it)) null else a.getString(it) } }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { return@LaunchedEffect }
         MosaicCache.posters[key] = list
@@ -159,7 +158,7 @@ class CollectionState(val id: String, val art: String?) {
     val filterSelection: List<String> get() =
         if (art == "tvshows") listOf("alle", "angefangen", "merkliste") else Choices.filter.map { it.value }
 
-    suspend fun load(kern: Kern) {
+    suspend fun load(kern: RustKern) {
         loads = items.isEmpty()
         disrupted = false
         try {
@@ -177,7 +176,7 @@ class CollectionState(val id: String, val art: String?) {
         loads = false
     }
 
-    suspend fun loadMore(kern: Kern, count: Long = 60L) {
+    suspend fun loadMore(kern: RustKern, count: Long = 60L) {
         if (!stillMorePresent || loadsPost || loads) return
         loadsPost = true
         try {
@@ -191,10 +190,10 @@ class CollectionState(val id: String, val art: String?) {
         } finally { loadsPost = false }
     }
 
-    suspend fun jumpTarget(kern: Kern, letter: String): Int? =
+    suspend fun jumpTarget(kern: RustKern, letter: String): Int? =
         alphabetJumpTarget(letter, letters, { items }, { stillMorePresent }, { loadsPost || loads }) { loadMore(kern, it) }
 
-    private suspend fun page(kern: Kern, since: Int, count: Long = 60L): Pair<List<GridTile>, Int> {
+    private suspend fun page(kern: RustKern, since: Int, count: Long = 60L): Pair<List<GridTile>, Int> {
         val o = JSONObject(withContext(Dispatchers.IO) {
             kern.collectionPage(id, art.orEmpty(), sorting, filter, since.toLong(), count).await()
         })
@@ -213,11 +212,11 @@ class CollectionState(val id: String, val art: String?) {
 fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destination) -> Unit, back: () -> Unit) {
     val state = remember(target.id, target.role) { CollectionState(target.id, target.role) }
     val section = rememberCoroutineScope()
-    LaunchedEffect(state, state.sorting, state.filter) { state.load(app.kern) }
+    LaunchedEffect(state, state.sorting, state.filter) { state.load(app.rk) }
     // Without the watchlist when it is switched off; a filter no longer offered falls back to "all".
     val filterSelection = offeredFilters(state.filterSelection, app.settings.watchlist)
     LaunchedEffect(filterSelection) { if (state.filter !in filterSelection) state.filter = "alle" }
-    WatchStateChange(app) { state.load(app.kern) }
+    WatchStateChange(app) { state.load(app.rk) }
     val grid = rememberLazyGridState()
     val density = LocalDensity.current
     val offset by remember {
@@ -252,7 +251,7 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
             LaunchedEffect(grid, count) {
                 snapshotFlow { (grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1) to state.items.size }
                     .collect { (lastOne, loaded) ->
-                        if (loaded > 0 && lastOne >= loaded - count * 3) state.loadMore(app.kern)
+                        if (loaded > 0 && lastOne >= loaded - count * 3) state.loadMore(app.rk)
                     }
             }
             LazyVerticalGrid(GridCells.Fixed(count), state = grid,
@@ -271,20 +270,20 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
                 AlphabetRail(shownLetters, current,
                              Modifier.align(Alignment.TopEnd).navigationBarsPadding()
                                  .padding(end = (lane - AlphabetRailWidth) / 2, top = headerDp + 8.dp, bottom = 40.dp)) { letter ->
-                    section.launch { state.jumpTarget(app.kern, letter)?.let { grid.animateScrollToItem(it) } }
+                    section.launch { state.jumpTarget(app.rk, letter)?.let { grid.animateScrollToItem(it) } }
                 }
             }
             if (state.disrupted) {
                 EmptyState(Glyph.WlanDisruption, translated("Server ist abgetaucht"),
                     translated("%@ antwortet nicht. Läuft er noch, oder hängt das WLAN?", app.serverAddress()),
-                    primaryButton = translated("Erneut versuchen") to { section.launch { state.load(app.kern) } })
+                    primaryButton = translated("Erneut versuchen") to { section.launch { state.load(app.rk) } })
             } else if (state.items.isEmpty() && !state.loads) {
                 val all = state.filter == "alle"
                 EmptyState(if (all) Glyph.Store else Glyph.Filter,
                     translated(if (all) "Hier ist noch nichts" else "Nichts gefunden"),
                     if (all) translated("Sobald in dieser Sammlung etwas liegt, taucht es hier auf.")
                     else translated("Unter „%@“ liegt gerade nichts. Nimm einen anderen Filter.", Choices.text(Choices.filter, state.filter)),
-                    quietButton = if (all) translated("Aktualisieren") to { section.launch { state.load(app.kern) } }
+                    quietButton = if (all) translated("Aktualisieren") to { section.launch { state.load(app.rk) } }
                                    else translated("Filter zurücksetzen") to { state.filter = "alle" })
             }
         }
@@ -295,7 +294,7 @@ fun CollectionPage(app: SwiftlyApplication, target: Destination, open: (Destinat
 data class CollectionRailsData(val id: String, val name: String, val art: String, val title: List<GridTile>)
 
 /** Reads `Kern.collectionsForTitle`; silent: empty without a collection or on an error. */
-suspend fun collectionRailsLoad(kern: Kern, titleIdentifier: String): List<CollectionRailsData> = try {
+suspend fun collectionRailsLoad(kern: RustKern, titleIdentifier: String): List<CollectionRailsData> = try {
     val a = JSONArray(withContext(Dispatchers.IO) { kern.collectionsForTitle(titleIdentifier).await() })
     (0 until a.length()).map { a.getJSONObject(it).let { o ->
         CollectionRailsData(o.getString("id"), o.getString("name"), o.getString("art"),

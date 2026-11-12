@@ -32,8 +32,8 @@ fun TvPlaylist(app: SwiftlyApplication, target: Destination, open: (Destination)
     val state = remember(target.id, target.role) { PlaylistState(target.id, target.role) }
     val run = rememberCoroutineScope()
     var prepares by remember { mutableStateOf(false) }
-    LaunchedEffect(state) { state.load(app.kern) }
-    WatchStateChange(app) { state.load(app.kern) }
+    LaunchedEffect(state) { state.load(app.rk) }
+    WatchStateChange(app) { state.load(app.rk) }
     val focus = firstFocus(!state.loads)
     Box(Modifier.fillMaxSize().background(Theme.reason)) {
         TvGrid(state.items, {}, focus, open, loads = state.loads, withUnderRow = false, header = {
@@ -47,7 +47,7 @@ fun TvPlaylist(app: SwiftlyApplication, target: Destination, open: (Destination)
                         run.launch {
                             // `finally`: if asking or starting fails, the button must not stay dead.
                             try {
-                                val first = try { state.start(app.kern) } catch (e: CancellationException) { throw e } catch (_: Exception) { "" }
+                                val first = try { state.start(app.rk) } catch (e: CancellationException) { throw e } catch (_: Exception) { "" }
                                 if (first.isNotEmpty()) de.paulherter.swiftly.playAsking(app, first, null)
                             } finally { prepares = false }
                         }
@@ -55,10 +55,10 @@ fun TvPlaylist(app: SwiftlyApplication, target: Destination, open: (Destination)
                     Spacer(Modifier.weight(1f))
                     if (state.items.isNotEmpty()) Text(playlistCount(state.items.size), style = TvTheme.small, color = Theme.fontVeryQuiet)
                 }
-                if (state.disrupted) TvDisruption(app, buttonModifier = Modifier.focusRequester(focus), retry = { run.launch { state.load(app.kern) } })
+                if (state.disrupted) TvDisruption(app, buttonModifier = Modifier.focusRequester(focus), retry = { run.launch { state.load(app.rk) } })
                 else if (!state.loads && state.items.isEmpty())
                     TvEmpty(translated("Hier ist noch nichts"), translated("Sobald in dieser Wiedergabeliste etwas liegt, taucht es hier auf."),
-                        symbol = Glyph.Store, button = translated("Aktualisieren") to { run.launch { state.load(app.kern) } }, buttonModifier = Modifier.focusRequester(focus))
+                        symbol = Glyph.Store, button = translated("Aktualisieren") to { run.launch { state.load(app.rk) } }, buttonModifier = Modifier.focusRequester(focus))
             }
         })
     }

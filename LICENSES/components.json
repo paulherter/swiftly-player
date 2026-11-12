@@ -2,46 +2,13 @@
  "schema": 1,
  "hinweis": "Einzige Quelle für alle Lizenzangaben. THIRD-PARTY-NOTICES.md wird daraus mit Werkzeuge/licenses-generate.py erzeugt; die Apps lesen diese Datei und LICENSES/*.txt aus dem Bündel. Das Feld \"pruefen\" ist intern (offene Punkte) und wird nirgends angezeigt.",
  "angebot": {
-  "titel": "VLCKit / libVLC and libmpv — Source and your rights",
-  "kurz": "Swiftly Player uses VLCKit and libVLC by VideoLAN and libmpv with FFmpeg (all LGPL-2.1 or later).",
+  "titel": "AetherEngine, FFmpeg and libmpv — Source and your rights",
+  "kurz": "Swiftly Player plays with AetherEngine and FFmpeg (Apple), Media3 with an FFmpeg audio decoder (Android) and libmpv (Windows, Linux). The LGPL parts can be replaced; the source is offered below.",
   "kontakt": "info@swiftlyplayer.com",
   "quelle_swiftly": "https://github.com/paulherter/swiftly-player",
   "abschnitte": [
    {
     "titel": "What is used",
-    "absaetze": [
-     "Swiftly Player plays video and audio with VLCKit and libVLC by VideoLAN, which are licensed under the GNU Lesser General Public License, version 2.1 or (at your option) any later version (LGPL-2.1-or-later). Copyright VideoLAN and VLC authors. The full license text is included in this app and in LICENSES/LGPL-2.1-or-later.txt.",
-     "On Apple platforms (iPhone, iPad, Mac, Apple TV) the app contains VLCKit 4.0.0-a23 as a dynamic framework (VLCKit.framework), built from VideoLAN's sources with the Swiftly patches listed below. VLCKit in turn contains libVLC and the libraries listed on the licenses page; those libraries carry their own licenses. VLC is built without its GPL modules (--disable-gpl); FFmpeg is built without --enable-gpl.",
-     "On Windows the app ships libmpv-2.dll (mpv built as a library under LGPL-2.1-or-later, with FFmpeg under LGPL-3.0-or-later) from the zhongfly/mpv-winbuild project, unmodified. On Linux the app does not bundle libmpv but uses the one of your system."
-    ]
-   },
-   {
-    "titel": "Source code",
-    "absaetze": [
-     "Upstream VLCKit: https://code.videolan.org/videolan/VLCKit, tag 4.0.0-a23 (commit e3774eb2).",
-     "Upstream libVLC: https://code.videolan.org/videolan/vlc, commit 2cd8705589 (the commit VLCKit 4.0.0-a23 pins as TESTEDHASH).",
-     "Bundled libraries: the exact release tarballs are those of VLC's contrib system (libvlc/vlc/contrib/src/*), in the versions listed on the licenses page.",
-     "libmpv for Windows: the sources of the build are mpv (https://github.com/mpv-player/mpv) and FFmpeg (https://ffmpeg.org) in the versions of release 2026-11-05-3138fc8eea at https://github.com/zhongfly/mpv-winbuild/releases/tag/2026-11-05-3138fc8eea; the recipe is https://github.com/shinchiro/mpv-winbuild-cmake. Swiftly does not patch it.",
-     "Swiftly's changes: the patch files are public in Swiftly Player's repository, in Werkzeuge/vlckit-patches/ (https://github.com/paulherter/swiftly-player). Six patches against libVLC (0028 and 0030 to 0034) and one against VLCKit itself (VLCKit-pause-without-queue.patch, for Sources/Playback/VLCMediaPlayer.m). Patches 0035 to 0038 are in the same directory but are not part of any shipped build.",
-     "How to rebuild: Documentation/VLCKit.md in the same repository describes the steps, and Documentation/Building.md describes how to build Swiftly against your own VLCKit."
-    ]
-   },
-   {
-    "titel": "Your rights",
-    "absaetze": [
-     "You may modify the library and use your modified version with Swiftly Player. To do so, build VLCKit from the sources above (with or without our patches), assemble Vendor/VLCKit-gepatcht.xcframework from your build, and build and sign Swiftly Player from its published source code as described in Documentation/Building.md. Swiftly Player's own code is published under the MPL-2.0.",
-     "You may copy and pass on the library under the terms of the LGPL. You may reverse engineer the application as far as needed to debug modifications of the library."
-    ]
-   },
-   {
-    "titel": "Written offer",
-    "absaetze": [
-     "On request we will provide the complete corresponding source code of VLCKit, libVLC and of libmpv with FFmpeg shipped for Windows and the bundled libraries of every version of Swiftly Player that we distribute, including the Swiftly patches and the scripts used to build it, on a data medium or as a download. The offer is valid for at least three years after the release of the respective version. We may charge no more than the cost of physically performing the delivery.",
-     "Send the request, with the version and platform you have, to info@swiftlyplayer.com."
-    ]
-   },
-   {
-    "titel": "Current playback engines: what is used",
     "absaetze": [
      "Apple (iPhone, iPad, Mac, Apple TV): the app plays with AetherEngine 7.58.0 (GNU LGPL version 3 with the Apple Store / DRM exception of the project). AetherEngine is linked statically and unmodified. It uses FFmpeg n8.1.3 from FFmpegBuild 3.13.0, delivered as dynamic frameworks under LGPL-2.1-or-later and replaceable by your own build. It further uses libdovi (MIT) and LibTrueHD (MIT, with the Apache-2.0 truehd and oamd crates).",
      "Android and Android TV: the app plays with Media3 / ExoPlayer (Apache-2.0) and an FFmpeg 6.0.1 audio decoder extension built by Swiftly from the official release without patches, as separate shared libraries (LGPL-2.1-or-later).",
@@ -49,7 +16,7 @@
     ]
    },
    {
-    "titel": "Current playback engines: source code",
+    "titel": "Source code",
     "absaetze": [
      "AetherEngine: https://github.com/superuser404notfound/AetherEngine, tag 7.58.0 (revision 7ea27bff8d8fb4a457d6e0042b0537eb31253583). Swiftly uses it without changes.",
      "FFmpegBuild: https://github.com/superuser404notfound/FFmpegBuild, tag 3.13.0 (revision 9282e592b81d9aa1d699dcc70d46cf6b4d66b55f). Its build.sh fetches FFmpeg n8.1.3 (https://github.com/FFmpeg/FFmpeg, tag n8.1.3) and applies the patches in its patches folder.",
@@ -60,10 +27,44 @@
     ]
    },
    {
-    "titel": "Current playback engines: your rights and written offer",
+    "titel": "Your rights and written offer",
     "absaetze": [
      "You may replace the FFmpeg frameworks (Apple), the FFmpeg shared libraries (Android) and libmpv-2.dll (Windows) with your own builds of the same versions, and you may modify and redistribute these LGPL components under the terms of their licenses. For the Apple and Android apps this means repackaging and signing the app yourself from the published Swiftly source.",
      "On request we provide the complete corresponding source code of the LGPL components named above on a data medium. Send the request, with the version and platform you have, to info@swiftlyplayer.com."
+    ]
+   },
+   {
+    "titel": "Earlier versions (VLCKit / libVLC): what is used",
+    "absaetze": [
+     "This section applies to earlier versions of Swiftly Player, which contained VLCKit and libVLC (and, on Windows, the VLC runtime). The written offer below stays valid for those versions for at least three years after their release.",
+     "Swiftly Player plays video and audio with VLCKit and libVLC by VideoLAN, which are licensed under the GNU Lesser General Public License, version 2.1 or (at your option) any later version (LGPL-2.1-or-later). Copyright VideoLAN and VLC authors. The full license text is included in this app and in LICENSES/LGPL-2.1-or-later.txt.",
+     "On Apple platforms (iPhone, iPad, Mac, Apple TV) the app contains VLCKit 4.0.0-a23 as a dynamic framework (VLCKit.framework), built from VideoLAN's sources with the Swiftly patches listed below. VLCKit in turn contains libVLC and the libraries listed on the licenses page; those libraries carry their own licenses. VLC is built without its GPL modules (--disable-gpl); FFmpeg is built without --enable-gpl.",
+     "On Windows the app ships libmpv-2.dll (mpv built as a library under LGPL-2.1-or-later, with FFmpeg under LGPL-3.0-or-later) from the zhongfly/mpv-winbuild project, unmodified. On Linux the app does not bundle libmpv but uses the one of your system."
+    ]
+   },
+   {
+    "titel": "Earlier versions (VLCKit / libVLC): source code",
+    "absaetze": [
+     "Upstream VLCKit: https://code.videolan.org/videolan/VLCKit, tag 4.0.0-a23 (commit e3774eb2).",
+     "Upstream libVLC: https://code.videolan.org/videolan/vlc, commit 2cd8705589 (the commit VLCKit 4.0.0-a23 pins as TESTEDHASH).",
+     "Bundled libraries: the exact release tarballs are those of VLC's contrib system (libvlc/vlc/contrib/src/*), in the versions listed on the licenses page.",
+     "libmpv for Windows: the sources of the build are mpv (https://github.com/mpv-player/mpv) and FFmpeg (https://ffmpeg.org) in the versions of release 2026-11-05-3138fc8eea at https://github.com/zhongfly/mpv-winbuild/releases/tag/2026-11-05-3138fc8eea; the recipe is https://github.com/shinchiro/mpv-winbuild-cmake. Swiftly does not patch it.",
+     "Swiftly's changes: the patch files are public in Swiftly Player's repository, in Werkzeuge/vlckit-patches/ (https://github.com/paulherter/swiftly-player). Six patches against libVLC (0028 and 0030 to 0034) and one against VLCKit itself (VLCKit-pause-without-queue.patch, for Sources/Playback/VLCMediaPlayer.m). Patches 0035 to 0038 are in the same directory but are not part of any shipped build.",
+     "How to rebuild: Documentation/VLCKit.md in the same repository describes the steps, and Documentation/Building.md describes how to build Swiftly against your own VLCKit."
+    ]
+   },
+   {
+    "titel": "Earlier versions (VLCKit / libVLC): your rights",
+    "absaetze": [
+     "You may modify the library and use your modified version with Swiftly Player. To do so, build VLCKit from the sources above (with or without our patches), assemble Vendor/VLCKit-gepatcht.xcframework from your build, and build and sign Swiftly Player from its published source code as described in Documentation/Building.md. Swiftly Player's own code is published under the MPL-2.0.",
+     "You may copy and pass on the library under the terms of the LGPL. You may reverse engineer the application as far as needed to debug modifications of the library."
+    ]
+   },
+   {
+    "titel": "Earlier versions (VLCKit / libVLC): written offer",
+    "absaetze": [
+     "On request we will provide the complete corresponding source code of VLCKit, libVLC and of libmpv with FFmpeg shipped for Windows and the bundled libraries of every version of Swiftly Player that we distribute, including the Swiftly patches and the scripts used to build it, on a data medium or as a download. The offer is valid for at least three years after the release of the respective version. We may charge no more than the cost of physically performing the delivery.",
+     "Send the request, with the version and platform you have, to info@swiftlyplayer.com."
     ]
    }
   ]
@@ -85,7 +86,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "player",
+   "gruppe": "frueher",
    "notiz": "Modified: Swiftly ships a VLCKit built with its own patches (see the written offer above)."
   },
   {
@@ -104,7 +105,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "player",
+   "gruppe": "frueher",
    "notiz": "On Apple platforms built with --disable-gpl, without VLC's GPL modules."
   },
   {
@@ -259,6 +260,29 @@
    "gruppe": "app"
   },
   {
+   "id": "rust-core",
+   "name": "Rust libraries of the Swiftly core (about 600 crates)",
+   "version": "as locked in Cargo.lock; full list in rust-crates.txt",
+   "spdx": "MIT, Apache-2.0, MPL-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, Unicode-3.0, MIT-0 (per crate)",
+   "urheber": "The authors of each crate (named in each crate's own license text)",
+   "quelle": "https://crates.io",
+   "plattformen": [
+    "ios",
+    "ipados",
+    "macos",
+    "tvos",
+    "android",
+    "androidtv",
+    "windows",
+    "linux"
+   ],
+   "texte": [
+    "rust-crates.txt"
+   ],
+   "gruppe": "app",
+   "notiz": "The shared core and the desktop apps are built from these libraries, linked statically. LICENSES/rust-crates.txt lists every crate with its license text; it is generated by cargo about (about.toml, about.hbs) and covers the targets in about.toml. GPL, AGPL and LGPL crates are refused by deny.toml."
+  },
+  {
    "id": "phosphor",
    "name": "Phosphor Icons (icon set)",
    "version": "2.1.1 (bold and fill weights)",
@@ -303,7 +327,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "Built without --enable-gpl (license of the build: LGPL version 2.1 or later)."
   },
   {
@@ -322,7 +346,7 @@
    "texte": [
     "BSD-2-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "flac",
@@ -340,7 +364,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "fluidlite",
@@ -358,7 +382,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "pruefen": "Copyright holders not checked individually in the source tree."
   },
   {
@@ -377,7 +401,7 @@
    "texte": [
     "FTL.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "FreeType is available under the FreeType License or the GPL-2.0; Swiftly uses it under the FreeType License. Portions of this software are copyright The FreeType Project (www.freetype.org). All rights reserved."
   },
   {
@@ -396,7 +420,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "gsm",
@@ -414,7 +438,7 @@
    "texte": [
     "GSM.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "harfbuzz",
@@ -432,7 +456,7 @@
    "texte": [
     "MIT.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "The \"Old MIT\" license; some parts carry other licenses, see COPYING upstream."
   },
   {
@@ -451,7 +475,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "The source states \"LGPL, version 2 or later\"; used under LGPL-2.1."
   },
   {
@@ -469,7 +493,7 @@
    "texte": [
     "BSD-2-Clause.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "Not in the tvOS slice."
   },
   {
@@ -488,7 +512,7 @@
    "texte": [
     "MIT.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libass",
@@ -506,7 +530,7 @@
    "texte": [
     "ISC.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libdsm",
@@ -524,7 +548,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libdvbpsi",
@@ -542,7 +566,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libebml",
@@ -560,7 +584,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libmatroska",
@@ -578,7 +602,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libebur128",
@@ -596,7 +620,7 @@
    "texte": [
     "MIT.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libgcrypt",
@@ -614,7 +638,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libgpg-error",
@@ -632,7 +656,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libjpeg-turbo",
@@ -650,7 +674,7 @@
    "texte": [
     "libjpeg-turbo.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libmodplug",
@@ -666,7 +690,7 @@
     "tvos"
    ],
    "texte": [],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "The source declares libmodplug to be in the public domain; there is no license text."
   },
   {
@@ -685,7 +709,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libnfs",
@@ -704,7 +728,7 @@
     "LGPL-2.1-or-later.txt",
     "BSD-2-Clause.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "The library is LGPL-2.1+; some protocol files are BSD-2-Clause."
   },
   {
@@ -723,7 +747,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libplacebo",
@@ -741,7 +765,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libpng",
@@ -759,7 +783,7 @@
    "texte": [
     "PNG-libpng-2.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "librist",
@@ -777,7 +801,7 @@
    "texte": [
     "BSD-2-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libshout",
@@ -795,7 +819,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "The source states the \"Library GPL, version 2\"; used under LGPL-2.1.",
    "pruefen": "Licence header says only LGPL-2.0; confirm the 'or later' wording."
   },
@@ -816,7 +840,7 @@
     "LGPL-2.1-or-later.txt",
     "BSD-2-Clause.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "The library is LGPL-2.1+; some files are BSD-2-Clause."
   },
   {
@@ -835,7 +859,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libtasn1",
@@ -853,7 +877,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "The library is LGPL; the package's tools are GPL and are not bundled."
   },
   {
@@ -872,7 +896,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libvorbis",
@@ -890,7 +914,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libvpx",
@@ -908,7 +932,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "libxml2",
@@ -926,7 +950,7 @@
    "texte": [
     "MIT.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "live555",
@@ -944,7 +968,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "mpg123",
@@ -962,7 +986,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "openapv",
@@ -980,7 +1004,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "opencv",
@@ -998,7 +1022,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "Only the modules core, imgproc, imgcodecs, features2d, calib3d, flann and objdetect are built in."
   },
   {
@@ -1017,7 +1041,7 @@
    "texte": [
     "BSD-2-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "opus",
@@ -1035,7 +1059,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "protobuf",
@@ -1052,7 +1076,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "Not in the tvOS slice."
   },
   {
@@ -1071,7 +1095,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "soxr",
@@ -1089,7 +1113,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "spatialaudio",
@@ -1107,7 +1131,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "speex",
@@ -1125,7 +1149,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "taglib",
@@ -1143,7 +1167,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "TagLib is available under LGPL-2.1 or MPL-1.1; Swiftly uses it under LGPL-2.1."
   },
   {
@@ -1161,7 +1185,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "Not in the macOS slice."
   },
   {
@@ -1180,7 +1204,7 @@
    "texte": [
     "BSD-3-Clause.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "pruefen": "Not verified against the linker that libupnp is linked into the shipped VLCKit; source is in the contrib tree."
   },
   {
@@ -1199,7 +1223,7 @@
    "texte": [
     "Zlib.txt"
    ],
-   "gruppe": "in-vlckit"
+   "gruppe": "frueher-in-vlckit"
   },
   {
    "id": "zvbi",
@@ -1217,7 +1241,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "Mixed licensing; the library parts are LGPL-2.0+.",
    "pruefen": "Check whether GPL-only files are compiled into the shipped build."
   },
@@ -1240,7 +1264,7 @@
     "MIT.txt",
     "Apache-2.0.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "Individual files carry different licenses; see LICENSE.txt upstream.",
    "pruefen": "Breakdown of per-file licenses not verified."
   },
@@ -1260,7 +1284,7 @@
    "texte": [
     "MIT.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "Generated OpenGL loader used by VLC's video output."
   },
   {
@@ -1276,7 +1300,7 @@
    "texte": [
     "BSD-2-Clause.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "macOS slice only. Used together with the AOM Patent License 1.0 of the upstream project.",
    "pruefen": "Present in the macOS contrib tree only; verify that it is linked."
   },
@@ -1293,7 +1317,7 @@
    "texte": [
     "LGPL-2.1-or-later.txt"
    ],
-   "gruppe": "in-vlckit",
+   "gruppe": "frueher-in-vlckit",
    "notiz": "macOS slice only.",
    "pruefen": "Present in the macOS contrib tree only (libiconv.a); verify that it is linked and the exact license wording (LGPL-2.0+ vs 2.1+)."
   },
@@ -1442,7 +1466,7 @@
     "Apache-2.0.txt"
    ],
    "gruppe": "player",
-   "notiz": "Plays Dolby Vision files through the device's own decoders; libVLC plays everything else. Used without an FFmpeg decoder extension: the Jellyfin build of that extension (org.jellyfin.media3:media3-ffmpeg-decoder) is published under the GPL-3.0 and is deliberately not included."
+   "notiz": "The only player engine on Android and Android TV: it plays through the device's own decoders, with Swiftly's own FFmpeg audio decoders (listed below). The Jellyfin build of the FFmpeg extension (org.jellyfin.media3:media3-ffmpeg-decoder) is published under the GPL-3.0 and is deliberately not included."
   },
   {
    "id": "ffmpeg-android",

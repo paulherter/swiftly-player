@@ -1,0 +1,39 @@
+{"MediaContainer":{"size":1,"Metadata":[{
+  "ratingKey":"1","type":"movie","title":"Testfilm","titleSort":"Testfilm","year":"2020",
+  "studio":"Bonobostudio","tagline":"Short line","contentRating":"de/12","summary":"A film.",
+  "audienceRating":7.5,"rating":8.0,"userRating":10,"duration":90023,"viewOffset":45011,
+  "viewCount":0,"lastViewedAt":1700000000,"originallyAvailableAt":"2020-01-25",
+  "thumb":"/library/metadata/1/thumb/17","art":"/library/metadata/1/art/17",
+  "Image":[{"alt":"Logo","type":"clearLogo","url":"/library/metadata/1/clearLogo/17"}],
+  "Media":[
+    {"id":1,"duration":90023,"container":"mkv","videoResolution":"4k","Part":[
+      {"id":1,"key":"/library/parts/1/1793487178/file.mkv","duration":90023,
+       "file":"/media/Filme/Testfilm.mkv","size":30165745,"container":"mkv","indexes":"sd",
+       "Stream":[
+        {"id":1,"streamType":1,"codec":"HEVC","index":0,"height":2160,"width":3840,
+         "frameRate":23.976,"colorTrc":"smpte2084","DOVIPresent":true,"DOVIProfile":8,
+         "DOVIBLCompatID":1},
+        {"id":2,"streamType":2,"selected":true,"default":true,"codec":"eac3","index":1,
+         "channels":6,"languageCode":"eng","displayTitle":"English (EAC3 5.1)"},
+        {"id":3,"streamType":2,"codec":"aac","index":2,"channels":2,"languageCode":"deu",
+         "displayTitle":"Deutsch (AAC Stereo)"},
+        {"id":4,"streamType":3,"codec":"srt","index":3,"languageCode":"deu","forced":"1",
+         "displayTitle":"Deutsch (SRT)","key":"/library/streams/4","format":"srt"},
+        {"id":5,"streamType":3,"selected":true,"codec":"pgs","index":4,"languageCode":"eng",
+         "displayTitle":"English (PGS)"}]}]},
+    {"id":2,"duration":90023,"container":"mp4","videoResolution":"1080","Part":[
+      {"id":2,"key":"/library/parts/2/1793487191/file.mp4","duration":90023,
+       "file":"/media/Filme/Testfilm 1080.mp4","size":17228584,"container":"mp4",
+       "Stream":[{"id":6,"streamType":1,"codec":"h264","height":1080,"width":1920}]}]}],
+  "Genre":[{"id":"5","tag":"Action","filter":"genre=5"}],
+  "Country":[{"tag":"USA"}],
+  "Role":[{"id":"10","tag":"Ann Actor","role":"Neo","thumb":"https://metadata-static.plex.tv/a.jpg"}],
+  "Director":[{"tag":"Bob Director"}],"Writer":[{"tag":"Cleo Writer"}],
+  "Guid":[{"id":"imdb://tt0133093"},{"id":"tmdb://603"},{"id":"tvdb://78804"},{"id":"other://x"}],
+  "Marker":[
+    {"type":"intro","startTimeOffset":1000,"endTimeOffset":61000},
+    {"type":"credits","startTimeOffset":85000,"endTimeOffset":120000,"final":true},
+    {"type":"sponsor","startTimeOffset":5000,"endTimeOffset":6000}],
+  "Chapter":[{"tag":"Start","startTimeOffset":0,"endTimeOffset":30000},
+             {"tag":"","startTimeOffset":30000,"endTimeOffset":90023}]
+}]}}

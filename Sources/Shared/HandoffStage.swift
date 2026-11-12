@@ -175,7 +175,7 @@ enum HandoffStyle {
         #endif
     }
 
-    /// Title and episode: "The Mentalist" and "Season 6 · Episode 7".
+    /// Title and episode: "The Lighthouse" and "Season 6 · Episode 7".
     static func rows(_ title: Item) -> (title: String, under: String?) {
         if let series = title.seriesName, !series.isEmpty {
             if let s = title.parentIndexNumber, let f = title.indexNumber {

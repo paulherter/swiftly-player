@@ -1,0 +1,50 @@
+[package]
+name = "swiftly-hardening"
+description = "Machine hardening harness: Swift-vs-Rust differential oracle, seeded property tests, parser fuzzing, soak and benchmarks (no production code)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json = "1"
+swiftly-uniffi = { path = "../swiftly-uniffi" }
+swiftly-net = { path = "../swiftly-net" }
+swiftly-vm = { path = "../swiftly-vm" }
+swiftly-images = { path = "../swiftly-images" }
+swiftly-jellyfin = { path = "../swiftly-jellyfin", default-features = false }
+swiftly-library = { path = "../swiftly-library" }
+swiftly-model = { path = "../swiftly-model" }
+swiftly-rules = { path = "../swiftly-rules" }
+tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "net", "time", "sync"] }
+async-compat = "0.2"
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+png = "0.18"
+async-trait = "0.1"
+swiftly-playback = { path = "../swiftly-playback" }
+swiftly-wslink = { path = "../swiftly-wslink" }
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[dev-dependencies]
+swiftly-model = { path = "../swiftly-model" }
+swiftly-rules = { path = "../swiftly-rules" }
+swiftly-jellyfin = { path = "../swiftly-jellyfin", default-features = false }
+swiftly-library = { path = "../swiftly-library" }
+swiftly-l10n = { path = "../swiftly-l10n" }
+swiftly-images = { path = "../swiftly-images" }
+swiftly-plex = { path = "../swiftly-plex", default-features = false }
+swiftly-cache = { path = "../swiftly-cache" }
+swiftly-settings = { path = "../swiftly-settings" }
+swiftly-downloads = { path = "../swiftly-downloads" }
+swiftly-sync = { path = "../swiftly-sync" }
+swiftly-accounts = { path = "../swiftly-accounts" }
+swiftly-vm = { path = "../swiftly-vm" }
+swiftly-net = { path = "../swiftly-net", default-features = false }
+url = "2"
+proptest = "1"
+futures-executor = { version = "0.3", features = ["thread-pool"] }
+
+[lints]
+workspace = true
