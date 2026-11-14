@@ -187,3 +187,17 @@ fn no_slot_is_decoded_smaller_than_it_is_drawn() {
     }
     assert!(worst.is_empty(), "stretched slots:\n{}", worst.join("\n"));
 }
+
+#[test]
+fn the_app_asks_for_the_posters_the_mac_asks_for() {
+    // The Mac's Home rails ask 600 high posters (its grid 500) and 1000 wide landscape pictures; the core's own default
+    // (360 / 640) is a phone's and showed soft posters on a large window.
+    swiftly_desktop::live::apply_tile_image_sizes();
+    let (poster, backdrop) = swiftly_vm::tile_image_sizes();
+    assert!(poster >= 600, "posters are asked {poster} high");
+    assert!(
+        backdrop >= 1000,
+        "landscape pictures are asked {backdrop} wide"
+    );
+    swiftly_vm::set_tile_image_sizes(0, 0);
+}

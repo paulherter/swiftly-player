@@ -89,6 +89,9 @@ syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-trai
 toml_datetime = { version = "1", features = ["serde"] }
 toml_parser = { version = "1" }
 tracing = { version = "0.1" }
+wayland-backend = { version = "0.3", default-features = false, features = ["client_system", "dlopen"] }
+wayland-protocols = { version = "0.32", default-features = false, features = ["client", "staging", "unstable"] }
+wayland-sys = { version = "0.31", default-features = false, features = ["dlopen", "egl"] }
 zerocopy = { version = "0.8", default-features = false, features = ["derive", "simd"] }
 
 [target.x86_64-unknown-linux-gnu.build-dependencies]

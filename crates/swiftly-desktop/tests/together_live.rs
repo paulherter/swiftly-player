@@ -2,7 +2,7 @@
 //! pause, play and seek reach both players together (the Swift "Gleichschritt" test allows 150 ms), a stop that follows
 //! the takeover hint closes the player as a handoff, and the other devices of the account are listed. Needs
 //! `target/debug/xtask` (`cargo build -p xtask`); without it the test says so and passes.
-#![allow(clippy::unwrap_used, clippy::expect_used, unsafe_code)]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -36,8 +36,7 @@ fn wait_for(what: &str, mut ok: impl FnMut() -> bool) {
 /// A signed-in core with its own config directory (so its own device id).
 fn client(dir: &std::path::Path, addr: &str) -> Arc<Core> {
     let _ = std::fs::remove_dir_all(dir);
-    // SAFETY-free: the variable is read when the core opens; the test is single-threaded up to here.
-    unsafe { std::env::set_var("SWIFTLY_CONFIG_DIR", dir) };
+    swiftly_desktop::store::set_config_dir_override(dir);
     let core = Arc::new(Core::open().expect("core"));
     let backend = core.sign_in_backend();
     let wait = Duration::from_secs(30);

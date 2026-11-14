@@ -1759,7 +1759,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
 }
 
 /// The offer row above the account card (`OfferingRow`): a capsule 40 high in accent at 18 % over `reason`, the icon, the
-/// title (13 semibold) with what runs under it (12, very quiet), and from two entries a counter capsule in accent. It
+/// title (13 medium) with what runs under it (12, very quiet), and from two entries a counter capsule in accent. It
 /// sits `BADGE_EDGE` from the sidebar's edges; a click reports `go:offer`. Empty when nothing is on offer.
 fn offer_row(cx: &Cx, offer: Option<&crate::desk::Offer>, icons: &Icons) -> Node {
     let Some(o) = offer else {
@@ -1775,7 +1775,13 @@ fn offer_row(cx: &Cx, offer: Option<&crate::desk::Offer>, icons: &Icons) -> Node
     let mut cells = vec![
         icons
             .node(&o.symbol, 17.0, true, accent)
-            .frame(Some(20.0), None, Alignment::CENTER),
+            .frame(Some(20.0), None, Alignment::CENTER)
+            .padding(EdgeInsets {
+                top: 0.0,
+                leading: 0.0,
+                bottom: 0.0,
+                trailing: 10.0,
+            }),
         Node::vstack(
             Align::Start,
             Some(1.0),
@@ -1783,11 +1789,13 @@ fn offer_row(cx: &Cx, offer: Option<&crate::desk::Offer>, icons: &Icons) -> Node
                 text(
                     cx,
                     &o.title,
-                    st(13.0, 600),
+                    // `Theme.tileTitleText`: 13 medium (semibold made "Hier weiterschauen" 2 pt too wide for the row).
+                    st(13.0, 500),
                     colour::MARK_ACCENT,
                     Some(1),
                     swiftly_text::Align::Start,
-                ),
+                )
+                .key("offer-title"),
                 text(
                     cx,
                     &o.under,
@@ -1795,11 +1803,14 @@ fn offer_row(cx: &Cx, offer: Option<&crate::desk::Offer>, icons: &Icons) -> Node
                     colour::FONT_VERY_QUIET,
                     Some(1),
                     swiftly_text::Align::Start,
-                ),
+                )
+                .key("offer-under"),
             ],
         )
         .layout_priority(1.0),
-        Node::spacer(),
+        // No minimum: the default 8 pt of a spacer was taken off the title's room before it was asked (the title was cut
+        // to "Hier..." with room to spare).
+        Node::spacer_min(0.0),
     ];
     if o.count > 1 {
         cells.push(
@@ -1818,11 +1829,17 @@ fn offer_row(cx: &Cx, offer: Option<&crate::desk::Offer>, icons: &Icons) -> Node
                 align: Some(Alignment::CENTER),
                 ..FlexFrame::default()
             })
-            .background(Node::rect(accent, 10.0), Alignment::CENTER),
+            .background(Node::rect(accent, 10.0), Alignment::CENTER)
+            .padding(EdgeInsets {
+                top: 0.0,
+                leading: 10.0,
+                bottom: 0.0,
+                trailing: 0.0,
+            }),
         );
     }
     let trailing = if o.count > 1 { 10.0 } else { 14.0 };
-    let capsule = Node::hstack(Align::Center, Some(10.0), cells)
+    let capsule = Node::hstack(Align::Center, Some(0.0), cells)
         .padding(EdgeInsets {
             top: 0.0,
             leading: 14.0,

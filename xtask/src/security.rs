@@ -19,6 +19,14 @@ const UNSAFE_ALLOWED: &[&str] = &[
     // The Windows window shell: the class brush behind the window and the shell calls (each block is commented).
     "crates/swiftly-desktop/src/win_backdrop.rs",
     "crates/swiftly-desktop/src/win_shell.rs",
+    // Single calls into the C library or the Windows API, each commented: the dark title bar, the local time of day,
+    // the quit guard's `_exit` and the free-space query of the downloads.
+    "crates/swiftly-desktop/src/win_dark.rs",
+    "crates/swiftly-desktop/src/local_clock.rs",
+    "crates/swiftly-desktop/src/quit_guard.rs",
+    "crates/swiftly-desktop/src/live_downloads.rs",
+    // The Wayland window icon over winit's own connection: two pointer handles, each commented.
+    "crates/swiftly-desktop/src/toplevel_icon.rs",
 ];
 
 struct Line {
@@ -216,7 +224,7 @@ fn lints(root: &Path) -> Line {
                     .take(3)
                     .any(|l| l.replace(' ', "") == "workspace=true")
             });
-            // The FFI crates (and the desktop app, for its two Windows files) cannot forbid `unsafe` (see UNSAFE_ALLOWED); they deny it per file and carry the same
+            // The FFI crates (and the desktop app, for its Windows and libc files) cannot forbid `unsafe` (see UNSAFE_ALLOWED); they deny it per file and carry the same
             // clippy set themselves.
             let own = [
                 "swiftly-android",

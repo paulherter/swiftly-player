@@ -351,6 +351,11 @@ fn backdrop(
     )
 }
 
+/// The height of the person page's header (`PersonView.headerHeight`) and of its backdrop (`headerHeight * 1.62`).
+const PERSON_BACKDROP_HEIGHT: f32 = 260.0 * 1.62;
+/// How far the page tone runs: the header plus 260 (`LinearGradient([color.audio, reason])`).
+const PERSON_TONE_HEIGHT: f32 = 260.0 + 260.0;
+
 fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
     let w = k.env.size.w;
     let edge = k.lk.edge;
@@ -397,10 +402,43 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
     )
     .padding(ins(0.0, edge, 22.0, 0.0));
     let first = p.titles.first().map_or("", |t| t.id.as_str());
+    // `PersonView.hero`: `Backdrop(url:, height: headerHeight * 1.62)` in a header of 260: the picture is `max(62 % page,
+    // 520)` wide, 421 high, runs on below the header and fades out to the left and at the foot (`BackdropsFade`). What it
+    // fades into is the page's own ground, the banner's tone running into the plain ground (see the page background below).
+    let tones = k.art.tones_for(art.banner.as_ref(), first);
+    let top = crate::detail_screen::mood_sampler(&tones, 260.0)(0.5, 0.0);
+    let ground = color(colour::REASON);
+    let sample = move |_x: f32, y: f32| {
+        let t = (y / PERSON_TONE_HEIGHT).clamp(0.0, 1.0);
+        let mix = |a: f32, b: f32| a + (b - a) * t;
+        Color::new(
+            mix(top.r, ground.r),
+            mix(top.g, ground.g),
+            mix(top.b, ground.b),
+            1.0,
+        )
+    };
+    let bw = (w * 0.62).max(520.0).min(w);
+    let hues = tones
+        .iter()
+        .fold(0u64, |a, t| a.rotate_left(7) ^ t.to_bits());
+    let backdrop_key = format!(
+        "person-backdrop:{first}:{}:{hues:x}",
+        (bw / w * 1000.0).round()
+    );
     let hero = fill_frame(block, Alignment::BOTTOM_LEADING)
         .frame(Some(w), Some(260.0), Alignment::BOTTOM_LEADING)
         .background(
-            backdrop(k, art.banner.as_ref(), first, w, 260.0, 260.0 * 1.62),
+            crate::detail_screen::faded_backdrop(
+                k,
+                art.banner.as_ref(),
+                first,
+                w,
+                bw,
+                PERSON_BACKDROP_HEIGHT,
+                &sample,
+                backdrop_key,
+            ),
             Alignment::TOP_LEADING,
         );
     let mut body = Vec::new();
@@ -537,8 +575,6 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
     }
     // The page tone runs on under the hero and fades into the ground (`LinearGradient([color.audio, reason])`, the hero's
     // height plus 260): the banner's own hue at the top, the plain ground where the rails start.
-    let tones = k.art.tones_for(art.banner.as_ref(), first);
-    let top = crate::detail_screen::mood_sampler(&tones, 260.0)(0.5, 0.0);
     let page = Node::vstack(
         Align::Start,
         Some(0.0),
@@ -557,7 +593,7 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
             top,
             color(colour::REASON),
             w,
-            260.0 + 260.0,
+            PERSON_TONE_HEIGHT,
         )
         .key("person-mood"),
         Alignment::TOP_LEADING,

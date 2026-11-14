@@ -135,13 +135,19 @@ impl VideoSurface for GpuSurface {
     }
 }
 
-/// Side of the app's image page. The poster hub takes up to 2048 rows of it and keeps 512 for icons; a 1280x720 video
+/// Width of the app's image page. The poster hub takes up to 2048 rows of it and keeps 512 for icons; a 1280x720 video
 /// frame needs 720 more, so the 2048 px default page left no room for the picture and the player stayed black.
 pub const APP_IMAGE_PAGE: u32 = 4096;
 
+/// Rows of the app's image page: the picture region (2048), the icon reserve (512), the sample picture of the subtitle
+/// page (720 and the icons that share its shelf row), and the rows kept for the episode stills (640) and the trickplay
+/// still (360). With a square 4096 page the icons of the first screens found no room (the server marks, the wordmark and
+/// the player's centre buttons stayed empty).
+pub const APP_IMAGE_ROWS: u32 = 4864;
+
 /// The shared services of the real app: the image page that posters, icons and video frames live on.
 pub fn app_cx() -> Cx {
-    let cx = Cx::new().with_image_page(APP_IMAGE_PAGE);
+    let cx = Cx::new().with_image_page_size(APP_IMAGE_PAGE, APP_IMAGE_ROWS);
     // Room for the trickplay still, kept from the start: a long session fills the rest of the page.
     cx.images.borrow_mut().keep_preview();
     // And for the sample picture of the subtitle page (it was added when the page opened, after the posters).

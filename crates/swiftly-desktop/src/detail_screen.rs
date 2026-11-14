@@ -1414,17 +1414,18 @@ fn backdrop_cover(
     sample: &dyn Fn(f32, f32) -> Color,
     page_w: f32,
     bw: f32,
+    height: f32,
 ) -> Option<ImageId> {
     const COLUMNS: usize = 96;
     let cache_key = (key, 0);
     if let Some(hit) = cx.icon_cache.borrow().get(&cache_key) {
         return *hit;
     }
-    let rows = (HERO_DESKTOP / 4.0).ceil() as usize;
+    let rows = (height / 4.0).ceil() as usize;
     let mut px = Vec::with_capacity(COLUMNS * rows * 4);
     for j in 0..rows {
         let t = j as f32 / (rows - 1) as f32;
-        let (y, v) = (t * HERO_DESKTOP, curve_at(&BACKDROP_V, t));
+        let (y, v) = (t * height, curve_at(&BACKDROP_V, t));
         for i in 0..COLUMNS {
             let x = i as f32 / (COLUMNS - 1) as f32;
             let c = sample((page_w - bw + x * bw) / page_w, y);
@@ -1440,36 +1441,61 @@ fn backdrop_cover(
 /// The Mac backdrop: the picture right aligned and 454 high, covered by the page colour with alpha `1 - h(x) * v(y)`.
 fn desktop_backdrop(k: &Kit, h: &Head, w: f32) -> Node {
     let bw = (w * 0.62).max(520.0).min(w);
-    let img = k
-        .art
-        .node_for(h.image.as_ref(), true, &h.id, bw, HERO_DESKTOP, 0.0);
     let tones = k.art.tones_for(h.image.as_ref(), &h.id);
     let sample = mood_sampler(&tones, HERO_DESKTOP);
     let hues = tones
         .iter()
         .fold(0u64, |a, t| a.rotate_left(7) ^ t.to_bits());
     let key = format!("backdrop:{}:{}:{hues:x}", h.id, (bw / w * 1000.0).round());
-    let cover = match backdrop_cover(k.cx, key, &sample, w, bw) {
-        Some(id) => Node::ramp_image(id, bw, HERO_DESKTOP),
-        None => strip_cover(&sample, w, bw),
+    faded_backdrop(
+        k,
+        h.image.as_ref(),
+        &h.id,
+        w,
+        bw,
+        HERO_DESKTOP,
+        &sample,
+        key,
+    )
+}
+
+/// A page backdrop like `Backdrop` + `BackdropsFade` on the Mac: the picture `bw` wide and `height` high, right aligned
+/// in a page `w` wide, covered by the colour the page has behind it (`sample`, at x as a fraction of the page and y in
+/// points) with alpha `1 - h(x) * v(y)`. The cover ends in the page's own colour on the left and at the foot, so no edge
+/// of the picture shows on a page that has a tint of its own.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn faded_backdrop(
+    k: &Kit,
+    image: Option<&swiftly_vm::ImageRef>,
+    id: &str,
+    w: f32,
+    bw: f32,
+    height: f32,
+    sample: &dyn Fn(f32, f32) -> Color,
+    key: String,
+) -> Node {
+    let img = k.art.node_for(image, true, id, bw, height, 0.0);
+    let cover = match backdrop_cover(k.cx, key, sample, w, bw, height) {
+        Some(id) => Node::ramp_image(id, bw, height),
+        None => strip_cover(sample, w, bw, height),
     };
     let covered = img.overlay(cover, Alignment::TOP_LEADING);
     Node::hstack(Align::Start, Some(0.0), vec![Node::spacer(), covered]).frame(
         Some(w),
-        Some(HERO_DESKTOP),
+        Some(height),
         Alignment::TOP_LEADING,
     )
 }
 
 /// The same cover as 6 point strips of horizontal gradients, for a full image page.
-fn strip_cover(sample: &dyn Fn(f32, f32) -> Color, w: f32, bw: f32) -> Node {
+fn strip_cover(sample: &dyn Fn(f32, f32) -> Color, w: f32, bw: f32, height: f32) -> Node {
     let band = 6.0_f32;
-    let n = (HERO_DESKTOP / band).ceil() as usize;
+    let n = (height / band).ceil() as usize;
     let bands: Vec<Node> = (0..n)
         .map(|i| {
-            let (y0, y1) = (i as f32 * band, ((i + 1) as f32 * band).min(HERO_DESKTOP));
+            let (y0, y1) = (i as f32 * band, ((i + 1) as f32 * band).min(height));
             let ym = (y0 + y1) * 0.5;
-            let v = curve_at(&BACKDROP_V, ym / HERO_DESKTOP);
+            let v = curve_at(&BACKDROP_V, ym / height);
             let stops: Vec<(f32, Color)> = BACKDROP_H
                 .iter()
                 .map(|&(x, a)| {
@@ -3763,6 +3789,47 @@ impl DetailScreen {
     pub fn open_sheet(&mut self, which: u8) {
         self.host.sx.sheet = which;
         self.refresh();
+    }
+}
+
+#[cfg(test)]
+mod backdrop_edge_tests {
+    use super::*;
+    use swiftly_render::Atlas;
+
+    /// The cover of a page backdrop is the page's own colour, fully opaque, on the left edge and on the foot, and clear
+    /// where the picture shows: with a tinted page ground a cover in the wrong colour left a box with hard edges.
+    #[test]
+    fn the_cover_ends_in_the_page_colour_on_the_left_and_at_the_foot() {
+        let cx = Cx::deterministic().with_image_page(512);
+        let ground = Color::new(0.40, 0.10, 0.20, 1.0);
+        let id = backdrop_cover(&cx, "edge".into(), &|_, _| ground, 1000.0, 620.0, 421.0)
+            .expect("room on the page");
+        let images = cx.images.borrow();
+        let (pw, ph) = images.page.size();
+        let (x0, y0) = (
+            (id.uv[0] * pw as f32).round() as usize,
+            (id.uv[1] * ph as f32).round() as usize,
+        );
+        let at = |col: usize, row: usize| {
+            let i = ((y0 + row) * pw as usize + x0 + col) * 4;
+            let p = &images.page.pixels()[i..i + 4];
+            (p[0], p[1], p[2], p[3])
+        };
+        let rows = (421.0_f32 / 4.0).ceil() as usize;
+        let want = (102, 26, 51);
+        for row in [0, rows / 2, rows - 1] {
+            let (r, g, b, a) = at(0, row);
+            assert_eq!((r, g, b), want, "left edge, row {row}");
+            assert_eq!(a, 255, "the left edge at row {row} is not fully covered");
+        }
+        for col in [0, 48, 95] {
+            let (r, g, b, a) = at(col, rows - 1);
+            assert_eq!((r, g, b), want, "foot, column {col}");
+            assert_eq!(a, 255, "the foot at column {col} is not fully covered");
+        }
+        // The picture shows at the right and in the upper half.
+        assert!(at(95, 0).3 < 5, "the top right is covered: {:?}", at(95, 0));
     }
 }
 

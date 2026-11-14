@@ -7,8 +7,24 @@ use std::sync::Mutex;
 use swiftly_accounts::SecretStore;
 use swiftly_library::{KeyValue, Store};
 
+/// A directory set by a test in this process (see [`set_config_dir_override`]); it wins over the environment.
+static CONFIG_DIR_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// Points [`config_dir`] at `dir` for the rest of this process (tests that open several cores with their own device
+/// ids; changing the environment of a running process is not safe, so they pass the directory here instead).
+pub fn set_config_dir_override(dir: &Path) {
+    if let Ok(mut slot) = CONFIG_DIR_OVERRIDE.lock() {
+        *slot = Some(dir.to_path_buf());
+    }
+}
+
 /// The directory with the settings (`SWIFTLY_CONFIG_DIR` overrides it, for tests and the fixture runs).
 pub fn config_dir() -> PathBuf {
+    if let Ok(slot) = CONFIG_DIR_OVERRIDE.lock()
+        && let Some(d) = slot.as_ref()
+    {
+        return d.clone();
+    }
     if let Some(d) = std::env::var_os("SWIFTLY_CONFIG_DIR") {
         return PathBuf::from(d);
     }

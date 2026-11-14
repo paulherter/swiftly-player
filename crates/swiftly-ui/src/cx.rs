@@ -58,8 +58,13 @@ pub const STILL_ROWS: u32 = 640;
 impl ImageStore {
     /// An empty `size x size` page.
     pub fn new(size: u32) -> ImageStore {
+        ImageStore::with_size(size, size)
+    }
+
+    /// An empty `width x height` page.
+    pub fn with_size(width: u32, height: u32) -> ImageStore {
         ImageStore {
-            page: PixelPage::new(size, size, AtlasFormat::Rgba8),
+            page: PixelPage::new(width, height, AtlasFormat::Rgba8),
             x: 0,
             y: 0,
             row_h: 0,
@@ -68,6 +73,13 @@ impl ImageStore {
             kept_rows: 0,
             stills: None,
         }
+    }
+
+    /// Rows the shelf can still use below its cursor: what is left of the page after the rows kept at the bottom for
+    /// the preview and the stills (those never count as free, whatever a caller plans to take).
+    pub fn shelf_free(&self) -> u32 {
+        let (_, ph) = self.page.size();
+        ph.saturating_sub(self.kept_rows + self.y + self.row_h)
     }
 
     /// The shelf cursor `(x, y, row height)` (tests, measuring how full the page is).
@@ -414,6 +426,14 @@ impl Cx {
     /// pictures use 4096 so a window full of posters fits next to the icons.
     pub fn with_image_page(mut self, size: u32) -> Cx {
         self.images = Rc::new(RefCell::new(ImageStore::new(size)));
+        self.icon_cache = Rc::new(RefCell::new(HashMap::new()));
+        self.memo = Rc::new(RefCell::new(HashMap::new()));
+        self
+    }
+
+    /// Like [`Cx::with_image_page`] with a page that is `width` wide and `height` rows high.
+    pub fn with_image_page_size(mut self, width: u32, height: u32) -> Cx {
+        self.images = Rc::new(RefCell::new(ImageStore::with_size(width, height)));
         self.icon_cache = Rc::new(RefCell::new(HashMap::new()));
         self.memo = Rc::new(RefCell::new(HashMap::new()));
         self

@@ -34,8 +34,9 @@ mod imp {
     pub fn day_seconds() -> f64 {
         use windows_sys::Win32::Foundation::SYSTEMTIME;
         use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+        // SAFETY: `SYSTEMTIME` is plain integers, valid when zeroed; `GetLocalTime` fills the struct it is given.
         let mut t: SYSTEMTIME = unsafe { std::mem::zeroed() };
-        // SAFETY: `GetLocalTime` fills the struct it is given.
+        // SAFETY: as above, `t` outlives the call.
         unsafe { GetLocalTime(&mut t) };
         f64::from(t.wHour) * 3600.0
             + f64::from(t.wMinute) * 60.0

@@ -82,6 +82,12 @@ pub mod title_target;
 pub mod together;
 pub mod together_socket;
 pub mod together_ui;
+#[cfg(all(
+    feature = "window",
+    unix,
+    not(any(target_os = "macos", target_os = "ios", target_os = "android"))
+))]
+pub mod toplevel_icon;
 pub mod trick_preview;
 pub mod update_check;
 #[cfg(feature = "mpv")]

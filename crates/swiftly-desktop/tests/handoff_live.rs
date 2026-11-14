@@ -2,7 +2,7 @@
 //! (`cargo xtask fixture-server`, real sockets): a device that plays is offered to the other one, the offering goes
 //! when the playback ends and also when the other device was busy with its own player meanwhile. Needs
 //! `target/debug/xtask` (`cargo build -p xtask`); without it the test says so and passes.
-#![allow(clippy::unwrap_used, clippy::expect_used, unsafe_code)]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -35,7 +35,7 @@ fn wait_for(what: &str, secs: u64, mut ok: impl FnMut() -> bool) {
 
 fn client(dir: &std::path::Path, addr: &str) -> Arc<Core> {
     let _ = std::fs::remove_dir_all(dir);
-    unsafe { std::env::set_var("SWIFTLY_CONFIG_DIR", dir) };
+    swiftly_desktop::store::set_config_dir_override(dir);
     let core = Arc::new(Core::open().expect("core"));
     let backend = core.sign_in_backend();
     let wait = Duration::from_secs(30);

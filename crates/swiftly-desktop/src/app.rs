@@ -322,6 +322,12 @@ struct App {
     /// A scale change happened: the title bar's dark mode is set again with the resize that follows it (Windows
     /// resets it while it moves the window to the new scale).
     retheme: bool,
+    /// Keeps the Wayland toplevel icon alive (the compositor needs its buffers as long as the window shows it).
+    #[cfg(all(
+        unix,
+        not(any(target_os = "macos", target_os = "ios", target_os = "android"))
+    ))]
+    toplevel_icon: Option<crate::toplevel_icon::Held>,
 }
 
 impl App {
@@ -618,6 +624,22 @@ impl ApplicationHandler<UserEvent> for App {
                 return;
             }
         };
+        // Wayland: winit has no window icon there, so a run without an installed desktop file (the unpacked tar.gz) set
+        // none; the compositor takes it through xdg-toplevel-icon-v1 where it offers that.
+        #[cfg(all(
+            unix,
+            not(any(target_os = "macos", target_os = "ios", target_os = "android"))
+        ))]
+        {
+            self.toplevel_icon =
+                crate::toplevel_icon::apply(&window, &crate::window_extras::toplevel_pictures());
+            if std::env::var_os("SWIFTLY_TRACE").is_some() {
+                eprintln!(
+                    "swiftly-desktop: toplevel icon set: {}",
+                    self.toplevel_icon.is_some()
+                );
+            }
+        }
         // The first rectangle never leaves the work area (a 1440x900 default on a 1280x800 screen) and is centred.
         #[cfg(target_os = "windows")]
         if !self.opts.offscreen {
@@ -1533,6 +1555,11 @@ pub fn run(opts: Options) -> Result<(), String> {
         retry_at: None,
         retries: 0,
         retheme: false,
+        #[cfg(all(
+            unix,
+            not(any(target_os = "macos", target_os = "ios", target_os = "android"))
+        ))]
+        toplevel_icon: None,
     };
     event_loop
         .run_app(&mut app)

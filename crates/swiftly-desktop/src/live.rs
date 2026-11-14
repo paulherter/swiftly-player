@@ -122,6 +122,18 @@ impl Drop for Core {
     }
 }
 
+/// Poster height the rails and grids ask the server for, in points: the Mac's Home rails (`HomeView`: `maxHeight: 600`;
+/// its poster grid asks 500, which this covers). The default of the core (360) is a phone's.
+pub const TILE_POSTER_HEIGHT: u32 = 600;
+/// Width of the landscape tiles' picture (`HomeView`: `landscapeImageURL(width: 1000)`).
+pub const TILE_BACKDROP_WIDTH: u32 = 1000;
+
+/// Tells the core how large the pictures of the tiles must be asked for (once, when the real app starts). The hub still
+/// raises a request to the device pixels a picture is drawn at, in steps.
+pub fn apply_tile_image_sizes() {
+    swiftly_vm::set_tile_image_sizes(TILE_POSTER_HEIGHT, TILE_BACKDROP_WIDTH);
+}
+
 impl Core {
     fn rt(&self) -> &tokio::runtime::Runtime {
         match self.rt.as_ref() {
@@ -156,6 +168,9 @@ impl Core {
             .build()
             .map_err(|e| format!("runtime: {e}"))?;
         let mock_is_none = mock.is_none();
+        if mock_is_none {
+            apply_tile_image_sizes();
+        }
         let net = Arc::new(match (mock, crate::net::host_http()) {
             (Some(m), _) => AppTransport::Mock(m),
             (None, Some(h)) => AppTransport::Host(h, rt.handle().clone()),

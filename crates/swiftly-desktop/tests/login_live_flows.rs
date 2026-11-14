@@ -97,7 +97,8 @@ impl SignInBackend for Fake {
             tx.send(end).ok()?;
             return Some(rx);
         }
-        tx.send(PlexEvent::Account("viewer@plex.test".into())).ok()?;
+        tx.send(PlexEvent::Account("viewer@plex.test".into()))
+            .ok()?;
         tx.send(PlexEvent::Profiles(self.profiles.clone())).ok()?;
         Some(rx)
     }

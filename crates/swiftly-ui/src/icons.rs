@@ -523,6 +523,10 @@ impl Icons {
             return *hit;
         }
         let id = self.cx.add_image(px, px, &make(px));
+        if id.is_none() && std::env::var_os("SWIFTLY_ICON_REPORT").is_some() {
+            let (x, y, row) = self.cx.images.borrow().cursor();
+            eprintln!("icon page full: {key} at {px} px, shelf cursor x {x} y {y} row {row}");
+        }
         self.cache.borrow_mut().insert(k, id);
         id
     }

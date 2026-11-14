@@ -358,11 +358,10 @@ impl ImageHub {
         let mut region = None;
         // The region never takes the whole page: icons, glyphs and animations that appear later (settings rows, the
         // player) are added to the same page and need room (an empty icon column in the real app otherwise).
-        let used = {
-            let (_, y, row_h) = cx.images.borrow().cursor();
-            y + row_h
-        };
-        let mut h = rows.min(page.1.saturating_sub(used + ICON_RESERVE_ROWS));
+        // The rows kept at the bottom for the preview and the stills are not free (the reserve was counted from the
+        // whole page before, so the hub's region took the rows the icons needed and the first screens drew none).
+        let free = cx.images.borrow().shelf_free();
+        let mut h = rows.min(free.saturating_sub(ICON_RESERVE_ROWS));
         while h >= 128 {
             let black = vec![0_u8; (page.0 * h * 4) as usize];
             if let Some(id) = cx.add_image(page.0, h, &black) {

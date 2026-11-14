@@ -185,7 +185,7 @@ pub use shared::{
     CurrentGroup, GroupDetail, GroupRow, HandoffEvent, HandoffStage, SharedDetail, SharedIntent,
     SharedPart, SharedVm, TakeoverPart, TakeoverRow, handoff_next, join_names, phase_text,
 };
-pub use tile::{banner_of, poster_tiles, section_cards, set_tile_image_sizes};
+pub use tile::{banner_of, poster_tiles, section_cards, set_tile_image_sizes, tile_image_sizes};
 pub use tile_details::TileDetails;
 pub use title_text::{episode_code, minutes_text, player_head};
 pub use track_names::TrackNames;

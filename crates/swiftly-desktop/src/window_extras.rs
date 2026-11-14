@@ -24,9 +24,9 @@ pub const PRODUCT_NAME: &str = "Swiftly Player";
 const ICON_256: &[u8] = include_bytes!("../assets/app-icon-256.png");
 const ICON_64: &[u8] = include_bytes!("../assets/app-icon-64.png");
 
-/// The Swiftly logo as a window icon (`small`: the 64 px picture for the title bar and taskbar corner; otherwise the large
-/// one). `None` when the embedded picture cannot be decoded.
-pub fn window_icon(small: bool) -> Option<winit::window::Icon> {
+/// The embedded logo picture (`small`: 64 px, otherwise 256 px) as straight-alpha RGBA with its size; `None` when it
+/// cannot be decoded.
+fn icon_rgba(small: bool) -> Option<(Vec<u8>, u32, u32)> {
     let mut reader =
         png::Decoder::new(std::io::Cursor::new(if small { ICON_64 } else { ICON_256 }))
             .read_info()
@@ -44,7 +44,28 @@ pub fn window_icon(small: bool) -> Option<winit::window::Icon> {
             .collect(),
         _ => return None,
     };
-    winit::window::Icon::from_rgba(rgba, info.width, info.height).ok()
+    Some((rgba, info.width, info.height))
+}
+
+/// The Swiftly logo as a window icon (`small`: the 64 px picture for the title bar and taskbar corner; otherwise the large
+/// one). `None` when the embedded picture cannot be decoded.
+pub fn window_icon(small: bool) -> Option<winit::window::Icon> {
+    let (rgba, w, h) = icon_rgba(small)?;
+    winit::window::Icon::from_rgba(rgba, w, h).ok()
+}
+
+/// Both logo sizes for the Wayland toplevel icon (the compositor takes the one that fits its panel).
+#[cfg(all(
+    unix,
+    not(any(target_os = "macos", target_os = "ios", target_os = "android"))
+))]
+pub fn toplevel_pictures() -> Vec<crate::toplevel_icon::Picture> {
+    [true, false]
+        .into_iter()
+        .filter_map(icon_rgba)
+        .filter(|(_, w, h)| w == h)
+        .map(|(rgba, side, _)| crate::toplevel_icon::Picture { side, rgba })
+        .collect()
 }
 
 /// What the helper threads send into the event loop.

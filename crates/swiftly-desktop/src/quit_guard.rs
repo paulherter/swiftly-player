@@ -31,6 +31,7 @@ pub fn arm_with(seconds: f64, grace: Duration) {
 /// Ends the process without exit handlers, which are what a stuck audio library would hang in.
 #[cfg(unix)]
 fn end_now() -> ! {
+    // SAFETY: `_exit` takes an int and never returns; skipping the exit handlers is the point.
     unsafe { libc::_exit(STUCK_EXIT) }
 }
 

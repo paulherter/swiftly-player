@@ -111,3 +111,7 @@ keyring = { version = "3", default-features = false, features = ["windows-native
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_WindowsAndMessaging", "Win32_System_SystemInformation"] }
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "ios", target_os = "android"))))'.dependencies]
 souvlaki = { version = "0.9", default-features = false, features = ["use_zbus"] }
+# The window icon through xdg-toplevel-icon-v1 (winit 0.30 has no icon on Wayland); the same versions winit uses; MIT.
+wayland-client = "0.31"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }

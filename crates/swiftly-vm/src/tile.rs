@@ -111,6 +111,11 @@ pub fn set_tile_image_sizes(poster_height: u32, backdrop_width: u32) {
     );
 }
 
+/// The poster height and backdrop width tiles ask for now, in points (what [`set_tile_image_sizes`] last set).
+pub fn tile_image_sizes() -> (u32, u32) {
+    (poster_height(), backdrop_width())
+}
+
 fn poster_height() -> u32 {
     POSTER_HEIGHT_NOW.load(Ordering::Relaxed)
 }
