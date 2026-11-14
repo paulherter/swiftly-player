@@ -10,7 +10,7 @@
 #
 # What it does:
 #  1. copies the libVLC patches from ../vlckit-patches/ into
-#     <checkout>/libvlc/patches/ (0028, 0030-0034; NOT 0035-0038),
+#     <checkout>/libvlc/patches/ (0028, 0030-0034, 0039-0041; NOT 0035-0038),
 #  2. applies VLCKit-pause-without-queue.patch to the VLCKit sources,
 #  3. runs VLCKit's own compileAndBuildVLCKit.sh in Release mode.
 #

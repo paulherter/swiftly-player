@@ -1,0 +1,38 @@
+From 1eda19cf9bfa6bfe18641d80732e702848b07249 Mon Sep 17 00:00:00 2001
+From: Andrew Beveridge <andrew@beveridge.uk>
+Date: Thu, 5 Nov 2026 17:15:28 -0500
+Subject: [PATCH] contrib: ffmpeg: build the TrueHD/MLP decoder on iOS and tvOS
+
+VLCKit disables FFmpeg's MLP decoder, demuxer and parser on iOS and
+tvOS. That also removes the TrueHD decoder, so a TrueHD track plays
+silently: VLC logs "Codec 'mlpa' (TrueHD Audio) is not supported" and
+no audio decoder module matches.
+
+TrueHD is the main audio track on many Blu-ray remuxes, and the Apple TV
+cannot bitstream it, so decoding it on the device is the only way to
+play it. Decode it to PCM like the other lossless codecs, as other
+App Store players already do.
+---
+ contrib/src/ffmpeg/rules.mak | 6 ------
+ 1 file changed, 6 deletions(-)
+
+diff --git a/contrib/src/ffmpeg/rules.mak b/contrib/src/ffmpeg/rules.mak
+index eda36c50f3..0b5dec8c35 100644
+--- a/contrib/src/ffmpeg/rules.mak
++++ b/contrib/src/ffmpeg/rules.mak
+@@ -41,12 +41,6 @@ FFMPEGCONF = --prefix="$(PREFIX)" --enable-static --disable-shared \
+ ifdef HAVE_DARWIN_OS
+ FFMPEGCONF += \
+ 	--disable-securetransport
+-ifdef HAVE_IOS
+-FFMPEGCONF += \
+-	--disable-decoder=mlp \
+-	--disable-demuxer=mlp \
+-	--disable-parser=mlp
+-endif
+ endif
+ 
+ ifdef ENABLE_PDB
+-- 
+2.54.0 (Apple Git-157)
+

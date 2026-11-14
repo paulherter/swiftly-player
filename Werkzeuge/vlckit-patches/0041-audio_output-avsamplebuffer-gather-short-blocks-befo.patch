@@ -1,0 +1,101 @@
+From a22fd883e16d147d23d1954f3bd3884b67b86266 Mon Sep 17 00:00:00 2001
+From: Andrew Beveridge <andrew@beveridge.uk>
+Date: Thu, 5 Nov 2026 17:55:52 -0500
+Subject: [PATCH] audio_output: avsamplebuffer: gather short blocks before
+ enqueueing
+
+A TrueHD access unit is 40 samples, 0.83 ms at 48 kHz. Each decoded
+block became its own CMSampleBuffer, and on tvOS AVSampleBufferAudioRenderer
+played these sub-millisecond buffers as silence, although the decoded
+audio was correct (the same chain written with the afile output had sound
+on all channels).
+
+Gather consecutive short blocks into one sample buffer of at least 1024
+frames, waiting at most 40 ms for more. Blocks that are already long
+enough (AC-3, E-AC-3, DTS) are enqueued unchanged.
+---
+ modules/audio_output/apple/avsamplebuffer.m | 61 +++++++++++++++++++--
+ 1 file changed, 57 insertions(+), 4 deletions(-)
+
+diff --git a/modules/audio_output/apple/avsamplebuffer.m b/modules/audio_output/apple/avsamplebuffer.m
+index 59609d59c5..4c5c25e5a0 100644
+--- a/modules/audio_output/apple/avsamplebuffer.m
++++ b/modules/audio_output/apple/avsamplebuffer.m
+@@ -271,6 +271,60 @@ - (void)startNow:(vlc_tick_t)delta
+     }];
+ }
+ 
++/* Some codecs decode to very short blocks: a TrueHD access unit is 40
++ * samples (0.83 ms at 48 kHz). Enqueued one by one, such blocks reach the
++ * renderer as sub-millisecond sample buffers, and AVSampleBufferAudioRenderer
++ * then plays silence on tvOS. Short blocks are therefore gathered into one
++ * buffer of at least this many frames. Blocks that are long enough on their
++ * own are enqueued unchanged. */
++#define MIN_BUFFER_FRAMES 1024
++#define MIN_BUFFER_WAIT VLC_TICK_FROM_MS(40)
++
++- (block_t *)dequeueBlock
++{
++    /* Called with _bufferLock held and _outChain not empty */
++    if (_outChain->i_nb_samples < MIN_BUFFER_FRAMES)
++    {
++        /* Wait briefly for more blocks, without delaying the end of a stream */
++        vlc_tick_t deadline = vlc_tick_now() + MIN_BUFFER_WAIT;
++        for (;;)
++        {
++            unsigned queued = 0;
++            for (block_t *b = _outChain; b != NULL; b = b->p_next)
++                queued += b->i_nb_samples;
++            if (queued >= MIN_BUFFER_FRAMES || _stopped
++             || vlc_cond_timedwait(&_bufferWait, &_bufferLock, deadline) != 0)
++                break;
++            if (_outChain == NULL)
++                return NULL; /* flushed while waiting */
++        }
++        if (_stopped || _outChain == NULL)
++            return NULL;
++    }
++
++    block_t *first = _outChain;
++    block_t *last = first;
++    unsigned frames = first->i_nb_samples;
++    while (frames < MIN_BUFFER_FRAMES && last->p_next != NULL)
++    {
++        last = last->p_next;
++        frames += last->i_nb_samples;
++    }
++
++    _outChain = last->p_next;
++    if (_outChain == NULL)
++        _outChainLast = &_outChain;
++    last->p_next = NULL;
++
++    if (first == last)
++        return first;
++
++    block_t *gathered = block_ChainGather(first);
++    if (gathered != NULL)
++        gathered->i_nb_samples = frames;
++    return gathered;
++}
++
+ - (void)whenDataReady
+ {
+     vlc_mutex_lock(&_bufferLock);
+@@ -322,10 +376,9 @@ - (void)whenDataReady
+             return;
+         }
+ 
+-        block_t *block = _outChain;
+-        _outChain = _outChain->p_next;
+-        if (_outChain == NULL)
+-            _outChainLast = &_outChain;
++        block_t *block = [self dequeueBlock];
++        if (block == NULL)
++            continue; /* flushed or stopped while gathering */
+ 
+         CMSampleBufferRef buffer = [self wrapBuffer:&block];
+         if (buffer == nil)
+-- 
+2.54.0 (Apple Git-157)
+
