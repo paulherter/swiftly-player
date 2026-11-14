@@ -18,7 +18,8 @@ use swiftly_downloads::item::{audio_streams, first_source};
 use swiftly_downloads::load_selection::SeasonRight;
 use swiftly_downloads::{
     Art, AudioStream, CheckboxState, DownloadAudioChoice, DownloadAudioOption, DownloadItem,
-    DownloadRules, DownloadState, FootSpace, LoadSelection,
+    DownloadManagerState as DownloadManager, DownloadRules, DownloadState, FootSpace,
+    LoadSelection,
 };
 use swiftly_layout::{Align, Alignment, Axis, Rect, Size};
 use swiftly_model::Item;
@@ -30,6 +31,65 @@ use swiftly_ui::icons::Icons;
 use swiftly_ui::popover::{Anchor, MenuEntry, MenuItem};
 use swiftly_ui::{Action, Cx, Env, Node, Paint, PressStyle, feel};
 use swiftly_vm::{DownloadsIntent, DownloadsVm};
+
+/// Which picture of a title a download saves along.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Look {
+    /// The poster, 600 high (a film's, a series').
+    Poster,
+    /// The wide header image of a series, for its page in Downloads.
+    Header,
+    /// The picture of an episode (its landscape still), 220 high.
+    Still,
+}
+
+/// Where the picture addresses of a download come from: the server's image rules (`AppModel.imageURL`,
+/// `headerImageURL`). Without a server (the demo, tests) it knows none and nothing is fetched along.
+#[derive(Clone, Default)]
+pub struct Pictures(Option<Source>);
+
+/// The lookup behind [`Pictures`].
+type Source = std::sync::Arc<dyn Fn(&Item, Look) -> Option<String> + Send + Sync>;
+
+impl Pictures {
+    /// Pictures from `f`.
+    pub fn new(f: impl Fn(&Item, Look) -> Option<String> + Send + Sync + 'static) -> Pictures {
+        Pictures(Some(std::sync::Arc::new(f)))
+    }
+
+    /// The address of the `look` picture of `item`, when the server has one.
+    pub fn address(&self, item: &Item, look: Look) -> Option<String> {
+        self.0.as_ref().and_then(|f| f(item, look))
+    }
+
+    /// What the season sheet hands the engine to save along (`SeriesView.loadImages`): the series poster, its wide header
+    /// under the header key, and the still of every chosen episode. Offline the rows then show pictures.
+    pub fn for_episodes(&self, series: &Item, episodes: &[&Item]) -> HashMap<String, String> {
+        let mut out = HashMap::new();
+        if let Some(poster) = self.address(series, Look::Poster) {
+            out.insert(series.id.clone(), poster);
+        }
+        if let Some(header) = self.address(series, Look::Header) {
+            out.insert(DownloadManager::header_key(&series.id), header);
+        }
+        for e in episodes {
+            if let Some(still) = self.address(e, Look::Still) {
+                out.insert(e.id.clone(), still);
+            }
+        }
+        out
+    }
+}
+
+impl std::fmt::Debug for Pictures {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() {
+            "Pictures(server)"
+        } else {
+            "Pictures(none)"
+        })
+    }
+}
 
 /// What a download button asks the Downloads page for.
 #[derive(Clone, Debug)]
@@ -65,6 +125,8 @@ pub enum LoadRequest {
         quality_select: bool,
         /// The button the sheet grows out of (window points); `None` centres it.
         anchor: Option<Rect>,
+        /// The picture addresses the chosen episodes save along.
+        pictures: Pictures,
     },
 }
 
@@ -396,6 +458,7 @@ pub(crate) struct SeasonSheet {
     stored: HashMap<String, DownloadState>,
     select_quality: bool,
     pub anchor: Option<Rect>,
+    pictures: Pictures,
 }
 
 impl SeasonSheet {
@@ -406,6 +469,7 @@ impl SeasonSheet {
         episodes: HashMap<String, Vec<Item>>,
         select_quality: bool,
         anchor: Option<Rect>,
+        pictures: Pictures,
     ) -> SeasonSheet {
         let ids = seasons.iter().map(|s| s.id.clone()).collect();
         let mut sel = LoadSelection::new(ids, episodes);
@@ -422,6 +486,7 @@ impl SeasonSheet {
             stored: HashMap::new(),
             select_quality,
             anchor,
+            pictures,
         }
     }
 
@@ -510,9 +575,12 @@ impl SeasonSheet {
         } else if k == "go" {
             let items = self.items(now);
             if !items.is_empty() {
+                let images = self
+                    .pictures
+                    .for_episodes(&self.series, &self.sel.selected_episodes());
                 let _ = vm.send(DownloadsIntent::Start {
                     items,
-                    images: HashMap::new(),
+                    images,
                     check_space: true,
                 });
             }

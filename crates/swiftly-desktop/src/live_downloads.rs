@@ -4,6 +4,8 @@
 
 use crate::downloads_screen::Dyn;
 use crate::live::Core;
+use crate::load_sheets::Look;
+use crate::load_sheets::Pictures;
 use crate::net_watch::{Pump, SystemWatcher};
 use crate::store::config_dir;
 use std::collections::HashMap;
@@ -580,6 +582,7 @@ pub fn shared(core: &Core, account: &AccountRef) -> DownloadsVm<Dyn> {
     if let Some((k, vm)) = slot.as_ref()
         && *k == key
     {
+        catch_up_covers(core, account, vm);
         return vm.clone();
     }
     let resolver = resolver_for(core, account);
@@ -592,8 +595,89 @@ pub fn shared(core: &Core, account: &AccountRef) -> DownloadsVm<Dyn> {
     );
     // The stored "Nur über WLAN" and "Nächste Folge laden" go to the engine (`AppModel.init` does this on the Mac).
     crate::settings_run::push_download_settings(&vm, &*core.settings);
+    catch_up_covers(core, account, &vm);
     *slot = Some((key, vm.clone()));
     vm
+}
+
+/// The poster of title `id` as the Mac's fallback asks for it (`AppModel.posterURL(itemID:)`: the primary picture, 300 high,
+/// no tag).
+fn bare_poster_address<T: swiftly_net::HttpTransport + 'static>(
+    server: &ServerClient<T>,
+    id: &str,
+) -> Option<String> {
+    use swiftly_images::{ImageAddress, ImageKind, ImageMetric, Url};
+    let token = server.current_session()?.access_token;
+    let base = Url::parse(&server.base_url()).ok()?;
+    ImageAddress::new(base, Some(token), server.kind())
+        .construct(id, ImageKind::Poster, None, ImageMetric::AtMostHigh(300))
+        .map(|u| u.to_string())
+}
+
+/// The saved covers `items` lack, as (file name, address) pairs: a title's own picture and its series' poster, each once.
+/// A title the engine saved nothing for (downloaded before the pictures went along, or the fetch failed) gets the online
+/// poster the Mac shows instead (`MacDownloads.imageAddressValue`).
+fn missing_covers(
+    dir: &Path,
+    items: &[DownloadItem],
+    address: &dyn Fn(&str) -> Option<String>,
+) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for item in items {
+        for id in std::iter::once(&item.id).chain(item.series_identifier.as_ref()) {
+            let name = DownloadItem::image_name(&item.account, id);
+            if dir.join(&name).exists() || out.iter().any(|(n, _)| *n == name) {
+                continue;
+            }
+            if let Some(url) = address(id) {
+                out.push((name, url));
+            }
+        }
+    }
+    out
+}
+
+/// Saves the online poster of every download that has no saved cover (see [`missing_covers`]), in the background. The page
+/// reads the file from disk, so the row shows the picture from the next look on, and offline from then on too.
+fn catch_up_covers(core: &Core, account: &AccountRef, vm: &DownloadsVm<Dyn>) {
+    static ASKED: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
+    let Ok(server) = core.server_for(account) else {
+        return;
+    };
+    let dir = downloads_dir();
+    let lacking = missing_covers(&dir, &vm.entries(), &|id| bare_poster_address(&server, id));
+    let asked = ASKED.get_or_init(Default::default);
+    let lacking: Vec<(String, String)> = lacking
+        .into_iter()
+        .filter(|(name, _)| {
+            asked
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(name.clone())
+        })
+        .collect();
+    if lacking.is_empty() {
+        return;
+    }
+    core.spawn(async move {
+        let http = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(60))
+            .build()
+            .unwrap_or_default();
+        for (name, url) in lacking {
+            let Ok(r) = http.get(&url).send().await else {
+                continue;
+            };
+            if !r.status().is_success() {
+                continue;
+            }
+            if let Ok(bytes) = r.bytes().await {
+                let _ = std::fs::create_dir_all(&dir);
+                let _ = swiftly_atomic::write(&dir.join(&name), &bytes);
+            }
+        }
+    });
 }
 
 /// The finished download `id` of `account`: the item and the path of its file.
@@ -614,6 +698,14 @@ pub trait SeasonSource: Send + Sync {
     fn seasons(&self, series: &str) -> Option<Vec<swiftly_model::Item>>;
     /// The episodes of one season, with their media sources (`None`: the request failed).
     fn episodes(&self, series: &str, season: &str) -> Option<Vec<swiftly_model::Item>>;
+    /// The series itself, with its image tags (`None`: not known; its pictures are then not saved along).
+    fn series(&self, _series: &str) -> Option<swiftly_model::Item> {
+        None
+    }
+    /// The address of a picture of `item` (`None`: no server, or it has no such picture).
+    fn address(&self, _item: &swiftly_model::Item, _look: Look) -> Option<String> {
+        None
+    }
 }
 
 /// The seasons and episodes of a series from the account's server, whatever its kind (Jellyfin/Emby `Shows/{id}/...`,
@@ -639,10 +731,22 @@ impl SeasonSource for ServerSeasons {
                 .ok(),
         }
     }
+    fn series(&self, series: &str) -> Option<swiftly_model::Item> {
+        self.rt
+            .block_on(crate::live_server::item(&self.client, series))
+            .ok()
+    }
+    fn address(&self, item: &swiftly_model::Item, look: Look) -> Option<String> {
+        picture_address(&self.client, item, look)
+    }
 }
 
 enum Msg {
-    Seasons(Option<Vec<swiftly_model::Item>>),
+    /// The seasons, and the series item when the server gave it.
+    Seasons(
+        Option<Vec<swiftly_model::Item>>,
+        Option<Box<swiftly_model::Item>>,
+    ),
     Episodes(String, Option<Vec<swiftly_model::Item>>),
 }
 
@@ -666,6 +770,7 @@ pub struct SeasonRead {
     series: swiftly_model::Item,
     account: String,
     anchor: Option<swiftly_layout::Rect>,
+    pictures: Pictures,
     tx: std::sync::mpsc::Sender<Msg>,
     rx: std::sync::mpsc::Receiver<Msg>,
     requested: std::collections::HashSet<String>,
@@ -689,14 +794,21 @@ impl SeasonRead {
             ..swiftly_model::Item::default()
         };
         let (src, me, out) = (Arc::clone(&source), id.to_owned(), tx.clone());
+        // The seasons and the series item (its image tags) are asked for side by side.
         std::thread::spawn(move || {
-            let _ = out.send(Msg::Seasons(src.seasons(&me)));
+            let (seasons, item) = std::thread::scope(|scope| {
+                let item = scope.spawn(|| src.series(&me));
+                (src.seasons(&me), item.join().ok().flatten())
+            });
+            let _ = out.send(Msg::Seasons(seasons, item.map(Box::new)));
         });
+        let for_pictures = Arc::clone(&source);
         SeasonRead {
             source,
             series,
             account: account.to_owned(),
             anchor,
+            pictures: Pictures::new(move |item, look| for_pictures.address(item, look)),
             tx,
             rx,
             requested: Default::default(),
@@ -711,8 +823,15 @@ impl SeasonRead {
         let mut out = SeasonPoll::default();
         while let Ok(m) = self.rx.try_recv() {
             match m {
-                Msg::Seasons(Some(seasons)) => {
+                Msg::Seasons(Some(seasons), item) => {
                     self.opened = true;
+                    // The name the page knew stays; the item brings the image tags.
+                    if let Some(item) = item {
+                        self.series = swiftly_model::Item {
+                            name: self.series.name.clone(),
+                            ..*item
+                        };
+                    }
                     out.open = Some(crate::load_sheets::LoadRequest::Season {
                         account: self.account.clone(),
                         series: Box::new(self.series.clone()),
@@ -720,9 +839,10 @@ impl SeasonRead {
                         episodes: std::collections::HashMap::new(),
                         quality_select: true,
                         anchor: self.anchor,
+                        pictures: self.pictures.clone(),
                     });
                 }
-                Msg::Seasons(None) => out.gone = true,
+                Msg::Seasons(None, _) => out.gone = true,
                 Msg::Episodes(id, list) => {
                     self.answered += 1;
                     out.loaded.push((id, list));
@@ -816,23 +936,43 @@ pub fn film_request(
     }
 }
 
+/// The width the series' header image is asked for: what the series page of Downloads needs at 2x
+/// (`DownloadSeriesOverviewPage.headerPixel`, the Mac's 62 % hero at its minimum).
+const HEADER_PIXELS: i64 = 2016;
+
+/// The address of a picture of `item` on `server` (`AppModel.imageURL`, `headerImageURL`): what the engine fetches along
+/// as the saved cover. The image rules are the Mac's (`ImageSelection`).
+fn picture_address<T: swiftly_net::HttpTransport + 'static>(
+    server: &ServerClient<T>,
+    item: &swiftly_model::Item,
+    look: Look,
+) -> Option<String> {
+    use swiftly_images::{ImageAddress, ImageKind, ImageMetric, ImageSelection, Url};
+    let token = server.current_session()?.access_token;
+    let base = Url::parse(&server.base_url()).ok()?;
+    let addresses = ImageAddress::new(base, Some(token), server.kind());
+    match look {
+        Look::Poster => ImageSelection::portrait(item, &addresses, 600),
+        Look::Header => ImageSelection::header(item, &addresses, HEADER_PIXELS),
+        Look::Still => {
+            let mark = item.image_tags.as_ref()?.get("Primary")?.clone();
+            addresses.construct(
+                &item.id,
+                ImageKind::Poster,
+                Some(&mark),
+                ImageMetric::AtMostHigh(220),
+            )
+        }
+    }
+    .map(|u| u.to_string())
+}
+
 /// The poster address of `item` on `server` (`AppModel.posterURL`): what the engine fetches along as the saved cover.
 fn poster_address<T: swiftly_net::HttpTransport + 'static>(
     server: &ServerClient<T>,
     item: &swiftly_model::Item,
 ) -> Option<String> {
-    use swiftly_images::{ImageAddress, ImageKind, ImageMetric, Url};
-    let mark = item.image_tags.as_ref()?.get("Primary")?.clone();
-    let token = server.current_session()?.access_token;
-    let base = Url::parse(&server.base_url()).ok()?;
-    ImageAddress::new(base, Some(token), server.kind())
-        .construct(
-            &item.id,
-            ImageKind::Poster,
-            Some(&mark),
-            ImageMetric::AtMostHigh(600),
-        )
-        .map(|u| u.to_string())
+    picture_address(server, item, Look::Poster)
 }
 
 /// The live read behind a film's "Laden": the item comes off-thread, then `poll` yields the request once.
@@ -885,6 +1025,31 @@ mod tests {
     use std::net::TcpListener;
     use swiftly_downloads::DownloadState;
     use swiftly_vm::RowState;
+
+    #[test]
+    fn a_title_without_a_saved_cover_gets_the_online_poster_once() {
+        let dir = std::env::temp_dir().join(format!("swiftly-catchup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut a = DownloadItem::new("e1", "acc", Art::Episode, "Folge 1", 1, 1.0);
+        a.series_identifier = Some("s1".into());
+        let mut b = DownloadItem::new("e2", "acc", Art::Episode, "Folge 2", 1, 1.0);
+        b.series_identifier = Some("s1".into());
+        let film = DownloadItem::new("f1", "acc", Art::Film, "Film", 1, 1.0);
+        // The film's cover is there already.
+        std::fs::write(dir.join(DownloadItem::image_name("acc", "f1")), b"x").unwrap();
+        let url = |id: &str| Some(format!("http://s/{id}.jpg"));
+        let got = missing_covers(&dir, &[a, b, film], &url);
+        let ids: Vec<&str> = got.iter().map(|(_, u)| u.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["http://s/e1.jpg", "http://s/s1.jpg", "http://s/e2.jpg"],
+            "each missing picture once, the series poster shared, the film left alone"
+        );
+        assert_eq!(got[0].0, DownloadItem::image_name("acc", "e1"));
+        assert!(missing_covers(&dir, &[], &url).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_film_request_carries_size_source_and_audio_of_the_live_item() {

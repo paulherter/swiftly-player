@@ -11,6 +11,13 @@ use winit::window::{Fullscreen, Theme, Window};
 /// Smallest inner size (points); below this the layouts do not fit.
 pub const MIN_SIZE: (f64, f64) = (900.0, 560.0);
 
+/// Whether a press may hand the mouse to the system (a move or resize drag of the window). A script's press is no real
+/// button: the system would wait in its own modal loop for a release that never comes, and that loop does not return to
+/// the app, not even to quit. So only a real press starts a system drag.
+pub fn system_drag_allowed(synthetic: bool) -> bool {
+    !synthetic
+}
+
 /// Smallest inner size of the phone, pad and tv forms (development windows of the other layouts).
 pub const MIN_SIZE_SMALL: (f64, f64) = (360.0, 360.0);
 
@@ -253,6 +260,12 @@ pub fn apply(action: Action, window: &Window, shell: &mut Shell, now: f64) -> bo
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_scripted_press_never_starts_a_system_drag() {
+        assert!(!super::system_drag_allowed(true));
+        assert!(super::system_drag_allowed(false));
+    }
+
     #[test]
     fn fullscreen_from_a_maximised_windows_window_starts_normal_and_leaving_maximises_again() {
         use FullscreenStep::*;

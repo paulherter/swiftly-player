@@ -26,8 +26,8 @@ use swiftly_vm::{
     StoragePart,
 };
 
-pub use crate::load_sheets::LoadRequest;
 use crate::load_sheets::{AddSheet, SeasonSheet, Sheet};
+pub use crate::load_sheets::{LoadRequest, Look, Pictures};
 
 #[path = "downloads_widgets.rs"]
 mod widgets;
@@ -1026,18 +1026,9 @@ fn series_hero(cx: &Cx, env: &Env, f: &Fm, p: &Parts, ctx: &Ctx, id: &str, title
         ],
     )
     .padding(ins(52.0 + 98.0, 36.0, 0.0, 0.0));
-    let back = forms::tappable(
-        ctx.icons
-            .node("caret-left", 20.0, true, color(colour::FONT))
-            .frame(Some(44.0), Some(44.0), Alignment::CENTER)
-            .a11y_label(swiftly_ui::a11y::Role::Button, "Zurück"),
-        f,
-        "back",
-        22.0,
-    )
-    .padding(ins(10.0, 24.0, 0.0, 0.0));
+    // No back control of its own: the window's back button (and Esc, the mouse back button) is the one way back, as on the
+    // Mac, where the pushed `DownloadSeriesOverviewPage` has only the toolbar's chevron (`go_back` closes the page).
     base.overlay(block, Alignment::TOP_LEADING)
-        .overlay(back, Alignment::TOP_LEADING)
 }
 
 /// The hero title style (30 bold, tracking -0.5) scaled down so the line fits `width`, never below `min` of its size.
@@ -1450,6 +1441,7 @@ impl DownloadsScreen {
                 episodes,
                 quality_select,
                 anchor,
+                pictures,
             } => Sheet::Season(Box::new(SeasonSheet::new(
                 account,
                 *series,
@@ -1457,6 +1449,7 @@ impl DownloadsScreen {
                 episodes,
                 quality_select,
                 anchor,
+                pictures,
             ))),
         });
         self.sheet_dirty = true;
@@ -1577,10 +1570,6 @@ impl DownloadsScreen {
 
     fn tapped(&mut self, a: &Action) {
         let is = |s: &str| *a == Action::from(s);
-        if is("back") {
-            self.back(0.0);
-            return;
-        }
         if *a == popover::DISMISS {
             self.menu.close();
             return;

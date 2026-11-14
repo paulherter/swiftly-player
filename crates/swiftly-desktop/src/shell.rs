@@ -52,6 +52,8 @@ pub struct Shell {
     notch: (swiftly_motion::NotchGlide, swiftly_motion::NotchGlide),
     /// Until when (ms) line wheel events count as a precision touchpad's.
     precise_until: f64,
+    /// Shift is held: a vertical wheel turns sideways (AppKit does this for every app on the Mac).
+    shift: bool,
 }
 
 fn env_for(size_px: (u32, u32), scale: f32) -> Env {
@@ -87,6 +89,7 @@ impl Shell {
             auto: None,
             notch: Default::default(),
             precise_until: f64::NEG_INFINITY,
+            shift: false,
         }
     }
 
@@ -478,6 +481,25 @@ impl Shell {
         self.pressed
     }
 
+    /// Shift went down or up. With it held, a vertical wheel scrolls sideways: AppKit turns Shift + wheel into a horizontal
+    /// scroll for every app, Windows and Linux leave that to the app.
+    pub fn set_shift(&mut self, on: bool) {
+        self.shift = on;
+    }
+
+    /// `delta` as the scroll views get it: with Shift held a vertical wheel (or touchpad) delta becomes the horizontal
+    /// one. A delta that already moves sideways stays as it is.
+    fn shifted(&self, delta: WheelDelta) -> WheelDelta {
+        let (WheelDelta::Lines(x, y) | WheelDelta::Points(x, y)) = delta;
+        if !self.shift || y.abs() <= x.abs() {
+            return delta;
+        }
+        match delta {
+            WheelDelta::Lines(..) => WheelDelta::Lines(y, 0.0),
+            WheelDelta::Points(..) => WheelDelta::Points(y, 0.0),
+        }
+    }
+
     /// A wheel or touchpad scroll event. Ignored while a button is held.
     pub fn wheel(&mut self, delta: WheelDelta, phase: Option<WheelPhase>, now: f64) {
         if self.pressed {
@@ -494,6 +516,7 @@ impl Shell {
         {
             return;
         }
+        let delta = self.shifted(delta);
         // A mouse wheel notch moves the view under the pointer by the OS's profile (Windows 100 px, Linux viewport^(2/3)),
         // clamped, with no rubber band; a touchpad keeps the Mac's momentum model below.
         if let (WheelDelta::Lines(dx, dy), Some(s)) =

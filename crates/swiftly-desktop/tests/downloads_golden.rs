@@ -227,6 +227,7 @@ fn season_request() -> LoadRequest {
         episodes,
         quality_select: false,
         anchor: None,
+        pictures: Default::default(),
     }
 }
 
@@ -328,6 +329,7 @@ fn a_failed_season_does_not_stand_empty() {
         episodes: HashMap::new(),
         quality_select: false,
         anchor: None,
+        pictures: Default::default(),
     });
     d.season_loaded("x", None);
     d.season_finished();
@@ -544,6 +546,7 @@ fn the_season_sheet_grows_out_of_its_button() {
         episodes,
         quality_select,
         anchor: Some(swiftly_layout::Rect::new(60.0, 120.0, 150.0, 40.0)),
+        pictures: Default::default(),
     });
     // It starts small and see-through and settles (the leap curve), the card is at its place then.
     let early = shoot(&mut d, &mut now, 40.0);
@@ -601,4 +604,36 @@ fn rows_take_tab_and_return_and_the_series_page_goes_back_when_empty() {
     now += 20.0;
     let _ = d.frame(now);
     assert_eq!(d.series(), None, "the page went back");
+}
+
+/// The series page has no back control of its own: the window's back button is the one way back (the Mac's pushed page has
+/// only the toolbar's chevron). Two arrows on top of each other were seen on the page's top left corner.
+#[test]
+fn the_series_page_has_no_back_button_of_its_own() {
+    let mut now = 0.0;
+    let mut d = DownloadsScreen::new(mac(), Cx::deterministic(), Scenario::Mixed);
+    let _ = shoot(&mut d, &mut now, 300.0);
+    let id = d
+        .vm()
+        .list()
+        .rows
+        .iter()
+        .find(|r| r.items.len() > 1)
+        .map(|r| r.id.clone())
+        .unwrap_or_default();
+    assert!(
+        !labels(&d).iter().any(|(l, _)| l == "Zurück"),
+        "the list has no back button either"
+    );
+    d.press(&format!("grp:{id}"));
+    let _ = shoot(&mut d, &mut now, 900.0);
+    assert_eq!(d.series(), Some(id.as_str()));
+    assert!(
+        !labels(&d).iter().any(|(l, _)| l == "Zurück"),
+        "the series page drew its own back button next to the window's: {:?}",
+        labels(&d)
+    );
+    // The way back is the window's: it closes the series page, then the page itself.
+    assert!(d.back(now));
+    assert_eq!(d.series(), None, "back closes the series page");
 }

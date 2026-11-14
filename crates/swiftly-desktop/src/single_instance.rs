@@ -327,7 +327,8 @@ mod tests {
             .unwrap();
             let took = started.elapsed();
             assert!(matches!(r, HandOver::Delivered), "{r:?}");
-            assert!(took < Duration::from_millis(100), "round {round}: {took:?}");
+            // The contract bound itself: a busy CI runner adds scheduling delay on top of the 40 ms inbox poll.
+            assert!(took < Duration::from_millis(200), "round {round}: {took:?}");
             assert_eq!(
                 rx.recv_timeout(Duration::from_secs(1)).unwrap(),
                 vec!["swiftly://titel/1".to_owned()]

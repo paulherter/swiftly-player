@@ -13,6 +13,7 @@
 //! key NAME                 a player shortcut: Space, Left, Right, Up, Down, Enter, Escape
 //! until-label TEXT MS      wait until a control whose accessible name contains TEXT exists (at most MS, then the script stops)
 //! wheel DY                 mouse wheel, lines
+//! shift down|up            hold or release Shift (a vertical wheel then scrolls sideways)
 //! fullscreen               toggle the window's fullscreen
 //! fill-images              fill the rest of the image page, as a long session of posters and icons does
 //! shot PATH                write the frame the swapchain presents next
@@ -46,6 +47,8 @@ pub enum Step {
     UntilLabel(String, f64),
     /// Wheel lines.
     Wheel(f32),
+    /// Shift held or released.
+    Shift(bool),
     /// Text committed into the focused field.
     Type(String),
     /// One key. Lowercase names (`right`, `left`, `up`, `down`, `tab`, `enter`, `escape`) go to the shell
@@ -135,6 +138,11 @@ pub fn parse(text: &str) -> Result<Vec<Step>, String> {
             "down" => Step::Down,
             "up" => Step::Up,
             "wheel" => Step::Wheel(num(rest)? as f32),
+            "shift" => match rest.trim() {
+                "down" => Step::Shift(true),
+                "up" => Step::Shift(false),
+                _ => return Err(bad()),
+            },
             "fullscreen" => Step::Fullscreen,
             "resize" => {
                 let (w, h) = rest.trim().split_once('x').ok_or_else(bad)?;
@@ -289,6 +297,16 @@ pub fn trace_flag(name: &str, value: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shift_steps_parse() -> Result<(), String> {
+        assert_eq!(
+            parse("shift down\nwheel -3\nshift up\n")?,
+            vec![Step::Shift(true), Step::Wheel(-3.0), Step::Shift(false)]
+        );
+        assert!(parse("shift sideways\n").is_err());
+        Ok(())
+    }
 
     #[test]
     fn a_script_in_a_pause_sleeps_until_it_ends() -> Result<(), String> {

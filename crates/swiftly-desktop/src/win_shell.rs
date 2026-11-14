@@ -43,6 +43,37 @@ pub fn min_size_for_work(min: (f64, f64), work: Rect, scale: f64) -> (f64, f64) 
     )
 }
 
+/// Ends the system's modal move/size loop of `window`, if one runs: a press on the window edge or the title bar hands the
+/// mouse to the system, which loops inside the window's message handling until the button is released (or Esc is
+/// pressed). A loop that was asked to stop (`exit`) cannot return before that loop ends, so it is told to give up the way
+/// the system itself ends it: the mode is cancelled, the button counts as released and Esc is pressed.
+#[cfg(all(feature = "window", target_os = "windows"))]
+pub fn cancel_modal_loop(window: &winit::window::Window) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        PostMessageW, WM_CANCELMODE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONUP,
+    };
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    const VK_ESCAPE: usize = 0x1B;
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(h) = handle.as_raw() else {
+        return;
+    };
+    let hwnd = h.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+    // SAFETY: the handle belongs to a live window of this process; the messages carry no pointers.
+    unsafe {
+        PostMessageW(hwnd, WM_CANCELMODE, 0, 0);
+        PostMessageW(hwnd, WM_LBUTTONUP, 0, 0);
+        PostMessageW(hwnd, WM_KEYDOWN, VK_ESCAPE, 0);
+        PostMessageW(hwnd, WM_KEYUP, VK_ESCAPE, 0);
+    }
+}
+
+/// Not Windows: no modal loop to end.
+#[cfg(not(all(feature = "window", target_os = "windows")))]
+pub fn cancel_modal_loop(_window: &winit::window::Window) {}
+
 /// Lets a release exe (GUI subsystem, no console of its own) print to the terminal it was started from. A redirect the
 /// parent set up (`> file`, a pipe) is kept: attaching to the parent's console must not replace it, otherwise a log
 /// captured by a script stays empty.

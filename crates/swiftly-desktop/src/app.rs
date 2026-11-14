@@ -313,6 +313,11 @@ struct App {
     edge: Option<winit::window::ResizeDirection>,
     /// The last press on the toolbar row, for the double click that maximises.
     last_drag_press: Option<Instant>,
+    /// A script step is running: its presses are not the real button, so no window drag may follow them (the system
+    /// would wait in its move/size loop for a release that never comes, and the window could not close).
+    synthetic: bool,
+    /// The loop was asked to stop and the system's move/size loop (if any) has been told to end.
+    quit_noted: bool,
     /// The pointer in physical pixels.
     cursor_px: (f64, f64),
     /// No surface image could be had: draw again at this time (ms).
@@ -339,6 +344,7 @@ impl App {
         let now_ms = self.now();
         self.retry_at = None;
         self.run_script(event_loop, now_ms);
+        self.note_quit(event_loop);
         let Some(run) = self.run.as_mut() else { return };
         // Windows resets the dark title bar after some DPI changes and winit's `set_theme` does not repeat it.
         crate::win_dark::ensure(&run.window);
@@ -539,7 +545,9 @@ impl App {
             W::ToggleMaximize => toggle(&run.window),
             W::Close => event_loop.exit(),
             W::MoveWindow => {
-                let _ = run.window.drag_window();
+                if crate::window_rules::system_drag_allowed(self.synthetic) {
+                    let _ = run.window.drag_window();
+                }
                 run.shell.release_stale(now_ms);
             }
             W::DragMove => {
@@ -551,7 +559,9 @@ impl App {
                     toggle(&run.window);
                 } else {
                     self.last_drag_press = Some(Instant::now());
-                    let _ = run.window.drag_window();
+                    if crate::window_rules::system_drag_allowed(self.synthetic) {
+                        let _ = run.window.drag_window();
+                    }
                     // Windows runs the move in its own loop and eats the button release.
                     run.shell.release_stale(now_ms);
                 }
@@ -924,7 +934,12 @@ impl ApplicationHandler<UserEvent> for App {
                     self.input_changed();
                 }
             }
-            WindowEvent::ModifiersChanged(m) => self.mods = m.state(),
+            WindowEvent::ModifiersChanged(m) => {
+                self.mods = m.state();
+                if let Some(run) = self.run.as_mut() {
+                    run.shell.set_shift(self.mods.shift_key());
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 let text = event.text.as_ref().map(|t| t.as_str());
                 let pressed = event.state == ElementState::Pressed;
@@ -1031,6 +1046,7 @@ impl ApplicationHandler<UserEvent> for App {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let now = self.now();
+        self.note_quit(event_loop);
         let mut wake: Option<f64> = None;
         if let Some(s) = self.stats.as_mut() {
             if let Some(line) = s.report(now) {
@@ -1131,7 +1147,9 @@ impl App {
             run.shell.take_window_action();
             // A fullscreen window stays where it is; only a normal or maximised one is moved.
             if run.window.fullscreen().is_none() {
-                let _ = run.window.drag_window();
+                if crate::window_rules::system_drag_allowed(self.synthetic) {
+                    let _ = run.window.drag_window();
+                }
                 // The compositor runs the move and eats the button release.
                 run.shell.release_stale(now);
             }
@@ -1266,7 +1284,11 @@ impl App {
             "primary {pressed} at {:?} edge {:?}",
             self.cursor_px, self.edge
         ));
-        if pressed && let (Some(d), Some(run)) = (self.edge, self.run.as_ref()) {
+        // The window edge starts the system's resize, except for a script's press: it has no real button to follow.
+        if pressed
+            && crate::window_rules::system_drag_allowed(self.synthetic)
+            && let (Some(d), Some(run)) = (self.edge, self.run.as_ref())
+        {
             let _ = run.window.drag_resize_window(d);
             return;
         }
@@ -1275,6 +1297,22 @@ impl App {
         }
         self.window_actions(event_loop);
         self.input_changed();
+    }
+
+    /// The loop was asked to stop (`exit`): once, tell the system's move/size loop to end if one runs (a press on the window
+    /// edge or the title bar: that loop sits inside the window's message handling and never returns to this loop until the
+    /// button is released, so `exit` alone would wait for it) and start the clock after which the process is ended with
+    /// code 0 whatever else keeps the loop from returning.
+    fn note_quit(&mut self, event_loop: &ActiveEventLoop) {
+        if !event_loop.exiting() || self.quit_noted {
+            return;
+        }
+        self.quit_noted = true;
+        crate::script::trace("quit asked");
+        if let Some(run) = self.run.as_ref() {
+            crate::win_shell::cancel_modal_loop(&run.window);
+        }
+        crate::quit_guard::quit_asked();
     }
 
     /// Runs the script steps that are due (`--script`). Every step goes through the window's own input path.
@@ -1294,7 +1332,9 @@ impl App {
                 .as_ref()
                 .is_some_and(|n| find_label(n, text).is_some())
         };
-        for step in script.due_with(now, open, &has) {
+        let due = script.due_with(now, open, &has);
+        self.synthetic = true;
+        for step in due {
             match step {
                 Step::Key(name) => {
                     // The real keyboard path, press and release, exactly as a key event of the window arrives.
@@ -1371,6 +1411,11 @@ impl App {
                     }
                     self.input_changed();
                 }
+                Step::Shift(on) => {
+                    if let Some(run) = self.run.as_mut() {
+                        run.shell.set_shift(on);
+                    }
+                }
                 Step::Resize(w, h) => {
                     if let Some(run) = self.run.as_ref() {
                         let _ = run.window.request_inner_size(LogicalSize::new(w, h));
@@ -1413,6 +1458,7 @@ impl App {
                 Step::Wait(_) | Step::UntilPlayer(_) | Step::UntilLabel(..) => {}
             }
         }
+        self.synthetic = false;
         self.input_changed();
     }
 }
@@ -1539,6 +1585,8 @@ pub fn run(opts: Options) -> Result<(), String> {
         extras,
         edge: None,
         last_drag_press: None,
+        synthetic: false,
+        quit_noted: false,
         cursor_px: (0.0, 0.0),
         opts,
         start: Instant::now(),

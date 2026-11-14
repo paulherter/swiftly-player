@@ -995,3 +995,53 @@ fn the_players_keys_are_not_text_with_a_player_open() {
         assert!(s.player_key(k, now), "{named:?} was not used by the player");
     }
 }
+
+/// Shift + a vertical wheel over a horizontal rail scrolls the rail sideways (AppKit turns it into a horizontal scroll); the
+/// plain wheel over the same rail scrolls the page.
+#[test]
+fn shift_and_the_vertical_wheel_scroll_a_rail_sideways() {
+    let tile_y = |s: &Shell| first_tile(s).bounds.unwrap()[1];
+    let has_back_arrow = |s: &Shell| nodes(s).iter().any(|n| n.label == "Zurückblättern");
+
+    // Plain wheel over a tile: the page moves, the rail stays.
+    let mut s = shell();
+    let mut now = 0.0;
+    run(&mut s, &mut now, 600.0);
+    let (x, y) = centre(&first_tile(&s));
+    s.cursor_moved((x, y), now);
+    run(&mut s, &mut now, 400.0);
+    let rest_y = tile_y(&s);
+    s.wheel(WheelDelta::Lines(0.0, -3.0), None, now);
+    run(&mut s, &mut now, 500.0);
+    assert!(
+        (tile_y(&s) - rest_y).abs() > 20.0,
+        "the plain wheel scrolls the page"
+    );
+    assert!(!has_back_arrow(&s), "the plain wheel leaves the rail alone");
+
+    // Shift + wheel on a fresh page: the rail moves sideways, the page stays.
+    let mut s = shell();
+    let mut now = 0.0;
+    run(&mut s, &mut now, 600.0);
+    s.cursor_moved((x, y), now);
+    run(&mut s, &mut now, 400.0);
+    s.set_shift(true);
+    s.wheel(WheelDelta::Lines(0.0, -3.0), None, now);
+    run(&mut s, &mut now, 500.0);
+    assert!(
+        has_back_arrow(&s),
+        "Shift + wheel did not scroll the rail sideways"
+    );
+    assert!(
+        (tile_y(&s) - rest_y).abs() < 1.0,
+        "Shift + wheel moved the page"
+    );
+    // Shift released: the plain wheel scrolls the page again.
+    s.set_shift(false);
+    s.wheel(WheelDelta::Lines(0.0, -3.0), None, now);
+    run(&mut s, &mut now, 500.0);
+    assert!(
+        (tile_y(&s) - rest_y).abs() > 20.0,
+        "the plain wheel scrolls the page after Shift is released"
+    );
+}
