@@ -307,6 +307,14 @@ mod tests {
         };
         let (tx, rx) = std::sync::mpsc::channel();
         first.watch(move |args| tx.send(args).is_ok());
+        // One unmeasured hand-over first: the watcher thread may not be scheduled yet right after `watch`, which on a
+        // busy machine alone takes longer than the bound below.
+        let r = hand_over(&dir, &["swiftly://warm".to_owned()], Duration::from_secs(3)).unwrap();
+        assert!(matches!(r, HandOver::Delivered), "{r:?}");
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(1)).unwrap(),
+            vec!["swiftly://warm".to_owned()]
+        );
         for round in 0..5 {
             // Start at a different moment of the watcher's period each round.
             std::thread::sleep(Duration::from_millis(7 * round));
