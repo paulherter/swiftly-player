@@ -11,9 +11,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use swiftly_design::tokens::{colour, touch};
 use swiftly_downloads::{
-    Art, AudioStream, AudioTrackRules, DownloadItem, DownloadManagerState, DownloadRules,
-    DownloadState, DownloadTransport, Effect, Intent, ProgressEstimator, RunningTransfer,
-    TaskParts,
+    Art, DownloadItem, DownloadManagerState, DownloadRules, DownloadState, DownloadTransport,
+    Effect, Intent, ProgressEstimator, RunningTransfer, TaskParts,
 };
 use swiftly_l10n::Locale;
 use swiftly_layout::{Align, Alignment, Point, Rect};
@@ -49,31 +48,6 @@ impl PartialEq for SheetPart {
 
 /// How far the check circle of edit mode slides in from the leading edge: its own width and the gap.
 const CHECK_SLIDE: f32 = 28.0;
-
-pub(crate) struct NoRules;
-impl AudioTrackRules for NoRules {
-    fn language_key(&self, _: Option<&str>) -> Option<String> {
-        None
-    }
-    fn language_label(&self, _: &str) -> Option<String> {
-        None
-    }
-    fn audio_label(&self, _: Option<&str>, _: Option<&str>, _: Option<i64>) -> Option<String> {
-        None
-    }
-    fn distinct(&self, labels: Vec<String>) -> Vec<String> {
-        labels
-    }
-    fn preferred_audio_index(&self, _: &[AudioStream], _: &str) -> Option<i64> {
-        None
-    }
-    fn all_label(&self) -> String {
-        String::new()
-    }
-    fn track_word(&self) -> String {
-        String::new()
-    }
-}
 
 /// The demo transport: records nothing, runs nothing.
 #[derive(Default)]
@@ -336,20 +310,46 @@ struct Parts {
     sheet: Option<SheetPart>,
     /// The first frame is over: rings that appear from now on play the reveal.
     settled: bool,
+    /// Only the sheet draws: the page it floats over is the title page the sheet was opened from.
+    sheet_only: bool,
 }
 
 struct Ctx {
     icons: Icons,
+    /// The generated pictures of the demo list; empty over real downloads.
     posters: Vec<ImageId>,
+    /// The folder the engine saved the covers in (`MacDownloads.imageAddress`: disk first); `None` in the demo.
+    covers: Option<std::path::PathBuf>,
+    /// Covers read from disk so far, by file name (`None`: no such file).
+    loaded: std::cell::RefCell<HashMap<String, Option<ImageId>>>,
 }
 
+/// The longest edge a cover is decoded to (the row picture at 3x).
+const COVER_EDGE: u32 = 480;
+
 impl Ctx {
-    /// The picture standing in for the saved poster / still of an entry (the demo has no image source).
-    fn picture(&self, id: &str) -> Option<ImageId> {
-        let h = id.bytes().fold(7_usize, |a, b| {
-            a.wrapping_mul(31).wrapping_add(usize::from(b))
-        });
-        self.posters.get(h % self.posters.len().max(1)).copied()
+    /// The saved cover of `id` (`account`'s download folder), as the Mac shows it. Over real downloads a title without a
+    /// file gets no picture (the caller draws the ground and the symbol); only the demo list uses generated art.
+    fn picture(&self, cx: &Cx, account: &str, id: &str) -> Option<ImageId> {
+        let Some(dir) = &self.covers else {
+            let h = id.bytes().fold(7_usize, |a, b| {
+                a.wrapping_mul(31).wrapping_add(usize::from(b))
+            });
+            return self.posters.get(h % self.posters.len().max(1)).copied();
+        };
+        let name = DownloadItem::image_name(account, id);
+        if let Some(known) = self.loaded.borrow().get(&name) {
+            return *known;
+        }
+        let read = std::fs::read(dir.join(&name))
+            .ok()
+            .and_then(|b| swiftly_images::decode::decode(&b, COVER_EDGE).ok())
+            .and_then(|d| cx.add_image(d.width, d.height, &d.rgba));
+        // A file that is not there yet stays unknown, so the next frame looks again.
+        if read.is_some() || dir.join(&name).exists() {
+            self.loaded.borrow_mut().insert(name, read);
+        }
+        read
     }
 }
 
@@ -371,6 +371,8 @@ struct Line {
     menu_id: Option<String>,
     hovered: bool,
     picture: Option<String>,
+    /// The account of the download (the cover's file name).
+    account: String,
     /// Play the reveal when the ring changes state.
     reveal: bool,
 }
@@ -447,18 +449,19 @@ fn line(cx: &Cx, ctx: &Ctx, f: &Fm, env: &Env, l: &Line) -> Node {
                 .opacity(1.0, feel::leap()),
         );
     }
-    let pic = match ctx.picture(l.picture.as_deref().unwrap_or(&l.key)) {
+    let pic = match ctx.picture(cx, &l.account, l.picture.as_deref().unwrap_or(&l.key)) {
         Some(id) => Node::image(id, iw, ih, touch::CORNER_TILE),
+        // `Theme.area` and the symbol of `tileCharacter`: a series and an episode are "tv", a film "film".
         None => icons
             .node(
-                if l.landscape {
-                    "monitor-play"
+                if l.landscape || l.group {
+                    "television"
                 } else {
                     "film-strip"
                 },
                 22.0,
                 true,
-                color(colour::FONT_VERY_QUIET),
+                color(colour::FONT),
             )
             .frame(Some(iw), Some(ih), Alignment::CENTER)
             .background(
@@ -555,6 +558,16 @@ fn line(cx: &Cx, ctx: &Ctx, f: &Fm, env: &Env, l: &Line) -> Node {
     browse::wide(row, Alignment::LEADING)
 }
 
+/// The state a title's ring shows: the one the list already put the row under (`ItemRow.state`), so a finished video
+/// whose subtitles are still on their way stays "loading" in its ring as well as in its section, instead of the ring
+/// saying "on this PC" while the row still sits under "Lädt gerade". The stored item's own state is the fallback.
+fn ring_state(rows: &[DownloadRow], d: &DownloadItem) -> RowState {
+    rows.iter()
+        .flat_map(|r| r.items.iter())
+        .find(|i| i.id == d.id)
+        .map_or_else(|| RowState::from(d.state), |i| i.state)
+}
+
 /// The line of a stored title, with the estimated progress.
 fn item_line(p: &Parts, d: &DownloadItem, pick: Option<bool>, menu: bool) -> Line {
     let loaded = p
@@ -567,7 +580,7 @@ fn item_line(p: &Parts, d: &DownloadItem, pick: Option<bool>, menu: bool) -> Lin
     } else {
         d.share().map(|s| s as f32)
     };
-    let state = RowState::from(d.state);
+    let state = ring_state(&p.list.rows, d);
     Line {
         key: format!("row:{}", d.id),
         ring_key: Some(format!("ring:{}", d.id)),
@@ -583,6 +596,7 @@ fn item_line(p: &Parts, d: &DownloadItem, pick: Option<bool>, menu: bool) -> Lin
         menu_id: menu.then(|| d.id.clone()),
         hovered: p.hover.as_deref() == Some(d.id.as_str()),
         picture: Some(d.id.clone()),
+        account: d.account.clone(),
         reveal: p.settled,
     }
 }
@@ -764,7 +778,12 @@ fn body(cx: &Cx, env: &Env, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
         if done.is_empty() {
             continue;
         }
-        if r.items.len() > 1 && done.len() > 1 {
+        // `DownloadRules.grouped` decides (`MacDownloads.swift`): episodes of one series group, even a single finished one.
+        let owned: Vec<DownloadItem> = done.iter().map(|d| (*d).clone()).collect();
+        if matches!(
+            DownloadRules::grouped(&owned).as_slice(),
+            [swiftly_downloads::DownloadGroup::Series { .. }]
+        ) {
             let ids: Vec<&str> = done.iter().map(|d| d.id.as_str()).collect();
             done_rows.push(line(
                 cx,
@@ -785,7 +804,8 @@ fn body(cx: &Cx, env: &Env, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                     landscape: false,
                     menu_id: None,
                     hovered: false,
-                    picture: Some(r.id.clone()),
+                    picture: Some(r.id.strip_prefix("serie-").unwrap_or(&r.id).to_owned()),
+                    account: done.first().map(|d| d.account.clone()).unwrap_or_default(),
                     reveal: false,
                 },
             ));
@@ -878,12 +898,18 @@ fn episodes_of<'a>(p: &'a Parts, id: &str) -> Vec<&'a DownloadItem> {
     v
 }
 
-/// The label of the series button: "Abspielen S2 F6".
+/// The label of the series button ("Abspielen S2 F6", "Weiter mit ..."): the core's `Item.seriesButton`, as the Mac
+/// takes it from `DownloadRules.nextEpisode` and `TitleText`.
 fn next_label(next: Option<&DownloadItem>) -> String {
-    match next.and_then(|d| d.season.zip(d.episode)) {
-        Some((s, e)) => format!("Abspielen S{s} F{e}"),
-        None => "Abspielen".to_owned(),
-    }
+    let Some(next) = next else {
+        return "Abspielen".to_owned();
+    };
+    let list = serde_json::to_string(&[next]).unwrap_or_default();
+    let answer = swiftly_vm::download_next_episode(&list, Locale::parse("de"));
+    serde_json::from_str::<serde_json::Value>(&answer)
+        .ok()
+        .and_then(|v| v["knopftext"].as_str().map(str::to_owned))
+        .unwrap_or_else(|| "Abspielen".to_owned())
 }
 
 /// Pencil / cross and, with a selection, the trash button (`EditButton`, `MacDownloadsPage.header`).
@@ -940,7 +966,17 @@ fn series_hero(cx: &Cx, env: &Env, f: &Fm, p: &Parts, ctx: &Ctx, id: &str, title
         Node::rect(color(colour::REASON), 0.0).frame(None, Some(hero_h), Alignment::TOP_LEADING),
         Alignment::TOP_LEADING,
     );
-    if let Some(img) = ctx.picture(eps.first().map_or(id, |d| d.id.as_str())) {
+    let account = eps.first().map(|d| d.account.as_str()).unwrap_or_default();
+    let first = eps.first();
+    let sid = first
+        .and_then(|d| d.series_identifier.as_deref())
+        .unwrap_or_else(|| id.strip_prefix("serie-").unwrap_or(id));
+    // The header image of the series, else its poster, else the first episode's own picture (`headerImage`).
+    let cover = ctx
+        .picture(cx, account, &format!("{sid}-kopf"))
+        .or_else(|| ctx.picture(cx, account, sid))
+        .or_else(|| first.and_then(|d| ctx.picture(cx, account, &d.id)));
+    if let Some(img) = cover {
         let pic = Node::image(img, backdrop_w, hero_h, 0.0).opacity(0.75, Motion::Instant);
         let pic = pic
             .overlay(fade(true, 220.0, 44), Alignment::LEADING)
@@ -1044,6 +1080,12 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
         }
         None => menu,
     };
+    if p.sheet_only {
+        // The add sheet over a title page: nothing of the Downloads page itself is drawn.
+        let none = || Node::fixed(0.0, 0.0);
+        return crate::home::fill_frame(none(), Alignment::TOP_LEADING)
+            .overlay(overlay.unwrap_or_else(none), Alignment::TOP_LEADING);
+    }
     let series = p
         .series
         .as_deref()
@@ -1159,6 +1201,7 @@ pub struct DownloadsScreen {
     sheet_rev: u64,
     sheet_dirty: bool,
     settled: bool,
+    sheet_only: bool,
 }
 
 impl DownloadsScreen {
@@ -1170,7 +1213,8 @@ impl DownloadsScreen {
     /// The page for `env` over a scripted download list.
     pub fn new(env: Env, cx: Cx, scenario: Scenario) -> DownloadsScreen {
         let quiet = Arc::new(Quiet::default());
-        let machine = DownloadManagerState::new(1, true, false, Box::new(NoRules));
+        let machine =
+            DownloadManagerState::new(1, true, false, Box::new(swiftly_vm::TrackNames::german()));
         let vm = DownloadsVm::new(
             Arc::new(Dyn(Arc::clone(&quiet) as Arc<dyn DownloadTransport>)),
             quiet as Arc<dyn DownloadServices>,
@@ -1193,11 +1237,16 @@ impl DownloadsScreen {
         ] {
             let _ = vm.send(DownloadsIntent::Engine(Box::new(intent)));
         }
-        Self::over(env, cx, vm)
+        Self::build(env, cx, vm, false)
     }
 
     /// The page over a view model that is already running (the real app's file downloads).
     pub fn over(env: Env, cx: Cx, vm: DownloadsVm<Dyn>) -> DownloadsScreen {
+        Self::build(env, cx, vm, true)
+    }
+
+    /// The page over `vm`; `covers`: the pictures are the saved covers on disk (the real app), not generated demo art.
+    fn build(env: Env, cx: Cx, vm: DownloadsVm<Dyn>, covers: bool) -> DownloadsScreen {
         let items = Arc::new(vm.entries());
         let parts = Parts {
             list: vm.list(),
@@ -1211,11 +1260,17 @@ impl DownloadsScreen {
             menu: MenuController::new(),
             sheet: None,
             settled: false,
+            sheet_only: false,
         };
-        let posters = crate::art::posters(&cx);
         let ctx = Rc::new(Ctx {
             icons: Icons::new(&cx, env.scale),
-            posters,
+            posters: if covers {
+                Vec::new()
+            } else {
+                crate::art::posters(&cx)
+            },
+            covers: covers.then(crate::live_downloads::downloads_dir),
+            loaded: Default::default(),
         });
         let ui = Ui::new(
             move |p: &Parts, env: &Env, cx: &Cx| view(p, env, cx, &ctx),
@@ -1245,6 +1300,7 @@ impl DownloadsScreen {
             sheet_rev: 0,
             sheet_dirty: false,
             settled: false,
+            sheet_only: false,
         };
         s.clock(0.0);
         s.sync();
@@ -1363,6 +1419,7 @@ impl DownloadsScreen {
                 data: Arc::new(s),
             }),
             settled: self.settled,
+            sheet_only: self.sheet_only,
         });
     }
 
@@ -1404,6 +1461,17 @@ impl DownloadsScreen {
         });
         self.sheet_dirty = true;
         self.sync();
+    }
+
+    /// Draws only the sheet (it floats over the title page it was opened from, not over the Downloads page).
+    pub fn set_sheet_only(&mut self, on: bool) {
+        self.sheet_only = on;
+        self.sheet_dirty = true;
+    }
+
+    /// Whether only the sheet draws (see [`DownloadsScreen::set_sheet_only`]).
+    pub fn is_sheet_only(&self) -> bool {
+        self.sheet_only
     }
 
     /// Whether the add popover or the season sheet is open.
@@ -1792,5 +1860,127 @@ impl DownloadsScreen {
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod core_rule_tests {
+    use super::*;
+
+    #[test]
+    fn the_series_button_text_and_the_group_rule_are_the_cores() {
+        let e = episode(2, DownloadState::Done, 900_000_000);
+        assert_eq!(next_label(Some(&e)), "Abspielen S1 · F2");
+        assert_eq!(next_label(None), "Abspielen");
+        // A series with one finished episode is still a series group on the Mac (`DownloadRules.grouped`).
+        assert!(matches!(
+            DownloadRules::grouped(std::slice::from_ref(&e)).as_slice(),
+            [swiftly_downloads::DownloadGroup::Series { .. }]
+        ));
+    }
+}
+
+#[cfg(test)]
+mod cover_tests {
+    use super::*;
+
+    fn png(w: u32, h: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut e = png::Encoder::new(&mut out, w, h);
+        e.set_color(png::ColorType::Rgba);
+        e.set_depth(png::BitDepth::Eight);
+        let mut wr = e.write_header().expect("header");
+        wr.write_image_data(&vec![200u8; (w * h * 4) as usize])
+            .expect("data");
+        drop(wr);
+        out
+    }
+
+    /// Over real downloads the row picture is the cover the engine saved (`DownloadItem::image_name`), a title without a
+    /// file gets none (ground + symbol), and the generated demo posters are only for the demo list.
+    #[test]
+    fn the_row_picture_is_the_saved_cover_never_a_generated_poster() {
+        let dir = std::env::temp_dir().join(format!("swiftly-covers-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        std::fs::write(dir.join(DownloadItem::image_name("u1", "f1")), png(8, 12)).expect("cover");
+        let cx = Cx::deterministic();
+        let live = Ctx {
+            icons: Icons::new(&cx, 1.0),
+            posters: Vec::new(),
+            covers: Some(dir.clone()),
+            loaded: Default::default(),
+        };
+        assert!(
+            live.picture(&cx, "u1", "f1").is_some(),
+            "the saved cover is read"
+        );
+        assert!(
+            live.picture(&cx, "u1", "f2").is_none(),
+            "no file: no generated art"
+        );
+        assert!(
+            live.picture(&cx, "u2", "f1").is_none(),
+            "another account's cover is not shared"
+        );
+        let demo = Ctx {
+            icons: Icons::new(&cx, 1.0),
+            posters: crate::art::posters(&cx),
+            covers: None,
+            loaded: Default::default(),
+        };
+        assert!(demo.picture(&cx, "u1", "f2").is_some());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod ring_state_tests {
+    use super::*;
+    use swiftly_downloads::DownloadState;
+
+    fn row(id: &str, state: RowState) -> DownloadRow {
+        DownloadRow {
+            id: id.into(),
+            title: String::new(),
+            subtitle: None,
+            state,
+            progress: None,
+            size: String::new(),
+            items: vec![ItemRow {
+                id: id.into(),
+                title: String::new(),
+                season: None,
+                episode: None,
+                state,
+                progress: None,
+                size: String::new(),
+                progress_text: None,
+                reason: None,
+                watched: false,
+                can_pause: false,
+                can_resume: false,
+                can_cancel: false,
+                can_delete: false,
+            }],
+        }
+    }
+
+    /// The list files a finished video with pending subtitles under "loading"; its ring must say the same.
+    #[test]
+    fn the_ring_follows_the_list_row_not_the_stored_state() {
+        let mut item = DownloadItem::new("m1", "acc", Art::Film, "Film", 100, 0.0);
+        item.state = DownloadState::Done;
+        item.subtitles_pending = true;
+        let rows = [row("m1", RowState::Loading)];
+        assert_eq!(ring_state(&rows, &item), RowState::Loading);
+        assert_eq!(
+            widgets::ring_label(Some(ring_state(&rows, &item))),
+            "L\u{00E4}dt, anhalten"
+        );
+        assert_eq!(
+            ring_state(&[], &item),
+            RowState::Done,
+            "unlisted: the stored state"
+        );
     }
 }

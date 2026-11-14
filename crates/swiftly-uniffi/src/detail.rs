@@ -922,14 +922,6 @@ impl SeriesVm {
         self.vm.play_episode(&id, pick.as_deref())
     }
 
-    /// Remembers the version that plays now (`MediaSource` JSON, e.g. the player's source) so the next
-    /// episode keeps it: same name, else same resolution, else the version is asked for again. Picks made
-    /// through `play_episode`/`play_next` are remembered by themselves. `None` or bad JSON forgets.
-    pub fn keep_version(&self, source_json: Option<String>) {
-        self.vm
-            .keep_version(source_json.and_then(|j| serde_json::from_str(&j).ok()));
-    }
-
     /// The entries of the "More" panel.
     pub fn more_menu(&self) -> Vec<MenuEntry> {
         self.vm.more_menu()

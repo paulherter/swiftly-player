@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The GPU renderer of a [`DrawList`]: one instanced draw (six vertices per quad, 144-byte instances read as vertex
+//! The GPU renderer of a [`DrawList`]: one instanced draw (six vertices per quad, 176-byte instances read as vertex
 //! attributes, so it also runs on GL ES 3) with the pipeline of `quad.wgsl`. Premultiplied "over" blending in sRGB code
 //! values, like [`crate::SoftwareRenderer`]. The structure follows the Sequence Studio wgpu renderer (instance buffer
 //! that only grows, atlas pages mirrored as textures and updated by dirty rectangle); the shader is new.
@@ -11,7 +11,7 @@
 
 use crate::atlas::{Atlas, AtlasFormat};
 use crate::draw_list::{DrawList, DrawQuad, QuadKind};
-use crate::geometry::Color;
+use crate::geometry::{Color, Rect};
 use crate::image::RgbaImage;
 use crate::software::{SoftwareRenderer, Sources};
 use std::fmt;
@@ -213,9 +213,13 @@ pub struct WgpuRenderer {
     bind_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     globals: wgpu::Buffer,
+    /// Corner radius of the window outline in pixels (0 = square), see [`WgpuRenderer::set_window_corner`].
+    window_corner: f32,
     glyph_page: Option<PageTexture>,
+    color_page: Option<PageTexture>,
     image_page: Option<PageTexture>,
     dummy_glyph: PageTexture,
+    dummy_color: PageTexture,
     dummy_image: PageTexture,
     instances: Option<(wgpu::Buffer, u64)>,
     bytes: Vec<u8>,
@@ -260,6 +264,7 @@ impl WgpuRenderer {
                 },
                 tex_entry(1),
                 tex_entry(2),
+                tex_entry(4),
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -273,7 +278,7 @@ impl WgpuRenderer {
             bind_group_layouts: &[Some(&bind_layout)],
             immediate_size: 0,
         });
-        let attributes: Vec<wgpu::VertexAttribute> = (0..9)
+        let attributes: Vec<wgpu::VertexAttribute> = (0..11)
             .map(|i| wgpu::VertexAttribute {
                 format: wgpu::VertexFormat::Float32x4,
                 offset: i * 16,
@@ -334,9 +339,17 @@ impl WgpuRenderer {
             bind_layout,
             sampler,
             globals,
+            window_corner: 0.0,
             glyph_page: None,
+            color_page: None,
             image_page: None,
             dummy_glyph: make_page(device, (1, 1), AtlasFormat::R8, "dummy glyph page"),
+            dummy_color: make_page(
+                device,
+                (1, 1),
+                AtlasFormat::Rgba8,
+                "dummy colour glyph page",
+            ),
             dummy_image: make_page(device, (1, 1), AtlasFormat::Rgba8, "dummy image page"),
             instances: None,
             bytes: Vec::new(),
@@ -435,11 +448,40 @@ impl WgpuRenderer {
     ) {
         if let Some(p) = src.glyphs {
             Self::sync_page(&self.ctx, &mut self.glyph_page, p, "glyph page");
+            if let Some(c) = p.color_page() {
+                Self::sync_page(&self.ctx, &mut self.color_page, c, "colour glyph page");
+            }
         }
         if let Some(p) = src.images {
             Self::sync_page(&self.ctx, &mut self.image_page, p, "image page");
         }
+        // Behind a video the ground is black: the bars the picture leaves above and below (or left and right) of it are
+        // part of the film's frame, not of the app's window colour.
+        let clear = if self.video.is_some() {
+            Color::new(0.0, 0.0, 0.0, 1.0)
+        } else {
+            clear
+        };
         self.bytes.clear();
+        // A rounded window clears to transparent (the corners must stay so), which would leave every pixel the screen
+        // does not paint see-through: the letterbox of a video, the app's own bars when the controls are away, the
+        // whole player before its first frame. So the ground is the first quad: the clear colour over the whole
+        // window, cut to the rounded outline like every other quad. The video and the list draw over it.
+        let ground = self.window_corner > 0.0;
+        if ground {
+            let scale = list.scale();
+            let (w, h) = (size.0 as f32 / scale, size.1 as f32 / scale);
+            let mut g = DrawList::new(w, h, scale);
+            g.fill(
+                Rect::new(0.0, 0.0, w, h),
+                Color::new(clear.r, clear.g, clear.b, 1.0),
+                0.0,
+            );
+            for q in g.quads() {
+                q.write_bytes(&mut self.bytes);
+            }
+        }
+        let first = u32::from(ground);
         for q in list.quads() {
             q.write_bytes(&mut self.bytes);
         }
@@ -459,14 +501,20 @@ impl WgpuRenderer {
         if let Some((buffer, _)) = &self.instances {
             queue.write_buffer(buffer, 0, &self.bytes);
         }
-        let constants: Vec<u8> = [size.0 as f32, size.1 as f32, list.scale(), 0.0]
-            .iter()
-            .flat_map(|f| f.to_le_bytes())
-            .collect();
+        let constants: Vec<u8> = [
+            size.0 as f32,
+            size.1 as f32,
+            list.scale(),
+            self.window_corner,
+        ]
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect();
         queue.write_buffer(&self.globals, 0, &constants);
 
         let glyph_view = self.glyph_page.as_ref().unwrap_or(&self.dummy_glyph);
         let image_view = self.image_page.as_ref().unwrap_or(&self.dummy_image);
+        let color_view = self.color_page.as_ref().unwrap_or(&self.dummy_color);
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("swiftly-render bindings"),
             layout: &self.bind_layout,
@@ -487,6 +535,10 @@ impl WgpuRenderer {
                     binding: 3,
                     resource: wgpu::BindingResource::Sampler(&self.sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&color_view.view),
+                },
             ],
         });
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -501,27 +553,53 @@ impl WgpuRenderer {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: f64::from(clear.r),
-                            g: f64::from(clear.g),
-                            b: f64::from(clear.b),
-                            a: 1.0,
+                            r: if self.window_corner > 0.0 {
+                                0.0
+                            } else {
+                                f64::from(clear.r)
+                            },
+                            g: if self.window_corner > 0.0 {
+                                0.0
+                            } else {
+                                f64::from(clear.g)
+                            },
+                            b: if self.window_corner > 0.0 {
+                                0.0
+                            } else {
+                                f64::from(clear.b)
+                            },
+                            // Premultiplied: a rounded window has transparent corners, so the ground is a quad of the list.
+                            a: if self.window_corner > 0.0 { 0.0 } else { 1.0 },
                         }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
                 ..Default::default()
             });
+            if let (true, Some((buffer, _))) = (ground, &self.instances) {
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(0, &bind_group, &[]);
+                pass.set_vertex_buffer(0, buffer.slice(..));
+                pass.draw(0..6, 0..1);
+            }
             if let Some(v) = &self.video {
-                v.draw(&self.ctx, &mut pass, size);
+                v.draw(&self.ctx, &mut pass, size, self.window_corner);
             }
             if let (false, Some((buffer, _))) = (list.quads().is_empty(), &self.instances) {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(0, &bind_group, &[]);
                 pass.set_vertex_buffer(0, buffer.slice(..));
-                pass.draw(0..6, 0..list.quads().len() as u32);
+                pass.draw(0..6, first..first + list.quads().len() as u32);
             }
         }
         queue.submit(Some(encoder.finish()));
+    }
+
+    /// Cuts every following frame to a rounded rectangle of `px` pixels radius (0 = a plain rectangle). The area outside
+    /// the corners is transparent, so the surface must be configured with a premultiplied alpha mode and the list must
+    /// start with a quad that covers the window (the screens' ground does).
+    pub fn set_window_corner(&mut self, px: f32) {
+        self.window_corner = px.max(0.0);
     }
 
     /// True when `list` holds frosted glass (a backdrop blur quad).

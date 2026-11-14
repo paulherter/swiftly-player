@@ -687,6 +687,39 @@ fn read_frame(stream: &mut TcpStream) -> Option<(u8, Vec<u8>)> {
     Some((head[0] & 0x0F, payload))
 }
 
+/// Whether the device holds a `/socket` right now (what makes a session take remote control).
+pub(crate) fn has_socket(device: &str) -> bool {
+    world().sockets.iter().any(|(_, d, _)| d == device)
+}
+
+/// A text message for the device's socket; `false` when it holds none.
+pub(crate) fn send_text(device: &str, text: &str) -> bool {
+    world()
+        .sockets
+        .iter()
+        .filter(|(_, d, _)| d == device)
+        .fold(false, |sent, (_, _, tx)| {
+            tx.send(Out::Text(text.to_owned())).is_ok() || sent
+        })
+}
+
+/// A play order for the device's socket, as the server forwards `POST /Sessions/{id}/Playing` (`Play` message).
+/// `false` when the device holds no socket.
+pub(crate) fn send_play(device: &str, item_ids: &str, ticks: i64) -> bool {
+    let ids: Vec<String> = item_ids.split(',').map(|i| format!("\"{i}\"")).collect();
+    let text = format!(
+        r#"{{"MessageType":"Play","Data":{{"PlayCommand":"PlayNow","ItemIds":[{}],"StartPositionTicks":{ticks},"StartIndex":0}}}}"#,
+        ids.join(",")
+    );
+    let w = world();
+    w.sockets
+        .iter()
+        .filter(|(_, d, _)| d == device)
+        .fold(false, |sent, (_, _, tx)| {
+            tx.send(Out::Text(text.clone())).is_ok() || sent
+        })
+}
+
 /// Takes over the connection: handshake, a writer for what the groups send, a reader for the client's frames.
 pub(crate) fn websocket(mut stream: TcpStream, key: &str, device: &str) {
     let accept = base64(&sha1(
@@ -703,7 +736,8 @@ pub(crate) fn websocket(mut stream: TcpStream, key: &str, device: &str) {
         let mut w = world();
         w.next_socket += 1;
         let id = w.next_socket;
-        w.sockets.retain(|(_, d, _)| d != device);
+        // A device may hold several sockets (the control channel and the group channel); a real server forwards a
+        // message to every one of them, and a socket leaves the list when it closes.
         w.sockets.push((id, device.to_owned(), tx.clone()));
         id
     };
@@ -755,6 +789,11 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_play_order_for_a_device_without_a_socket_goes_nowhere() {
+        assert!(!send_play("no-such-device", "m1", 0));
+    }
+
+    #[test]
     fn handshake_key_matches_rfc_6455() {
         assert_eq!(
             base64(&sha1(
@@ -762,6 +801,22 @@ mod tests {
             )),
             "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
         );
+    }
+
+    #[test]
+    fn a_message_reaches_every_socket_of_a_device() {
+        let (a, ra) = channel();
+        let (b, rb) = channel();
+        {
+            let mut w = world();
+            w.sockets.push((901, "two-sockets".into(), a));
+            w.sockets.push((902, "two-sockets".into(), b));
+        }
+        assert!(send_text("two-sockets", "hello"));
+        world().sockets.retain(|(i, _, _)| *i != 901 && *i != 902);
+        for rx in [ra, rb] {
+            assert!(matches!(rx.try_recv(), Ok(Out::Text(t)) if t == "hello"));
+        }
     }
 
     fn call(method: &str, path: &str, body: &str, device: &str) -> (u16, String) {

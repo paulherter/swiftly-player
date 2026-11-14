@@ -13,6 +13,11 @@ use std::time::{Duration, Instant};
 use winit::event::WindowEvent;
 use winit::window::Window;
 
+/// The application id every platform identifies the app by: the Wayland `app_id` and the X11 `WM_CLASS` (so the shell finds
+/// the `.desktop` file and its icon), the Windows AppUserModelID. It equals the desktop file's id
+/// (`Distribution/desktop/de.paulherter.swiftly.player.desktop`).
+pub const APP_ID: &str = "de.paulherter.swiftly.player";
+
 /// The product's name in the window title, taskbar, process description and installer. The logo itself says only "Swiftly".
 pub const PRODUCT_NAME: &str = "Swiftly Player";
 
@@ -78,6 +83,9 @@ impl Extras {
     /// Sets up from the options. `None`: another instance runs, this launch's arguments were handed over, and the
     /// process should exit.
     pub fn new(opts: &Options) -> Option<Extras> {
+        if let Some(q) = opts.quit_after {
+            crate::quit_guard::arm(q);
+        }
         let mut primary = None;
         if opts.single_instance {
             let dir = single_instance::default_dir();
@@ -150,16 +158,7 @@ impl Extras {
         }
         if let Some(p) = self.primary.take() {
             let send = send.clone();
-            std::thread::spawn(move || {
-                loop {
-                    std::thread::sleep(Duration::from_millis(300));
-                    for args in p.drain() {
-                        if !send(Event::Launch(args)) {
-                            return;
-                        }
-                    }
-                }
-            });
+            p.watch(move |args| send(Event::Launch(args)));
         }
         if self.run_script {
             let rounds = self.quit_after.map_or(10, |q| (q - 3.0).max(1.0) as u32);

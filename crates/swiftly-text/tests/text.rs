@@ -71,12 +71,16 @@ impl Canvas {
         self.y += t.height() + 6.0;
     }
 
-    fn render(&self, name: &str) -> RgbaImage {
+    fn render_unchecked(&self) -> RgbaImage {
         let src = Sources {
             glyphs: Some(&self.atlas),
             images: None,
         };
-        let img = SoftwareRenderer::render(&self.list, c(colour::AREA), &src);
+        SoftwareRenderer::render(&self.list, c(colour::AREA), &src)
+    }
+
+    fn render(&self, name: &str) -> RgbaImage {
+        let img = self.render_unchecked();
         check_golden(name, &img);
         img
     }
@@ -484,4 +488,86 @@ fn widths_match_core_text_within_a_tenth_of_a_point() {
             );
         }
     }
+}
+
+/// A colour emoji font on this machine (Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji) is reached through the
+/// system fallback; without one the test says so and skips.
+#[test]
+fn emoji_line_is_drawn_in_colour_and_cached() {
+    use swiftly_render::{Atlas, QuadKind};
+
+    let mut fonts = FontSystem::new();
+    let style: TextStyle = touch::text::BODY.into();
+    let t = fonts.layout("🎬🍿 Kino-Nacht 🌙✨", &style, None, None, Align::Start);
+    if t.missing_glyphs() > 0 {
+        println!("SKIP emoji: no colour emoji font on this machine");
+        return;
+    }
+    let mut cv = Canvas::new(220.0, 40.0, 2.0);
+    cv.put(&t, 10.0);
+    let colour_quads = cv
+        .list
+        .quads()
+        .iter()
+        .filter(|q| q.kind == QuadKind::ColorGlyph)
+        .count();
+    if colour_quads == 0 {
+        println!("SKIP emoji: the fallback emoji font has no bitmap or COLR v0 colour data");
+        return;
+    }
+    assert!(colour_quads >= 4, "four emoji, got {colour_quads}");
+    assert!(
+        cv.atlas.color_page().is_some(),
+        "the colour page exists once an emoji was drawn"
+    );
+    let img = cv.render_unchecked();
+    // The text colour is a light grey: any clearly saturated pixel is emoji colour.
+    let saturated = (0..img.height)
+        .flat_map(|y| (0..img.width).map(move |x| (x, y)))
+        .filter(|(x, y)| {
+            let p = img.pixel(*x, *y);
+            p[0].max(p[1]).max(p[2]) - p[0].min(p[1]).min(p[2]) > 60
+        })
+        .count();
+    assert!(saturated > 200, "emoji carry colour, {saturated} px");
+    // Noto Color Emoji (the Linux fallback) gives a stable picture; other emoji fonts draw other pictures, and a CI
+    // runner may carry another release of it: there the picture is only compared when `SWIFTLY_EMOJI_GOLDEN` is set.
+    if std::env::var_os("SWIFTLY_EMOJI_GOLDEN").is_some()
+        || (cfg!(target_os = "linux") && std::env::var_os("CI").is_none())
+    {
+        check_golden("emoji_line", &img);
+    }
+
+    // The second frame is answered from the cache.
+    let before = cv.atlas.stats();
+    cv.atlas.begin_frame();
+    let mut list = DrawList::new(220.0, 40.0, 2.0);
+    cv.atlas.draw(&t, &mut list, 10.0, 8.0, c(colour::FONT));
+    let after = cv.atlas.stats();
+    assert_eq!(after.rasterised, before.rasterised, "no new rasterising");
+    assert!(after.hits > before.hits);
+}
+
+#[test]
+fn text_without_emoji_never_touches_the_colour_page() {
+    use swiftly_render::{Atlas, QuadKind};
+
+    let mut fonts = FontSystem::bundled_only();
+    let t = fonts.layout(
+        "Kino-Nacht, Frieren",
+        &touch::text::BODY.into(),
+        None,
+        None,
+        Align::Start,
+    );
+    let mut cv = Canvas::new(220.0, 40.0, 2.0);
+    cv.put(&t, 10.0);
+    assert!(cv.atlas.color_page().is_none());
+    assert_eq!(cv.atlas.color_used_rows(), 0);
+    assert!(
+        cv.list
+            .quads()
+            .iter()
+            .all(|q| q.kind != QuadKind::ColorGlyph)
+    );
 }

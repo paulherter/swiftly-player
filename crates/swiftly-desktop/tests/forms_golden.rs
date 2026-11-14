@@ -12,13 +12,13 @@ use swiftly_ui::{Cx, Dir, Env, Idiom, NavKey};
 use swiftly_vm::{Confirm, DownloadsIntent, RowControl, RowState, SettingsIntent};
 
 const FRAME_MS: f64 = 1000.0 / 60.0;
-// The goldens come from macOS. The vector rasteriser (swiftly-ui `icons.rs`, f32 edge coverage with arcs flattened through
-// libm) rounds a few edge pixels differently per OS build and CPU: measured 2026-11-10 on a Mac whose OS is newer than the
-// one that wrote the goldens, the very commit that wrote them (87cbafa3) differs by 3-11 levels in 0.001-0.010 % of the
-// pixels, all on icon edges (plug, chevrons), never on text or fills. So the tolerance has two parts: at most 12 levels,
-// and on macOS a difference above 2 levels may touch at most 0.05 % of the pixels (a real layout change moves far more pixels and fails).
-// Other systems keep the wider level tolerance (seen: up to 10 levels from font hinting) without a pixel limit.
-const TOLERANCE: u8 = 12;
+// The goldens are written on Linux (CI runs Linux and macOS). The vector rasteriser (swiftly-ui `icons.rs`, f32 edge
+// coverage with arcs flattened through the system libm sin/cos/atan2) rounds a few edge pixels differently per OS:
+// measured 2026-11-13 on macOS against the Linux goldens, 0.001-0.010 % of the pixels differ by up to 13 levels, all on
+// icon edges (plug, chevrons, search glass, clock), never on text or fills. So on macOS a difference above 2 levels may
+// touch at most 0.05 % of the pixels and none may exceed 16 levels (a real layout change moves far more pixels and
+// fails). Other systems keep the 12 level tolerance (seen: up to 10 levels from font hinting) without a pixel limit.
+const TOLERANCE: u8 = if cfg!(target_os = "macos") { 16 } else { 12 };
 const MAC_PIXEL_SHARE: f64 = 0.0005;
 
 struct Form {

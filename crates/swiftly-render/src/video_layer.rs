@@ -42,7 +42,7 @@ impl VideoLayer {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -108,7 +108,7 @@ impl VideoLayer {
         });
         let place = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("swiftly-render video place"),
-            size: 16,
+            size: 32,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -201,12 +201,19 @@ impl VideoLayer {
         ctx: &GpuContext,
         pass: &mut wgpu::RenderPass<'_>,
         target: (u32, u32),
+        window_corner: f32,
     ) {
         let (Some((_, _, size)), Some(group)) = (&self.texture, &self.bind_group) else {
             return;
         };
         let rect = Self::clip_rect(*size, target, self.fit);
-        let bytes: Vec<u8> = rect.iter().flat_map(|f| f.to_le_bytes()).collect();
+        // Second vec4: the target in pixels and the window's corner radius (the picture is cut to the rounded outline
+        // too, or a film that fills the window would paint over the transparent corners).
+        let bytes: Vec<u8> = rect
+            .iter()
+            .chain([target.0 as f32, target.1 as f32, window_corner, 0.0].iter())
+            .flat_map(|f| f.to_le_bytes())
+            .collect();
         ctx.queue().write_buffer(&self.place, 0, &bytes);
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, group, &[]);

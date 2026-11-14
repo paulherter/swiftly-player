@@ -35,6 +35,7 @@ mod fixture_modes;
 mod fixture_plex;
 mod fixture_seerr;
 mod fixture_server;
+mod fixture_sessions;
 mod fixture_syncplay;
 mod hardening;
 mod ios;

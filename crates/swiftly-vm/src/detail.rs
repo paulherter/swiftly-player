@@ -670,6 +670,13 @@ impl<T: HttpTransport + 'static> DetailVm<T> {
         )
     }
 
+    /// Whether the title is a placeholder the server lists without a file (`LocationType: Virtual`, a missing movie):
+    /// there is nothing to start, and the page says so instead of waiting for versions.
+    pub fn is_placeholder(&self) -> bool {
+        let live = self.inner.live();
+        self.inner.current(&live).location_type.as_deref() == Some("Virtual")
+    }
+
     /// Like [`DetailVm::play`], but from the beginning ("Play from start" in the More panel).
     pub fn play_from_start(&self, pick: Option<&str>) -> PlayAction {
         match self.play(pick) {
@@ -818,7 +825,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 .key(if live.favorite { "Gemerkt" } else { "Merken" }),
             toggle_error: live.toggle_error.clone(),
             proof: ProofPart {
-                visible: live.plan_present,
+                visible: live.plan_present && current.location_type.as_deref() != Some("Virtual"),
                 direct_play: live.plan.as_ref().is_some_and(|p| p.is_lossless()),
                 hint: live
                     .plan

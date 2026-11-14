@@ -15,7 +15,7 @@ use libloading::Library;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char, c_double, c_int, c_void};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 use swiftly_playback::engine::{
@@ -212,6 +212,39 @@ fn audio_output_list(
     Some("alsa,null")
 }
 
+/// How many engines were left behind because their close did not finish ([`CLOSE_LIMIT`]). Each one still holds its
+/// threads and handles (about forty descriptors); a stuck audio output repeats, so after [`ABANDON_LIMIT`] of them every
+/// new engine plays through the silent output instead of trying that audio stack again.
+static ABANDONED: AtomicUsize = AtomicUsize::new(0);
+/// Set when starting an engine hung once: the retry (and every later engine) uses the silent output.
+static FORCE_NULL_AUDIO: AtomicBool = AtomicBool::new(false);
+/// Abandoned engines after which the audio stack counts as broken.
+const ABANDON_LIMIT: usize = 2;
+/// How long creating an engine may take before it counts as hung (a normal start is well under a second).
+const START_LIMIT: Duration = Duration::from_secs(6);
+
+/// Whether new engines must use the silent output: the audio stack hung a start, or left engines behind on close.
+fn silent_audio_needed(forced: bool, abandoned: usize) -> bool {
+    forced || abandoned >= ABANDON_LIMIT
+}
+
+/// Runs `work` on its own thread and waits at most `limit` for the answer; `None` when it did not come in time (the
+/// thread is left to finish by itself and its result is dropped). The caller never blocks for good on libmpv or the
+/// audio stack below it.
+fn bounded<T: Send + 'static>(
+    limit: Duration,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .name("mpv-start".into())
+        .spawn(move || {
+            let _ = tx.send(work());
+        })
+        .ok()?;
+    rx.recv_timeout(limit).ok()
+}
+
 // ---- the engine ------------------------------------------------------------------------------------------------------
 
 #[derive(Default)]
@@ -311,8 +344,21 @@ impl MpvEngine {
         self.skip_alpha.store(on, Ordering::Relaxed);
     }
 
-    /// Loads libmpv, creates the player and the software render context.
+    /// Loads libmpv, creates the player and the software render context. Never blocks for good: a start that hangs
+    /// (an audio stack that does not answer) is given up after [`START_LIMIT`] and tried once more with the silent
+    /// output, then it is an error the player screen shows as a failed start.
     pub fn new() -> Result<MpvEngine, String> {
+        match bounded(START_LIMIT, Self::create) {
+            Some(r) => r,
+            None => {
+                FORCE_NULL_AUDIO.store(true, Ordering::Relaxed);
+                bounded(START_LIMIT, Self::create)
+                    .unwrap_or_else(|| Err("libmpv did not start in time".into()))
+            }
+        }
+    }
+
+    fn create() -> Result<MpvEngine, String> {
         let api = Arc::new(Api::load()?);
         let h = unsafe { (api.create)() };
         if h.is_null() {
@@ -357,9 +403,16 @@ impl MpvEngine {
         if let Some(dir) = Self::fonts_dir() {
             engine.set_option("sub-fonts-dir", &dir);
         }
-        if let Some(list) = audio_output_list(&|k| std::env::var(k).ok(), &|p| p.exists()) {
+        if silent_audio_needed(
+            FORCE_NULL_AUDIO.load(Ordering::Relaxed),
+            ABANDONED.load(Ordering::Relaxed),
+        ) {
+            engine.set_option("ao", "null");
+        } else if let Some(list) = audio_output_list(&|k| std::env::var(k).ok(), &|p| p.exists()) {
             engine.set_option("ao", list);
         }
+        // No device opens (a busy or missing one): carry on silently instead of failing the title.
+        engine.set_option("audio-fallback-to-null", "yes");
         // A diagnosis aid: `SWIFTLY_MPV_LOG=<file>` writes libmpv's own log (decoder, hwdec, render messages).
         if let Ok(path) = std::env::var("SWIFTLY_MPV_LOG")
             && !path.is_empty()
@@ -756,8 +809,8 @@ impl Drop for MpvEngine {
                 unsafe { (api.terminate_destroy)(handle as *mut c_void) };
                 let _ = tx.send(());
             });
-        if spawned.is_ok() {
-            let _ = rx.recv_timeout(CLOSE_LIMIT);
+        if spawned.is_ok() && rx.recv_timeout(CLOSE_LIMIT).is_err() {
+            ABANDONED.fetch_add(1, Ordering::Relaxed);
         }
     }
 }
@@ -1087,8 +1140,9 @@ pub fn describe(engine: &MpvEngine) -> HashMap<&'static str, String> {
 
 #[cfg(test)]
 mod audio_choice_tests {
-    use super::audio_output_list;
+    use super::{ABANDON_LIMIT, audio_output_list, bounded, silent_audio_needed};
     use std::path::Path;
+    use std::time::Duration;
 
     fn pick(env: &[(&str, &str)], sockets: &[&str]) -> Option<&'static str> {
         audio_output_list(
@@ -1133,5 +1187,28 @@ mod audio_choice_tests {
             pick(&[("PULSE_SERVER", "tcp:host")], &[]),
             Some("pulse,alsa,null")
         );
+    }
+
+    #[test]
+    fn a_hung_start_gives_up_instead_of_blocking() {
+        let t = std::time::Instant::now();
+        let hung = bounded(Duration::from_millis(100), || {
+            std::thread::sleep(Duration::from_secs(5));
+            1
+        });
+        assert_eq!(hung, None);
+        assert!(
+            t.elapsed() < Duration::from_secs(2),
+            "the caller waited for the hung work"
+        );
+        assert_eq!(bounded(Duration::from_secs(5), || 7), Some(7));
+    }
+
+    #[test]
+    fn a_stuck_audio_stack_switches_new_engines_to_silence() {
+        assert!(!silent_audio_needed(false, 0));
+        assert!(!silent_audio_needed(false, ABANDON_LIMIT - 1));
+        assert!(silent_audio_needed(false, ABANDON_LIMIT));
+        assert!(silent_audio_needed(true, 0));
     }
 }

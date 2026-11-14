@@ -39,6 +39,34 @@ pub fn cache_dir() -> PathBuf {
     config_dir().join("cache")
 }
 
+/// Saves a setting. A failed write is logged (`crash::note_error`) instead of dropped; the value stays in memory for this
+/// session either way (the store keeps it before it writes). `true` when it reached the disk.
+pub fn set_logged<S: swiftly_settings::KeyValueStore + ?Sized>(
+    store: &S,
+    key: &str,
+    value: swiftly_settings::Value,
+) -> bool {
+    set_logged_with(store, key, value, &mut |what, msg| {
+        crate::crash::note_error(what, msg)
+    })
+}
+
+/// [`set_logged`] with the log sink given (tests).
+pub fn set_logged_with<S: swiftly_settings::KeyValueStore + ?Sized>(
+    store: &S,
+    key: &str,
+    value: swiftly_settings::Value,
+    log: &mut dyn FnMut(&str, &str),
+) -> bool {
+    match store.set(key, value) {
+        Ok(()) => true,
+        Err(e) => {
+            log("settings write failed", &format!("{key}: {e:?}"));
+            false
+        }
+    }
+}
+
 fn write_private(path: &Path, data: &[u8]) {
     let _ = swiftly_atomic::write_private(path, data);
 }
@@ -290,5 +318,35 @@ mod fallback_tests {
         assert!(note_vault_fallback("token"));
         assert!(vault_fallback_used());
         assert!(!note_vault_fallback("token"));
+    }
+}
+
+#[cfg(test)]
+mod set_logged_tests {
+    use super::*;
+    use swiftly_settings::{JsonFileStore, KeyValueStore, Value};
+
+    /// A write that fails is reported with the key, and the value is still there for this session.
+    #[test]
+    fn a_failed_settings_write_is_logged_and_the_value_stays_in_memory() {
+        let dir = std::env::temp_dir().join(format!("swiftly-set-logged-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        let store = JsonFileStore::open(&path).unwrap();
+        // The file's place is taken by a directory afterwards: the write cannot succeed.
+        std::fs::create_dir(&path).unwrap();
+        let mut seen = Vec::new();
+        let ok = set_logged_with(
+            &store,
+            "playerLautstaerke",
+            Value::Double(0.4),
+            &mut |w, m| seen.push((w.to_owned(), m.to_owned())),
+        );
+        assert!(!ok);
+        assert_eq!(seen.len(), 1, "{seen:?}");
+        assert!(seen[0].1.starts_with("playerLautstaerke"), "{seen:?}");
+        assert_eq!(store.get("playerLautstaerke"), Some(Value::Double(0.4)));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

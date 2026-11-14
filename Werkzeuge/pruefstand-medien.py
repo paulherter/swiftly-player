@@ -72,7 +72,7 @@ def probe(path):
 
 CONTAINER = {"matroska,webm": "mkv", "mov,mp4,m4a,3gp,3g2,mj2": "mp4", "mpegts": "ts", "avi": "avi"}
 
-def describe(id_, file, extra_streams=(), kind="Movie", series=None, number=1, resume=0, title=None, external=(), video_extra=None,
+def describe(id_, file, extra_streams=(), kind="Movie", series=None, number=1, season=1, resume=0, title=None, external=(), video_extra=None,
              source_extra=None, transcode=None, burned=()):
     p = probe(f"{OUT}/{file}")
     fmt = p["format"]
@@ -121,7 +121,7 @@ def describe(id_, file, extra_streams=(), kind="Movie", series=None, number=1, r
     item = {"Id": id_, "Name": title or id_, "Type": kind, "RunTimeTicks": run_seconds * 10_000_000, "MediaSources": [source],
             "UserData": {"PlaybackPositionTicks": resume, "Played": False}}
     if series:
-        item.update(SeriesId=series, SeriesName="Bench Series", ParentIndexNumber=1, IndexNumber=number)
+        item.update(SeriesId=series, SeriesName="Bench Series", SeasonId=f"bm-s{season}", ParentIndexNumber=season, IndexNumber=number)
     json.dump(item, open(f"{OUT}/{id_}.item.json", "w"))
     json.dump({"MediaSources": [source], "PlaySessionId": f"ps-{id_}"}, open(f"{OUT}/{id_}.info.json", "w"))
     if transcode:
@@ -215,6 +215,9 @@ else:
     skipped.append(f"bm-pgs-mkv: ffmpeg failed: {err}")
 make("bm-ep1", "h264", "aac", "mp4", kind="Episode", series="bm-series", number=1, title="Bench Episode 1")
 make("bm-ep2", "h264", "aac", "mp4", kind="Episode", series="bm-series", number=2, title="Bench Episode 2")
+# Season 2 of the series (the episodes layer's season picker and a switch to another season's card).
+make("bm-ep3", "h264", "aac", "mp4", kind="Episode", series="bm-series", season=2, number=1, title="Bench Episode 3")
+make("bm-ep4", "h264", "aac", "mp4", kind="Episode", series="bm-series", season=2, number=2, title="Bench Episode 4")
 
 # Multi audio (aac eng, ac3 deu, eac3 fra) + embedded SRT and ASS.
 open(f"{OUT}/embedded.srt", "w").write(SRT)

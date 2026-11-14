@@ -71,15 +71,15 @@ fn groups_are_split_ordered_and_display_ready() {
     let results = vm.results();
     assert_eq!(results.query, "dark");
     let kinds: Vec<_> = results.groups.iter().map(|g| g.kind).collect();
-    assert_eq!(kinds, [SearchKind::Movies, SearchKind::Series]);
+    assert_eq!(kinds, [SearchKind::Series, SearchKind::Movies]);
     // Natural order: "Dark 2" before "Dark 10".
-    let movies: Vec<_> = results.groups[0]
+    let movies: Vec<_> = results.groups[1]
         .tiles
         .iter()
         .map(|t| t.title.as_str())
         .collect();
     assert_eq!(movies, ["Dark 2", "Dark 10"]);
-    assert_eq!(results.groups[1].tiles[0].title, "Dark Matter");
+    assert_eq!(results.groups[0].tiles[0].title, "Dark Matter");
     // Exactly the Swift request: movies and series, 40 hits, one call.
     let urls = net.urls();
     assert_eq!(urls.len(), 1, "{urls:?}");
@@ -237,4 +237,33 @@ fn a_failed_search_names_its_kind_and_unreachable_stays_offline() {
     query(&vm, "dark");
     wait_for("offline", || vm.status().status == SearchStatus::Offline);
     assert_eq!(vm.load(), Load::Offline);
+}
+
+/// A debounce that panics (a timer with no runtime behind it did exactly that on the desktop).
+struct PanickingSleeper;
+
+impl swiftly_vm::Sleeper for PanickingSleeper {
+    fn sleep(
+        &self,
+        _seconds: f64,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+        panic!("there is no reactor running");
+    }
+}
+
+#[test]
+fn a_panic_in_the_search_task_ends_in_a_failed_state_not_in_searching_forever() {
+    let net = server();
+    let vm = SearchVm::new(
+        net.clone(),
+        host(),
+        Arc::new(PanickingSleeper),
+        Arc::new(MemoryKeyValue::new()),
+        Some(account("TOKEN-A")),
+    )
+    .unwrap();
+    query(&vm, "dark");
+    wait_for("failed", || vm.status().status == SearchStatus::Offline);
+    assert_eq!(vm.load(), Load::Failed(FailKind::Server));
+    assert!(vm.results().groups.is_empty());
 }

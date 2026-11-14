@@ -2,7 +2,7 @@
 //! transfer with `Range` resume through reqwest on the network runtime. [`Files`] is the `DownloadTransport` and the
 //! `DownloadServices` of one `DownloadsVm`; the state machine stays in `swiftly-downloads`.
 
-use crate::downloads_screen::{Dyn, NoRules};
+use crate::downloads_screen::Dyn;
 use crate::live::Core;
 use crate::net_watch::{Pump, SystemWatcher};
 use crate::store::config_dir;
@@ -86,7 +86,7 @@ fn now() -> f64 {
         .map_or(0.0, |d| d.as_secs_f64())
 }
 
-/// Free bytes on the volume of `dir` (`df` on unix; elsewhere "plenty").
+/// Free bytes on the volume of `dir` (`df` on unix, `GetDiskFreeSpaceExW` on Windows; "plenty" if the system will not say).
 fn free_bytes(dir: &Path) -> i64 {
     let _ = std::fs::create_dir_all(dir);
     #[cfg(unix)]
@@ -102,7 +102,31 @@ fn free_bytes(dir: &Path) -> i64 {
     {
         return kb.saturating_mul(1024);
     }
+    #[cfg(windows)]
+    if let Some(bytes) = free_bytes_windows(dir) {
+        return bytes;
+    }
     i64::MAX / 4
+}
+
+/// The bytes available to this user on the volume of `dir` (`GetDiskFreeSpaceExW`).
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn free_bytes_windows(dir: &Path) -> Option<i64> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    let wide: Vec<u16> = dir.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut free_to_caller: u64 = 0;
+    // SAFETY: `wide` is a NUL-terminated UTF-16 path that outlives the call; the two other out pointers may be null.
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut free_to_caller,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    (ok != 0).then(|| i64::try_from(free_to_caller).unwrap_or(i64::MAX))
 }
 
 impl Inner {
@@ -439,7 +463,8 @@ pub fn build_with(
         tasks: Mutex::new(HashMap::new()),
     });
     let files = Files(inner);
-    let machine = DownloadManagerState::new(1, true, false, Box::new(NoRules));
+    let machine =
+        DownloadManagerState::new(1, true, false, Box::new(swiftly_vm::TrackNames::german()));
     let vm = DownloadsVm::new(
         Arc::new(Dyn(Arc::new(files.clone()))),
         Arc::new(files.clone()),
@@ -463,6 +488,10 @@ pub fn build_with(
         Intent::RunningTransfers(Vec::new()),
         Intent::SpaceChanged(free_bytes(&dir)),
         Intent::Tick,
+        // What a finished title still owed when the app last closed (its subtitle files, its chapter sections) is
+        // asked for again, as the Mac does after every server pass (`downloads.sectionsCatchUp()`,
+        // `AppModel.swift:1769`). Without it a stored "pending" never cleared and the row stayed "L\u{00E4}dt gerade".
+        Intent::SectionsCatchUp,
     ] {
         let _ = vm.send(DownloadsIntent::Engine(Box::new(intent)));
     }
@@ -561,6 +590,8 @@ pub fn shared(core: &Core, account: &AccountRef) -> DownloadsVm<Dyn> {
         resolver,
         core.subtitle_lister(account),
     );
+    // The stored "Nur über WLAN" and "Nächste Folge laden" go to the engine (`AppModel.init` does this on the Mac).
+    crate::settings_run::push_download_settings(&vm, &*core.settings);
     *slot = Some((key, vm.clone()));
     vm
 }
@@ -757,6 +788,7 @@ pub fn film_request(
     account: &str,
     now: f64,
     anchor: Option<swiftly_layout::Rect>,
+    poster: Option<String>,
 ) -> crate::load_sheets::LoadRequest {
     let src = swiftly_downloads::item::first_source(item);
     let mut d = DownloadItem::new(
@@ -771,13 +803,36 @@ pub fn film_request(
     d.container = src.and_then(|s| s.container.clone());
     d.source = src.and_then(|s| s.id.clone());
     crate::load_sheets::LoadRequest::Add {
-        title: format!("{} laden", item.name),
+        // The bare title: the sheet adds " laden" itself (`MacDownloads.swift:269`).
+        title: item.name.clone(),
+        // The poster the engine saves along (`DetailView.loadImages`), so the finished row shows its cover.
+        images: poster
+            .map(|url| HashMap::from([(item.id.clone(), url)]))
+            .unwrap_or_default(),
         items: vec![d],
-        images: HashMap::new(),
         quality_select: true,
         streams: vec![swiftly_downloads::item::audio_streams(src)],
         anchor,
     }
+}
+
+/// The poster address of `item` on `server` (`AppModel.posterURL`): what the engine fetches along as the saved cover.
+fn poster_address<T: swiftly_net::HttpTransport + 'static>(
+    server: &ServerClient<T>,
+    item: &swiftly_model::Item,
+) -> Option<String> {
+    use swiftly_images::{ImageAddress, ImageKind, ImageMetric, Url};
+    let mark = item.image_tags.as_ref()?.get("Primary")?.clone();
+    let token = server.current_session()?.access_token;
+    let base = Url::parse(&server.base_url()).ok()?;
+    ImageAddress::new(base, Some(token), server.kind())
+        .construct(
+            &item.id,
+            ImageKind::Poster,
+            Some(&mark),
+            ImageMetric::AtMostHigh(600),
+        )
+        .map(|u| u.to_string())
 }
 
 /// The live read behind a film's "Laden": the item comes off-thread, then `poll` yields the request once.
@@ -814,10 +869,10 @@ pub fn film_read(
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0.0, |d| d.as_secs_f64());
-        let request = crate::live_server::item(&server, &id)
-            .await
-            .ok()
-            .map(|i| film_request(&i, &key, now, anchor));
+        let request = crate::live_server::item(&server, &id).await.ok().map(|i| {
+            let poster = poster_address(&server, &i);
+            film_request(&i, &key, now, anchor, poster)
+        });
         let _ = tx.send(request);
     });
     Some(FilmRead { rx })
@@ -842,12 +897,13 @@ mod tests {
             items,
             quality_select,
             streams,
+            images,
             ..
-        } = film_request(&item, "acc", 5.0, None)
+        } = film_request(&item, "acc", 5.0, None, Some("http://s/p.jpg".into()))
         else {
             panic!("an add request")
         };
-        assert_eq!(title, "Player-Extras laden");
+        assert_eq!(title, "Player-Extras", "the sheet adds \" laden\" itself");
         assert!(quality_select);
         assert_eq!(
             (
@@ -859,6 +915,8 @@ mod tests {
             (4200, Some("mkv"), Some("srcg1"), "acc")
         );
         assert_eq!(streams[0].len(), 2);
+        // The poster goes along, or the finished row has no cover to show.
+        assert_eq!(images.get("g1").map(String::as_str), Some("http://s/p.jpg"));
     }
 
     /// A tiny server for one file with `Range` support; `slow` sends the body in pieces with pauses.
@@ -973,6 +1031,44 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// L10: the catalogue says 1.5 MB, the stream ends after 139 KB (and a subtitle fetch that did not finish before the
+    /// app closed). The title is finished when the stream ends, and after a restart it is a finished row again, not
+    /// "Lädt gerade": the start sends the catch-up the Mac sends after its server pass (`sectionsCatchUp`).
+    #[test]
+    fn a_size_mismatch_and_a_restart_still_leave_a_finished_title() {
+        let body: Vec<u8> = (0..139_068u32).map(|i| (i % 251) as u8).collect();
+        let (rt, dir, vm) = setup(serve(body.clone(), false), "mismatch");
+        add(&vm, "m1", 1_500_000);
+        wait(&vm, "done", |v| state(v) == Some(RowState::Done));
+        // The app is closed before the subtitle answer arrived: the list keeps `subtitles_pending`.
+        wait(&vm, "list file says done", |_| {
+            load_list(std::fs::read(dir.join("liste.json")).ok().as_deref())
+                .items
+                .first()
+                .is_some_and(|d| d.state == DownloadState::Done)
+        });
+        let mut stored = load_list(std::fs::read(dir.join("liste.json")).ok().as_deref()).items;
+        stored[0].subtitles_pending = true;
+        std::fs::write(
+            dir.join("liste.json"),
+            swiftly_downloads::list::encode_list(&stored).unwrap(),
+        )
+        .unwrap();
+        drop(vm);
+        let resolver: Resolver = Arc::new(|_, _, _, _| Err("offline".to_owned()));
+        let vm = build(dir.clone(), "acc", rt.handle().clone(), resolver);
+        wait(&vm, "finished again after the restart", |v| {
+            state(v) == Some(RowState::Done)
+        });
+        let (item, path) = finished(&dir, "acc", "m1").expect("playable");
+        assert_eq!(std::fs::read(path).unwrap(), body);
+        assert!(
+            !item.subtitles_pending,
+            "the pending subtitle fetch ran again"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn a_finished_download_takes_its_subtitle_files_along() {
         let body: Vec<u8> = (0..50_000u32).map(|i| (i % 251) as u8).collect();
@@ -1063,5 +1159,15 @@ mod tests {
         wait(&vm, "done", |v| state(v) == Some(RowState::Done));
         assert_eq!(std::fs::read(dir.join(name)).unwrap(), body);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The free space is the real figure of the volume, never the "plenty" stand-in (it read "2,31 EB" on Windows).
+    #[test]
+    fn free_space_is_the_volume_figure_not_the_stand_in() {
+        let dir = std::env::temp_dir().join("swiftly-free-space-probe");
+        let free = free_bytes(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(free > 0, "{free}");
+        assert!(free < i64::MAX / 4, "stand-in value: {free}");
     }
 }

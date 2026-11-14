@@ -71,6 +71,13 @@ pub enum HandOver {
     Waiting,
 }
 
+/// How often a second launch looks whether the first has taken its line.
+const HAND_OVER_POLL: std::time::Duration = std::time::Duration::from_millis(5);
+
+/// How often the running instance looks into its inbox (one `stat` per look). A second launch waits for this, and a
+/// launch that hands over must be gone within 200 ms, so the look is frequent; it costs no measurable CPU.
+pub const INBOX_POLL: std::time::Duration = std::time::Duration::from_millis(40);
+
 /// Hands `args` to the running instance and waits up to `wait` for it to take them. A holder that is dying (killed a
 /// moment ago, the OS still tearing it down) never takes them: when the lock comes free in the meantime, this process
 /// takes over instead of leaving the user with no app.
@@ -101,7 +108,7 @@ pub fn hand_over(dir: &Path, args: &[String], wait: std::time::Duration) -> io::
         if std::time::Instant::now() >= deadline {
             return Ok(HandOver::Waiting);
         }
-        std::thread::sleep(std::time::Duration::from_millis(40));
+        std::thread::sleep(HAND_OVER_POLL);
     }
 }
 
@@ -117,6 +124,22 @@ pub fn forward(dir: &Path, args: &[String]) -> io::Result<()> {
 }
 
 impl Primary {
+    /// Watches the inbox on a thread of its own and calls `on_launch` for every launch that arrives; the thread ends
+    /// when `on_launch` returns `false` (the app is gone).
+    pub fn watch(self, on_launch: impl Fn(Vec<String>) -> bool + Send + 'static) {
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(INBOX_POLL);
+                // `drain` looks for the file first, so an empty inbox costs one `stat`.
+                for args in self.drain() {
+                    if !on_launch(args) {
+                        return;
+                    }
+                }
+            }
+        });
+    }
+
     /// The launches that arrived since the last call, oldest first (each is the argument list of one second launch).
     pub fn drain(&self) -> Vec<Vec<String>> {
         let inbox = self.dir.join(INBOX_NAME);
@@ -270,6 +293,38 @@ mod tests {
             panic!()
         };
         assert!(p.drain().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The hand-over of a second launch must be done well inside 200 ms (`windows-desktop.md`): the first instance
+    /// looked into its inbox only every 300 ms, so the second one alone took that long.
+    #[test]
+    fn a_second_launch_is_handed_over_within_200_ms() {
+        use std::time::{Duration, Instant};
+        let dir = temp("fast");
+        let Role::Primary(first) = acquire(&dir).unwrap() else {
+            panic!()
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        first.watch(move |args| tx.send(args).is_ok());
+        for round in 0..5 {
+            // Start at a different moment of the watcher's period each round.
+            std::thread::sleep(Duration::from_millis(7 * round));
+            let started = Instant::now();
+            let r = hand_over(
+                &dir,
+                &["swiftly://titel/1".to_owned()],
+                Duration::from_secs(3),
+            )
+            .unwrap();
+            let took = started.elapsed();
+            assert!(matches!(r, HandOver::Delivered), "{r:?}");
+            assert!(took < Duration::from_millis(100), "round {round}: {took:?}");
+            assert_eq!(
+                rx.recv_timeout(Duration::from_secs(1)).unwrap(),
+                vec!["swiftly://titel/1".to_owned()]
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -24,6 +24,11 @@ pub enum QuadKind {
     Glyph = 4,
     /// Frosted glass: blurs what is behind. The software renderer blurs (three box passes); `WgpuRenderer::render_to_image`/`render_to_surface` hand lists with glass to it and upload the result, so both give the same pixels.
     BackdropBlur = 5,
+    /// Rounded rectangle filled with one band of a radial (elliptical) gradient, see [`DrawList::radial_stops`].
+    Radial = 6,
+    /// A colour glyph (emoji): premultiplied RGBA from the colour page of the glyph atlas ([`Atlas::color_page`]), drawn
+    /// untinted; only the alpha of the quad colour (and the group opacity) applies.
+    ColorGlyph = 7,
 }
 
 impl QuadKind {
@@ -36,6 +41,8 @@ impl QuadKind {
             3 => QuadKind::Image,
             4 => QuadKind::Glyph,
             5 => QuadKind::BackdropBlur,
+            6 => QuadKind::Radial,
+            7 => QuadKind::ColorGlyph,
             _ => return None,
         })
     }
@@ -65,7 +72,7 @@ pub struct ShadowStyle {
     pub spread: f32,
 }
 
-/// One GPU instance: every primitive is a quad. All lengths are points. On the GPU an instance is 144 bytes, see
+/// One GPU instance: every primitive is a quad. All lengths are points. On the GPU an instance is 176 bytes, see
 /// [`DrawQuad::write_bytes`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DrawQuad {
@@ -73,6 +80,9 @@ pub struct DrawQuad {
     pub rect: Rect,
     /// Clip as `(x0, y0, x1, y1)`.
     pub clip: [f32; 4],
+    /// Rounded clip as `(x0, y0, x1, y1, radius)`: the picture of the quad is cut to this rounded rectangle, with an
+    /// anti-aliased edge (a card that clips its children, SwiftUI `clipShape(RoundedRectangle)`). Radius 0 = none.
+    pub round_clip: [f32; 5],
     /// Fill, gradient start, image tint, glyph colour, shadow colour or glass tint.
     pub color: Color,
     /// Gradient end colour.
@@ -95,16 +105,20 @@ pub struct DrawQuad {
     pub gradient: [f32; 4],
     /// The quad belongs to an opacity group (set between `push_opacity` and `pop_opacity`).
     pub grouped: bool,
+    /// Noise of one level is added to the output, so a slow ramp does not band in 8 bits. Always on for gradients; images
+    /// opt in (a pre-computed gradient picture).
+    pub dither: bool,
 }
 
 impl DrawQuad {
     /// Bytes of one instance in the GPU buffer.
-    pub const SIZE: usize = 144;
+    pub const SIZE: usize = 176;
 
     fn base(rect: Rect, clip: Rect, kind: QuadKind) -> DrawQuad {
         DrawQuad {
             rect,
             clip: [clip.x, clip.y, clip.max_x(), clip.max_y()],
+            round_clip: [0.0; 5],
             color: Color::CLEAR,
             color2: Color::CLEAR,
             border_color: Color::CLEAR,
@@ -116,15 +130,16 @@ impl DrawQuad {
             kind,
             gradient: [0.0, 0.5, 1.0, 0.5],
             grouped: false,
+            dither: false,
         }
     }
 
-    /// Appends the 144-byte little-endian instance: rect, clip, colour, colour2, border colour, radii, uv,
-    /// `(border_width, blur, opacity, kind + 16 * flags)`, gradient.
+    /// Appends the 176-byte little-endian instance: rect, clip, colour, colour2, border colour, radii, uv,
+    /// `(border_width, blur, opacity, kind + 16 * flags)`, gradient, rounded clip rectangle, `(radius, 0, 0, 0)`.
     pub fn write_bytes(&self, out: &mut Vec<u8>) {
         let r = &self.rect;
-        let flags = u32::from(self.grouped);
-        let floats: [f32; 36] = {
+        let flags = u32::from(self.grouped) + 2 * u32::from(self.dither);
+        let floats: [f32; 44] = {
             let (c, c2, bc, ra) = (self.color, self.color2, self.border_color, self.radii);
             [
                 r.x,
@@ -163,6 +178,14 @@ impl DrawQuad {
                 self.gradient[1],
                 self.gradient[2],
                 self.gradient[3],
+                self.round_clip[0],
+                self.round_clip[1],
+                self.round_clip[2],
+                self.round_clip[3],
+                self.round_clip[4],
+                0.0,
+                0.0,
+                0.0,
             ]
         };
         for f in floats {
@@ -181,8 +204,15 @@ pub struct DrawList {
     width: f32,
     height: f32,
     scale: f32,
-    clips: Vec<Rect>,
+    clips: Vec<Clip>,
     opacities: Vec<f32>,
+}
+
+/// One entry of the clip stack: the rectangle and the innermost rounded clip in force (`(x0, y0, x1, y1, radius)`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Clip {
+    rect: Rect,
+    round: [f32; 5],
 }
 
 impl DrawList {
@@ -194,7 +224,10 @@ impl DrawList {
             width,
             height,
             scale,
-            clips: vec![Rect::new(0.0, 0.0, width, height)],
+            clips: vec![Clip {
+                rect: Rect::new(0.0, 0.0, width, height),
+                round: [0.0; 5],
+            }],
             opacities: Vec::new(),
         }
     }
@@ -244,6 +277,8 @@ impl DrawList {
             q.rect.x += dx;
             q.clip[0] = (q.clip[0] + dx).max(0.0);
             q.clip[2] = (q.clip[2] + dx).min(self.width);
+            q.round_clip[0] += dx;
+            q.round_clip[2] += dx;
             if q.clip[2] > q.clip[0] {
                 self.quads.push(q);
             }
@@ -258,6 +293,8 @@ impl DrawList {
             q.rect.x += dx;
             q.clip[0] = (q.clip[0] + dx).max(0.0);
             q.clip[2] = (q.clip[2] + dx).min(width);
+            q.round_clip[0] += dx;
+            q.round_clip[2] += dx;
             q.clip[2] > q.clip[0]
         });
     }
@@ -294,12 +331,29 @@ impl DrawList {
 
     /// The innermost clip.
     pub fn clip(&self) -> Rect {
-        self.clips.last().copied().unwrap_or(Rect::ZERO)
+        self.clips.last().map_or(Rect::ZERO, |c| c.rect)
+    }
+    fn round(&self) -> [f32; 5] {
+        self.clips.last().map_or([0.0; 5], |c| c.round)
     }
     /// Intersects the clip with `r` until [`pop_clip`](Self::pop_clip).
     pub fn push_clip(&mut self, r: Rect) {
         let c = self.clip().intersection(r);
-        self.clips.push(c);
+        let round = self.round();
+        self.clips.push(Clip { rect: c, round });
+    }
+    /// Like [`push_clip`](Self::push_clip), and the picture inside is cut to the rounded rectangle `r` with corner
+    /// `radius` (anti-aliased, drawn in the shader: no offscreen pass), SwiftUI `clipShape(RoundedRectangle)`. Closed
+    /// with [`pop_clip`](Self::pop_clip). One rounded clip applies at a time: a quad inside two nested rounded clips is
+    /// cut to the inner one only (and to the rectangle of both).
+    pub fn push_round_clip(&mut self, r: Rect, radius: f32) {
+        let c = self.clip().intersection(r);
+        let round = if radius > 0.0 {
+            [r.x, r.y, r.max_x(), r.max_y(), radius]
+        } else {
+            self.round()
+        };
+        self.clips.push(Clip { rect: c, round });
     }
     /// Drops the innermost pushed clip (the canvas clip stays).
     pub fn pop_clip(&mut self) {
@@ -330,11 +384,52 @@ impl DrawList {
     }
 
     fn quad(&self, rect: Rect, kind: QuadKind) -> DrawQuad {
-        DrawQuad::base(rect, self.clip(), kind)
+        let mut q = DrawQuad::base(rect, self.clip(), kind);
+        q.round_clip = self.round();
+        q
+    }
+
+    /// `r` with every edge on a whole device pixel (at least one pixel wide and high). On a 1.5 scale half of all
+    /// edges fall between two pixels; the shader then covers the edge pixels partly, so two touching shapes leave a
+    /// seam of the picture behind them and a picture shows a rim of the page. Core Animation snaps layers to the pixel
+    /// grid the same way.
+    pub fn snapped(&self, r: Rect) -> Rect {
+        let s = self.scale;
+        let edge = |v: f32| (v * s).round() / s;
+        let (x0, y0) = (edge(r.x), edge(r.y));
+        let (mut x1, mut y1) = (edge(r.x + r.w), edge(r.y + r.h));
+        if x1 <= x0 {
+            x1 = x0 + 1.0 / s;
+        }
+        if y1 <= y0 {
+            y1 = y0 + 1.0 / s;
+        }
+        Rect::new(x0, y0, x1 - x0, y1 - y0)
+    }
+
+    /// `r` with its origin and its size on whole device pixels (at least one pixel): a picture is drawn one texel to one
+    /// pixel when its texture was made at that size (`round(size * scale)`, what the image hub does), and a raster made
+    /// at the device size (icons, the wordmark) never lands between two pixels. This is the only place that snaps
+    /// pictures; gradient seams use [`snapped`](Self::snapped), which rounds the edges so touching bands share them.
+    pub fn snapped_picture(&self, r: Rect) -> Rect {
+        let s = self.scale;
+        let px = |v: f32| (v * s).round() / s;
+        Rect::new(px(r.x), px(r.y), px(r.w).max(1.0 / s), px(r.h).max(1.0 / s))
     }
 
     /// A rounded rectangle with a fill and an optional inside border.
     pub fn rect(
+        &mut self,
+        r: Rect,
+        fill: impl Into<Fill>,
+        border: Option<Border>,
+        radii: impl Into<Corners>,
+    ) {
+        self.rect_exact(r, fill, border, radii);
+    }
+
+    /// [`rect`](Self::rect) at exactly `r`, anti-aliased on its edges.
+    fn rect_exact(
         &mut self,
         r: Rect,
         fill: impl Into<Fill>,
@@ -381,6 +476,19 @@ impl DrawList {
             [(_, c)] => self.fill(r, *c, radius),
             _ => {
                 let last = stops.len() - 2;
+                // The seams between bands lie on whole device pixels: a seam inside a pixel is covered twice by half and
+                // lets the picture behind show through as a thin line.
+                let whole = self.snapped(r);
+                let s = self.scale;
+                let at = |from: f32, len: f32, p: f32| {
+                    if p <= 0.0 {
+                        from
+                    } else if p >= 1.0 {
+                        from + len
+                    } else {
+                        ((from + len * p) * s).round() / s
+                    }
+                };
                 for (i, w) in stops.windows(2).enumerate() {
                     let (p0, c0) = (w[0].0.clamp(0.0, 1.0), w[0].1);
                     let (p1, c1) = (w[1].0.clamp(0.0, 1.0), w[1].1);
@@ -388,13 +496,15 @@ impl DrawList {
                         continue;
                     }
                     let (band, g) = if vertical {
+                        let (y0, y1) = (at(whole.y, whole.h, p0), at(whole.y, whole.h, p1));
                         (
-                            Rect::new(r.x, r.y + r.h * p0, r.w, r.h * (p1 - p0)),
+                            Rect::new(whole.x, y0, whole.w, y1 - y0),
                             LinearGradient::vertical(c0, c1),
                         )
                     } else {
+                        let (x0, x1) = (at(whole.x, whole.w, p0), at(whole.x, whole.w, p1));
                         (
-                            Rect::new(r.x + r.w * p0, r.y, r.w * (p1 - p0), r.h),
+                            Rect::new(x0, whole.y, x1 - x0, whole.h),
                             LinearGradient::horizontal(c0, c1),
                         )
                     };
@@ -408,6 +518,55 @@ impl DrawList {
                         Corners::new(a, b, b, a)
                     };
                     self.fill(band, g, corners);
+                }
+            }
+        }
+    }
+
+    /// An elliptical gradient inside `r` (SwiftUI `EllipticalGradient`, `RadialGradient`): the colour at distance `t` from
+    /// `center` (points) is read from `stops` (`(position, colour)`, sorted, positions 0..1), where `t` is 1 on the
+    /// ellipse with the half axes `radii` (points). Inside the first stop and beyond the last the end colours extend.
+    /// Drawn as one quad per pair of neighbouring stops, each covering `r` but painting only its own band, so a band
+    /// costs one cheap shader pass and no stop count limits the quad. Dithered like the linear gradient.
+    pub fn radial_stops(
+        &mut self,
+        r: Rect,
+        center: [f32; 2],
+        radii: [f32; 2],
+        stops: &[(f32, Color)],
+    ) {
+        if r.w <= 0.0 || r.h <= 0.0 || radii[0] <= 0.0 || radii[1] <= 0.0 {
+            return;
+        }
+        let unit = [
+            (center[0] - r.x) / r.w,
+            (center[1] - r.y) / r.h,
+            radii[0] / r.w,
+            radii[1] / r.h,
+        ];
+        let last = stops.len().saturating_sub(2);
+        match stops {
+            [] => {}
+            [(_, c)] => self.fill(r, *c, 0.0),
+            _ => {
+                for (i, w) in stops.windows(2).enumerate() {
+                    let (p0, p1) = (w[0].0, w[1].0);
+                    if p1 <= p0 || w[0].1.a <= 0.0 && w[1].1.a <= 0.0 {
+                        continue;
+                    }
+                    let mut q = self.quad(r, QuadKind::Radial);
+                    q.color = w[0].1;
+                    q.color2 = w[1].1;
+                    q.gradient = unit;
+                    // The band; the outermost ones extend to infinity (a huge number keeps the shader branch-free).
+                    q.uv = [
+                        if i == 0 { -1.0e9 } else { p0 },
+                        p0,
+                        p1,
+                        if i == last { 1.0e9 } else { p1 },
+                    ];
+                    q.dither = true;
+                    self.push(q);
                 }
             }
         }
@@ -465,11 +624,27 @@ impl DrawList {
         if r.w <= 0.0 || r.h <= 0.0 || tint.a <= 0.0 {
             return;
         }
-        let mut q = self.quad(r, QuadKind::Image);
+        let mut q = self.quad(self.snapped_picture(r), QuadKind::Image);
         q.uv = uv;
         q.color = tint;
         q.radii = radii.into();
         self.push(q);
+    }
+
+    /// Like [`image`](Self::image), with one level of noise added so a pre-computed slow ramp (a faded backdrop) does not
+    /// band in 8 bits.
+    pub fn image_dithered(
+        &mut self,
+        r: Rect,
+        uv: [f32; 4],
+        tint: Color,
+        radii: impl Into<Corners>,
+    ) {
+        let before = self.quads.len();
+        self.image(r, uv, tint, radii);
+        if let Some(q) = self.quads[before..].last_mut() {
+            q.dither = true;
+        }
     }
 
     /// A glyph from the R8 glyph atlas (`uv` normalised) into `r`, in `color`.
@@ -478,6 +653,18 @@ impl DrawList {
             return;
         }
         let mut q = self.quad(r, QuadKind::Glyph);
+        q.uv = uv;
+        q.color = color;
+        self.push(q);
+    }
+
+    /// A colour glyph (emoji) from the colour page of the glyph atlas (`uv` normalised) into `r`. The picture keeps its own
+    /// colours; of `color` only the alpha is used (so a faded row fades its emoji too).
+    pub fn color_glyph(&mut self, r: Rect, uv: [f32; 4], color: Color) {
+        if r.w <= 0.0 || r.h <= 0.0 || color.a <= 0.0 {
+            return;
+        }
+        let mut q = self.quad(r, QuadKind::ColorGlyph);
         q.uv = uv;
         q.color = color;
         self.push(q);
@@ -501,7 +688,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn quad_is_144_bytes_with_kind_and_flags() {
+    fn quad_is_176_bytes_with_kind_and_flags() {
         let mut l = DrawList::new(10.0, 10.0, 1.0);
         l.push_opacity(0.5);
         l.image(
@@ -516,6 +703,7 @@ mod tests {
         let f = |i: usize| f32::from_le_bytes([b[i * 4], b[i * 4 + 1], b[i * 4 + 2], b[i * 4 + 3]]);
         assert_eq!(f(30), 0.5, "opacity");
         assert_eq!(f(31), 3.0 + 16.0, "image kind and the group flag");
+        assert_eq!(f(40), 0.0, "no rounded clip");
     }
 
     #[test]
@@ -571,6 +759,69 @@ mod tests {
     }
 
     #[test]
+    fn round_clip_is_stored_on_the_quads_and_follows_shifts() {
+        let mut l = DrawList::new(100.0, 100.0, 1.0);
+        l.push_round_clip(Rect::new(10.0, 10.0, 50.0, 40.0), 8.0);
+        l.push_clip(Rect::new(0.0, 0.0, 30.0, 100.0));
+        l.fill(Rect::new(0.0, 0.0, 100.0, 100.0), Color::WHITE, 0.0);
+        l.pop_clip();
+        l.pop_clip();
+        l.fill(Rect::new(0.0, 0.0, 5.0, 5.0), Color::WHITE, 0.0);
+        assert_eq!(l.quads()[0].round_clip, [10.0, 10.0, 60.0, 50.0, 8.0]);
+        assert_eq!(
+            l.quads()[0].clip,
+            [10.0, 10.0, 30.0, 50.0],
+            "the rectangle clip still applies"
+        );
+        assert_eq!(l.quads()[1].round_clip[4], 0.0, "popped");
+        let mut b = Vec::new();
+        l.quads()[0].write_bytes(&mut b);
+        let f = |i: usize| f32::from_le_bytes([b[i * 4], b[i * 4 + 1], b[i * 4 + 2], b[i * 4 + 3]]);
+        assert_eq!((f(36), f(38), f(40)), (10.0, 60.0, 8.0));
+        l.shift_all(5.0);
+        assert_eq!(
+            (l.quads()[0].round_clip[0], l.quads()[0].round_clip[2]),
+            (15.0, 65.0)
+        );
+    }
+
+    #[test]
+    fn radial_stops_make_one_band_per_pair_with_open_ends() {
+        let mut l = DrawList::new(100.0, 100.0, 1.0);
+        let c = |a: f32| Color::new(1.0, 1.0, 1.0, a);
+        l.radial_stops(
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+            [50.0, 0.0],
+            [50.0, 25.0],
+            &[(0.0, c(0.2)), (0.35, c(0.12)), (1.0, c(0.0))],
+        );
+        let q = l.quads();
+        assert_eq!(q.len(), 2);
+        assert!(q.iter().all(|q| q.kind == QuadKind::Radial));
+        assert_eq!(
+            q[0].gradient,
+            [0.5, 0.0, 0.5, 0.5],
+            "centre and radii in the unit square"
+        );
+        assert!(
+            q[0].uv[0] < -1.0e8 && q[0].uv[3] == 0.35,
+            "first band reaches inwards"
+        );
+        assert!(
+            q[1].uv[3] > 1.0e8 && q[1].uv[1] == 0.35 && q[1].uv[2] == 1.0,
+            "last band reaches outwards"
+        );
+        let mut none = DrawList::new(10.0, 10.0, 1.0);
+        none.radial_stops(
+            Rect::new(0.0, 0.0, 10.0, 10.0),
+            [0.0; 2],
+            [0.0, 5.0],
+            &[(0.0, c(1.0)), (1.0, c(0.0))],
+        );
+        assert!(none.quads().is_empty(), "a flat ellipse draws nothing");
+    }
+
+    #[test]
     fn opacity_groups_nest() {
         let mut l = DrawList::new(10.0, 10.0, 1.0);
         l.push_opacity(0.5);
@@ -598,7 +849,8 @@ mod tests {
         l.fill_stops(Rect::new(0.0, 0.0, 100.0, 150.0), true, &stops, 0.0);
         let q = l.quads();
         assert_eq!(q.len(), 3);
-        assert!((q[0].rect.h - 22.5).abs() < 1e-4);
+        // The seam lies on a whole pixel (22.5 rounds to 23).
+        assert!((q[0].rect.h - 22.5).abs() <= 0.5);
         let end = q[2].rect.y + q[2].rect.h;
         assert!((end - 150.0).abs() < 1e-3, "{end}");
         assert_eq!(q[1].color.a, 0.93);

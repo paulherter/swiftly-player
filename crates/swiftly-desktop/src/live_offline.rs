@@ -66,7 +66,9 @@ pub fn offline_spec(item: &DownloadItem, file: &Path, since: f64) -> Result<Play
             method: PlayMethod::DirectPlay,
         },
         request: EngineRequest {
-            item_id: item.id.clone(),
+            // Empty like the Mac's file request: a file on the device has no server description, so the engine's own
+            // audio tracks fill the list (the subtitles come from the download's `info.json`).
+            item_id: String::new(),
             streams,
             runtime,
             subtitle_files,
@@ -179,6 +181,10 @@ mod subtitle_tests {
         assert_eq!(
             files,
             vec![(3, "3.srt".to_owned()), (5, "5.ass".to_owned())]
+        );
+        assert!(
+            spec.request.item_id.is_empty(),
+            "a file has no server description: the engine's audio tracks fill the list"
         );
         let tracks: Vec<_> = spec
             .request

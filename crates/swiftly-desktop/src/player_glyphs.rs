@@ -84,31 +84,25 @@ fn bar(x0: f32, y0: f32, x1: f32, y1: f32, t: f32) -> String {
     )
 }
 
-/// Four corner brackets: pointing out (enter fullscreen) or in (leave it).
-fn corners(inward: bool) -> String {
-    let (a, b) = if inward {
-        (62.0_f32, 38.0_f32)
+/// One diagonal arrow of the window button: an L-shaped head at `(cx, cy)` whose arms run along `(ax, ay)` (each +-1), and
+/// a shaft from the head's corner to `(tx, ty)`.
+fn diagonal_arrow(cx: f32, cy: f32, ax: f32, ay: f32, (tx, ty): (f32, f32)) -> String {
+    let (arm, t) = (32.0_f32, 10.0_f32);
+    bar(cx - ax * t / 2.0, cy, cx + ax * arm, cy, t)
+        + &bar(cx, cy - ay * t / 2.0, cx, cy + ay * arm, t)
+        + &bar(cx, cy, tx, ty, t)
+}
+
+/// The Mac's `arrow.up.left.and.arrow.down.right` (enter fullscreen: one arrow at the top left pointing up-left, one at
+/// the bottom right pointing down-right) and `arrow.down.right.and.arrow.up.left` (leave it: both point at the middle).
+fn window_arrows(inward: bool) -> String {
+    if inward {
+        diagonal_arrow(46.0, 46.0, -1.0, -1.0, (8.0, 8.0))
+            + &diagonal_arrow(54.0, 54.0, 1.0, 1.0, (92.0, 92.0))
     } else {
-        (100.0, 0.0)
-    };
-    let mut d = String::new();
-    for (sx, sy) in [(0.0_f32, 0.0_f32), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)] {
-        let m = |v: f32, s: f32| if s == 0.0 { v } else { 100.0 - v };
-        let (cx, cy) = if inward {
-            (m(b, sx), m(b, sy))
-        } else {
-            (m(0.0, sx), m(0.0, sy))
-        };
-        let arm = if inward { 24.0 } else { 34.0 };
-        let (ex, ey) = (
-            if sx == 0.0 { arm } else { -arm },
-            if sy == 0.0 { arm } else { -arm },
-        );
-        let _ = a;
-        d.push_str(&bar(cx, cy, cx + ex, cy, 9.0));
-        d.push_str(&bar(cx, cy, cx, cy + ey, 9.0));
+        diagonal_arrow(10.0, 10.0, 1.0, 1.0, (46.0, 46.0))
+            + &diagonal_arrow(90.0, 90.0, -1.0, -1.0, (54.0, 54.0))
     }
-    d
 }
 
 /// The loader arc: 22 % of a circle (stroke 3 of 34 points), turned to step `i` of 12.
@@ -142,8 +136,8 @@ const ARCS: [&str; 12] = [
 
 fn path(name: &str) -> String {
     match name {
-        "fullscreen" => corners(false),
-        "fullscreen-exit" => corners(true),
+        "fullscreen" => window_arrows(false),
+        "fullscreen-exit" => window_arrows(true),
         "speaker-slash" => {
             // Cone and body, then the slash cross (muted).
             "M 4 36 L 24 36 L 54 12 L 54 88 L 24 64 L 4 64 Z ".to_owned()
@@ -179,7 +173,36 @@ fn path(name: &str) -> String {
     }
 }
 
+/// The shared icon asset behind a player glyph name (and whether it is an outline with stroke variants).
+fn asset_of(name: &str) -> Option<(&'static str, bool)> {
+    match name {
+        "check" => Some(("check", true)),
+        "x" => Some(("x", true)),
+        "play" => Some(("play.fill", false)),
+        "pause" => Some(("pause.fill", false)),
+        "skip-end" => Some(("skip-forward.fill", false)),
+        "captions" => Some(("subtitles", true)),
+        "speaker" => Some(("speaker-high", false)),
+        "sliders" => Some(("sliders-horizontal", true)),
+        "stack" => Some(("stack", true)),
+        "pip" => Some(("picture-in-picture.fill", false)),
+        "television" => Some(("television", true)),
+        "users" => Some(("users", true)),
+        "warning" => Some(("warning.fill", false)),
+        "goforward" => Some(("arrow-clockwise", true)),
+        "gobackward" => Some(("arrow-counter-clockwise", true)),
+        // The window button's arrows (up-left / down-right, `IconMap`: arrow.up.left.and.arrow.down.right) are drawn
+        // by `window_arrows`: the shared set only has the mirrored pair (up-right / down-left).
+        _ => None,
+    }
+}
+
 impl Glyphs {
+    /// The shared icon set behind the glyphs (the paging arrows use its caret).
+    pub fn icons(&self) -> &Icons {
+        &self.icons
+    }
+
     /// Glyphs for `cx` drawn at `scale` pixels per point.
     pub fn new(cx: &Cx, scale: f32) -> Glyphs {
         Glyphs {
@@ -194,24 +217,12 @@ impl Glyphs {
     pub fn node(&self, name: &'static str, pt: f32, tint: Color) -> Node {
         // The real Swift assets (`IconMap.swift`): play.fill, pause.fill, forward.end.fill, captions.bubble,
         // slider.horizontal.3 and the skip arrows (`arrow-clockwise` / `arrow-counter-clockwise`, the seconds are text).
-        let asset = match name {
-            "check" | "x" => Some((name, true)),
-            "play" => Some(("play.fill", false)),
-            "pause" => Some(("pause.fill", false)),
-            "skip-end" => Some(("skip-forward.fill", false)),
-            "captions" => Some(("subtitles", true)),
-            "speaker" => Some(("speaker-high", false)),
-            "sliders" => Some(("sliders-horizontal", true)),
-            "stack" => Some(("stack", true)),
-            "pip" => Some(("picture-in-picture.fill", false)),
-            "television" => Some(("television", true)),
-            "users" => Some(("users", true)),
-            "warning" => Some(("warning.fill", false)),
-            "goforward" => Some(("arrow-clockwise", true)),
-            "gobackward" => Some(("arrow-counter-clockwise", true)),
-            _ => None,
-        };
+        let asset = asset_of(name);
         if let Some((asset, outlined)) = asset {
+            // The skip rings keep their ring on the box centre (the seconds are centred in the same box).
+            if matches!(name, "goforward" | "gobackward") {
+                return self.icons.node_template(asset, pt, outlined, tint);
+            }
             return self.icons.node(asset, pt, outlined, tint);
         }
         let px = ((pt * self.scale).ceil() as u32).max(8);
@@ -243,5 +254,36 @@ impl Glyphs {
     /// The activity spinner at spoke `i`.
     pub fn spinner(&self, i: u8, pt: f32, tint: Color) -> Node {
         self.icons.spoke(usize::from(i), pt, tint)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{asset_of, path, rasterize};
+
+    /// Whether the glyph has ink around `(fx, fy)` (fractions of its box).
+    fn ink(name: &str, fx: f32, fy: f32) -> bool {
+        let px = 100u32;
+        let img = rasterize(&path(name), px, true);
+        let (cx, cy) = ((fx * px as f32) as i32, (fy * px as f32) as i32);
+        (-3..=3).any(|dy| {
+            (-3..=3).any(|dx| {
+                let (x, y) = ((cx + dx) as usize, (cy + dy) as usize);
+                img[(y * px as usize + x) * 4 + 3] > 128
+            })
+        })
+    }
+
+    #[test]
+    fn the_window_button_is_drawn_like_the_mac_symbols() {
+        // `IconMap`: arrow.up.left.and.arrow.down.right / arrow.down.right.and.arrow.up.left.
+        assert_eq!(asset_of("fullscreen"), None);
+        assert_eq!(asset_of("fullscreen-exit"), None);
+        // Enter: the arrow heads sit in the top-left and bottom-right corners, nothing in the other two.
+        assert!(ink("fullscreen", 0.10, 0.10) && ink("fullscreen", 0.90, 0.90));
+        assert!(!ink("fullscreen", 0.90, 0.10) && !ink("fullscreen", 0.10, 0.90));
+        // Leave: the heads move to the middle, the corners keep only the shafts' ends.
+        assert!(ink("fullscreen-exit", 0.46, 0.46) && ink("fullscreen-exit", 0.54, 0.54));
+        assert!(!ink("fullscreen-exit", 0.90, 0.10) && !ink("fullscreen-exit", 0.10, 0.90));
     }
 }

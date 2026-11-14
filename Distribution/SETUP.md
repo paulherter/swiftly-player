@@ -27,10 +27,22 @@ branch, and the secrets below are needed before they can succeed.
    easiest way is `wingetcreate` (runs on Windows, or through `dotnet` on any
    machine):
    ```sh
-   wingetcreate submit --token <PAT> Distribution/winget/1.0.3/PaulHerter.SwiftlyPlayer.yaml
+   wingetcreate submit --token <PAT> Distribution/winget/1.1.0/PaulHerter.SwiftlyPlayer.yaml
    ```
-   The three finished manifests are in `Distribution/winget/1.0.3/`. They follow
-   the current schema and include the installer's SHA256 checksum.
+   The three manifests are in `Distribution/winget/1.1.0/` (the older version
+   folders are kept as they were submitted). They follow the current schema.
+   `InstallerSha256` in the 1.1.0 installer manifest is a placeholder of zeros:
+   replace it with the SHA256 of the published
+   `Swiftly-Player-1.1.0-win-x64-Setup.exe` first (`Get-FileHash` or
+   `shasum -a 256`).
+
+   Version 1.1.0 switches the installer from Inno Setup to NSIS
+   (`InstallerType: nullsoft`, silent switch `/S`). The automatic action copies
+   the type and switches of the newest published version, so submit 1.1.0 by
+   hand even though earlier versions exist, and set the repository variable
+   `WINGET_READY` to `true` only after that pull request is merged. The NSIS
+   installer removes an Inno-based 1.0.x installation itself, so
+   `winget upgrade` over it leaves a single entry.
    `wingetcreate submit` reads all three from the same folder and opens the PR
    against `microsoft/winget-pkgs`.
 5. From the next release on (`gh release create` or the web UI),
@@ -56,8 +68,14 @@ branch, and the secrets below are needed before they can succeed.
       swiftly-player-bin/
    cd swiftly-player-bin
    git add PKGBUILD .SRCINFO
-   git commit -m "swiftly-player-bin 1.0.3"
+   git commit -m "swiftly-player-bin 1.1.0"
    git push
+   ```
+   The package installs the prebuilt Linux tarball of the Rust desktop app.
+   Its checksums in the shipped PKGBUILD and `.SRCINFO` are `SKIP`; on an Arch
+   machine fill them from the published release files first:
+   ```sh
+   cd swiftly-player-bin && updpkgsums && makepkg --printsrcinfo > .SRCINFO
    ```
    The shipped `.SRCINFO` was written by hand from the PKGBUILD, because
    `makepkg` was not available where it was prepared. **Check it once before

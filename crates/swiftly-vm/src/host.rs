@@ -60,6 +60,25 @@ pub struct Host {
 }
 
 impl Host {
+    /// Runs `task` and calls `on_panic` if it panics, so a screen can show an error instead of waiting for an answer that
+    /// never comes (the lost task left it on its loading tiles for good). The spawner keeps its worker either way.
+    pub(crate) fn spawn_guarded(
+        &self,
+        task: Pin<Box<dyn Future<Output = ()> + Send>>,
+        on_panic: impl FnOnce() + Send + 'static,
+    ) {
+        use futures_util::FutureExt;
+        self.spawner.spawn(Box::pin(async move {
+            if std::panic::AssertUnwindSafe(task)
+                .catch_unwind()
+                .await
+                .is_err()
+            {
+                on_panic();
+            }
+        }));
+    }
+
     /// Where the preview of the account `key` lives: the cache database (with the host store as
     /// the fallback for one written before) or, without a cache, the host store alone.
     pub(crate) fn preview_store(&self, key: &str) -> Arc<dyn Store> {

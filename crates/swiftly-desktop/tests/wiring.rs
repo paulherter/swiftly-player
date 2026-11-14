@@ -89,6 +89,45 @@ fn a_load_request_opens_the_downloads_page_with_the_add_popover() {
     s.season_finished();
 }
 
+/// A sheet is modal, as on the Mac: the sidebar (clicks and the tab shortcuts) does nothing under the open add popover.
+#[test]
+fn the_sidebar_does_nothing_while_the_add_popover_is_open() {
+    let mut s = Suite::new(env(false), Cx::deterministic());
+    let mut now = 0.0;
+    run_for(&mut s, &mut now, 300.0);
+    s.request_load(
+        LoadRequest::Add {
+            title: "Der Zug laden".into(),
+            items: Vec::new(),
+            images: HashMap::new(),
+            quality_select: false,
+            streams: Vec::new(),
+            anchor: None,
+        },
+        now,
+    );
+    run_for(&mut s, &mut now, 600.0);
+    assert!(s.load_open());
+    let rows = (60..420).step_by(30);
+    for y in rows {
+        s.touch_down(40.0, y as f32, now);
+        now += 40.0;
+        s.touch_up(40.0, y as f32, now);
+        run_for(&mut s, &mut now, 400.0);
+        assert!(
+            s.load_open() && s.form_open() == Some("downloads"),
+            "a sidebar click at y={y} changed the page under the sheet"
+        );
+    }
+    assert!(!s.goto_tab(2, now), "the tab shortcuts wait for the sheet");
+    assert!(s.load_open() && s.form_open() == Some("downloads"));
+    // Esc closes the sheet; afterwards the sidebar works again.
+    s.back(now);
+    run_for(&mut s, &mut now, 400.0);
+    assert!(!s.load_open());
+    assert!(s.goto_tab(2, now));
+}
+
 fn play(s: &mut Suite, now: &mut f64) -> (f64, f64) {
     s.begin_switch_stage("Paula", None, *now);
     assert!(s.switch_stage_running());

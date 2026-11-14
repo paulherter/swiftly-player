@@ -229,3 +229,35 @@ fn kind_card_busy_mark_pair() {
     let at = now + 300.0;
     check("login_mac_kind_busy_cleared", &shoot!(l, &mut now, at));
 }
+
+/// The Jellyfin address page keeps the Mac's two wordings apart: the first start is `ServerView` with the button
+/// "Verbinden", "Server hinzuf\u{00FC}gen" is `ServerOnboardingView` with "Weiter" (and "Moment\u{2026}" while it checks).
+#[test]
+fn the_jellyfin_address_button_follows_the_first_start_and_the_add_flow() {
+    fn labels(l: &LoginScreen) -> String {
+        fn walk(n: &[swiftly_ui::a11y::A11yNode], out: &mut Vec<String>) {
+            for x in n {
+                out.push(x.label.clone());
+                walk(&x.children, out);
+            }
+        }
+        let mut all = Vec::new();
+        walk(&l.a11y_nodes(), &mut all);
+        all.join("\n")
+    }
+    let mut first = screen(Start::Kind);
+    first.press("kind:0");
+    let mut now = 0.0;
+    let _ = shoot!(first, &mut now, 300.0);
+    let joined = labels(&first);
+    assert!(joined.contains("Verbinden"), "{joined}");
+    assert!(!joined.contains("Weiter"), "{joined}");
+
+    let mut add = screen(Start::AddKind);
+    add.press("kind:0");
+    let mut now = 0.0;
+    let _ = shoot!(add, &mut now, 300.0);
+    let joined = labels(&add);
+    assert!(joined.contains("Weiter"), "{joined}");
+    assert!(!joined.contains("Verbinden"), "{joined}");
+}

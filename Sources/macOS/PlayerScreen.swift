@@ -1303,10 +1303,17 @@ struct PlayerScreen: View {
         }
     }
 
+    /// Whether the server has heard of the running title. The core reports the start itself (at the first picture) and
+    /// the tick does not compute here for it, so `startReported` stays false for a title the core plays: its picture
+    /// being up is the same fact.
+    private var startIsReported: Bool {
+        state.startReported || (area?.coreTransport != nil && state.firstImagePresent)
+    }
+
     /// The stop for whatever is running now, only if its start was reported. Once for
     /// `finish` and once for disappearing without it.
     private func stopMessage(at spot: Double) -> @Sendable () async -> Void {
-        let ongoing = (item: title, plan: plan, reported: state.startReported)
+        let ongoing = (item: title, plan: plan, reported: startIsReported)
         let model = model
         return {
             guard ongoing.reported else { return }
@@ -1853,7 +1860,7 @@ struct PlayerScreen: View {
 
             beats += 1
             // The Now Playing field needs the position only once per second.
-            if beats % 2 == 0, state.startReported {
+            if beats % 2 == 0, startIsReported {
                 hub.stateCatchUp(position: state.position,
                                          running: state.running, tempo: area.tempo)
             }

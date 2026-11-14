@@ -100,6 +100,9 @@ pub struct AfterPlay {
     store: Arc<dyn KeyValue>,
     version: String,
     rating_possible: bool,
+    /// The host marks a nudge as shown only when it really put it on screen ([`AfterPlay::mark_shown`]), where the
+    /// Apple apps mark at once (a crash before the sheet would rather lose the hint than repeat it).
+    mark_when_shown: bool,
 }
 
 impl AfterPlay {
@@ -109,6 +112,28 @@ impl AfterPlay {
             store,
             version: version.to_owned(),
             rating_possible,
+            mark_when_shown: false,
+        }
+    }
+
+    /// Like [`AfterPlay::new`], but a nudge counts as shown only after [`AfterPlay::mark_shown`]: a card that was not put on
+    /// screen (another window in front, the app closed) comes again after the next finished title.
+    pub fn marking_when_shown(
+        store: Arc<dyn KeyValue>,
+        version: &str,
+        rating_possible: bool,
+    ) -> Self {
+        Self {
+            mark_when_shown: true,
+            ..Self::new(store, version, rating_possible)
+        }
+    }
+
+    /// Records that `nudge` was shown (what `done_watch` does at once when the host marks on its own).
+    pub fn mark_shown(&self, nudge: Nudge) {
+        match nudge {
+            Nudge::Rating => self.store.set(RATED_KEY, &self.version),
+            Nudge::Discord => self.store.set(DISCORD_KEY, "true"),
         }
     }
 
@@ -133,11 +158,9 @@ impl AfterPlay {
             shown,
             self.rating_possible,
         );
-        match nudge {
-            Some(Nudge::Rating) => self.store.set(RATED_KEY, &self.version),
-            // Marked at once: a crash before the sheet would rather lose the hint than repeat it.
-            Some(Nudge::Discord) => self.store.set(DISCORD_KEY, "true"),
-            None => {}
+        // Marked at once: a crash before the sheet would rather lose the hint than repeat it.
+        if let Some(n) = nudge.filter(|_| !self.mark_when_shown) {
+            self.mark_shown(n);
         }
         nudge
     }

@@ -130,29 +130,37 @@ impl SwitchStage {
 
     /// The overlay at `t`: the picture with its initial and the ring, placed over a window filling frame.
     pub fn node(&self, cx: &Cx, t: f64, initial: char) -> Node {
+        self.node_with(t, |size| {
+            text(
+                cx,
+                &initial.to_string(),
+                swiftly_design::TextStyle {
+                    size: size * 0.42,
+                    weight: 700,
+                    tracking: 0.0,
+                    uppercase: false,
+                },
+                colour::FONT,
+                Some(1),
+                swiftly_text::Align::Center,
+            )
+        })
+    }
+
+    /// [`SwitchStage::node`] with the face drawn by `inner` (given the circle's size): the new account's picture, or its
+    /// initial.
+    pub fn node_with(&self, t: f64, inner: impl FnOnce(f32) -> Node) -> Node {
         let p = self.pose(t);
         let ring = Color::new(0.20, 0.55, 1.0, p.ring_alpha);
         let rs = p.size * p.ring_scale + 8.0;
         let ring_node = Node::rect(ring, rs / 2.0).frame(Some(rs), Some(rs), Alignment::CENTER);
-        let face = text(
-            cx,
-            &initial.to_string(),
-            swiftly_design::TextStyle {
-                size: p.size * 0.42,
-                weight: 700,
-                tracking: 0.0,
-                uppercase: false,
-            },
-            colour::FONT,
-            Some(1),
-            swiftly_text::Align::Center,
-        )
-        .frame(Some(p.size), Some(p.size), Alignment::CENTER)
-        .background(
-            Node::rect(color(colour::AREA), p.size / 2.0),
-            Alignment::CENTER,
-        )
-        .opacity(p.alpha, swiftly_ui::Motion::Instant);
+        let face = inner(p.size)
+            .frame(Some(p.size), Some(p.size), Alignment::CENTER)
+            .background(
+                Node::rect(color(colour::AREA), p.size / 2.0),
+                Alignment::CENTER,
+            )
+            .opacity(p.alpha, swiftly_ui::Motion::Instant);
         let placed = face.background(ring_node, Alignment::CENTER).frame(
             Some(rs),
             Some(rs),
@@ -191,6 +199,47 @@ impl StageScreen {
     /// A stage over an empty window of `env`.
     pub fn new(env: Env, cx: Cx, stage: SwitchStage) -> StageScreen {
         StageScreen::with_initial(env, cx, stage, 'P')
+    }
+
+    /// A stage whose picture is the new account's (`picture`, through `hub`) and shows `initial` (the first letter of
+    /// its name) while there is none (the Mac's `ProfileCharacter`).
+    pub fn with_picture(
+        env: Env,
+        cx: Cx,
+        stage: SwitchStage,
+        initial: char,
+        hub: crate::hub::HubSlot,
+        picture: Option<String>,
+    ) -> StageScreen {
+        let ui = Ui::new(
+            move |t: &f64, _env: &Env, cx: &Cx| {
+                stage.node_with(*t / 1000.0, |size| {
+                    crate::hub::avatar_node(&hub, picture.as_deref(), size, || {
+                        text(
+                            cx,
+                            &initial.to_string(),
+                            swiftly_design::TextStyle {
+                                size: size * 0.42,
+                                weight: 700,
+                                tracking: 0.0,
+                                uppercase: false,
+                            },
+                            colour::FONT,
+                            Some(1),
+                            swiftly_text::Align::Center,
+                        )
+                    })
+                })
+            },
+            0.0,
+            env,
+            cx,
+        );
+        StageScreen {
+            ui,
+            since: None,
+            stage,
+        }
     }
 
     /// A stage whose picture shows `initial` (the first letter of the new account's name).
@@ -260,6 +309,18 @@ mod tests {
         );
         assert!(s.change_at() >= 0.6);
         assert!(s.finished(s.curve.paint_end() + 0.06) && !s.finished(0.2));
+    }
+
+    #[test]
+    fn the_face_is_drawn_by_the_caller_at_the_circles_size() {
+        let s = stage();
+        let t = s.curve.paint_end();
+        let seen = std::cell::Cell::new(0.0_f32);
+        let _ = s.node_with(t, |size| {
+            seen.set(size);
+            Node::fixed(1.0, 1.0)
+        });
+        assert!((seen.get() - s.pose(t).size).abs() < 1e-4, "{}", seen.get());
     }
 
     #[test]

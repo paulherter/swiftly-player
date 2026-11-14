@@ -310,3 +310,277 @@ fn the_rendered_sidebar_follows_the_machine_for_settings() {
         );
     }
 }
+
+/// Settings > "Server hinzufügen" > the back control: the settings page comes back, not the start page.
+#[test]
+fn back_from_add_server_returns_to_settings() {
+    let (mut s, mut now) = app();
+    assert!(s.open_settings(now));
+    run_for(&mut s, &mut now, 1200.0);
+    let f = s.top_frame_of("go:server").expect("the add-server row");
+    let (x, y) = (f[0] + f[2] * 0.5, f[1] + f[3] * 0.5);
+    s.pointer_move(x, y, now);
+    s.touch_down(x, y, now);
+    now += 60.0;
+    s.touch_up(x, y, now);
+    run_for(&mut s, &mut now, 700.0);
+    assert_eq!(s.form_open(), Some("login"));
+    assert!(s.back(now));
+    run_for(&mut s, &mut now, 1500.0);
+    assert_eq!(
+        s.form_open(),
+        Some("settings"),
+        "back lands on the settings page"
+    );
+    assert_eq!(s.tab(), 0);
+}
+
+/// Leaving Downloads for another page only fades the new page in: the old page is already gone, so a fade out of the
+/// area behind it would flash that area for a moment (disappear, fade in, disappear, fade in).
+#[test]
+fn leaving_downloads_only_fades_the_new_page_in() {
+    let (mut s, mut now) = app();
+    assert!(tap_label(&mut s, &mut now, "Downloads"));
+    run_for(&mut s, &mut now, 700.0);
+    assert_eq!(s.form_open(), Some("downloads"));
+    assert!(tap_label(&mut s, &mut now, "Merkliste"));
+    now += 40.0;
+    let _ = s.frame(now);
+    assert_eq!(s.tab(), 4);
+    assert!(s.fade_in_only(), "no fade out of the page behind Downloads");
+    run_for(&mut s, &mut now, 700.0);
+    assert!(!s.fade_in_only());
+}
+
+/// The darkest content-area pixel of every frame while an area change runs: the Mac cross fades over the window ground
+/// (16), so the content area never goes darker than the ground, also between the old page leaving and the new one coming.
+fn darkest_content_pixel_during(s: &mut Suite, now: &mut f64, ms: f64) -> u8 {
+    let end = *now + ms;
+    let mut lowest = 255u8;
+    while *now < end {
+        *now += STEP;
+        let (list, _) = s.frame(*now);
+        let img = s.render_software(&list);
+        for (x, y) in [(900, 760), (1200, 780), (700, 790), (1250, 20)] {
+            lowest = lowest.min(img.pixel(x, y)[0]);
+        }
+    }
+    lowest
+}
+
+#[test]
+fn leaving_downloads_never_dips_below_the_page_ground() {
+    let (mut s, mut now) = app();
+    assert!(tap_label(&mut s, &mut now, "Downloads"));
+    run_for(&mut s, &mut now, 700.0);
+    assert_eq!(s.form_open(), Some("downloads"));
+    assert!(tap_label(&mut s, &mut now, "Merkliste"));
+    let lowest = darkest_content_pixel_during(&mut s, &mut now, 600.0);
+    assert!(lowest >= 16, "content dipped to {lowest} (ground is 16)");
+}
+
+#[test]
+fn a_tab_change_never_dips_below_the_page_ground() {
+    let (mut s, mut now) = app();
+    assert!(tap_label(&mut s, &mut now, "Filme"));
+    let lowest = darkest_content_pixel_during(&mut s, &mut now, 600.0);
+    assert!(lowest >= 16, "content dipped to {lowest} (ground is 16)");
+}
+
+/// How many samples of the content area differ from the window ground (16) by more than a hair.
+fn drawn_samples(s: &mut Suite, list: &swiftly_render::DrawList) -> usize {
+    let img = s.render_software(list);
+    let mut n = 0;
+    for y in (60..780).step_by(20) {
+        for x in (400..1260).step_by(20) {
+            let p = img.pixel(x, y);
+            if p[..3].iter().any(|c| c.abs_diff(16) > 6) {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+/// The content area is never only the ground while an area changes: the old page stays until the new one draws over it
+/// (one cross fade), as the Mac's section switch never shows an empty window between two pages.
+#[test]
+fn a_tab_change_never_shows_only_the_ground() {
+    let (mut s, mut now) = app();
+    let (list, _) = s.frame(now);
+    let before = drawn_samples(&mut s, &list);
+    assert!(before > 40, "the start page draws {before} samples");
+    assert!(tap_label(&mut s, &mut now, "Filme"));
+    let end = now + 600.0;
+    let mut lowest = usize::MAX;
+    while now < end {
+        now += STEP;
+        let (list, _) = s.frame(now);
+        lowest = lowest.min(drawn_samples(&mut s, &list));
+    }
+    assert!(
+        lowest * 2 >= before,
+        "a frame of the switch drew {lowest} samples of {before}: the area went blank"
+    );
+}
+
+/// "Laden" on a title page: the add sheet floats over that page, the Downloads page is never shown, and closing the
+/// sheet brings the title page back in front.
+#[test]
+fn the_add_sheet_floats_over_the_title_page_not_the_downloads_page() {
+    use swiftly_desktop::downloads_screen::LoadRequest;
+    use swiftly_desktop::nav_machine::Selected;
+    let (mut s, mut now) = app();
+    // Movies, then tap a grid of points until a title page opens.
+    assert!(s.goto_tab(1, now));
+    run_for(&mut s, &mut now, 400.0);
+    let before = s.pushes();
+    'scan: for yi in 0..14 {
+        for xi in 0..14 {
+            let (x, y) = (
+                SIZE.0 * (0.30 + 0.05 * xi as f32),
+                SIZE.1 * (0.25 + 0.05 * yi as f32),
+            );
+            s.touch_down(x, y, now);
+            s.touch_up(x, y, now + 40.0);
+            now += 80.0;
+            run_for(&mut s, &mut now, 100.0);
+            if s.pushes() > before {
+                break 'scan;
+            }
+        }
+    }
+    run_for(&mut s, &mut now, 900.0);
+    assert_eq!(s.top_kind(), Some("detail"), "the film page is open");
+    s.request_load(
+        LoadRequest::Add {
+            title: "Der Zug".into(),
+            items: Vec::new(),
+            images: std::collections::HashMap::new(),
+            quality_select: false,
+            streams: Vec::new(),
+            anchor: None,
+        },
+        now,
+    );
+    run_for(&mut s, &mut now, 600.0);
+    assert!(s.load_open(), "the sheet is open");
+    assert_ne!(
+        s.selected(),
+        Selected::Downloads,
+        "the sidebar stays on its page"
+    );
+    let (list, _) = s.frame(now);
+    assert!(
+        drawn_samples(&mut s, &list) > 40,
+        "the film page stays under the sheet"
+    );
+    assert!(s.back(now));
+    run_for(&mut s, &mut now, 300.0);
+    assert!(!s.load_open());
+    assert_eq!(
+        s.top_kind(),
+        Some("detail"),
+        "the film page is in front again"
+    );
+}
+
+/// The add sheet comes from the More menu: the Mac shows no menu while the sheet is up, and none after it closes. The
+/// window title stays the title page's, not "Downloads".
+#[test]
+fn the_more_menu_is_closed_by_its_sheet_and_the_title_stays_the_page() {
+    use swiftly_desktop::downloads_screen::LoadRequest;
+    let (mut s, mut now) = app();
+    assert!(s.goto_tab(1, now));
+    run_for(&mut s, &mut now, 400.0);
+    let before = s.pushes();
+    'scan: for yi in 0..14 {
+        for xi in 0..14 {
+            let (x, y) = (
+                SIZE.0 * (0.30 + 0.05 * xi as f32),
+                SIZE.1 * (0.25 + 0.05 * yi as f32),
+            );
+            s.touch_down(x, y, now);
+            s.touch_up(x, y, now + 40.0);
+            now += 80.0;
+            run_for(&mut s, &mut now, 100.0);
+            if s.pushes() > before {
+                break 'scan;
+            }
+        }
+    }
+    run_for(&mut s, &mut now, 900.0);
+    assert_eq!(s.top_kind(), Some("detail"), "the film page is open");
+    assert!(tap_label(&mut s, &mut now, "Mehr"), "the More button");
+    run_for(&mut s, &mut now, 400.0);
+    assert!(s.title_menu_open(), "the More menu is open");
+    s.request_load(
+        LoadRequest::Add {
+            title: "Der Zug".into(),
+            items: Vec::new(),
+            images: std::collections::HashMap::new(),
+            quality_select: false,
+            streams: Vec::new(),
+            anchor: None,
+        },
+        now,
+    );
+    run_for(&mut s, &mut now, 600.0);
+    assert!(s.load_open(), "the sheet is open");
+    assert!(!s.title_menu_open(), "the menu stayed open under the sheet");
+    assert_eq!(
+        s.a11y_nodes().0,
+        "Film",
+        "the title is the page under the sheet"
+    );
+    assert!(s.back(now));
+    run_for(&mut s, &mut now, 300.0);
+    assert!(!s.load_open());
+    assert!(!s.title_menu_open(), "the menu came back with the page");
+}
+
+/// Clicks the first tile found on a grid of window points; returns where it hit.
+fn open_a_tile(s: &mut Suite, now: &mut f64) -> Option<(f32, f32)> {
+    let before = s.pushes();
+    for yi in 0..14 {
+        for xi in 0..14 {
+            let (x, y) = (
+                SIZE.0 * (0.30 + 0.05 * xi as f32),
+                SIZE.1 * (0.25 + 0.05 * yi as f32),
+            );
+            s.touch_down(x, y, *now);
+            s.touch_up(x, y, *now + 40.0);
+            *now += 80.0;
+            if s.pushes() > before {
+                return Some((x, y));
+            }
+        }
+    }
+    None
+}
+
+#[test]
+fn a_click_during_the_back_slide_opens_the_tile_behind() {
+    let (mut s, mut now) = app();
+    assert!(tap_label(&mut s, &mut now, "Filme"));
+    run_for(&mut s, &mut now, 700.0);
+    let (x, y) = open_a_tile(&mut s, &mut now).expect("a tile opens a page");
+    run_for(&mut s, &mut now, 800.0);
+    assert!(s.title_open());
+    let pushes = s.pushes();
+    assert!(s.back(now));
+    // 100 ms later the page is still sliding out; the click on the same tile must open it again.
+    run_for(&mut s, &mut now, 100.0);
+    assert!(
+        !s.top_open() && s.top_kind().is_some(),
+        "the page is still sliding out"
+    );
+    s.touch_down(x, y, now);
+    s.touch_up(x, y, now + 40.0);
+    run_for(&mut s, &mut now, 400.0);
+    assert!(
+        s.pushes() > pushes,
+        "the click during the slide opened no page"
+    );
+    assert!(s.title_open());
+}

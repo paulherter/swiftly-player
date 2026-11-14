@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
-use swiftly_images::decode::downscale;
+use swiftly_images::decode::{downscale, downscale_to};
 use swiftly_images::fixture::FixtureImages;
 use swiftly_images::{Decoded, Device, ImageLoader, Priority, Slot, Url, image_key};
 use swiftly_layout::Alignment;
@@ -65,6 +65,44 @@ pub fn remote_node(
             n
         }
         RemoteSlot::Failed => Node::fixed(w, h).overlay(symbol(), Alignment::CENTER),
+    }
+}
+
+/// The picture of a profile circle for a slot: nothing but the ground while it loads, the picture fading in when it is
+/// ready, and the initial (`letter`) only when there is no picture or loading failed (`ProfileCharacter`: the letter is
+/// a fallback, never a base layer, so it never flashes under a picture that is on its way).
+pub fn avatar_for_slot(slot: RemoteSlot, size: f32, letter: impl FnOnce() -> Node) -> Node {
+    remote_node(slot, size, size, size / 2.0, letter)
+}
+
+/// The edge of a user picture (`AppModel.userImageEdge`): one address, one cache entry for every spot.
+pub const AVATAR_EDGE: u32 = 480;
+
+/// The user picture at `address` as a `ImageRef`, as the Mac asks for it.
+pub fn avatar_ref(address: &str) -> ImageRef {
+    ImageRef {
+        address: address.to_owned(),
+        kind: swiftly_vm::ImageKind::Poster,
+        wanted_width: AVATAR_EDGE,
+        wanted_height: AVATAR_EDGE,
+    }
+}
+
+/// A profile circle of `size` points: the picture at `address` through `hub`, else (no hub, no address, or a failed
+/// load) the `letter`.
+pub fn avatar_node(
+    hub: &HubSlot,
+    address: Option<&str>,
+    size: f32,
+    letter: impl FnOnce() -> Node,
+) -> Node {
+    let hub = hub.borrow().clone();
+    match (hub, address) {
+        (Some(hub), Some(address)) => {
+            let slot = hub.slot(Some(&avatar_ref(address)), size, size, Priority::Visible);
+            avatar_for_slot(slot, size, letter)
+        }
+        _ => letter(),
     }
 }
 
@@ -215,8 +253,22 @@ struct State {
     blocked: bool,
     stale_total: u64,
     touched: Vec<(String, Url)>,
-    last: Vec<(String, Url)>,
+    /// What each screen's last build asked for. Screens share one hub (home under a title page), so a build of one
+    /// must never cancel what another screen still shows: that was the title page's backdrop, cancelled by every
+    /// rebuild of the page below and never asked for again once the page stood still.
+    last: Vec<(HubOwner, Vec<(String, Url)>)>,
+    /// The screen that is covered by a page at rest: nothing of it shows but its sidebar. Its builds may use and fill free
+    /// room, but never push another screen's pictures out (two screens that evict each other's pictures on every build
+    /// left the page in front grey and both of them rebuilding on every frame).
+    hidden: Option<HubOwner>,
+    /// The view run in progress belongs to the hidden screen.
+    building_hidden: bool,
+    /// Pictures cut to a tile and uploaded so far (each is a copy and a downscale of the decoded picture).
+    cuts: u64,
 }
+
+/// The screen a build belongs to: its [`HubSlot`], held weakly so a closed screen does not keep anything alive.
+pub type HubOwner = std::rc::Weak<RefCell<Option<Rc<ImageHub>>>>;
 
 /// The hub. One per screen set; shares the `Cx` image page.
 pub struct ImageHub {
@@ -262,14 +314,15 @@ impl HubSlotExt for HubSlot {
         self.borrow().as_ref().map_or(0, |h| h.stamp())
     }
     fn begin_build(&self) {
-        if let Some(h) = self.borrow().as_ref() {
-            h.begin_build();
+        let hub = self.borrow().clone();
+        if let Some(h) = hub {
+            h.begin_build_for(&Rc::downgrade(self));
         }
     }
     fn finish(&self, list: &mut DrawList) -> usize {
         let hub = self.borrow().clone();
         hub.map_or(0, |h| {
-            h.after_build();
+            h.after_build(&Rc::downgrade(self));
             h.sanitize(list)
         })
     }
@@ -329,7 +382,17 @@ impl ImageHub {
                 });
                 break;
             }
-            h = if h > 1024 { 1024 } else { h - 128 };
+            // The largest height that still fits (the rows kept for the preview and the stills come off the page).
+            h -= 128;
+        }
+        if trace_images() {
+            eprintln!(
+                "swiftly-desktop: picture region: {} x {} rows of a {} x {} page",
+                region.as_ref().map_or(0, |r| r.w),
+                region.as_ref().map_or(0, |r| r.h),
+                page.0,
+                page.1
+            );
         }
         Rc::new(ImageHub {
             backend: RefCell::new(backend),
@@ -348,6 +411,9 @@ impl ImageHub {
                 stale_total: 0,
                 touched: Vec::new(),
                 last: Vec::new(),
+                hidden: None,
+                building_hidden: false,
+                cuts: 0,
             }),
         })
     }
@@ -404,24 +470,70 @@ impl ImageHub {
 
     /// A view run starts: entries asked for from now on belong to it and are safe from eviction until the next run.
     pub fn begin_build(&self) {
-        self.state.borrow_mut().epoch += 1;
+        let mut s = self.state.borrow_mut();
+        s.epoch += 1;
+        s.building_hidden = false;
     }
 
-    /// Cancels loads of tiles that were in the last build but not in this one (they scrolled away). A frame
-    /// without a rebuild changes nothing.
-    pub fn after_build(&self) {
+    /// [`begin_build`](Self::begin_build) for the screen `owner`: a hidden screen's run never evicts.
+    pub fn begin_build_for(&self, owner: &HubOwner) {
+        let mut s = self.state.borrow_mut();
+        s.epoch += 1;
+        s.building_hidden = s.hidden.as_ref().is_some_and(|h| h.ptr_eq(owner));
+    }
+
+    /// Names the screen a page at rest covers (`None`: none is covered). When it shows again it builds anew, so its
+    /// pictures are asked for and placed.
+    pub fn set_hidden(&self, owner: Option<HubOwner>) {
+        let mut s = self.state.borrow_mut();
+        let same = match (&s.hidden, &owner) {
+            (Some(a), Some(b)) => a.ptr_eq(b),
+            (None, None) => true,
+            _ => false,
+        };
+        if !same {
+            s.hidden = owner;
+            s.arrivals += 1;
+        }
+    }
+
+    /// Cancels loads of tiles that were in the last build of `owner` but not in this one (they scrolled away) and that
+    /// no other screen's last build shows either. A frame without a rebuild changes nothing.
+    pub fn after_build(&self, owner: &HubOwner) {
         let mut guard = self.state.borrow_mut();
         let s = &mut *guard;
+        s.building_hidden = false;
         if s.touched.is_empty() {
             return;
         }
-        let seen: HashSet<&String> = s.touched.iter().map(|(k, _)| k).collect();
-        for (k, url) in &s.last {
-            if !seen.contains(k) && s.waiting.remove(k) {
+        let touched = std::mem::take(&mut s.touched);
+        let seen: HashSet<&String> = touched.iter().map(|(k, _)| k).collect();
+        // Screens that are gone give up their pictures as well.
+        let mut gone: Vec<(String, Url)> = Vec::new();
+        s.last.retain_mut(|(o, l)| {
+            let alive = o.strong_count() > 0;
+            if !alive {
+                gone.append(l);
+            }
+            alive
+        });
+        let at = s.last.iter().position(|(o, _)| o.ptr_eq(owner));
+        let mut dropped = at.map_or_else(Vec::new, |i| std::mem::take(&mut s.last[i].1));
+        dropped.append(&mut gone);
+        match at {
+            Some(i) => s.last[i].1 = touched.clone(),
+            None => s.last.push((std::rc::Weak::clone(owner), touched.clone())),
+        }
+        for (k, url) in &dropped {
+            let wanted =
+                seen.contains(k) || s.last.iter().any(|(_, l)| l.iter().any(|(k2, _)| k2 == k));
+            if !wanted && s.waiting.remove(k) {
+                if trace_images() {
+                    eprintln!("swiftly-desktop: picture {k}: cancelled, it left the view");
+                }
                 self.backend.borrow().cancel(url);
             }
         }
-        s.last = std::mem::take(&mut s.touched);
     }
 
     /// Blanks every picture quad of the page region whose rectangle is not a live one (a node that outlived its
@@ -470,6 +582,11 @@ impl ImageHub {
         self.state.borrow().stale_total
     }
 
+    /// How many pictures were cut to a tile and uploaded so far (tests: a window drag must not cut them again and again).
+    pub fn cuts(&self) -> u64 {
+        self.state.borrow().cuts
+    }
+
     /// Pictures currently placed (tests).
     pub fn placed(&self) -> usize {
         self.state
@@ -513,18 +630,33 @@ impl ImageHub {
 
     /// A finished picture node: the tile ground, then the picture (fading in) or the symbol when it failed.
     pub fn node(&self, image: Option<&ImageRef>, w: f32, h: f32, radius: f32) -> Node {
+        self.node_with_symbol(image, w, h, radius, "film-strip")
+    }
+
+    /// [`ImageHub::node`] with the symbol `symbol` (an icon name) for a title without a picture.
+    pub fn node_with_symbol(
+        &self,
+        image: Option<&ImageRef>,
+        w: f32,
+        h: f32,
+        radius: f32,
+        symbol: &str,
+    ) -> Node {
         use swiftly_design::tokens::colour;
         use swiftly_ui::components::color;
-        let ground =
-            Node::rect(color(colour::AREA), radius).frame(Some(w), Some(h), Alignment::CENTER);
+        // The ground, the picture and the border (painted on this node by the caller) share one pixel rectangle.
+        let ground = Node::rect(color(colour::AREA), radius)
+            .pixel_snapped()
+            .frame(Some(w), Some(h), Alignment::CENTER);
         let slot = self.slot(image, w, h, Priority::Visible);
-        ground.overlay(
-            remote_node(slot, w, h, radius, || {
-                self.icons
-                    .node("film-strip", 22.0, true, color(colour::FONT))
-            }),
-            Alignment::CENTER,
-        )
+        ground
+            .overlay(
+                remote_node(slot, w, h, radius, || {
+                    self.icons.node(symbol, 22.0, true, color(colour::FONT))
+                }),
+                Alignment::CENTER,
+            )
+            .pixel_snapped()
     }
 
     /// The slot for `image` shown at `w x h` points. Starts the load on first sight, uploads on arrival.
@@ -535,17 +667,21 @@ impl ImageHub {
         let Ok(url) = Url::parse(&image.address) else {
             return RemoteSlot::Failed;
         };
-        let key = image_key(&url);
         let (tw, th) = (
-            (w * self.scale).ceil().max(1.0) as u32,
-            (h * self.scale).ceil().max(1.0) as u32,
+            (w * self.scale).round().max(1.0) as u32,
+            (h * self.scale).round().max(1.0) as u32,
         );
-        let border = swiftly_images::border_for(Some(w.max(h)), self.device);
+        let url = sized_for_device(&url, tw, th);
+        let key = image_key(&url);
+        let border = decode_border(w, h, tw, th, self.device);
         let mut guard = self.state.borrow_mut();
         let s = &mut *guard;
         s.touched.push((key.clone(), url.clone()));
         match self.backend.borrow().request(&url, border, priority) {
             Slot::Loading => {
+                if trace_images() && s.waiting.insert(key.clone()) {
+                    eprintln!("swiftly-desktop: picture {key}: asked for");
+                }
                 s.waiting.insert(key);
                 RemoteSlot::Loading
             }
@@ -555,7 +691,17 @@ impl ImageHub {
             }
             Slot::Ready(img) => {
                 let entry_key = format!("{key}@{tw}x{th}");
-                let Some(uv) = self.entry_uv(s, &entry_key, &img, tw, th) else {
+                let may_evict = !s.building_hidden;
+                let Some(uv) = self.entry_uv(s, &entry_key, &img, tw, th, may_evict) else {
+                    if !may_evict {
+                        return RemoteSlot::Loading;
+                    }
+                    if trace_images() {
+                        eprintln!(
+                            "swiftly-desktop: picture {entry_key}: no room in the page ({} placed)",
+                            s.region.as_ref().map_or(0, |r| r.entries.len())
+                        );
+                    }
                     s.blocked = true;
                     return RemoteSlot::Loading;
                 };
@@ -580,6 +726,7 @@ impl ImageHub {
         img: &Decoded,
         tw: u32,
         th: u32,
+        may_evict: bool,
     ) -> Option<[f32; 4]> {
         let (epoch, now_clock) = (s.epoch, s.region.as_ref().map_or(0, |r| r.clock) + 1);
         let region = s.region.as_mut()?;
@@ -590,6 +737,21 @@ impl ImageHub {
             return Some(e.uv);
         }
         let small = fit_fill(img, tw, th);
+        if trace_images() {
+            // Source (decoded) size against the device size it is drawn at: a source below the target is stretched.
+            eprintln!(
+                "swiftly-desktop: picture {entry_key}: source {}x{}, uploaded {}x{}, drawn {tw}x{th}{}",
+                img.width,
+                img.height,
+                small.width,
+                small.height,
+                if small.width < tw || small.height < th {
+                    " (STRETCHED)"
+                } else {
+                    ""
+                }
+            );
+        }
         let (w, h) = (small.width, small.height);
         if w > region.w || h > region.h {
             return None;
@@ -598,7 +760,7 @@ impl ImageHub {
             if let Some(at) = region.place(w, h) {
                 break at;
             }
-            if !region.evict(epoch) {
+            if !may_evict || !region.evict(epoch) {
                 return None;
             }
         };
@@ -613,6 +775,7 @@ impl ImageHub {
             return None;
         }
         let uv = region.next_uv(px, py, w, h);
+        s.cuts += 1;
         region.live.insert(bits(uv), entry_key.to_owned());
         region.entries.insert(
             entry_key.to_owned(),
@@ -630,8 +793,114 @@ impl ImageHub {
     }
 }
 
+/// `SWIFTLY_DESKTOP_TRACE_IMAGES` is set: the hub says what it asks for, cancels and cannot place.
+fn trace_images() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("SWIFTLY_DESKTOP_TRACE_IMAGES").is_some())
+}
+
+/// The longest edge a picture of the slot (`w x h` points, `tw x th` device pixels) is decoded to. The Mac's rule is
+/// 3.2 x the edge in points, held at the device limit (1600): on a 4K window at scale 1.5 that limit is below the pixels
+/// of a wide header, so the decoded picture was stretched by the GPU. The device pixels (with the margin the Mac's
+/// 3.2 gives at 2x for a picture cut to the slot's aspect) come first, up to the largest size the server is asked for.
+pub fn decode_border(w: f32, h: f32, tw: u32, th: u32, device: Device) -> u32 {
+    let mac = swiftly_images::border_for(Some(w.max(h)), device);
+    let device_edge = (f64::from(tw.max(th)) * 1.6).ceil() as u32;
+    mac.max(device_edge.min(ASK_STEPS[ASK_STEPS.len() - 1]))
+}
+
+/// Sizes a Jellyfin picture address asks the server for, in steps so a window drag does not ask for a new picture on every
+/// pixel of growth.
+const ASK_STEPS: [u32; 8] = [360, 640, 960, 1280, 1920, 2560, 3200, 3840];
+
+/// `url` with `maxWidth` / `maxHeight` raised to cover the device pixels the picture is drawn at (`tw x th`). The core asks
+/// for sizes in points at 1x (a 1200 wide backdrop); drawn across a 1.5x window that is stretched by the GPU and soft.
+/// Never lowers a size and leaves any other address alone.
+pub(crate) fn sized_for_device(url: &Url, tw: u32, th: u32) -> Url {
+    let raised = |asked: u32, px: u32| {
+        if px <= asked {
+            asked
+        } else {
+            ASK_STEPS
+                .iter()
+                .copied()
+                .find(|s| *s >= px)
+                .unwrap_or(3840)
+                .max(asked)
+        }
+    };
+    let mut changed = false;
+    // A box to fill (`fillWidth` + `fillHeight`: profile pictures, Plex's 16:9 boxes) grows as a whole, keeping its aspect.
+    let fill: Option<(u32, u32)> = {
+        let get = |name: &str| {
+            url.query_pairs()
+                .find(|(k, _)| k == name)
+                .and_then(|(_, v)| v.parse::<u32>().ok())
+        };
+        let has_min = url.query_pairs().any(|(k, _)| k == "minSize");
+        get("fillWidth")
+            .zip(get("fillHeight"))
+            .or_else(|| has_min.then(|| get("width").zip(get("height"))).flatten())
+    };
+    let fill_to = fill.and_then(|(fw, fh)| {
+        let (kw, kh) = (
+            f64::from(tw) / f64::from(fw.max(1)),
+            f64::from(th) / f64::from(fh.max(1)),
+        );
+        let k = kw.max(kh);
+        if k <= 1.0 {
+            return None;
+        }
+        let edge = ((f64::from(fw.max(fh)) * k).ceil() as u32).max(1);
+        let edge = ASK_STEPS
+            .iter()
+            .copied()
+            .find(|s| *s >= edge)
+            .unwrap_or(3840);
+        let r = f64::from(edge) / f64::from(fw.max(fh));
+        Some((
+            (f64::from(fw) * r).round() as u32,
+            (f64::from(fh) * r).round() as u32,
+        ))
+    });
+    let pairs: Vec<(String, String)> = url
+        .query_pairs()
+        .map(|(k, v)| {
+            let px = match k.as_ref() {
+                "maxWidth" | "width" => Some(tw),
+                "maxHeight" | "height" => Some(th),
+                _ => None,
+            };
+            if let (Some((nw, nh)), "fillWidth" | "fillHeight" | "width" | "height") =
+                (fill_to, k.as_ref())
+            {
+                changed = true;
+                let n = if k == "fillWidth" || k == "width" {
+                    nw
+                } else {
+                    nh
+                };
+                return (k.into_owned(), n.to_string());
+            }
+            match (px, v.parse::<u32>()) {
+                (Some(px), Ok(asked)) if raised(asked, px) != asked => {
+                    changed = true;
+                    (k.into_owned(), raised(asked, px).to_string())
+                }
+                _ => (k.into_owned(), v.into_owned()),
+            }
+        })
+        .collect();
+    if !changed {
+        return url.clone();
+    }
+    let mut out = url.clone();
+    out.query_pairs_mut().clear().extend_pairs(pairs);
+    out
+}
+
 /// The picture cut to the aspect of a `tw x th` tile (centred, `.fill`) and scaled down to at most that size.
-fn fit_fill(img: &Decoded, tw: u32, th: u32) -> Decoded {
+pub(crate) fn fit_fill(img: &Decoded, tw: u32, th: u32) -> Decoded {
     let (w, h) = (img.width as u64, img.height as u64);
     let (tw64, th64) = (u64::from(tw), u64::from(th));
     // Keep the largest centred part with the tile's aspect: compare w * th with h * tw.
@@ -651,5 +920,140 @@ fn fit_fill(img: &Decoded, tw: u32, th: u32) -> Decoded {
         height: ch as u32,
         rgba,
     };
-    downscale(cut, tw.max(th))
+    // Exactly the quad's device size when the picture is larger (never up: a smaller picture is stretched by the GPU).
+    if cut.width >= tw && cut.height >= th {
+        downscale_to(cut, tw, th)
+    } else {
+        downscale(cut, tw.max(th))
+    }
+}
+
+#[cfg(test)]
+mod avatar_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn is_image(n: &Node) -> bool {
+        n.paint.iter().any(|p| matches!(p, Paint::Image { .. }))
+    }
+
+    #[test]
+    fn a_ready_picture_replaces_the_letter_and_fades_in() {
+        let called = Cell::new(false);
+        let slot = RemoteSlot::Ready {
+            image: ImageId {
+                uv: [0.0, 0.0, 1.0, 1.0],
+            },
+            alpha: 0.5,
+        };
+        let n = avatar_for_slot(slot, 28.0, || {
+            called.set(true);
+            Node::fixed(1.0, 1.0)
+        });
+        assert!(is_image(&n), "the node is the picture");
+        assert!(!called.get(), "no letter under or over a picture");
+        assert!(
+            n.paint
+                .iter()
+                .any(|p| matches!(p, Paint::Image { tint, .. } if (tint.a - 0.5).abs() < 1e-6))
+        );
+    }
+
+    #[test]
+    fn the_letter_shows_only_when_there_is_no_picture() {
+        let called = Cell::new(false);
+        let _ = avatar_for_slot(RemoteSlot::Loading, 28.0, || {
+            called.set(true);
+            Node::fixed(1.0, 1.0)
+        });
+        assert!(!called.get(), "while it loads only the ground shows");
+        let _ = avatar_for_slot(RemoteSlot::Failed, 28.0, || {
+            called.set(true);
+            Node::fixed(1.0, 1.0)
+        });
+        assert!(
+            called.get(),
+            "a failed or missing picture falls back to the letter"
+        );
+    }
+
+    #[test]
+    fn without_a_hub_or_an_address_the_letter_is_drawn() {
+        let hub: HubSlot = HubSlot::default();
+        let called = Cell::new(0);
+        let letter = || {
+            called.set(called.get() + 1);
+            Node::fixed(1.0, 1.0)
+        };
+        let _ = avatar_node(&hub, Some("https://h/Users/u/Images/Primary"), 28.0, letter);
+        let _ = avatar_node(&hub, None, 28.0, letter);
+        assert_eq!(called.get(), 2);
+    }
+
+    #[test]
+    fn the_avatar_ref_is_the_macs_480_edge() {
+        let r = avatar_ref("https://h/x");
+        assert_eq!((r.wanted_width, r.wanted_height), (480, 480));
+    }
+}
+
+#[cfg(test)]
+mod sized_tests {
+    use super::{decode_border, sized_for_device};
+    use swiftly_images::{Device, Url};
+
+    #[test]
+    fn a_box_to_fill_and_the_plex_scaler_grow_with_the_device_size() {
+        // A profile picture box of 480 stays; a 16:9 Plex box grows as a whole to cover a 1920 px slot.
+        let avatar =
+            Url::parse("http://h/Users/u/Images/Primary?fillWidth=480&fillHeight=480&quality=90")
+                .unwrap();
+        assert_eq!(sized_for_device(&avatar, 84, 84), avatar);
+        let plex = Url::parse("http://h/photo/:/transcode?url=%2Fa&upscale=0&width=640&height=360&quality=90&minSize=1").unwrap();
+        let q = sized_for_device(&plex, 1900, 1069)
+            .query()
+            .unwrap()
+            .to_owned();
+        assert!(q.contains("width=1920") && q.contains("height=1080"), "{q}");
+        let thumb = Url::parse(
+            "http://h/photo/:/transcode?url=%2Fa&upscale=0&width=4096&height=360&quality=90",
+        )
+        .unwrap();
+        let q = sized_for_device(&thumb, 300, 450)
+            .query()
+            .unwrap()
+            .to_owned();
+        assert!(q.contains("width=4096") && q.contains("height=640"), "{q}");
+    }
+
+    #[test]
+    fn the_decode_border_covers_the_device_pixels_of_the_slot() {
+        // The Mac's limit is 1600; a header across a 4K window at scale 1.5 is 2176 px wide.
+        assert!(decode_border(1451.0, 454.0, 2176, 681, Device::Mac) >= 2176);
+        assert!(decode_border(1920.0, 600.0, 3840, 1200, Device::Mac) >= 3840);
+        // A small tile keeps the Mac's rule.
+        assert_eq!(decode_border(150.0, 225.0, 225, 338, Device::Mac), 720);
+    }
+
+    #[test]
+    fn a_backdrop_asked_at_1200_is_raised_for_a_wide_window_and_a_poster_that_fits_is_left_alone() {
+        let back =
+            Url::parse("http://h/Items/a/Images/Backdrop?tag=b&maxWidth=1200&quality=90").unwrap();
+        assert!(
+            sized_for_device(&back, 2176, 681)
+                .query()
+                .unwrap()
+                .contains("maxWidth=2560")
+        );
+        assert_eq!(sized_for_device(&back, 1000, 300), back);
+        let poster =
+            Url::parse("http://h/Items/a/Images/Primary?tag=p&maxHeight=360&quality=90").unwrap();
+        assert_eq!(sized_for_device(&poster, 225, 338), poster);
+        assert!(
+            sized_for_device(&poster, 300, 450)
+                .query()
+                .unwrap()
+                .contains("maxHeight=640")
+        );
+    }
 }

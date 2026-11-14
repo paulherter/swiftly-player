@@ -211,6 +211,11 @@ struct Parts {
     /// A panel (profile, settings) is open: the account card is the selected entry, no page row is.
     settings: bool,
     card: crate::desk::Card,
+    /// The offer row of the sidebar.
+    offer: Option<crate::desk::Offer>,
+    /// The "Meins" rows that exist (Merkliste, Downloads).
+    mine: (bool, bool),
+    glow: (crate::look_glow::Glow, u16),
     status: Arc<StatusPart>,
     rails: Arc<RailsPart>,
     /// The tab in front (0 = Start).
@@ -240,6 +245,96 @@ struct Parts {
     stagger: u32,
     /// The old account's rows are leaving (the tap on an account, until the account changed).
     rails_out: bool,
+    /// The support card at the end of the rails: the hours watched (`None`: no card; `MacSupportCard`).
+    support: Option<i64>,
+}
+
+/// What a tap on the support card asks of the suite.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SupportTap {
+    /// "Unterstützen": the supporter web page.
+    Open,
+    /// "Nicht jetzt": hide the card for 30 days.
+    Snooze,
+}
+
+/// The support card (`MacSupportCard`, `MacSupport.swift:160`): the hours watched from two hours on, the ask, and two
+/// buttons; a 18 pt padded `groupsArea` card of at most 480 pt, at the page's edge.
+fn support_card(cx: &Cx, hours: i64) -> Node {
+    use swiftly_support::SupportCopy;
+    let words = |c: SupportCopy| c.de.to_owned();
+    const W: f32 = desktop::FORM_WIDTH + 60.0;
+    let inner = W - 36.0;
+    let mut lines = Vec::new();
+    if hours >= SupportCopy::CARD_MINIMUM_HOURS {
+        lines.push(
+            text(
+                cx,
+                &words(SupportCopy::CARD_WATCHED_HOURS).replace("%lld", &hours.to_string()),
+                desktop::text::LIST_TITLE,
+                colour::FONT,
+                Some(2),
+                swiftly_text::Align::Start,
+            )
+            .frame(Some(inner), None, Alignment::LEADING),
+        );
+    }
+    lines.push(
+        text(
+            cx,
+            &words(SupportCopy::CARD_ASK),
+            desktop::text::BODY,
+            colour::FONT_QUIET,
+            Some(3),
+            swiftly_text::Align::Start,
+        )
+        .frame(Some(inner), None, Alignment::LEADING),
+    );
+    let button = |label: String, key: &str, primary: bool| {
+        let (fg, bg) = if primary {
+            (colour::REASON, colour::FONT)
+        } else {
+            (colour::FONT, colour::AREA)
+        };
+        text(
+            cx,
+            &label,
+            desktop::text::LIST_TITLE,
+            fg,
+            Some(1),
+            swiftly_text::Align::Center,
+        )
+        .frame(
+            Some((inner - 10.0) / 2.0),
+            Some(desktop::PRIMARY_BUTTON_HEIGHT),
+            Alignment::CENTER,
+        )
+        .background(Node::rect(color(bg), desktop::CORNER), Alignment::CENTER)
+        .key(key)
+        .on_tap(Action::from(key))
+    };
+    let buttons = Node::hstack(
+        Align::Start,
+        Some(10.0),
+        vec![
+            button(words(SupportCopy::CARD_SUPPORT), "support:open", true),
+            button(words(SupportCopy::NOT_NOW), "support:snooze", false),
+        ],
+    );
+    Node::vstack(
+        Align::Start,
+        Some(0.0),
+        vec![
+            Node::vstack(Align::Start, Some(4.0), lines),
+            buttons.padding(ins(16.0, 0.0, 0.0, 0.0)),
+        ],
+    )
+    .padding(ins(18.0, 18.0, 18.0, 18.0))
+    .background(
+        Node::rect(color(colour::GROUPS_AREA), desktop::CORNER_CARD),
+        Alignment::CENTER,
+    )
+    .padding(ins(0.0, desktop::EDGE_SPACING, 0.0, 0.0))
 }
 
 /// The sheet over the Home page.
@@ -267,6 +362,12 @@ pub struct Bar {
     pub settings: bool,
     /// What the account card shows (part of the view's input, so a new account rebuilds the sidebar).
     pub card: crate::desk::Card,
+    /// The row for what plays on another device or what a group offers (`OfferingRow`).
+    pub offer: Option<crate::desk::Offer>,
+    /// Which "Meins" rows exist: (Merkliste, Downloads), from the settings (`Region.mineGroup`). Both gone: no heading.
+    pub mine: (bool, bool),
+    /// The look's glow behind the page and how far the page has scrolled (see [`crate::look_glow`]).
+    pub glow: (crate::look_glow::Glow, u16),
 }
 
 impl Parts {
@@ -277,6 +378,9 @@ impl Parts {
             downloads: self.downloads,
             settings: self.settings,
             card: self.card.clone(),
+            offer: self.offer.clone(),
+            mine: self.mine,
+            glow: self.glow,
         }
     }
 }
@@ -350,25 +454,40 @@ fn tile_node(
 ) -> Node {
     let size = if landscape { m.landscape } else { m.poster };
     let hub = hub.borrow().clone();
+    // Only the Continue Watching row plays on a tap (`resume:`); every other tile opens its page (`tile:`), also when the
+    // same title is in the Continue Watching row too: the action says which row was tapped, the title's id cannot.
+    let tap = Action::from(
+        format!(
+            "{}:{}",
+            if continue_rail { "resume" } else { "tile" },
+            tile.id
+        )
+        .as_str(),
+    );
+    // With the image hub (the real app) a title without a picture is the tile ground and the symbol of its kind, never
+    // generated art (`NetworkImage` with `symbolText`); `art` is the demo's stand-in when there is no hub.
+    let symbol = crate::detail_screen::tile_character_icon(
+        tile.facts.kind.as_deref(),
+        tile.facts.series_id.as_deref(),
+    );
     let image = match (hub, tile.image.as_ref()) {
-        (Some(hub), Some(_)) => {
-            let back = Node::rect(color(colour::AREA), m.corner).frame(
-                Some(size.w),
-                Some(size.h),
-                Alignment::CENTER,
-            );
+        (Some(hub), _) => {
+            let back = Node::rect(color(colour::AREA), m.corner)
+                .pixel_snapped()
+                .frame(Some(size.w), Some(size.h), Alignment::CENTER);
             back.overlay(
                 remote_node(
                     hub.slot(tile.image.as_ref(), size.w, size.h, Priority::Visible),
                     size.w,
                     size.h,
                     m.corner,
-                    || icons.node("film-strip", 22.0, true, color(colour::FONT)),
+                    || icons.node(symbol, 22.0, true, color(colour::FONT)),
                 ),
                 Alignment::CENTER,
             )
+            .pixel_snapped()
         }
-        _ => match art.pick(landscape, &tile.id) {
+        (None, _) => match art.pick(landscape, &tile.id) {
             Some(id) => Node::image(id, size.w, size.h, m.corner),
             None => Node::rect(color(colour::AREA), m.corner).frame(
                 Some(size.w),
@@ -382,10 +501,6 @@ fn tile_node(
         width: 1.0,
         radius: m.corner,
     });
-    if form == Form::Desktop {
-        // The image alone scales to 1.04 (easeOut 0.12, `hover()` curve), the text does not move.
-        image = image.hover_scale(swiftly_ui::feel::HOVER_TILE_SCALE);
-    }
     // The progress bar lives inside the tile's mask (`MacComponents.swift:373`): a strip of the rounded picture, so the lower
     // corners follow the tile's rounding. It exists on the Continue Watching rail only ("Nächste Folge" has none).
     if form == Form::Desktop
@@ -416,6 +531,17 @@ fn tile_node(
         );
         image = image.overlay(bar, Alignment::BOTTOM_LEADING);
     }
+    if form == Form::Desktop {
+        // The picture with its progress bar scales to 1.04 (easeOut 0.12, `hover()` curve), the text does not move: the bar
+        // belongs to the tile (`MacComponents.swift:373`, inside the mask the scale is applied to), so it scales last.
+        image = image.hover_scale(swiftly_ui::feel::HOVER_TILE_SCALE);
+        // Tab reaches the picture and shows the accent ring around it, not around title and year (the Mac's focus ring
+        // is the picture's outline); Enter on it does what a click on the tile does.
+        image = image
+            .on_tap(tap)
+            .focusable(focus_id(key), None)
+            .focus_ring(color(colour::MARK_ACCENT), m.corner);
+    }
     let line = if continue_rail {
         tile.remaining.as_ref().or(tile.subtitle.as_ref())
     } else {
@@ -430,7 +556,11 @@ fn tile_node(
             Some(1),
             swiftly_text::Align::Start,
         )
-        .frame(Some(size.w), None, Alignment::LEADING),
+        .frame(
+            Some(size.w),
+            None,
+            swiftly_ui::components::natural_edge(&tile.title),
+        ),
     ];
     if let Some(sub) = line {
         lines.push(
@@ -442,7 +572,11 @@ fn tile_node(
                 Some(1),
                 swiftly_text::Align::Start,
             )
-            .frame(Some(size.w), None, Alignment::LEADING),
+            .frame(
+                Some(size.w),
+                None,
+                swiftly_ui::components::natural_edge(sub),
+            ),
         );
     }
     let mut n = Node::vstack(
@@ -451,24 +585,81 @@ fn tile_node(
         vec![image, Node::vstack(Align::Start, Some(2.0), lines)],
     )
     .key(key)
-    .on_tap(Action::from(format!("tile:{}", tile.id).as_str()))
+    .on_tap(tap)
     .on_long_press(Action::from(format!("menu:{}", tile.id).as_str()));
     if form == Form::Tv {
         n = n.focusable(focus_id(key), Some(FocusLook::tile(m.corner)));
     }
     if form == Form::Desktop {
-        // Right click opens the menu (the touch long press stays); Tab reaches the tile and shows the accent ring.
+        // Right click opens the menu (the touch long press stays); the focus ring sits on the picture above.
         n = n
             .on_secondary(Action::from(format!("menu:{}", tile.id).as_str()))
-            .on_hover_rest(Action::from(format!("rest:{}", tile.id).as_str()))
-            .focusable(focus_id(key), None)
-            .focus_ring(color(colour::MARK_ACCENT), m.corner);
+            .on_hover_rest(Action::from(format!("rest:{}", tile.id).as_str()));
     }
     n
 }
 
 fn tile_key(rail: &str, i: usize) -> String {
     format!("{rail}:{i}")
+}
+
+/// One paging arrow of a rail (`PagingRail`): 34 x 34, area-coloured, radius 8, `at` pt from the top of the row, 6 pt
+/// from its side; it fades in and out with the hover.
+fn paging_arrow(
+    icons: &Icons,
+    asset: &str,
+    label: &str,
+    key: &str,
+    trailing: bool,
+    at: f32,
+) -> Node {
+    paging_arrow_inset(icons, asset, label, key, trailing, at, 6.0)
+}
+
+/// [`paging_arrow`] with its own distance `inset` from the side (the player's episode strip keeps 12 pt).
+pub(crate) fn paging_arrow_inset(
+    icons: &Icons,
+    asset: &str,
+    label: &str,
+    key: &str,
+    trailing: bool,
+    at: f32,
+    inset: f32,
+) -> Node {
+    let icon = icons.node(asset, 15.0, false, color(colour::FONT)).frame(
+        Some(34.0),
+        Some(34.0),
+        Alignment::CENTER,
+    );
+    let b = icon
+        .background(Node::rect(color(colour::AREA), 8.0), Alignment::CENTER)
+        .hover_surface(
+            Color::new(1.0, 1.0, 1.0, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
+            8.0,
+        )
+        .a11y(swiftly_ui::a11y::A11yNode::new(
+            "",
+            swiftly_ui::a11y::Role::Button,
+            label,
+        ))
+        .key(key)
+        .on_tap(Action::from(key))
+        .appear_from(1.0, 0.0)
+        .exit_to(1.0, 0.0)
+        .opacity(1.0, swiftly_ui::feel::arrow());
+    let pad = if trailing {
+        ins(at, 0.0, 0.0, inset)
+    } else {
+        ins(at, inset, 0.0, 0.0)
+    };
+    fill_frame(
+        b.padding(pad),
+        if trailing {
+            Alignment::TOP_TRAILING
+        } else {
+            Alignment::TOP_LEADING
+        },
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -566,10 +757,8 @@ fn rail_node(
     let (header, row) = if form == Form::Desktop {
         // Mac `RailTitle`: 28 high, "Alle \u{203a}" 15/500 at the right on the rails that link to a library; paging
         // arrows 34 x 34 over the image rows while the pointer is over the rail.
-        let link = matches!(
-            rail.kind,
-            RailKind::NewMovies | RailKind::NewSeries | RailKind::NewArrivals
-        ) || rail.is_library();
+        let link =
+            matches!(rail.kind, RailKind::NewMovies | RailKind::NewSeries) || rail.is_library();
         let title = text(
             cx,
             &rail.title,
@@ -602,14 +791,23 @@ fn rail_node(
                     Some(1),
                     swiftly_text::Align::End,
                 )
-                .frame(None, Some(28.0), Alignment::CENTER)
-                .key(format!("all:{}", rail.id).as_str())
-                .on_tap(Action::from(format!("all:{}", rail.id).as_str())),
+                .frame(None, Some(28.0), Alignment::CENTER),
             );
         }
-        let head = Node::hstack(Align::Center, Some(8.0), parts)
+        // One button: the whole title row is the click area (`Button(action: header) { RailTitle(... all: true) }`).
+        let mut head = Node::hstack(Align::Center, Some(8.0), parts)
             .padding(ins(0.0, m.edge, 0.0, m.edge))
             .frame(None, Some(28.0), Alignment::LEADING);
+        if link {
+            head = head
+                .a11y(swiftly_ui::a11y::A11yNode::new(
+                    "",
+                    swiftly_ui::a11y::Role::Button,
+                    format!("Alle anzeigen: {}", rail.title).as_str(),
+                ))
+                .key(format!("all:{}", rail.id).as_str())
+                .on_tap(Action::from(format!("all:{}", rail.id).as_str()));
+        }
         let mut row = row;
         // Both overlay slots always exist so the scroll view keeps its identity (and offset) when the arrows come and go.
         let (show, left, right) = match hover {
@@ -618,39 +816,13 @@ fn rail_node(
         };
         {
             let arrow = |asset: &str, label: &str, key: String, trailing: bool| {
-                let at = headroom + size.h / 2.0 - 17.0;
-                let icon = ctx
-                    .icons
-                    .node(asset, 15.0, false, color(colour::FONT))
-                    .frame(Some(34.0), Some(34.0), Alignment::CENTER);
-                let b = icon
-                    .background(Node::rect(color(colour::AREA), 8.0), Alignment::CENTER)
-                    .hover_surface(
-                        Color::new(1.0, 1.0, 1.0, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
-                        8.0,
-                    )
-                    .a11y(swiftly_ui::a11y::A11yNode::new(
-                        "",
-                        swiftly_ui::a11y::Role::Button,
-                        label,
-                    ))
-                    .key(key.as_str())
-                    .on_tap(Action::from(key.as_str()))
-                    .appear_from(1.0, 0.0)
-                    .exit_to(1.0, 0.0)
-                    .opacity(1.0, swiftly_ui::feel::arrow());
-                let pad = if trailing {
-                    ins(at, 0.0, 0.0, 6.0)
-                } else {
-                    ins(at, 6.0, 0.0, 0.0)
-                };
-                fill_frame(
-                    b.padding(pad),
-                    if trailing {
-                        Alignment::TOP_TRAILING
-                    } else {
-                        Alignment::TOP_LEADING
-                    },
+                paging_arrow(
+                    &ctx.icons,
+                    asset,
+                    label,
+                    &key,
+                    trailing,
+                    headroom + size.h / 2.0 - 17.0,
                 )
             };
             let none = || Node::fixed(0.0, 0.0);
@@ -711,9 +883,21 @@ pub(crate) fn load_field(w: f32, h: f32, radius: f32) -> Node {
         .opacity(1.0, swiftly_ui::feel::pulse())
 }
 
-/// The genre chips row (`HomeView.swift:422`): chips 30 high (like the library pills; the Mac's 34 sat too low), side 14, 13/500 white on white 8 % with the margin hairline,
-/// 8 apart, in a row 42 high. A tap reports `genre:<name>`.
-fn chips_row(cx: &Cx, m: &Metrics, chips: &[String]) -> Node {
+/// Rows of paging rails with no rail of their own use this id for the hover and the arrows.
+const CHIPS_RAIL: &str = "chips";
+/// One page of the chips: three pieces of 120 (`PagingRail(widthJePiece: 120)`, `stepRange` 3).
+const CHIPS_STEP: f32 = 3.0 * 120.0;
+
+/// The genre chips (`HomeView.genreChips`): a paging rail of capsules 34 high on a 42 frame, side 14, 13/500 white on
+/// white 8 % with the margin hairline, a tile spacing apart, scrolling sideways with arrows while the pointer is over
+/// it. A tap reports `genre:<name>`.
+fn chips_row(
+    cx: &Cx,
+    m: &Metrics,
+    icons: &Icons,
+    chips: &[String],
+    hover: &Option<(String, bool, bool)>,
+) -> Node {
     let items: Vec<Node> = chips
         .iter()
         .map(|g| {
@@ -732,19 +916,19 @@ fn chips_row(cx: &Cx, m: &Metrics, chips: &[String]) -> Node {
             );
             label
                 .padding(EdgeInsets::symmetric(14.0, 0.0))
-                .frame(None, Some(30.0), Alignment::CENTER)
+                .frame(None, Some(34.0), Alignment::CENTER)
                 .background(
-                    Node::rect(Color::new(1.0, 1.0, 1.0, 0.08), 15.0),
+                    Node::rect(Color::new(1.0, 1.0, 1.0, 0.08), 17.0),
                     Alignment::CENTER,
                 )
                 .paint(Paint::Stroke {
                     color: color(colour::MARGIN),
                     width: 1.0,
-                    radius: 15.0,
+                    radius: 17.0,
                 })
                 .hover_surface(
                     Color::new(1.0, 1.0, 1.0, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
-                    15.0,
+                    17.0,
                 )
                 .a11y(swiftly_ui::a11y::A11yNode::new(
                     "",
@@ -755,8 +939,48 @@ fn chips_row(cx: &Cx, m: &Metrics, chips: &[String]) -> Node {
                 .on_tap(Action::from(format!("genre:{g}").as_str()))
         })
         .collect();
-    let row = Node::hstack(Align::Center, Some(8.0), items).padding(ins(0.0, m.edge, 0.0, m.edge));
-    row.frame(None, Some(30.0), Alignment::TOP_LEADING)
+    let strip = Node::hstack(Align::Center, Some(m.tile_spacing), items)
+        .padding(ins(4.0, m.edge, 4.0, m.edge));
+    let mut row = Node::scroll(Axis::Horizontal, None, strip)
+        .key(format!("rail-row:{CHIPS_RAIL}").as_str())
+        .frame(None, Some(42.0), Alignment::TOP_LEADING);
+    let (show, left, right) = match hover {
+        Some((h, l, r)) if h == CHIPS_RAIL => (true, *l, *r),
+        _ => (false, false, false),
+    };
+    let none = || Node::fixed(0.0, 0.0);
+    row = row.overlay(
+        if show && left {
+            paging_arrow(
+                icons,
+                "caret-left",
+                "Zur\u{fc}ckbl\u{e4}ttern",
+                &format!("page.l:{CHIPS_RAIL}"),
+                false,
+                4.0,
+            )
+        } else {
+            none()
+        },
+        Alignment::TOP_LEADING,
+    );
+    row = row.overlay(
+        if show && right {
+            paging_arrow(
+                icons,
+                "caret-right",
+                "Weiterbl\u{e4}ttern",
+                &format!("page.r:{CHIPS_RAIL}"),
+                true,
+                4.0,
+            )
+        } else {
+            none()
+        },
+        Alignment::TOP_TRAILING,
+    );
+    row.key(format!("rail:{CHIPS_RAIL}").as_str())
+        .on_hover(Action::from(format!("rail:{CHIPS_RAIL}").as_str()))
 }
 
 /// `RailsPlaceholder`: a title bar and four tiles in their final shape.
@@ -954,34 +1178,19 @@ pub(crate) fn header_backdrop(strength: f32) -> Node {
     if op <= 0.0 {
         return Node::fixed(0.0, 0.0);
     }
-    let stops = backdrop_stops();
-    let bands: Vec<Node> = stops
-        .windows(2)
-        .map(|pair| {
-            let (a, b) = (pair[0], pair[1]);
-            let (ca, cb) = (
-                rgba(colour::REASON, a.1 * op),
-                rgba(colour::REASON, b.1 * op),
-            );
-            Node::rect(ca, 0.0)
-                .paint(Paint::Linear {
-                    gradient: LinearGradient {
-                        start: ca,
-                        end: cb,
-                        from: [0.5, 0.0],
-                        to: [0.5, 1.0],
-                    },
-                    radius: 0.0,
-                })
-                .flex_frame(FlexFrame {
-                    max_w: Some(f32::INFINITY),
-                    align: Some(Alignment::TOP),
-                    ..FlexFrame::default()
-                })
-                .frame(None, Some((b.0 - a.0) * HEIGHT), Alignment::TOP)
-        })
+    // One node with the whole ramp: the renderer lays the seams between its pieces on whole device pixels. Ninety-six
+    // separate rectangles in a stack had fractional heights (1.5625 pt), so at a scale of 1.5 most seams ran through a
+    // device pixel, which two half-covering bands paint too dark: a dark line every second row.
+    let stops: Vec<(f32, Color)> = backdrop_stops()
+        .into_iter()
+        .map(|(at, a)| (at, rgba(colour::REASON, a * op)))
         .collect();
-    Node::vstack(Align::Start, Some(0.0), bands)
+    Node::rect(rgba(colour::REASON, 0.0), 0.0)
+        .paint(Paint::Stops {
+            stops,
+            vertical: true,
+            radius: 0.0,
+        })
         .flex_frame(FlexFrame {
             max_w: Some(f32::INFINITY),
             align: Some(Alignment::TOP),
@@ -1272,7 +1481,7 @@ pub(crate) fn quiet_to_hot(
 /// shortcut hints, "Meins" (Merkliste, Downloads) and the account footer (no "Profil" row). Rows are 32 high, icon 18,
 /// label 14 (semibold and accent when active), corner 8; rest `fontQuiet`, hover white with a white 6 % surface, active
 /// accent on accent 12 %.
-pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons) -> Node {
+pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot) -> Node {
     let hot = Color::new(1.0, 1.0, 1.0, swiftly_ui::feel::HOVER_SURFACE_ALPHA);
     let row = |active: bool,
                name: &str,
@@ -1371,7 +1580,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons) -> Node {
             )
         })
         .collect();
-    let mine = vec![
+    let mut mine = vec![
         text(
             cx,
             "Meins",
@@ -1385,8 +1594,10 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons) -> Node {
             Some(1),
             swiftly_text::Align::Start,
         )
-        .padding(ins(22.0, 20.0, 6.0, 20.0)),
-        row(
+        .padding(ins(20.0, 20.0, 4.0, 20.0)),
+    ];
+    if p.mine.0 {
+        mine.push(row(
             p.tab == 4 && !p.downloads && !p.settings,
             "Merkliste",
             "bookmark-simple.fill",
@@ -1394,45 +1605,56 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons) -> Node {
             None,
             "go:watchlist",
             "Merkliste",
-        ),
-        row(
+        ));
+    }
+    if p.mine.1 {
+        // The Mac's filled asset (`Region.filledAsset`).
+        mine.push(row(
             p.downloads,
             "Downloads",
-            "arrow-circle-down",
+            "arrow-circle-down.fill",
             false,
             None,
             "go:downloads",
             "Downloads",
-        ),
-    ];
+        ));
+    }
+    if !(p.mine.0 || p.mine.1) {
+        // Neither section exists: no heading either.
+        mine.clear();
+    }
     let footer = {
         // Avatar circle 28, name 13/600, server 11 very quiet, gear 16 at the right; row 48 with 10 around.
         // The demo app shows its sample account; the real app shows the signed-in one, and nothing while signing in.
         let (name, server) = match &p.card {
             crate::desk::Card::Demo => ("Swiftly".to_owned(), Some(home_data::SERVER.to_owned())),
-            crate::desk::Card::Account { name, server } => {
+            crate::desk::Card::Account { name, server, .. } => {
                 (name.clone(), Some(server.clone()).filter(|s| !s.is_empty()))
             }
             crate::desk::Card::Hidden => ("Konto".to_owned(), None),
         };
-        let face = text(
-            cx,
-            &p.card.initial(),
-            swiftly_design::TextStyle {
-                size: 13.0,
-                weight: 600,
-                tracking: 0.0,
-                uppercase: false,
-            },
-            colour::REASON,
-            Some(1),
-            swiftly_text::Align::Center,
-        )
-        .frame(Some(28.0), Some(28.0), Alignment::CENTER)
-        .background(
-            Node::rect(color(colour::MARK_ACCENT), 14.0),
-            Alignment::CENTER,
-        );
+        let letter = || {
+            text(
+                cx,
+                &p.card.initial(),
+                swiftly_design::TextStyle {
+                    size: 13.0,
+                    weight: 600,
+                    tracking: 0.0,
+                    uppercase: false,
+                },
+                colour::REASON,
+                Some(1),
+                swiftly_text::Align::Center,
+            )
+        };
+        // The signed-in user's picture (`userImageURL()`), the initial only while there is none.
+        let face = crate::hub::avatar_node(hub, p.card.picture(), 28.0, letter)
+            .frame(Some(28.0), Some(28.0), Alignment::CENTER)
+            .background(
+                Node::rect(color(colour::MARK_ACCENT), 14.0),
+                Alignment::CENTER,
+            );
         let mut lines = vec![text(
             cx,
             &name,
@@ -1517,6 +1739,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons) -> Node {
             Node::vstack(Align::Start, Some(2.0), top).padding(ins(0.0, 10.0, 0.0, 10.0)),
             Node::vstack(Align::Start, Some(2.0), mine).padding(ins(0.0, 10.0, 0.0, 10.0)),
             Node::spacer(),
+            offer_row(cx, p.offer.as_ref(), icons),
             footer,
         ],
     );
@@ -1533,6 +1756,109 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons) -> Node {
             fill_frame(hairline, Alignment::TRAILING),
             Alignment::TRAILING,
         )
+}
+
+/// The offer row above the account card (`OfferingRow`): a capsule 40 high in accent at 18 % over `reason`, the icon, the
+/// title (13 semibold) with what runs under it (12, very quiet), and from two entries a counter capsule in accent. It
+/// sits `BADGE_EDGE` from the sidebar's edges; a click reports `go:offer`. Empty when nothing is on offer.
+fn offer_row(cx: &Cx, offer: Option<&crate::desk::Offer>, icons: &Icons) -> Node {
+    let Some(o) = offer else {
+        return Node::fixed(0.0, 0.0);
+    };
+    let st = |size: f32, weight: u16| swiftly_design::TextStyle {
+        size,
+        weight,
+        tracking: 0.0,
+        uppercase: false,
+    };
+    let accent = color(colour::MARK_ACCENT);
+    let mut cells = vec![
+        icons
+            .node(&o.symbol, 17.0, true, accent)
+            .frame(Some(20.0), None, Alignment::CENTER),
+        Node::vstack(
+            Align::Start,
+            Some(1.0),
+            vec![
+                text(
+                    cx,
+                    &o.title,
+                    st(13.0, 600),
+                    colour::MARK_ACCENT,
+                    Some(1),
+                    swiftly_text::Align::Start,
+                ),
+                text(
+                    cx,
+                    &o.under,
+                    st(12.0, 400),
+                    colour::FONT_VERY_QUIET,
+                    Some(1),
+                    swiftly_text::Align::Start,
+                ),
+            ],
+        )
+        .layout_priority(1.0),
+        Node::spacer(),
+    ];
+    if o.count > 1 {
+        cells.push(
+            text(
+                cx,
+                &o.count.to_string(),
+                st(10.0, 600),
+                colour::REASON,
+                Some(1),
+                swiftly_text::Align::Center,
+            )
+            .padding(EdgeInsets::symmetric(6.0, 0.0))
+            .frame(None, Some(20.0), Alignment::CENTER)
+            .flex_frame(FlexFrame {
+                min_w: Some(20.0),
+                align: Some(Alignment::CENTER),
+                ..FlexFrame::default()
+            })
+            .background(Node::rect(accent, 10.0), Alignment::CENTER),
+        );
+    }
+    let trailing = if o.count > 1 { 10.0 } else { 14.0 };
+    let capsule = Node::hstack(Align::Center, Some(10.0), cells)
+        .padding(EdgeInsets {
+            top: 0.0,
+            leading: 14.0,
+            bottom: 0.0,
+            trailing,
+        })
+        .frame(None, Some(desktop::BADGE_HEIGHT), Alignment::LEADING)
+        .background(Node::rect(color(colour::REASON), 999.0), Alignment::CENTER)
+        .background(
+            Node::rect(rgba(colour::MARK_ACCENT, 0.18), 999.0),
+            Alignment::CENTER,
+        );
+    let label = if o.count > 1 {
+        o.title.clone()
+    } else {
+        format!("{}, {}", o.title, o.under)
+    };
+    capsule
+        .hover_surface(
+            Color::new(1.0, 1.0, 1.0, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
+            999.0,
+        )
+        .press_style(swiftly_ui::PressStyle::Button)
+        .a11y(swiftly_ui::a11y::A11yNode::new(
+            "",
+            swiftly_ui::a11y::Role::Button,
+            &label,
+        ))
+        .key("go:offer")
+        .on_tap(Action::from("go:offer"))
+        .padding(ins(
+            0.0,
+            desktop::BADGE_EDGE,
+            desktop::BADGE_EDGE,
+            desktop::BADGE_EDGE,
+        ))
 }
 
 /// One tab of the tv bar (`TabStyle`): 30 semibold, 28 side padding, 68 high; resting `fontQuiet`, open `font` with a 4 high
@@ -1659,14 +1985,12 @@ fn hero(cx: &Cx, m: &Metrics, ctx: &Ctx, tile: Option<&Tile>) -> Node {
     let ground = colour::REASON;
     let clear = rgba(ground, 0.0);
     let backdrop_w = 1280.0;
-    let remote = ctx
-        .hub
-        .borrow()
-        .clone()
-        .zip(tile.and_then(|t| t.image.as_ref()));
-    let image = if let Some((hub, img)) = remote {
+    let hub = ctx.hub.borrow().clone();
+    let image = if let Some(hub) = hub {
+        // Without a picture the backdrop is empty (the page ground), not demo art.
+        let img = tile.and_then(|t| t.image.as_ref());
         remote_node(
-            hub.slot(Some(img), backdrop_w, tv::HERO_HEIGHT, Priority::Visible),
+            hub.slot(img, backdrop_w, tv::HERO_HEIGHT, Priority::Visible),
             backdrop_w,
             tv::HERO_HEIGHT,
             0.0,
@@ -1801,14 +2125,15 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
             if p.chips.is_empty() {
                 Node::vstack(Align::Start, Some(22.0), vec![heading("Start"), stack])
             } else {
-                // The chips sit where the Movies/Series pills do: 14 pt under the heading, 30 high.
+                // Mac: 22 under the heading, the chips on their 42 frame, then the 40 of the rail spacing.
                 Node::vstack(
                     Align::Start,
                     Some(0.0),
                     vec![
                         heading("Start"),
-                        chips_row(cx, &m, &p.chips).padding(ins(14.0, 0.0, 0.0, 0.0)),
-                        stack.padding(ins(22.0, 0.0, 0.0, 0.0)),
+                        chips_row(cx, &m, &ctx.icons, &p.chips, &p.rail_hover)
+                            .padding(ins(22.0, 0.0, 0.0, 0.0)),
+                        stack.padding(ins(m.rails_spacing, 0.0, 0.0, 0.0)),
                     ],
                 )
             }
@@ -1835,17 +2160,19 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
                 ));
                 fill_frame(column, Alignment::TOP_LEADING).reveal_as("home.loading")
             }
-            Status::Offline => empty_state(
-                cx,
-                &ctx.icons,
-                "hard-drive-x",
-                "Server ist abgetaucht",
-                &format!(
-                    "{} antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                    home_data::SERVER
-                ),
-                "Erneut versuchen",
-            ),
+            Status::Offline => {
+                // The words follow the failure and name the account's server (`Trouble.copy(server:)`).
+                let server = p.card.server_name();
+                let (title, body) = ctx.vm.failure().copy(&server);
+                empty_state(
+                    cx,
+                    &ctx.icons,
+                    "hard-drive-x",
+                    title,
+                    &body,
+                    "Erneut versuchen",
+                )
+            }
             Status::Ready | Status::SignedOut => empty_state(
                 cx,
                 &ctx.icons,
@@ -1856,7 +2183,7 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
             ),
         };
     }
-    let rails: Vec<Node> = (0..p.rails.rails.len())
+    let mut rails: Vec<Node> = (0..p.rails.rails.len())
         .map(|i| {
             stagger_row(
                 rail_node(cx, &m, form, pad, ctx, &p.rails, i, &p.rail_hover),
@@ -1866,6 +2193,10 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
             )
         })
         .collect();
+    // At the very end, after the last row; never above the content.
+    if let (Some(hours), Form::Desktop) = (p.support, form) {
+        rails.push(support_card(cx, hours).reveal_as("home.support"));
+    }
     let column = if form == Form::Tv {
         let focused = p.focus.and_then(|f| {
             p.rails.rails.iter().find_map(|r| {
@@ -1957,12 +2288,15 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
         Form::Desktop => {
             // The window's top strip fades in over the content with the scroll, like the Swift toolbar zone.
             let strip = state_bar(cx, "Start", p.header);
-            let content_side =
-                fill_frame(body, Alignment::TOP_LEADING).overlay(strip, Alignment::TOP);
+            let content_side = crate::look_glow::behind(
+                fill_frame(body, Alignment::TOP_LEADING).overlay(strip, Alignment::TOP),
+                p.glow,
+                env.size.w - desktop::SIDEBAR_WIDTH,
+            );
             Node::hstack(
                 Align::Start,
                 Some(0.0),
-                vec![sidebar(cx, &p.bar(), &ctx.icons), content_side],
+                vec![sidebar(cx, &p.bar(), &ctx.icons, &ctx.hub), content_side],
             )
         }
         Form::Tv => fill_frame(body, Alignment::TOP_LEADING)
@@ -1975,7 +2309,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
             p.rails.rails.iter().any(|r| {
                 r.kind == RailKind::ContinueWatching && r.tiles.iter().any(|t| t.id == id)
             });
-        crate::tile_menu::demo_cx(cw)
+        crate::tile_menu::rail_cx(cw, false)
     };
     let overlay = match &p.sheet {
         Sheet::None => None,
@@ -2031,6 +2365,8 @@ pub struct HomeScreen {
     asked: HashSet<String>,
     opened: Vec<String>,
     resumed: Vec<String>,
+    /// Tiles the pointer rested on for 150 ms (the Mac's `TileWrapper` prefetch hint), in order.
+    rested: Vec<String>,
     refreshes: u32,
     tab: usize,
     now: f64,
@@ -2051,6 +2387,11 @@ pub struct HomeScreen {
     genres: Vec<String>,
     /// Library rows whose heading link was tapped (their ids), oldest first.
     libraries: Vec<String>,
+    /// A New-movies (false) or New-series (true) heading link was tapped; the suite hands the order to that library.
+    jumped: Option<bool>,
+    /// The support card shown (hours watched) and the taps on its buttons, oldest first.
+    support: Option<i64>,
+    support_taps: Vec<SupportTap>,
 }
 
 impl HomeScreen {
@@ -2077,6 +2418,9 @@ impl HomeScreen {
             downloads: false,
             settings: false,
             card: crate::desk::Card::Demo,
+            offer: None,
+            mine: (true, true),
+            glow: (crate::look_glow::Glow::default(), 0),
             status: vm.status(),
             rails: vm.rails(),
             tab: 0,
@@ -2092,6 +2436,7 @@ impl HomeScreen {
             chips: Vec::new(),
             stagger: 0,
             rails_out: false,
+            support: None,
         };
         let ui = Ui::new(
             move |p: &Parts, env: &Env, cx: &Cx| view(p, env, cx, &ctx),
@@ -2106,6 +2451,7 @@ impl HomeScreen {
             asked: HashSet::new(),
             opened: Vec::new(),
             resumed: Vec::new(),
+            rested: Vec::new(),
             refreshes: 0,
             tab: 0,
             now: 0.0,
@@ -2120,6 +2466,9 @@ impl HomeScreen {
             rails_out: false,
             genres: Vec::new(),
             libraries: Vec::new(),
+            jumped: None,
+            support: None,
+            support_taps: Vec::new(),
         };
         s.sync();
         s
@@ -2138,6 +2487,11 @@ impl HomeScreen {
     /// The Continue-rail tiles tapped since the last call: the app plays them at once.
     pub fn take_resumed(&mut self) -> Vec<String> {
         std::mem::take(&mut self.resumed)
+    }
+
+    /// The tiles the pointer rested on since the last call: the title pages behind them are fetched ahead.
+    pub fn take_rested(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.rested)
     }
 
     /// How many reloads the user started (pull to refresh, retry).
@@ -2184,6 +2538,9 @@ impl HomeScreen {
             downloads: crate::desk::downloads_front(),
             settings: crate::desk::settings_front(),
             card: crate::desk::card(),
+            offer: crate::desk::offer(),
+            mine: crate::desk::mine(),
+            glow: crate::look_glow::bar_state(offset as f64),
             status,
             rails: self.vm.rails(),
             tab: self.tab,
@@ -2203,7 +2560,48 @@ impl HomeScreen {
             },
             stagger: self.stagger,
             rails_out: self.rails_out,
+            support: self.support,
         });
+    }
+
+    /// Shows or hides the support card (`SupportModel.cardVisible`): the hours watched when it is due.
+    pub fn set_support(&mut self, hours: Option<i64>) {
+        if self.support != hours {
+            self.support = hours;
+            self.sync();
+        }
+    }
+
+    /// The window-point frame of the control `key` (tests).
+    #[doc(hidden)]
+    pub fn frame_of(&self, key: &str) -> Option<[f32; 4]> {
+        self.ui.frame_of(key)
+    }
+
+    /// The tooltip the pointer's rest has earned at `now` (tests).
+    #[doc(hidden)]
+    pub fn visible_tooltip(&self, now: f64) -> Option<(String, swiftly_layout::Rect)> {
+        self.ui.visible_tooltip(now)
+    }
+
+    /// The text of the tooltip the last click hid.
+    pub fn dismissed_tooltip(&self) -> Option<String> {
+        self.ui.dismissed_tooltip()
+    }
+
+    /// Keeps a tooltip hidden that a click on the screen before hid.
+    pub fn inherit_dismissed_tooltip(&mut self, text: Option<String>) {
+        self.ui.inherit_dismissed_tooltip(text);
+    }
+
+    /// Whether the support card is shown.
+    pub fn support_shown(&self) -> bool {
+        self.support.is_some()
+    }
+
+    /// The oldest tap on a button of the support card, once.
+    pub fn take_support_tap(&mut self) -> Option<SupportTap> {
+        (!self.support_taps.is_empty()).then(|| self.support_taps.remove(0))
     }
 
     fn reload(&mut self) {
@@ -2235,7 +2633,7 @@ impl HomeScreen {
                 let cw = self.vm.rails().rails.iter().any(|r| {
                     r.kind == RailKind::ContinueWatching && r.tiles.iter().any(|t| t.id == id)
                 });
-                let c = crate::tile_menu::demo_cx(cw);
+                let c = crate::tile_menu::rail_cx(cw, false);
                 for (i, e) in crate::tile_menu::entries(form, &c, tile.as_ref())
                     .into_iter()
                     .enumerate()
@@ -2267,9 +2665,16 @@ impl HomeScreen {
                     }
                 }
             }
-            Sheet::Devices(_) => {
-                if is("sheet.close") || is("pick.d.0") {
+            Sheet::Devices(id) => {
+                if is("sheet.close") {
                     self.sheet = Sheet::None;
+                }
+                let targets = crate::tile_menu::rail_cx(false, false).host.play_on;
+                for (i, (device, _)) in targets.iter().enumerate() {
+                    if is(&format!("pick.d.{i}")) {
+                        self.requests.push(format!("PlayOn:{id}:{device}"));
+                        self.sheet = Sheet::None;
+                    }
                 }
             }
             Sheet::Load(_) => {
@@ -2360,6 +2765,12 @@ impl HomeScreen {
     }
 
     /// The library rows whose "Alle" link was tapped since the last call.
+    /// The library the last "Alle \u{203a}" of a new-additions row opened: `Some(true)` series, `Some(false)` movies.
+    pub fn take_jump(&mut self) -> Option<bool> {
+        self.jumped.take()
+    }
+
+    /// The library rows whose "Alle" link was tapped since the last call.
     pub fn take_libraries(&mut self) -> Vec<String> {
         std::mem::take(&mut self.libraries)
     }
@@ -2413,7 +2824,7 @@ impl HomeScreen {
                         if crate::tile_menu::carries(Some(&t)) {
                             self.menu.open(
                                 &t,
-                                &crate::tile_menu::demo_cx(cw),
+                                &crate::tile_menu::rail_cx(cw, false),
                                 swiftly_layout::Point::new(*x, *y),
                                 false,
                             );
@@ -2422,6 +2833,13 @@ impl HomeScreen {
                     continue;
                 }
                 UiEvent::HoverChanged { action, entered } => {
+                    if *action == Action::from(format!("rail:{CHIPS_RAIL}").as_str()) {
+                        if *entered {
+                            self.hovered_rail = Some(CHIPS_RAIL.to_owned());
+                        } else if self.hovered_rail.as_deref() == Some(CHIPS_RAIL) {
+                            self.hovered_rail = None;
+                        }
+                    }
                     for r in &self.vm.rails().rails {
                         if *action == Action::from(format!("rail:{}", r.id).as_str()) {
                             if *entered {
@@ -2439,9 +2857,28 @@ impl HomeScreen {
                     }
                     continue;
                 }
+                UiEvent::Tap(a) if *a == Action::from("support:open") => {
+                    self.support_taps.push(SupportTap::Open);
+                    continue;
+                }
+                UiEvent::Tap(a) if *a == Action::from("support:snooze") => {
+                    self.support_taps.push(SupportTap::Snooze);
+                    continue;
+                }
                 UiEvent::Tap(a) => {
                     let now = self.now;
                     let mut page = None;
+                    for dir in [-1.0_f64, 1.0] {
+                        let key =
+                            format!("page.{}:{CHIPS_RAIL}", if dir < 0.0 { 'l' } else { 'r' });
+                        if *a == Action::from(key.as_str()) {
+                            self.ui.scroll_key_by(
+                                format!("rail-row:{CHIPS_RAIL}").as_str(),
+                                dir * f64::from(CHIPS_STEP),
+                                now,
+                            );
+                        }
+                    }
                     for r in &self.vm.rails().rails {
                         if *a == Action::from(format!("page.l:{}", r.id).as_str()) {
                             page = Some((r.id.clone(), -1.0));
@@ -2453,7 +2890,10 @@ impl HomeScreen {
                                 self.libraries
                                     .push(r.id.trim_start_matches("library:").to_owned());
                             } else {
-                                self.tab = if r.kind == RailKind::NewSeries { 2 } else { 1 };
+                                // `AppModel.openLibrary(jump)`: the suite hands the row's order to that library.
+                                let series = r.kind == RailKind::NewSeries;
+                                self.jumped = Some(series);
+                                self.tab = if series { 2 } else { 1 };
                             }
                         }
                     }
@@ -2484,6 +2924,18 @@ impl HomeScreen {
                 }
                 _ => {}
             }
+            if let UiEvent::HoverRest(a) = &ev
+                && let Some(t) = self
+                    .vm
+                    .rails()
+                    .rails
+                    .iter()
+                    .flat_map(|r| r.tiles.iter())
+                    .find(|t| *a == Action::from(format!("rest:{}", t.id).as_str()))
+            {
+                // The Mac's `TileWrapper`: after 150 ms of rest the title behind the tile is fetched ahead.
+                self.rested.push(t.id.clone());
+            }
             if let UiEvent::LongPress(a) = &ev
                 && let Some(t) = self
                     .vm
@@ -2512,13 +2964,14 @@ impl HomeScreen {
                 }
                 for r in &self.vm.rails().rails {
                     for t in &r.tiles {
-                        if action == Action::from(format!("tile:{}", t.id).as_str()) {
-                            // The Mac's Continue rail resumes at once; the detail page is the info/menu path only.
-                            if r.kind == RailKind::ContinueWatching {
+                        // The Mac's Continue rail resumes at once; the detail page is the info/menu path only. Every
+                        // other row opens the page, whatever else its title is in.
+                        if r.kind == RailKind::ContinueWatching {
+                            if action == Action::from(format!("resume:{}", t.id).as_str()) {
                                 self.resumed.push(t.id.clone());
-                            } else {
-                                self.opened.push(t.id.clone());
                             }
+                        } else if action == Action::from(format!("tile:{}", t.id).as_str()) {
+                            self.opened.push(t.id.clone());
                         }
                     }
                 }
@@ -2631,6 +3084,11 @@ impl HomeScreen {
         self.ui.needs_frame() || self.vm.status().refreshing || self.hub.busy()
     }
 
+    /// The owner the picture hub knows this screen by (see `ImageHub::set_hidden`).
+    pub(crate) fn hub_owner(&self) -> crate::hub::HubOwner {
+        Rc::downgrade(&self.hub)
+    }
+
     /// The services (atlas pages) the renderers read.
     pub fn with_images(self, hub: Rc<ImageHub>) -> Self {
         self.hub.attach(hub);
@@ -2661,6 +3119,47 @@ impl HomeScreen {
 #[cfg(test)]
 mod backdrop_tests {
     use super::*;
+
+    /// The glow over a mid-grey picture at the Linux 4K scale of 1.5: every row must be the ramp's value at that row
+    /// (within the noise of the dither), with no dark seam line where two bands meet inside a device pixel.
+    #[test]
+    fn the_glow_has_no_seam_lines_at_a_fractional_scale() {
+        use swiftly_layout::Size;
+        let env = Env::new(Size::new(300.0, BACKDROP_HEIGHT), 1.5, Idiom::Desktop);
+        let ground = Color::rgb(0.6, 0.6, 0.6);
+        let mut ui = Ui::new(
+            move |_: &(), _: &Env, _: &Cx| {
+                header_backdrop(1.0).background(Node::rect(ground, 0.0), Alignment::TOP)
+            },
+            (),
+            env,
+            Cx::deterministic(),
+        );
+        let list = ui.frame(0.0);
+        let img = ui.render(&list, Color::BLACK);
+        let rows = (BACKDROP_HEIGHT * 1.5) as usize;
+        let stops = backdrop_stops();
+        let alpha_at = |t: f32| {
+            let i = stops
+                .windows(2)
+                .position(|w| t >= w[0].0 && t <= w[1].0)
+                .unwrap_or(stops.len() - 2);
+            let (a, b) = (stops[i], stops[i + 1]);
+            a.1 + (b.1 - a.1) * (t - a.0) / (b.0 - a.0)
+        };
+        let reason = colour::REASON.r;
+        let mut worst = 0.0_f32;
+        for y in 0..rows {
+            let a = alpha_at((y as f32 + 0.5) / rows as f32);
+            let expect = (0.6 * (1.0 - a) + reason * a) * 255.0;
+            let got = f32::from(img.pixel(150, y)[0]);
+            worst = worst.max((got - expect).abs());
+        }
+        assert!(
+            worst <= 3.0,
+            "a row is {worst} levels off the ramp (seam lines)"
+        );
+    }
 
     #[test]
     fn the_glow_ramp_is_smooth_and_keeps_the_mac_end_points() {
@@ -2712,6 +3211,149 @@ mod backdrop_tests {
         assert!(
             old_worst > 0.45 && worst < old_worst / 2.0,
             "{old_worst} vs {worst}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod downloads_row_tests {
+    use super::*;
+    use swiftly_layout::Size;
+
+    fn names(on: bool) -> Vec<String> {
+        crate::desk::set_mine(true, on);
+        let env = Env::new(Size::new(1280.0, 800.0), 2.0, swiftly_ui::Idiom::Desktop);
+        let mut s = HomeScreen::new(
+            env,
+            Cx::deterministic(),
+            crate::home_data::Scenario::Loading,
+        );
+        let _ = s.frame(100.0);
+        let names = s.a11y_nodes().into_iter().map(|n| n.label).collect();
+        crate::desk::set_mine(true, true);
+        names
+    }
+
+    #[test]
+    fn the_sidebar_has_a_downloads_row_only_while_downloads_are_on() {
+        assert!(names(true).iter().any(|n| n == "Downloads"));
+        assert!(!names(false).iter().any(|n| n == "Downloads"));
+    }
+}
+
+#[cfg(test)]
+mod no_demo_art_tests {
+    use super::*;
+    use swiftly_images::fixture::FixtureImages;
+    use swiftly_images::{Device, ImageLoader};
+
+    fn uvs(n: &Node, out: &mut Vec<[f32; 4]>) {
+        for p in &n.paint {
+            if let Paint::Image { image, .. } = p {
+                out.push(image.uv);
+            }
+        }
+        for c in &n.children {
+            uvs(c, out);
+        }
+    }
+
+    /// Over the real image hub a title without a picture is the tile ground with the symbol of its kind, not a generated
+    /// demo poster; without a hub (the demo) the generated art stays.
+    #[test]
+    fn a_home_tile_without_a_picture_never_draws_demo_art() {
+        let cx = Cx::deterministic();
+        let art = Art {
+            posters: art::posters(&cx),
+            landscapes: art::heroes(&cx),
+        };
+        let demo: Vec<[f32; 4]> = art
+            .posters
+            .iter()
+            .chain(&art.landscapes)
+            .map(|i| i.uv)
+            .collect();
+        let icons = Icons::new(&cx, 2.0);
+        let m = metrics(Form::Desktop, false);
+        let tile = Tile {
+            id: "t1".into(),
+            title: "Ohne Bild".into(),
+            subtitle: None,
+            progress: None,
+            image: None,
+            badges: Vec::new(),
+            remaining: None,
+            facts: swiftly_vm::TileFacts::default(),
+        };
+        let slot: HubSlot = Rc::new(RefCell::new(None));
+        let build = |landscape: bool| {
+            let n = tile_node(
+                &cx,
+                &m,
+                Form::Desktop,
+                &art,
+                &slot,
+                &icons,
+                &tile,
+                landscape,
+                false,
+                "k",
+            );
+            let mut found = Vec::new();
+            uvs(&n, &mut found);
+            found
+        };
+        assert!(
+            build(false).iter().any(|u| demo.contains(u)),
+            "the demo keeps its art"
+        );
+        *slot.borrow_mut() = Some(ImageHub::new(
+            Box::new(ImageLoader::new(Arc::new(FixtureImages), None, Device::Mac)),
+            &cx,
+            2.0,
+            Device::Mac,
+        ));
+        for landscape in [false, true] {
+            assert!(
+                build(landscape).iter().all(|u| !demo.contains(u)),
+                "landscape {landscape}: a generated picture is drawn over the hub"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod sidebar_tooltip_tests {
+    use super::*;
+    use swiftly_layout::Size;
+
+    /// The Mac hides a help tag once the row is clicked; it must not come back over the next label while the pointer
+    /// stays on the (re-built) row.
+    #[test]
+    fn a_click_on_a_sidebar_row_hides_its_tooltip_for_good() {
+        let env = Env::new(Size::new(1280.0, 800.0), 1.0, swiftly_ui::Idiom::Desktop);
+        let mut s = HomeScreen::new(env, Cx::deterministic(), crate::home_data::Scenario::Ready);
+        let mut now = 0.0;
+        for _ in 0..10 {
+            now += 16.0;
+            let _ = s.frame(now);
+        }
+        let f = s.frame_of("tab:1").expect("a sidebar row");
+        let (x, y) = (f[0] + f[2] / 2.0, f[1] + f[3] / 2.0);
+        s.pointer_move(x, y, now);
+        now += 900.0;
+        let _ = s.frame(now);
+        assert!(s.visible_tooltip(now).is_some(), "the rest earns a tooltip");
+        s.touch_down(x, y, now);
+        s.touch_up(x, y, now + 40.0);
+        for _ in 0..80 {
+            now += 16.0;
+            let _ = s.frame(now);
+            s.pointer_move(x, y, now);
+        }
+        assert!(
+            s.visible_tooltip(now + 2000.0).is_none(),
+            "the tooltip stays away after the click"
         );
     }
 }

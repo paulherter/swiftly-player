@@ -7,7 +7,9 @@ use crate::detail_screen::{fill_frame, ins, rgba, txt};
 use crate::home::Form;
 use crate::player_card::{self, CardLook, CardMotion};
 use crate::player_glyphs::Glyphs;
-use crate::player_host::{PlanAsk, Planner, PlayerCalls, SwitchState};
+use crate::player_host::{
+    EpisodeCardData, EpisodeSource, PlanAsk, Planner, PlayerCalls, SeasonRow, SwitchState,
+};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -43,24 +45,36 @@ pub const NOTICE_SECONDS: f64 = 3.0;
 pub const DOUBLE_TAP: f64 = 0.26;
 /// Seconds a running seek chain waits for the next tap (`PlayerScreen.chainTap`).
 pub const CHAIN_TAP: f64 = 0.5;
+/// How far (points) a press on the bare background must travel before it is a window drag and no tap.
+const WINDOW_DRAG_SLOP: f32 = 4.0;
 /// Pinch thresholds of the Swift `MagnifyGesture`.
 pub const PINCH_IN: f64 = 1.15;
 /// See [`PINCH_IN`].
 pub const PINCH_OUT: f64 = 0.85;
-/// Sleep timer choices in minutes.
-pub const SLEEP_CHOICES: [u32; 5] = [15, 30, 45, 60, 90];
-/// Speed choices.
-pub const TEMPOS: [f32; 6] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+/// Sleep timer choices in minutes (`SleepTimes.values`, from the core).
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+pub const SLEEP_CHOICES: [u32; 5] = {
+    let s = swiftly_rules::playback_levels::SLEEP_TIMES;
+    [
+        s[0] as u32,
+        s[1] as u32,
+        s[2] as u32,
+        s[3] as u32,
+        s[4] as u32,
+    ]
+};
+/// Speed choices (`SpeedLevels.values`, from the core).
+pub const TEMPOS: [f32; 5] = swiftly_rules::playback_levels::SPEED_VALUES;
 /// Quality caps in Mbit/s after "Originalqualität".
 /// `Bitrate.levels`; 0 is "Unbegrenzt".
-pub const QUALITY_CAPS: [i64; 6] = [0, 4, 8, 20, 40, 80];
+pub const QUALITY_CAPS: [i64; 6] = swiftly_rules::playback_selection::BITRATE_LEVELS;
 
-/// TVs a film can be handed to (`PlayOutputs.targets`); the demo has one.
-const TARGETS: [&str; 1] = ["Wohnzimmer"];
-/// The group the player sits in (name, who is there), if any (`SharedModel.group`).
-const GROUP: Option<(&str, &str)> = None;
-/// Episodes of the demo season: number, title, minutes, watched share, watched.
-const EPISODES: [(u32, &str, u32, f32, bool); 6] = [
+/// The TV the demo screen can hand a film to (`PlayOutputs.targets`); the live player asks the account's devices.
+const DEMO_TARGET: &str = "Wohnzimmer";
+/// Seconds the error strip of the group stays (`SharedError`).
+const ERROR_SECONDS: f64 = 4.0;
+/// The demo season (the made-up player): number, title, minutes, watched share, watched.
+const DEMO_EPISODES: [(u32, &str, u32, f32, bool); 6] = [
     (1, "Der Hafen", 46, 0.0, true),
     (2, "Die Nachricht", 44, 0.0, true),
     (3, "Nordlicht", 47, 0.3, false),
@@ -68,10 +82,86 @@ const EPISODES: [(u32, &str, u32, f32, bool); 6] = [
     (5, "Schwarzes Eis", 48, 0.0, false),
     (6, "Das Ende der Nacht", 52, 0.0, false),
 ];
-/// The seasons of the demo series (`SeasonPill` list).
-const SEASONS: [&str; 3] = ["Staffel 1", "Staffel 2", "Staffel 3"];
-/// The episode that runs (index in [`EPISODES`]).
-const CURRENT: usize = 2;
+
+/// The made-up player's episodes: three seasons, the first six episodes in every one, the third running.
+struct DemoEpisodes;
+
+impl crate::player_host::EpisodeSource for DemoEpisodes {
+    fn seasons(
+        &self,
+        _series: &str,
+        _hint: Option<&str>,
+    ) -> crate::login_screen::Pending<Option<(Vec<SeasonRow>, usize)>> {
+        let (tx, rx) = crate::login_screen::Pending::channel();
+        let rows = (1..=3)
+            .map(|n| SeasonRow {
+                id: format!("demo-s{n}"),
+                name: format!("Staffel {n}"),
+            })
+            .collect();
+        let _ = tx.send(Some((rows, 0)));
+        rx
+    }
+
+    fn episodes(
+        &self,
+        _series: &str,
+        _season: &str,
+    ) -> crate::login_screen::Pending<Option<Vec<EpisodeCardData>>> {
+        let (tx, rx) = crate::login_screen::Pending::channel();
+        let cards = DEMO_EPISODES
+            .iter()
+            .map(|(n, title, minutes, share, watched)| EpisodeCardData {
+                // The running one has the demo player's own id.
+                id: if *n == 3 {
+                    "demo-ep".to_owned()
+                } else {
+                    format!("demo-e{n}")
+                },
+                title: (*title).to_owned(),
+                header: format!("F{n} · {title}"),
+                sub: Some(format!("{minutes} Min.")),
+                progress: (*share > 0.0).then_some(*share),
+                watched: *watched,
+                image: None,
+            })
+            .collect();
+        let _ = tx.send(Some(cards));
+        rx
+    }
+
+    fn still(&self, _id: &str, _address: Option<&str>) -> player_card::StillSource {
+        Arc::new(|| None)
+    }
+}
+
+/// The seasons on their way: the rows and the index to open on.
+type SeasonsWait = crate::login_screen::Pending<Option<(Vec<SeasonRow>, usize)>>;
+
+/// An episode list on its way: the season index it was asked for and the answer.
+type CardsWait = (
+    usize,
+    crate::login_screen::Pending<Option<Vec<EpisodeCardData>>>,
+);
+
+/// What the made-up player's overlay says about its made-up file.
+fn demo_tech() -> crate::player_host::TechFacts {
+    let mut video = stream(0, "Video", "", "h264");
+    video.width = Some(1920);
+    video.height = Some(1080);
+    let mut audio = stream(1, "Audio", "ger", "eac3");
+    audio.channels = Some(6);
+    crate::player_host::TechFacts {
+        delivery: "Direct Play".to_owned(),
+        good: true,
+        video: Some(video),
+        audios: vec![audio],
+        subtitles: Vec::new(),
+        container: Some("mkv".to_owned()),
+        size: Some(2_100_000_000),
+        reason: None,
+    }
+}
 
 /// A shared frame surface as the seam type.
 struct RcSurface(Rc<crate::frame_surface::FrameSurface>);
@@ -426,20 +516,38 @@ struct Params {
     offer: OfferPart,
     title: String,
     meta: String,
+    /// The episodes layer and its button exist.
+    episodes: bool,
+    /// The delivery is a transcode: a warning line under the meta.
+    transcode: bool,
     chapters: Vec<(f64, String)>,
     marks: Vec<f64>,
     spin: u8,
+    /// Turns of the Mac loader (continuous, 0.7 s per turn).
+    turn: f32,
     focus: u64,
     fill: bool,
     muted: bool,
     volume: i32,
     tech: bool,
+    /// The stored subtitle look for the lines the app draws itself.
+    sub_style: Option<swiftly_playback::engine::SubtitleTextStyle>,
+    /// The overlay's delivery word (accent when good) and its file lines.
+    tech_head: Option<(String, bool)>,
+    /// The first transcode reason in words, under the delivery word (`TechBadge`).
+    tech_reason: Option<String>,
+    tech_rows: Vec<(String, String)>,
     /// The handover menu is open (desktop).
     menu: bool,
     /// The film runs in the small window: the big picture shows the hint (`smallerHint`).
     small: bool,
     /// The season picker list is open, and the chosen season (index in [`SEASONS`]).
     seasons: (bool, usize),
+    /// The season names of the picker, the cards of the chosen season, the running one among them and their pictures.
+    season_names: Vec<String>,
+    cards: Vec<EpisodeCardData>,
+    current_card: Option<usize>,
+    card_imgs: Vec<Option<(swiftly_ui::ImageId, f32)>>,
     /// Scroll offset of the episode strip (the arrows show from it).
     strip_x: f32,
     /// The window is in real fullscreen (the rail button swaps its glyph).
@@ -461,6 +569,16 @@ struct Params {
     bounce: (f32, f32),
     /// Counts the fullscreen changes: the controls fade in again with easeInOut 0.5 after each.
     fs_epoch: u32,
+    /// The group the player sits in: its name and "mit A und B" (`SharedModel.group`, `withWhom`).
+    group: Option<(String, String)>,
+    /// Everyone in the group, as the server names them.
+    participants: Vec<String>,
+    /// The latest event of the group, shown at the top for a moment.
+    event: Option<crate::together::EventLine>,
+    /// What went wrong with the group, shown above the scrubber.
+    group_error: Option<String>,
+    /// The devices the film can be handed to: id and name (`PlayOutputs.targets`).
+    targets: Vec<(String, String)>,
 }
 
 struct Metrics {
@@ -528,11 +646,11 @@ fn metrics(env: &Env) -> Metrics {
             play_box: 116.0,
             bar_gap: 14.0,
         },
-        // `PL:10-52`: page/titleLeft 28, top 14, titleTop 44, bottom 20, button 44, glyph 22, over bar 12.
+        // `PL:10-52`: page/titleLeft 28, iconTop 35.5 (= titleTop 44 - (44 - 27) / 2), titleTop 44, bottom 20, button 44, glyph 22, over bar 12.
         Form::Desktop => Metrics {
             form: Form::Desktop,
             edge: 28.0,
-            top: 14.0,
+            top: 35.5,
             bottom: 20.0,
             title: 22.0,
             meta: 13.0,
@@ -552,7 +670,7 @@ fn metrics(env: &Env) -> Metrics {
             preview_w: 160.0,
             row_h: 34.0,
             sub: 22.0,
-            rail_top: 14.0,
+            rail_top: 35.5,
             title_top: 44.0,
             skip_box: 48.0,
             play_box: 60.0,
@@ -650,11 +768,16 @@ fn act(c: &Ctx<'_>, n: Node, on: bool, key: &str, action: &str) -> Node {
         "toggle" => "Wiedergabe".to_owned(),
         "back" => format!("{} Sekunden zurück", c.p.c.jump_seconds.0),
         "fwd" => format!("{} Sekunden vor", c.p.c.jump_seconds.1),
-        "tracks" => "Audio und Untertitel".to_owned(),
+        "tracks" => "Ton und Untertitel".to_owned(),
+        "fullscreen" if c.p.fullscreen => "Vollbild verlassen".to_owned(),
+        "fullscreen" => "Vollbild".to_owned(),
+        "mute" if c.p.muted || c.p.volume <= 0 => "Ton an".to_owned(),
+        "mute" => "Ton aus".to_owned(),
         "episodes" => "Folgen".to_owned(),
         "settings" => "Einstellungen".to_owned(),
         "handover" => "Auf anderem Gerät fortsetzen".to_owned(),
-        "close" | "layer-close" => "Schließen".to_owned(),
+        "close" => "Player schließen".to_owned(),
+        "layer-close" | "fail-close" => "Schließen".to_owned(),
         other => other.to_owned(),
     };
     let n = n
@@ -674,6 +797,22 @@ fn label(c: &Ctx<'_>, s: &str, size: f32, w: u16, col: swiftly_design::Colour) -
         ..base()
     };
     txt(c.cx, s, base, col, Some(1))
+}
+
+/// The width a one-line label takes at its natural size (what the Mac reads from its layout).
+fn label_width(c: &Ctx<'_>, s: &str, size: f32, w: u16) -> f32 {
+    let style = swiftly_design::TextStyle {
+        size,
+        weight: w,
+        ..base()
+    };
+    c.cx.measure_text(
+        s,
+        &swiftly_text::TextStyle::from(style),
+        Some(1),
+        swiftly_layout::Proposal::NIL,
+    )
+    .w
 }
 
 /// A time or clock label: tabular figures, so the digits stay put while the time runs.
@@ -709,15 +848,15 @@ const VOL_INSET: f32 = 6.0;
 
 /// Buttons right of the volume control in the desktop rail: Ton und Untertitel, Folgen, Einstellungen, Vollbild,
 /// the handover (when there are targets) and close.
-fn rail_after_volume() -> f32 {
-    (5 + usize::from(!TARGETS.is_empty() && GROUP.is_none())) as f32
+fn rail_after_volume(handover: bool) -> f32 {
+    (5 + usize::from(handover)) as f32
 }
 
 /// Left edge of the volume slider (window points) and the vertical centre of the rail.
-fn vol_geometry(env: &Env) -> (f32, f32) {
+fn vol_geometry(env: &Env, handover: bool) -> (f32, f32) {
     let m = metrics(env);
     let right = env.size.w - (m.edge - (m.button - m.glyph) / 2.0);
-    let comp_right = right - rail_after_volume() * (m.button + 2.0);
+    let comp_right = right - rail_after_volume(handover) * (m.button + 2.0);
     (
         comp_right - VOL_COMPARTMENT + (VOL_COMPARTMENT - VOL_SLIDER) / 2.0,
         m.rail_top + m.button / 2.0,
@@ -725,9 +864,9 @@ fn vol_geometry(env: &Env) -> (f32, f32) {
 }
 
 /// The rectangle (x0, y0, x1, y1) in which the pointer keeps the compartment out: speaker button and compartment.
-fn vol_zone(env: &Env) -> (f32, f32, f32, f32) {
+fn vol_zone(env: &Env, handover: bool) -> (f32, f32, f32, f32) {
     let m = metrics(env);
-    let (sx, cy) = vol_geometry(env);
+    let (sx, cy) = vol_geometry(env, handover);
     let comp_left = sx - (VOL_COMPARTMENT - VOL_SLIDER) / 2.0;
     (
         comp_left - 2.0 - m.button,
@@ -766,13 +905,15 @@ fn symbol_swap() -> Motion {
 /// Speaker button and the compartment with the 88 pt slider (`VolumeSlider.swift`).
 fn volume_control(c: &Ctx<'_>, on: bool) -> Node {
     let p = c.p;
-    let level = if p.muted { 0 } else { p.volume.clamp(0, 100) };
+    // One value like the Mac's `volume`: muted is volume 0, the speaker is slashed at 0 (`VolumeSlider.swift:55`).
+    let level = p.volume.clamp(0, 100);
     let glyph = if level == 0 {
         "speaker-slash"
     } else {
         "speaker"
     };
-    let mut kids = vec![rail_button(c, glyph, "mute", "mute", "Stumm (M)", on)];
+    let word = if level == 0 { "Ton an" } else { "Ton aus" };
+    let mut kids = vec![rail_button(c, glyph, "mute", "mute", word, on)];
     // The compartment opens with `easeOut(0.18)`: its width goes 0 to 96 and its opacity 0 to 1 while the speaker button moves
     // over (`VolumeSlider.swift:30-64`: `.frame(width: opened ? 96 : 0).clipped().opacity(opened ? 1 : 0)`).
     let open = p.vol_open && on;
@@ -827,7 +968,7 @@ fn header_desktop(c: &Ctx<'_>) -> Node {
     let (m, on) = (&c.m, c.p.c.visible && c.p.c.layer.is_none());
     let scrubbing = c.p.c.scrubbing;
     let mut col = vec![label(c, &c.p.title, m.title, 700, colour::FONT)];
-    if let Some((name, with)) = GROUP {
+    if let Some((name, with)) = c.p.group.as_ref() {
         let people = c.g.node("users", m.meta + 1.0, color(colour::MARK_ACCENT));
         col.push(Node::hstack(
             Align::Center,
@@ -838,8 +979,17 @@ fn header_desktop(c: &Ctx<'_>) -> Node {
                 label(c, &format!("· {with}"), m.meta, 400, colour::FONT_QUIET),
             ],
         ));
-    } else if !c.p.meta.is_empty() {
-        col.push(label(c, &c.p.meta, m.meta, 400, colour::FONT_QUIET));
+    } else if !c.p.meta.is_empty() || c.p.transcode {
+        let mut line = Vec::new();
+        if !c.p.meta.is_empty() {
+            line.push(label(c, &c.p.meta, m.meta, 400, colour::FONT_QUIET));
+        }
+        if c.p.transcode {
+            // `Label(plan.method.rawValue, systemImage: "exclamationmark.triangle.fill")` in the warning colour.
+            line.push(c.g.node("warning", m.meta, color(colour::ORIGINAL_WARNING)));
+            line.push(label(c, "Transcode", m.meta, 400, colour::ORIGINAL_WARNING));
+        }
+        col.push(Node::hstack(Align::Center, Some(6.0), line));
     }
     let left =
         Node::vstack(Align::Start, Some(3.0), col).padding(ins(m.title_top, m.edge, 0.0, m.edge));
@@ -854,9 +1004,20 @@ fn header_desktop(c: &Ctx<'_>) -> Node {
             "Ton und Untertitel (T)",
             ok,
         ),
-        rail_button(c, "stack", "episodes", "episodes", "Folgen", ok),
-        rail_button(c, "sliders", "settings", "settings", "Einstellungen", ok),
     ];
+    if c.p.episodes {
+        rail.push(rail_button(
+            c, "stack", "episodes", "episodes", "Folgen", ok,
+        ));
+    }
+    rail.push(rail_button(
+        c,
+        "sliders",
+        "settings",
+        "settings",
+        "Einstellungen",
+        ok,
+    ));
     let (fs_glyph, fs_tip) = if c.p.fullscreen {
         ("fullscreen-exit", "Vollbild verlassen (F)")
     } else {
@@ -870,7 +1031,7 @@ fn header_desktop(c: &Ctx<'_>) -> Node {
         fs_tip,
         ok,
     ));
-    if GROUP.is_none() && !TARGETS.is_empty() {
+    if c.p.group.is_none() && !c.p.targets.is_empty() {
         rail.push(rail_button(
             c,
             "television",
@@ -906,7 +1067,7 @@ fn header_desktop(c: &Ctx<'_>) -> Node {
         let row_bottom = m.title_top
             + 27.0
             + 3.0
-            + if GROUP.is_some() || !c.p.meta.is_empty() {
+            + if c.p.group.is_some() || !c.p.meta.is_empty() {
                 16.0
             } else {
                 0.0
@@ -954,7 +1115,7 @@ fn header(c: &Ctx<'_>) -> Node {
         colour::FONT,
     );
     let mut col = vec![title];
-    if let Some((name, with)) = GROUP {
+    if let Some((name, with)) = c.p.group.as_ref() {
         // In a group the group replaces year and runtime (`GroupsRow`): people icon, name semibold, both accent.
         let people = c.g.node("users", m.meta + 1.0, color(colour::MARK_ACCENT));
         col.push(Node::hstack(
@@ -996,7 +1157,7 @@ fn header(c: &Ctx<'_>) -> Node {
         "settings",
         on && !scrubbing,
     ));
-    if c.m.form == Form::Desktop && GROUP.is_none() && !TARGETS.is_empty() {
+    if c.m.form == Form::Desktop && c.p.group.is_none() && !c.p.targets.is_empty() {
         rail.push(icon_button(
             c,
             "television",
@@ -1058,7 +1219,13 @@ fn center(c: &Ctx<'_>) -> Node {
         let n = Node::zstack(Alignment::CENTER, vec![g, num])
             .scaled(bounce, Motion::Instant)
             .frame(Some(m.skip_box), Some(m.skip_box), Alignment::CENTER);
-        act(c, n, on, key, if forward { "fwd" } else { "back" })
+        let n = act(c, n, on, key, if forward { "fwd" } else { "back" });
+        // The Mac grows the skip button to 1.06 under the pointer (`PlayerScreen.swift:1973`).
+        if on && c.m.form == Form::Desktop {
+            n.hover_scale(1.06)
+        } else {
+            n
+        }
     };
     let playing = matches!(c.p.t.phase, Phase::Playing);
     let mut mid =
@@ -1356,7 +1523,11 @@ fn footer(c: &Ctx<'_>) -> Node {
         &right_text,
         m.time,
         if m.form == Form::Desktop { 500 } else { 400 },
-        colour::FONT,
+        if m.form == Form::Desktop {
+            colour::FONT_QUIET
+        } else {
+            colour::FONT
+        },
     )
     .frame(Some(right_w), None, Alignment::TRAILING);
     let mut sl = time_slider(c, bar_w);
@@ -1384,7 +1555,9 @@ fn scrim(c: &Ctx<'_>) -> Node {
         let _ = top;
         let s = Color::new(0.0, 0.0, 0.0, a[0].0);
         let e = Color::new(0.0, 0.0, 0.0, a[a.len() - 1].0);
-        Node::rect(s, 0.0)
+        // The base fill stays clear: a gradient paint is drawn ON TOP of the fill, so a black base would keep the whole band
+        // dark and cut the picture at the band's lower edge.
+        Node::rect(Color::CLEAR, 0.0)
             .paint(Paint::Linear {
                 gradient: LinearGradient {
                     start: s,
@@ -1504,8 +1677,10 @@ fn pill(c: &Ctx<'_>) -> Node {
     }
     if let Some(s) = skip_share {
         // The skip button's countdown: the pill is about as wide as glyph + label + padding.
+        // Measured like the Mac's `GeometryReader` over the real button: padding, glyph, gap 8 and the set label.
         let pad = if c.tv { 36.0 } else { 18.0 };
-        let full = pad * 2.0 + size + 8.0 + text.chars().count() as f32 * size * 0.55;
+        let glyph_w = if m.form == Form::Desktop { 16.0 } else { size };
+        let full = pad * 2.0 + glyph_w + 8.0 + label_width(c, &text, size, 600);
         back.push(
             Node::rect(Color::new(dark.r, dark.g, dark.b, 0.16), 0.0).frame(
                 Some(full * s as f32),
@@ -1689,16 +1864,69 @@ fn key_hints(c: &Ctx<'_>) -> Node {
 /// shadow .63 with no blur, margin 16 (+7 % of the height while the controls are up), no box.
 fn subtitle_desktop(c: &Ctx<'_>, s: &str) -> Node {
     let h = c.env.size.h;
-    let size = (h * 0.0625 * 0.78).round();
-    let margin = 16.0 + if c.p.c.visible { h * 0.07 } else { 0.0 };
+    // The stored look (`utAussehen`): size, colour, outline, shadow, box and the raised position; without one the
+    // defaults of the engine path (white, 0.0625 x 0.78 of the picture).
+    let look = c.p.sub_style.clone();
+    let (share, rgb, outline, shadow, boxed, margin_px, raise) = match &look {
+        Some(l) => (
+            l.text_share,
+            l.colour,
+            l.outline_em,
+            l.shadow,
+            l.background,
+            l.margin_px as f32,
+            l.margin_share as f32,
+        ),
+        None => (0.0625 * 0.78, 0xFF_FFFF, 0.0, true, false, 16.0, 0.0),
+    };
+    let picture = look.as_ref().map_or(h, |l| (l.picture_pt as f32).max(1.0));
+    let size = (picture * share as f32).round().max(6.0);
+    let margin = margin_px + raise * picture + if c.p.c.visible { h * 0.07 } else { 0.0 };
     let style = swiftly_text::TextStyle::from(swiftly_design::TextStyle {
         size,
         weight: 600,
         ..base()
     });
+    let ink = Color::new(
+        ((rgb >> 16) & 0xFF) as f32 / 255.0,
+        ((rgb >> 8) & 0xFF) as f32 / 255.0,
+        (rgb & 0xFF) as f32 / 255.0,
+        1.0,
+    );
     let text = |col: Color| Node::text(c.cx, s, &style, col, Some(3), swiftly_text::Align::Center);
-    let shadow = text(Color::new(0.0, 0.0, 0.0, 0.63)).padding(ins(size * 0.04, 0.0, 0.0, 0.0));
-    let t = Node::zstack(Alignment::TOP, vec![shadow, text(white())]);
+    let mut layers = Vec::new();
+    let reach = (outline as f32 * size).round();
+    if reach >= 1.0 {
+        // The outline: the line in black, eight steps around the text.
+        for (dx, dy) in [
+            (-1.0, 0.0),
+            (1.0, 0.0),
+            (0.0, -1.0),
+            (0.0, 1.0),
+            (-0.7, -0.7),
+            (0.7, -0.7),
+            (-0.7, 0.7),
+            (0.7, 0.7),
+        ] {
+            layers.push(text(Color::new(0.0, 0.0, 0.0, 1.0)).padding(ins(
+                reach * dy + reach,
+                reach * dx + reach,
+                reach - reach * dy,
+                reach - reach * dx,
+            )));
+        }
+    }
+    if shadow {
+        layers.push(text(Color::new(0.0, 0.0, 0.0, 0.63)).padding(ins(size * 0.04, 0.0, 0.0, 0.0)));
+    }
+    layers.push(text(ink));
+    let mut t = Node::zstack(Alignment::TOP, layers);
+    if boxed {
+        t = t.padding(ins(4.0, 10.0, 4.0, 10.0)).background(
+            Node::rect(Color::new(0.0, 0.0, 0.0, 0.55), 6.0),
+            Alignment::CENTER,
+        );
+    }
     let w = c.env.size.w * 0.9;
     fill_frame(
         t.frame(Some(w), None, Alignment::TOP)
@@ -1866,6 +2094,19 @@ fn delay_text(ms: i64) -> String {
 
 /// A menu row of the Mac layers (`PL:205`): check slot 17 on the left, 15 regular, selected white else #CCC, pad
 /// 10x7, hover fill white 6 % radius 12.
+/// The body of a layer row (`LayersRow`): the check column and the text, over the whole width of the column. The row takes
+/// the width (`frame(maxWidth: .infinity, alignment: .leading)`); a `Spacer` beside the text would hand it half of what
+/// is left, and "Unbegrenzt" would read "Unbegre..." in a 200 pt column.
+fn row_layout(check: Node, text: Node) -> Node {
+    let row = Node::hstack(
+        Align::Center,
+        Some(4.0),
+        vec![check.frame(Some(17.0), None, Alignment::CENTER), text],
+    )
+    .padding(ins(7.0, 10.0, 7.0, 10.0));
+    crate::browse::wide(row, Alignment::LEADING)
+}
+
 fn row_desktop(c: &Ctx<'_>, key: &str, action: &str, text: &str, selected: bool) -> Node {
     let check = if selected {
         c.g.node("check", 13.0, white())
@@ -1877,26 +2118,66 @@ fn row_desktop(c: &Ctx<'_>, key: &str, action: &str, text: &str, selected: bool)
     } else {
         colour::FONT_QUIET
     };
-    Node::hstack(
-        Align::Center,
-        Some(4.0),
-        vec![
-            check.frame(Some(17.0), None, Alignment::CENTER),
-            label(c, text, 15.0, 400, tone),
-            Node::spacer(),
-        ],
-    )
-    .padding(ins(7.0, 10.0, 7.0, 10.0))
-    .hover_surface(Color::new(1.0, 1.0, 1.0, 0.06), 12.0)
-    .key(key)
-    .on_tap(Action::from(action))
+    row_layout(check, label(c, text, 15.0, 400, tone))
+        .hover_surface(Color::new(1.0, 1.0, 1.0, 0.06), 12.0)
+        .key(key)
+        .on_tap(Action::from(action))
 }
 
+/// The base of every layer (`LayersReason`): the picture blurred (`.ultraThinMaterial`) under the ground colour at 0.72.
+/// The desktop uses the renderer's backdrop blur; the other forms keep the flat dim.
+fn layer_dim(c: &Ctx<'_>, flat: f32) -> Node {
+    if c.m.form == Form::Desktop {
+        Node::rect(Color::new(0.0, 0.0, 0.0, 0.0), 0.0).paint(Paint::Blur {
+            blur: LAYER_BLUR,
+            tint: rgba(colour::REASON, 0.72),
+            radius: 0.0,
+        })
+    } else {
+        Node::rect(Color::new(0.0, 0.0, 0.0, flat), 0.0)
+    }
+}
+
+/// Blur radius of the layer base in points (the system's ultra thin material).
+const LAYER_BLUR: f32 = 24.0;
+
+/// Where a layer's columns start from the top (`PL` rail line plus the heading gap).
+fn layer_columns_top(m: &Metrics) -> f32 {
+    m.rail_top + m.button / 2.0 + 50.0 - 0.5
+}
+
+/// The width of the Audio and Subtitle columns: 360 pt, narrower when the window cannot hold both between its margins.
+fn track_column_width(c: &Ctx<'_>) -> f32 {
+    ((c.env.size.w - 2.0 * c.m.edge - 45.0) / 2.0).clamp(160.0, 360.0)
+}
+
+/// A column: its heading stays, its rows scroll (`PL:192`: `ScrollView`, 12 at the bottom, no indicator).
 fn column_desktop(c: &Ctx<'_>, title: &str, rows: Vec<Node>, width: f32) -> Node {
-    let mut kids =
-        vec![label(c, title, 17.0, 600, colour::FONT).padding(ins(0.0, 10.0, 6.0, 10.0))];
-    kids.extend(rows);
-    Node::vstack(Align::Start, Some(2.0), kids).frame(Some(width), None, Alignment::TOP_LEADING)
+    let head = label(c, title, 17.0, 600, colour::FONT).padding(ins(0.0, 10.0, 6.0, 10.0));
+    let head_h =
+        c.cx.measure_text(
+            title,
+            &swiftly_text::TextStyle::from(swiftly_design::TextStyle {
+                size: 17.0,
+                weight: 600,
+                ..base()
+            }),
+            Some(1),
+            swiftly_layout::Proposal::NIL,
+        )
+        .h + 6.0;
+    let room = (c.env.size.h - layer_columns_top(&c.m) - head_h).max(60.0);
+    let list = Node::vstack(Align::Start, Some(2.0), rows).padding(ins(0.0, 0.0, 12.0, 0.0));
+    let body = Node::scroll(Axis::Vertical, None, list).frame(
+        Some(width),
+        Some(room),
+        Alignment::TOP_LEADING,
+    );
+    Node::vstack(Align::Start, Some(0.0), vec![head, body]).frame(
+        Some(width),
+        None,
+        Alignment::TOP_LEADING,
+    )
 }
 
 /// Minus, value (15 mono), plus and a reset that hides at 0 (`PL:267`).
@@ -1934,7 +2215,7 @@ fn delay_row_desktop(c: &Ctx<'_>, tag: &str, ms: i64) -> Node {
 /// header item is the X at the rail position.
 fn layer_desktop(c: &Ctx<'_>, which: PlayerLayer) -> Node {
     let (p, m) = (c.p, &c.m);
-    let dim = Node::rect(Color::new(0.0, 0.0, 0.0, 0.72), 0.0)
+    let dim = layer_dim(c, 0.72)
         .key("layer-close")
         .on_tap(Action::from("layer-close"));
     let cols: Vec<Node> = if which == PlayerLayer::Tracks {
@@ -1971,8 +2252,8 @@ fn layer_desktop(c: &Ctx<'_>, which: PlayerLayer) -> Node {
         audio.push(delay_row_desktop(c, "audio", p.tracks.audio_delay_ms));
         subs.push(delay_row_desktop(c, "sub", p.tracks.subtitle_delay_ms));
         vec![
-            column_desktop(c, "Audio", audio, 360.0),
-            column_desktop(c, "Untertitel", subs, 360.0),
+            column_desktop(c, "Audio", audio, track_column_width(c)),
+            column_desktop(c, "Untertitel", subs, track_column_width(c)),
         ]
     } else {
         let picture = vec![
@@ -1999,11 +2280,21 @@ fn layer_desktop(c: &Ctx<'_>, which: PlayerLayer) -> Node {
             row_desktop(c, "tech:0", "tech:0", "Aus", !p.tech),
             row_desktop(c, "tech:1", "tech:1", "An", p.tech),
         ];
-        let mut cols = vec![
+        let mut cols = Vec::new();
+        // "Gemeinsam" comes first: who is there, and below it the exit (`PlayerLayers.swift:461-487`).
+        if let Some((name, _)) = &p.group {
+            cols.push(column_desktop(
+                c,
+                &format!("Gemeinsam · {name}"),
+                group_rows(c, 15.0),
+                200.0,
+            ));
+        }
+        cols.extend(vec![
             column_desktop(c, "Bild", picture, 200.0),
             column_desktop(c, "Schlafzeit", sleep, 200.0),
             column_desktop(c, "Technikschild", shield, 200.0),
-        ];
+        ]);
         if let Some(q) = &p.c.quality {
             let mut quality = vec![row_desktop(
                 c,
@@ -2031,11 +2322,13 @@ fn layer_desktop(c: &Ctx<'_>, which: PlayerLayer) -> Node {
         cols
     };
     let body = fill_frame(
+        // The columns keep the Mac's side margin (`m.edge`): a window too narrow for two 360 pt columns narrows them, so
+        // the first never touches the window edge (at 125 % the Audio column started 7 px from it).
         Node::hstack(Align::Start, Some(45.0), cols).padding(ins(
-            m.rail_top + m.button / 2.0 + 50.0 - 0.5,
+            layer_columns_top(m),
+            m.edge,
             0.0,
-            0.0,
-            0.0,
+            m.edge,
         )),
         Alignment::TOP,
     );
@@ -2146,12 +2439,21 @@ fn layer_panel(c: &Ctx<'_>, which: PlayerLayer) -> Node {
                 row(c, "tech:0", "tech:0", "Aus", !p.tech),
                 row(c, "tech:1", "tech:1", "An", p.tech),
             ];
-            let mut cols = vec![
+            let mut cols = Vec::new();
+            if let Some((name, _)) = &p.group {
+                cols.push(column(
+                    c,
+                    &format!("Gemeinsam · {name}"),
+                    group_rows(c, if c.tv { 28.0 } else { 16.0 }),
+                    Some(col_w),
+                ));
+            }
+            cols.extend(vec![
                 column(c, "Tempo", tempo, Some(col_w)),
                 column(c, "Bild", picture, Some(col_w)),
                 column(c, "Schlafzeit", sleep, Some(col_w)),
                 column(c, "Technikschild", shield, Some(col_w)),
-            ];
+            ]);
             if let Some(q) = &p.c.quality {
                 let mut quality = vec![row(c, "q:dp", "quality:dp", "Direct Play", q.direct_play)];
                 for cap in QUALITY_CAPS {
@@ -2234,13 +2536,34 @@ fn tech_badge(c: &Ctx<'_>) -> Option<Node> {
             ],
         )
     };
-    let rows = vec![
-        label(c, "Direct Play", size + 1.0, 600, colour::MARK_ACCENT),
-        line("Bild", "H.264 · 1920 × 1080 · SDR"),
-        line("Ton", "E-AC-3 · 5.1 · Deutsch"),
-        line("Datei", "MKV · 2,1 GB · Ø 6,3 Mbit/s"),
-        line("Puffer", "30,0 s · Eingang 6,1 Mbit/s"),
-    ];
+    let (word, good) = c.p.tech_head.clone()?;
+    let mut rows = vec![label(
+        c,
+        &word,
+        size + 1.0,
+        600,
+        if good {
+            colour::MARK_ACCENT
+        } else {
+            colour::ORIGINAL_WARNING
+        },
+    )];
+    // The reason sits directly under the word, in warning colour, two lines at most (`TechBadge.swift:105`).
+    if let Some(reason) = &c.p.tech_reason {
+        let style = swiftly_design::TextStyle {
+            size,
+            weight: 400,
+            ..base()
+        };
+        rows.push(
+            txt(c.cx, reason, style, colour::ORIGINAL_WARNING, Some(2)).frame(
+                Some(420.0),
+                None,
+                Alignment::TOP_LEADING,
+            ),
+        );
+    }
+    rows.extend(c.p.tech_rows.iter().map(|(n, v)| line(n, v)));
     let open = c.p.c.visible && c.p.c.layer.is_none();
     let below = if c.m.form == Form::Desktop {
         14.0 + 30.0 + 46.0 + 8.0
@@ -2259,6 +2582,102 @@ fn tech_badge(c: &Ctx<'_>) -> Option<Node> {
 }
 
 /// What the big picture shows while the film plays in the small window (`smallerHint`): symbol, one quiet line.
+/// The rows of the "Gemeinsam" column: everyone who is there (the names do nothing), then "Gruppe verlassen" in the
+/// accent colour.
+fn group_rows(c: &Ctx<'_>, size: f32) -> Vec<Node> {
+    let mut rows: Vec<Node> =
+        c.p.participants
+            .iter()
+            .enumerate()
+            .map(|(i, who)| {
+                Node::hstack(
+                    Align::Center,
+                    Some(4.0),
+                    vec![
+                        Node::fixed(17.0, 13.0),
+                        label(c, who, size, 400, colour::FONT_QUIET),
+                        Node::spacer(),
+                    ],
+                )
+                .padding(ins(7.0, 10.0, 7.0, 10.0))
+                .key(format!("participant:{i}").as_str())
+            })
+            .collect();
+    rows.push(
+        Node::hstack(
+            Align::Center,
+            Some(9.0),
+            vec![
+                c.g.node("x", size + 2.0, color(colour::MARK_ACCENT)),
+                label(c, "Gruppe verlassen", size, 400, colour::MARK_ACCENT),
+                Node::spacer(),
+            ],
+        )
+        .padding(ins(7.0, 10.0, 7.0, 10.0))
+        .hover_surface(Color::new(1.0, 1.0, 1.0, 0.06), 12.0)
+        .key("group-leave")
+        .on_tap(Action::from("group-leave")),
+    );
+    rows
+}
+
+/// What happens in the group, briefly at the top, so nobody wonders why the film is paused (`GroupsEvent`): a capsule
+/// on `raised` with a 1 px margin, accent symbol, one line.
+fn group_event(c: &Ctx<'_>) -> Option<Node> {
+    let e = c.p.event.as_ref()?;
+    let m = &c.m;
+    let line = Node::hstack(
+        Align::Center,
+        Some(10.0),
+        vec![
+            c.g.node(e.symbol, 17.0, color(colour::MARK_ACCENT)),
+            label(c, &e.text, 15.0, 400, colour::FONT),
+        ],
+    )
+    .padding(ins(0.0, 16.0, 0.0, 16.0))
+    .frame(None, Some(40.0), Alignment::CENTER)
+    .background(
+        Node::rect(color(colour::RAISED), 20.0).paint(Paint::Stroke {
+            color: color(colour::MARGIN),
+            width: 1.0,
+            radius: 20.0,
+        }),
+        Alignment::CENTER,
+    )
+    .key(format!("group-event:{}", e.id).as_str())
+    .appear_from(0.97, 0.0)
+    .exit_to(0.97, 0.0);
+    Some(fill_frame(
+        line.padding(ins(m.top + m.button + 8.0, 0.0, 0.0, 0.0)),
+        Alignment::TOP,
+    ))
+}
+
+/// What went wrong with the group, at the bottom above the scrubber; a tap sends it away (`SharedError`).
+fn group_error(c: &Ctx<'_>) -> Option<Node> {
+    let text = c.p.group_error.as_ref()?;
+    let m = &c.m;
+    let strip = label(c, text, 15.0, 400, colour::FONT)
+        .padding(ins(0.0, 14.0, 0.0, 14.0))
+        .frame(None, Some(34.0), Alignment::CENTER)
+        .background(
+            Node::rect(color(colour::RAISED), 17.0).paint(Paint::Stroke {
+                color: color(colour::MARGIN),
+                width: 1.0,
+                radius: 17.0,
+            }),
+            Alignment::CENTER,
+        )
+        .key("group-error")
+        .on_tap(Action::from("group-error"))
+        .appear_from(0.97, 0.0)
+        .exit_to(0.97, 0.0);
+    Some(fill_frame(
+        strip.padding(ins(0.0, 0.0, m.bottom + m.bar_h + m.over_bar, 0.0)),
+        Alignment::BOTTOM,
+    ))
+}
+
 fn small_hint(c: &Ctx<'_>) -> Option<Node> {
     if !c.p.small {
         return None;
@@ -2317,7 +2736,13 @@ fn strip_geometry(env: &Env) -> StripGeometry {
 /// The season line in the meta place: on tv the `SeasonPill` (56 high, padding 24, 26/600, white 10 %, capsule), else
 /// the plain line; both open the season list.
 fn season_pill(c: &Ctx<'_>) -> Node {
-    let name = SEASONS[c.p.seasons.1];
+    let name =
+        c.p.season_names
+            .get(c.p.seasons.1)
+            .map_or("", String::as_str);
+    if c.p.season_names.is_empty() {
+        return Node::spacer_min(0.0);
+    }
     if !c.tv {
         return label(c, name, c.m.meta + 1.0, 600, colour::FONT)
             .key("season")
@@ -2345,43 +2770,44 @@ fn season_pill(c: &Ctx<'_>) -> Node {
 
 /// The season list (`ActionPanel`, rows 72 high, 30/500, corner 16, the chosen one 600 with a check).
 fn season_list(c: &Ctx<'_>) -> Node {
-    let rows: Vec<Node> = SEASONS
-        .iter()
-        .enumerate()
-        .map(|(i, name)| {
-            let on = i == c.p.seasons.1;
-            let size = if c.tv { 30.0 } else { 15.0 };
-            let mut kids = vec![
-                label(
-                    c,
-                    name,
-                    size,
-                    if on { 600 } else { 500 },
-                    if on { colour::FONT } else { colour::FONT_QUIET },
-                ),
-                Node::spacer(),
-            ];
-            if on {
-                kids.push(c.g.node("check", size, white()));
-            }
-            let h = if c.tv { 72.0 } else { 40.0 };
-            let key = format!("season:{i}");
-            let row = Node::hstack(Align::Center, Some(12.0), kids)
-                .padding(ins(0.0, 20.0, 0.0, 20.0))
-                .frame(
-                    Some(if c.tv { 420.0 } else { 220.0 }),
-                    Some(h),
-                    Alignment::LEADING,
-                )
-                .key(key.as_str())
-                .on_tap(Action::from(key.as_str()));
-            if c.tv {
-                row.focusable(focus_id(key.as_str()), Some(FocusLook::tile(16.0)))
-            } else {
-                row
-            }
-        })
-        .collect();
+    let rows: Vec<Node> =
+        c.p.season_names
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                let on = i == c.p.seasons.1;
+                let size = if c.tv { 30.0 } else { 15.0 };
+                let mut kids = vec![
+                    label(
+                        c,
+                        name,
+                        size,
+                        if on { 600 } else { 500 },
+                        if on { colour::FONT } else { colour::FONT_QUIET },
+                    ),
+                    Node::spacer(),
+                ];
+                if on {
+                    kids.push(c.g.node("check", size, white()));
+                }
+                let h = if c.tv { 72.0 } else { 40.0 };
+                let key = format!("season:{i}");
+                let row = Node::hstack(Align::Center, Some(12.0), kids)
+                    .padding(ins(0.0, 20.0, 0.0, 20.0))
+                    .frame(
+                        Some(if c.tv { 420.0 } else { 220.0 }),
+                        Some(h),
+                        Alignment::LEADING,
+                    )
+                    .key(key.as_str())
+                    .on_tap(Action::from(key.as_str()));
+                if c.tv {
+                    row.focusable(focus_id(key.as_str()), Some(FocusLook::tile(16.0)))
+                } else {
+                    row
+                }
+            })
+            .collect();
     let panel = Node::vstack(Align::Start, Some(4.0), rows)
         .padding(ins(10.0, 10.0, 10.0, 10.0))
         .background(
@@ -2409,7 +2835,7 @@ fn season_list(c: &Ctx<'_>) -> Node {
 fn episodes_layer(c: &Ctx<'_>) -> Node {
     let (m, w) = (&c.m, c.env.size.w);
     let tv = c.tv;
-    let dim = Node::rect(Color::new(0.0, 0.0, 0.0, if tv { 0.82 } else { 0.72 }), 0.0)
+    let dim = layer_dim(c, if tv { 0.82 } else { 0.72 })
         .key("layer-close")
         .on_tap(Action::from("layer-close"));
     let dim = fill_frame(dim, Alignment::CENTER);
@@ -2437,35 +2863,79 @@ fn episodes_layer(c: &Ctx<'_>) -> Node {
     ));
     let g = strip_geometry(c.env);
     let (card_w, img_h) = (g.card, g.img);
-    let cards: Vec<Node> = EPISODES
+    let cards: Vec<Node> = c
+        .p
+        .cards
         .iter()
         .enumerate()
-        .map(|(i, (number, title, minutes, share, watched))| {
+        .map(|(i, d)| {
+            let (title, share, watched) = (d.header.as_str(), d.progress.unwrap_or(0.0), d.watched);
             // tv: every card the same landscape tile (`TileContent`), no larger running card; focus marks it.
-            let scale = if i == CURRENT && !tv { 1.25 } else { 1.0 };
+            let current = Some(i) == c.p.current_card;
+            let scale = if current && !tv { 1.25 } else { 1.0 };
             let (cw, ch) = (card_w * scale, img_h * scale);
-            let shade = if *watched { 0.45 } else { 1.0 };
             let corner = if tv { 16.0 } else { 10.0 };
-            let mut pic = vec![
-                Node::rect(
-                    Color::new(0.149 * shade, 0.149 * shade, 0.149 * shade, 1.0),
-                    corner,
-                )
-                .frame(Some(cw), Some(ch), Alignment::CENTER),
-            ];
-            if *share > 0.0 {
-                pic.push(Node::rect(Color::new(1.0, 1.0, 1.0, 0.9), 0.0).frame(
-                    Some(cw * share),
-                    Some(if tv { 6.0 } else { 3.0 }),
-                    Alignment::LEADING,
-                ));
-            }
-            let pic = Node::zstack(Alignment::BOTTOM_LEADING, pic).frame(
+            let mut pic = vec![Node::rect(color(colour::AREA), corner).frame(
                 Some(cw),
                 Some(ch),
                 Alignment::CENTER,
-            );
-            let tint = if i == CURRENT || tv {
+            )];
+            if let Some(Some((img, a))) = c.p.card_imgs.get(i) {
+                pic.push(Node::image(*img, cw, ch, corner).opacity(*a, Motion::Instant));
+            }
+            if watched {
+                // The Mac's `colorMultiply(white 0.45)` on the whole picture: black at 55 % over area and still.
+                pic.push(Node::rect(Color::new(0.0, 0.0, 0.0, 0.55), 0.0).frame(
+                    Some(cw),
+                    Some(ch),
+                    Alignment::CENTER,
+                ));
+            }
+            // A watched card shows a badge instead of the bar (`progress: episode.isWatched ? nil : ...`).
+            if share > 0.0 && !watched {
+                // The Mac's `ImageArea` bar: 4 pt, light track and accent bar, inside the card's rounded mask.
+                let bar = if tv {
+                    Node::rect(Color::new(1.0, 1.0, 1.0, 0.9), 0.0).frame(
+                        Some(cw * share),
+                        Some(6.0),
+                        Alignment::LEADING,
+                    )
+                } else {
+                    crate::home::progress_bar(cw, corner, share)
+                };
+                pic.push(bar);
+            }
+            let pic = Node::zstack(Alignment::BOTTOM_LEADING, pic)
+                .frame(Some(cw), Some(ch), Alignment::CENTER)
+                .clipped_rounded(corner);
+            // `TileBadge(.watched)` top right (the Mac's card); a watched card shows no bar.
+            let pic = if watched && !tv {
+                let tick = Node::hstack(
+                    Align::Center,
+                    Some(3.0),
+                    vec![c.g.node("check", 10.0, color(colour::FONT))],
+                )
+                .padding(ins(3.0, 5.0, 3.0, 5.0))
+                .background(
+                    Node::rect(rgba(colour::REASON, 0.78), 9.0).paint(Paint::Stroke {
+                        color: color(colour::MARGIN),
+                        width: 1.0,
+                        radius: 9.0,
+                    }),
+                    Alignment::CENTER,
+                )
+                .padding(ins(6.0, 6.0, 6.0, 6.0));
+                pic.overlay(tick, Alignment::TOP_TRAILING)
+            } else {
+                pic
+            };
+            // The Mac scales the picture with its bar and badge to 1.04 under the pointer (`scaleEffect`).
+            let pic = if tv {
+                pic
+            } else {
+                pic.hover_scale(swiftly_ui::feel::HOVER_TILE_SCALE)
+            };
+            let tint = if current || tv {
                 colour::FONT
             } else {
                 colour::FONT_QUIET
@@ -2475,10 +2945,10 @@ fn episodes_layer(c: &Ctx<'_>) -> Node {
                 Align::Start,
                 Some(2.0),
                 vec![
-                    label(c, &format!("{number}. {title}"), ts, 500, tint),
+                    label(c, title, ts, 500, tint),
                     label(
                         c,
-                        &format!("{minutes} Min."),
+                        d.sub.as_deref().unwrap_or(""),
                         us,
                         400,
                         if tv {
@@ -2489,7 +2959,7 @@ fn episodes_layer(c: &Ctx<'_>) -> Node {
                     ),
                 ],
             );
-            let key = format!("episode:{number}");
+            let key = format!("episode:{i}");
             let n = Node::vstack(
                 Align::Start,
                 Some(if tv { 12.0 } else { 8.0 }),
@@ -2497,11 +2967,20 @@ fn episodes_layer(c: &Ctx<'_>) -> Node {
             )
             .frame(Some(cw), None, Alignment::TOP_LEADING)
             .key(key.as_str())
+            .a11y_label(
+                swiftly_ui::a11y::Role::Button,
+                [Some(d.header.as_str()), d.sub.as_deref()]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            )
             .on_tap(Action::from(key.as_str()));
             if tv {
                 n.focusable(focus_id(key.as_str()), Some(FocusLook::tile(16.0)))
             } else {
-                n
+                // The Mac's `.tileMenu(episode, inPlayer: true)` on every card (`PlayerEpisodeStrip.swift:56`).
+                n.on_secondary(Action::from(format!("epmenu:{i}").as_str()))
             }
         })
         .collect();
@@ -2525,33 +3004,36 @@ fn episodes_layer(c: &Ctx<'_>) -> Node {
     if !tv {
         // Arrows (`PlayerEpisodeStrip.arrow`): 34 x 34 on the area colour, corner 8, at the middle of the pictures,
         // shown only while there is more to the left / right.
-        let total = 2.0 * m.edge + EPISODES.len() as f32 * (g.card + g.gap) - g.gap + g.card * 0.25;
+        let total =
+            2.0 * m.edge + c.p.cards.len() as f32 * (g.card + g.gap) - g.gap + g.card * 0.25;
         let x = c.p.strip_x;
-        let arrow = |sym: &'static str, key: &str, on: bool, side: Alignment| -> Option<Node> {
-            on.then(|| {
-                let a =
-                    c.g.node(sym, 16.0, white())
-                        .frame(Some(34.0), Some(34.0), Alignment::CENTER)
-                        .background(Node::rect(color(colour::AREA), 8.0), Alignment::CENTER);
-                let a = a.key(key).on_tap(Action::from(key));
-                fill_frame(
-                    a.padding(ins(
-                        8.0 + g.img * 0.25 + g.img / 2.0 - 17.0,
-                        12.0,
-                        0.0,
-                        12.0,
-                    )),
-                    side,
-                )
-            })
+        let has_current = c.p.current_card.is_some();
+        let at = 8.0 + if has_current { g.img * 0.25 } else { 0.0 } + g.img / 2.0 - 17.0;
+        // Both overlays are always there (an empty one while an arrow is hidden): a node's retained state follows its
+        // path, so wrapping the scroll view only while an arrow shows made it lose its offset the moment an arrow
+        // appeared, and the strip snapped back at every scroll step.
+        let arrow = |asset: &str, key: &str, label: &str, on: bool, trailing: bool| -> Node {
+            if on {
+                crate::home::paging_arrow_inset(c.g.icons(), asset, label, key, trailing, at, 12.0)
+            } else {
+                Node::fixed(0.0, 0.0)
+            }
         };
         let (left, right) = (x > 4.0, x + w < total - 4.0);
-        if let Some(a) = arrow("caret-left", "strip:-1", left, Alignment::TOP_LEADING) {
-            strip = strip.overlay(a, Alignment::TOP_LEADING);
-        }
-        if let Some(a) = arrow("caret-right", "strip:1", right, Alignment::TOP_TRAILING) {
-            strip = strip.overlay(a, Alignment::TOP_TRAILING);
-        }
+        strip = strip.overlay(
+            arrow(
+                "caret-left",
+                "strip:-1",
+                "Zur\u{fc}ckbl\u{e4}ttern",
+                left,
+                false,
+            ),
+            Alignment::TOP_LEADING,
+        );
+        strip = strip.overlay(
+            arrow("caret-right", "strip:1", "Weiterbl\u{e4}ttern", right, true),
+            Alignment::TOP_TRAILING,
+        );
     }
     let mut panel_kids = vec![head, strip];
     if c.p.seasons.0 {
@@ -2568,31 +3050,68 @@ fn episodes_layer(c: &Ctx<'_>) -> Node {
     )
 }
 
-/// Desktop: no error page. A strip on the black picture says what happened (`PlayControls.swift:113`); a tap on it
-/// tries again, the X sits at the rail position.
-fn failure_strip(c: &Ctx<'_>, text: &str) -> Node {
+/// Desktop: the Mac's start-failed page (`PlayerScreen.swift:683`, `EmptyState`): the warning symbol in a 78 pt disc, the
+/// core's header and text (`Failure::START`), the main button "Erneut versuchen" and the quiet accent button
+/// "Schließen"; the X stays at the rail position.
+fn failure_strip(c: &Ctx<'_>, f: &swiftly_vm::Failure) -> Node {
     let m = &c.m;
-    let msg = format!("Die Wiedergabe hat nicht geklappt. {text}");
-    let strip = label(c, &msg, 15.0, 400, colour::FONT)
-        .padding(ins(10.0, 18.0, 10.0, 18.0))
-        .background(Node::rect(color(colour::RAISED), 14.0), Alignment::CENTER)
-        .key("retry")
-        .on_tap(Action::from("retry"));
+    let disc =
+        c.g.node("warning", 44.0, color(colour::FONT_QUIET))
+            .frame(Some(78.0), Some(78.0), Alignment::CENTER)
+            .background(Node::rect(color(colour::AREA), 39.0), Alignment::CENTER);
+    let text = Node::text(
+        c.cx,
+        f.text,
+        &swiftly_text::TextStyle::from(swiftly_design::TextStyle {
+            size: 15.0,
+            weight: 400,
+            ..base()
+        }),
+        color(colour::FONT_QUIET),
+        Some(6),
+        swiftly_text::Align::Center,
+    )
+    .frame(Some(262.0), None, Alignment::CENTER);
+    let primary = Node::hstack(
+        Align::Center,
+        Some(8.0),
+        vec![
+            c.g.node("goforward", 15.0, color(colour::REASON)),
+            label(c, f.primary, 15.0, 600, colour::REASON),
+        ],
+    )
+    .padding(ins(0.0, 22.0, 0.0, 22.0))
+    .frame(None, Some(44.0), Alignment::CENTER)
+    .background(Node::rect(white(), 22.0), Alignment::CENTER)
+    .key("retry")
+    .on_tap(Action::from("retry"));
+    let quiet = label(c, f.quiet, 15.0, 500, colour::MARK_ACCENT)
+        .padding(ins(0.0, 12.0, 0.0, 12.0))
+        .frame(None, Some(44.0), Alignment::CENTER)
+        .key("fail-quiet")
+        .on_tap(Action::from("fail-quiet"));
+    let col = Node::vstack(
+        Align::Center,
+        Some(0.0),
+        vec![
+            disc.padding(ins(0.0, 0.0, 22.0, 0.0)),
+            label(c, f.header, 22.0, 600, colour::FONT).padding(ins(0.0, 0.0, 7.0, 0.0)),
+            text,
+            primary.padding(ins(24.0, 0.0, 0.0, 0.0)),
+            quiet.padding(ins(16.0, 0.0, 0.0, 0.0)),
+        ],
+    );
     let x = icon_button(c, "x", "fail-close", "fail-close", true).padding(ins(
         m.rail_top,
         0.0,
         0.0,
         m.edge - (m.button - m.glyph) / 2.0,
     ));
-    let top = fill_frame(
-        strip.padding(ins(m.title_top, 0.0, 0.0, 0.0)),
-        Alignment::TOP,
-    );
     let n = Node::zstack(
         Alignment::TOP_LEADING,
         vec![
             Node::rect(Color::new(0.0, 0.0, 0.0, 1.0), 0.0),
-            top,
+            fill_frame(col, Alignment::CENTER),
             fill_frame(x, Alignment::TOP_TRAILING),
         ],
     )
@@ -2603,7 +3122,7 @@ fn failure_strip(c: &Ctx<'_>, text: &str) -> Node {
 fn failure_view(c: &Ctx<'_>) -> Option<Node> {
     let f = c.p.t.failure.as_ref()?;
     if c.m.form == Form::Desktop {
-        return Some(failure_strip(c, f.text));
+        return Some(failure_strip(c, f));
     }
     let tv = c.tv;
     let big = if tv { 44.0 } else { 20.0 };
@@ -2671,6 +3190,46 @@ fn failure_view(c: &Ctx<'_>) -> Option<Node> {
         n = n.focus_scope(ScopeSpec::trap(focus_id("failure")));
     }
     Some(fill_frame(n, Alignment::CENTER))
+}
+
+/// Seconds per turn of the Mac loader (`Components.swift:Loader`, `.linear(duration: 0.7).repeatForever`).
+const LOADER_TURN_SECONDS: f64 = 0.7;
+
+/// The Mac loader: a 34 pt circle with a 3 pt stroke, a track ring at 18 % and an arc over 22 % of the circle that starts at
+/// 3 o'clock and turns continuously, round caps. Both rings are vector `Paint::Arc`s on one square, so the arc turns around the
+/// centre of the circle at every angle (a raster glyph centred on the bounding box of the arc turned around the wrong point).
+fn loader(turn: f32) -> Node {
+    let (size, stroke) = (34.0_f32, 3.0_f32);
+    let accent = color(colour::MARK_ACCENT);
+    let track = Color::new(accent.r, accent.g, accent.b, 0.18);
+    // `Paint::Arc` counts turns from 12 o'clock; the Mac's trim starts at 3 o'clock.
+    let from = (0.25 + turn).rem_euclid(1.0);
+    let to = from + 0.22;
+    let mut n = Node::rect(Color::CLEAR, 0.0).paint(Paint::Arc {
+        color: track,
+        width: stroke,
+        from: 0.0,
+        to: 1.0,
+    });
+    if to <= 1.0 {
+        n = n.paint(Paint::Arc {
+            color: accent,
+            width: stroke,
+            from,
+            to,
+        });
+    } else {
+        for (a, b) in [(from, 1.0), (0.0, to - 1.0)] {
+            n = n.paint(Paint::Arc {
+                color: accent,
+                width: stroke,
+                from: a,
+                to: b,
+            });
+        }
+    }
+    // The stroke is centred on the circle's edge on the Mac, `Paint::Arc` draws it inside the square: grow the square by it.
+    n.frame(Some(size + stroke), Some(size + stroke), Alignment::CENTER)
 }
 
 fn view(p: &Params, env: &Env, cx: &Cx, g: &Glyphs, surface: &dyn VideoSurface) -> Node {
@@ -2757,11 +3316,13 @@ fn view(p: &Params, env: &Env, cx: &Cx, g: &Glyphs, surface: &dyn VideoSurface) 
         });
     }
     kids.extend(card(&c));
+    kids.extend(group_event(&c));
+    kids.extend(group_error(&c));
     kids.extend(p.menu_c.overlay(cx, env));
     kids.extend(small_hint(&c));
     if !p.t.picture_shown && p.t.failure.is_none() {
         let spin = if c.m.form == Form::Desktop {
-            c.g.arc(p.spin, 34.0, color(colour::MARK_ACCENT))
+            loader(p.turn)
         } else {
             c.g.spinner(p.spin, if tv { 72.0 } else { 36.0 }, white())
         };
@@ -2800,6 +3361,8 @@ pub enum PlayerKey {
     Down,
     /// Return: runs the skip button / card.
     Enter,
+    /// The media key "next": the next episode, when there is one.
+    NextEpisode,
     /// Esc.
     Escape,
     /// A letter (`m` mute, `f` fill, `g`/`h` subtitle delay, `j`/`k` audio delay).
@@ -2812,8 +3375,6 @@ struct ScrubState {
 
 /// The player: view model, simulated engine, surface and the Ui over them.
 pub struct PlayerScreen {
-    plan_failed: bool,
-    retry_asked: bool,
     ui: Ui<Params>,
     vm: PlayerVm<DynEngine, DynReporter>,
     engine: Arc<SimEngine>,
@@ -2842,10 +3403,14 @@ pub struct PlayerScreen {
     chain: bool,
     scrub: Option<ScrubState>,
     volume: i32,
-    muted: bool,
+    /// The value before the last mute (`volumePrior`); 0 when there was none.
+    volume_prior: i32,
     fill: bool,
     /// The Technikschild (technical badge) is on.
     tech: bool,
+    /// What the file is, and the lines built from it (rebuilt every 2 s while the overlay shows).
+    tech_facts: Option<crate::player_host::TechFacts>,
+    tech_rows: (f64, Vec<(String, String)>),
     /// The handover menu is open.
     menu: bool,
     /// The film plays in the small window (set by the host).
@@ -2853,16 +3418,30 @@ pub struct PlayerScreen {
     /// The season picker list is open; the chosen season.
     seasons_open: bool,
     season: usize,
+    /// Where the layer gets its seasons and episodes, and what it has fetched so far.
+    ep_source: Option<Arc<dyn EpisodeSource>>,
+    ep_seasons: Vec<SeasonRow>,
+    ep_cards: Vec<EpisodeCardData>,
+    /// The card a context menu is open on, and the writes its picks sent (`PlayerEpisodeStrip.swift:56`).
+    ep_menu: Option<usize>,
+    ep_writers: Vec<swiftly_vm::DetailVm<crate::net::AppTransport>>,
+    ep_stills: Vec<Option<player_card::CardStill>>,
+    ep_asked: bool,
+    ep_wait_seasons: Option<SeasonsWait>,
+    ep_wait_cards: Option<CardsWait>,
     /// The strip was put on the running episode for this opening of the layer.
     strip_placed: bool,
     closed: bool,
     spin: u8,
+    turn: f32,
     sections: Vec<Segment>,
     chapters: Vec<Chapter>,
     trick: Option<crate::trick_preview::TrickPreview>,
     cx: Cx,
     seen_visible: bool,
     down: Option<(f32, f32)>,
+    /// A drag of the bare background asks the host to move the window (see `take_window_drag`).
+    window_drag: bool,
     moved: bool,
     /// A real engine drives the clock; the made-up one stays still.
     external_clock: bool,
@@ -2888,6 +3467,8 @@ pub struct PlayerScreen {
     click_at: Option<f64>,
     /// "Endet um": local seconds of the day at the moment it was set, and that moment (seconds).
     end_base: Option<(f64, f64)>,
+    /// What the core's player reads from settings (skip widths, auto skip, next episode, quality).
+    prefs: PlayerPrefs,
     /// The latest frame time in seconds.
     cur_s: f64,
     /// The anchored menu (handover, season list).
@@ -2899,6 +3480,10 @@ pub struct PlayerScreen {
     /// The poster for the system's media widgets, and whether a next episode is queued.
     poster: Option<crate::media_keys::Poster>,
     has_next: bool,
+    /// A series episode: the episodes layer exists (`hasEpisodes`).
+    has_episodes: bool,
+    /// The picture is re-encoded: the header says so (`plan.isLossless`).
+    transcode: bool,
     card_drag: Option<(f32, f32)>,
     /// When the back and forward buttons were last used (seconds), for the bounce.
     bounce_at: (f64, f64),
@@ -2912,6 +3497,42 @@ pub struct PlayerScreen {
     switch: SwitchState,
     /// A rating or Discord prompt the core asked for; the host shows it once the player is closed.
     nudge: Option<Nudge>,
+    /// The file plays from the device (`spec.downloaded`).
+    downloaded: bool,
+    /// The title's item id (for the stream that takes over).
+    item_id: String,
+    /// The downloaded file did not open: the position the stream takes over at (read once by the host).
+    stream_fallback: Option<f64>,
+    /// The next episode's code for the card (`episode.episodeCode`).
+    next_code: Option<String>,
+    /// The Jellyfin account's own next-episode wish.
+    account_next: Option<bool>,
+    /// The season the running episode is in.
+    season_id: Option<String>,
+    /// The running episode's code, "S1 · F3".
+    episode_code: Option<String>,
+    /// Watching together, the other devices and the remote control (the live app only).
+    together: Option<Arc<crate::together::Hub>>,
+    /// What the hub last said about the group and the devices.
+    view: crate::together::View,
+    /// This player sits in the group: its buttons are requests to the group.
+    shared: bool,
+    /// The demo screen offers its one made-up TV.
+    demo_targets: bool,
+    /// The error of the group that is on the strip: its number and when it came up (seconds).
+    error_seen: Option<(u64, f64)>,
+    /// The strip was tapped away.
+    error_gone: bool,
+    /// A hand-over is on its way; whether the film ran when it started.
+    handover_ran: Option<bool>,
+    /// The title and version that play here, for a hand-over.
+    ids: Option<(String, Option<String>)>,
+    /// The device that took the title over; the player leaves for it.
+    taken_to: Option<String>,
+    /// The last picture of the video, grabbed when the title was handed over (the exit card flies with it).
+    exit_still: Option<crate::together_ui::ExitStill>,
+    /// When the group was last told about this player's buffering (seconds).
+    last_group_tick: f64,
 }
 
 fn parts(
@@ -2919,7 +3540,7 @@ fn parts(
     head: &(String, String),
     chapters: &[Chapter],
     sections: &[Segment],
-    st: (u8, u64, bool, bool, i32, bool, bool, bool),
+    st: (u8, u64, bool, bool, i32, bool, bool, bool, f32),
 ) -> Params {
     Params {
         preview_img: None,
@@ -2928,6 +3549,10 @@ fn parts(
         tracks: vm.tracks(),
         offer: vm.offer(),
         seasons: (false, 0),
+        season_names: Vec::new(),
+        cards: Vec::new(),
+        current_card: None,
+        card_imgs: Vec::new(),
         strip_x: 0.0,
         fullscreen: false,
         vol_open: false,
@@ -2939,19 +3564,63 @@ fn parts(
         card_img: None,
         bounce: (1.0, 1.0),
         fs_epoch: 0,
+        group: None,
+        participants: Vec::new(),
+        event: None,
+        group_error: None,
+        targets: Vec::new(),
         title: head.0.clone(),
         meta: head.1.clone(),
+        episodes: true,
+        transcode: false,
         chapters: chapters.iter().map(|c| (c.from, c.name.clone())).collect(),
         marks: sections.iter().flat_map(|s| [s.from, s.until]).collect(),
         spin: st.0,
+        turn: st.8,
         focus: st.1,
         fill: st.2,
         muted: st.3,
         volume: st.4,
         tech: st.5,
+        tech_head: None,
+        tech_reason: None,
+        tech_rows: Vec::new(),
+        sub_style: None,
         menu: st.6,
         small: st.7,
     }
+}
+
+/// The settings the core's player decides by (`CorePlaybackBackend.prefs`): the skip widths, "skip intro and outro
+/// automatically" and "next episode automatically" (own choice, else on). Quality stays as it is.
+pub fn prefs_from_store(
+    store: &JsonFileStore,
+    base: &PlayerPrefs,
+    account_next: Option<bool>,
+) -> PlayerPrefs {
+    let int = |k: &str, d: i64| match store.get(k) {
+        Some(Value::Int(n)) if n > 0 => n,
+        _ => d,
+    };
+    let flag = |k: &str| match store.get(k) {
+        Some(Value::Bool(b)) => Some(b),
+        _ => None,
+    };
+    PlayerPrefs {
+        back_seconds: int("zurueckSek", 10),
+        forward_seconds: int("vorSek", 30),
+        auto_skip: flag("introAbspannAuto").unwrap_or(false),
+        next_automatic: swiftly_playback::offering_layer::Advance::applies(
+            flag("naechsteAuto"),
+            account_next,
+        ),
+        ..base.clone()
+    }
+}
+
+/// Setting `endzeitImPlayer`: "Endet um" instead of the remaining time.
+pub fn end_time_from_store(store: &JsonFileStore) -> bool {
+    matches!(store.get("endzeitImPlayer"), Some(Value::Bool(true)))
 }
 
 impl PlayerScreen {
@@ -3023,7 +3692,7 @@ impl PlayerScreen {
             &head,
             &chapters,
             &sections,
-            (0, 0, false, false, 100, false, false, false),
+            (0, 0, false, false, 100, false, false, false, 0.0),
         );
         let (g2, s2) = (glyphs.clone(), Arc::clone(&surface));
         let cx_keep = cx.clone();
@@ -3034,8 +3703,6 @@ impl PlayerScreen {
             cx,
         );
         PlayerScreen {
-            plan_failed: false,
-            retry_asked: false,
             ui,
             vm,
             engine,
@@ -3054,22 +3721,35 @@ impl PlayerScreen {
             chain: false,
             scrub: None,
             volume: 100,
-            muted: false,
+            volume_prior: 0,
             fill: false,
             tech: false,
+            tech_facts: Some(demo_tech()),
+            tech_rows: (f64::NEG_INFINITY, Vec::new()),
             menu: false,
             small: false,
             seasons_open: false,
             season: 0,
+            ep_source: Some(Arc::new(DemoEpisodes)),
+            ep_seasons: Vec::new(),
+            ep_cards: Vec::new(),
+            ep_menu: None,
+            ep_writers: Vec::new(),
+            ep_stills: Vec::new(),
+            ep_asked: false,
+            ep_wait_seasons: None,
+            ep_wait_cards: None,
             strip_placed: false,
             closed: false,
             spin: 0,
+            turn: 0.0,
             sections,
             chapters,
             trick: None,
             cx: cx_keep,
             seen_visible: false,
             down: None,
+            window_drag: false,
             moved: false,
             external_clock: false,
             fullscreen: false,
@@ -3083,13 +3763,16 @@ impl PlayerScreen {
             hover_pos: None,
             click_at: None,
             end_base: None,
+            prefs: PlayerPrefs::default(),
             cur_s: s,
             menu_c: MenuController::new(),
             card_motion: CardMotion::default(),
             card_data: None,
             card_still: None,
             poster: None,
-            has_next: false,
+            has_next: true,
+            has_episodes: true,
+            transcode: false,
             card_drag: None,
             bounce_at: (-10.0, -10.0),
             fs_epoch: 0,
@@ -3098,6 +3781,24 @@ impl PlayerScreen {
             planner: None,
             switch: SwitchState::Idle,
             nudge: None,
+            downloaded: false,
+            item_id: String::new(),
+            stream_fallback: None,
+            next_code: None,
+            account_next: None,
+            season_id: None,
+            episode_code: None,
+            together: None,
+            view: crate::together::View::default(),
+            shared: false,
+            demo_targets: true,
+            error_seen: None,
+            error_gone: false,
+            handover_ran: None,
+            ids: None,
+            taken_to: None,
+            exit_still: None,
+            last_group_tick: 0.0,
         }
     }
 
@@ -3121,7 +3822,16 @@ impl PlayerScreen {
         let surface: Arc<dyn VideoSurface> = Arc::new(RcSurface(Rc::clone(&frames)));
         let mut p = PlayerScreen::with_surface(env, cx, PlayerScenario::Playing, now, surface);
         let s = now / 1000.0;
+        p.demo_targets = false;
+        p.ids = Some((spec.item_id.clone(), spec.plan.media_source_id.clone()));
         p.has_next = spec.next.is_some();
+        p.tech_facts = None;
+        p.downloaded = spec.downloaded;
+        p.item_id = spec.item_id.clone();
+        p.set_title_kind(
+            spec.series_id.is_some(),
+            spec.plan.method == PlayMethod::Transcode,
+        );
         p.sub_look = Some((Arc::clone(&engine), None, f64::NEG_INFINITY));
         let vm = PlayerVm::new(
             Arc::new(DynEngine(engine)),
@@ -3142,40 +3852,6 @@ impl PlayerScreen {
         p.chapters.clear();
         p.sync();
         p
-    }
-
-    /// The screen for a title whose plan the server refused: the same failed view (message, retry, close). Retry does not
-    /// touch an engine; the suite asks `retry_asked` and prepares the title again.
-    pub fn plan_failed(
-        env: Env,
-        cx: Cx,
-        now: f64,
-        message: &str,
-        head: (String, String),
-    ) -> PlayerScreen {
-        let mut p = PlayerScreen::new(env, cx, PlayerScenario::Failed, now);
-        p.vm.engine_event(
-            EngineEvent::LoadFailed {
-                attempt: 1,
-                message: message.to_owned(),
-                kind: None,
-            },
-            now / 1000.0,
-        );
-        p.head = head;
-        p.plan_failed = true;
-        p.sync();
-        p
-    }
-
-    /// Whether Retry was tapped on a plan-failed screen (read once).
-    pub fn retry_asked(&mut self) -> bool {
-        std::mem::take(&mut self.retry_asked)
-    }
-
-    /// Whether this is the plan-failed screen.
-    pub fn is_plan_failed(&self) -> bool {
-        self.plan_failed
     }
 
     /// Frames the real engine delivered so far.
@@ -3204,28 +3880,35 @@ impl PlayerScreen {
         self.poster = Some(crate::media_keys::Poster::new(source, dir, name));
     }
 
-    /// What the system's media widgets show now: title card, state, position. `None` while nothing plays (failed start,
-    /// ended, closed) so the card goes away.
+    /// What the system's media widgets show now: title card, state, position. A film that ended stays open with its
+    /// controls, so it shows as paused at the end (like the Mac's now-playing); `None` while nothing plays (before the
+    /// first picture, a failed start, closed) so the card goes away and the system reads "Stopped".
     pub fn now_playing(&self) -> Option<crate::media_keys::NowPlaying> {
-        if self.closed || self.plan_failed {
+        if self.closed {
             return None;
         }
         let t = self.vm.transport();
-        let playing = match t.phase {
-            Phase::Playing => true,
-            Phase::Paused => false,
-            // Before the first picture there is nothing to control; after the end or a failure the card goes.
-            _ => return None,
-        };
+        let playing = crate::media_keys::playing_in(t.phase)?;
         Some(crate::media_keys::NowPlaying {
             meta: crate::media_keys::Metadata {
-                title: self.head.0.clone(),
-                subtitle: self.head.1.clone(),
+                item_id: self.vm.spec().item_id.clone(),
+                // The Mac's `report`: the title's own name, the series as the album, the episode code as the artist.
+                title: self.vm.spec().title.clone(),
+                album: (self.has_episodes && !self.head.0.is_empty()).then(|| self.head.0.clone()),
+                artist: self
+                    .has_episodes
+                    .then(|| self.episode_code.clone())
+                    .flatten(),
                 duration_s: (t.duration > 0.0).then_some(t.duration),
                 cover_url: self.poster.as_ref().and_then(|p| p.url()),
             },
             playing,
-            position_s: t.position.max(0.0),
+            position_s: if t.phase == Phase::Ended && t.duration > 0.0 {
+                t.duration
+            } else {
+                t.position.max(0.0)
+            },
+            rate: f64::from(t.tempo),
             has_next: self.has_next,
         })
     }
@@ -3370,6 +4053,13 @@ impl PlayerScreen {
         let planner = self.planner.clone();
         if c.close {
             self.closed = true;
+            if let Some(hub) = &self.together {
+                hub.player_open(false);
+                if self.shared {
+                    hub.player_detached();
+                    self.shared = false;
+                }
+            }
         }
         if let Some(n) = c.nudge {
             self.nudge = Some(n);
@@ -3456,6 +4146,19 @@ impl PlayerScreen {
                     spec.subtitle_index = sub;
                 }
                 self.has_next = spec.next.is_some();
+                if let Some(x) = sw.extra {
+                    self.set_title_facts(x.next_code, x.account_next);
+                    self.set_tech_facts(x.tech);
+                    self.set_season_id(x.season_id);
+                    self.episode_code = x.code;
+                    self.vm.set_original_language(x.original_language);
+                }
+                self.ep_cards.clear();
+                self.ep_stills.clear();
+                self.set_title_kind(
+                    spec.series_id.is_some(),
+                    spec.plan.method == PlayMethod::Transcode,
+                );
                 self.head = sw.head;
                 self.vm.load_title(spec, s);
                 self.set_marks(sw.chapters, sw.sections);
@@ -3489,11 +4192,9 @@ impl PlayerScreen {
     /// The host that plans a title for a switch. Also takes the quality of the settings into the menu.
     pub fn set_planner(&mut self, planner: Arc<dyn Planner>) {
         let q = planner.quality();
-        self.vm.set_prefs(PlayerPrefs {
-            direct_play: q.direct_play,
-            bitrate_limit: q.limit,
-            ..PlayerPrefs::default()
-        });
+        self.prefs.direct_play = q.direct_play;
+        self.prefs.bitrate_limit = q.limit;
+        self.vm.set_prefs(self.prefs.clone());
         self.planner = Some(planner);
     }
 
@@ -3510,6 +4211,11 @@ impl PlayerScreen {
     /// The prompt the core asked for, once (the host shows it after the close).
     pub fn take_nudge(&mut self) -> Option<Nudge> {
         self.nudge.take()
+    }
+
+    /// Shows a line over the picture for a few seconds (a link that arrived while the player is open).
+    pub fn announce(&mut self, text: String, now: f64) {
+        self.notice = Some((text, now / 1000.0 + NOTICE_SECONDS));
     }
 
     /// The line a shortcut announced and that is still showing (G/H/J/K).
@@ -3529,7 +4235,9 @@ impl PlayerScreen {
             PlayerIntent::Forward => self.bounce_at.1 = s,
             _ => {}
         }
+        crate::script::trace(&format!("intent {intent:?}"));
         self.vm.send(intent, s);
+        crate::script::trace("engine command issued");
         self.pump(s);
     }
 
@@ -3539,6 +4247,9 @@ impl PlayerScreen {
         self.vol_open = self.desk() && (self.vol_hover || self.vol_drag || s < self.vol_until);
         if let Some((eng, frames)) = &self.live {
             for ev in eng.events() {
+                if let EngineEvent::State(state) = &ev {
+                    crate::script::trace(&format!("engine report {state:?}"));
+                }
                 self.vm.engine_event(ev, s);
             }
             let gpu = self.cx.video.borrow().gpu;
@@ -3600,7 +4311,9 @@ impl PlayerScreen {
             self.last_half = s + 1e9;
         }
         self.spin = ((s * 12.5) as u64 % 12) as u8;
+        self.turn = (s / LOADER_TURN_SECONDS).fract() as f32;
         self.poll_switch(s);
+        self.together_tick(s);
         self.pump(s);
     }
 
@@ -3616,14 +4329,16 @@ impl PlayerScreen {
                 self.spin,
                 focus,
                 self.fill,
-                self.muted,
+                self.volume == 0,
                 self.volume,
                 self.tech,
                 self.menu,
                 self.small,
+                self.turn,
             ),
         );
         let mut p = p;
+        crate::script::trace_flag("shown playing", matches!(p.t.phase, Phase::Playing));
         if self
             .notice
             .as_ref()
@@ -3635,6 +4350,54 @@ impl PlayerScreen {
             p.t.hint = Some(text.clone());
         }
         p.seasons = (self.seasons_open, self.season);
+        if self.tech {
+            // Every 2 s from what plays now (`PS:450-458`: the task re-reads the values and the playing tracks).
+            if self.cur_s - self.tech_rows.0 >= 2.0 {
+                let tracks = self.vm.tracks();
+                let playing = |rows: &[swiftly_vm::TrackRow]| {
+                    rows.iter().find(|r| r.selected).map(|r| r.index)
+                };
+                let duration = self.vm.transport().duration;
+                if let Some(f) = &self.tech_facts {
+                    self.tech_rows = (
+                        self.cur_s,
+                        f.rows(
+                            playing(&tracks.audio),
+                            playing(&tracks.subtitles),
+                            duration,
+                            &words(),
+                        ),
+                    );
+                }
+            }
+            p.tech_head = self
+                .tech_facts
+                .as_ref()
+                .map(|f| (f.delivery.clone(), f.good));
+            p.tech_reason = self.tech_facts.as_ref().and_then(|f| f.reason.clone());
+            p.tech_rows = self.tech_rows.1.clone();
+        }
+        p.sub_style = Some(self.stored_subtitle_style());
+        p.season_names = self.ep_seasons.iter().map(|r| r.name.clone()).collect();
+        p.cards = self.ep_cards.clone();
+        p.current_card = self.current_card();
+        let reduce_still = self.env.reduce_motion;
+        p.card_imgs = if self.vm.controls().layer == Some(PlayerLayer::Episodes) {
+            self.ep_stills
+                .iter_mut()
+                .map(|st| {
+                    st.as_mut()
+                        .and_then(|st| st.poll(&self.cx, self.cur_s, reduce_still))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        p.group = self.view.group.clone().filter(|_| self.shared);
+        p.participants = self.view.participants.clone();
+        p.event = self.view.event.clone().filter(|_| self.shared);
+        p.group_error = self.group_error_text();
+        p.targets = self.p_targets();
         if let Some(t) = &mut self.trick {
             // Scrubbing shows the tile of the scrub position, hovering the tile under the pointer.
             let tile = if p.c.scrubbing {
@@ -3651,12 +4414,14 @@ impl PlayerScreen {
             seconds_left,
         } = self.vm.offer().view
         {
-            let code = next_code(&self.head.1);
+            let code = self.next_code.clone().unwrap_or_else(|| title.clone());
             self.card_data = Some((title, share, seconds_left, code));
             let desk = self.desk();
             self.card_motion.update(desk, self.cur_s, reduce);
         } else {
-            self.card_motion.update(false, self.cur_s, reduce);
+            // Zoomed by a click that started the next episode: the card stays over the switch (as on the Mac).
+            let hold = self.desk() && self.card_motion.zoomed() && self.switch.busy();
+            self.card_motion.update(hold, self.cur_s, reduce);
         }
         p.card = self.card_motion.look(self.cur_s, reduce);
         p.card_data = if p.card.shown {
@@ -3678,6 +4443,8 @@ impl PlayerScreen {
         p.menu_c = self.menu_c.clone();
         p.fs_epoch = self.fs_epoch;
         p.strip_x = self.ui.scroll_offsets().first().copied().unwrap_or(0.0) as f32;
+        p.episodes = self.has_episodes;
+        p.transcode = self.transcode;
         p.fullscreen = self.fullscreen;
         p.vol_open = self.vol_open;
         p.hover_pos = self.hover_pos;
@@ -3694,6 +4461,119 @@ impl PlayerScreen {
         self.ui.set_parts(p);
     }
 
+    /// The running episode among the cards.
+    fn current_card(&self) -> Option<usize> {
+        let id = &self.vm.spec().item_id;
+        self.ep_cards.iter().position(|c| &c.id == id)
+    }
+
+    /// Asks the source for the episodes of the chosen season; the cards stay until the answer comes.
+    fn load_cards(&mut self) {
+        let (Some(src), Some(series), Some(season)) = (
+            self.ep_source.clone(),
+            self.vm.spec().series_id.clone(),
+            self.ep_seasons.get(self.season).map(|r| r.id.clone()),
+        ) else {
+            return;
+        };
+        self.ep_wait_cards = Some((self.season, src.episodes(&series, &season)));
+    }
+
+    /// Opens the layer's data once per opening and takes the answers (`EpisodesLayer.load`, `episodesLoad`).
+    fn episodes_tick(&mut self) {
+        let open = self.vm.controls().layer == Some(PlayerLayer::Episodes);
+        if !open {
+            self.ep_asked = false;
+            return;
+        }
+        if !self.ep_asked {
+            self.ep_asked = true;
+            if let (Some(src), Some(series)) =
+                (self.ep_source.clone(), self.vm.spec().series_id.clone())
+            {
+                self.ep_wait_seasons = Some(src.seasons(&series, self.season_id.as_deref()));
+            }
+        }
+        if let Some(w) = &self.ep_wait_seasons {
+            match w.0.try_recv() {
+                Ok(found) => {
+                    self.ep_wait_seasons = None;
+                    if let Some((rows, chosen)) = found {
+                        // Keep the season the person picked while this ran; else the one the episode is in.
+                        let keep = self.ep_seasons.get(self.season).map(|r| r.id.clone());
+                        self.season = keep
+                            .and_then(|k| rows.iter().position(|r| r.id == k))
+                            .unwrap_or(chosen);
+                        self.ep_seasons = rows;
+                        self.load_cards();
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.ep_wait_seasons = None,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some((season, w)) = &self.ep_wait_cards {
+            let season = *season;
+            match w.0.try_recv() {
+                Ok(found) => {
+                    self.ep_wait_cards = None;
+                    // Someone who switched season meanwhile gets that season's episodes, not these.
+                    if let (Some(cards), true) = (found, season == self.season) {
+                        let g = strip_geometry(&self.env);
+                        let running = self.vm.spec().item_id.clone();
+                        let scale = self.env.scale.max(0.5);
+                        // The old stills' regions are free again before the new ones take theirs.
+                        self.cx.images.borrow_mut().reset_stills();
+                        self.ep_stills = cards
+                            .iter()
+                            .map(|c| {
+                                // The card's device pixels (the running one is 1.25 x): the picture is asked for, and cut
+                                // down to, exactly that, so it is drawn 1:1.
+                                let k = if c.id == running && !g.tv { 1.25 } else { 1.0 };
+                                let (tw, th) = (
+                                    (g.card * k * scale).round().max(1.0) as u32,
+                                    (g.img * k * scale).round().max(1.0) as u32,
+                                );
+                                let address = c
+                                    .image
+                                    .as_deref()
+                                    .and_then(|a| swiftly_images::Url::parse(a).ok())
+                                    .map(|u| crate::hub::sized_for_device(&u, tw, th).to_string());
+                                self.ep_source.as_ref().map(|s| {
+                                    player_card::CardStill::new(s.still(&c.id, address.as_deref()))
+                                        .fitted(tw, th)
+                                })
+                            })
+                            .collect();
+                        self.ep_cards = cards;
+                        self.strip_placed = false;
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.ep_wait_cards = None,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
+    }
+
+    /// A card was chosen: the running episode just closes the layer, another one is started through the core's switch
+    /// (stop report, plan, load), like the Mac's `start(item)`.
+    fn start_episode(&mut self, card: &EpisodeCardData, now: f64) {
+        self.send(PlayerIntent::Layer(None), now);
+        if card.id == self.vm.spec().item_id {
+            return;
+        }
+        self.vm.set_next(Some(swiftly_vm::NextEpisode {
+            id: card.id.clone(),
+            title: card.title.clone(),
+        }));
+        self.send(PlayerIntent::NextEpisode, now);
+    }
+
+    /// Where the layer gets its data.
+    pub fn set_episode_source(&mut self, source: Arc<dyn EpisodeSource>) {
+        self.ep_source = Some(source);
+    }
+
     /// Puts the strip on the running episode once per opening (tv: at the front, else in the middle).
     fn place_strip(&mut self) -> bool {
         let open = self.vm.controls().layer == Some(PlayerLayer::Episodes);
@@ -3706,7 +4586,10 @@ impl PlayerScreen {
             return false;
         }
         let g = strip_geometry(&self.env);
-        let at = CURRENT as f32 * (g.card + g.gap);
+        let Some(current) = self.current_card() else {
+            return false;
+        };
+        let at = current as f32 * (g.card + g.gap);
         let target = if g.tv {
             at
         } else {
@@ -3725,7 +4608,13 @@ impl PlayerScreen {
     /// One frame at `now` ms. Returns the draw list and whether another frame is wanted.
     pub fn frame(&mut self, now: f64) -> (DrawList, bool) {
         self.follow_subtitle_look(now);
+        self.episodes_tick();
         self.advance(now);
+        // A downloaded file that gives no picture: the stream takes over (`fileFailed`), once.
+        if self.downloaded && self.vm.transport().failure.is_some() {
+            self.downloaded = false;
+            self.stream_fallback = Some(self.vm.transport().position.max(0.0));
+        }
         self.sync();
         let visible = self.vm.controls().visible;
         if self.env.idiom == swiftly_ui::Idiom::Tv && visible && !self.seen_visible {
@@ -3751,6 +4640,14 @@ impl PlayerScreen {
                 .card_still
                 .as_ref()
                 .is_some_and(|s| s.moving(self.cur_s))
+            || (self.vm.controls().layer == Some(PlayerLayer::Episodes)
+                && (self.ep_wait_cards.is_some()
+                    || self.ep_wait_seasons.is_some()
+                    || self
+                        .ep_stills
+                        .iter()
+                        .flatten()
+                        .any(|s| s.moving(self.cur_s))))
             || self.cur_s - self.bounce_at.0.max(self.bounce_at.1) < 0.5
             || self.live.is_some()
             || self.engine.with(|e| e.playing)
@@ -3759,6 +4656,26 @@ impl PlayerScreen {
 
     fn desk(&self) -> bool {
         Form::of(self.env.idiom) == Form::Desktop
+    }
+
+    /// Whether the episodes layer (the strip of cards) is open.
+    pub fn episodes_open(&self) -> bool {
+        self.vm.controls().layer == Some(PlayerLayer::Episodes)
+    }
+
+    /// How far the strip of episode cards is scrolled sideways (tests, measuring).
+    pub fn strip_offset(&self) -> f32 {
+        self.ui.scroll_offsets().first().copied().unwrap_or(0.0) as f32
+    }
+
+    /// A wheel notch or touchpad delta over the episode strip: it moves sideways whichever way the wheel turns
+    /// (`ScrollView(.horizontal)` on the Mac). Returns whether the strip moved.
+    pub fn wheel_scroll(&mut self, x: f32, y: f32, dx: f32, dy: f32, now: f64) -> bool {
+        let moved = self.ui.wheel_scroll(x, y, dx, dy, now);
+        if moved {
+            self.sync();
+        }
+        moved
     }
 
     /// The host tells whether the window is in real fullscreen.
@@ -3814,7 +4731,7 @@ impl PlayerScreen {
             .is_none_or(|(px, py)| (x - px).abs() > 2.0 || (y - py).abs() > 2.0);
         self.pointer = Some((x, y));
         let c = self.vm.controls();
-        let (x0, y0, x1, y1) = vol_zone(&self.env);
+        let (x0, y0, x1, y1) = vol_zone(&self.env, self.handover_on());
         self.vol_hover = c.visible && x >= x0 && x <= x1 && y >= y0 && y <= y1;
         let (bx, bw) = bar_span(&self.env, self.end_base.is_some());
         let (top, h) = bar_hit(&self.env);
@@ -3822,7 +4739,7 @@ impl PlayerScreen {
             (c.visible && c.layer.is_none() && x >= bx && x <= bx + bw && y >= top && y <= top + h)
                 .then(|| self.pos_at(x));
         if moved && c.layer.is_none() && !c.scrubbing {
-            self.send(PlayerIntent::WakeControls, now);
+            self.send(PlayerIntent::WakeControlsBeside, now);
         }
         self.sync();
         self.ui.pointer_move(x, y, now);
@@ -3847,7 +4764,7 @@ impl PlayerScreen {
     /// The wheel over the speaker or compartment sets the volume (`VS`): a touchpad moves by d/24*5 %, a notch by 5 %
     /// (at most three). Returns whether the event was used.
     pub fn volume_wheel(&mut self, x: f32, y: f32, dy: f32, precise: bool, now: f64) -> bool {
-        let (x0, y0, x1, y1) = vol_zone(&self.env);
+        let (x0, y0, x1, y1) = vol_zone(&self.env, self.handover_on());
         if !self.desk()
             || !self.vm.controls().visible
             || x < x0
@@ -3864,54 +4781,76 @@ impl PlayerScreen {
             dy.clamp(-3.0, 3.0) * 0.05
         };
         self.volume = (self.volume + (share * 100.0).round() as i32).clamp(0, 100);
-        self.muted = false;
         self.vol_until = now / 1000.0 + 1.2;
         self.send(PlayerIntent::Volume(self.volume), now);
+        self.send(PlayerIntent::WakeControls, now);
         self.persist_volume();
         self.sync();
         true
     }
 
     fn volume_at(&mut self, x: f32, now: f64) {
-        let (sx, _) = vol_geometry(&self.env);
+        let (sx, _) = vol_geometry(&self.env, self.handover_on());
         let f = ((x - sx - VOL_INSET) / (VOL_SLIDER - 2.0 * VOL_INSET)).clamp(0.0, 1.0);
         self.volume = (f * 100.0).round() as i32;
-        self.muted = false;
         self.send(PlayerIntent::Volume(self.volume), now);
     }
 
     fn on_volume_slider(&self, x: f32, y: f32) -> bool {
-        let (sx, cy) = vol_geometry(&self.env);
+        let (sx, cy) = vol_geometry(&self.env, self.handover_on());
         self.vol_open && x >= sx - 8.0 && x <= sx + VOL_SLIDER + 8.0 && (y - cy).abs() <= 18.0
     }
 
+    /// Click on the speaker and key M (`volumeMuted`): mute remembers the value, a second time restores it (or 1 %).
     fn toggle_mute(&mut self, now: f64) {
-        self.muted = !self.muted;
+        if self.volume > 0 {
+            self.volume_prior = self.volume;
+            self.volume = 0;
+        } else {
+            self.volume = if self.volume_prior > 0 {
+                self.volume_prior
+            } else {
+                1
+            };
+        }
         self.vol_until = now / 1000.0 + 1.2;
-        self.send(
-            PlayerIntent::Volume(if self.muted { 0 } else { self.volume }),
-            now,
-        );
+        self.send(PlayerIntent::Volume(self.volume), now);
         self.persist_volume();
     }
 
     /// Keeps the volume between sessions like the Mac (`playerLautstaerke` 0...1, `playerLautstaerkeDavor` before a mute).
     fn persist_volume(&self) {
         if let Some(store) = &self.store {
-            let v = f64::from(self.volume) / 100.0;
-            let _ = store.set(
+            crate::store::set_logged(
+                &**store,
                 "playerLautstaerke",
-                Value::Double(if self.muted { 0.0 } else { v }),
+                Value::Double(f64::from(self.volume) / 100.0),
             );
-            let _ = store.set("playerLautstaerkeDavor", Value::Double(v));
+            crate::store::set_logged(
+                &**store,
+                "playerLautstaerkeDavor",
+                Value::Double(f64::from(self.volume_prior.max(0)) / 100.0),
+            );
         }
+    }
+
+    /// The saved subtitle look (`utAussehen`, synced) as the style the engine and the app-drawn route use. The 16 point
+    /// margin follows the picture on screen (window size in points, source aspect).
+    fn stored_subtitle_style(&self) -> swiftly_playback::engine::SubtitleTextStyle {
+        let source = self.live.as_ref().and_then(|(live, _)| live.source_size());
+        let picture = crate::subtitle_style::picture_pt((self.env.size.w, self.env.size.h), source);
+        let stored = match self.store.as_ref().and_then(|s| s.get("utAussehen")) {
+            Some(Value::Data(d)) => Some(d),
+            _ => None,
+        };
+        let look = swiftly_support::subtitle::SubtitleLook::read(stored.as_deref());
+        crate::subtitle_style::style_of(&look, picture)
     }
 
     /// Hands the saved subtitle look (`utAussehen`, synced) to the engine: before the first frame, and again when it
     /// changes, so a running player follows the settings page at once.
     fn follow_subtitle_look(&mut self, now: f64) {
-        let source = self.live.as_ref().and_then(|(live, _)| live.source_size());
-        let picture = crate::subtitle_style::picture_pt((self.env.size.w, self.env.size.h), source);
+        let style = self.stored_subtitle_style();
         let Some((engine, seen, at)) = self.sub_look.as_mut() else {
             return;
         };
@@ -3919,13 +4858,6 @@ impl PlayerScreen {
             return;
         }
         *at = now;
-        let stored = match self.store.as_ref().and_then(|s| s.get("utAussehen")) {
-            Some(Value::Data(d)) => Some(d),
-            _ => None,
-        };
-        let look = swiftly_support::subtitle::SubtitleLook::read(stored.as_deref());
-        // The 16 point margin follows the picture on screen (window size in points, source aspect).
-        let style = crate::subtitle_style::style_of(&look, picture);
         if seen.as_ref() != Some(&style) {
             engine.set_subtitle_style(&style);
             *seen = Some(style);
@@ -3939,22 +4871,72 @@ impl PlayerScreen {
             _ => None,
         };
         if let Some(v) = get("playerLautstaerke") {
-            let prior = get("playerLautstaerkeDavor").unwrap_or(1.0);
-            self.muted = v <= 0.0;
-            self.volume = ((if self.muted { prior } else { v }) * 100.0).round() as i32;
-            if self.volume == 0 {
-                self.volume = 100;
-            }
-            self.send(
-                PlayerIntent::Volume(if self.muted { 0 } else { self.volume }),
-                now,
-            );
+            self.volume_prior =
+                (get("playerLautstaerkeDavor").unwrap_or(0.0) * 100.0).round() as i32;
+            self.volume = (v * 100.0).round() as i32;
+            self.send(PlayerIntent::Volume(self.volume), now);
         }
+        self.prefs = prefs_from_store(&store, &self.prefs, self.account_next);
+        self.vm.set_prefs(self.prefs.clone());
+        self.set_end_time(
+            end_time_from_store(&store),
+            crate::local_clock::day_seconds(),
+            now,
+        );
         self.store = Some(store);
         if let Some((_, _, at)) = self.sub_look.as_mut() {
             *at = f64::NEG_INFINITY;
         }
         self.follow_subtitle_look(now);
+    }
+
+    /// The next episode's code and the account's own next-episode wish; the prefs follow at once.
+    pub fn set_title_facts(&mut self, next_code: Option<String>, account_next: Option<bool>) {
+        self.next_code = next_code;
+        self.account_next = account_next;
+        if let Some(store) = self.store.clone() {
+            self.prefs = prefs_from_store(&store, &self.prefs, self.account_next);
+            self.vm.set_prefs(self.prefs.clone());
+        }
+    }
+
+    /// The file plays from the device, so a failed start falls back to the stream.
+    pub fn set_downloaded(&mut self, on: bool) {
+        self.downloaded = on;
+    }
+
+    /// What the technical overlay says about the file.
+    pub fn set_tech_facts(&mut self, facts: Option<crate::player_host::TechFacts>) {
+        self.tech_facts = facts;
+        self.tech_rows.0 = f64::NEG_INFINITY;
+    }
+
+    /// The season of the running episode (the episodes layer opens on it).
+    pub fn set_season_id(&mut self, id: Option<String>) {
+        self.season_id = id;
+    }
+
+    /// The running episode's code for the system's now-playing card.
+    pub fn set_episode_code(&mut self, code: Option<String>) {
+        self.episode_code = code;
+    }
+
+    /// A downloaded file that would not open: the second to play the stream from (`fileFailed`), read once.
+    pub fn take_stream_fallback(&mut self) -> Option<(String, f64)> {
+        self.stream_fallback
+            .take()
+            .map(|since| (self.item_id.clone(), since))
+    }
+
+    /// What the title is: a series episode has the episodes layer and its button; a transcode is named in the header.
+    pub fn set_title_kind(&mut self, episode: bool, transcode: bool) {
+        self.has_episodes = episode;
+        self.transcode = transcode;
+    }
+
+    /// The player prefs the screen holds (tests).
+    pub fn prefs(&self) -> &PlayerPrefs {
+        &self.prefs
     }
 
     fn pos_at(&self, x: f32) -> f64 {
@@ -4027,9 +5009,22 @@ impl PlayerScreen {
         }
         if let Some((dx, dy)) = self.down {
             self.moved |= (x - dx).abs() > 10.0 || (y - dy).abs() > 10.0;
+            // The window moves by its background, like the Mac's: a drag that started on nothing (no control, no layer
+            // card) hands the press to the window manager. It is no tap any more.
+            if self.desk() && (x - dx).hypot(y - dy) > WINDOW_DRAG_SLOP && self.ui.touch_is_bare() {
+                self.down = None;
+                self.ui.touch_cancel(now);
+                self.window_drag = true;
+                return;
+            }
         }
         self.ui.touch_move(x, y, now);
         let _ = self.drain(now);
+    }
+
+    /// Whether the last drag asks the host to move the window (read once).
+    pub fn take_window_drag(&mut self) -> bool {
+        std::mem::take(&mut self.window_drag)
     }
 
     /// The finger lifts.
@@ -4100,7 +5095,11 @@ impl PlayerScreen {
             if player_card::inside(player_card::x_rect(r), sx, sy) {
                 self.send(PlayerIntent::Back2, now);
             } else {
-                self.card_motion.toggle_zoom(now / 1000.0, reduce);
+                // The Mac: the click starts the next episode, the card zooms over the switch.
+                if !self.card_motion.zoomed() {
+                    self.card_motion.toggle_zoom(now / 1000.0, reduce);
+                }
+                self.send(PlayerIntent::PressCard, now);
             }
         } else {
             self.card_motion.release(now / 1000.0);
@@ -4188,12 +5187,114 @@ impl PlayerScreen {
         let events = self.ui.take_events();
         let mut taps = 0;
         for ev in events {
-            if let UiEvent::Tap(a) = ev {
-                taps += 1;
-                self.action(a, now);
+            match ev {
+                UiEvent::Tap(a) => {
+                    taps += 1;
+                    self.action(a, now);
+                }
+                UiEvent::Secondary { action, x, y } => self.open_episode_menu(&action, x, y),
+                _ => {}
             }
         }
         taps
+    }
+
+    /// A right click on a card of the episodes layer.
+    pub fn secondary_click(&mut self, x: f32, y: f32, now: f64) -> bool {
+        let took = self.ui.secondary_click(x, y, now);
+        self.drain(now);
+        self.sync();
+        took
+    }
+
+    /// The tile of an episode card for the shared menu: only what its entries read.
+    fn card_tile(card: &EpisodeCardData) -> swiftly_vm::Tile {
+        swiftly_vm::Tile {
+            id: card.id.clone(),
+            title: card.title.clone(),
+            subtitle: None,
+            progress: card.progress,
+            image: None,
+            badges: if card.watched {
+                vec![swiftly_vm::Badge::Watched]
+            } else {
+                Vec::new()
+            },
+            remaining: None,
+            facts: swiftly_vm::TileFacts {
+                kind: Some("Episode".to_owned()),
+                ..swiftly_vm::TileFacts::default()
+            },
+        }
+    }
+
+    /// The menu context in the player: the Mac's `inPlayer` leaves only the watched marks.
+    fn episode_menu_cx() -> crate::tile_menu::Cx {
+        crate::tile_menu::Cx {
+            host: swiftly_vm::MenuContext {
+                in_player: true,
+                ..swiftly_vm::MenuContext::default()
+            },
+            watchlist_shown: false,
+            favourite: false,
+        }
+    }
+
+    /// Opens the tile menu of card `epmenu:{i}` at the pointer.
+    fn open_episode_menu(&mut self, a: &Action, x: f32, y: f32) {
+        let Some(i) =
+            (0..self.ep_cards.len()).find(|i| *a == Action::from(format!("epmenu:{i}").as_str()))
+        else {
+            return;
+        };
+        let tile = Self::card_tile(&self.ep_cards[i]);
+        let rows = crate::tile_menu::pop_items(
+            crate::home::Form::Desktop,
+            &Self::episode_menu_cx(),
+            Some(&tile),
+        );
+        if rows.is_empty() {
+            return;
+        }
+        self.menu_c.open(
+            rows,
+            Anchor::Pointer(swiftly_layout::Point::new(x, y)),
+            0.0,
+            false,
+        );
+        self.log.push(format!("epmenu open {}", tile.id));
+        self.ep_menu = Some(i);
+    }
+
+    /// A pick `tmenu:{n}` of the card menu: the watched mark goes to the server and the card follows.
+    fn episode_menu_pick(&mut self, a: &Action) -> bool {
+        let Some(i) = self.ep_menu else {
+            return false;
+        };
+        let Some(card) = self.ep_cards.get(i) else {
+            return false;
+        };
+        let (cx, tile) = (Self::episode_menu_cx(), Self::card_tile(card));
+        let entries = crate::tile_menu::entries(crate::home::Form::Desktop, &cx, Some(&tile));
+        let Some((_, entry)) = entries
+            .into_iter()
+            .enumerate()
+            .find(|(n, _)| *a == Action::from(format!("tmenu:{n}").as_str()))
+        else {
+            return false;
+        };
+        self.ep_menu = None;
+        let on = matches!(entry, crate::tile_menu::Entry::Watched);
+        self.log.push(format!("epmenu {entry:?} {}", tile.id));
+        let _ = crate::tile_menu::run(&entry, &tile, &cx, &mut self.ep_writers);
+        // The card shows the new state at once, like the Mac's reload of the season after the write.
+        if let Some(card) = self.ep_cards.get_mut(i) {
+            card.watched = on;
+            if on {
+                card.progress = None;
+            }
+        }
+        true
     }
 
     fn action(&mut self, a: Action, now: f64) {
@@ -4201,9 +5302,15 @@ impl PlayerScreen {
         // Any tap that reaches the screen while a menu is up is a choice or a click outside: the menu closes either way.
         self.menu_c.close();
         if a == popover::DISMISS {
+            self.ep_menu = None;
             self.sync();
             return;
         }
+        if self.episode_menu_pick(&a) {
+            self.sync();
+            return;
+        }
+        self.ep_menu = None;
         if is("tap:-1") {
             self.tap_area(-1, now);
         } else if is("tap:1") {
@@ -4220,14 +5327,10 @@ impl PlayerScreen {
             self.send(PlayerIntent::Layer(Some(PlayerLayer::Settings)), now);
         } else if is("layer-close") {
             self.send(PlayerIntent::Layer(None), now);
-        } else if is("close") || is("fail-close") {
+        } else if is("close") || is("fail-close") || is("fail-quiet") {
             self.send(PlayerIntent::Close, now);
         } else if is("retry") {
-            if self.plan_failed {
-                self.retry_asked = true;
-            } else {
-                self.send(PlayerIntent::Retry, now);
-            }
+            self.send(PlayerIntent::Retry, now);
         } else if is("offer") {
             self.send(PlayerIntent::PressOffering, now);
         } else if is("season") {
@@ -4240,13 +5343,17 @@ impl PlayerScreen {
             let g = strip_geometry(&self.env);
             let x = self.ui.scroll_offsets().first().copied().unwrap_or(0.0) as f32;
             let dir = if is("strip:1") { 1.0 } else { -1.0 };
-            let _ = self.ui.jump_first_scroll(
+            // `page(±1, cards: 3)` with the `reveal` animation (`PlayerEpisodeStrip.swift:94`).
+            let _ = self.ui.scroll_first_to(
                 Axis::Horizontal,
                 f64::from((x + dir * (g.card + g.gap) * 3.0).max(0.0)),
+                true,
+                now,
             );
-        } else if let Some(i) = (0..SEASONS.len()).find(|i| is(&format!("season:{i}"))) {
+        } else if let Some(i) = (0..self.ep_seasons.len()).find(|i| is(&format!("season:{i}"))) {
             self.season = i;
             self.seasons_open = false;
+            self.load_cards();
         } else if is("episodes") {
             self.send(PlayerIntent::Layer(Some(PlayerLayer::Episodes)), now);
         } else if is("fullscreen") {
@@ -4255,8 +5362,15 @@ impl PlayerScreen {
             self.toggle_mute(now);
         } else if is("handover") {
             self.open_handover();
-        } else if is("handover:0") {
-            self.log.push(format!("handover:{}", TARGETS[0]));
+        } else if let Some(i) = (0..self.p_targets().len()).find(|i| is(&format!("handover:{i}"))) {
+            self.start_hand_over(i, now);
+        } else if is("group-error") {
+            if let Some(hub) = &self.together {
+                hub.dismiss_error();
+            }
+            self.error_gone = true;
+        } else if is("group-leave") {
+            self.leave_group(now);
         } else if is("tech:0") || is("tech:1") {
             self.tech = is("tech:1");
         } else if is("fill") || is("fill:0") || is("fill:1") {
@@ -4268,6 +5382,237 @@ impl PlayerScreen {
         self.sync();
     }
 
+    /// The devices the film can go to: the account's (live) or the demo's one TV.
+    fn p_targets(&self) -> Vec<(String, String)> {
+        if self.together.is_some() {
+            self.view
+                .targets
+                .iter()
+                .map(|t| (t.device_id.clone(), t.name.clone()))
+                .collect()
+        } else if self.demo_targets {
+            vec![("demo-tv".to_owned(), DEMO_TARGET.to_owned())]
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// The hand-over button is there: devices to send to, and not in a group (the group watches here, handing
+    /// over would leave it without a word).
+    fn handover_on(&self) -> bool {
+        !(self.shared && self.view.group.is_some()) && !self.p_targets().is_empty()
+    }
+
+    /// The text of the group's error strip while it is up (4 s, or until tapped).
+    fn group_error_text(&self) -> Option<String> {
+        let (_, at) = self.error_seen?;
+        let (_, text) = self.view.error.as_ref()?;
+        (!self.error_gone && self.cur_s - at < ERROR_SECONDS).then(|| text.clone())
+    }
+
+    /// The player's state as the group's session reads it.
+    fn group_view(&self) -> swiftly_sync::PlayerView {
+        let t = self.vm.transport();
+        swiftly_sync::PlayerView {
+            title: self.ids.as_ref().map(|i| i.0.clone()).unwrap_or_default(),
+            ready: t.picture_shown && !self.switching(),
+            spot: t.position,
+        }
+    }
+
+    /// Hands the player the hub of the account. When the group watches this title, the player joins in: its buttons
+    /// become requests and the group's steps move it (`sharedAn`).
+    pub fn attach_together(&mut self, hub: Arc<crate::together::Hub>, item_id: &str) {
+        self.ids.get_or_insert_with(|| (item_id.to_owned(), None));
+        self.view = hub.view();
+        hub.player_open(true);
+        if self.view.group.is_some() && hub.group_title().as_deref() == Some(item_id) {
+            self.shared = true;
+            self.vm
+                .set_group(Some(Arc::clone(&hub) as Arc<dyn swiftly_vm::GroupHook>));
+            hub.player_attached(self.group_view());
+        }
+        self.together = Some(hub);
+        self.sync();
+    }
+
+    /// Is the player in the group right now?
+    pub fn in_group(&self) -> bool {
+        self.shared && self.view.group.is_some()
+    }
+
+    /// The title and the episode line the header shows.
+    pub fn head(&self) -> &(String, String) {
+        &self.head
+    }
+
+    /// The still frame of the video, at most 1280 wide: a box one step off the one the GPU path asks for, so libmpv
+    /// renders the picture that stands (a paused engine has no "new" frame, a different size makes it render).
+    fn grab_still(&self) -> Option<crate::together_ui::ExitStill> {
+        let (engine, _) = self.live.as_ref()?;
+        let mut got = None;
+        for (w, h) in [(1278_u32, 718_u32), (1100, 618)] {
+            engine.frame(w, h, &mut |fw, fh, rgba| {
+                if fw > 0 && fh > 0 && rgba.len() == fw as usize * fh as usize * 4 {
+                    got = Some(crate::together_ui::ExitStill {
+                        w: fw,
+                        h: fh,
+                        rgba: Arc::new(rgba.to_vec()),
+                    });
+                }
+            });
+            if got.is_some() {
+                break;
+            }
+        }
+        got
+    }
+
+    /// The grabbed still, once (the suite hands it to the exit card).
+    pub fn take_exit_still(&mut self) -> Option<crate::together_ui::ExitStill> {
+        self.exit_still.take()
+    }
+
+    /// The device the picture leaves for after a hand-over or a takeover, once the player closed.
+    pub fn taken_to(&self) -> Option<&str> {
+        self.taken_to.as_deref()
+    }
+
+    /// Once per frame: reads the group, tells it how this player stands, times the error strip.
+    fn together_tick(&mut self, s: f64) {
+        let Some(hub) = self.together.clone() else {
+            return;
+        };
+        let was = self.view.group.is_some();
+        self.view = hub.view();
+        if self.shared {
+            if was && self.view.group.is_none() {
+                // The group is gone (left from the sheet, or it ended): the buttons are the player's own again.
+                self.shared = false;
+                self.vm.set_group(None);
+            } else {
+                hub.player_update(self.group_view());
+                if s - self.last_group_tick >= 0.5 {
+                    self.last_group_tick = s;
+                    hub.player_tick();
+                }
+            }
+        }
+        match (&self.view.error, self.error_seen) {
+            (Some((n, _)), seen) if seen.map(|e| e.0) != Some(*n) => {
+                self.error_seen = Some((*n, s));
+                self.error_gone = false;
+            }
+            _ => {}
+        }
+    }
+
+    /// One thing the hub has for this player (the suite hands it over once per frame).
+    pub fn hub_event(&mut self, event: crate::together::HubEvent, now: f64) {
+        use crate::together::HubEvent as E;
+        use swiftly_sync::{PlayerAction as A, RemoteCommand as C};
+        match event {
+            E::Step { action, .. } => self.send(
+                match action {
+                    A::Proceed => PlayerIntent::EnginePlay,
+                    A::Halt => PlayerIntent::EnginePause,
+                    A::Jump(to) => PlayerIntent::EngineSeek(to),
+                },
+                now,
+            ),
+            E::Command(c) => {
+                let running = self.vm.transport().running;
+                let group = self.in_group();
+                match c {
+                    // In a group a pause or a resume is a request, never a direct stop of the picture.
+                    C::Pause if group => {
+                        if running {
+                            self.send(PlayerIntent::TogglePlay, now);
+                        }
+                    }
+                    C::Proceed if group => {
+                        if !running {
+                            self.send(PlayerIntent::TogglePlay, now);
+                        }
+                    }
+                    C::Pause => self.send(PlayerIntent::EnginePause, now),
+                    C::Proceed => self.send(PlayerIntent::EnginePlay, now),
+                    C::Toggle => self.send(PlayerIntent::TogglePlay, now),
+                    C::Stop => self.send(PlayerIntent::Close, now),
+                    C::JumpOn(to) => self.send(PlayerIntent::SeekTo(to), now),
+                    C::Forward => self.send(PlayerIntent::Forward, now),
+                    C::Back => self.send(PlayerIntent::Back, now),
+                    C::Next => self.send(PlayerIntent::NextEpisode, now),
+                    C::Previous => {}
+                }
+                self.send(PlayerIntent::WakeControls, now);
+            }
+            E::TakenOver { device } | E::HandedOver { device } => {
+                // The picture stands paused here; grab it before the engine is closed (`area.stillImage`).
+                self.exit_still = self.grab_still();
+                self.taken_to = Some(device);
+                self.handover_ran = None;
+                self.send(PlayerIntent::Close, now);
+            }
+            E::HandOverFailed { .. } => {
+                if self.handover_ran.take() == Some(true) {
+                    self.send(PlayerIntent::EnginePlay, now);
+                }
+            }
+            E::LoadTitle { .. } | E::Play(_) | E::StartHere { .. } => {}
+        }
+        self.sync();
+    }
+
+    /// "Übergeben an <device>": pauses here so the other device does not start behind, then sends the title at this
+    /// position with these tracks. If the device does not take it, the film plays on here.
+    fn start_hand_over(&mut self, i: usize, now: f64) {
+        let targets = self.p_targets();
+        let Some((device_id, name)) = targets.get(i).cloned() else {
+            return;
+        };
+        let (Some(hub), Some((item_id, source_id))) = (self.together.clone(), self.ids.clone())
+        else {
+            self.log.push(format!("handover:{name}"));
+            return;
+        };
+        if self.handover_ran.is_some() {
+            return;
+        }
+        let t = self.vm.transport();
+        self.handover_ran = Some(t.running);
+        let tracks = self.vm.tracks();
+        let audio = tracks.audio.iter().find(|r| r.selected).map(|r| r.index);
+        let subtitle = if tracks.subtitles_off {
+            Some(-1)
+        } else {
+            tracks
+                .subtitles
+                .iter()
+                .find(|r| r.selected)
+                .map(|r| r.index)
+        };
+        self.send(PlayerIntent::EnginePause, now);
+        hub.hand_over(crate::together::HandOver {
+            device_id,
+            item_id,
+            position: t.position,
+            source_id,
+            audio,
+            subtitle,
+        });
+    }
+
+    /// "Gruppe verlassen": the player goes on alone.
+    fn leave_group(&mut self, now: f64) {
+        if let Some(hub) = &self.together {
+            hub.leave();
+        }
+        self.shared = false;
+        self.vm.set_group(None);
+        self.send(PlayerIntent::Layer(None), now);
+    }
+
     /// The handover menu under its rail button (`Menu` in `PS:703`): the entries are the devices that can take over.
     fn open_handover(&mut self) {
         let m = metrics(&self.env);
@@ -4277,8 +5622,8 @@ impl PlayerScreen {
         let mut entries = vec![MenuEntry::Item(
             MenuItem::new("handover-title", "Übergeben an …").disabled(),
         )];
-        entries.extend(TARGETS.iter().enumerate().map(|(i, name)| {
-            MenuEntry::Item(MenuItem::new(format!("handover:{i}").as_str(), *name))
+        entries.extend(self.p_targets().iter().enumerate().map(|(i, (_, name))| {
+            MenuEntry::Item(MenuItem::new(format!("handover:{i}").as_str(), name))
         }));
         self.menu_c.open(
             entries,
@@ -4292,12 +5637,14 @@ impl PlayerScreen {
     fn open_seasons(&mut self) {
         let m = metrics(&self.env);
         let button = swiftly_layout::Rect::new(m.edge, m.title_top + 24.0, 110.0, 22.0);
-        let entries = SEASONS
+        let entries = self
+            .ep_seasons
             .iter()
             .enumerate()
-            .map(|(i, name)| {
+            .map(|(i, row)| {
                 MenuEntry::Item(
-                    MenuItem::new(format!("season:{i}").as_str(), *name).checked(i == self.season),
+                    MenuItem::new(format!("season:{i}").as_str(), row.name.as_str())
+                        .checked(i == self.season),
                 )
             })
             .collect();
@@ -4339,10 +5686,9 @@ impl PlayerScreen {
                 self.send(PlayerIntent::Sleep((m > 0).then_some(m)), now);
             }
         }
-        for (number, ..) in EPISODES {
-            if a == Action::from(format!("episode:{number}").as_str()) {
-                self.log.push(format!("episode:{number}"));
-                self.send(PlayerIntent::Layer(None), now);
+        for (i, card) in self.ep_cards.clone().iter().enumerate() {
+            if a == Action::from(format!("episode:{i}").as_str()) {
+                self.start_episode(card, now);
             }
         }
         if a == Action::from("quality:dp") {
@@ -4400,6 +5746,16 @@ impl PlayerScreen {
         );
     }
 
+    /// The window closes during playback: the sound stops and position and end go to the server, through the same
+    /// close the Close button uses (`PS:583-589`, "the same calls as `finish()`"; the report is once-only).
+    pub fn window_closing(&mut self, now: f64) {
+        if self.closed {
+            return;
+        }
+        self.send(PlayerIntent::Close, now);
+        self.sync();
+    }
+
     /// Esc (desktop, tv Menu): the card first, then a layer, then the controls, then the player.
     pub fn back(&mut self, now: f64) {
         if self.menu_c.is_open() {
@@ -4446,6 +5802,12 @@ impl PlayerScreen {
                 }
                 self.send(PlayerIntent::PressOffering, now);
             }
+            PlayerKey::NextEpisode => {
+                if !self.has_next {
+                    return false;
+                }
+                self.send(PlayerIntent::NextEpisode, now);
+            }
             _ if layer => return false,
             PlayerKey::Space => self.send(PlayerIntent::TogglePlay, now),
             PlayerKey::Left => self.send(PlayerIntent::Back, now),
@@ -4477,10 +5839,11 @@ impl PlayerScreen {
     }
 
     fn volume_step(&mut self, step: i32, now: f64) {
+        // From a mute the arrow counts up from 0 (`volumeLevel`), and the key wakes the controls.
         self.volume = (self.volume + step).clamp(0, 100);
-        self.muted = false;
         self.vol_until = now / 1000.0 + 1.2;
         self.send(PlayerIntent::Volume(self.volume), now);
+        self.send(PlayerIntent::WakeControls, now);
         self.persist_volume();
     }
 
@@ -4575,18 +5938,6 @@ impl PlayerScreen {
     }
 }
 
-/// The episode code of the next episode from the header's second line ("S1 · F3" gives "F4").
-fn next_code(meta: &str) -> String {
-    match meta
-        .rsplit('F')
-        .next()
-        .and_then(|t| t.trim().parse::<u32>().ok())
-    {
-        Some(n) if meta.contains('F') => format!("F{}", n + 1),
-        _ => "Nächste Folge".to_owned(),
-    }
-}
-
 /// Wire-check: maps a map of menu keys (used by the focus-plan test).
 pub fn layer_keys(tracks: &TracksPart) -> HashMap<&'static str, Vec<String>> {
     let mut m = HashMap::new();
@@ -4620,5 +5971,51 @@ fn base() -> swiftly_design::TextStyle {
         weight: 400,
         tracking: 0.0,
         uppercase: false,
+    }
+}
+
+#[cfg(test)]
+mod layer_row_tests {
+    use super::*;
+    use swiftly_layout::Size;
+    use swiftly_ui::a11y::Role;
+
+    /// "Unbegrenzt" in the 200 pt "Qualität" column is drawn in full: the text gets its natural width.
+    #[test]
+    fn a_layer_row_gives_its_text_the_room_of_the_column() {
+        let cx = Cx::deterministic();
+        let env = Env::new(Size::new(600.0, 300.0), 1.0, swiftly_ui::Idiom::Desktop);
+        let style = swiftly_design::TextStyle {
+            size: 15.0,
+            weight: 400,
+            ..base()
+        };
+        let natural = cx
+            .measure_text(
+                "Unbegrenzt",
+                &swiftly_text::TextStyle::from(style),
+                Some(1),
+                swiftly_layout::Proposal::NIL,
+            )
+            .w;
+        let text = txt(&cx, "Unbegrenzt", style, colour::FONT_QUIET, Some(1));
+        let row = row_layout(Node::fixed(13.0, 13.0), text).frame(
+            Some(200.0),
+            None,
+            Alignment::TOP_LEADING,
+        );
+        let ui = Ui::new(move |_: &(), _: &Env, _: &Cx| row.clone(), (), env, cx);
+        let nodes = ui.a11y_nodes();
+        let shown = nodes
+            .iter()
+            .flat_map(|n| n.walk())
+            .find(|n| n.role == Role::Text && n.label == "Unbegrenzt")
+            .and_then(|n| n.bounds)
+            .expect("the text is in the tree");
+        assert!(
+            shown[2] >= natural - 0.5,
+            "the text is {} pt wide, it needs {natural}",
+            shown[2]
+        );
     }
 }

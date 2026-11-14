@@ -105,6 +105,8 @@ struct Live<T: HttpTransport + 'static> {
     /// The combined order of fixed, library and collection rows (`startReihenfolge`), set by the host; empty: the old
     /// order (fixed rows, then libraries).
     row_order: Vec<String>,
+    /// The fixed rows the user switched off (`startAus`, raw values of the rows).
+    hidden_rails: Vec<String>,
 }
 
 struct Inner<T: HttpTransport + 'static> {
@@ -174,6 +176,14 @@ impl<T: HttpTransport + 'static> HomeVm<T> {
             .collect()
     }
 
+    /// Sets the fixed rows that are switched off (`startAus`: raw values such as `weiterschauen`); the rails part
+    /// updates at once.
+    pub fn set_hidden_rails(&self, hidden: Vec<String>) {
+        let mut live = self.inner.live();
+        live.hidden_rails = hidden;
+        self.inner.publish(&mut live);
+    }
+
     /// Sets the stored combined row order (`startReihenfolge`: fixed raw values and `library:<id>`) before a load, or
     /// after the user moved a row; the rails part updates at once. Empty: the old order.
     pub fn set_row_order(&self, order: Vec<String>) {
@@ -229,6 +239,7 @@ impl<T: HttpTransport + 'static> HomeVm<T> {
             abort: None,
             libraries: Vec::new(),
             row_order: Vec::new(),
+            hidden_rails: Vec::new(),
         };
         let inner = Arc::new(Inner {
             transport,
@@ -288,6 +299,16 @@ impl<T: HttpTransport + 'static> HomeVm<T> {
     /// The status part.
     pub fn status(&self) -> Arc<StatusPart> {
         Arc::clone(&self.inner.live().status)
+    }
+
+    /// Why the page is in the `Offline` status (`Trouble`): the words of its error text follow it. `Offline` (the
+    /// server could not be reached) while nothing else is known.
+    pub fn failure(&self) -> LoadFailure {
+        let live = self.inner.live();
+        match self.inner.load_of(&live) {
+            Load::Failed(kind) => LoadFailure::Failed(kind),
+            _ => LoadFailure::Offline,
+        }
     }
 
     /// The rails part.
@@ -403,6 +424,8 @@ fn all_rails<'a, T: HttpTransport + 'static>(
             ));
         }
     }
+    // The fixed rows the user switched off are not shown (the Mac's `HomeView.fixedRails`).
+    rails.retain(|r| !live.hidden_rails.contains(&r.0));
     // The chosen libraries and collections, in the chosen order, before the genre rows. They reuse the genre kind so
     // the host API does not change; the id starts with `library:` (`Rail::is_library`).
     for lib in s.library_rails_for(&live.libraries) {

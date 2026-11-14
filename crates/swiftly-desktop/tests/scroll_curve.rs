@@ -1,7 +1,7 @@
 //! Scroll test harness: feeds synthetic Windows wheel streams through the real `Shell` at a 60 Hz frame clock and logs
 //! the page offset per frame (CSV in `$SCROLL_CSV_DIR`, default the temp dir) next to the cumulative input. The asserts
 //! are the feel contract: a precision touchpad is 1:1 with the OS stream (no second smoothing), a wheel notch moves on
-//! the first frame and lands fast, notches accumulate, the ends give like a rubber band and spring back.
+//! the first frame and lands fast, notches accumulate, the ends give like a rubber band and spring back on the Mac, and never give on Windows and Linux.
 #![allow(clippy::unwrap_used)]
 
 use std::fmt::Write as _;
@@ -14,6 +14,11 @@ const FRAME: f64 = 1000.0 / 60.0;
 /// Linux (the GTK/libinput notch follows the viewport, see `ScrollTuning`).
 fn notch_px() -> f64 {
     swiftly_motion::ScrollTuning::for_os(swiftly_motion::Os::current()).notch(300.0)
+}
+
+/// Whether this OS's table lets the ends give (the Mac only; Windows and Linux stop dead).
+fn bounces() -> bool {
+    swiftly_motion::ScrollTuning::for_os(swiftly_motion::Os::current()).rubber_band
 }
 
 fn shell() -> Shell {
@@ -185,21 +190,69 @@ fn six_notches_accumulate_without_lag_or_overshoot() {
 }
 
 #[test]
-fn pulling_past_the_top_gives_like_a_rubber_band_and_springs_back() {
-    // A touchpad pull of 300 px past the top.
+fn a_precision_touchpad_stream_in_wheel_lines_never_gives_at_the_top_on_any_os() {
+    // Windows delivers a precision touchpad as fractional wheel lines; the shell applies that stream 1:1 and clamped on
+    // every OS (the Mac's own touchpad arrives as points with phases, see the next test).
     let ev = touchpad(900.0, 160.0, 120.0);
-    let sent: f64 = -ev.iter().map(|e| -e.1 * notch_px()).sum::<f64>();
     let ev: Vec<(f64, f64)> = ev.into_iter().map(|(t, l)| (t, -l)).collect();
     let end = ev.last().unwrap().0;
-    let c = play("top-pull", 0.0, &ev, end + 900.0);
+    let c = play("top-pull-lines", 0.0, &ev, end + 900.0);
     let lowest = c.rows.iter().map(|r| r.2).fold(0.0, f64::min);
     println!(
-        "top pull: sent {sent:.0} px, deepest {lowest:.1}, final {:.2}",
+        "lines pull: deepest {lowest:.1}, final {:.2}",
         c.final_offset()
     );
+    assert!(lowest >= -1e-6, "the top never gives ({lowest:.1})");
+    assert!(c.final_offset().abs() < 0.5);
+}
+
+/// Plays a touchpad pull of points (15 pt per frame for 160 ms, content pulled past the top, then the fingers lift)
+/// through the real `Shell`; returns the offset per frame.
+fn play_points(total: f64) -> Curve {
+    use swiftly_desktop::wheel::WheelPhase;
+    let mut s = shell();
+    let base = 2000.0;
+    let o0 = s.suite_mut().unwrap().page_offset();
+    let (mut rows, mut input) = (vec![], 0.0);
+    let (mut t, mut lifted) = (0.0, false);
+    while t <= total {
+        let now = base + t;
+        if t <= 160.0 {
+            let phase = if t == 0.0 {
+                WheelPhase::Started
+            } else {
+                WheelPhase::Moved
+            };
+            s.wheel(WheelDelta::Points(0.0, 15.0), Some(phase), now);
+            input += 15.0;
+        } else if !lifted {
+            lifted = true;
+            s.wheel(WheelDelta::Points(0.0, 0.0), Some(WheelPhase::Ended), now);
+        }
+        let _ = s.frame(now);
+        rows.push((t, input, s.suite_mut().unwrap().page_offset() - o0));
+        t += FRAME;
+    }
+    Curve { rows }
+}
+
+#[test]
+fn a_touchpad_pull_past_the_top_gives_like_a_rubber_band_only_on_the_os_that_has_one() {
+    let c = play_points(1400.0);
+    let lowest = c.rows.iter().map(|r| r.2).fold(0.0, f64::min);
+    let sent = c.rows.last().unwrap().1;
+    println!(
+        "points pull: sent {sent:.0} px, deepest {lowest:.1}, final {:.2}",
+        c.final_offset()
+    );
+    if !bounces() {
+        assert!(lowest >= -1e-6, "the top never gives ({lowest:.1})");
+        assert!(c.final_offset().abs() < 0.5);
+        return;
+    }
     assert!(lowest < -10.0, "the top gives ({lowest:.1})");
     assert!(
-        lowest > -(sent.abs()) * 0.8,
+        lowest > -sent * 0.8,
         "with resistance ({lowest:.1} of {sent:.0})"
     );
     assert!(
@@ -209,8 +262,58 @@ fn pulling_past_the_top_gives_like_a_rubber_band_and_springs_back() {
     );
 }
 
+/// Drags the demo's page down past its top with the scroll table of `os` (whatever OS the test runs on) and lets go;
+/// returns the deepest page offset during the drag and the offset after the release has settled.
+fn demo_pull(os: swiftly_motion::Os) -> (f64, f64) {
+    use swiftly_ui::Env;
+    let env = Env::new(
+        swiftly_layout::Size::new(1100.0, 400.0),
+        1.0,
+        Idiom::Desktop,
+    );
+    let mut d = swiftly_desktop::demo::Demo::new(env, Cx::deterministic());
+    d.set_scroll_tuning(swiftly_motion::ScrollTuning::for_os(os));
+    let mut now = 0.0;
+    while now < 1500.0 {
+        now += FRAME;
+        let _ = d.frame(now);
+    }
+    let page = |d: &swiftly_desktop::demo::Demo| d.scroll_offsets()[0];
+    let mut deepest = page(&d).min(0.0);
+    d.touch_down(550.0, 100.0, now);
+    for i in 1..=12_u8 {
+        now += FRAME;
+        d.touch_move(550.0, 100.0 + 25.0 * f32::from(i), now);
+        let _ = d.frame(now);
+        deepest = deepest.min(page(&d));
+    }
+    d.touch_up(550.0, 400.0, now);
+    let end = now + 1500.0;
+    while now < end {
+        now += FRAME;
+        let _ = d.frame(now);
+        deepest = deepest.min(page(&d));
+    }
+    (deepest, page(&d))
+}
+
 #[test]
-fn wheel_notches_past_the_top_give_a_soft_stop_and_spring_back() {
+fn every_scroll_table_decides_alone_whether_the_top_gives() {
+    use swiftly_motion::Os;
+    let (deep, rest) = demo_pull(Os::MacOs);
+    println!("mac table: deepest {deep:.1}, rest {rest:.2}");
+    assert!(deep < -10.0, "the Mac keeps its rubber band ({deep:.1})");
+    assert!(rest.abs() < 0.5, "and springs back ({rest:.2})");
+    for os in [Os::Windows, Os::Linux] {
+        let (deep, rest) = demo_pull(os);
+        println!("{os:?} table: deepest {deep:.1}, rest {rest:.2}");
+        assert!(deep >= -1e-6, "{os:?} never gives ({deep:.1})");
+        assert!(rest.abs() < 0.5, "{os:?} rests at the top ({rest:.2})");
+    }
+}
+
+#[test]
+fn wheel_notches_past_the_top_give_a_soft_stop_on_the_mac_and_stop_dead_elsewhere() {
     // Two notches up at the very top: the page gives a few points (a quarter of the excess, at most 28), then settles at 0.
     let c = play("notch-top-bounce", 0.0, &[(8.0, 1.0), (28.0, 1.0)], 900.0);
     let lowest = c.rows.iter().map(|r| r.2).fold(0.0, f64::min);
@@ -218,6 +321,11 @@ fn wheel_notches_past_the_top_give_a_soft_stop_and_spring_back() {
         "notch at the top: deepest {lowest:.1}, final {:.2}",
         c.final_offset()
     );
+    if !bounces() {
+        assert!(lowest >= -1e-6, "no soft stop ({lowest:.1})");
+        assert!(c.final_offset().abs() < 0.5);
+        return;
+    }
     assert!((-28.5..-5.0).contains(&lowest), "soft stop ({lowest:.1})");
     assert!(
         c.final_offset().abs() < 0.5,

@@ -75,12 +75,11 @@ pub fn resolve(key: &Key, mods: ModifiersState, repeat: bool, ctx: Ctx) -> Optio
         {
             return Some(Action::Player(PlayerKey::Space));
         }
+        // One rule with the system's media keys (`PlaybackHub`): next is the next episode, previous does nothing.
         Key::Named(NamedKey::MediaTrackNext) if ctx.player_open => {
-            return Some(Action::Player(PlayerKey::Right));
+            return Some(Action::Player(PlayerKey::NextEpisode));
         }
-        Key::Named(NamedKey::MediaTrackPrevious) if ctx.player_open => {
-            return Some(Action::Player(PlayerKey::Left));
-        }
+        Key::Named(NamedKey::MediaTrackPrevious) if ctx.player_open => return None,
         _ => {}
     }
     if shortcut_held(mods) && !mods.alt_key() {
@@ -114,8 +113,10 @@ pub fn resolve(key: &Key, mods: ModifiersState, repeat: bool, ctx: Ctx) -> Optio
         Key::Named(NamedKey::ArrowRight) => Some(Action::Player(PlayerKey::Right)),
         Key::Named(NamedKey::ArrowUp) => Some(Action::Player(PlayerKey::Up)),
         Key::Named(NamedKey::ArrowDown) => Some(Action::Player(PlayerKey::Down)),
+        // Return starts the offer that is showing (`PlayerScreen.swift:656`).
+        Key::Named(NamedKey::Enter) if !repeat => Some(Action::Player(PlayerKey::Enter)),
         Key::Character(c) => match c.to_lowercase().as_str() {
-            m @ ("f" | "t" | "m" | "g" | "h" | "j" | "k" | "+" | "=" | "-") if !repeat => m
+            m @ ("f" | "t" | "m" | "g" | "h" | "j" | "k") if !repeat => m
                 .chars()
                 .next()
                 .map(|ch| Action::Player(PlayerKey::Char(ch))),
@@ -123,6 +124,36 @@ pub fn resolve(key: &Key, mods: ModifiersState, repeat: bool, ctx: Ctx) -> Optio
         },
         _ => None,
     }
+}
+
+/// Corner radius of the window outline in points on Linux, where a frameless window has no corners of its own: the radius
+/// of KDE's Breeze window decoration, so the window is as round as every other KDE window (Dolphin, Spotify, Discord) and
+/// not as round as a Mac window. Measured on the real KDE desktop at scale 1.5 (alpha of a window capture, circle fit of
+/// the four corners): Dolphin 8.6 to 9.5 device pixels = 5.7 to 6.3 pt, against 11.2 to 11.5 for this window at the
+/// former 8 pt. Breeze has no setting for it (no key in `breezerc` or the decoration's config), so the measured 6 pt is
+/// the value. Windows 11 keeps the radius DWM gives the window (8 px at 100 %, asked for with `CornerPreference::Round`).
+pub const WINDOW_CORNER_PT: f32 = 6.0;
+
+/// The corner radius in device pixels for a window at `scale`: none when it fills the screen (fullscreen or maximised) or
+/// the platform draws the corners itself (anything but Linux).
+pub fn window_corner_px(scale: f32, fullscreen: bool, maximized: bool) -> f32 {
+    if cfg!(target_os = "linux") && !fullscreen && !maximized {
+        (WINDOW_CORNER_PT * scale).round()
+    } else {
+        0.0
+    }
+}
+
+/// Whether a `Resized` event needs no frame of its own: the window is already at the size and scale of the last frame
+/// (an earlier event of the same drag was drawn for it). A scale change always draws.
+pub fn resize_is_stale(
+    window_px: (u32, u32),
+    drawn_px: (u32, u32),
+    scale: f32,
+    drawn_scale: f32,
+    scale_event: bool,
+) -> bool {
+    !scale_event && window_px == drawn_px && (scale - drawn_scale).abs() <= f32::EPSILON
 }
 
 /// The fullscreen state to ask for when toggling from `current`.
@@ -134,15 +165,83 @@ pub fn toggled(current: Option<Fullscreen>) -> Option<Fullscreen> {
     }
 }
 
+/// One window call of a fullscreen change.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FullscreenStep {
+    /// Leave the maximised state (before going fullscreen).
+    Unmaximize,
+    /// Borderless fullscreen on the current monitor.
+    Enter,
+    /// Back to a normal window.
+    Leave,
+    /// Maximise again (after leaving fullscreen).
+    Maximize,
+}
+
+/// Whether the window was maximised when it went fullscreen, so leaving can maximise it again.
+static MAXIMIZED_BEFORE_FULLSCREEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// The window calls that enter (`on`) or leave fullscreen, and whether to remember "was maximised" afterwards.
+///
+/// On Windows a window that stays maximised under fullscreen keeps `WS_MAXIMIZE`, and its client area is then cut to the
+/// monitor's work area (the taskbar stays out of it): 1280x752 content in a 1280x800 window, with a grey strip at the
+/// bottom, and leaving fullscreen lands on the full monitor under the taskbar. So fullscreen starts from a normal
+/// window and leaving maximises again.
+pub fn fullscreen_steps(
+    on: bool,
+    maximized: bool,
+    was_maximized: bool,
+    windows: bool,
+) -> (Vec<FullscreenStep>, bool) {
+    if on {
+        if windows && maximized {
+            (
+                vec![FullscreenStep::Unmaximize, FullscreenStep::Enter],
+                true,
+            )
+        } else {
+            (vec![FullscreenStep::Enter], false)
+        }
+    } else if windows && was_maximized {
+        (vec![FullscreenStep::Leave, FullscreenStep::Maximize], false)
+    } else {
+        (vec![FullscreenStep::Leave], false)
+    }
+}
+
+/// Enters or leaves fullscreen (the one place that does it; the previous maximised state is restored on the way out).
+pub fn set_fullscreen(window: &Window, on: bool) {
+    use std::sync::atomic::Ordering::Relaxed;
+    if on == window.fullscreen().is_some() {
+        return;
+    }
+    let (steps, remember) = fullscreen_steps(
+        on,
+        window.is_maximized(),
+        MAXIMIZED_BEFORE_FULLSCREEN.load(Relaxed),
+        cfg!(target_os = "windows"),
+    );
+    MAXIMIZED_BEFORE_FULLSCREEN.store(remember, Relaxed);
+    for step in steps {
+        match step {
+            FullscreenStep::Unmaximize => window.set_maximized(false),
+            FullscreenStep::Enter => window.set_fullscreen(Some(Fullscreen::Borderless(None))),
+            FullscreenStep::Leave => window.set_fullscreen(None),
+            FullscreenStep::Maximize => window.set_maximized(true),
+        }
+    }
+}
+
 /// Carries out an action. Returns whether it was used (a redraw is due).
 pub fn apply(action: Action, window: &Window, shell: &mut Shell, now: f64) -> bool {
     match action {
         Action::ToggleFullscreen => {
-            window.set_fullscreen(toggled(window.fullscreen()));
+            set_fullscreen(window, window.fullscreen().is_none());
             true
         }
         Action::LeaveFullscreen => {
-            window.set_fullscreen(None);
+            set_fullscreen(window, false);
             true
         }
         Action::Tab(n) => shell.goto_tab(n, now),
@@ -154,7 +253,70 @@ pub fn apply(action: Action, window: &Window, shell: &mut Shell, now: f64) -> bo
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fullscreen_from_a_maximised_windows_window_starts_normal_and_leaving_maximises_again() {
+        use FullscreenStep::*;
+        assert_eq!(
+            fullscreen_steps(true, true, false, true),
+            (vec![Unmaximize, Enter], true)
+        );
+        assert_eq!(
+            fullscreen_steps(false, false, true, true),
+            (vec![Leave, Maximize], false)
+        );
+        // A normal window, or another platform, only toggles.
+        assert_eq!(
+            fullscreen_steps(true, false, false, true),
+            (vec![Enter], false)
+        );
+        assert_eq!(
+            fullscreen_steps(true, true, false, false),
+            (vec![Enter], false)
+        );
+        assert_eq!(
+            fullscreen_steps(false, false, true, false),
+            (vec![Leave], false)
+        );
+    }
+
+    #[test]
+    fn a_resize_event_for_a_size_already_drawn_gets_no_frame() {
+        assert!(resize_is_stale((1600, 900), (1600, 900), 1.5, 1.5, false));
+        assert!(!resize_is_stale((1604, 900), (1600, 900), 1.5, 1.5, false));
+        assert!(!resize_is_stale((1600, 900), (1600, 900), 2.0, 1.5, false));
+        assert!(!resize_is_stale((1600, 900), (1600, 900), 1.5, 1.5, true));
+    }
+
+    #[test]
+    fn linux_windows_are_rounded_unless_they_fill_the_screen() {
+        let linux = cfg!(target_os = "linux");
+        assert_eq!(window_corner_px(1.5, false, false) > 0.0, linux);
+        assert_eq!(
+            window_corner_px(1.5, false, false),
+            if linux { 9.0 } else { 0.0 }
+        );
+        assert_eq!(window_corner_px(1.5, true, false), 0.0);
+        assert_eq!(window_corner_px(1.5, false, true), 0.0);
+    }
+
     use super::*;
+
+    /// The Breeze radius is 6 pt: 6 px at scale 1, 9 at 1.5, 12 at 2. Windows 11 rounds the window itself (DWM, 8 px at
+    /// 100 %), so the renderer cuts nothing there; macOS never reaches this code.
+    #[test]
+    fn the_window_corner_is_the_breeze_radius_on_linux_and_dwm_s_own_on_windows() {
+        let (one, one_and_a_half, two) = (
+            window_corner_px(1.0, false, false),
+            window_corner_px(1.5, false, false),
+            window_corner_px(2.0, false, false),
+        );
+        if cfg!(target_os = "linux") {
+            assert_eq!((one, one_and_a_half, two), (6.0, 9.0, 12.0));
+        } else {
+            assert_eq!((one, one_and_a_half, two), (0.0, 0.0, 0.0));
+        }
+        assert!((WINDOW_CORNER_PT - 6.0).abs() < f32::EPSILON);
+    }
 
     const PLAYER: Ctx = Ctx {
         fullscreen: false,
@@ -302,10 +464,8 @@ mod tests {
             resolve(&ch("t"), none, false, PLAYER),
             Some(Action::Player(PlayerKey::Char('t')))
         );
-        assert_eq!(
-            resolve(&ch("-"), none, false, PLAYER),
-            Some(Action::Player(PlayerKey::Char('-')))
-        );
+        // The Mac's player has no key for "+", "=" or "-".
+        assert_eq!(resolve(&ch("-"), none, false, PLAYER), None);
         assert_eq!(resolve(&ch("m"), none, false, APP), None);
     }
 
@@ -320,7 +480,14 @@ mod tests {
         let n = Key::Named(NamedKey::MediaTrackNext);
         assert_eq!(
             resolve(&n, ModifiersState::empty(), false, PLAYER),
-            Some(Action::Player(PlayerKey::Right))
+            Some(Action::Player(PlayerKey::NextEpisode))
+        );
+        let p = Key::Named(NamedKey::MediaTrackPrevious);
+        assert_eq!(resolve(&p, ModifiersState::empty(), false, PLAYER), None);
+        let r = Key::Named(NamedKey::Enter);
+        assert_eq!(
+            resolve(&r, ModifiersState::empty(), false, PLAYER),
+            Some(Action::Player(PlayerKey::Enter))
         );
     }
 

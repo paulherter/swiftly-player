@@ -19308,13 +19308,6 @@ public protocol SeriesVmProtocol: AnyObject, Sendable {
     func itemJson(id: String?)  -> String?
     
     /**
-     * Remembers the version that plays now (`MediaSource` JSON, e.g. the player's source) so the next
-     * episode keeps it: same name, else same resolution, else the version is asked for again. Picks made
-     * through `play_episode`/`play_next` are remembered by themselves. `None` or bad JSON forgets.
-     */
-    func keepVersion(sourceJson: String?) 
-    
-    /**
      * The episode list's shared load state (additive to `episodes().status`).
      */
     func load()  -> LoadPart
@@ -19483,20 +19476,6 @@ open func itemJson(id: String?) -> String?  {
         FfiConverterOptionString.lower(id),uniffiCallStatus
     )
 })
-}
-    
-    /**
-     * Remembers the version that plays now (`MediaSource` JSON, e.g. the player's source) so the next
-     * episode keeps it: same name, else same resolution, else the version is asked for again. Picks made
-     * through `play_episode`/`play_next` are remembered by themselves. `None` or bad JSON forgets.
-     */
-open func keepVersion(sourceJson: String?)  {try! rustCall() {
-        uniffiCallStatus in
-    uniffi_swiftly_uniffi_fn_method_seriesvm_keep_version(
-            self.uniffiCloneHandle(),
-        FfiConverterOptionString.lower(sourceJson),uniffiCallStatus
-    )
-}
 }
     
     /**
@@ -60570,9 +60549,6 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_seriesvm_item_json() != 4966) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_swiftly_uniffi_checksum_method_seriesvm_keep_version() != 42789) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_seriesvm_load() != 12577) {

@@ -20,8 +20,6 @@ pub enum Command {
     Scroll(swiftly_ui::shortcuts::ScrollKey),
     /// The Delete key with no text field focused: removes the selected downloads in edit mode.
     Delete,
-    /// Typing with nothing focused: the text that should open the search (the Mac's type-to-search).
-    TypeToSearch(String),
 }
 
 /// An IME event as the shell sees it (mapped from winit's `Ime`).
@@ -178,6 +176,11 @@ impl Shell {
         self.primary_button(false, now + 30.0);
     }
 
+    /// Fills the image page (see `Suite::fill_image_page`); how many blocks fitted.
+    pub fn fill_image_page(&self) -> usize {
+        self.suite.as_ref().map_or(0, |s| s.fill_image_page())
+    }
+
     /// The window fullscreen state, for the player.
     pub fn set_fullscreen(&mut self, on: bool) {
         if let Some(s) = &mut self.suite {
@@ -212,6 +215,13 @@ impl Shell {
     /// A key of the player (Space, arrows, letters); `false` when no player is open or the key is not used.
     pub fn player_key(&mut self, key: crate::player_screen::PlayerKey, now: f64) -> bool {
         self.suite.as_mut().is_some_and(|s| s.player_key(key, now))
+    }
+
+    /// The window is closing: a running player pauses and reports position and stop first. Whether one was open.
+    pub fn window_closing(&mut self, now: f64) -> bool {
+        self.suite
+            .as_mut()
+            .is_some_and(|s| s.player_window_closing(now))
     }
 
     /// What the system's media widgets show (`None` when no player plays).
@@ -401,6 +411,11 @@ impl Shell {
         self.suite.as_mut().and_then(|s| s.take_window_action())
     }
 
+    /// The window action the last input asked for, left in place.
+    pub fn peek_window_action(&self) -> Option<crate::desk::WinAction> {
+        self.suite.as_ref().and_then(|s| s.peek_window_action())
+    }
+
     /// The window is (no longer) maximised.
     pub fn set_maximized(&mut self, on: bool) {
         if let Some(s) = &mut self.suite {
@@ -492,7 +507,7 @@ impl Shell {
             let ms = swiftly_motion::ScrollTuning::for_os(swiftly_motion::Os::current())
                 .notch_smoothing_ms;
             // Windows also delivers a precision touchpad (and its OS inertia) as fractional wheel lines. That stream is
-            // already shaped by the OS: apply it 1:1, with the rubber band, and never smooth it a second time.
+            // already shaped by the OS: apply it 1:1, clamped (no rubber band on Windows or Linux), and never smooth it a second time.
             if self.is_precise(dx, dy, now) {
                 self.notch.0.cancel();
                 self.notch.1.cancel();
@@ -522,7 +537,8 @@ impl Shell {
     /// (WHEEL_DELTA 120 = 1.0), a touchpad sends fractions. The OS inertia that follows a swipe can land on whole numbers
     /// now and then, so the mode holds for a short while after the last fraction.
     fn is_precise(&mut self, dx: f32, dy: f32, now: f64) -> bool {
-        let fractional = |v: f32| (v - v.round()).abs() > 0.01;
+        // A tail below one hundredth of a line rounds to a whole 0 but is no notch either: only a plain wheel sends whole lines.
+        let fractional = |v: f32| v != 0.0 && ((v - v.round()).abs() > 0.01 || v.abs() < 0.5);
         if fractional(dx) || fractional(dy) {
             self.precise_until = now + 250.0;
         }
@@ -564,10 +580,6 @@ impl Shell {
             Command::Forward => self.suite.as_mut().is_some_and(|s| s.forward(now)),
             Command::Scroll(k) => self.suite.as_mut().is_some_and(|s| s.scroll_key(k, now)),
             Command::Delete => self.suite.as_mut().is_some_and(|s| s.delete_key(now)),
-            Command::TypeToSearch(t) => self
-                .suite
-                .as_mut()
-                .is_some_and(|s| s.type_to_search(&t, now)),
         }
     }
 

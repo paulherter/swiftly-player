@@ -44,6 +44,7 @@ mod real {
                 MediaEvent::Skip(*d == SeekDirection::Forward)
             }
             MediaControlEvent::SetPosition(MediaPosition(p)) => MediaEvent::SeekTo(p.as_secs_f64()),
+            MediaControlEvent::SetRate(r) => MediaEvent::SetRate(*r),
             _ => return None,
         })
     }
@@ -73,6 +74,9 @@ mod real {
                     }
                 })
                 .ok()?;
+            // The speeds the player offers (MPRIS `MinimumRate`/`MaximumRate`).
+            let (lo, hi) = crate::media_keys::tempo_range();
+            let _ = controls.set_rate_range(lo, hi);
             Some(OsMedia {
                 controls,
                 queue,
@@ -83,11 +87,12 @@ mod real {
 
     impl SystemMedia for OsMedia {
         fn set_metadata(&mut self, meta: &Metadata) {
-            let subtitle = (!meta.subtitle.is_empty()).then_some(meta.subtitle.as_str());
+            let track = crate::media_keys::track_path(&meta.item_id);
             let _ = self.controls.set_metadata(MediaMetadata {
+                track_id: Some(&track),
                 title: Some(&meta.title),
-                album: None,
-                artist: subtitle,
+                album: meta.album.as_deref(),
+                artist: meta.artist.as_deref(),
                 cover_url: meta.cover_url.as_deref(),
                 duration: meta
                     .duration_s
@@ -103,6 +108,12 @@ mod real {
                 PlaybackState::Paused => MediaPlayback::Paused { progress },
                 PlaybackState::Playing => MediaPlayback::Playing { progress },
             });
+        }
+        fn set_rate(&mut self, rate: f64) {
+            let _ = self.controls.set_rate(rate);
+        }
+        fn set_navigation(&mut self, next: bool, previous: bool) {
+            let _ = self.controls.set_navigation(next, previous);
         }
         fn clear(&mut self) {
             let _ = self.controls.set_playback(MediaPlayback::Stopped);
@@ -140,6 +151,10 @@ mod real {
             assert_eq!(
                 event_of(&MediaControlEvent::SetPosition(MediaPosition(ms(90)))),
                 Some(MediaEvent::SeekTo(90.0))
+            );
+            assert_eq!(
+                event_of(&MediaControlEvent::SetRate(1.5)),
+                Some(MediaEvent::SetRate(1.5))
             );
             assert_eq!(event_of(&MediaControlEvent::SetVolume(0.5)), None);
             assert_eq!(event_of(&MediaControlEvent::Raise), None);
@@ -193,6 +208,8 @@ impl OsMedia {
 impl SystemMedia for OsMedia {
     fn set_metadata(&mut self, _meta: &Metadata) {}
     fn set_playback(&mut self, _state: PlaybackState, _position_s: f64) {}
+    fn set_rate(&mut self, _rate: f64) {}
+    fn set_navigation(&mut self, _next: bool, _previous: bool) {}
     fn clear(&mut self) {}
     fn poll_events(&mut self) -> Vec<MediaEvent> {
         Vec::new()

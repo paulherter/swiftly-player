@@ -161,8 +161,10 @@ pub enum PlayerIntent {
     ScrubEnd(f64),
     /// Tap on the picture.
     ToggleControls,
-    /// Any activity that keeps the controls up.
+    /// Any activity that keeps the controls up (click, key, button): it cancels a running "Next episode" card.
     WakeControls,
+    /// Pointer movement that brings the controls up (`controlsShow(through: .beside)`): the card keeps running.
+    WakeControlsBeside,
     /// Opens or closes a panel.
     Layer(Option<PlayerLayer>),
     /// Audio track by server index.
@@ -187,6 +189,8 @@ pub enum PlayerIntent {
     Sleep(Option<u32>),
     /// The press on the skip button / next-episode card.
     PressOffering,
+    /// The click on the next-episode card: starts the next episode from the card (it zooms over the switch).
+    PressCard,
     /// Back (Esc/Menu): closes the card, then a layer, then the controls, then the player.
     Back2,
     /// Next episode now.
@@ -897,6 +901,11 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
                 EngineEvent::State(EngineState::Ended) => {
                     l.ended = true;
                     l.stage = l.stage.reduce(StageEvent::Ended);
+                    // The last title stays open on its last frame, so its bar must be there to replay or close (the bar
+                    // may have faded while it played; it never fades again once the engine is not running).
+                    if l.spec.next.is_none() && !l.controls {
+                        Self::set_controls(l, true, now, Opening::Beside);
+                    }
                 }
                 EngineEvent::Tracks { audio, .. } if !audio.is_empty() => {
                     l.has_audio_tracks = true;
@@ -992,6 +1001,10 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
             }
             match c {
                 Command::Running(go) => {
+                    // The button follows the engine's own report (the Mac's `runsDisplay`), not the next tick.
+                    if l.snap.first_image_present {
+                        l.snap.running = go;
+                    }
                     if go {
                         l.paused_since = None;
                     } else {
@@ -1205,7 +1218,10 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
             && SectionLogic::card_due(p, d, &l.sections, has_next, window);
         let running = l.snap.running && l.snap.first_image_present && !l.at_push;
         let countdown = SectionLogic::countdown_with_sections(p, d, &l.sections, window);
-        let at_end = episodes_end::at_end(p, d) && !l.at_push;
+        // A clip under a minute is no "end of file" for the long-file rules, but once the engine reports the end
+        // the card must finish its countdown all the same, or it would stay on screen forever.
+        let ended_short = l.ended && d > 0.0 && p >= d - 1.0;
+        let at_end = (episodes_end::at_end(p, d) || ended_short) && !l.at_push;
         let offering = Self::offering(l);
         l.layer
             .tick(offering, card_due, running, elapsed, countdown, at_end)
@@ -1372,7 +1388,7 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
 
     // MARK: Intents
 
-    fn set_controls(l: &mut Live, visible: bool, now: f64) {
+    fn set_controls(l: &mut Live, visible: bool, now: f64, through: Opening) {
         l.controls = visible;
         l.hide_at = visible.then_some(now + CONTROLS_HIDE);
         l.controls_state = l.controls_state.reduce(if visible {
@@ -1380,7 +1396,7 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
         } else {
             ControlsEvent::Hide { now }
         });
-        l.layer.controls(visible, Opening::Deliberate);
+        l.layer.controls(visible, through);
     }
 
     fn resume(&self, l: &mut Live, now: f64) {
@@ -1455,9 +1471,10 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
             }
             PlayerIntent::ToggleControls => {
                 let v = !l.controls;
-                Self::set_controls(l, v, now);
+                Self::set_controls(l, v, now, Opening::Deliberate);
             }
-            PlayerIntent::WakeControls => Self::set_controls(l, true, now),
+            PlayerIntent::WakeControls => Self::set_controls(l, true, now, Opening::Deliberate),
+            PlayerIntent::WakeControlsBeside => Self::set_controls(l, true, now, Opening::Beside),
             PlayerIntent::Layer(layer) => {
                 l.open_layer = layer;
                 if layer.is_none() {
@@ -1545,12 +1562,12 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
             PlayerIntent::Mute => {
                 let p = l.extra.volume.toggle_mute();
                 self.set_volume(l, p, now);
-                Self::set_controls(l, true, now);
+                Self::set_controls(l, true, now, Opening::Deliberate);
             }
             PlayerIntent::VolumeStep(step) => {
                 let p = l.extra.volume.step(step);
                 self.set_volume(l, p, now);
-                Self::set_controls(l, true, now);
+                Self::set_controls(l, true, now, Opening::Deliberate);
             }
             PlayerIntent::StreamLook(reading) => {
                 let sample = PlayerExtra::sample(
@@ -1596,12 +1613,18 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
                 l.sleep = m.map(|m| (m, now + f64::from(m) * 60.0));
             }
             PlayerIntent::PressOffering => self.press_offering(l, now),
+            PlayerIntent::PressCard => {
+                l.layer.pressed();
+                if l.group.is_none() && l.spec.next.is_some() {
+                    self.start_episode(l, true, now);
+                }
+            }
             PlayerIntent::Back2 => {
                 if l.layer.close() {
                 } else if l.open_layer.is_some() {
                     l.open_layer = None;
                 } else if l.controls {
-                    Self::set_controls(l, false, now);
+                    Self::set_controls(l, false, now, Opening::Deliberate);
                 } else {
                     self.close(l, now);
                 }

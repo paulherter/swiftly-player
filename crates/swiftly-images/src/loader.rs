@@ -12,9 +12,24 @@ use crate::tone::{ToneCache, tones_from_rgba};
 use futures_executor::ThreadPool;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use swiftly_net::{HttpRequest, HttpTransport, Method};
 use url::Url;
+
+/// What the window shell wants called whenever a load finishes (its redraw request): without it a picture that lands
+/// while the app is idle stays unseen until the next input event.
+static ARRIVAL_WAKER: OnceLock<Arc<dyn Fn() + Send + Sync>> = OnceLock::new();
+
+/// Registers the call made after every finished load (once per process; the first registration stays).
+pub fn set_arrival_waker(wake: Arc<dyn Fn() + Send + Sync>) {
+    let _ = ARRIVAL_WAKER.set(wake);
+}
+
+fn wake_arrival() {
+    if let Some(wake) = ARRIVAL_WAKER.get() {
+        wake();
+    }
+}
 
 /// Requests in flight at once (`ImageCache.concurrent`).
 pub const FETCH_AT_ONCE: usize = 4;
@@ -462,6 +477,7 @@ impl<T: HttpTransport + 'static> ImageLoader<T> {
 
     async fn run(&self, mut job: Job) {
         let outcome = self.work(&job).await;
+        let mut arrived = false;
         let mut s = lock(&self.shared.state);
         s.running.remove(&job.key);
         if let Some(result) = outcome {
@@ -469,6 +485,7 @@ impl<T: HttpTransport + 'static> ImageLoader<T> {
                 s.stats.cancelled += 1;
             } else {
                 s.done.push((job.key.clone(), result));
+                arrived = true;
             }
         } else if Self::cancelled(&job) {
             s.stats.cancelled += 1;
@@ -487,6 +504,10 @@ impl<T: HttpTransport + 'static> ImageLoader<T> {
         }
         self.pump(&mut s);
         self.shared.changed.notify_all();
+        drop(s);
+        if arrived {
+            wake_arrival();
+        }
     }
 
     /// `None` when cancelled before a result existed.

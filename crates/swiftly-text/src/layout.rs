@@ -200,12 +200,27 @@ fn convert_height(h: LineHeight, size: f32) -> PLineHeight {
     }
 }
 
+/// True when `text` has a pictograph of the supplementary emoji planes (U+1F000 and up: faces, objects, flags) or an
+/// emoji variation selector (U+FE0F). Plain symbols of the BMP stay on the ordinary fallback.
+fn has_emoji(text: &str) -> bool {
+    text.chars().any(|c| c as u32 >= 0x1F000 || c == '\u{FE0F}')
+}
+
 impl FontSystem {
     fn build(&mut self, text: &str, style: &TextStyle, wrap_anywhere: bool) -> Layout<()> {
-        let family = [
+        // Text with emoji asks the system emoji font right after Inter: the sans-serif fallback of a machine may own
+        // monochrome outlines of some pictographs (Noto Sans Symbols 2 has a few) and would win otherwise. Text without
+        // emoji keeps the two-family list, so ordinary text resolves exactly as before.
+        let with_emoji = [
+            FontFamilyName::Named(Cow::Owned(self.primary.clone())),
+            FontFamilyName::Generic(GenericFamily::Emoji),
+            FontFamilyName::Generic(GenericFamily::SansSerif),
+        ];
+        let plain = [
             FontFamilyName::Named(Cow::Owned(self.primary.clone())),
             FontFamilyName::Generic(GenericFamily::SansSerif),
         ];
+        let family: &[FontFamilyName<'_>] = if has_emoji(text) { &with_emoji } else { &plain };
         // Automatic optical size = the point size (as Core Text does); the font clamps it to its axis (14 to 32).
         let optical = [FontVariation::new(
             Tag::new(b"opsz"),
@@ -215,7 +230,7 @@ impl FontSystem {
             .layout_cx
             .ranged_builder(&mut self.font_cx, text, 1.0, false);
         b.push_default(StyleProperty::FontFamily(FontFamily::List(Cow::Borrowed(
-            &family,
+            family,
         ))));
         b.push_default(StyleProperty::FontSize(style.size));
         b.push_default(StyleProperty::FontWeight(FontWeight::new(f32::from(

@@ -105,3 +105,36 @@ fn series_shows_real_pictures() {
     assert!(n >= 1, "series pictures: {n}");
     assert_eq!(stale, 0);
 }
+
+/// The mood backdrop of a series page is built from the hero picture's hues. They arrive after the page was built; the
+/// page must pick them up then (it did only when something else changed the page, so at a small window the backdrop was
+/// missing in most runs). Counts tinted pixels of the page ground beside the content.
+#[test]
+fn series_mood_backdrop_appears_when_the_hues_arrive_late() {
+    let cx = Cx::deterministic().with_image_page(4096);
+    let h = hub(&cx);
+    let env = Env::new(Size::new(1280.0, 600.0), 1.0, Idiom::Desktop);
+    let mut s = SeriesScreen::new(env, cx, Scenario::Ready).with_images(Rc::clone(&h));
+    s.open(0.0);
+    let mut now = 0.0;
+    // The page is built and has been quiet for a while before the picture arrives.
+    for _ in 0..30 {
+        now += STEP;
+        let _ = s.frame(now);
+    }
+    s.settle_images(now);
+    now += 600.0;
+    let (list, _) = s.frame(now);
+    let img = s.render_software(&list);
+    let mut tinted = 0;
+    for y in (330..590).step_by(4) {
+        for x in (700..1270).step_by(4) {
+            let p = img.pixel(x, y);
+            tinted += usize::from(p[0].abs_diff(p[2]) >= 4 || p[1].abs_diff(p[2]) >= 4);
+        }
+    }
+    assert!(
+        tinted > 100,
+        "no mood colour on the page ({tinted} tinted samples)"
+    );
+}

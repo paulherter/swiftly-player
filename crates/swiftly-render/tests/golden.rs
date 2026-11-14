@@ -198,3 +198,22 @@ fn bench_5k_quads() {
         t.elapsed().as_secs_f64() * 1000.0 / runs as f64
     );
 }
+
+#[test]
+fn the_bars_around_a_video_are_black_whatever_the_ground_colour() {
+    let Some(ctx) = gpu() else { return };
+    let mut renderer = WgpuRenderer::new(&ctx, wgpu::TextureFormat::Rgba8Unorm).unwrap();
+    let list = swiftly_render::DrawList::new(64.0, 64.0, 1.0);
+    let grey = swiftly_render::Color::new(0.0627451, 0.0627451, 0.0627451, 1.0);
+    let src = swiftly_render::Sources::default();
+    // Without a video the app's ground shows.
+    let img = renderer.render_to_image(&list, grey, &src).unwrap();
+    assert_eq!(img.pixel(32, 2)[0], 16, "ground colour without a video");
+    // A 64 x 16 white frame in a 64 x 64 target: bars above and below, black.
+    renderer.upload_video(64, 16, &[255; 64 * 16 * 4], swiftly_render::VideoFit::Fit);
+    let img = renderer.render_to_image(&list, grey, &src).unwrap();
+    assert_eq!(img.pixel(32, 32)[0], 255, "the picture");
+    for y in [1, 10, 52, 62] {
+        assert_eq!(&img.pixel(32, y)[..3], &[0, 0, 0], "bar at row {y}");
+    }
+}

@@ -227,3 +227,70 @@ pub fn answer(path: &str) -> Option<String> {
         _ => return None,
     })
 }
+
+// ---- plex.tv (live sign-in runs) ---------------------------------------------------------------------------------
+
+/// When the code was made; the account "confirms" it six seconds later, so a run can look at the waiting page first.
+static PIN_MADE: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+/// The two servers of the account; both address this fixture itself (`base`), so the sign-in ends on a server that answers.
+fn resources(base: &str) -> String {
+    let base = if base.is_empty() {
+        "http://127.0.0.1:9"
+    } else {
+        base
+    };
+    format!(
+        r#"[{{"clientIdentifier":"plexfx","name":"Wohnzimmer","provides":"server","owned":true,"presence":true,"connections":[{{"uri":"{base}","local":true}}]}},{{"clientIdentifier":"m2","name":"Kino","provides":"server","owned":false,"sourceTitle":"Oma","presence":true,"connections":[{{"uri":"{base}","local":false}}]}}]"#
+    )
+}
+
+/// The plex.tv routes the desktop sign-in asks (`SWIFTLY_PLEX_FIXTURE` points every Plex host at this server): the code
+/// (`expiresIn` 900), the confirmation, the Home profiles (Mama has a PIN, "1234"), the profile switch and two servers.
+pub(crate) fn account(method: &str, path: &str) -> Option<Reply> {
+    let json = |s: &str| Some(Reply(200, "application/json", s.as_bytes().to_vec()));
+    match (method, path) {
+        ("POST", "/api/v2/pins") => {
+            *PIN_MADE.lock().ok()? = Some(std::time::Instant::now());
+            json(r#"{"id":7,"code":"K7QMXXXX","expiresIn":900}"#)
+        }
+        ("GET", "/api/v2/pins/7") => {
+            let ready = PIN_MADE
+                .lock()
+                .ok()?
+                .is_some_and(|t| t.elapsed() >= std::time::Duration::from_secs(6));
+            json(if ready {
+                r#"{"id":7,"code":"K7QMXXXX","expiresIn":900,"authToken":"acct-token"}"#
+            } else {
+                r#"{"id":7,"code":"K7QMXXXX","expiresIn":900}"#
+            })
+        }
+        ("GET", "/api/v2/user") => {
+            json(r#"{"id":1,"uuid":"u1","title":"paul@plex.test","username":"paul"}"#)
+        }
+        ("GET", "/api/v2/home/users") => {
+            let base = std::env::var("SWIFTLY_PLEX_FIXTURE").unwrap_or_default();
+            json(&format!(
+                r#"{{"users":[{{"id":"1","uuid":"u1","title":"Paul","protected":false,"admin":true,"thumb":"{base}/Users/u1/Images/Primary"}},{{"id":"2","uuid":"u2","title":"Mama","protected":true}}]}}"#
+            ))
+        }
+        ("POST", p) if p.starts_with("/api/v2/home/users/") && p.ends_with("/switch") => {
+            json(r#"{"authToken":"mama-token"}"#)
+        }
+        ("GET", "/api/v2/resources") => {
+            let base = std::env::var("SWIFTLY_PLEX_FIXTURE").unwrap_or_default();
+            json(&resources(&base))
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_sign_in_servers_point_at_the_fixture_itself() {
+        let list = super::resources("http://127.0.0.1:4242");
+        assert_eq!(list.matches("http://127.0.0.1:4242").count(), 2, "{list}");
+        assert!(!list.contains("127.0.0.1:9\""), "{list}");
+    }
+}

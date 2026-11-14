@@ -236,6 +236,10 @@ struct MainView: View {
         }
         .onDisappear { takeover.finish() }
         #if DEBUG
+        // `-SwiftlyLiveTakeover`: the model taps the badge once; here that is the sidebar badge's action.
+        .modifier(LiveBadgeTap(tapped: takeover.tapped) { takeover.tapped = false; badgePressed() })
+        #endif
+        #if DEBUG
         .task { LiveRun.start(model, open: { controls.wish = $0 }, close: { controls.close() }) }
         #endif
         // **The card grows out of the badge** (as on iPhone): instead of fading in mid-window
@@ -1072,3 +1076,14 @@ struct ProfileRow: View {
 
 }
 
+
+#if DEBUG
+/// Runs `press` when the takeover model's `tapped` flag turns on (the Debug launch argument `-SwiftlyLiveTakeover`).
+private struct LiveBadgeTap: ViewModifier {
+    let tapped: Bool
+    let press: () -> Void
+    func body(content: Content) -> some View {
+        content.onChange(of: tapped) { _, an in if an { press() } }
+    }
+}
+#endif

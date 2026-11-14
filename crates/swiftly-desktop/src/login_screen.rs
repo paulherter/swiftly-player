@@ -9,8 +9,8 @@ use crate::login_mac::{self, Kind, Mac, PinState, PlexStep};
 use crate::signin_flows::{self, EmbyFound, PlexEvent};
 use std::rc::Rc;
 use swiftly_design::tokens::colour;
-use swiftly_jellyfin::QuickConnectDeadline;
 use swiftly_jellyfin::discovery::FoundServer;
+use swiftly_jellyfin::{QuickConnectDeadline, QuickConnectState, QuickConnectWait, WaitEvent};
 use swiftly_layout::{Align, Alignment};
 use swiftly_text::{TextEditor, TextInputEvent};
 use swiftly_ui::components::color;
@@ -24,6 +24,8 @@ pub enum Start {
     Address,
     /// The account list (switch account).
     Accounts,
+    /// Approve the code another device shows.
+    Share,
     /// The kind picker of the first start (desktop).
     Kind,
     /// The kind picker of "Server hinzufügen" (desktop).
@@ -49,6 +51,8 @@ pub enum Step {
     EmbyCredentials,
     /// The Plex steps (desktop, `Mac::plex`).
     Plex,
+    /// Approve the code another device shows (profile, "Quick Connect").
+    Share,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,6 +63,7 @@ pub(crate) enum Field {
     HName(usize),
     HValue(usize),
     Pin,
+    Share,
 }
 
 /// The code the scripted server hands out.
@@ -93,6 +98,7 @@ impl Parts {
             Field::HName(i) => self.mac.headers.get(i).map_or(&self.address, |h| &h.0),
             Field::HValue(i) => self.mac.headers.get(i).map_or(&self.address, |h| &h.1),
             Field::Pin => &self.mac.pin,
+            Field::Share => &self.mac.share_code,
         };
         value.clone()
     }
@@ -824,6 +830,10 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
         Step::Credentials => ("demo.swiftly.test", credentials_body(cx, &f, p, ctx)),
         Step::Quick => ("Quick Connect", quick_body(cx, &f, p)),
         Step::Accounts => ("Konto wechseln", accounts_body(cx, &f, p, ctx)),
+        Step::Share => (
+            "Quick Connect",
+            login_mac::share_rows(cx, &ctx.icons, &f, p),
+        ),
         Step::Kind | Step::EmbyAddress | Step::EmbyCredentials | Step::Plex => {
             ("Server hinzufügen", address_body(cx, &f, p, ctx))
         }
@@ -834,6 +844,8 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
 
 /// The sign-in flow and account switcher.
 pub struct LoginScreen {
+    /// The picture hub the shared frame hooks (the same slot as `Mac::hub`, which the pages draw their faces from).
+    hub: crate::hub::HubSlot,
     /// Every text field of the flow: one editor each, the keyboard in one of them (the shared field model).
     book: crate::field_book::FieldBook<Field>,
     cx: Cx,
@@ -841,7 +853,12 @@ pub struct LoginScreen {
     dragging: bool,
     ui: Ui<Parts>,
     p: Parts,
-    quick_since: Option<f64>,
+    /// The core's wait for the approval (`QuickConnectWait`): deadline on the clock, a failed question does not end it.
+    quick_wait: Option<QuickConnectWait>,
+    /// Seconds the tests let the wait run ahead.
+    quick_skew: f64,
+    /// Whether the server offers Quick Connect (`quickConnectOffered`), while the answer is on its way.
+    offered_rx: Option<Pending<bool>>,
     closed: bool,
     signed_in: Option<String>,
     switched: Option<usize>,
@@ -850,8 +867,6 @@ pub struct LoginScreen {
     /// The real server behind the flow (`None`: the scripted one of the demo).
     backend: Option<Rc<dyn SignInBackend>>,
     waiting: Option<Wait>,
-    /// When the last Quick Connect poll was sent.
-    last_poll: f64,
     /// The text the user asked to copy (the shell puts it on the clipboard).
     copy: Option<String>,
     /// When the current Plex step or Emby load began.
@@ -866,8 +881,14 @@ pub struct LoginScreen {
     plex_rx: Option<std::sync::mpsc::Receiver<PlexEvent>>,
     /// When the Plex wait began.
     plex_since: Option<f64>,
+    /// How long plex.tv lets the code live (seconds; the scripted demo and an answer without a figure use 300).
+    plex_total: u64,
     /// A page the shell should open in the browser.
     open: Option<String>,
+    /// The page of the running Plex sign-in ("Seite noch mal öffnen").
+    plex_url: Option<String>,
+    /// When the share was approved.
+    share_since: Option<f64>,
 }
 
 /// A result that arrives from a worker thread.
@@ -889,8 +910,19 @@ pub trait SignInBackend {
     fn password(&self, user: &str, password: &str) -> Pending<Result<String, String>>;
     /// Starts Quick Connect. Answer: the six-digit code.
     fn quick_start(&self) -> Pending<Result<String, String>>;
-    /// Asks whether the code was approved. Answer: `Some(user)` once signed in; an `Err` ends the wait.
-    fn quick_poll(&self) -> Pending<Result<Option<String>, String>>;
+    /// Asks whether the code was approved. A failed question is `Failed`; it does not end the wait.
+    fn quick_poll(&self) -> Pending<signin_flows::QuickAnswer>;
+    /// Whether the checked server has Quick Connect switched on (`quickConnectOffered`).
+    fn quick_offered(&self) -> Pending<bool> {
+        let (tx, rx) = Pending::channel();
+        let _ = tx.send(true);
+        rx
+    }
+    /// The addresses of the servers that already have an account (hidden from the "Im Netzwerk gefunden" list, like the
+    /// Mac's `ServerDiscovery.shown(found, except:)`).
+    fn known_servers(&self) -> Vec<String> {
+        Vec::new()
+    }
     /// Hands the typed "Erweitert" headers over before the next address check; the transport sends them to that server.
     fn set_headers(&self, _headers: &[(String, String)]) {}
     /// Servers found on the local network, round by round (all found so far). `None`: no discovery.
@@ -903,10 +935,20 @@ pub trait SignInBackend {
         let _ = tx.send(Err(signin_flows::EMBY_DOWN.to_owned()));
         rx
     }
+    /// The picture address of each user `emby_users` answered with (same order; `None`: no picture).
+    fn emby_user_pictures(&self) -> Vec<Option<String>> {
+        Vec::new()
+    }
     /// The user names of the Emby server ("Wer schaut?").
     fn emby_users(&self) -> Pending<Vec<String>> {
         let (tx, rx) = Pending::channel();
         let _ = tx.send(Vec::new());
+        rx
+    }
+    /// Approves the code another device shows with the signed-in account (`quickConnectShare`).
+    fn quick_share(&self, _code: &str) -> Pending<Result<(), String>> {
+        let (tx, rx) = Pending::channel();
+        let _ = tx.send(Err("Nicht angemeldet.".to_owned()));
         rx
     }
     /// Starts the Plex sign-in. The worker sends the page to open, then the profiles, or a failure.
@@ -935,10 +977,11 @@ enum Wait {
     Connect(Pending<Result<String, String>>),
     Password(Pending<Result<String, String>>),
     QuickStart(Pending<Result<String, String>>),
-    QuickPoll(Pending<Result<Option<String>, String>>),
+    QuickPoll(Pending<signin_flows::QuickAnswer>),
     EmbyConnect(Pending<Result<EmbyFound, String>>),
     PlexPick(Pending<Result<Vec<(String, String)>, String>>),
     PlexFinish(Pending<Result<String, String>>),
+    Share(Pending<Result<(), String>>),
 }
 
 impl LoginScreen {
@@ -956,6 +999,7 @@ impl LoginScreen {
         s.p.mac.version.clear();
         s.p.mac.found.clear();
         s.p.mac.users = None;
+        s.p.mac.quick_offered = false;
         s.p.mac.server_name.clear();
         s.p.accounts.clear();
         s.p.code = String::new();
@@ -964,12 +1008,27 @@ impl LoginScreen {
         s
     }
 
+    /// Shows the real pictures of the Emby users and Plex profiles through `hub` (without it only the initials show).
+    #[must_use]
+    pub fn with_images(mut self, hub: Rc<crate::hub::ImageHub>) -> Self {
+        crate::hub::HubSlotExt::attach(&self.p.mac.hub.0, hub);
+        self.sync();
+        self
+    }
+
     /// The flow as "Server hinzufügen" (the picker with its header; no change on touch and tv).
     #[must_use]
     pub fn into_add(mut self) -> LoginScreen {
         self.p.mac.add = true;
         self.sync();
         self
+    }
+
+    /// The page that approves the code another device shows, over a real server.
+    pub fn share(env: Env, cx: Cx, backend: Rc<dyn SignInBackend>) -> LoginScreen {
+        let mut s = LoginScreen::new(env, cx, Start::Share);
+        s.backend = Some(backend);
+        s
     }
 
     /// The account list over the stored accounts of the real app (`accounts`: name and server, `active` the one in use).
@@ -1020,6 +1079,8 @@ impl LoginScreen {
                     self.p.error = None;
                     self.p.step = Step::Credentials;
                     self.p.field = Field::User;
+                    self.p.mac.quick_offered = false;
+                    self.offered_rx = self.backend.as_ref().map(|b| b.quick_offered());
                 }
                 Err(e) => {
                     self.p.checking = false;
@@ -1040,8 +1101,9 @@ impl LoginScreen {
             Wait::QuickStart(rx) => match take!(rx, QuickStart) {
                 Ok(code) => {
                     self.p.code = code;
-                    self.quick_since = None;
-                    self.last_poll = f64::NEG_INFINITY;
+                    self.quick_wait = None;
+                    self.quick_skew = 0.0;
+                    self.p.left = QuickConnectDeadline::SECONDS;
                 }
                 Err(e) => self.p.error = Some(e),
             },
@@ -1066,6 +1128,8 @@ impl LoginScreen {
             Wait::PlexPick(rx) => match take!(rx, PlexPick) {
                 Ok(servers) => {
                     self.p.mac.servers = servers;
+                    self.p.mac.server_busy = None;
+                    self.p.mac.server_failed.clear();
                     self.p.mac.plex = PlexStep::Servers;
                     self.p.mac.pin.clear();
                     self.p.mac.pin_state = PinState::Idle;
@@ -1088,35 +1152,82 @@ impl LoginScreen {
                     self.signed_in = Some(name);
                     self.closed = true;
                 }
-                Err(e) => {
-                    self.p.mac.plex = PlexStep::Failed;
-                    self.p.error = Some(e);
+                Err(_) => {
+                    // The row says "Antwortet gerade nicht. Tipp für einen neuen Versuch."; the list stays.
+                    if let Some(i) = self.p.mac.server_busy.take()
+                        && !self.p.mac.server_failed.contains(&i)
+                    {
+                        self.p.mac.server_failed.push(i);
+                    }
                 }
             },
-            Wait::QuickPoll(rx) => match take!(rx, QuickPoll) {
-                Ok(Some(user)) => {
-                    self.signed_in = Some(user);
-                    self.closed = true;
-                }
-                Ok(None) => {}
-                Err(e) => self.p.error = Some(e),
+            Wait::Share(rx) => match take!(rx, Share) {
+                Ok(()) => self.p.mac.share = login_mac::ShareState::Done,
+                Err(e) => self.p.mac.share = login_mac::ShareState::Failed(e),
             },
+            Wait::QuickPoll(rx) => {
+                use signin_flows::QuickAnswer;
+                let answer = take!(rx, QuickPoll);
+                let state = match answer {
+                    QuickAnswer::Waiting => QuickConnectState::Opened,
+                    QuickAnswer::Failed => QuickConnectState::Failed,
+                    QuickAnswer::Expired => QuickConnectState::Expired,
+                    QuickAnswer::SignedIn(user) => {
+                        self.signed_in = Some(user);
+                        self.closed = true;
+                        QuickConnectState::Released
+                    }
+                    QuickAnswer::SignInFailed(text) => {
+                        self.p.error = Some(text);
+                        QuickConnectState::Released
+                    }
+                };
+                let event = self.quick_wait.as_mut().and_then(|w| w.answer(state));
+                if let Some(WaitEvent::End(last)) = event {
+                    self.quick_ended(last);
+                }
+            }
         }
         self.sync();
     }
 
-    /// Asks for the Quick Connect approval every two seconds while the code is shown.
+    /// The wait is over without approval (`QuickConnectDeadline.endText`): the counter stands at 0:00 and the sentence
+    /// is kept. The Mac window keeps the code on screen; the touch and tv pages show the sentence.
+    fn quick_ended(&mut self, last: QuickConnectState) {
+        self.p.left = 0;
+        let tr = swiftly_l10n::Translator::new(swiftly_l10n::Locale::parse("de"));
+        self.p.error = Some(swiftly_l10n::error_text::quick_connect_end_text(
+            &tr,
+            last == QuickConnectState::Failed,
+        ));
+    }
+
+    /// The Quick Connect wait of the core: counts the time left on the clock and asks every two seconds. A failed
+    /// question does not end it (`AccountsHost.quickWait`).
     fn poll_quick(&mut self, now: f64) {
-        let Some(b) = self.backend.clone() else {
-            return;
-        };
-        if self.p.step == Step::Quick
-            && self.waiting.is_none()
-            && !self.p.code.is_empty()
-            && self.p.error.is_none()
-            && now - self.last_poll >= QuickConnectDeadline::TICK as f64 * 1000.0
+        if let Some(rx) = &self.offered_rx
+            && let Ok(offered) = rx.0.try_recv()
         {
-            self.last_poll = now;
+            self.p.mac.quick_offered = offered;
+            self.offered_rx = None;
+        }
+        if self.p.step != Step::Quick || self.p.code.is_empty() {
+            return;
+        }
+        let secs = (now + self.quick_skew) / 1000.0;
+        let wait = self
+            .quick_wait
+            .get_or_insert_with(|| QuickConnectWait::start(secs));
+        let step = wait.tick(secs);
+        match step.event {
+            Some(WaitEvent::Rest(left)) => self.p.left = left.max(0) as u64,
+            Some(WaitEvent::End(last)) => self.quick_ended(last),
+            _ => {}
+        }
+        if step.ask
+            && self.waiting.is_none()
+            && let Some(b) = self.backend.clone()
+        {
             self.waiting = Some(Wait::QuickPoll(b.quick_poll()));
         }
     }
@@ -1129,6 +1240,7 @@ impl LoginScreen {
             step: match start {
                 Start::Address => Step::Address,
                 Start::Accounts => Step::Accounts,
+                Start::Share => Step::Share,
                 Start::Kind | Start::AddKind
                     if crate::home::Form::of(env.idiom) == crate::home::Form::Desktop =>
                 {
@@ -1136,7 +1248,11 @@ impl LoginScreen {
                 }
                 Start::Kind | Start::AddKind => Step::Address,
             },
-            field: Field::Address,
+            field: if start == Start::Share {
+                Field::Share
+            } else {
+                Field::Address
+            },
             mac: Mac {
                 add: start == Start::AddKind,
                 ..Mac::new()
@@ -1167,9 +1283,12 @@ impl LoginScreen {
             cx,
         );
         LoginScreen {
+            hub: Rc::clone(&p.mac.hub.0),
             ui,
             p,
-            quick_since: None,
+            quick_wait: None,
+            quick_skew: 0.0,
+            offered_rx: None,
             closed: false,
             signed_in: None,
             switched: None,
@@ -1177,7 +1296,6 @@ impl LoginScreen {
             add_server: false,
             backend: None,
             waiting: None,
-            last_poll: f64::NEG_INFINITY,
             copy: None,
             stage_since: None,
             found_rx: None,
@@ -1185,19 +1303,24 @@ impl LoginScreen {
             users_rx: None,
             plex_rx: None,
             plex_since: None,
+            plex_total: 300,
             open: None,
+            plex_url: None,
+            share_since: None,
             book: crate::field_book::FieldBook::new(),
             cx: text_cx,
             dragging: false,
         }
     }
 
-    /// Whether a worker is running or the Quick Connect wait is on (the app keeps drawing frames).
+    /// Whether a worker is running or the Quick Connect wait is on (the app keeps drawing frames). Every answer that is
+    /// still on its way counts: it must wake the window when it arrives, not on the next key or mouse move.
     pub fn pending(&self) -> bool {
         self.backend.is_some()
             && (self.waiting.is_some()
                 || self.p.step == Step::Quick
                 || self.plex_rx.is_some()
+                || self.offered_rx.is_some()
                 || self.users_rx.is_some()
                 || (self.found_rx.is_some() && self.p.step == Step::Address))
     }
@@ -1234,11 +1357,19 @@ impl LoginScreen {
     pub fn seconds_left(&self) -> u64 {
         self.p.left
     }
+    /// Escape goes back from every flow page, also with a field focused (the Mac's `cancelAction` button).
+    pub fn escape_backs(&self) -> bool {
+        true
+    }
     /// Whether typed text goes into a field.
     pub fn wants_text(&self) -> bool {
         matches!(
             self.p.step,
-            Step::Address | Step::Credentials | Step::EmbyAddress | Step::EmbyCredentials
+            Step::Address
+                | Step::Credentials
+                | Step::EmbyAddress
+                | Step::EmbyCredentials
+                | Step::Share
         ) || (self.p.step == Step::Plex && self.p.mac.plex == PlexStep::Pin)
     }
     /// The text of the field that has the keyboard.
@@ -1256,6 +1387,7 @@ impl LoginScreen {
                 &mut self.p.mac.headers[i.min(n.saturating_sub(1))].1
             }
             Field::Pin => &mut self.p.mac.pin,
+            Field::Share => &mut self.p.mac.share_code,
         }
     }
     /// The composition of the input method (empty ends it).
@@ -1331,6 +1463,7 @@ impl LoginScreen {
         self.book.ensure(f, || match f {
             Field::Password | Field::HValue(_) => TextEditor::single_line().password(),
             Field::Pin => TextEditor::single_line().max_len(4),
+            Field::Share => TextEditor::single_line().max_len(8),
             _ => TextEditor::single_line(),
         });
     }
@@ -1356,6 +1489,14 @@ impl LoginScreen {
         let text = self.book.text(f).to_owned();
         *self.field_mut() = text;
         if out.text_changed {
+            // A changed address ends the check that is still running (`addressChanged` -> `checkTask.cancel`): its answer
+            // is for the old text and must not take the user to the sign-in.
+            if matches!(self.p.field, Field::Address)
+                && matches!(self.waiting, Some(Wait::Connect(_) | Wait::EmbyConnect(_)))
+            {
+                self.waiting = None;
+                self.p.checking = false;
+            }
             self.p.error = None;
             self.p.mac.pin_state = PinState::Idle;
             if self.p.step == Step::Plex && self.p.field == Field::Pin {
@@ -1485,6 +1626,7 @@ impl LoginScreen {
             Step::Address | Step::EmbyAddress => self.connect(),
             Step::Credentials | Step::EmbyCredentials => self.sign_in(),
             Step::Plex if self.p.mac.plex == PlexStep::Pin => self.check_pin(),
+            Step::Share => self.share_code(),
             _ => {}
         }
     }
@@ -1549,6 +1691,20 @@ impl LoginScreen {
         }
     }
 
+    /// Sends the typed code to the server (needs four characters).
+    fn share_code(&mut self) {
+        if self.p.mac.share_code.chars().count() < 4
+            || self.waiting.is_some()
+            || self.p.mac.share == login_mac::ShareState::Done
+        {
+            return;
+        }
+        if let Some(b) = self.backend.clone() {
+            self.p.mac.share = login_mac::ShareState::Running;
+            self.waiting = Some(Wait::Share(b.quick_share(&self.p.mac.share_code)));
+        }
+    }
+
     fn start_quick(&mut self) {
         if let Some(b) = self.backend.clone() {
             self.p.code = String::new();
@@ -1570,7 +1726,11 @@ impl LoginScreen {
             Step::Quick => {
                 self.p.step = Step::Credentials;
                 self.p.error = None;
-                self.quick_since = None;
+                self.quick_wait = None;
+                // Leaving the code halts the wait: no more questions, a late approval signs nobody in.
+                if matches!(self.waiting, Some(Wait::QuickPoll(_) | Wait::QuickStart(_))) {
+                    self.waiting = None;
+                }
                 true
             }
             Step::Credentials => {
@@ -1609,12 +1769,19 @@ impl LoginScreen {
                     self.plex_since = None;
                 }
                 self.p.error = None;
+                let several = self.p.mac.profiles.len() > 1;
                 self.p.mac.plex = match self.p.mac.plex {
                     PlexStep::Start => {
                         self.p.step = Step::Kind;
                         PlexStep::Start
                     }
-                    PlexStep::Pin => PlexStep::Profiles,
+                    PlexStep::Pin | PlexStep::Servers | PlexStep::Loading if several => {
+                        PlexStep::Profiles
+                    }
+                    PlexStep::Pin | PlexStep::Servers | PlexStep::Loading => {
+                        self.p.step = Step::Kind;
+                        PlexStep::Start
+                    }
                     _ => PlexStep::Start,
                 };
                 true
@@ -1645,12 +1812,12 @@ impl LoginScreen {
                 match self.p.mac.plex {
                     PlexStep::Opening if el >= 800.0 => {
                         self.p.mac.plex = PlexStep::Waiting;
-                        self.p.mac.plex_left = 300;
+                        self.p.mac.plex_left = self.plex_total;
                         self.p.code = "K7QM".into();
                         self.stage_since = None;
                     }
                     PlexStep::Waiting => {
-                        self.p.mac.plex_left = 300u64.saturating_sub((el / 1000.0) as u64);
+                        self.p.mac.plex_left = self.plex_total.saturating_sub((el / 1000.0) as u64);
                         if el >= 3000.0 {
                             self.p.mac.plex = PlexStep::Loading;
                             self.stage_since = None;
@@ -1676,6 +1843,13 @@ impl LoginScreen {
                 latest = Some(list);
             }
             if let Some(list) = latest {
+                let known = self
+                    .backend
+                    .as_ref()
+                    .map(|b| b.known_servers())
+                    .unwrap_or_default();
+                let except: Vec<Option<&str>> = known.iter().map(|k| Some(k.as_str())).collect();
+                let list = swiftly_jellyfin::discovery::shown(&list, &except);
                 self.p.mac.found = list
                     .iter()
                     .map(|f| (f.name.clone(), f.short_address()))
@@ -1687,6 +1861,11 @@ impl LoginScreen {
             && let Ok(users) = rx.0.try_recv()
         {
             self.p.mac.users = Some(users);
+            self.p.mac.user_pics = self
+                .backend
+                .as_ref()
+                .map(|b| b.emby_user_pictures())
+                .unwrap_or_default();
             self.users_rx = None;
         }
         let mut events = Vec::new();
@@ -1698,25 +1877,69 @@ impl LoginScreen {
         for ev in events {
             match ev {
                 PlexEvent::Open(url) => {
+                    self.plex_url = Some(url.clone());
                     self.open = Some(url);
                     self.p.mac.plex = PlexStep::Waiting;
                     self.plex_since = None;
+                    self.plex_total = 300;
                 }
+                PlexEvent::Expiry(secs) => self.plex_total = secs,
+                PlexEvent::Pictures(list) => self.p.mac.profile_pics = list,
+                PlexEvent::Account(name) => self.p.mac.plex_account = name,
                 PlexEvent::Profiles(list) => {
                     self.p.mac.profiles = list;
-                    self.p.mac.plex = PlexStep::Profiles;
                     self.plex_rx = None;
+                    // One profile (or none) is taken at once; the chooser is for several (`PlexSignInModel`).
+                    if self.p.mac.profiles.len() <= 1 {
+                        self.p.mac.profile = 0;
+                        self.plex_pick("");
+                    } else {
+                        self.p.mac.plex = PlexStep::Profiles;
+                    }
                 }
                 PlexEvent::Failed(text) => {
                     self.p.mac.plex = PlexStep::Failed;
+                    self.p.mac.plex_problem = crate::login_mac::PlexProblem::Other;
                     self.p.error = Some(text);
+                    self.plex_rx = None;
+                }
+                PlexEvent::Expired => {
+                    self.p.mac.plex = PlexStep::Failed;
+                    self.p.mac.plex_problem = crate::login_mac::PlexProblem::Expired;
+                    self.plex_rx = None;
+                }
+                PlexEvent::Unreachable => {
+                    self.p.mac.plex = PlexStep::Failed;
+                    self.p.mac.plex_problem = crate::login_mac::PlexProblem::Unreachable;
                     self.plex_rx = None;
                 }
             }
         }
+        if self.p.step == Step::Plex && self.p.mac.plex == PlexStep::Pin {
+            // Digits only, four of them, and the fourth sends the PIN (`pinEntry`).
+            let digits: String = self
+                .p
+                .mac
+                .pin
+                .chars()
+                .filter(char::is_ascii_digit)
+                .take(4)
+                .collect();
+            if digits != self.p.mac.pin {
+                self.p.mac.pin = digits;
+            }
+            if !self.p.mac.pin.is_empty() && self.p.mac.pin_state == PinState::Wrong {
+                self.p.mac.pin_state = PinState::Idle;
+            }
+            if self.p.mac.pin.len() == 4 && self.waiting.is_none() {
+                self.check_pin();
+            }
+        }
         if self.p.mac.plex == PlexStep::Waiting && self.p.step == Step::Plex {
             let since = *self.plex_since.get_or_insert(now);
-            self.p.mac.plex_left = 300u64.saturating_sub(((now - since).max(0.0) / 1000.0) as u64);
+            self.p.mac.plex_left = self
+                .plex_total
+                .saturating_sub(((now - since).max(0.0) / 1000.0) as u64);
         }
         self.sync();
     }
@@ -1839,16 +2062,20 @@ impl LoginScreen {
     /// Advances the countdown; the wait ends with an error text when the code runs out.
     fn tick(&mut self, now: f64) {
         self.poll_wait();
+        if self.p.mac.share == login_mac::ShareState::Done {
+            // "Freigegeben. …", then back after two seconds.
+            let since = *self.share_since.get_or_insert(now);
+            if now - since >= 2000.0 {
+                self.closed = true;
+            }
+        }
         self.poll_quick(now);
         self.mac_tick(now);
-        if self.p.step != Step::Quick {
-            return;
-        }
-        let since = *self.quick_since.get_or_insert(now);
-        let gone = ((now - since) / 1000.0).max(0.0) as u64;
-        self.p.left = QuickConnectDeadline::SECONDS.saturating_sub(gone);
-        if self.p.left == 0 {
-            self.p.error = Some("Der Code ist abgelaufen. Hol dir einen neuen.".into());
+        // A picture that arrived rebuilds the page (the shared hub counts loads; the app's frame runs the hub itself).
+        let stamp = crate::hub::HubSlotExt::stamp(&self.p.mac.hub.0);
+        if stamp != self.p.mac.pictures {
+            self.p.mac.pictures = stamp;
+            self.sync();
         }
     }
 
@@ -1866,9 +2093,7 @@ impl LoginScreen {
 
     /// Lets the wait run `seconds` further (tests, goldens).
     pub fn skip_wait(&mut self, seconds: u64) {
-        if let Some(s) = self.quick_since.as_mut() {
-            *s -= seconds as f64 * 1000.0;
-        }
+        self.quick_skew += seconds as f64 * 1000.0;
     }
 
     /// The taps whose key ends in a number: kind cards, found servers, headers, profiles, servers, users.
@@ -1910,7 +2135,8 @@ impl LoginScreen {
             } else if is("server") {
                 if let Some(b) = self.backend.clone() {
                     if self.waiting.is_none() && i < self.p.mac.servers.len() {
-                        self.p.mac.plex = PlexStep::Loading;
+                        self.p.mac.server_busy = Some(i);
+                        self.p.mac.server_failed.retain(|f| *f != i);
                         self.waiting = Some(Wait::PlexFinish(b.plex_finish(i)));
                     }
                 } else if let Some((name, _)) = self.p.mac.servers.get(i) {
@@ -1944,7 +2170,7 @@ impl LoginScreen {
             self.p.step = Step::Quick;
             self.p.error = None;
             self.p.left = QuickConnectDeadline::SECONDS;
-            self.quick_since = None;
+            self.quick_wait = None;
             self.start_quick();
         } else if is("password") {
             self.p.step = Step::Credentials;
@@ -1952,7 +2178,7 @@ impl LoginScreen {
         } else if is("newcode") {
             self.p.error = None;
             self.p.left = QuickConnectDeadline::SECONDS;
-            self.quick_since = None;
+            self.quick_wait = None;
             self.start_quick();
         } else if is("add") {
             self.add_server = true;
@@ -1966,14 +2192,42 @@ impl LoginScreen {
         } else if is("copy") {
             self.copy = Some(self.p.code.clone());
             self.p.mac.copied = true;
-        } else if is("plexstart") {
+        } else if is("plexstart") || is("plexagain") {
+            // "Erneut versuchen" / "Neuen Code holen" start the sign-in again (`actions.start`).
             self.p.mac.plex = PlexStep::Opening;
             self.stage_since = None;
             self.p.error = None;
             self.plex_since = None;
             self.plex_rx = self.backend.as_ref().and_then(|b| b.plex_begin());
-        } else if is("plexagain") {
-            self.p.mac.plex = PlexStep::Start;
+        } else if is("plexreopen") {
+            self.open = self.plex_url.clone();
+        } else if is("plexother") {
+            // "Anderes Plex-Konto": back to the first page of the sign-in.
+            if self.waiting.is_none() {
+                self.p.mac.plex = PlexStep::Start;
+                self.p.mac.plex_account.clear();
+                self.p.mac.server_failed.clear();
+            }
+        } else if is("plexreload") {
+            self.p.mac.server_failed.clear();
+            if self
+                .p
+                .mac
+                .profiles
+                .get(self.p.mac.profile)
+                .is_some_and(|x| x.1)
+            {
+                self.p.mac.plex = PlexStep::Pin;
+                self.p.field = Field::Pin;
+            } else {
+                self.plex_pick("");
+            }
+        } else if is("share") {
+            self.share_code();
+        } else if is("field:share") {
+            self.p.field = Field::Share;
+        } else if is("pinboxes") {
+            self.p.field = Field::Pin;
         } else {
             self.tapped_numbered(a);
         }

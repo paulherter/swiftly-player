@@ -143,8 +143,10 @@ pub(crate) struct RNode {
     pub paint: Vec<Paint>,
     pub gestures: Gestures,
     pub press_feedback: bool,
+    pub snap_pixels: bool,
     pub scroll: Option<ScrollSpec>,
     pub clip: bool,
+    pub clip_radius: f32,
     pub children: Vec<RNode>,
     pub frame: Rect,
     pub content: Option<Size>,
@@ -301,8 +303,10 @@ pub(crate) fn reconcile(rec: &mut Rec, mut n: Node, id: u64) -> RNode {
         paint: n.paint,
         gestures: n.gestures,
         press_feedback: n.press_feedback,
+        snap_pixels: n.snap_pixels,
         scroll: n.scroll,
         clip: n.clip,
+        clip_radius: n.clip_radius,
         children,
         frame: Rect::ZERO,
         content: None,
@@ -690,7 +694,11 @@ pub(crate) fn paint(n: &RNode, origin: Point, xf: Xf, pc: &mut PaintCx, root: bo
         pc.list.push_opacity(op);
     }
     if n.clip {
-        pc.list.push_clip(screen);
+        if n.clip_radius > 0.0 {
+            pc.list.push_round_clip(screen, n.clip_radius * xf2.s);
+        } else {
+            pc.list.push_clip(screen);
+        }
     }
     let interactive = n.focus.is_some()
         || n.interact.tracks_hover()
@@ -716,20 +724,18 @@ pub(crate) fn paint(n: &RNode, origin: Point, xf: Xf, pc: &mut PaintCx, root: bo
             }
         }
     }
+    // A node that holds a picture's ground and border paints on the picture's own pixels.
+    let has_picture = n
+        .paint
+        .iter()
+        .any(|p| matches!(p, Paint::Image { .. } | Paint::FocusImage { .. }));
+    let paint_rect = if n.snap_pixels || has_picture {
+        pc.list.snapped_picture(screen)
+    } else {
+        screen
+    };
     for p in &n.paint {
-        paint_one(p, r, screen, xf2, pc, fk);
-    }
-    if let (Some(ring), Some(s)) = (n.interact.ring, st) {
-        let k = s.focus_t.value().clamp(0.0, 1.0) as f32;
-        if k > 0.0 {
-            let c = Color::new(ring.color.r, ring.color.g, ring.color.b, ring.color.a * k);
-            if ring.fill.is_some() {
-                pc.list.fill(screen, c, ring.radius * xf2.s);
-            } else {
-                pc.list
-                    .stroke(screen, c, ring.width * xf2.s, ring.radius * xf2.s);
-            }
-        }
+        paint_one(p, r, paint_rect, xf2, pc, fk);
     }
     let mut child_origin = Point::new(r.x, r.y);
     if let (Some(spec), Some(s)) = (n.scroll, st) {
@@ -745,6 +751,19 @@ pub(crate) fn paint(n: &RNode, origin: Point, xf: Xf, pc: &mut PaintCx, root: bo
     }
     for i in paint_order(n) {
         paint(&n.children[i], child_origin, xf2, pc, false, fk);
+    }
+    // The ring comes after the children: a picture inside the node would otherwise cover it.
+    if let (Some(ring), Some(s)) = (n.interact.ring, st) {
+        let k = s.focus_t.value().clamp(0.0, 1.0) as f32;
+        if k > 0.0 {
+            let c = Color::new(ring.color.r, ring.color.g, ring.color.b, ring.color.a * k);
+            if ring.fill.is_some() {
+                pc.list.fill(screen, c, ring.radius * xf2.s);
+            } else {
+                pc.list
+                    .stroke(screen, c, ring.width * xf2.s, ring.radius * xf2.s);
+            }
+        }
     }
     if let (Some(spec), Some(s)) = (n.scroll, st)
         && spec.axis == Axis::Vertical
@@ -858,6 +877,19 @@ fn paint_one(p: &Paint, r: Rect, screen: swiftly_render::Rect, xf: Xf, pc: &mut 
             vertical,
             radius,
         } => pc.list.fill_stops(screen, *vertical, stops, radius * xf.s),
+        Paint::Radial {
+            center,
+            radii,
+            stops,
+        } => pc.list.radial_stops(
+            screen,
+            [
+                screen.x + center[0] * screen.w,
+                screen.y + center[1] * screen.h,
+            ],
+            [radii[0] * screen.w, radii[1] * screen.h],
+            stops,
+        ),
         Paint::Blur { blur, tint, radius } => {
             pc.list
                 .backdrop_blur(screen, blur * xf.s, *tint, radius * xf.s)
@@ -884,7 +916,15 @@ fn paint_one(p: &Paint, r: Rect, screen: swiftly_render::Rect, xf: Xf, pc: &mut 
             image,
             tint,
             radius,
-        } => pc.list.image(screen, image.uv, *tint, radius * xf.s),
+            dither,
+        } => {
+            if *dither {
+                pc.list
+                    .image_dithered(screen, image.uv, *tint, radius * xf.s);
+            } else {
+                pc.list.image(screen, image.uv, *tint, radius * xf.s);
+            }
+        }
         Paint::Text {
             text,
             style,

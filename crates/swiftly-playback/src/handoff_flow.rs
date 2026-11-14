@@ -189,7 +189,8 @@ pub fn reduce(
         ) => {
             // Whoever is watching does not ask.
             if player_runs {
-                (S::Quiet { last_reason }, vec![])
+                // The own player is open: whatever was offered before it opened is stale once it closes.
+                (S::Quiet { last_reason }, vec![X::Offer(vec![])])
             } else if !signed_in {
                 (S::Quiet { last_reason }, vec![X::Offer(vec![])])
             } else {
@@ -380,7 +381,7 @@ mod tests {
     fn polling_rules() {
         let (s, fx) = step(Flow::Stopped, Event::Start);
         assert_eq!((s.clone(), fx), (quiet(), vec![]));
-        // Player runs: no question.
+        // Player runs: no question, and the offering from before it opened is gone.
         let (s2, fx) = step(
             s.clone(),
             Event::Tick {
@@ -388,7 +389,7 @@ mod tests {
                 signed_in: true,
             },
         );
-        assert_eq!((s2, fx), (quiet(), vec![]));
+        assert_eq!((s2, fx), (quiet(), vec![Effect::Offer(vec![])]));
         // Not signed in: clears the badge.
         let (_, fx) = step(
             s.clone(),

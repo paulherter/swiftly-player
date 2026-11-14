@@ -28,7 +28,8 @@ fn list() -> Harness<P> {
             ..FlexFrame::default()
         })
     };
-    Harness::new(Ui::new(
+    // The Mac table: the bar and its timing are the Mac's behaviour, whatever OS the test runs on.
+    let mut ui = Ui::new(
         view,
         P,
         Env::new(
@@ -37,7 +38,11 @@ fn list() -> Harness<P> {
             swiftly_ui::Idiom::Desktop,
         ),
         Cx::deterministic(),
-    ))
+    );
+    ui.set_scroll_tuning(swiftly_motion::ScrollTuning::for_os(
+        swiftly_motion::Os::MacOs,
+    ));
+    Harness::new(ui)
 }
 
 #[test]

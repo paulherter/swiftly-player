@@ -557,6 +557,17 @@ impl SharedVm {
         }
     }
 
+    /// The session with this id out of what the card offers or lets the user choose from.
+    pub fn takeover_session(&self, id: &str) -> Option<RemoteSession> {
+        match &self.offer {
+            TakeoverOffer::Offer(l) | TakeoverOffer::Choosing(l) => {
+                l.iter().find(|s| s.id == id).cloned()
+            }
+            TakeoverOffer::Taking(s) if s.id == id => Some((**s).clone()),
+            _ => None,
+        }
+    }
+
     /// What the takeover card draws, with its version.
     pub fn takeover(&self) -> (u64, TakeoverPart) {
         let part = match &self.offer {
@@ -761,6 +772,17 @@ mod tests {
         let mut vm = vm();
         assert_eq!(vm.handoff(E::TakenOver), S::SenderLeaving);
         assert_eq!(vm.stage(), S::SenderLeaving);
+    }
+
+    #[test]
+    fn a_chosen_session_can_be_read_back_by_id() {
+        let mut vm = vm();
+        let now = 1_700_000_005.0;
+        vm.sessions_polled(&[session_json("s1", "TV", "Swiftly", true, "u1")], now);
+        assert_eq!(vm.takeover_session("s1").map(|s| s.id), Some("s1".into()));
+        assert!(vm.takeover_session("zz").is_none());
+        vm.takeover_event(TakeoverEvent::Tapped);
+        assert_eq!(vm.takeover_session("s1").map(|s| s.id), Some("s1".into()));
     }
 
     #[test]

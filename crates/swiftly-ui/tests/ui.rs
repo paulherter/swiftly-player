@@ -379,7 +379,8 @@ fn a_pressed_tile_is_drawn_smaller_and_faded() {
         .find(|q| q.kind == QuadKind::Image)
         .expect("poster");
     let r = p_rest.expect("poster at rest");
-    assert!((img.rect.w - r.w * 0.97).abs() < 0.01);
+    // Edges snap to device pixels, so the width is the 0.97 scale within one pixel.
+    assert!((img.rect.w - r.w * 0.97).abs() <= 1.0);
     assert!((img.opacity - 0.85).abs() < 1e-6);
 }
 

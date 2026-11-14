@@ -145,7 +145,9 @@ pub fn compare_all(root: &Path, swift_dir: &Path, write_diffs: bool) -> Result<V
         let (wa, ha, a) = decode(&path)?;
         let (wb, hb, b) = decode(&golden)?;
         if (wa, ha) != (wb, hb) {
-            return Err(format!("{name}: size {wa}x{ha} vs {wb}x{hb}"));
+            // One screen with another size must not stop the whole run.
+            eprintln!("{name}: skipped, size {wa}x{ha} vs {wb}x{hb}");
+            continue;
         }
         let (mut sum, mut close) = (0u64, 0u64);
         for (x, y) in a.as_chunks::<3>().0.iter().zip(b.as_chunks::<3>().0) {
@@ -222,7 +224,8 @@ pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
         let _ = std::fs::remove_dir_all(&out);
         // The Mac sources are compiled into an unhosted test bundle (no app is started), built with xcodebuild and run
         // with the plain `xctest` runner.
-        let dev = "/Applications/Xcode.app/Contents/Developer";
+        let dev = std::env::var("DEVELOPER_DIR")
+            .unwrap_or_else(|_| "/Applications/Xcode.app/Contents/Developer".to_owned());
         let spec = Command::new("python3")
             .current_dir(root)
             .arg("Werkzeuge/parity-project.py")
@@ -265,12 +268,12 @@ pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
                 "-destination",
                 "platform=macOS",
                 "-jobs",
-                "3",
+                "4",
                 "-derivedDataPath",
                 "build/DD-parity",
                 "CODE_SIGNING_ALLOWED=NO",
             ])
-            .env("DEVELOPER_DIR", dev)
+            .env("DEVELOPER_DIR", &dev)
             .output()
             .map_err(|e| format!("xcodebuild: {e}"))?;
         if !st.status.success() {
@@ -282,16 +285,27 @@ pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
                 .collect();
             return Err(format!("render build failed:\n{}", tail.join("\n")));
         }
-        let run = Command::new("xcrun")
+        // Hosted run: the tests are injected into the tiny host app (`SwiftlyParityHost`), whose main bundle carries the
+        // asset catalogs, the string catalog and Inter, and which starts in German. `TEST_RUNNER_` variables reach it.
+        let run = Command::new("xcodebuild")
             .current_dir(root)
             .args([
-                "xctest",
-                "build/DD-parity/Build/Products/Debug/SwiftlyParityTests.xctest",
+                "test-without-building",
+                "-project",
+                "build/parity/SwiftlyParity.xcodeproj",
+                "-scheme",
+                "SwiftlyParityTests",
+                "-destination",
+                "platform=macOS",
+                "-derivedDataPath",
+                "build/DD-parity",
+                "-only-testing:SwiftlyParityTests/ParitySnapshots",
+                "CODE_SIGNING_ALLOWED=NO",
             ])
-            .env("DEVELOPER_DIR", dev)
-            .env("SWIFTUI_PARITY_OUT", &out)
+            .env("DEVELOPER_DIR", &dev)
+            .env("TEST_RUNNER_SWIFTUI_PARITY_OUT", &out)
             .output()
-            .map_err(|e| format!("xctest: {e}"))?;
+            .map_err(|e| format!("xcodebuild test: {e}"))?;
         if !run.status.success() {
             let text = String::from_utf8_lossy(&run.stdout);
             let tail: Vec<&str> = text

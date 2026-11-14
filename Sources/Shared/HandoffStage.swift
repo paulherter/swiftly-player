@@ -101,7 +101,11 @@ final class StageHolder {
     }
 
     static func buildUp() -> StageHolder? {
-        guard let main = NSApp.keyWindow ?? NSApp.mainWindow, let content = main.contentView
+        // The key or main window; when the app is not in front (the tap came from a remote command or a run
+        // without focus) neither is set, and the stage goes over the first visible window instead of not coming at all.
+        guard let main = NSApp.keyWindow ?? NSApp.mainWindow
+                ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }),
+              let content = main.contentView
         else { return nil }
         let frameRect = main.convertToScreen(content.convert(content.bounds, to: nil))
         let f = NSWindow(contentRect: frameRect, styleMask: .borderless, backing: .buffered, defer: false)

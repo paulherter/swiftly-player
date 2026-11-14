@@ -1,35 +1,52 @@
 # Maintainer: Paul Herter <accounts@paulherter.de>
 #
-# Prebuilt package from the GitHub release, not a source build. The tarball
-# `swiftly-jellyfin-<version>-x86_64.tar.gz` already has the final usr/ layout,
-# so this only copies it to $pkgdir.
-# For a source build (compiling Swift) see the separate PKGBUILD in
-# `Linux/Install/PKGBUILD` in this repository (package name
-# `swiftly-jellyfin`, without `-bin`).
+# Prebuilt package from the GitHub release, not a source build. The release
+# tarball `swiftly-player-<version>-linux-x64.tar.gz` (built by
+# `Werkzeuge/package-desktop.sh`) contains one folder with the stripped
+# `swiftly-player` binary, the desktop entry, a 256 px icon and a README; this
+# file installs them under /usr like the .deb and .rpm packages do.
 #
-# On every release the workflow `.github/workflows/aur.yml` rewrites this file
-# with the new version and checksum and pushes it to the AUR. pkgver and
-# sha256sums here are only the initial state.
+# The binary is linked against glibc 2.35 or newer and loads libmpv, Vulkan and
+# the window system libraries at run time, so those are listed as dependencies.
+# The tarball carries no licence text, so LICENSE and THIRD-PARTY-NOTICES.md
+# are fetched from the repository at the release tag.
+#
+# On every release the workflow `.github/workflows/aur.yml` rewrites pkgver and
+# resets pkgrel, and `updpkgsums` fills the sha256sums with the real files.
+# The 'SKIP' entries below are only the template state and are never pushed.
 
 pkgname=swiftly-player-bin
-pkgver=1.0.3
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="Jellyfin client that never transcodes (prebuilt binary)"
 arch=('x86_64')
 url="https://github.com/paulherter/swiftly-player"
 license=('MPL-2.0')
-depends=('gtk4' 'vlc' 'glibc' 'gcc-libs')
-provides=('swiftly-jellyfin')
+depends=('glibc' 'gcc-libs' 'mpv' 'vulkan-icd-loader' 'fontconfig' 'freetype2'
+         'libxkbcommon' 'libxkbcommon-x11' 'wayland' 'ca-certificates')
+optdepends=('vulkan-radeon: Vulkan driver for AMD GPUs'
+            'vulkan-intel: Vulkan driver for Intel GPUs'
+            'nvidia-utils: Vulkan driver for NVIDIA GPUs'
+            'vulkan-swrast: software Vulkan fallback')
+provides=('swiftly-jellyfin' 'swiftly-player')
 conflicts=('swiftly-jellyfin')
 options=('!strip' '!debug')
-source=("https://github.com/paulherter/swiftly-player/releases/download/v${pkgver}/swiftly-jellyfin-${pkgver}-x86_64.tar.gz")
-sha256sums=('3f1f9704af4529b8a4e5126b6a3ce1d506f6519bcf47251a2bbad235b0df1eee')
+source=("https://github.com/paulherter/swiftly-player/releases/download/v${pkgver}/swiftly-player-${pkgver}-linux-x64.tar.gz"
+        "LICENSE-${pkgver}::https://raw.githubusercontent.com/paulherter/swiftly-player/v${pkgver}/LICENSE"
+        "THIRD-PARTY-NOTICES-${pkgver}.md::https://raw.githubusercontent.com/paulherter/swiftly-player/v${pkgver}/THIRD-PARTY-NOTICES.md")
+sha256sums=('SKIP' 'SKIP' 'SKIP')
 
 package() {
-    # The tarball already unpacks into usr/lib, usr/bin and usr/share, the same
-    # layout the source PKGBUILD produces.
-    cp -r "$srcdir/swiftly-jellyfin-$pkgver/usr" "$pkgdir/usr"
-    install -Dm644 "$pkgdir/usr/share/doc/swiftly-jellyfin/LICENSE" \
+    local d="$srcdir/swiftly-player-${pkgver}-linux-x64"
+
+    install -Dm755 "$d/swiftly-player" "$pkgdir/usr/bin/swiftly-player"
+    install -Dm644 "$d/de.paulherter.swiftly.player.desktop" \
+        "$pkgdir/usr/share/applications/de.paulherter.swiftly.player.desktop"
+    install -Dm644 "$d/app-icon-256.png" \
+        "$pkgdir/usr/share/icons/hicolor/256x256/apps/swiftly-player.png"
+
+    install -Dm644 "$srcdir/LICENSE-${pkgver}" \
         "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-    rm -rf "$pkgdir/usr/share/doc/swiftly-jellyfin"
+    install -Dm644 "$srcdir/THIRD-PARTY-NOTICES-${pkgver}.md" \
+        "$pkgdir/usr/share/licenses/$pkgname/THIRD-PARTY-NOTICES.md"
 }

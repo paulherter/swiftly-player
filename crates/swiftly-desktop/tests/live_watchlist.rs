@@ -185,13 +185,20 @@ fn the_merkliste_shows_the_favourites_on_the_real_server_path() {
     run_for(&mut s, &mut now, 1500.0);
     // The sidebar's account card shows the stored account (name and host), never the demo's "Swiftly / tv.example.test".
     let host = address_host.clone();
-    assert_eq!(
-        swiftly_desktop::desk::card(),
+    match swiftly_desktop::desk::card() {
         swiftly_desktop::desk::Card::Account {
-            name: "demo".into(),
-            server: host
+            name,
+            server,
+            picture,
+        } => {
+            assert_eq!((name.as_str(), server.as_str()), ("demo", host.as_str()));
+            // The user's picture address (`Users/{id}/Images/Primary`, 480 px) rides along for the card's circle.
+            let picture = picture.expect("the card carries the user picture address");
+            assert!(picture.contains("/Users/") && picture.contains("/Images/Primary"));
+            assert!(picture.contains("fillWidth=480"));
         }
-    );
+        other => panic!("not the stored account: {other:?}"),
+    }
 
     // From a title page: the Merkliste leaves the title page and shows its own grid (the title stays parked on "Filme").
     assert!(tap_label(&mut s, &mut now, "Filme"));

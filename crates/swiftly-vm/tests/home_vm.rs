@@ -523,3 +523,22 @@ fn continue_watching_drops_a_finished_title_on_refresh() {
     assert_eq!(resume.ids, ["e1"], "the finished film is still on the rail");
     assert_eq!(resume.tiles.len(), 1);
 }
+
+#[test]
+fn a_failed_home_names_why_for_its_error_text() {
+    use swiftly_vm::{FailKind, LoadFailure};
+    let (t, x) = LoadFailure::Offline.copy("nas.local");
+    assert_eq!(t, "Server ist abgetaucht");
+    assert_eq!(
+        x,
+        "nas.local antwortet nicht. Läuft er noch, oder hängt das WLAN?"
+    );
+    assert_eq!(
+        LoadFailure::Failed(FailKind::Denied).copy("x").0,
+        "Anmeldung abgelehnt"
+    );
+    assert_eq!(
+        LoadFailure::Failed(FailKind::Unreadable).copy("x").0,
+        "Antwort unlesbar"
+    );
+}

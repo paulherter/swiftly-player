@@ -124,6 +124,39 @@ fn several_versions_ask_and_a_pick_starts_it() {
     ));
 }
 
+/// The one rule: several versions ask on every press (resume or start), and the resume position rides along; one
+/// version starts at once. Nothing is remembered between presses.
+#[test]
+fn the_press_asks_with_several_versions_and_keeps_the_resume_position() {
+    let net = server(2, 18_000_000_000);
+    let vm = vm(&net);
+    vm.send(DetailIntent::Load);
+    wait_for("title", || vm.actions().play.enabled);
+    assert!(matches!(
+        vm.play(None),
+        PlayAction::Choose { since, ref versions, .. } if (since - 1800.0).abs() < 1e-9 && versions.len() == 2
+    ));
+    assert!(matches!(
+        vm.play_from_start(None),
+        PlayAction::Choose { since, ref versions, .. } if since == 0.0 && versions.len() == 2
+    ));
+    assert!(matches!(
+        vm.play(Some("s1")),
+        PlayAction::Start { since, source_id: Some(ref s), .. } if (since - 1800.0).abs() < 1e-9 && s == "s1"
+    ));
+    // The pick is not kept: the next press asks again.
+    assert!(matches!(vm.play(None), PlayAction::Choose { .. }));
+    // One version: no question.
+    let net = server(1, 18_000_000_000);
+    let one = self::vm(&net);
+    one.send(DetailIntent::Load);
+    wait_for("title", || one.actions().play.enabled);
+    assert!(matches!(
+        one.play(None),
+        PlayAction::Start { since, source_id: None, .. } if (since - 1800.0).abs() < 1e-9
+    ));
+}
+
 #[test]
 fn resume_label_and_remaining_time() {
     // 30 minutes of 2 hours.
@@ -419,4 +452,27 @@ fn a_movie_without_a_backdrop_takes_its_poster_for_the_head_image() {
     .unwrap();
     let vm = DetailVm::new(rich_server(), host(), item, Some(account("TOKEN-A"))).unwrap();
     assert!(vm.hero().image.is_some());
+}
+
+/// A placeholder the server lists without a file (`LocationType: Virtual`): the page says so at once instead of waiting for
+/// versions that never come, and shows no "Direct Play" mark.
+#[test]
+fn a_virtual_title_is_a_placeholder() {
+    let net = Script::new(|r| {
+        let p = r.url.path();
+        if p.ends_with("/Items/f1") {
+            let mut v = full(0, 0);
+            v["LocationType"] = serde_json::json!("Virtual");
+            v["MediaSources"] = serde_json::json!(null);
+            return Some(v.to_string());
+        }
+        Some("{}".into())
+    });
+    let vm = vm(&net);
+    vm.send(DetailIntent::Load);
+    wait_for("fresh title", || vm.is_placeholder());
+    assert!(
+        !vm.actions().proof.visible,
+        "no Direct Play mark for a placeholder"
+    );
 }

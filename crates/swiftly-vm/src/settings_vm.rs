@@ -11,6 +11,7 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use swiftly_l10n::{Arg, Locale, Translator};
+use swiftly_library::StartRail;
 use swiftly_rules::playback_selection::{BITRATE_LEVELS, SPAN_LEVELS, language_selection_all};
 use swiftly_settings::options::BufferLevel;
 use swiftly_settings::{Key, KeyValueStore, SettingValue, Settings, keys};
@@ -90,6 +91,9 @@ pub struct SettingsContext {
     /// Desktop shell only: "Server und Dienste" also gets the server line, "Verbindung prüfen" and Discord (the
     /// Apple apps draw the first two themselves and hide Discord in the sandbox; they never set this).
     pub server_rows: bool,
+    /// The host can show what is playing on Discord. Without it the "Discord" row stays hidden, so no switch does
+    /// nothing (the Mac hides it where its presence cannot work). The desktop shell has no presence client yet.
+    pub discord_presence: bool,
     /// Name of the connected server (`AppModel.serverName`).
     pub server_name: Option<String>,
     /// Version of the connected server (`AppModel.serverVersion`).
@@ -116,6 +120,7 @@ impl Default for SettingsContext {
             stored_bytes: 0,
             account_next_auto: None,
             server_rows: false,
+            discord_presence: false,
             server_name: None,
             server_version: None,
             checking: false,
@@ -243,6 +248,50 @@ pub enum SettingsIntent {
     Context(Box<SettingsContext>),
     /// The store was changed from outside (for example by `@AppStorage` or a sync).
     Reload,
+    /// Move a Home row of the Appearance page up (`delta` -1) or down (+1) among the rows that are shown (the Mac's
+    /// "Nach oben" / "Nach unten").
+    MoveRow {
+        /// The row's key (`startRow.<raw>`).
+        key: String,
+        /// -1 up, +1 down.
+        delta: i32,
+    },
+    /// An edit of the Home rows or the genres of the Appearance page (libraries, genres, drag and drop).
+    Home(HomeEdit),
+}
+
+/// What the Home group and the Genres group of the Appearance page can do besides the switches.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HomeEdit {
+    /// Move a row up (-1) or down (+1) among the shown ones (`id` as in the combined order).
+    Shift {
+        /// The row's id.
+        id: String,
+        /// -1 up, +1 down.
+        delta: i32,
+    },
+    /// Drop a row onto another (the dragged row takes its place).
+    Drop {
+        /// The dragged row's id.
+        source: String,
+        /// The row it landed on.
+        onto: String,
+    },
+    /// Add a library or collection as a Home row.
+    AddLibrary(swiftly_library::start_libraries::StartLibrary),
+    /// Remove a chosen library by its server id.
+    RemoveLibrary(String),
+    /// Add a genre.
+    AddGenre(String),
+    /// Remove a genre.
+    RemoveGenre(String),
+    /// Drop a genre onto another.
+    DropGenre {
+        /// The dragged genre.
+        source: String,
+        /// The genre it landed on.
+        onto: String,
+    },
 }
 
 /// Why an intent was refused.
@@ -358,6 +407,12 @@ impl<S: KeyValueStore + 'static> SettingsVm<S> {
         Arc::clone(&self.inner.shown().sections)
     }
 
+    /// The Home rows and the chosen genres of the Appearance page, as stored for the current server.
+    pub fn home(&self) -> crate::home_rows::HomeView {
+        let server = self.inner.live().context.server.clone();
+        crate::home_rows::view(&self.inner.settings, &server)
+    }
+
     /// The pending question.
     pub fn status(&self) -> Arc<SettingsStatusPart> {
         Arc::clone(&self.inner.shown().status)
@@ -397,6 +452,10 @@ impl<S: KeyValueStore + 'static> SettingsVm<S> {
                     Ok(())
                 }
                 SettingsIntent::Reload => Ok(()),
+                SettingsIntent::MoveRow { key, delta } => {
+                    inner.move_row(&live, &key, delta, &mut effects)
+                }
+                SettingsIntent::Home(edit) => inner.edit_home(&live, &edit, &mut effects),
             };
             inner.publish(&mut live);
             result
@@ -406,6 +465,23 @@ impl<S: KeyValueStore + 'static> SettingsVm<S> {
         }
         result
     }
+}
+
+/// The key of the Home row `rail` on the Appearance page.
+fn start_row_key(rail: StartRail) -> &'static str {
+    match rail {
+        StartRail::ContinueWatching => "startRow.weiterschauen",
+        StartRail::NextEpisode => "startRow.naechsteFolge",
+        StartRail::NewMovies => "startRow.neueFilme",
+        StartRail::NewSeries => "startRow.neueSerien",
+        StartRail::NewArrivals => "startRow.neuzugaenge",
+    }
+}
+
+fn start_rail_of(key: &str) -> Option<StartRail> {
+    StartRail::ALL
+        .into_iter()
+        .find(|r| start_row_key(*r) == key)
 }
 
 fn find<'a>(sections: &'a [Section], key: &str) -> Option<&'a Row> {
@@ -527,6 +603,16 @@ impl<S: KeyValueStore + 'static> Inner<S> {
         match key {
             "immerDirectPlay" => self.put_server(&keys::IMMER_DIRECT_PLAY, &server, on, fx),
             "naechsteAuto" => self.put(&keys::NAECHSTE_AUTO, Some(on), fx),
+            _ if start_rail_of(key).is_some() => {
+                // A Home row on or off (`startAus` lists the rows that are off).
+                let raw = start_rail_of(key).map_or("", StartRail::raw_value);
+                let mut off = self.get(&keys::START_AUS);
+                off.retain(|r| r != raw);
+                if !on {
+                    off.push(raw.to_owned());
+                }
+                self.put(&keys::START_AUS, off, fx)
+            }
             "downloadsAn" => {
                 // Turning off deletes nothing unasked; with nothing stored there is nothing to ask.
                 if !on && live.context.stored_downloads > 0 {
@@ -561,6 +647,126 @@ impl<S: KeyValueStore + 'static> Inner<S> {
             live.context.stored_bytes = 0;
         }
         Ok(())
+    }
+
+    /// The combined order of the Home rows as the core heals it: stored ids that exist (fixed rows that fit now and
+    /// `library:` rows), then every missing fixed row in basic order.
+    fn home_order(&self, server: &str) -> Vec<String> {
+        let disconnected = self.get(&keys::NEU_GETRENNT);
+        let mut order: Vec<String> = Vec::new();
+        for id in self
+            .settings
+            .get_for_server(&keys::START_REIHENFOLGE, server)
+        {
+            let known = StartRail::from_raw(&id).is_some_and(|r| r.fits(disconnected))
+                || id.starts_with("library:");
+            if known && !order.contains(&id) {
+                order.push(id);
+            }
+        }
+        for rail in StartRail::ALL.into_iter().filter(|r| r.fits(disconnected)) {
+            let raw = rail.raw_value().to_owned();
+            if !order.contains(&raw) {
+                // Missing fixed rows go before the first library row.
+                let at = order
+                    .iter()
+                    .position(|o| o.starts_with("library:"))
+                    .unwrap_or(order.len());
+                order.insert(at, raw);
+            }
+        }
+        order
+    }
+
+    /// The edits of the Home rows and genres; each one that changes something reports the keys it wrote.
+    fn edit_home(
+        &self,
+        live: &Live,
+        edit: &HomeEdit,
+        fx: &mut Vec<SettingsEffect>,
+    ) -> Result<(), Rejected> {
+        use crate::home_rows as h;
+        let server = live.context.server.clone();
+        let settings = &self.settings;
+        let (moved, names): (bool, &[&str]) = match edit {
+            HomeEdit::Shift { id, delta } => (
+                h::shift_row(settings, &server, id, *delta).map_err(|e| store_error(&e))?,
+                &["startReihenfolge", "startReihen"],
+            ),
+            HomeEdit::Drop { source, onto } => (
+                h::drop_row(settings, &server, source, onto).map_err(|e| store_error(&e))?,
+                &["startReihenfolge", "startReihen"],
+            ),
+            HomeEdit::AddLibrary(l) => {
+                h::add_library(settings, &server, l.clone()).map_err(|e| store_error(&e))?;
+                (true, &["startBibliotheken"])
+            }
+            HomeEdit::RemoveLibrary(id) => {
+                h::remove_library(settings, &server, id).map_err(|e| store_error(&e))?;
+                (true, &["startBibliotheken"])
+            }
+            HomeEdit::AddGenre(g) => {
+                h::add_genre(settings, g).map_err(|e| store_error(&e))?;
+                (true, &["startGenres"])
+            }
+            HomeEdit::RemoveGenre(g) => {
+                h::remove_genre(settings, g).map_err(|e| store_error(&e))?;
+                (true, &["startGenres"])
+            }
+            HomeEdit::DropGenre { source, onto } => (
+                h::drop_genre(settings, source, onto).map_err(|e| store_error(&e))?,
+                &["startGenres"],
+            ),
+        };
+        if moved {
+            for name in names {
+                let synced = *name != "startReihenfolge";
+                fx.push(SettingsEffect::Changed {
+                    key: (*name).to_owned(),
+                    synced,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn move_row(
+        &self,
+        live: &Live,
+        key: &str,
+        delta: i32,
+        fx: &mut Vec<SettingsEffect>,
+    ) -> Result<(), Rejected> {
+        let rail = start_rail_of(key).ok_or(Rejected::UnknownKey)?;
+        let server = live.context.server.clone();
+        let mut order = self.home_order(&server);
+        let shown: Vec<String> = order
+            .iter()
+            .filter(|o| StartRail::from_raw(o).is_some())
+            .cloned()
+            .collect();
+        let Some(pos) = shown.iter().position(|s| s == rail.raw_value()) else {
+            return Err(Rejected::NotAllowed);
+        };
+        let target = i64::try_from(pos).unwrap_or(0) + i64::from(delta);
+        let Some(other) = usize::try_from(target).ok().and_then(|t| shown.get(t)) else {
+            return Ok(());
+        };
+        let (a, b) = (
+            order.iter().position(|o| o == rail.raw_value()),
+            order.iter().position(|o| o == other),
+        );
+        if let (Some(a), Some(b)) = (a, b) {
+            order.swap(a, b);
+        }
+        // The fixed rows' own list follows (`AppModel.storeOrder`).
+        let fixed: Vec<String> = order
+            .iter()
+            .filter(|o| StartRail::from_raw(o).is_some())
+            .cloned()
+            .collect();
+        self.put_server(&keys::START_REIHENFOLGE, &server, order, fx)?;
+        self.put(&keys::START_REIHEN, fixed, fx)
     }
 
     fn set_choice(
@@ -971,7 +1177,25 @@ impl<S: KeyValueStore + 'static> Inner<S> {
             if chips { "chips" } else { "rails" },
         );
         if desk {
-            // The Mac has the groups "Neuzugänge" and "Genres" (`AppearanceView.swift`).
+            // The Mac has the groups "Startseite" (the rows, on or off, in the stored order), "Neuzugänge" and
+            // "Genres" (`AppearanceView.swift`).
+            let disconnected = self.get(&keys::NEU_GETRENNT);
+            let off = self.get(&keys::START_AUS);
+            let rows: Vec<Row> = self
+                .home_order(&c.server)
+                .iter()
+                .filter_map(|id| StartRail::from_raw(id))
+                .filter(|r| r.fits(disconnected))
+                .map(|r| {
+                    self.switch(
+                        start_row_key(r),
+                        r.lists_name(),
+                        None,
+                        !off.iter().any(|o| o == r.raw_value()),
+                    )
+                })
+                .collect();
+            out.push(self.section("Startseite", rows));
             out.push(self.section("Neuzugänge", vec![separate]));
             out.push(self.section("Genres", vec![form]));
         } else {
@@ -1020,11 +1244,8 @@ impl<S: KeyValueStore + 'static> Inner<S> {
                     Some("Lädt die nächste, löscht die gesehene"),
                     self.get(&keys::NAECHSTE_FOLGE_LADEN),
                 ));
-                let place = if c.platform == Platform::Desktop {
-                    "%lld Titel auf diesem Mac"
-                } else {
-                    "%lld Titel auf diesem Gerät"
-                };
+                // Not "Mac": the same app runs on Linux and Windows (the catalog key of the phone and the profile row).
+                let place = "%lld Titel auf diesem Gerät";
                 let count = i64::try_from(c.stored_downloads).unwrap_or(i64::MAX);
                 rows.push(Row {
                     key: "downloadsSpeicher",
@@ -1090,8 +1311,8 @@ impl<S: KeyValueStore + 'static> Inner<S> {
                 enabled: true,
             });
         }
-        if c.server_rows {
-            // The desktop shell has no sandbox, so Discord is offered (`serviceRows`).
+        if c.server_rows && c.discord_presence {
+            // Offered only where presence works (`serviceRows`).
             services.push(self.switch(
                 "discordAnzeigen",
                 "Discord",
@@ -1403,6 +1624,7 @@ mod tests {
         }
         let (vm, _, store) = vm_with(SettingsContext {
             server_rows: true,
+            discord_presence: true,
             server_name: Some("Kino".into()),
             server_version: Some("10.10.3".into()),
             ..Default::default()
@@ -1449,6 +1671,7 @@ mod tests {
         // Unknown server and a running check.
         let (vm, _, _) = vm_with(SettingsContext {
             server_rows: true,
+            discord_presence: true,
             checking: true,
             check_result: Some("Erreichbar".into()),
             ..Default::default()
@@ -1497,6 +1720,7 @@ mod tests {
         // Desktop: `PlaybackSettingsView` and `AppearanceView` of the Mac.
         let (mac, _, _) = vm_with(SettingsContext {
             server_rows: true,
+            discord_presence: true,
             landscape_lock_possible: true,
             ..Default::default()
         });
@@ -1513,10 +1737,17 @@ mod tests {
                 "vorSek"
             ]
         );
-        assert!(groups.iter().all(|(t, _)| !matches!(
-            *t,
-            "Ablauf" | "Im Player" | "Filme und Serien" | "Startseite"
-        )));
+        assert!(
+            groups
+                .iter()
+                .all(|(t, _)| !matches!(*t, "Ablauf" | "Im Player" | "Filme und Serien"))
+        );
+        // The Mac's Appearance page has the Home rows ("Startseite") as a group of switches.
+        assert!(
+            groups
+                .iter()
+                .any(|(t, r)| *t == "Startseite" && r.len() >= 3)
+        );
         assert!(
             groups
                 .iter()
@@ -1732,5 +1963,74 @@ mod tests {
         assert!(on(&vm, "technikschild"));
         vm.send(SettingsIntent::Reload).unwrap();
         assert_eq!(vm.version(), v + 1);
+    }
+
+    #[test]
+    fn home_rows_switch_off_and_move_among_the_shown_ones() {
+        let ctx = SettingsContext {
+            platform: Platform::Desktop,
+            server_rows: true,
+            discord_presence: true,
+            capabilities: Capabilities::ALL,
+            server: "srv".into(),
+            ..SettingsContext::default()
+        };
+        let (vm, _seen, store) = vm_with(ctx);
+        let rows = |vm: &SettingsVm<Mem>| -> Vec<(String, bool)> {
+            vm.sections()
+                .sections
+                .iter()
+                .find(|s| s.title_key == "Startseite")
+                .map(|s| {
+                    s.rows
+                        .iter()
+                        .map(|r| {
+                            (
+                                r.key.to_owned(),
+                                matches!(r.control, RowControl::Switch { on: true }),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let first = rows(&vm);
+        assert!(first.len() >= 3 && first.iter().all(|r| r.1), "{first:?}");
+        // Off, and back on.
+        vm.send(SettingsIntent::SetSwitch {
+            key: first[0].0.clone(),
+            on: false,
+        })
+        .unwrap();
+        assert!(!rows(&vm)[0].1);
+        assert_eq!(
+            store.get("startAus"),
+            Some(swiftly_settings::Value::StrList(vec![
+                "weiterschauen".into()
+            ]))
+        );
+        vm.send(SettingsIntent::SetSwitch {
+            key: first[0].0.clone(),
+            on: true,
+        })
+        .unwrap();
+        assert!(rows(&vm)[0].1);
+        // Down: the first row swaps with the second and the combined order is stored for this server.
+        vm.send(SettingsIntent::MoveRow {
+            key: first[0].0.clone(),
+            delta: 1,
+        })
+        .unwrap();
+        let moved = rows(&vm);
+        assert_eq!(moved[0].0, first[1].0);
+        assert_eq!(moved[1].0, first[0].0);
+        assert!(store.get("startReihenfolge|srv").is_some());
+        // Up at the top does nothing.
+        vm.send(SettingsIntent::MoveRow {
+            key: moved[0].0.clone(),
+            delta: -1,
+        })
+        .unwrap();
+        assert_eq!(rows(&vm), moved);
     }
 }

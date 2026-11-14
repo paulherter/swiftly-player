@@ -7,6 +7,7 @@ pub const USAGE: &str = "swiftly-desktop [--app] [--smoke ADDRESS USER PASSWORD]
                 [--size WxH] [--scale S] [--frames N --png OUT.png [--open-detail]] [--gpu-bench] [--latency] [--single-instance]
                 [swiftly://... | VIDEOFILE]...
 
+  --script FILE       scripted pointer steps (move, click, wheel, fullscreen, resize WxH, shot, mark) for live checks in a nested compositor; SWIFTLY_TRACE=1 prints timestamped trace lines
   --touch-script S    scripted finger events F:P:X:Y;... (frame, d/m/u, physical px) through the window's touch path
   --latency           scripted wheel run through the event loop (use with --quit-after): prints input-to-present p50/p95/p99 and a histogram, and the frame statistics
   --single-instance   one running instance: a second launch hands its arguments (links, files) to the first and exits. On in the real app
@@ -82,6 +83,8 @@ pub struct Options {
     /// `--touch-script F:P:X:Y;...`: scripted finger events through the window's touch path, fired once `F` frames
     /// are presented (`P` is d, m or u for down, move, up; `X`, `Y` physical pixels). For automated window checks.
     pub touch_script: Vec<(u32, u8, f64, f64)>,
+    /// `--script FILE`: scripted pointer steps for live checks (see `script.rs`).
+    pub script: Option<PathBuf>,
     /// `--exit-after-dump`: close the window once the dump is written.
     pub exit_after_dump: bool,
     /// `--form`: the layout (idiom) of `--demo app`.
@@ -119,6 +122,7 @@ impl Default for Options {
             video_px: None,
             dump_frame: None,
             touch_script: Vec::new(),
+            script: None,
             after_frames: 5,
             exit_after_dump: false,
             form: swiftly_ui::Idiom::Desktop,
@@ -244,6 +248,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Option<Options>,
                     ));
                 }
             }
+            "--script" => o.script = Some(PathBuf::from(value("--script")?)),
             "--exit-after-dump" => o.exit_after_dump = true,
             "--after-frames" => {
                 let v = value("--after-frames")?;

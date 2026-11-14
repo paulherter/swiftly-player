@@ -2,7 +2,12 @@
 #
 # The package itself has to be created in the AUR by hand once (see
 # Distribution/SETUP.md). After that, this run rewrites pkgver and the checksum
-# of the release tarball and pushes them to the AUR git repository.
+# of the release files and pushes them to the AUR git repository.
+#
+# The package installs the Rust desktop app from the release asset
+# `swiftly-player-<version>-linux-x64.tar.gz` (see the PKGBUILD for the layout).
+# The release assets must exist before this run: the checksums are read from
+# the published files.
 
 name: AUR
 
@@ -14,7 +19,7 @@ on:
       fassung:
         description: 'Fassung, z. B. 1.0.4'
         required: true
-        default: '1.0.3'
+        default: '1.1.0'
 
 jobs:
   veroeffentlichen:
@@ -37,11 +42,13 @@ jobs:
       - name: PKGBUILD mit der neuen Fassung fuellen
         run: |
           mkdir -p aur-arbeit
-          sed "s/^pkgver=.*/pkgver=${{ steps.f.outputs.wert }}/" \
+          sed -e "s/^pkgver=.*/pkgver=${{ steps.f.outputs.wert }}/" \
+              -e "s/^pkgrel=.*/pkgrel=1/" \
             Distribution/aur/swiftly-player-bin/PKGBUILD > aur-arbeit/PKGBUILD
 
-      # updpkgsums downloads the new tarball and writes the checksum into the
-      # copy under aur-arbeit. The template in the repository stays untouched.
+      # updpkgsums downloads the release tarball and the licence files named in
+      # `source=` and writes their checksums into the copy under aur-arbeit. The
+      # template in the repository stays untouched.
       - name: Ins AUR stellen
         uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
         with:

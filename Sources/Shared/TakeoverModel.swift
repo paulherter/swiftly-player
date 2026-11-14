@@ -28,6 +28,9 @@ final class TakeoverModel {
     private var lastAnswer: [RemoteSession] = []
     /// The session being taken over (its id is looked up in the fresh answer).
     private var adopting: RemoteSession?
+    #if DEBUG
+    private var liveTapped = false
+    #endif
 
     /// The first of them, for when there is only one.
     var offering: RemoteSession? { offerings.first }
@@ -149,9 +152,7 @@ final class TakeoverModel {
         case .ask:
             guard let client = model.remoteServer else { return .askFailed(error: "kein Server") }
             do {
-                let data = try await client.remoteSessionData()
-                // The same answer, decoded for the views that still read `RemoteSession`.
-                let list = (try? JSONDecoder().decode([RemoteSession].self, from: data)) ?? []
+                let (data, list) = try await client.remoteSessionAnswer()
                 answered = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
                 lastAnswer = list
                 return .answered(sessionsJson: data, now: Date().timeIntervalSince1970)
@@ -162,6 +163,13 @@ final class TakeoverModel {
             try? await model.remoteServer?.reportCapabilities()
         case .offer(let ids):
             offerings = ids.compactMap { answered[$0] }
+            #if DEBUG
+            // Live runs (`-SwiftlyLiveTakeover`): tap the badge once, as soon as something is offered.
+            if !offerings.isEmpty, !liveTapped, ProcessInfo.processInfo.arguments.contains("-SwiftlyLiveTakeover") {
+                liveTapped = true
+                tapped = true
+            }
+            #endif
         case .publishSessions:
             if let user = model.session?.userID { PlayOutputs.shared.take(lastAnswer, user: user) }
         case .preload:

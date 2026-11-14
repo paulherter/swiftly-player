@@ -141,6 +141,9 @@ pub struct ScrollBody {
     blend: Blend,
     /// Time of the last wheel event while a precision touchpad drives the body (see [`wheel_by`](Self::wheel_by)).
     wheel_last: Option<f64>,
+    /// Whether the ends give (rubber band, soft stop, momentum overshoot). Off on Windows and Linux desktops: content
+    /// stops dead at its ends there. On for touch and the Mac table.
+    pub bounce: bool,
 }
 
 /// True for a finite-or-infinite number above zero (false for NaN).
@@ -254,6 +257,7 @@ impl ScrollBody {
             table: Vec::new(),
             blend: Blend::new(0.0),
             wheel_last: None,
+            bounce: true,
         }
     }
 
@@ -287,6 +291,21 @@ impl ScrollBody {
         self.glide = Some(t.release);
         self.min_fling = t.min_fling_speed;
         self.stale_ms = t.velocity_stale_ms;
+        self.bounce = t.rubber_band;
+        if !self.bounce {
+            self.stop_overscroll();
+        }
+    }
+
+    /// Without a bounce a stretched body goes straight to its nearest bound.
+    fn stop_overscroll(&mut self) {
+        let m = self.metrics;
+        if m.scrollable() && (self.pos < m.min || self.pos > m.max) {
+            self.pos = m.clamp(self.pos);
+            if matches!(self.mode, Mode::Spring { .. } | Mode::Dragging { .. }) {
+                self.mode = Mode::Idle;
+            }
+        }
     }
 
     /// Moves the content by `delta` points without a finger (a discrete wheel notch): clamped into the range, no rubber
@@ -319,6 +338,9 @@ impl ScrollBody {
             self.mode = Mode::Idle;
             self.pos = m.min;
             return 0.0;
+        }
+        if !self.bounce {
+            return self.scroll_by_clamped(delta).abs();
         }
         let from = self.pos;
         let inside = m.clamp(from);
@@ -484,6 +506,8 @@ impl ScrollBody {
             }
             if !self.metrics.scrollable() {
                 *raw = self.metrics.min;
+            } else if !self.bounce {
+                *raw = self.metrics.clamp(*raw);
             }
             let raw = *raw;
             self.samples.push((now_ms, raw));
@@ -708,12 +732,16 @@ impl ScrollBody {
                 && t >= c.t_ms
             {
                 self.pos = c.bound;
-                self.mode = Mode::Spring {
-                    target: c.bound,
-                    spring: self.back_spring,
-                    x0: 0.0,
-                    v0: c.v,
-                    t0: t0 + c.t_ms,
+                self.mode = if self.bounce {
+                    Mode::Spring {
+                        target: c.bound,
+                        spring: self.back_spring,
+                        x0: 0.0,
+                        v0: c.v,
+                        t0: t0 + c.t_ms,
+                    }
+                } else {
+                    Mode::Idle
                 };
             } else if cross.is_none() && t >= stop_ms {
                 self.pos = x0 + self.table_at(stop_ms);
@@ -736,12 +764,16 @@ impl ScrollBody {
                 && t >= c.t_ms
             {
                 self.pos = c.bound;
-                self.mode = Mode::Spring {
-                    target: c.bound,
-                    spring: self.back_spring,
-                    x0: 0.0,
-                    v0: c.v,
-                    t0: t0 + c.t_ms,
+                self.mode = if self.bounce {
+                    Mode::Spring {
+                        target: c.bound,
+                        spring: self.back_spring,
+                        x0: 0.0,
+                        v0: c.v,
+                        t0: t0 + c.t_ms,
+                    }
+                } else {
+                    Mode::Idle
                 };
             } else if cross.is_none() && t >= stop_ms {
                 self.pos = x0 + v0 * (1.0 - rate.powf(stop_ms)) / decay_constant(rate);
@@ -1310,9 +1342,72 @@ mod tests {
     fn mac_body(content: f64, offset: f64) -> ScrollBody {
         let mut b = ScrollBody::new(ScrollMetrics::new(content, 600.0), offset);
         b.apply_tuning(&crate::profile::ScrollTuning::for_os(
-            crate::profile::Os::Windows,
+            crate::profile::Os::MacOs,
         ));
         b
+    }
+
+    /// A body with the Windows or Linux table: the ends never give.
+    fn desk_body(os: crate::profile::Os, content: f64, offset: f64) -> ScrollBody {
+        let mut b = ScrollBody::new(ScrollMetrics::new(content, 600.0), offset);
+        b.apply_tuning(&crate::profile::ScrollTuning::for_os(os));
+        b
+    }
+
+    #[test]
+    fn windows_and_linux_never_go_past_an_end() {
+        use crate::profile::Os;
+        for os in [Os::Windows, Os::Linux] {
+            // A wheel notch at the top and at the bottom: dead stop, no stretch, no spring.
+            let mut b = desk_body(os, 1000.0, 0.0);
+            b.notch_by(-100.0, 0.0);
+            assert_eq!(
+                (b.position(), b.state()),
+                (0.0, ScrollState::Idle),
+                "{os:?}"
+            );
+            let mut b = desk_body(os, 1000.0, 390.0);
+            assert!(close(b.notch_by(100.0, 0.0), 10.0, 1e-9));
+            assert_eq!((b.position(), b.state()), (400.0, ScrollState::Idle));
+            // A touchpad stream pulled 300 pt past the top stays at the top, also after the stream goes quiet.
+            let mut b = desk_body(os, 1000.0, 0.0);
+            for i in 0..30 {
+                b.wheel_by(-10.0, f64::from(i) * 8.0);
+                assert!(b.position() >= 0.0, "{os:?} {}", b.position());
+            }
+            assert_eq!(b.position(), 0.0);
+            b.advance(1000.0);
+            assert_eq!((b.position(), b.state()), (0.0, ScrollState::Idle));
+            // Pushing past the bottom and then back moves at once (no raw distance to unwind).
+            let mut b = desk_body(os, 1000.0, 390.0);
+            for i in 0..20 {
+                b.wheel_by(10.0, f64::from(i) * 8.0);
+            }
+            assert_eq!(b.position(), 400.0);
+            b.wheel_by(-10.0, 170.0);
+            assert_eq!(b.position(), 390.0);
+            // A fast flick into the bottom stops at it: the position never exceeds it and no spring runs.
+            let mut b = desk_body(os, 1000.0, 380.0);
+            let t = flick(&mut b, 0.0, 3000.0, 100.0, 10.0);
+            let mut now = t;
+            while b.state() != ScrollState::Idle && now < t + 3000.0 {
+                now += 8.0;
+                assert!(b.offset(now) <= 400.0 + 1e-9, "{os:?}");
+                assert_ne!(b.state(), ScrollState::Spring);
+            }
+            assert_eq!(b.position(), 400.0);
+        }
+    }
+
+    #[test]
+    fn touch_and_the_mac_still_bounce() {
+        let mut b = ScrollBody::new(ScrollMetrics::new(1000.0, 600.0), 0.0);
+        b.apply_tuning(&crate::profile::ScrollTuning::touch());
+        b.touch_move(-100.0, 0.0);
+        assert!(b.position() < -10.0);
+        let mut b = mac_body(1000.0, 0.0);
+        b.notch_by(-40.0, 0.0);
+        assert!(close(b.position(), -10.0, 1e-9));
     }
 
     #[test]

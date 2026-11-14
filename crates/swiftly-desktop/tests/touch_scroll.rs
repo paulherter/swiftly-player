@@ -90,6 +90,11 @@ fn finger_past_the_end_rubber_bands_and_springs_back() {
     // Pull down at the very top: content follows less than the finger, then returns to the top.
     let seen = drag(&mut s, &mut now, 700.0, 300.0, 300.0, 240.0);
     let pulled = seen.last().unwrap() - top;
+    if !cfg!(target_os = "macos") {
+        // Windows and Linux never bounce at the ends: the content stays at the top.
+        assert!(pulled.abs() < 0.5, "moved {pulled} past the top");
+        return;
+    }
     assert!(
         pulled.abs() > 10.0 && pulled.abs() < 300.0 * 0.6,
         "rubber band moved {pulled} for a 300 px pull"

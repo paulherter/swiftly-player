@@ -111,6 +111,16 @@ pub enum Paint {
         /// Corner radius (outer ends only).
         radius: f32,
     },
+    /// An elliptical gradient (SwiftUI `EllipticalGradient`): `stops` are `(position, colour)`, position 1 lies on the
+    /// ellipse of half axes `radii` around `center`; both are in the unit square of the node and may reach outside it.
+    Radial {
+        /// Centre in the node's unit square.
+        center: [f32; 2],
+        /// Half axes in units of the node's width and height.
+        radii: [f32; 2],
+        /// Stops sorted by position.
+        stops: Vec<(f32, Color)>,
+    },
     /// Frosted glass: blurs what is drawn behind the node by `blur` points under `tint` (Swift `Material` / `.blur`).
     /// The software renderer blurs; the GPU renderer draws the tint only.
     Blur {
@@ -156,6 +166,8 @@ pub enum Paint {
         tint: Color,
         /// Corner radius.
         radius: f32,
+        /// One level of noise on the output, for a pre-computed slow ramp that would band in 8 bits.
+        dither: bool,
     },
     /// A fill that fades in with the focus amount of the nearest focusable (its alpha is multiplied by it).
     FocusFill {
@@ -297,10 +309,16 @@ pub struct Node {
     pub gestures: Gestures,
     /// Shows the press feedback (scale + opacity) while a tap on this node is held.
     pub press_feedback: bool,
+    /// Draws this node's fills and strokes on the same whole device pixels as a picture inside it
+    /// ([`DrawList::snapped_picture`](swiftly_render::DrawList::snapped_picture)), so the ground and the border of a
+    /// cover never peek out beside it.
+    pub snap_pixels: bool,
     /// Makes this node a scroll view.
     pub scroll: Option<ScrollSpec>,
     /// Clips the children to the frame.
     pub clip: bool,
+    /// With `clip`: the children are cut to the frame as a rounded rectangle of this corner radius (0 = square).
+    pub clip_radius: f32,
     /// Target opacity; changes animate with [`Node::motion`].
     pub opacity: f32,
     /// Target scale about the centre; changes animate with [`Node::motion`].
@@ -349,8 +367,10 @@ impl Node {
             paint: vec![],
             gestures: Gestures::default(),
             press_feedback: false,
+            snap_pixels: false,
             scroll: None,
             clip: false,
+            clip_radius: 0.0,
             opacity: 1.0,
             scale: 1.0,
             motion: Motion::Instant,
@@ -443,7 +463,18 @@ impl Node {
             image,
             tint: Color::WHITE,
             radius,
+            dither: false,
         });
+        n
+    }
+
+    /// A pre-computed ramp (a faded backdrop) of a fixed size, drawn with a little noise so it does not band.
+    pub fn ramp_image(image: ImageId, w: f32, h: f32) -> Node {
+        let mut n = Node::image(image, w, h, 0.0);
+        n.name = "ramp";
+        if let Some(Paint::Image { dither, .. }) = n.paint.last_mut() {
+            *dither = true;
+        }
         n
     }
 
@@ -590,6 +621,12 @@ impl Node {
         self.paint.push(p);
         self
     }
+    /// Paints this node on whole device pixels, the same rectangle a picture inside it is drawn at.
+    #[must_use]
+    pub fn pixel_snapped(mut self) -> Node {
+        self.snap_pixels = true;
+        self
+    }
     /// Takes taps and shows the press feedback.
     #[must_use]
     pub fn on_tap(mut self, action: impl Into<Action>) -> Node {
@@ -670,6 +707,14 @@ impl Node {
     #[must_use]
     pub fn clipped(mut self) -> Node {
         self.clip = true;
+        self
+    }
+    /// Clips children to the frame as one rounded card (SwiftUI `.clipShape(RoundedRectangle(cornerRadius:))`): the
+    /// children are cut to the rounded rectangle, anti-aliased, so a mosaic of cells reads as one card.
+    #[must_use]
+    pub fn clipped_rounded(mut self, radius: f32) -> Node {
+        self.clip = true;
+        self.clip_radius = radius;
         self
     }
     /// Target opacity, animated with `motion` when it changes between rebuilds.

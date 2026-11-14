@@ -41,8 +41,11 @@ fn env(f: &Form) -> Env {
     Env::new(Size::new(f.size.0, f.size.1), f.scale, f.idiom)
 }
 
-// The goldens come from macOS; the software renderer rounds a little differently on other systems (seen: up to 10 levels).
-const TOLERANCE: u8 = if cfg!(target_os = "macos") { 2 } else { 12 };
+// The goldens are written on Linux (CI runs Linux and macOS); the vector rasteriser rounds a few edge pixels differently
+// per OS (icon edges only). Same rule as `forms_golden.rs`: on macOS a difference above 2 levels may touch at most
+// 0.05 % of the pixels and none may exceed 16 levels; other systems keep the 12 level tolerance.
+const TOLERANCE: u8 = if cfg!(target_os = "macos") { 16 } else { 12 };
+const MAC_PIXEL_SHARE: f64 = 0.0005;
 
 fn check(name: &str, img: &RgbaImage) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -60,8 +63,13 @@ fn check(name: &str, img: &RgbaImage) {
         (golden.width, golden.height),
         "golden {name}: size"
     );
-    let (max, _) = img.diff(&golden);
-    assert!(max <= TOLERANCE, "golden {name} differs by {max}");
+    let (max, share) = img.diff(&golden);
+    let share_ok = !cfg!(target_os = "macos") || max <= 2 || share <= MAC_PIXEL_SHARE;
+    assert!(
+        max <= TOLERANCE && share_ok,
+        "golden {name} differs by {max} ({:.3} % of the pixels)",
+        share * 100.0
+    );
 }
 
 macro_rules! screen_tests {

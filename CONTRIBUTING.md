@@ -13,41 +13,42 @@ translated; the German wording is currently the key of the string catalogue
 
 | Path | What lives there |
 |---|---|
-| `Packages/JellyfinKit` | Shared logic and tests: Jellyfin API, playback decisions, models. Platform-neutral Swift. |
+| `crates/` | The shared Rust core (Jellyfin, Plex and Emby access, playback rules, view models, settings, downloads) and the Rust UI crates. |
+| `crates/swiftly-desktop` | The Windows and Linux app: its own Rust UI in a winit window, video through libmpv. |
+| `xtask/` | Cargo helpers: the Apple framework, desktop packaging, the fixture server. |
+| `Packages/SwiftlyCore` | Swift wrapper around the Rust core, used by the Apple apps. |
+| `Packages/JellyfinKit` | Swift logic and tests used by the Apple apps; parts of it are being replaced by the Rust core. |
 | `Sources/Shared` | SwiftUI code shared by iOS, iPadOS, tvOS and macOS. |
 | `Sources/iOS`, `tvOS`, `macOS`, `TopShelf` | Views and entry points per platform. |
-| `Android/` | Kotlin app (`phone`, which also contains the Android TV screens, and `shared`) plus the Swift core (`core`) used through swift-java. |
-| `Linux/`, `Windows/` | GTK 4 app in Swift, installers and packaging. |
+| `Android/` | Kotlin app (`phone`, which also contains the Android TV screens, and `shared`) plus the bindings to the Rust core (`rustcore`). |
+| `Linux/`, `Windows/` | Install scripts and packaging, and the earlier desktop app in Swift and GTK 4 (being retired). |
 | `Werkzeuge/` | Build, check and release scripts. |
 
 **One rule above all:** logic is shared, screens are per platform. If the same
-logic exists twice, move it into `JellyfinKit` instead of copying it. Behaviour
+logic exists twice, move it into the shared core (`crates/`) instead of copying it. Behaviour
 that differs between platforms needs a reason from input method, distance or
 window size.
 
 ## Building
 
-Apple platforms (Xcode 26 or newer):
+The full steps are in [Documentation/Building.md](Documentation/Building.md). In short:
 
 ```bash
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-xcodegen generate            # after any change to project.yml
-cd Packages/JellyfinKit && swift test
+cargo test --workspace                                      # Rust core and desktop UI
+cargo build -p swiftly-desktop --release --features mpv     # Windows and Linux app, needs libmpv to play
+cargo xtask fixture-server --port 8096 --real-shapes        # a fake Jellyfin server for development
 ```
 
-Then open `Swiftly.xcodeproj` and build the scheme for your platform. VLCKit is
-fetched with `Werkzeuge/vlckit-fetch.sh`.
+Apple platforms (Xcode 26 or newer): `Werkzeuge/rust-kern.sh` builds the core
+framework and runs `xcodegen`; then open `Swiftly.xcodeproj` and build the scheme
+for your platform. `Werkzeuge/check.sh` runs the package tests and the Apple
+builds in one command.
 
-Everything Apple plus the package tests in one command:
-
-```bash
-Werkzeuge/check.sh
-```
-
-Android: `cd Android && ./gradlew :phone:compileDebugKotlin` (JDK 17, Android SDK;
+Android: `Werkzeuge/rust-kern-android.sh`, then
+`cd Android && ./gradlew :phone:assembleDirectDebug` (JDK, Android SDK and NDK;
 `Werkzeuge/android-environment.sh` prepares the environment).
 
-Linux: `Linux/build.sh` (Swift 6, GTK 4.14, libVLC). Windows: `Windows/build.ps1`.
+Desktop packages: `Werkzeuge/package-desktop.sh`.
 
 ## Rules for changes
 
@@ -59,11 +60,13 @@ Linux: `Linux/build.sh` (Swift 6, GTK 4.14, libVLC). Windows: `Windows/build.ps1
   and keep the string.
 - **Comments explain why,** not what. No history ("used to be", dates), no names.
 - **Standard controls and the accent colour** come from the shared style
-  (`Sources/Shared/Style.swift`); do not hard-code colours or sizes.
+  (`Sources/Shared/Style.swift` on Apple, `crates/swiftly-design` in the Rust
+  UI); do not hard-code colours or sizes.
 - **No new dependency without its licence.** Add it to `LICENSES/components.json`
   and `THIRD-PARTY-NOTICES.md`. Swiftly is MPL-2.0; GPL-only code cannot go in.
   FFmpeg builds must be LGPL (no `--enable-gpl`, no `--enable-nonfree`).
-- **Tests:** logic in `JellyfinKit` comes with a test. `swift test` must stay green.
+- **Tests:** logic comes with a test. `cargo test --workspace` and, for Swift
+  changes, `swift test` in `Packages/JellyfinKit` must stay green.
 - **Texts:** a new user-visible text goes into the string catalogue in every
   language, the German wording being the key. `Werkzeuge/catalog-check.py` checks
   that none is missing.

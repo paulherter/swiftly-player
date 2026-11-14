@@ -17,6 +17,12 @@ fn env() -> Env {
     Env::new(Size::new(1280.0, 620.0), 1.0, Idiom::Desktop)
 }
 
+/// A shorter window for the settings page: without the Discord row (the desktop shows no presence) its content is
+/// barely taller than the default window, and a page that fits has nothing to scroll.
+fn short_env() -> Env {
+    Env::new(Size::new(1280.0, 540.0), 1.0, Idiom::Desktop)
+}
+
 /// One screen under test: frames, touch, and every scroll offset in tree order.
 struct Rig {
     frame: Box<dyn FnMut(f64)>,
@@ -99,7 +105,7 @@ fn rigs() -> Vec<(&'static str, Rig)> {
         (
             "settings",
             rig!(
-                SettingsScreen::new(env(), cx(), true),
+                SettingsScreen::new(short_env(), cx(), true),
                 |s: &mut SettingsScreen| s.scroll_offsets()
             ),
         ),

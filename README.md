@@ -306,31 +306,22 @@ sudo zypper addrepo -f https://paulherter.github.io/swiftly-player/rpm swiftly
 sudo zypper install swiftly-jellyfin
 ```
 
-**Anything else** — build it yourself. Same script, one flag:
-`… | bash -s -- --aus-quelle`. It pulls the dependencies from your
-distribution, fetches Swift into `$HOME`, and builds.
-
-**On Arch, CachyOS and Manjaro** the toolchain from swift.org is linked
-against Ubuntu's library names, and the compiler will not start until
-`libncurses.so.6` and `libxml2.so.2` are there. The installer creates those
-two links under `~/.swift-compat` by itself, without a password and without
-touching `/usr/lib`. If you skip the installer and run `swift build` by hand,
-source `Linux/environment.sh` first — it does the same and says what is missing
-before the build runs instead of after.
+**Anything else** — build it yourself with Cargo, see
+[Building](Documentation/Building.md). `Werkzeuge/package-desktop.sh` also makes
+a `.tar.gz` that starts without installation.
 
 </details>
 
 The packages are signed; the key's fingerprint is
 `705D 676A 71BF 0121 804A  90BA C858 9885 A042 FB8B`.
 
-**Requirements: GTK 4.14 and libmpv.** That is what rules out the older
-releases — Debian 12 ships GTK 4.8 and could not draw the app at all. The
-packages are built against Ubuntu 24.04 for glibc, which is the same floor
-GTK already sets, so it costs nothing.
+**Requirements: libmpv and a graphics driver with Vulkan or OpenGL.** The
+packages are built against glibc 2.35, so they run on Debian 12, Ubuntu 22.04
+and everything newer.
 
 **Why packages and not a Flatpak.** Measured, not assumed: the GNOME 48
-runtime carries GTK 4 but not a single libmpv library. A Flatpak would have
-to build mpv and its FFmpeg itself.
+runtime carries not a single libmpv library. A Flatpak would have to build mpv
+and its FFmpeg itself.
 
 <br>
 
@@ -351,14 +342,14 @@ installer carries no paid code-signing certificate, which is all that warning
 says. Jellyfin's own desktop app is in the same position. The checksum is
 listed with each release so you can verify the download.
 
-It is the same program as on Linux: the same interface code, mirrored into the
-Windows build. GTK 4, libmpv and the Swift runtime ship inside the installer.
+It is the same program as on Linux, built from the same Rust code. libmpv ships
+inside the installer.
 
 <br>
 
 ## Documentation
 
-- [Building](Documentation/Building.md): clone, generate the project, run the tests
+- [Building](Documentation/Building.md): build the apps, run the tests, package the desktop app
 - [Players](Documentation/Players.md): which player engine runs on which system, and where its source is
 - [VLCKit](Documentation/VLCKit.md): why the VLCKit build used so far is patched, with the measurements
 - [Device profile](Packages/JellyfinKit/Sources/JellyfinKit/DeviceProfile.swift): the file that decides whether your server transcodes, with the reasoning in its comments
@@ -369,8 +360,8 @@ Windows build. GTK 4, libmpv and the Swift runtime ship inside the installer.
 
 - Your own server: Jellyfin **10.8 or newer**, or Plex or Emby (beta). Swiftly
   Player hosts nothing and has no account of its own.
-- iOS 18, tvOS 18, macOS 15, Android 9, Windows 10, or a Linux desktop with GTK
-  4.14 and libmpv, which the installer takes care of.
+- iOS 18, tvOS 18, macOS 15, Android 9, Windows 10, or a Linux desktop with
+  libmpv, which the installer takes care of.
 
 <br>
 

@@ -175,10 +175,58 @@ enum LiveRun {
     /// as the player covers it, and a cancelled task's sleeps return at once.
     static func start(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void,
                       look: ((Bool) -> Void)? = nil) {
+        #if os(macOS)
+        snapshotsStart()
+        #endif
         guard an, !started else { return }
         started = true
         Task { @MainActor in await flow(model, open: open, close: close, look: look) }
     }
+
+    #if os(macOS)
+    private static var snapshotsRunning = false
+
+    /// The window with its child windows on top (the hand-over stage is one), as PNG data.
+    private static func snapshotWithChildren(_ window: NSWindow) -> Data? {
+        typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return nil }
+        let capture = unsafeBitCast(symbol, to: Capture.self)
+        func image(_ w: NSWindow) -> CGImage? { capture(.null, 1 << 3, UInt32(w.windowNumber), 1 << 0)?.takeRetainedValue() }
+        guard let base = image(window), let context = CGContext(
+            data: nil, width: base.width, height: base.height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        let scale = window.backingScaleFactor
+        context.draw(base, in: CGRect(x: 0, y: 0, width: base.width, height: base.height))
+        for child in window.childWindows ?? [] where child.isVisible {
+            guard let picture = image(child) else { continue }
+            let origin = CGPoint(x: (child.frame.minX - window.frame.minX) * scale, y: (child.frame.minY - window.frame.minY) * scale)
+            context.draw(picture, in: CGRect(origin: origin, size: CGSize(width: picture.width, height: picture.height)))
+        }
+        guard let merged = context.makeImage() else { return nil }
+        return NSBitmapImageRep(cgImage: merged).representation(using: .png, properties: [:])
+    }
+
+    /// `-SwiftlyLiveSnapshots`: every 1.5 s the window as the window server composes it goes to `<live dir>/snap/<epoch ms>.png`.
+    /// A run of two clients (a hand-over) needs the Mac window at the moments in between, not only at asked-for shots.
+    private static func snapshotsStart() {
+        guard arguments.contains("-SwiftlyLiveSnapshots"), !snapshotsRunning else { return }
+        snapshotsRunning = true
+        let folder = dir.appendingPathComponent("snap", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        Task { @MainActor in
+            // The hand-over stage is built over the key window: a run that no one clicked must make its own window key.
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.windows.first(where: { $0.canBecomeMain })?.makeKeyAndOrderFront(nil)
+            while !Task.isCancelled {
+                if let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }), let png = snapshotWithChildren(window) {
+                    let stamp = Int(Date().timeIntervalSince1970 * 1000)
+                    try? png.write(to: folder.appendingPathComponent("\(stamp).png"))
+                }
+                try? await Task.sleep(for: .milliseconds(350))
+            }
+        }
+    }
+    #endif
 
     /// `-SwiftlyLiveLookPage`: the subtitle look page on screen for a shot (the outside answers `shot-wanted` with a screenshot).
     private static func lookPage(_ look: (Bool) -> Void) async {

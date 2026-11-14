@@ -22,6 +22,7 @@ mod detail_more;
 mod downloads_vm;
 mod history;
 mod home;
+pub mod home_rows;
 mod host;
 mod language_data;
 mod language_names;
@@ -58,12 +59,15 @@ mod seerr;
 mod series;
 mod server;
 mod server_probe;
+mod settings_sync_run;
 mod settings_vm;
 mod shared;
 pub mod subtitle_sidecar;
 mod tile;
 mod tile_details;
 mod title_text;
+mod track_names;
+mod transcode_reason;
 
 pub use account::AccountRef;
 pub use bell::{Change, Changed, part};
@@ -168,8 +172,12 @@ pub use server::{
     make_signed_out_client,
 };
 pub use server_probe::{ProbeBoard, ProbeEvent, ServerProbe};
+pub use settings_sync_run::{
+    Ran as SyncRan, SeerrOutcome, SettingsSyncCore, StoreSync, SyncOutcome, SyncRound,
+    keys as sync_keys, stamp_change, synced_values,
+};
 pub use settings_vm::{
-    Capabilities, ChoiceOption, Confirm, Platform, Rejected, Row, RowControl, Section,
+    Capabilities, ChoiceOption, Confirm, HomeEdit, Platform, Rejected, Row, RowControl, Section,
     SectionsPart, SettingsContext, SettingsEffect, SettingsIntent, SettingsStatusPart, SettingsVm,
     settings_part,
 };
@@ -177,6 +185,8 @@ pub use shared::{
     CurrentGroup, GroupDetail, GroupRow, HandoffEvent, HandoffStage, SharedDetail, SharedIntent,
     SharedPart, SharedVm, TakeoverPart, TakeoverRow, handoff_next, join_names, phase_text,
 };
-pub use tile::{banner_of, poster_tiles, set_tile_image_sizes};
+pub use tile::{banner_of, poster_tiles, section_cards, set_tile_image_sizes};
 pub use tile_details::TileDetails;
-pub use title_text::minutes_text;
+pub use title_text::{episode_code, minutes_text, player_head};
+pub use track_names::TrackNames;
+pub use transcode_reason::reason_text;

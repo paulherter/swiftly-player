@@ -622,6 +622,103 @@ fn the_merkliste_page_mixes_movies_and_series_and_the_kind_narrows_it() {
     wait_for("both again", || ready(&vm) && vm.grid().tiles.len() == 2);
 }
 
+/// Merkliste: the order starts at "latest" (DateCreated, newest first, `WatchlistModel.sorting = .latest`), and a
+/// remembered choice of the viewer wins.
+#[test]
+fn the_merkliste_starts_with_the_newest_saved_first() {
+    let net = Script::new(|r| {
+        if !r.url.path().ends_with("/Items") {
+            return Some("{}".into());
+        }
+        let mut m = movie(1);
+        m["UserData"] = serde_json::json!({"Played": false, "IsFavorite": true});
+        Some(list(&[m], 1))
+    });
+    let kv = Arc::new(MemoryKeyValue::new());
+    let first = vm(&net, &kv, spec(Some("merkliste"), None));
+    assert!(first.set_remember_kind(RememberGenre::All));
+    wait_for("grid", || ready(&first));
+    assert_eq!(first.status().sorting, Sorting::Latest);
+    let url = net
+        .urls()
+        .into_iter()
+        .rev()
+        .find(|u| u.contains("IncludeItemTypes"))
+        .unwrap();
+    assert!(
+        url.contains("SortBy=DateCreated") && url.contains("SortOrder=Descending"),
+        "{url}"
+    );
+    // A stored choice stays.
+    let kv2 = Arc::new(MemoryKeyValue::new());
+    kv2.set("sortierung.merkliste", "bewertung");
+    let vm2 = vm(&net, &kv2, spec(Some("merkliste"), None));
+    assert!(vm2.set_remember_kind(RememberGenre::All));
+    wait_for("grid 2", || ready(&vm2));
+    assert_eq!(vm2.status().sorting, Sorting::Rating);
+}
+
+/// Merkliste (L2): a film that is on the watchlist in two libraries is one tile and one counted work, and the page
+/// asks the way the Mac's `rememberedItems` does (slim list, merge per work, then the page by ids).
+#[test]
+fn the_merkliste_shows_each_work_once() {
+    let net = Script::new(|r| {
+        let path = r.url.path().to_owned();
+        if path.ends_with("/UserViews") {
+            return Some(list(
+                &[
+                    serde_json::json!({"Id": "libA", "Name": "Filme", "Type": "CollectionFolder"}),
+                    serde_json::json!({"Id": "libB", "Name": "Filme 4K", "Type": "CollectionFolder"}),
+                ],
+                2,
+            ));
+        }
+        if path.ends_with("/Ancestors") {
+            let lib = if path.contains("/Items/a1/") {
+                "libA"
+            } else {
+                "libB"
+            };
+            return Some(
+                serde_json::json!([{"Id": lib, "Name": "x", "Type": "CollectionFolder"}])
+                    .to_string(),
+            );
+        }
+        if !path.ends_with("/Items") {
+            return Some("{}".into());
+        }
+        let both = |id: &str, name: &str| {
+            serde_json::json!({"Id": id, "Name": name, "Type": "Movie", "ProviderIds": {"Tmdb": "77"},
+                "ImageTags": {"Primary": "p"}})
+        };
+        let other = serde_json::json!({"Id": "c1", "Name": "Zweitfilm", "Type": "Movie",
+            "ProviderIds": {"Tmdb": "5"}, "ImageTags": {"Primary": "p"}});
+        let all = vec![both("a1", "Doppelt"), both("a2", "Doppelt"), other];
+        if let Some(ids) = param(r, "Ids") {
+            let found: Vec<_> = all
+                .iter()
+                .filter(|m| ids.split(',').any(|i| i == m["Id"].as_str().unwrap()))
+                .cloned()
+                .collect();
+            return Some(list(&found, found.len()));
+        }
+        Some(list(&all, 3))
+    });
+    let vm = vm(&net, &Arc::new(MemoryKeyValue::new()), spec(None, None));
+    assert!(vm.set_remember_kind(RememberGenre::Movies));
+    wait_for("one tile per work", || {
+        ready(&vm) && vm.grid().tiles.len() == 2
+    });
+    let grid = vm.grid();
+    assert_eq!(grid.total, 2, "the count badge counts works");
+    let ids: Vec<_> = grid.tiles.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["a1", "c1"]);
+    assert!(
+        net.count("Fields=ProviderIds") >= 1,
+        "the slim list asks for provider ids"
+    );
+}
+
 /// Line 8 (#25/#37/#28): in every sort order (name, recently added, rating, release date) the strip covers the whole
 /// list and each of its letters jumps to the first title that carries it.
 #[test]
@@ -656,4 +753,65 @@ fn the_strip_works_in_all_four_sort_orders() {
             .count();
         assert!(reachable >= 1, "{sorting:?}: no letter jumps anywhere");
     }
+}
+
+/// The page starts from the bare section (as the desktop builds it) and learns its libraries afterwards: "All" must
+/// then read from those libraries, each work once, like the Mac's `LibraryView.source`. Without it every title that
+/// lives in two libraries is listed twice, and what sits in libraries of other kinds shows up as movies.
+#[test]
+fn the_offer_of_libraries_turns_the_bare_section_into_all_libraries_each_work_once() {
+    let net = Script::new(|r| {
+        if !r.url.path().ends_with("/Items") {
+            return Some("{}".into());
+        }
+        let film = |id: &str, n: usize, tmdb: &str| {
+            let mut m = movie(n);
+            m["Id"] = id.into();
+            m["ProviderIds"] = serde_json::json!({"Tmdb": tmdb});
+            m
+        };
+        let a = [film("a0", 0, "0"), film("a1", 1, "1"), film("a2", 2, "2")];
+        let b = [film("b2", 2, "2"), film("b3", 3, "3")];
+        // A library of home videos whose clips are typed `Movie` on the server.
+        let clips = [film("c9", 9, "99")];
+        let everything: Vec<_> = a.iter().chain(&b).chain(&clips).cloned().collect();
+        match param(r, "ParentId").as_deref() {
+            Some("l1") => return Some(list(&a, 3)),
+            Some("l2") => return Some(list(&b, 2)),
+            Some("l3") => return Some(list(&clips, 1)),
+            _ => {}
+        }
+        if let Some(ids) = param(r, "Ids") {
+            let found: Vec<_> = everything
+                .iter()
+                .filter(|m| ids.split(',').any(|i| m["Id"] == i))
+                .cloned()
+                .collect();
+            return Some(list(&found, found.len()));
+        }
+        Some(list(&everything, everything.len()))
+    });
+    let spec = LibrarySpec {
+        source: ShelfSource::new(None, Some("movies"), false, &[]),
+        genre: None,
+        remember_name: None,
+    };
+    let vm = vm(&net, &Arc::new(MemoryKeyValue::new()), spec);
+    let library = |id: &str, kind: &str| swiftly_model::Item {
+        id: id.into(),
+        name: id.into(),
+        collection_type: Some(kind.into()),
+        ..swiftly_model::Item::default()
+    };
+    vm.follow_offering(swiftly_playback::section_offering::SectionOffering::new(
+        "movies",
+        vec![library("l1", "movies"), library("l2", "movies")],
+        0,
+        0,
+    ));
+    wait_for("ready", || ready(&vm) && vm.grid().total > 0);
+    let grid = vm.grid();
+    let titles: Vec<_> = grid.tiles.iter().map(|t| t.title.as_str()).collect();
+    assert_eq!(titles, ["Titel 000", "Titel 001", "Titel 002", "Titel 003"]);
+    assert_eq!(grid.total, 4);
 }

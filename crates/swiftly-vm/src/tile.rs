@@ -295,6 +295,56 @@ pub fn poster_tiles<T: HttpTransport>(
     items.iter().map(|i| grid_tile(i, client, &words)).collect()
 }
 
+/// The collection and playlist cards of a library section's title menu (`LibraryView.collectionTiles` and
+/// `playlistTiles`): the same poster tile as the grid; the id says what a tap opens (`collection:<id>` or
+/// `playlist:<id>`) and the second line says how many titles of this kind it holds.
+pub fn section_cards<T: HttpTransport>(
+    art: &str,
+    directory: Option<&swiftly_library::CollectionDirectory>,
+    playlists: Option<&swiftly_library::PlaylistDirectory>,
+    client: &JellyfinClient<T>,
+    locale: Locale,
+) -> (Vec<Tile>, Vec<Tile>) {
+    let words = Words::new(locale);
+    cards_from(art, directory, playlists, &words, |i| {
+        grid_tile(i, client, &words)
+    })
+}
+
+fn cards_from(
+    art: &str,
+    directory: Option<&swiftly_library::CollectionDirectory>,
+    playlists: Option<&swiftly_library::PlaylistDirectory>,
+    words: &Words,
+    make: impl Fn(&Item) -> Tile,
+) -> (Vec<Tile>, Vec<Tile>) {
+    let collections = directory
+        .map(|d| d.collections(art))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| Tile {
+            id: format!("collection:{}", c.id()),
+            subtitle: Some(swiftly_library::ItemCollection::count_text(
+                art,
+                i64::try_from(c.count(art)).unwrap_or(0),
+                words,
+            )),
+            ..make(&c.item)
+        })
+        .collect();
+    let lists = playlists
+        .map(|d| d.playlists(art))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| Tile {
+            id: format!("playlist:{}", p.id()),
+            subtitle: Some(words.text("%lld Titel", &[i64::try_from(p.count(art)).unwrap_or(0)])),
+            ..make(&p.item)
+        })
+        .collect();
+    (collections, lists)
+}
+
 /// The banner of a person page: the first real landscape picture of the titles (`None` = calm
 /// background, no portrait is cropped into a banner).
 pub fn banner_of<T: HttpTransport>(items: &[Item], client: &JellyfinClient<T>) -> Option<String> {
@@ -327,5 +377,45 @@ mod tests {
             serde_json::from_str(r#"{"Id":"m1","Name":"A Film","Type":"Movie"}"#).unwrap();
         let tile = build_tile(&movie, RailKind::Genre, None, &words);
         assert_eq!(tile.facts.child_count, None);
+    }
+
+    #[test]
+    fn collection_and_playlist_cards_carry_what_a_tap_opens_and_their_counts() {
+        use swiftly_library::{
+            CollectionDirectory, ItemCollection, PlaylistDirectory, VideoPlaylist,
+        };
+        let item = |id: &str, name: &str, kind: &str| Item::new(id, name, Some(kind));
+        let movies = |n: usize| -> Vec<Item> {
+            (0..n)
+                .map(|i| item(&format!("m{i}"), "x", "Movie"))
+                .collect()
+        };
+        let directory = CollectionDirectory {
+            all: vec![
+                ItemCollection::new(item("c1", "Marvel", "BoxSet"), &movies(3)),
+                ItemCollection::new(item("c2", "Solo", "BoxSet"), &movies(1)),
+            ],
+        };
+        let lists = PlaylistDirectory {
+            all: vec![VideoPlaylist::new(
+                item("p1", "Wochenende", "Playlist"),
+                &movies(4),
+            )],
+        };
+        let words = Words::new(Locale::parse("de"));
+        let (cards, playlists) =
+            cards_from("movies", Some(&directory), Some(&lists), &words, |i| {
+                build_tile(i, RailKind::Genre, None, &words)
+            });
+        assert_eq!(
+            cards.len(),
+            1,
+            "a collection under the threshold is not offered"
+        );
+        assert_eq!(cards[0].id, "collection:c1");
+        assert_eq!(cards[0].title, "Marvel");
+        assert_eq!(cards[0].subtitle.as_deref(), Some("3 Filme"));
+        assert_eq!(playlists[0].id, "playlist:p1");
+        assert_eq!(playlists[0].subtitle.as_deref(), Some("4 Titel"));
     }
 }

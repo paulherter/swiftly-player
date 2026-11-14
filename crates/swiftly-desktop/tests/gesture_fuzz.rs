@@ -194,7 +194,7 @@ fn gen_event(r: &mut Rng, extreme: bool) -> Ev {
                 ScrollKey::PageDown,
                 ScrollKey::LineUp,
             ])),
-            _ => Command::TypeToSearch((*r.pick(&texts)).to_owned()),
+            _ => Command::Forward,
         }),
         80..=87 => {
             let key = if r.below(2) == 0 {
@@ -493,14 +493,6 @@ impl Rig {
                 NamedKey::PageUp => ScrollKey::PageUp,
                 _ => ScrollKey::PageDown,
             })),
-            Key::Character(c)
-                if !ctrl_or_cmd
-                    && !mods.alt_key()
-                    && c.chars().count() == 1
-                    && c.chars().all(|ch| !ch.is_control() && !ch.is_whitespace()) =>
-            {
-                Some(Command::TypeToSearch(c.to_string()))
-            }
             _ => None,
         };
         if let Some(c) = cmd {

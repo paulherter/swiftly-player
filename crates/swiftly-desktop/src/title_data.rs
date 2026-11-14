@@ -150,6 +150,36 @@ pub fn detail_entry_for(id: &str, name: &str) -> Item {
     serde_json::from_str(&film_for(false, id, name)).unwrap_or_else(|e| panic!("entry: {e}"))
 }
 
+/// What the Mac tells the film page (`DetailCore.send(options:)`): the settings, the account's right, what a browser
+/// can open. No devices are in reach and watching together is not offered on the desktop yet, so the core leaves
+/// those menu entries out.
+pub fn live_detail_options(w: &crate::live::Wiring) -> DetailOptions {
+    DetailOptions {
+        watchers_shown: w.watchers_shown(),
+        download_button: w.download_button(),
+        can_open_web: true,
+        // The devices in reach and watching together: the More menu offers "Abspielen auf ..." and "Gemeinsam schauen".
+        menu: swiftly_vm::MenuContext {
+            download_button: w.download_button(),
+            ..crate::tile_menu::live_host(w, false)
+        },
+        ..DetailOptions::default()
+    }
+}
+
+/// What the Mac tells the series page (`SeriesCore.send(options:)`).
+pub fn live_series_options(w: &crate::live::Wiring) -> swiftly_vm::SeriesOptions {
+    let host = crate::tile_menu::live_host(w, false);
+    swiftly_vm::SeriesOptions {
+        download_button: w.download_button(),
+        can_open_web: true,
+        watchers_shown: w.watchers_shown(),
+        together: host.together,
+        play_on: host.play_on,
+        ..swiftly_vm::SeriesOptions::default()
+    }
+}
+
 /// A `DetailVm` over the scripted server. Loaded when this returns, except for `Loading` (not asked).
 ///
 /// # Panics
@@ -171,11 +201,8 @@ pub fn detail_vm_for(s: Scenario, id: &str, name: &str) -> DetailVm<crate::net::
             Some(w.account.clone()),
         )
         .unwrap_or_else(|e| panic!("detail vm: {e:?}"));
-        vm.send(DetailIntent::Options(Box::new(DetailOptions {
-            download_button: true,
-            can_open_web: true,
-            ..DetailOptions::default()
-        })));
+        w.ask_download_right();
+        vm.send(DetailIntent::Options(Box::new(live_detail_options(&w))));
         vm.send(DetailIntent::Load);
         return vm;
     }
@@ -299,10 +326,12 @@ pub fn series_vm(s: Scenario) -> SeriesVm<crate::net::AppTransport> {
             Arc::clone(&w.core.net),
             w.core.host(),
             w.stand_in(&id, &name),
-            SeriesSpec::default(),
+            w.next_spec.borrow().clone(),
             Some(w.account.clone()),
         )
         .unwrap_or_else(|e| panic!("series vm: {e:?}"));
+        w.ask_download_right();
+        vm.send(SeriesIntent::Options(live_series_options(&w)));
         vm.send(SeriesIntent::Load);
         return vm;
     }

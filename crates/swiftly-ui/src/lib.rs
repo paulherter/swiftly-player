@@ -23,6 +23,7 @@ mod icon_data;
 mod icon_data_audit;
 mod icon_data_forms;
 mod icon_data_keys;
+mod icon_data_kinds;
 mod icon_data_more;
 mod icon_data_phos;
 mod icon_data_rest;

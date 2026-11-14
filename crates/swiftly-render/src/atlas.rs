@@ -71,6 +71,11 @@ pub trait Atlas {
     fn pixels(&self) -> &[u8];
     /// The rectangle changed since the last call (and forgets it); `None` when nothing changed.
     fn take_dirty(&self) -> Option<DirtyRect>;
+    /// A glyph page may carry a second, `Rgba8` page of colour glyphs (emoji) with **premultiplied** texels; quads of
+    /// kind [`QuadKind::ColorGlyph`](crate::QuadKind::ColorGlyph) sample it. `None` (the default) when there is none.
+    fn color_page(&self) -> Option<&dyn Atlas> {
+        None
+    }
 }
 
 /// A plain in-memory page: `put` copies a block of texels in and records the dirty rectangle.

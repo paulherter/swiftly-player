@@ -1,8 +1,31 @@
-//! `cargo xtask fixture-server [--port N] [--big] [--mode ...]`: a small Jellyfin-shaped HTTP server for the real-app runs. Auth (password
+//! `cargo xtask fixture-server [--port N] [--big] [--real-shapes] [--slow-downloads] [--mode ...]`: a small Jellyfin-shaped HTTP server for the real-app runs. Auth (password
 //! and Quick Connect), views, items, resume and next up, detail with a media source, seasons and episodes, generated
 //! pictures, a playable test clip (16-bit WAV tone served with ranges) and the playback reports. Everything is
 //! deterministic and read-only; user `demo`, password `demo` (or empty). Not a Jellyfin replacement: only what the
 //! Rust app asks for.
+//!
+//! # Real shapes (opt-in)
+//!
+//! `cargo xtask fixture-server --port 8096 --real-shapes` (or `SWIFTLY_FIXTURE_REAL=1` in the environment) serves the
+//! shapes a real server has and the plain fixture does not. Without the switch every answer stays byte-identical.
+//! The user is `demo` (id `u1`; `u-<SWIFTLY_FIXTURE_ID>` when that is set) and carries `PrimaryImageTag` `avatar1`.
+//!
+//! | What | Id(s) |
+//! |---|---|
+//! | Library "Filme" (movies): 5 films `ra0..ra4` + the virtual movie | `rl-movies-a` |
+//! | Library "Filme 4K" (movies): the same 5 films as `rb0..rb4`, `ProviderIds.Tmdb` = `1000 + n` | `rl-movies-b` |
+//! | Library "Heimvideos" (`homevideos`): 3 clips typed `Movie`, no Tmdb id | `rl-home`, clips `hv0..hv2` |
+//! | Library "Serien" (`tvshows`) | `rl-shows` |
+//! | Missing movie, `LocationType: "Virtual"`, listed in `rl-movies-a`, no media sources | `rv1` |
+//! | Series "Küstenwache" | `rs1` |
+//! | Season 2 of it (`SeriesId`, `SeriesName`, `IndexNumber`); children via `Shows/rs1/Episodes?SeasonId=rse1` or `Items?ParentId=rse1` | `rse1` |
+//! | Episodes of that season, `DateCreated` rising with the number; `Items/Latest` and `Items?SortBy=DateCreated` list them newest first | `re1..re4` |
+//! | People (`Type` Person, picture tag `p<id>`); `Items?PersonIds=<id>` lists films and the series | `rp1`, `rp2` |
+//! | User picture (PNG; `maxHeight`/`maxWidth` set the size) | `/Users/u1/Images/Primary`, `/UserImage` |
+//!
+//! Also in this mode: `/Users`, `/Users/Me`, `/Users/Public` and the auth answers carry `PrimaryImageTag`; the movie
+//! detail `People` lists actors `rp1`/`rp2` with `PrimaryImageTag`; `Items` without a parent lists the whole catalogue
+//! (each shared film twice, so a client has to merge by Tmdb id); every image route serves a small generated PNG.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -23,9 +46,10 @@ pub(crate) fn movie(i: usize) -> String {
         r#""Played":false"#
     };
     format!(
-        r#"{{"Id":"m{i}","Name":"{}","Type":"Movie","ProductionYear":{},"RunTimeTicks":120000000,"Overview":"Ein ruhiger Testfilm vom Fixture-Server.","Genres":["Drama"],"CommunityRating":7.5,"OfficialRating":"FSK 12","People":[{{"Id":"p1","Name":"Anna Test","Type":"Actor","Role":"Hauptrolle","PrimaryImageTag":"pp1"}},{{"Id":"p2","Name":"Ben Regie","Type":"Director"}}],"RemoteTrailers":[{{"Url":"https://www.youtube.com/watch?v=fixture{i}"}}],"ImageTags":{{"Primary":"p{i}"}},"BackdropImageTags":["b{i}"],"MediaSources":[{{"Id":"src{i}","Name":"Test","Container":"mp4","Size":1500000,"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"DisplayTitle":"Ton","IsDefault":true}}]}},{{"Id":"src{i}b","Name":"Test klein","Container":"mkv","Size":900000,"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":[{{"Type":"Video","Codec":"hevc","Index":0,"Width":1280,"Height":720}},{{"Type":"Audio","Codec":"ac3","Channels":6,"Index":1,"Language":"deu","DisplayTitle":"Deutsch 5.1"}},{{"Type":"Subtitle","Codec":"srt","Index":2,"Language":"eng"}}]}}],"UserData":{{{resume}}}}}"#,
+        r#"{{"Id":"m{i}","Name":"{}","Type":"Movie","ProductionYear":{},"RunTimeTicks":120000000,"Overview":"Ein ruhiger Testfilm vom Fixture-Server.","Genres":["Drama"],"CommunityRating":7.5,"OfficialRating":"FSK 12","People":[{{"Id":"p1","Name":"Anna Test","Type":"Actor","Role":"Hauptrolle","PrimaryImageTag":"pp1"}},{{"Id":"p2","Name":"Ben Regie","Type":"Director"}}],"RemoteTrailers":[{{"Url":"https://www.youtube.com/watch?v=fixture{i}"}}],"ImageTags":{{"Primary":"p{i}"}},"BackdropImageTags":["b{i}"],"MediaSources":[{{"Id":"src{i}","Name":"Test","Container":"mp4","Size":{clip},"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"DisplayTitle":"Ton","IsDefault":true}}]}},{{"Id":"src{i}b","Name":"Test klein","Container":"mkv","Size":900000,"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":[{{"Type":"Video","Codec":"hevc","Index":0,"Width":1280,"Height":720}},{{"Type":"Audio","Codec":"ac3","Channels":6,"Index":1,"Language":"deu","DisplayTitle":"Deutsch 5.1"}},{{"Type":"Subtitle","Codec":"srt","Index":2,"Language":"eng"}}]}}],"UserData":{{{resume}}}}}"#,
         NAMES[i % NAMES.len()],
-        2015 + i
+        2015 + i,
+        clip = CLIP.len()
     )
 }
 
@@ -72,9 +96,10 @@ fn extras_streams(source: &str, codec: &str, width: u32, height: u32) -> String 
 fn extras_sources() -> String {
     let (a, b) = (EXTRAS_SOURCES[0], EXTRAS_SOURCES[1]);
     format!(
-        r#"[{{"Id":"{a}","Name":"1080p","Container":"mp4","Size":1500000,"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":{}}},{{"Id":"{b}","Name":"4K","Container":"mkv","Size":9000000,"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":{}}}]"#,
+        r#"[{{"Id":"{a}","Name":"1080p","Container":"mp4","Size":{clip},"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":{}}},{{"Id":"{b}","Name":"4K","Container":"mkv","Size":9000000,"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":{}}}]"#,
         extras_streams(a, "h264", 1920, 1080),
-        extras_streams(b, "hevc", 3840, 2160)
+        extras_streams(b, "hevc", 3840, 2160),
+        clip = CLIP.len()
     )
 }
 
@@ -98,6 +123,36 @@ fn extras_movie() -> String {
         extras_trickplay(),
         extras_sources()
     )
+}
+
+/// The `PlaybackInfo` answer of item `id`: the item's own versions (the ids its listing names, as a real server keeps
+/// them), else the one version `src-<id>` that the other fixtures name.
+fn playback_info(id: &str) -> String {
+    let item = real_find(id).or_else(|| {
+        let n = id.strip_prefix('m')?.parse::<usize>().ok()?;
+        (n < NAMES.len()).then(|| movie(n))
+    });
+    let own = item.as_deref().and_then(|j| {
+        let from = j.find(r#""MediaSources":["#)? + r#""MediaSources":"#.len();
+        let mut depth = 0usize;
+        for (i, c) in j[from..].char_indices() {
+            match c {
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(j[from..=from + i].to_owned());
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    });
+    let sources = own.unwrap_or_else(|| {
+        format!(r#"[{{"Id":"src-{id}","Container":"mp4","SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"IsDefault":true}}]}}]"#)
+    });
+    format!(r#"{{"MediaSources":{sources},"PlaySessionId":"fx-session"}}"#)
 }
 
 fn extras_playback_info() -> String {
@@ -246,7 +301,27 @@ fn all_items() -> Vec<String> {
     (0..6).map(movie).chain(std::iter::once(series())).collect()
 }
 
+/// What the plain fixture's `/Items` lists. Without a type or library the whole catalogue, as ever; with
+/// `IncludeItemTypes` only those types (episodes too, when asked for); with a library as parent only what that library
+/// holds (`lib-movies` the films, `lib-shows` the series), so the "Serien" tab no longer lists the films.
+fn plain_items(types: Option<&str>, parent: Option<&str>) -> Vec<String> {
+    let mut items = all_items();
+    if types.is_some() {
+        items.extend((1..=3).map(episode));
+    }
+    let items = of_types(items, types);
+    match parent {
+        Some("lib-movies") => of_types(items, Some("Movie")),
+        Some("lib-shows") => of_types(items, Some("Series")),
+        _ => items,
+    }
+}
+
 pub(crate) fn find(id: &str) -> Option<String> {
+    // The real-shape titles (`re1`, `ra0`, ...) are answered by their own routes; the sessions list reads them from there.
+    if let Some(Reply(200, _, body)) = real_answer("GET", &format!("/Items/{id}"), "") {
+        return String::from_utf8(body).ok();
+    }
     let n: usize = id.get(1..)?.parse().ok()?;
     match id.as_bytes().first()? {
         b'm' if n < 6 => Some(movie(n)),
@@ -265,7 +340,17 @@ pub(crate) fn find(id: &str) -> Option<String> {
 }
 
 fn auth_result(name: &str) -> String {
+    auth_result_with(name, real_enabled())
+}
+
+/// `real`: the user carries a `PrimaryImageTag` (a profile picture), as a real server's does.
+fn auth_result_with(name: &str, real: bool) -> String {
     let sid = server_id();
+    let tag = if real {
+        format!(r#","PrimaryImageTag":"{REAL_AVATAR_TAG}""#)
+    } else {
+        String::new()
+    };
     let uid = if crate::fixture_big::enabled() {
         format!("u-{name}")
     } else if sid == "fx" {
@@ -274,15 +359,11 @@ fn auth_result(name: &str) -> String {
         format!("u-{sid}")
     };
     format!(
-        r#"{{"User":{{"Id":"{uid}","Name":"{name}","ServerId":"{sid}"}},"AccessToken":"fixture-token","ServerId":"{sid}"}}"#
+        r#"{{"User":{{"Id":"{uid}","Name":"{name}","ServerId":"{sid}"{tag}}},"AccessToken":"fixture-token","ServerId":"{sid}"}}"#
     )
 }
 
 fn png(seed: u32, w: u32, h: u32) -> Vec<u8> {
-    let mut out = Vec::new();
-    let mut enc = png::Encoder::new(&mut out, w, h);
-    enc.set_color(png::ColorType::Rgb);
-    enc.set_depth(png::BitDepth::Eight);
     let mut data = Vec::with_capacity((w * h * 3) as usize);
     for y in 0..h {
         for x in 0..w {
@@ -294,8 +375,127 @@ fn png(seed: u32, w: u32, h: u32) -> Vec<u8> {
             ]);
         }
     }
+    encode_rgb(w, h, &data)
+}
+
+/// A picture with a slow colour ramp, rings and one-pixel texture, a different hue per `seed`: no flat areas, so
+/// stretching, blur and a neighbour's colour on the edge all show in the pixels.
+fn detailed_picture(seed: u32, w: u32, h: u32) -> Vec<u8> {
+    let hue = f64::from(seed % 360) / 360.0 * std::f64::consts::TAU;
+    let (base_r, base_g, base_b) = (
+        hue.cos() * 0.5 + 0.5,
+        (hue + 2.1).cos() * 0.5 + 0.5,
+        (hue + 4.2).cos() * 0.5 + 0.5,
+    );
+    let mut data = Vec::with_capacity((w * h * 3) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            let (fx, fy) = (f64::from(x) / f64::from(w), f64::from(y) / f64::from(h));
+            let rings = (((fx - 0.5).powi(2) + (fy - 0.4).powi(2)).sqrt() * 60.0).sin() * 0.12;
+            let ramp = 0.25 + 0.5 * fy;
+            let grid = if x % 16 == 0 || y % 16 == 0 {
+                0.06
+            } else {
+                0.0
+            };
+            let mut n = x.wrapping_mul(374_761_393) ^ y.wrapping_mul(668_265_263) ^ seed;
+            n = (n ^ (n >> 13)).wrapping_mul(1_274_126_177);
+            let noise = f64::from((n ^ (n >> 16)) & 255) / 255.0 * 0.08 - 0.04;
+            let v = (ramp + rings + grid + noise).clamp(0.0, 1.0);
+            data.extend([
+                ((base_r * 0.6 + 0.4) * v * 255.0) as u8,
+                ((base_g * 0.6 + 0.4) * v * 255.0) as u8,
+                ((base_b * 0.6 + 0.4) * v * 255.0) as u8,
+            ]);
+        }
+    }
+    encode_rgb(w, h, &data)
+}
+
+/// The original size of the picture `kind` ("Primary", "Backdrop", "Thumb", "Logo") of item `id`, as a real library holds
+/// it: posters 2000 x 3000, backdrops 4K, an episode's still and a thumb Full HD, a logo 800 wide.
+fn original_size(id: &str, kind: &str) -> (u32, u32) {
+    let numbered = |prefix: &str| {
+        id.strip_prefix(prefix)
+            .is_some_and(|r| r.starts_with(|c: char| c.is_ascii_digit()))
+    };
+    match kind {
+        "Backdrop" => (3840, 2160),
+        "Thumb" => (1920, 1080),
+        "Logo" => (800, 310),
+        _ if numbered("re") || numbered("e") || numbered("bm-ep") => (1920, 1080),
+        _ => (2000, 3000),
+    }
+}
+
+/// The size Jellyfin answers with (`DrawingUtils.Resize`): `max*` fit the picture into the box and keep its aspect,
+/// `fill*` cover the box and cut the rest; a picture is never enlarged beyond its original.
+fn resized(
+    original: (u32, u32),
+    max: (Option<u32>, Option<u32>),
+    fill: (Option<u32>, Option<u32>),
+) -> (u32, u32) {
+    let (ow, oh) = (f64::from(original.0), f64::from(original.1));
+    if let (Some(fw), Some(fh)) = fill {
+        let (fw, fh) = (f64::from(fw), f64::from(fh));
+        // The largest box of the fill aspect the original holds.
+        let k = (ow / fw).min(oh / fh).min(1.0);
+        return (
+            ((fw * k).round() as u32).max(1),
+            ((fh * k).round() as u32).max(1),
+        );
+    }
+    let k = [
+        max.0.map(|w| f64::from(w) / ow),
+        max.1.map(|h| f64::from(h) / oh),
+        Some(1.0),
+    ]
+    .into_iter()
+    .flatten()
+    .fold(f64::MAX, f64::min);
+    (
+        ((ow * k).round() as u32).max(1),
+        ((oh * k).round() as u32).max(1),
+    )
+}
+
+/// A picture of `/Items/<id>/Images/<kind>[/<n>]` the way a real Jellyfin sends it: rendered at the size the query asks
+/// for (`maxWidth` / `maxHeight` / `fillWidth` / `fillHeight`, names case-insensitive), at most the original.
+fn jellyfin_picture(path: &str, query: &str) -> Reply {
+    let segs: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let at = segs.iter().position(|s| *s == "Images").unwrap_or(0);
+    let id = at
+        .checked_sub(1)
+        .and_then(|i| segs.get(i))
+        .copied()
+        .unwrap_or("x");
+    let kind = segs.get(at + 1).copied().unwrap_or("Primary");
+    let seed = id
+        .bytes()
+        .fold(7_u32, |a, b| a.wrapping_mul(31).wrapping_add(u32::from(b)));
+    let ask = |k: &str| {
+        query.split('&').find_map(|p| {
+            p.split_once('=')
+                .filter(|(n, _)| n.eq_ignore_ascii_case(k))
+                .and_then(|(_, v)| v.parse::<u32>().ok())
+                .filter(|v| *v > 0)
+        })
+    };
+    let (w, h) = resized(
+        original_size(id, kind),
+        (ask("maxWidth"), ask("maxHeight")),
+        (ask("fillWidth"), ask("fillHeight")),
+    );
+    Reply(200, "image/png", detailed_picture(seed, w, h))
+}
+
+fn encode_rgb(w: u32, h: u32, data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut enc = png::Encoder::new(&mut out, w, h);
+    enc.set_color(png::ColorType::Rgb);
+    enc.set_depth(png::BitDepth::Eight);
     if let Ok(mut wr) = enc.write_header() {
-        let _ = wr.write_image_data(&data);
+        let _ = wr.write_image_data(data);
     }
     out
 }
@@ -312,7 +512,8 @@ fn json(body: String) -> Reply {
 }
 
 /// The 12 s test clip (320x180 h264 + aac, generated with ffmpeg; served with ranges).
-const CLIP: &[u8] = include_bytes!("../assets/fixture-clip.mp4");
+/// What every film download and stream answers with; the catalogue declares exactly this many bytes.
+pub(crate) const CLIP: &[u8] = include_bytes!("../assets/fixture-clip.mp4");
 /// `POST /Sessions/Playing*` paths in arrival order, read back with `GET /fixture/reports`.
 static REPORTS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 /// Every request target in arrival order, read back with `GET /fixture/seen` (what a client really asked).
@@ -345,12 +546,20 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
     if let Some(reply) = crate::fixture_big::answer(method, path, query) {
         return reply;
     }
+    // The opt-in real shapes (`--real-shapes`): after the big catalogue, before everything plain.
+    if let Some(reply) = real_answer(method, path, query) {
+        return reply;
+    }
     // The playback bench's server transcodes (HLS folders next to the media): before the plain media routes.
     if let Some(reply) = crate::fixture_hls::answer(method, path, body) {
         return reply;
     }
     // The playback bench titles (`bm-*`, only with SWIFTLY_FIXTURE_MEDIA_DIR): real media files.
     if let Some(reply) = crate::fixture_media::answer(path, query) {
+        return reply;
+    }
+    // plex.tv itself (pins, Home users, resources) for the sign-in runs of the desktop app.
+    if let Some(reply) = crate::fixture_plex::account(method, path) {
         return reply;
     }
     // The Plex fixture: paths no Jellyfin route uses.
@@ -395,12 +604,15 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
             }
         }
         (_, "/fixture/seen") => json(format!("[{}]", SEEN.lock().map(|r| r.iter().map(|l| format!("\"{l}\"")).collect::<Vec<_>>().join(",")).unwrap_or_default())),
-        (_, "/System/Info/Public") => json(format!(r#"{{"ServerName":"Fixture","Version":"10.10.0","Id":"{}","ProductName":"Jellyfin Server"}}"#, server_id())),
+        (_, "/System/Info/Public") => json(format!(r#"{{"ServerName":"Fixture","Version":"10.10.0","Id":"{}","ProductName":"{}"}}"#, server_id(), std::env::var("SWIFTLY_FIXTURE_PRODUCT").unwrap_or_else(|_| "Jellyfin Server".into()))),
         ("POST", "/Users/AuthenticateByName") => {
             let user = if crate::fixture_big::enabled() { crate::fixture_big::ACCOUNTS.iter().find(|n| body.contains(&format!(r#""Username":"{n}""#))) } else { body.contains(r#""Username":"demo""#).then_some(&"demo") };
             let ok = user.is_some() && (body.contains(r#""Pw":"demo""#) || body.contains(r#""Pw":"""#));
             if let (true, Some(name)) = (ok, user) { json(auth_result(name)) } else { Reply(401, "text/plain", b"bad".to_vec()) }
         }
+        (_, "/QuickConnect/Enabled") => json("true".into()),
+        ("POST", "/QuickConnect/Authorize") => json(if param("code").as_deref() == Some("000000") { "false".into() } else { "true".into() }),
+        ("POST", "/Sessions/Logout") => Reply(204, "text/plain", Vec::new()),
         ("POST", "/QuickConnect/Initiate") => json(r#"{"Secret":"quick-secret","Code":"123456","Authenticated":false}"#.into()),
         (_, "/QuickConnect/Connect") => json(r#"{"Secret":"quick-secret","Code":"123456","Authenticated":true}"#.into()),
         ("POST", "/Users/AuthenticateWithQuickConnect") => json(auth_result("demo")),
@@ -414,6 +626,9 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
         (_, p) if p.ends_with("/Shows/s1/Seasons") || p == "/Shows/s1/Seasons" => json(list(&[r#"{"Id":"se1","Name":"Staffel 1","Type":"Season","IndexNumber":1,"SeriesId":"s1"}"#.into()])),
         (_, p) if p.ends_with("/Episodes") => json(list(&[episode(1), episode(2), episode(3)])),
         (_, p) if p.ends_with("/Items/Latest") => json(format!("[{}]", all_items().join(","))),
+        // Real shapes: pictures resized like Jellyfin does (see `jellyfin_picture`), with fine detail, so a soft or
+        // stretched cover shows.
+        (_, p) if p.contains("/Images/") && real_enabled() && !p.starts_with("/Users/") => jellyfin_picture(p, query),
         (_, p) if p.contains("/Images/") => {
             let id = p.split('/').rev().nth(2).unwrap_or("x");
             let seed = id.bytes().fold(7_u32, |a, b| a.wrapping_mul(31).wrapping_add(u32::from(b)));
@@ -431,6 +646,11 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
         (_, p) if p.starts_with("/Videos/g1/") && p.contains("/Subtitles/") && (p.ends_with("/Stream.srt") || p.ends_with("/Stream.vtt")) => extras_subtitle(p),
         (_, "/Items/g1/PlaybackInfo") => json(extras_playback_info()),
         (_, p) if p.ends_with("/Items") && param("ids").is_some_and(|ids| ids == EXTRAS_ID) => json(list(&[extras_movie()])),
+        // Without that mode the devices that hold a socket are the user's sessions, and a play order reaches the target's socket.
+        ("GET", "/Sessions") if !crate::fixture_modes::global().0.sessions => json(crate::fixture_sessions::list(query)),
+        ("POST", p) if !crate::fixture_modes::global().0.sessions && p.starts_with("/Sessions/") && !p.starts_with("/Sessions/Playing") && !p.starts_with("/Sessions/Capabilities") && p.matches('/').count() >= 3 => {
+            crate::fixture_sessions::command(p, query, body).unwrap_or(Reply(404, "text/plain", Vec::new()))
+        }
         // Mode `sessions`: a second device of the same user (the TV) plays m1 at 25 s; hand-over posts are recorded.
         ("GET", "/Sessions") if crate::fixture_modes::global().0.sessions => json(r#"[{"Id":"fx-tv","UserId":"u1","DeviceId":"fx-tv-device","DeviceName":"Fixture TV","Client":"Swiftly TV","SupportsRemoteControl":true,"LastActivityDate":"2099-01-01T00:00:00.0000000Z","PlayableMediaTypes":["Video"],"NowPlayingItem":{"Id":"m1","Name":"Sommerregen","Type":"Movie","RunTimeTicks":120000000},"PlayState":{"IsPaused":false,"PositionTicks":250000000}}]"#.into()),
         ("POST", p) if crate::fixture_modes::global().0.sessions && p.starts_with("/Sessions/fx-tv/") => {
@@ -440,10 +660,7 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
         (_, "/MediaSegments") => Reply(404, "text/plain", Vec::new()),
         (_, p) if p.starts_with("/MediaSegments/") => json(r#"{"Items":[{"Type":"Intro","StartTicks":20000000,"EndTicks":50000000}],"TotalRecordCount":1}"#.into()),
         (_, "/fixture/reports") => json(format!("[{}]", REPORTS.lock().map(|r| r.iter().map(|l| format!("\"{l}\"")).collect::<Vec<_>>().join(",")).unwrap_or_default())),
-        (_, p) if p.ends_with("/PlaybackInfo") => {
-            let id = p.split('/').rev().nth(1).unwrap_or("m0");
-            json(format!(r#"{{"MediaSources":[{{"Id":"src-{id}","Container":"mp4","SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"IsDefault":true}}]}}],"PlaySessionId":"fx-session"}}"#))
-        }
+        (_, p) if p.ends_with("/PlaybackInfo") => json(playback_info(p.split('/').rev().nth(1).unwrap_or("m0"))),
         ("POST", p) if p.starts_with("/Sessions/Playing") || p.contains("/PlayedItems") || p.contains("/FavoriteItems") => {
             if p.starts_with("/Sessions/Playing") {
                 record(p);
@@ -469,12 +686,468 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
             let ids = param("Ids").or_else(|| param("ids")).unwrap_or_default().replace("%2C", ",").replace("%2c", ",");
             json(list(&ids.split(',').filter_map(find).collect::<Vec<_>>()))
         }
-        (_, p) if p.ends_with("/Items") && !has("Ids") && !has("ids") => json(list(&all_items())),
+        (_, p) if p.ends_with("/Items") && !has("Ids") && !has("ids") => json(list(&plain_items(param("IncludeItemTypes").as_deref(), param("ParentId").as_deref()))),
         (_, p) if p.rsplit('/').nth(1) == Some("Items") => match find(p.rsplit('/').next().unwrap_or("")) {
             Some(item) => json(item),
             None => Reply(404, "text/plain", b"no such item".to_vec()),
         },
         _ => json(list(&[])),
+    }
+}
+
+// ---- Real shapes (`--real-shapes`): what a real Jellyfin server sends and the plain fixture never does. Opt-in; with
+// the switch off none of this runs, so every answer above stays byte-identical.
+
+static REAL_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(test)]
+thread_local! {
+    /// Lets one test thread switch the mode on without touching the other tests (they run in parallel).
+    static FORCE_REAL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn enable_real() {
+    REAL_ON.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn real_enabled() -> bool {
+    #[cfg(test)]
+    if FORCE_REAL.with(std::cell::Cell::get) {
+        return true;
+    }
+    REAL_ON.load(std::sync::atomic::Ordering::Relaxed)
+        || std::env::var_os("SWIFTLY_FIXTURE_REAL").is_some()
+}
+
+const REAL_LIB_A: &str = "rl-movies-a";
+const REAL_LIB_B: &str = "rl-movies-b";
+const REAL_LIB_HOME: &str = "rl-home";
+const REAL_LIB_SHOWS: &str = "rl-shows";
+/// The real-shape collections: one with its own picture, one without (two titles, a mosaic of two), one without (four
+/// titles, a 2 x 2 mosaic); and one video playlist.
+const REAL_BOX_PICTURE: &str = "rc1";
+const REAL_BOX_TWO: &str = "rc2";
+const REAL_BOX_FOUR: &str = "rc3";
+const REAL_PLAYLIST: &str = "rpl1";
+const REAL_SERIES: &str = "rs1";
+const REAL_SEASON: &str = "rse1";
+const REAL_VIRTUAL: &str = "rv1";
+const REAL_PERSONS: [(&str, &str, &str, &str); 2] = [
+    ("rp1", "Anna Test", "1980-05-01T00:00:00.0000000Z", "1234"),
+    (
+        "rp2",
+        "Carl Beispiel",
+        "1975-09-12T00:00:00.0000000Z",
+        "5678",
+    ),
+];
+/// Tmdb id of the five films both movie libraries hold (film `i` has `1000 + i`).
+const REAL_TMDB_BASE: usize = 1000;
+const REAL_AVATAR_TAG: &str = "avatar1";
+
+fn real_user_id() -> String {
+    let sid = server_id();
+    if sid == "fx" {
+        "u1".into()
+    } else {
+        format!("u-{sid}")
+    }
+}
+
+fn real_user() -> String {
+    format!(
+        r#"{{"Id":"{}","Name":"demo","ServerId":"{}","HasPassword":true,"PrimaryImageTag":"{REAL_AVATAR_TAG}"}}"#,
+        real_user_id(),
+        server_id()
+    )
+}
+
+/// A movie built from the plain fixture movie `base`: another id and name, real provider ids and location type, and
+/// people whose actors carry a picture tag.
+fn real_movie(id: &str, base: usize, name: &str, tmdb: Option<usize>) -> String {
+    let actors = r#"{"Id":"rp1","Name":"Anna Test","Type":"Actor","Role":"Hauptrolle","PrimaryImageTag":"prp1"},{"Id":"rp2","Name":"Carl Beispiel","Type":"Actor","Role":"Nebenrolle","PrimaryImageTag":"prp2"}"#;
+    let provider = tmdb.map_or(String::new(), |t| {
+        format!(r#""ProviderIds":{{"Tmdb":"{t}"}},"#)
+    });
+    movie(base)
+        .replacen(&format!(r#""Id":"m{base}""#), &format!(r#""Id":"{id}""#), 1)
+        .replacen(
+            &format!(r#""Name":"{}""#, NAMES[base % NAMES.len()]),
+            &format!(r#""Name":"{name}""#),
+            1,
+        )
+        .replacen(
+            r#"{"Id":"p1","Name":"Anna Test","Type":"Actor","Role":"Hauptrolle","PrimaryImageTag":"pp1"}"#,
+            actors,
+            1,
+        )
+        .replacen(
+            r#""Type":"Movie","#,
+            &format!(r#""Type":"Movie","LocationType":"FileSystem",{provider}"#),
+            1,
+        )
+}
+
+/// The five shared films of one movie library: `ra0..ra4` (library A) or `rb0..rb4` (library B), the same Tmdb ids.
+fn real_library_movies(prefix: &str) -> Vec<String> {
+    (0..5)
+        .map(|i| {
+            real_movie(
+                &format!("{prefix}{i}"),
+                i,
+                NAMES[i],
+                Some(REAL_TMDB_BASE + i),
+            )
+        })
+        .collect()
+}
+
+/// The collections (`BoxSet`) of the real shapes.
+fn real_boxsets() -> Vec<String> {
+    vec![
+        format!(
+            r#"{{"Id":"{REAL_BOX_PICTURE}","Name":"Nordlicht-Reihe","Type":"BoxSet","ImageTags":{{"Primary":"prc1"}}}}"#
+        ),
+        format!(r#"{{"Id":"{REAL_BOX_TWO}","Name":"Zwei Filme","Type":"BoxSet"}}"#),
+        format!(r#"{{"Id":"{REAL_BOX_FOUR}","Name":"Hafen-Abende","Type":"BoxSet"}}"#),
+    ]
+}
+
+/// The video playlist of the real shapes (no picture of its own).
+fn real_playlist() -> String {
+    format!(
+        r#"{{"Id":"{REAL_PLAYLIST}","Name":"Abendprogramm","Type":"Playlist","MediaType":"Video"}}"#
+    )
+}
+
+/// What a real collection holds, in the order the server keeps it.
+fn real_box_members(id: &str) -> Option<Vec<String>> {
+    let movies = real_library_movies("ra");
+    let more = real_library_movies("rb");
+    Some(match id {
+        REAL_BOX_PICTURE => movies.into_iter().take(3).collect(),
+        REAL_BOX_TWO => more.into_iter().skip(3).collect(),
+        REAL_BOX_FOUR => movies.into_iter().take(4).collect(),
+        _ => return None,
+    })
+}
+
+/// A missing (virtual) movie: listed by the library, but there is no file behind it.
+fn real_virtual() -> String {
+    format!(
+        r#"{{"Id":"{REAL_VIRTUAL}","Name":"Fehlender Film","Type":"Movie","ProductionYear":2021,"LocationType":"Virtual","IsMissing":true,"ProviderIds":{{"Tmdb":"9999"}},"UserData":{{"Played":false}}}}"#
+    )
+}
+
+/// Home videos: typed `Movie` like a real server does, without any provider id.
+fn real_home() -> Vec<String> {
+    ["Urlaub am Meer", "Geburtstag", "Wanderung"]
+        .iter()
+        .enumerate()
+        .map(|(i, name)| real_movie(&format!("hv{i}"), i, name, None))
+        .collect()
+}
+
+fn real_series() -> String {
+    format!(
+        r#"{{"Id":"{REAL_SERIES}","Name":"Küstenwache","Type":"Series","ProductionYear":2024,"ChildCount":1,"ProviderIds":{{"Tmdb":"7777"}},"ImageTags":{{"Primary":"prs1"}},"People":[{{"Id":"rp1","Name":"Anna Test","Type":"Actor","Role":"Kommissarin","PrimaryImageTag":"prp1"}}],"UserData":{{"UnplayedItemCount":4,"Played":false}}}}"#
+    )
+}
+
+fn real_season() -> String {
+    format!(
+        r#"{{"Id":"{REAL_SEASON}","Name":"Staffel 2","Type":"Season","IndexNumber":2,"SeriesId":"{REAL_SERIES}","SeriesName":"Küstenwache","ParentId":"{REAL_SERIES}","ChildCount":4,"ImageTags":{{"Primary":"prse1"}},"UserData":{{"Played":false}}}}"#
+    )
+}
+
+/// Episode `n` (1..=4) of the season; a higher number was added later (`DateCreated`).
+fn real_episode(n: usize) -> String {
+    // A real server's media source carries the run time; a client that plays the file reads its length from there.
+    let mut base = episode(n).replace(
+        r#""Container":"wav","SupportsDirectPlay":true,"MediaStreams":[]"#,
+        r#""Container":"wav","SupportsDirectPlay":true,"RunTimeTicks":120000000,"MediaStreams":[]"#,
+    );
+    // `SWIFTLY_FIXTURE_EPISODE_VERSIONS=1`: every episode names a second version, to run the version choice on episodes.
+    if std::env::var_os("SWIFTLY_FIXTURE_EPISODE_VERSIONS").is_some() {
+        base = base.replacen(
+            r#""MediaStreams":[]}]"#,
+            &format!(
+                r#""MediaStreams":[]}},{{"Id":"srce{n}b","Name":"Test klein","Container":"wav","SupportsDirectPlay":true,"MediaStreams":[]}}]"#
+            ),
+            1,
+        );
+    }
+    base.replacen(&format!(r#""Id":"e{n}""#), &format!(r#""Id":"re{n}""#), 1)
+        .replacen(
+            r#""SeriesId":"s1","SeriesName":"Hafenlichter","SeasonId":"se1","ParentIndexNumber":1"#,
+            &format!(
+                r#""SeriesId":"{REAL_SERIES}","SeriesName":"Küstenwache","SeasonId":"{REAL_SEASON}","SeasonName":"Staffel 2","ParentIndexNumber":2"#
+            ),
+            1,
+        )
+        .replacen(
+            r#""Type":"Episode","#,
+            &format!(r#""Type":"Episode","DateCreated":"2026-11-0{n}T20:00:00.0000000Z","#),
+            1,
+        )
+}
+
+/// Newest first, as `Items/Latest` and `SortBy=DateCreated` (descending) answer.
+fn real_episodes_newest_first() -> Vec<String> {
+    (1..=4).rev().map(real_episode).collect()
+}
+
+fn real_person(id: &str) -> Option<String> {
+    let (id, name, born, tmdb) = REAL_PERSONS.iter().find(|p| p.0 == id)?;
+    Some(format!(
+        r#"{{"Id":"{id}","Name":"{name}","Type":"Person","Overview":"Schauspielerin oder Schauspieler aus dem Fixture.","PremiereDate":"{born}","ProductionLocations":["Berlin"],"ProviderIds":{{"Tmdb":"{tmdb}"}},"ImageTags":{{"Primary":"p{id}"}}}}"#
+    ))
+}
+
+fn real_views() -> Vec<String> {
+    vec![
+        format!(
+            r#"{{"Id":"{REAL_LIB_A}","Name":"Filme","Type":"CollectionFolder","CollectionType":"movies"}}"#
+        ),
+        format!(
+            r#"{{"Id":"{REAL_LIB_B}","Name":"Filme 4K","Type":"CollectionFolder","CollectionType":"movies"}}"#
+        ),
+        format!(
+            r#"{{"Id":"{REAL_LIB_HOME}","Name":"Heimvideos","Type":"CollectionFolder","CollectionType":"homevideos"}}"#
+        ),
+        format!(
+            r#"{{"Id":"{REAL_LIB_SHOWS}","Name":"Serien","Type":"CollectionFolder","CollectionType":"tvshows"}}"#
+        ),
+    ]
+}
+
+/// One real item by id (movies, home videos, the virtual movie, series, season, episodes, persons, the libraries).
+fn real_find(id: &str) -> Option<String> {
+    let numbered = |prefix: &str, max: usize| {
+        id.strip_prefix(prefix)
+            .and_then(|n| n.parse::<usize>().ok())
+            .filter(|n| *n < max)
+    };
+    if let Some(i) = numbered("ra", 5) {
+        return real_library_movies("ra").into_iter().nth(i);
+    }
+    if let Some(i) = numbered("rb", 5) {
+        return real_library_movies("rb").into_iter().nth(i);
+    }
+    if let Some(i) = numbered("hv", 3) {
+        return real_home().into_iter().nth(i);
+    }
+    if let Some(n) = numbered("re", 5).filter(|n| *n >= 1) {
+        return Some(real_episode(n));
+    }
+    match id {
+        REAL_PLAYLIST => Some(real_playlist()),
+        REAL_BOX_PICTURE | REAL_BOX_TWO | REAL_BOX_FOUR => real_boxsets()
+            .into_iter()
+            .find(|b| b.contains(&format!(r#""Id":"{id}""#))),
+        REAL_VIRTUAL => Some(real_virtual()),
+        REAL_SERIES => Some(real_series()),
+        REAL_SEASON => Some(real_season()),
+        _ => real_person(id).or_else(|| {
+            real_views()
+                .into_iter()
+                .find(|v| v.contains(&format!(r#""Id":"{id}""#)))
+        }),
+    }
+}
+
+/// Keeps the items whose `Type` is one of the comma separated `types`; `None` keeps everything.
+fn of_types(items: Vec<String>, types: Option<&str>) -> Vec<String> {
+    let Some(types) = types else { return items };
+    let wanted: Vec<String> = types
+        .replace("%2C", ",")
+        .replace("%2c", ",")
+        .split(',')
+        .map(|t| format!(r#""Type":"{t}""#))
+        .collect();
+    items
+        .into_iter()
+        .filter(|i| wanted.iter().any(|t| i.contains(t.as_str())))
+        .collect()
+}
+
+/// Everything a library of this id holds: `recursive` also goes down into seasons and episodes.
+fn real_children(parent: &str, recursive: bool) -> Option<Vec<String>> {
+    let mut items = match parent {
+        REAL_LIB_A => {
+            let mut a = real_library_movies("ra");
+            a.push(real_virtual());
+            a
+        }
+        REAL_LIB_B => real_library_movies("rb"),
+        REAL_LIB_HOME => real_home(),
+        REAL_LIB_SHOWS => vec![real_series()],
+        REAL_BOX_PICTURE | REAL_BOX_TWO | REAL_BOX_FOUR => return real_box_members(parent),
+        REAL_SERIES => vec![real_season()],
+        REAL_SEASON => (1..=4).map(real_episode).collect(),
+        _ => return None,
+    };
+    if recursive && parent == REAL_LIB_SHOWS {
+        items.push(real_season());
+        items.extend((1..=4).map(real_episode));
+    } else if recursive && parent == REAL_SERIES {
+        items.extend((1..=4).map(real_episode));
+    }
+    Some(items)
+}
+
+/// A square, clearly coloured avatar: a violet-blue gradient with a light head and shoulders.
+fn real_avatar(size: u32) -> Vec<u8> {
+    let s = i64::from(size);
+    let mut data = Vec::with_capacity((size * size * 3) as usize);
+    for y in 0..s {
+        for x in 0..s {
+            let inside = |cx: i64, cy: i64, r: i64| (x - cx).pow(2) + (y - cy).pow(2) <= r * r;
+            let px = if inside(s / 2, s * 38 / 100, s / 5) {
+                [250, 215, 180]
+            } else if inside(s / 2, s * 98 / 100, s * 38 / 100) {
+                [245, 245, 250]
+            } else {
+                [
+                    (40 + 90 * x / s) as u8,
+                    (90 + 40 * y / s) as u8,
+                    (220 - 60 * y / s) as u8,
+                ]
+            };
+            data.extend(px);
+        }
+    }
+    encode_rgb(size, size, &data)
+}
+
+fn real_json_list(items: &[String]) -> Reply {
+    json(list(items))
+}
+
+/// The real-shape answers, or `None` to let the plain fixture answer. Only when the mode is on.
+fn real_answer(method: &str, path: &str, query: &str) -> Option<Reply> {
+    if !real_enabled() {
+        return None;
+    }
+    real_answer_on(method, path, query)
+}
+
+fn real_answer_on(method: &str, path: &str, query: &str) -> Option<Reply> {
+    let param = |k: &str| {
+        query.split('&').find_map(|p| {
+            p.split_once('=')
+                .filter(|(n, _)| n.eq_ignore_ascii_case(k))
+                .map(|(_, v)| v.to_owned())
+        })
+    };
+    let segs: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let types = param("IncludeItemTypes");
+    let recursive = param("Recursive").is_some_and(|v| v.eq_ignore_ascii_case("true"));
+    match segs.as_slice() {
+        ["Users", "Public"] if method == "GET" => Some(json(format!("[{}]", real_user()))),
+        ["Users"] if method == "GET" => Some(json(format!("[{}]", real_user()))),
+        ["Users", u] if method == "GET" && *u != "AuthenticateByName" => Some(json(real_user())),
+        ["Users", _, "Images", "Primary"] | ["UserImage"] => {
+            let size = [
+                "maxHeight",
+                "maxWidth",
+                "fillHeight",
+                "fillWidth",
+                "height",
+                "width",
+            ]
+            .iter()
+            .find_map(|k| param(k).and_then(|v| v.parse::<u32>().ok()))
+            .unwrap_or(192)
+            .clamp(32, 512);
+            Some(Reply(200, "image/png", real_avatar(size)))
+        }
+        [.., "UserViews"] | [.., "Views"] => Some(real_json_list(&real_views())),
+        ["Shows", id, "Seasons"] if *id == REAL_SERIES => Some(real_json_list(&[real_season()])),
+        ["Shows", id, "Episodes"] if *id == REAL_SERIES => {
+            let all = match param("SeasonId") {
+                Some(s) if s != REAL_SEASON => Vec::new(),
+                _ => (1..=4).map(real_episode).collect(),
+            };
+            Some(real_json_list(&all))
+        }
+        ["Playlists", id, "Items"] if *id == REAL_PLAYLIST => Some(real_json_list(&[
+            real_find("ra0").unwrap_or_default(),
+            real_find("ra1").unwrap_or_default(),
+            real_episode(1),
+        ])),
+        [.., "Items"] if types.as_deref() == Some("BoxSet") => {
+            Some(real_json_list(&real_boxsets()))
+        }
+        [.., "Items"] if types.as_deref() == Some("Playlist") => {
+            Some(real_json_list(&[real_playlist()]))
+        }
+        // "Next up" comes from the same catalogue as the Serien library: without this arm the simple fixture's series
+        // "Hafenlichter" showed on Home although no library holds it.
+        ["Shows", "NextUp"] => Some(real_json_list(&[real_episode(2)])),
+        [.., "Items", "Latest"] => {
+            let items = param("ParentId")
+                .and_then(|p| real_children(&p, false))
+                .unwrap_or_else(real_episodes_newest_first);
+            Some(json(format!(
+                "[{}]",
+                of_types(items, types.as_deref()).join(",")
+            )))
+        }
+        [.., "Items", id] if method == "GET" && real_find(id).is_some() => real_find(id).map(json),
+        [.., "Items"] => {
+            let ids = param("Ids").or_else(|| param("ids"));
+            let plain = types
+                .as_deref()
+                .is_some_and(|t| t.contains("BoxSet") || t.contains("Playlist"));
+            if let Some(ids) = ids {
+                let ids = ids.replace("%2C", ",").replace("%2c", ",");
+                let found: Vec<String> = ids.split(',').filter_map(real_find).collect();
+                return (!found.is_empty()).then(|| real_json_list(&found));
+            }
+            if let Some(person) = param("PersonIds") {
+                let items = match person.as_str() {
+                    "rp1" => vec![real_find("ra0"), real_find("ra2"), real_find(REAL_SERIES)],
+                    "rp2" => vec![real_find("ra1"), real_find(REAL_SERIES)],
+                    _ => Vec::new(),
+                };
+                let items = items.into_iter().flatten().collect();
+                return Some(real_json_list(&of_types(items, types.as_deref())));
+            }
+            if let Some(items) = param("ParentId").and_then(|p| real_children(&p, recursive)) {
+                // Nothing in a collection is a favourite or half watched: those filters leave it empty.
+                let narrowed = param("Filters")
+                    .is_some_and(|f| f.contains("IsFavorite") || f.contains("IsResumable"));
+                let boxed = param("ParentId").is_some_and(|p| real_box_members(&p).is_some());
+                if narrowed && boxed {
+                    return Some(real_json_list(&[]));
+                }
+                return Some(real_json_list(&of_types(items, types.as_deref())));
+            }
+            if plain || param("ParentId").is_some() {
+                return None;
+            }
+            if param("SortBy").is_some_and(|s| s.starts_with("DateCreated")) {
+                let mut items = real_episodes_newest_first();
+                items.extend(real_library_movies("ra"));
+                items.extend(real_library_movies("rb"));
+                items.extend(real_home());
+                return Some(real_json_list(&of_types(items, types.as_deref())));
+            }
+            // The whole catalogue: both libraries' films (so a film shows twice), the home videos, the
+            // missing movie, the series; seasons and episodes only when asked for by type.
+            let mut items = real_library_movies("ra");
+            items.push(real_virtual());
+            items.extend(real_library_movies("rb"));
+            items.extend(real_home());
+            items.push(real_series());
+            if types.is_some() {
+                items.push(real_season());
+                items.extend((1..=4).map(real_episode));
+            }
+            Some(real_json_list(&of_types(items, types.as_deref())))
+        }
+        _ => None,
     }
 }
 
@@ -499,6 +1172,7 @@ fn serve(mut stream: TcpStream) {
         let mut close = false;
         let mut ws_key = None;
         let mut device = String::new();
+        let mut authorization = String::new();
         loop {
             let mut h = String::new();
             if reader.read_line(&mut h).unwrap_or(0) == 0 || h.trim().is_empty() {
@@ -518,6 +1192,7 @@ fn serve(mut stream: TcpStream) {
                 && let Some((_, rest)) = h.split_once("DeviceId=\"")
             {
                 device = rest.split('"').next().unwrap_or("").to_owned();
+                authorization = h.clone();
             }
             if let Some(v) = lower.strip_prefix("range:") {
                 range = v
@@ -543,6 +1218,13 @@ fn serve(mut stream: TcpStream) {
             return;
         }
         let body_text = String::from_utf8_lossy(&body);
+        crate::fixture_sessions::seen(&authorization);
+        crate::fixture_sessions::observe(
+            &method,
+            target.split('?').next().unwrap_or(""),
+            &body_text,
+            &device,
+        );
         let (cfg, state) = crate::fixture_modes::global();
         let normal = || match crate::fixture_syncplay::answer(&method, &target, &body_text, &device)
         {
@@ -554,7 +1236,13 @@ fn serve(mut stream: TcpStream) {
                 crate::fixture_modes::Outcome::Reply(r) => r,
                 crate::fixture_modes::Outcome::Drop => return,
             };
-        eprintln!("fixture-server: {method} {target} -> {status}");
+        // Milliseconds since the first request, so a live run can tell when a picture was asked for.
+        static FIRST: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+        let at = FIRST
+            .get_or_init(std::time::Instant::now)
+            .elapsed()
+            .as_millis();
+        eprintln!("fixture-server: {method} {target} -> {status} +{at}ms");
         let (status, slice, extra) = match range {
             // `bytes=a-b` cuts to b (inclusive); `bytes=a-` runs to the end as before.
             Some(from) if status == 200 && from < data.len() => {
@@ -581,7 +1269,23 @@ fn serve(mut stream: TcpStream) {
             "HTTP/1.1 {status} X\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\n{hang_up}{extra}\r\n",
             slice.len()
         );
-        if stream.write_all(head.as_bytes()).is_err() || stream.write_all(&slice).is_err() {
+        if stream.write_all(head.as_bytes()).is_err() {
+            return;
+        }
+        // `--slow-downloads`: media bodies trickle out (16 KiB every 100 ms), so a download stays "loading" long enough to
+        // pause, resume and watch in the UI.
+        let slow = SLOW_DOWNLOADS.load(std::sync::atomic::Ordering::Relaxed)
+            && target.contains("/Videos/")
+            && slice.len() > SLOW_CHUNK;
+        let sent = if slow {
+            slice.chunks(SLOW_CHUNK).all(|c| {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                stream.write_all(c).is_ok()
+            })
+        } else {
+            stream.write_all(&slice).is_ok()
+        };
+        if !sent {
             return;
         }
         if close {
@@ -590,11 +1294,16 @@ fn serve(mut stream: TcpStream) {
     }
 }
 
+/// Set by `--slow-downloads`.
+static SLOW_DOWNLOADS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Bytes per step of a slow download.
+const SLOW_CHUNK: usize = 16 * 1024;
+
 /// Runs the server until the process is stopped. Prints `listening on http://127.0.0.1:PORT` once ready.
 /// Flags (env in brackets): `--big` [SWIFTLY_FIXTURE_BIG] (300 movies, 40 series, genres, four accounts), `--port N`, `--mode a,b` [SWIFTLY_FIXTURE_MODE], `--latency-ms N` [SWIFTLY_FIXTURE_LATENCY_MS],
 /// `--flaky-every N` [SWIFTLY_FIXTURE_FLAKY_EVERY], `--expire-after N` [SWIFTLY_FIXTURE_EXPIRE_AFTER].
 pub fn run(args: &[String]) -> Result<(), String> {
-    const USAGE: &str = "usage: cargo xtask fixture-server [--port N] [--mode empty|long|huge|i18n|sessions|slow|offline-flaky|auth-expire[,..]] [--latency-ms N] [--flaky-every N] [--expire-after N]";
+    const USAGE: &str = "usage: cargo xtask fixture-server [--port N] [--real-shapes] [--mode empty|long|huge|i18n|sessions|slow|offline-flaky|auth-expire[,..]] [--latency-ms N] [--flaky-every N] [--expire-after N]";
     let env_num = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<u64>().ok());
     let (mut port, mut modes) = (
         0_u16,
@@ -609,6 +1318,14 @@ pub fn run(args: &[String]) -> Result<(), String> {
     while let Some(flag) = it.next() {
         if flag == "--big" {
             crate::fixture_big::enable();
+            continue;
+        }
+        if flag == "--real-shapes" {
+            enable_real();
+            continue;
+        }
+        if flag == "--slow-downloads" {
+            SLOW_DOWNLOADS.store(true, std::sync::atomic::Ordering::Relaxed);
             continue;
         }
         let value = it.next().ok_or(USAGE)?;
@@ -638,6 +1355,31 @@ pub fn run(args: &[String]) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn playback_info_names_the_versions_the_listing_names() {
+        let ids = |json: &str| {
+            json.split(r#""Id":""#)
+                .skip(1)
+                .filter_map(|r| r.split('"').next())
+                .filter(|i| i.starts_with("src"))
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        };
+        let all = ["ra0", "ra1", "ra4", "rb2", "hv1", "m0", "m3"];
+        for id in all {
+            let item =
+                super::real_find(id).unwrap_or_else(|| super::movie(id[1..].parse().unwrap()));
+            let (listed, offered) = (ids(&item), ids(&super::playback_info(id)));
+            assert!(!listed.is_empty(), "{id} lists no version");
+            assert_eq!(
+                listed, offered,
+                "{id}: PlaybackInfo must offer the listed versions"
+            );
+        }
+        // Items without versions in their listing keep the one `src-<id>` version.
+        assert!(super::playback_info("bg-m1").contains(r#""Id":"src-bg-m1""#));
+    }
+
     use super::*;
 
     /// Every kind of request the server answered before the player extras existed.
@@ -743,7 +1485,7 @@ mod tests {
     /// `Items?ids=` is not in the list on purpose: it answered the unfiltered fallback before the downloads catch-up
     /// needed the real filter (see `ids_filter_answers_exactly_the_known_ones`); every other answer is unchanged
     /// (checked by re-running the old routing: the old hash 13_088_136_916_963_034_929 came back with that one request).
-    const OLD_ANSWERS_HASH: u64 = 12_171_024_901_924_467_041;
+    const OLD_ANSWERS_HASH: u64 = 17_122_911_487_198_912_136;
 
     #[test]
     fn display_preferences_keep_what_a_client_wrote() {
@@ -904,5 +1646,372 @@ mod tests {
         assert_eq!(u16::from_be_bytes([b[sof + 5], b[sof + 6]]), 352);
         assert_eq!(u16::from_be_bytes([b[sof + 7], b[sof + 8]]), 960);
         assert_eq!(get("/Videos/g1/Trickplay/320/1.jpg").0, 404);
+    }
+
+    // ---- Real shapes (`--real-shapes`)
+
+    /// Runs `f` with the real shapes on for this test thread only.
+    fn real<T>(f: impl FnOnce() -> T) -> T {
+        FORCE_REAL.with(|c| c.set(true));
+        let out = f();
+        FORCE_REAL.with(|c| c.set(false));
+        out
+    }
+
+    fn real_get(target: &str) -> String {
+        let r = real(|| get(target));
+        assert_eq!(r.0, 200, "{target}");
+        text(&r).to_owned()
+    }
+
+    fn ids_of(body: &str) -> Vec<String> {
+        body.split(r#""Id":""#)
+            .skip(1)
+            .filter_map(|p| p.split('"').next().map(str::to_owned))
+            .filter(|id| (id.starts_with('r') && !id.starts_with("rp")) || id.starts_with("hv"))
+            .collect()
+    }
+
+    #[test]
+    fn real_shapes_carry_collections_and_a_playlist() {
+        let boxes = real_get("/Users/u1/Items?IncludeItemTypes=BoxSet&Recursive=true");
+        assert_eq!(boxes.matches(r#""Type":"BoxSet""#).count(), 3, "{boxes}");
+        // One with its own picture, the others without (the Mac draws a mosaic for those).
+        assert_eq!(boxes.matches("ImageTags").count(), 1, "{boxes}");
+        assert_eq!(
+            ids_of(&real_get(
+                "/Users/u1/Items?ParentId=rc1&IncludeItemTypes=Movie"
+            )),
+            ["ra0", "ra1", "ra2"]
+        );
+        assert_eq!(
+            ids_of(&real_get("/Users/u1/Items?ParentId=rc2")),
+            ["rb3", "rb4"]
+        );
+        assert_eq!(ids_of(&real_get("/Users/u1/Items?ParentId=rc3")).len(), 4);
+        let lists = real_get("/Users/u1/Items?IncludeItemTypes=Playlist");
+        assert!(lists.contains(r#""Id":"rpl1""#), "{lists}");
+        let entries = real_get("/Playlists/rpl1/Items?UserId=u1");
+        assert!(
+            entries.contains("ra0") && entries.contains(r#""Type":"Episode""#),
+            "{entries}"
+        );
+        assert!(real_get("/Users/u1/Items/rc2").contains("Zwei Filme"));
+        // A collection has no favourites: that filter leaves it empty, while the plain list stays full.
+        assert!(ids_of(&real_get("/Users/u1/Items?ParentId=rc1&Filters=IsFavorite")).is_empty());
+    }
+
+    /// The Serien library lists series only and the Filme library films only (the i18n mode served both everywhere).
+    #[test]
+    fn the_plain_libraries_hold_their_own_kind_of_title() {
+        let shows = text(&get(
+            "/Users/u1/Items?ParentId=lib-shows&IncludeItemTypes=Series&Recursive=true",
+        ))
+        .to_owned();
+        assert!(
+            shows.contains(r#""Type":"Series""#) && !shows.contains(r#""Type":"Movie""#),
+            "{shows}"
+        );
+        let shows = text(&get("/Users/u1/Items?ParentId=lib-shows&Recursive=true")).to_owned();
+        assert!(!shows.contains(r#""Type":"Movie""#), "{shows}");
+        let movies = text(&get(
+            "/Users/u1/Items?ParentId=lib-movies&IncludeItemTypes=Movie",
+        ))
+        .to_owned();
+        assert!(
+            movies.contains(r#""Type":"Movie""#) && !movies.contains(r#""Type":"Series""#),
+            "{movies}"
+        );
+        // Without a type or a parent the catalogue stays whole.
+        let all = text(&get("/Users/u1/Items?Recursive=true")).to_owned();
+        assert!(
+            all.contains(r#""Type":"Movie""#) && all.contains(r#""Type":"Series""#),
+            "{all}"
+        );
+    }
+
+    #[test]
+    fn plain_collections_stay_as_they_were() {
+        let plain = text(&get("/Users/u1/Items?IncludeItemTypes=BoxSet")).to_owned();
+        assert!(
+            plain.contains(r#""Id":"c1""#) && !plain.contains("rc1"),
+            "{plain}"
+        );
+    }
+
+    #[test]
+    fn the_declared_size_is_the_size_it_serves() {
+        let size = format!("\"Size\":{},", CLIP.len());
+        assert!(movie(1).contains(&size), "the film's first source");
+        assert!(extras_sources().contains(&size), "the extras' first source");
+        assert!(!movie(1).contains("1500000"));
+    }
+
+    #[test]
+    fn real_shapes_are_off_by_default() {
+        for target in [
+            "/Users/u1/Views",
+            "/Users/Me",
+            "/Users/u1/Items?ParentId=rl-home",
+            "/Users/u1/Items?PersonIds=rp1",
+            "/Users/u1/Items/rv1",
+            "/Users/u1/Items/rse1",
+            "/Users/u1/Items/rp1",
+            "/Users/u1/Images/Primary",
+        ] {
+            let r = get(target);
+            if r.1 == "image/png" {
+                // The plain gradient, not the avatar.
+                assert_ne!(r.2, real(|| get(target)).2, "{target}");
+            } else {
+                let body = text(&r);
+                assert!(
+                    !body.contains("rl-movies-a") && !body.contains("Virtual"),
+                    "{target}: {body}"
+                );
+                assert!(
+                    !body.contains("rv1")
+                        && !body.contains("rse1")
+                        && !body.contains("PrimaryImageTag\":\"avatar1"),
+                    "{target}: {body}"
+                );
+            }
+        }
+        assert!(!auth_result_with("demo", false).contains("PrimaryImageTag"));
+        let default_auth = route(
+            "POST",
+            "/Users/AuthenticateByName",
+            r#"{"Username":"demo","Pw":"demo"}"#,
+        );
+        assert!(!text(&default_auth).contains("PrimaryImageTag"));
+        assert!(!text(&get("/Users/u1/Views")).contains("rl-"));
+    }
+
+    #[test]
+    fn real_two_movie_libraries_share_tmdb_ids() {
+        let views = real_get("/Users/u1/Views");
+        assert_eq!(
+            views.matches(r#""CollectionType":"movies""#).count(),
+            2,
+            "{views}"
+        );
+        assert!(views.contains(r#""Id":"rl-home","Name":"Heimvideos","Type":"CollectionFolder","CollectionType":"homevideos""#));
+        let a = real_get("/Users/u1/Items?ParentId=rl-movies-a");
+        let b = real_get("/Users/u1/Items?ParentId=rl-movies-b");
+        for n in 0..5 {
+            let tmdb = format!(r#""ProviderIds":{{"Tmdb":"{}"}}"#, 1000 + n);
+            assert!(
+                a.contains(&format!(r#""Id":"ra{n}""#)) && a.contains(&tmdb),
+                "{a}"
+            );
+            assert!(
+                b.contains(&format!(r#""Id":"rb{n}""#)) && b.contains(&tmdb),
+                "{b}"
+            );
+        }
+        assert!(!b.contains("ra0"));
+        // Without a parent every film is in the catalogue twice.
+        let all = real_get("/Users/u1/Items?Recursive=true&IncludeItemTypes=Movie");
+        assert_eq!(all.matches(r#""Tmdb":"1000""#).count(), 2, "{all}");
+    }
+
+    #[test]
+    fn real_home_videos_are_movies_without_tmdb_ids() {
+        let home = real_get("/Users/u1/Items?ParentId=rl-home");
+        assert_eq!(home.matches(r#""Type":"Movie""#).count(), 3, "{home}");
+        assert!(
+            !home.contains("ProviderIds") && home.contains(r#""Id":"hv2""#),
+            "{home}"
+        );
+    }
+
+    #[test]
+    fn real_virtual_movie_is_listed_but_has_no_file() {
+        let a = real_get("/Users/u1/Items?ParentId=rl-movies-a");
+        assert!(a.contains(r#""Id":"rv1""#), "{a}");
+        let item = real_get("/Users/u1/Items/rv1");
+        assert!(
+            item.contains(r#""LocationType":"Virtual""#) && !item.contains("MediaSources"),
+            "{item}"
+        );
+        assert!(real_get("/Users/u1/Items/ra0").contains(r#""LocationType":"FileSystem""#));
+    }
+
+    #[test]
+    fn real_next_up_names_a_series_of_the_series_library() {
+        let next = real_get("/Shows/NextUp?userId=u1");
+        assert!(next.contains(r#""SeriesName":"Küstenwache""#), "{next}");
+        assert!(!next.contains("Hafenlichter"), "{next}");
+        let library = real_get("/Users/u1/Items?ParentId=rl-shows");
+        assert!(library.contains(r#""Name":"Küstenwache""#), "{library}");
+    }
+
+    #[test]
+    fn real_season_returns_its_episodes_both_ways() {
+        let season = real_get("/Users/u1/Items/rse1");
+        for part in [
+            r#""Type":"Season""#,
+            r#""SeriesId":"rs1""#,
+            r#""SeriesName":"Küstenwache""#,
+            r#""IndexNumber":2"#,
+        ] {
+            assert!(season.contains(part), "{season}");
+        }
+        assert!(real_get("/Shows/rs1/Seasons?userId=u1").contains(r#""Id":"rse1""#));
+        for target in [
+            "/Shows/rs1/Episodes?userId=u1&SeasonId=rse1",
+            "/Users/u1/Items?ParentId=rse1",
+        ] {
+            let eps = real_get(target);
+            assert_eq!(
+                eps.matches(r#""Type":"Episode""#).count(),
+                4,
+                "{target}: {eps}"
+            );
+        }
+        assert_eq!(
+            real_get("/Shows/rs1/Episodes?SeasonId=nope"),
+            r#"{"Items":[],"TotalRecordCount":0}"#
+        );
+    }
+
+    #[test]
+    fn real_latest_and_date_created_list_episodes_of_one_series() {
+        for target in [
+            "/Users/u1/Items/Latest",
+            "/Users/u1/Items?SortBy=DateCreated&SortOrder=Descending&IncludeItemTypes=Episode",
+        ] {
+            let body = real_get(target);
+            assert_eq!(ids_of(&body), ["re4", "re3", "re2", "re1"], "{target}");
+            assert_eq!(body.matches(r#""SeriesId":"rs1""#).count(), 4);
+            assert_eq!(body.matches(r#""SeasonId":"rse1""#).count(), 4);
+            assert_eq!(body.matches(r#""ParentIndexNumber":2"#).count(), 4);
+            assert!(
+                body.contains(r#""IndexNumber":4"#)
+                    && body.contains(r#""DateCreated":"2026-11-04"#)
+            );
+        }
+    }
+
+    #[test]
+    fn real_people_have_details_credits_and_pictures() {
+        let person = real_get("/Users/u1/Items/rp1");
+        for part in [
+            r#""Type":"Person""#,
+            r#""Overview":"#,
+            r#""PremiereDate":"1980-05-01"#,
+            r#""ProductionLocations":["Berlin"]"#,
+            r#""ProviderIds":{"Tmdb":"1234"}"#,
+            r#""ImageTags":{"Primary":"prp1"}"#,
+        ] {
+            assert!(person.contains(part), "{person}");
+        }
+        let credits = real_get("/Users/u1/Items?PersonIds=rp1&Recursive=true");
+        assert_eq!(ids_of(&credits), ["ra0", "ra2", "rs1"], "{credits}");
+        assert_eq!(
+            real_get("/Users/u1/Items?PersonIds=zz"),
+            r#"{"Items":[],"TotalRecordCount":0}"#
+        );
+        let movie = real_get("/Users/u1/Items/ra0");
+        assert!(movie.contains(r#"{"Id":"rp1","Name":"Anna Test","Type":"Actor","Role":"Hauptrolle","PrimaryImageTag":"prp1"}"#), "{movie}");
+        let picture = real(|| get("/Items/rp1/Images/Primary?tag=prp1"));
+        assert_eq!((picture.0, picture.1), (200, "image/png"));
+        assert!(png_pixels(&picture.2).len() > 100);
+    }
+
+    /// The size of the picture a real-shape request gets (read from the PNG header).
+    fn picture_size(target: &str) -> (u32, u32) {
+        let r = real(|| get(target));
+        assert_eq!((r.0, r.1), (200, "image/png"), "{target}");
+        let header = png::Decoder::new(std::io::Cursor::new(&r.2[..]))
+            .read_info()
+            .expect("png header");
+        let info = header.info();
+        (info.width, info.height)
+    }
+
+    #[test]
+    fn real_pictures_are_resized_to_the_asked_size_like_jellyfin() {
+        // A poster fits the height it asks for and keeps its 2:3 aspect.
+        assert_eq!(
+            picture_size("/Items/ra0/Images/Primary?tag=t&maxHeight=480&quality=90"),
+            (320, 480)
+        );
+        assert_eq!(
+            picture_size("/Items/ra0/Images/Primary?maxHeight=300"),
+            (200, 300)
+        );
+        // Never above the original (2000 x 3000).
+        assert_eq!(
+            picture_size("/Items/ra0/Images/Primary?maxHeight=5000"),
+            (2000, 3000)
+        );
+        // A backdrop fits the width (4K original, 16:9).
+        assert_eq!(
+            picture_size("/Items/ra0/Images/Backdrop/0?maxWidth=1280"),
+            (1280, 720)
+        );
+        assert_eq!(
+            picture_size("/Items/ra0/Images/Backdrop?maxWidth=9999"),
+            (3840, 2160)
+        );
+        // An episode's still is landscape, not a poster: height 360 gives 640 x 360, width 640 the same.
+        assert_eq!(
+            picture_size("/Items/re1/Images/Primary?maxHeight=360"),
+            (640, 360)
+        );
+        assert_eq!(
+            picture_size("/Items/bm-ep2/Images/Primary?maxWidth=640"),
+            (640, 360)
+        );
+        assert_eq!(
+            picture_size("/Items/ra0/Images/Thumb?maxWidth=960"),
+            (960, 540)
+        );
+        // A fill box is met exactly (cover and cut), names in any case.
+        assert_eq!(
+            picture_size("/Items/ra0/Images/Primary?fillWidth=300&fillHeight=300"),
+            (300, 300)
+        );
+        assert_eq!(
+            picture_size("/Items/ra0/Images/Primary?FillWidth=320&FillHeight=180"),
+            (320, 180)
+        );
+        // Without any size: the original.
+        assert_eq!(picture_size("/Items/ra0/Images/Primary"), (2000, 3000));
+    }
+
+    #[test]
+    fn real_user_has_a_picture_and_a_tag() {
+        for target in ["/Users/Me", "/Users/u1", "/Users", "/Users/Public"] {
+            assert!(
+                real_get(target).contains(r#""PrimaryImageTag":"avatar1""#),
+                "{target}"
+            );
+        }
+        let auth = auth_result_with("demo", true);
+        assert!(
+            auth.contains(r#""Name":"demo","ServerId":"fx","PrimaryImageTag":"avatar1""#),
+            "{auth}"
+        );
+        let routed = real(|| {
+            route(
+                "POST",
+                "/Users/AuthenticateByName",
+                r#"{"Username":"demo","Pw":"demo"}"#,
+            )
+        });
+        assert!(text(&routed).contains("PrimaryImageTag"));
+        let small = real(|| get("/Users/u1/Images/Primary?maxHeight=64&tag=avatar1"));
+        let big = real(|| get("/Users/u1/Images/Primary"));
+        assert_eq!((small.0, small.1), (200, "image/png"));
+        let (px, big_px) = (png_pixels(&small.2), png_pixels(&big.2));
+        assert_eq!((px.len(), big_px.len()), (64 * 64 * 3, 192 * 192 * 3));
+        // Coloured and not flat: many distinct colours, none of them gray.
+        let distinct: std::collections::HashSet<_> = big_px.chunks(3).collect();
+        assert!(distinct.len() > 50, "{}", distinct.len());
+        let corner = &big_px[0..3];
+        assert!(corner[2] > corner[0] + 60, "{corner:?}");
+        assert_eq!(real(|| get("/UserImage?userId=u1")).0, 200);
     }
 }

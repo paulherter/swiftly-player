@@ -108,7 +108,7 @@ import Testing
         #expect(try f.step(event: .stopAccepted).isEmpty)
         #expect(try f.step(event: .tick(playerRuns: false, signedIn: true)).isEmpty)
         _ = try f.step(event: .start)
-        #expect(try f.step(event: .tick(playerRuns: true, signedIn: true)).isEmpty)
+        #expect(try f.step(event: .tick(playerRuns: true, signedIn: true)) == [.offer(sessionIds: [])])
         #expect(try f.step(event: .adopt(sessionId: "nope")).isEmpty)
         #expect(try f.step(event: .finish) == [.offer(sessionIds: [])])
         #expect(f.phase() == "stopped")

@@ -115,7 +115,7 @@ fn movie(n: usize) -> String {
         ""
     };
     format!(
-        r#"{{"Id":"bg-m{n}","Name":"{name}","SortName":"{sort}","Type":"Movie","ProductionYear":{year},"PremiereDate":"{year}-0{month}-15T00:00:00.0000000Z","DateCreated":"2026-0{month}-{day:02}T10:00:00.0000000Z","RunTimeTicks":{runtime},"Overview":"Ein Film aus dem grossen Testkatalog, Nummer {n}. Er hat einen Beschreibungstext, der ueber mehrere Zeilen laufen darf, damit die Detailseite ihre Hoehe zeigt.","Genres":[{genres}],"CommunityRating":{rating:.1},"OfficialRating":"FSK 12","People":[{{"Id":"p1","Name":"Anna Test","Type":"Actor","Role":"Hauptrolle","PrimaryImageTag":"pp1"}},{{"Id":"p2","Name":"Ben Regie","Type":"Director"}}],"ImageTags":{{"Primary":"p{n}"}},"BackdropImageTags":["b{n}"],"MediaSources":[{{"Id":"src-bg-m{n}","Name":"Test","Container":"mp4","Size":1500000,"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":{runtime},"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"DisplayTitle":"Ton","IsDefault":true}}]}}],"UserData":{{{resume}}}{fav}}}"#,
+        r#"{{"Id":"bg-m{n}","Name":"{name}","SortName":"{sort}","Type":"Movie","ProductionYear":{year},"PremiereDate":"{year}-0{month}-15T00:00:00.0000000Z","DateCreated":"2026-0{month}-{day:02}T10:00:00.0000000Z","RunTimeTicks":{runtime},"Overview":"Ein Film aus dem grossen Testkatalog, Nummer {n}. Er hat einen Beschreibungstext, der ueber mehrere Zeilen laufen darf, damit die Detailseite ihre Hoehe zeigt.","Genres":[{genres}],"CommunityRating":{rating:.1},"OfficialRating":"FSK 12","People":[{{"Id":"p1","Name":"Anna Test","Type":"Actor","Role":"Hauptrolle","PrimaryImageTag":"pp1"}},{{"Id":"p2","Name":"Ben Regie","Type":"Director"}}],"ImageTags":{{"Primary":"p{n}"}},"BackdropImageTags":["b{n}"],"MediaSources":[{{"Id":"src-bg-m{n}","Name":"Test","Container":"mp4","Size":{clip},"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":{runtime},"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"DisplayTitle":"Ton","IsDefault":true}}]}}],"UserData":{{{resume}}}{fav}}}"#,
         name = movie_name(n),
         sort = movie_name(n).to_lowercase(),
         year = 1980 + (n * 7) % 45,
@@ -124,6 +124,7 @@ fn movie(n: usize) -> String {
         runtime = 36_000_000_000_u64 + (n as u64 % 40) * 1_800_000_000,
         genres = genre_json(n, 0),
         rating = 4.0 + (n % 55) as f64 / 10.0,
+        clip = crate::fixture_server::CLIP.len(),
     )
 }
 

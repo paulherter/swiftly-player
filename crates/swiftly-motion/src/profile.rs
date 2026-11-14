@@ -60,7 +60,8 @@ pub struct ScrollTuning {
     pub notch_smoothing_ms: f64,
     /// Multiplier of touchpad pixels (1.0 on the Mac; GTK uses 2.5).
     pub touchpad_gain: f64,
-    /// Rubber band at the ends for touchpad flicks (a wheel never bounces).
+    /// Whether the ends give: rubber band for touchpad drags, soft stop for wheel notches, momentum overshoot. Only the
+    /// Mac and touch screens bounce; Windows and Linux desktop apps stop dead at the ends.
     pub rubber_band: bool,
     /// Poster rails snap to item starts after a flick (the Mac rails do not).
     pub rail_snaps: bool,
@@ -82,7 +83,7 @@ impl ScrollTuning {
             notch_by_viewport: false,
             notch_smoothing_ms: tuning::WHEEL_SMOOTH_MS,
             touchpad_gain: 1.0,
-            rubber_band: true,
+            rubber_band: os == Os::MacOs,
             rail_snaps: false,
             measured_rubber_c: None,
             measured_rebound_s: None,
@@ -113,6 +114,7 @@ impl ScrollTuning {
             velocity_stale_ms: tuning::VELOCITY_STALE_MS,
             min_fling_speed: tuning::MIN_FLING_SPEED,
             rail_snaps: true,
+            rubber_band: true,
             ..ScrollTuning::for_os(Os::Windows)
         }
     }

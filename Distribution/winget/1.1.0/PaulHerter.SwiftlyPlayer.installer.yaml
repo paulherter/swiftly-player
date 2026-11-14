@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+#
+# From 1.1.0 the Windows installer is an NSIS Setup built by
+# Werkzeuge/package-desktop.sh (script: Distribution/desktop/swiftly-player.nsi).
+# It installs per user (no administrator rights) and, when it finds the Inno Setup
+# installation of 1.0.x, uninstalls it first, so `winget upgrade` over the old
+# entry leaves one Swiftly Player in "Apps & features".
+#
+# InstallerSha256 is a placeholder: replace it with the SHA256 of the published
+# Swiftly-Player-1.1.0-win-x64-Setup.exe (e.g. `wingetcreate update` or
+# `Get-FileHash`) before submitting this set. Add ReleaseDate when it is known.
+
+PackageIdentifier: PaulHerter.SwiftlyPlayer
+PackageVersion: 1.1.0
+Platform:
+- Windows.Desktop
+InstallerType: nullsoft
+Scope: user
+InstallerSwitches:
+  Silent: /S
+  SilentWithProgress: /S
+UpgradeBehavior: install
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/paulherter/swiftly-player/releases/download/v1.1.0/Swiftly-Player-1.1.0-win-x64-Setup.exe
+  InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+  AppsAndFeaturesEntries:
+  - DisplayName: Swiftly Player
+    Publisher: Paul Herter
+    DisplayVersion: 1.1.0
+    ProductCode: Swiftly Player
+ManifestType: installer
+ManifestVersion: 1.12.0

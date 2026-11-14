@@ -4,18 +4,22 @@
 //
 // One instanced draw of all quads of a DrawList. The per-pixel math is mirrored 1:1 by software.rs (the oracle):
 // change both together. Output is premultiplied; the pipeline blends "one, one minus source alpha" in sRGB code values.
-// Instance layout: see DrawQuad::write_bytes (144 bytes, nine vec4 attributes).
+// Instance layout: see DrawQuad::write_bytes (176 bytes, eleven vec4 attributes).
 
 struct Globals {
     target_px: vec2<f32>,
     scale: f32,
-    unused: f32,
+    // Corner radius of the window's own outline in pixels (0 = a plain rectangle): the picture is cut to that rounded
+    // rectangle, the corners stay transparent (a frameless window on a compositor that draws no corners itself).
+    window_corner: f32,
 }
 
 @group(0) @binding(0) var<uniform> g: Globals;
 @group(0) @binding(1) var glyph_tex: texture_2d<f32>;
 @group(0) @binding(2) var image_tex: texture_2d<f32>;
 @group(0) @binding(3) var tex_sampler: sampler;
+// Colour glyphs (emoji): premultiplied RGBA, see KIND_COLOR_GLYPH.
+@group(0) @binding(4) var color_tex: texture_2d<f32>;
 
 struct Instance {
     @location(0) rect: vec4<f32>,
@@ -27,6 +31,8 @@ struct Instance {
     @location(6) uv: vec4<f32>,
     @location(7) params: vec4<f32>,
     @location(8) grad: vec4<f32>,
+    @location(9) round_clip: vec4<f32>,
+    @location(10) round_radius: vec4<f32>,
 }
 
 struct Varyings {
@@ -40,6 +46,8 @@ struct Varyings {
     @location(6) @interpolate(flat) uv: vec4<f32>,
     @location(7) @interpolate(flat) params: vec4<f32>,
     @location(8) @interpolate(flat) grad: vec4<f32>,
+    @location(9) @interpolate(flat) round_clip: vec4<f32>,
+    @location(10) @interpolate(flat) round_radius: vec4<f32>,
 }
 
 const KIND_SHAPE: u32 = 0u;
@@ -47,7 +55,9 @@ const KIND_GRADIENT: u32 = 1u;
 const KIND_SHADOW: u32 = 2u;
 const KIND_IMAGE: u32 = 3u;
 const KIND_GLYPH: u32 = 4u;
+const KIND_COLOR_GLYPH: u32 = 7u;
 const KIND_BACKDROP: u32 = 5u;
+const KIND_RADIAL: u32 = 6u;
 
 const SHADOW_STEPS: i32 = 8;
 
@@ -78,6 +88,8 @@ fn vs_main(@builtin(vertex_index) vertex: u32, inst: Instance) -> Varyings {
     out.uv = inst.uv;
     out.params = inst.params;
     out.grad = inst.grad;
+    out.round_clip = inst.round_clip;
+    out.round_radius = inst.round_radius;
     return out;
 }
 
@@ -139,8 +151,50 @@ fn premul(c: vec4<f32>) -> vec4<f32> {
     return vec4<f32>(c.rgb * c.a, c.a);
 }
 
+fn window_mask(p: vec2<f32>) -> f32 {
+    if g.window_corner <= 0.0 {
+        return 1.0;
+    }
+    let hs = g.target_px * 0.5;
+    return clamp(0.5 - sd_round_box(p - hs, hs, min(g.window_corner, min(hs.x, hs.y))), 0.0, 1.0);
+}
+
+// Interleaved gradient noise in [0, 1): one 8-bit level of dither for ramps (mirrored by `dither_noise` in software.rs).
+fn dither_noise(p: vec2<f32>) -> f32 {
+    return fract(52.98292 * fract(dot(p, vec2<f32>(0.06711056, 0.00583715))));
+}
+
+// The image's region of the page in texels: the uv rectangle snapped to whole texels (a handed-out rectangle may carry
+// a sub-texel offset up to 0.4 that only tells generations apart), then the texel-centre range inside it.
+fn region_clamped(uv: vec4<f32>, t: vec2<f32>, dims: vec2<f32>) -> vec2<f32> {
+    let lo = floor(uv.xy * dims + vec2<f32>(0.5));
+    let hi = floor(uv.zw * dims + vec2<f32>(0.5));
+    let at = lo + (hi - lo) * t;
+    let first = lo + vec2<f32>(0.5);
+    let last = max(first, hi - vec2<f32>(0.5));
+    return clamp(at, first, last) / dims;
+}
+
+// Coverage of the rounded clip of the quad (round_clip = x0, y0, x1, y1 in points, round_radius.x = corner): 1 inside
+// the rounded rectangle, anti-aliased on its edge. Radius 0 = no rounded clip. Mirrored by `round_clip_mask` in software.rs.
+fn round_clip_mask(in: Varyings) -> f32 {
+    let r = in.round_radius.x;
+    if r <= 0.0 {
+        return 1.0;
+    }
+    let s = g.scale;
+    let lo = in.round_clip.xy * s;
+    let hi = in.round_clip.zw * s;
+    let hs = (hi - lo) * 0.5;
+    return clamp(0.5 - sd_round_box(in.position.xy - lo - hs, hs, min(r * s, min(hs.x, hs.y))), 0.0, 1.0);
+}
+
 @fragment
 fn fs_main(in: Varyings) -> @location(0) vec4<f32> {
+    return shape_main(in) * window_mask(in.position.xy) * round_clip_mask(in);
+}
+
+fn shape_main(in: Varyings) -> vec4<f32> {
     let s = g.scale;
     let p = in.position.xy;
     if p.x < in.clip.x * s || p.x >= in.clip.z * s || p.y < in.clip.y * s || p.y >= in.clip.w * s {
@@ -170,6 +224,15 @@ fn fs_main(in: Varyings) -> @location(0) vec4<f32> {
         return vec4<f32>(in.color.rgb * a, a);
     }
 
+    if kind == KIND_COLOR_GLYPH {
+        if p.x < origin.x || p.y < origin.y || p.x >= origin.x + size.x || p.y >= origin.y + size.y {
+            discard;
+        }
+        let uv = mix(in.uv.xy, in.uv.zw, (p - origin) / size);
+        let t = textureSampleLevel(color_tex, tex_sampler, uv, 0.0);
+        return t * (in.color.a * opacity);
+    }
+
     // Fill colour (premultiplied) of the shape kinds.
     var fill = premul(in.color);
     if kind == KIND_GRADIENT {
@@ -180,8 +243,20 @@ fn fs_main(in: Varyings) -> @location(0) vec4<f32> {
             t = clamp(dot((p - origin) / size - in.grad.xy, d) / len2, 0.0, 1.0);
         }
         fill = mix(premul(in.color), premul(in.color2), t);
+    } else if kind == KIND_RADIAL {
+        // One band of an elliptical gradient: grad = centre and radii in the unit square, uv = (inner limit, band start,
+        // band end, outer limit). Outside the band nothing is drawn; the outermost bands extend to infinity.
+        let t = length(((p - origin) / size - in.grad.xy) / max(in.grad.zw, vec2<f32>(0.0001)));
+        if t < in.uv.x || t >= in.uv.w {
+            discard;
+        }
+        let span = max(in.uv.z - in.uv.y, 0.00001);
+        fill = mix(premul(in.color), premul(in.color2), clamp((t - in.uv.y) / span, 0.0, 1.0));
     } else if kind == KIND_IMAGE {
-        let uv = mix(in.uv.xy, in.uv.zw, (p - origin) / size);
+        // Never sample past the picture's own texels: the page packs pictures edge to edge, and bilinear filtering at the
+        // border would mix in the neighbour (a rim of another cover on the left, right and bottom).
+        let dims = vec2<f32>(textureDimensions(image_tex));
+        let uv = region_clamped(in.uv, (p - origin) / size, dims);
         fill = premul(textureSampleLevel(image_tex, tex_sampler, uv, 0.0) * in.color);
     }
 
@@ -197,5 +272,13 @@ fn fs_main(in: Varyings) -> @location(0) vec4<f32> {
         let ring = premul(in.border_color) * max(cov_outer - cov_inner, 0.0);
         result = ring + result * (1.0 - ring.a);
     }
-    return result * opacity;
+    result = result * opacity;
+    if kind == KIND_GRADIENT || kind == KIND_RADIAL || (u32(in.params.w) & 32u) != 0u {
+        // Ramps are 8-bit in the target; noise of one level keeps the steps from showing as bands. Fades towards fully
+        // clear and fully opaque so nothing grows out of nothing.
+        let n = dither_noise(p) - 0.5;
+        let w = clamp(min(result.a, 1.0 - result.a) * 255.0, 0.0, 1.0);
+        result = vec4<f32>(result.rgb + vec3<f32>(n * result.a / 255.0), result.a + n * w / 255.0);
+    }
+    return result;
 }

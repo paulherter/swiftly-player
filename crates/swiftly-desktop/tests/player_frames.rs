@@ -418,14 +418,19 @@ fn next_card_drags_away_and_the_menu_takes_escape_first() {
         },
     );
     let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
-    // A small click zooms and keeps the card; a drag of more than 70 pt keeps the credits and removes it.
+    // A small click starts the next episode (the card zooms over the switch); a drag of more than 70 pt keeps the
+    // credits and removes the card.
     s.touch_down(cx, cy, now);
     s.touch_up(cx, cy, now + 20.0);
-    now += 20.0;
     assert!(
-        matches!(s.vm().offer().view, OfferView::Card { .. }),
-        "a click only zooms"
+        !matches!(s.vm().offer().view, OfferView::Card { .. }),
+        "a click on the card starts the next episode"
     );
+    let (mut s, mut now) = player(&DESKTOP, PlayerScenario::Playing);
+    let _ = shot(&mut s, &mut now, 500.0);
+    s.jump_clock(DURATION - 50.0, now);
+    let _ = shot_for(&mut s, &mut now, 1500.0);
+    assert!(matches!(s.vm().offer().view, OfferView::Card { .. }));
     s.touch_down(cx, cy, now);
     s.touch_move(cx - 60.0, cy + 60.0, now + 30.0);
     s.touch_up(cx - 60.0, cy + 60.0, now + 60.0);

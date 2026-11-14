@@ -292,12 +292,19 @@ impl HandoffFlowModel {
                 player_runs,
                 signed_in,
             },
+            // An answer that is not a list counts as a failed poll: the flow must leave `Asking`, or no later
+            // tick would ever ask again. One session that does not read is dropped, the others stay.
             HandoffEvent::Answered { sessions_json, now } => {
-                let sessions: Vec<RemoteSession> =
-                    serde_json::from_slice(&sessions_json).map_err(|e| CoreError::Failed {
-                        message: e.to_string(),
-                    })?;
-                FlowEvent::Answered { sessions, now }
+                match serde_json::from_slice::<Vec<serde_json::Value>>(&sessions_json) {
+                    Ok(rows) => FlowEvent::Answered {
+                        sessions: rows
+                            .into_iter()
+                            .filter_map(|r| serde_json::from_value::<RemoteSession>(r).ok())
+                            .collect(),
+                        now,
+                    },
+                    Err(e) => FlowEvent::AskFailed(format!("unreadable sessions answer: {e}")),
+                }
             }
             HandoffEvent::AskFailed { error } => FlowEvent::AskFailed(error),
             HandoffEvent::Adopt { session_id } => match g.known.iter().find(|s| s.id == session_id)
@@ -491,13 +498,65 @@ mod tests {
             }]
         );
         assert_eq!(m.phase(), "preparing");
+        // An answer outside a poll changes nothing.
         assert!(
             m.step(HandoffEvent::Answered {
                 sessions_json: b"nope".to_vec(),
                 now: 0.0
             })
-            .is_err()
+            .unwrap()
+            .is_empty()
         );
+    }
+
+    #[test]
+    fn an_unreadable_answer_ends_the_poll_and_the_next_tick_asks_again() {
+        let m = HandoffFlowModel::build("own", "u1");
+        m.step(HandoffEvent::Start).unwrap();
+        let tick = || HandoffEvent::Tick {
+            player_runs: false,
+            signed_in: true,
+        };
+        assert_eq!(m.step(tick()).unwrap(), vec![HandoffEffect::Ask]);
+        let fx = m
+            .step(HandoffEvent::Answered {
+                sessions_json: b"<html>gateway</html>".to_vec(),
+                now: 0.0,
+            })
+            .unwrap();
+        assert!(fx.contains(&HandoffEffect::Offer {
+            session_ids: vec![]
+        }));
+        assert_eq!(m.phase(), "quiet");
+        assert_eq!(m.step(tick()).unwrap(), vec![HandoffEffect::Ask]);
+    }
+
+    #[test]
+    fn one_session_that_does_not_read_does_not_cost_the_others() {
+        let m = HandoffFlowModel::build("own", "u1");
+        m.step(HandoffEvent::Start).unwrap();
+        m.step(HandoffEvent::Tick {
+            player_runs: false,
+            signed_in: true,
+        })
+        .unwrap();
+        let good = serde_json::from_slice::<Vec<serde_json::Value>>(&sessions(
+            "u1",
+            "other",
+            "2023-11-14T22:13:00Z",
+        ))
+        .unwrap();
+        let mut rows = vec![serde_json::json!({"Id": 7})];
+        rows.extend(good);
+        let fx = m
+            .step(HandoffEvent::Answered {
+                sessions_json: serde_json::to_vec(&rows).unwrap(),
+                now: 1_700_000_000.0,
+            })
+            .unwrap();
+        assert!(fx.contains(&HandoffEffect::Offer {
+            session_ids: vec!["s1".into()]
+        }));
     }
 
     #[test]

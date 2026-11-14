@@ -14,7 +14,7 @@ use std::sync::Arc;
 use swiftly_design::tokens::{colour, desktop, touch};
 use swiftly_layout::{Align, Alignment, Axis};
 use swiftly_library::library_filter::Sorting;
-use swiftly_library::{LibraryFilter, MemoryKeyValue, RememberGenre, ShelfSource};
+use swiftly_library::{LibraryFilter, MemoryKeyValue, RememberGenre, ShelfSource, SortingExt};
 use swiftly_render::{Color, DrawList, RgbaImage};
 use swiftly_rules::alphabet_index::{AlphabetIndex, Entry as IndexEntry};
 use swiftly_ui::components::color;
@@ -120,6 +120,8 @@ struct Parts {
     load: LoadSpec,
     list: Option<LibraryList>,
     cards: Vec<Tile>,
+    /// The posters of the collection cards without a picture of their own (`CollectionMosaic`).
+    mosaics: Arc<HashMap<String, Vec<swiftly_vm::ImageRef>>>,
     rail: Option<RailPart>,
     pictures: u64,
     pop: crate::desk::Pop,
@@ -187,7 +189,33 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
             vec![Node::spacer()]
         } else {
             let mut row = Vec::new();
-            if watch {
+            if m.form == Form::Desktop {
+                // Mac: `SelectionButton` pills with a caret; the filter pill carries no symbol (the Merkliste's has one).
+                row.push(if watch {
+                    browse::popup_chip(
+                        cx,
+                        &ctx.icons,
+                        Some("squares-four"),
+                        label(&KINDS, p.kind),
+                        "lib.kind",
+                    )
+                } else {
+                    browse::popup_chip(
+                        cx,
+                        &ctx.icons,
+                        None,
+                        label(&FILTERS, p.status.filter),
+                        "lib.filter",
+                    )
+                });
+                row.push(browse::popup_chip(
+                    cx,
+                    &ctx.icons,
+                    Some("arrows-down-up"),
+                    label(&SORTINGS, p.status.sorting),
+                    "lib.sort",
+                ));
+            } else if watch {
                 row.push(browse::value_pill(
                     cx,
                     &ctx.icons,
@@ -206,14 +234,16 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                     tv,
                 ));
             }
-            row.push(browse::value_pill(
-                cx,
-                &ctx.icons,
-                "arrows-down-up",
-                label(&SORTINGS, p.status.sorting),
-                "lib.sort",
-                tv,
-            ));
+            if m.form != Form::Desktop {
+                row.push(browse::value_pill(
+                    cx,
+                    &ctx.icons,
+                    "arrows-down-up",
+                    label(&SORTINGS, p.status.sorting),
+                    "lib.sort",
+                    tv,
+                ));
+            }
             row.push(Node::spacer());
             row.push(if p.grid.total > 0 && (m.form != Form::Desktop || watch) {
                 browse::count_mark(cx, p.grid.total, tv)
@@ -240,7 +270,15 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                 .chunks(g.columns)
                 .enumerate()
                 .map(|(r, chunk)| {
-                    let cells = chunk.iter().enumerate().map(|(c, t)| browse::grid_tile(cx, &ctx.icons, &m, &ctx.art, t, &g, &format!("c:{}", r * g.columns + c))).collect();
+                    let cells = chunk
+                        .iter()
+                        .enumerate()
+                        .map(|(c, t)| {
+                            let key = format!("c:{}", r * g.columns + c);
+                            let mosaic = p.mosaics.get(&t.id).map(Vec::as_slice);
+                            browse::grid_tile_with(cx, &ctx.icons, &m, &ctx.art, t, &g, &key, mosaic)
+                        })
+                        .collect();
                     Node::hstack(Align::Start, Some(g.gap), cells)
                 })
                 .collect();
@@ -252,7 +290,7 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
             &ctx.icons,
             "hard-drive-x",
             "Server ist abgetaucht",
-            &format!("{} antwortet nicht. Läuft er noch, oder hängt das WLAN?", browse::SERVER),
+            &format!("{} antwortet nicht. Läuft er noch, oder hängt das WLAN?", crate::desk::card().server_name()),
             "Erneut versuchen",
         )
         .padding(ins(80.0, 0.0, 0.0, 0.0))),
@@ -500,6 +538,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
         cx,
         env,
         &ctx.icons,
+        &ctx.art.hub,
         p.bar.clone(),
         &ctx.title,
         body(cx, env, p, ctx),
@@ -508,6 +547,56 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
     match p.pop.overlay(cx, env) {
         Some(o) => page.overlay(o, Alignment::TOP_LEADING),
         None => page,
+    }
+}
+
+/// Waits for the grid to come back on its own. The Mac shows "Erneut versuchen" and reloads when the window comes
+/// back to the front; the desktop has no such moment when the server returns while the window stays in front, so an
+/// empty "server unreachable" page asks again after 3 s, 6 s, 12 s, 24 s and then every 30 s. It also stops waiting
+/// for the libraries of the account after 8 s (the grid then reads the bare section instead of staying on skeletons).
+#[derive(Default)]
+struct Recovery {
+    /// Since when the page has been offline, and the time of the next retry (ms).
+    offline: Option<(f64, f64)>,
+    tries: u32,
+    /// Since when the screen waits for the libraries (ms), and whether it gave up already.
+    offering: Option<f64>,
+    gave_up: bool,
+}
+
+impl Recovery {
+    const OFFERING_WAIT: f64 = 8000.0;
+
+    /// Whether to ask again now.
+    fn retry_due(&mut self, offline: bool, now: f64) -> bool {
+        if !offline {
+            self.offline = None;
+            self.tries = 0;
+            return false;
+        }
+        let (_, next) = *self.offline.get_or_insert((now, now + 3000.0));
+        if now < next {
+            return false;
+        }
+        self.tries += 1;
+        let wait = (3000.0 * f64::from(1_u32 << self.tries.min(3))).min(30_000.0);
+        let wait = if self.tries > 3 { 30_000.0 } else { wait };
+        self.offline = self.offline.map(|(since, _)| (since, now + wait));
+        true
+    }
+
+    /// Whether the wait for the libraries has run out (once).
+    fn offering_overdue(&mut self, waiting: bool, now: f64) -> bool {
+        if !waiting {
+            self.offering = None;
+            return false;
+        }
+        let since = *self.offering.get_or_insert(now);
+        if self.gave_up || now - since < Self::OFFERING_WAIT {
+            return false;
+        }
+        self.gave_up = true;
+        true
     }
 }
 
@@ -534,14 +623,19 @@ pub struct LibraryScreen {
     first_frame: Option<f64>,
     now: f64,
     refreshes: u32,
+    /// Quiet retries while the server does not answer, and the wait for the libraries of the account.
+    recovery: Recovery,
+    auto_retries: u32,
     asked: Option<String>,
     columns: usize,
     /// The kind of the Merkliste page (the pill).
     remember: RememberGenre,
     scenario: Scenario,
     /// The libraries of the account on their way (real app).
-    offering:
-        Option<crate::login_screen::Pending<swiftly_playback::section_offering::SectionOffering>>,
+    offering: Option<crate::login_screen::Pending<Offered>>,
+    /// The posters of collection cards without a picture, as they arrive (real app), and what has arrived.
+    mosaic_rx: Option<std::sync::mpsc::Receiver<(String, Vec<swiftly_vm::ImageRef>)>>,
+    mosaics: Arc<HashMap<String, Vec<swiftly_vm::ImageRef>>>,
 }
 
 impl LibraryScreen {
@@ -585,7 +679,11 @@ impl LibraryScreen {
             ),
         }
         .unwrap_or_else(|e| panic!("library vm: {e:?}"));
-        if scenario != Scenario::Loading {
+        // The real app loads once the libraries of this section are known: "All" is those libraries, each title once
+        // (the Mac's `LibraryView.source`), so a first load from the bare section would show titles twice.
+        let waits_for_offering =
+            crate::live::current().is_some() && matches!(kind, Kind::Movies | Kind::Series);
+        if scenario != Scenario::Loading && !waits_for_offering {
             vm.send(LibraryIntent::Load);
             if matches!(kind, Kind::Watchlist) {
                 vm.set_remember_kind(vm.remembered_kind());
@@ -614,14 +712,18 @@ impl LibraryScreen {
                 downloads: false,
                 settings: false,
                 card: crate::desk::Card::Demo,
+                offer: None,
+                mine: (true, true),
+                glow: (crate::look_glow::Glow::default(), 0),
             },
             open: Open::None,
             favourites: Vec::new(),
             kind: RememberGenre::All,
-            mcx: tile_menu::demo_cx(false),
+            mcx: tile_menu::rail_cx(false, false),
             load: LoadSpec::demo(""),
             list: None,
             cards: Vec::new(),
+            mosaics: Arc::default(),
             rail: None,
             pictures: 0,
             pop: crate::desk::Pop::default(),
@@ -659,11 +761,15 @@ impl LibraryScreen {
             first_frame: None,
             now: 0.0,
             refreshes: 0,
+            recovery: Recovery::default(),
+            auto_retries: 0,
             asked: None,
             columns: 3,
             remember,
             scenario,
             offering: None,
+            mosaic_rx: None,
+            mosaics: Arc::default(),
         };
         s.offer(kind);
         s.sync();
@@ -675,8 +781,10 @@ impl LibraryScreen {
         if let Some(w) = crate::live::current() {
             // Real app: one entry per library of the account (`UserViews` of this kind), each with its view id as the
             // parent of the source, like the Swift title menu.
-            if !matches!(kind, Kind::Genre(_)) {
-                self.offering = Some(fetch_offering(&w, matches!(kind, Kind::Series)));
+            if matches!(kind, Kind::Movies | Kind::Series) {
+                let (offering, mosaics) = fetch_offering(&w, matches!(kind, Kind::Series));
+                self.offering = Some(offering);
+                self.mosaic_rx = Some(mosaics);
             }
             return;
         }
@@ -730,6 +838,18 @@ impl LibraryScreen {
         );
     }
 
+    /// The collection cards that show a mosaic and how many posters it has so far, by id (tests).
+    #[doc(hidden)]
+    pub fn mosaic_counts(&self) -> Vec<(String, usize)> {
+        let mut all: Vec<_> = self
+            .mosaics
+            .iter()
+            .map(|(k, v)| (k.clone(), v.len()))
+            .collect();
+        all.sort();
+        all
+    }
+
     /// Starts the Merkliste: both kinds (or the one chosen last), favourites only, loaded now.
     pub fn start_watchlist(&mut self) {
         self.remember = self.vm.remembered_kind();
@@ -747,6 +867,10 @@ impl LibraryScreen {
     /// How many reloads the user started.
     pub fn refreshes(&self) -> u32 {
         self.refreshes
+    }
+    /// How many times the screen asked again by itself after the server did not answer.
+    pub fn auto_retries(&self) -> u32 {
+        self.auto_retries
     }
     /// The scenario of the scripted server.
     pub fn scenario(&self) -> Scenario {
@@ -980,14 +1104,18 @@ impl LibraryScreen {
                 downloads: crate::desk::downloads_front(),
                 settings: crate::desk::settings_front(),
                 card: crate::desk::card(),
+                offer: crate::desk::offer(),
+                mine: crate::desk::mine(),
+                glow: crate::look_glow::bar_state(self.offset()),
             },
             open: self.open.clone(),
             favourites: self.favourites.clone(),
             kind: self.remember,
-            mcx: tile_menu::demo_cx(false),
+            mcx: tile_menu::rail_cx(false, false),
             load: self.load.clone(),
             list: self.vm.list(),
             cards: self.vm.cards(),
+            mosaics: Arc::clone(&self.mosaics),
             rail: self.rail_part(),
             pictures: self.hub.stamp(),
             pop: self.pop.clone(),
@@ -1006,8 +1134,7 @@ impl LibraryScreen {
                         .iter()
                         .find(|t| a == Action::from(format!("menu:{}", t.id).as_str()))
                     {
-                        let mut mcx = tile_menu::demo_cx(false);
-                        mcx.favourite = self.favourites.contains(&t.id);
+                        let mcx = tile_menu::rail_cx(false, self.favourites.contains(&t.id));
                         let entries = tile_menu::entries(Form::Desktop, &mcx, Some(t));
                         if !entries.is_empty() {
                             self.open = Open::Menu(t.id.clone());
@@ -1167,8 +1294,7 @@ impl LibraryScreen {
         }
         if let Open::Menu(id) = self.open.clone() {
             let tile = self.vm.grid().tiles.iter().find(|t| t.id == id).cloned();
-            let mut mcx = tile_menu::demo_cx(false);
-            mcx.favourite = self.favourites.contains(&id);
+            let mcx = tile_menu::rail_cx(false, self.favourites.contains(&id));
             self.vm.set_menu_context(mcx.host.clone());
             for (i, e) in tile_menu::entries(Form::of(self.ui.env().idiom), &mcx, tile.as_ref())
                 .into_iter()
@@ -1284,6 +1410,21 @@ impl LibraryScreen {
     pub fn set_env(&mut self, env: Env) {
         self.ui.set_env(env);
     }
+    /// The tooltip to draw at `now` (tests).
+    pub fn visible_tooltip(&self, now: f64) -> Option<(String, swiftly_layout::Rect)> {
+        self.ui.visible_tooltip(now)
+    }
+
+    /// The text of the tooltip the last click hid.
+    pub fn dismissed_tooltip(&self) -> Option<String> {
+        self.ui.dismissed_tooltip()
+    }
+
+    /// Keeps a tooltip hidden that a click on the screen before hid.
+    pub fn inherit_dismissed_tooltip(&mut self, text: Option<String>) {
+        self.ui.inherit_dismissed_tooltip(text);
+    }
+
     /// The pointer moved over the window (no button held): hover, cursor, tooltips.
     pub fn pointer_move(&mut self, x: f32, y: f32, now: f64) {
         self.ui.pointer_move(x, y, now);
@@ -1374,14 +1515,71 @@ impl LibraryScreen {
         self.ui.touch_cancel(now);
         self.drain();
     }
+    /// Asks again when the server did not answer, and stops waiting for slow libraries (see [`Recovery`]).
+    fn recover(&mut self, now: f64) {
+        let offline = matches!(self.vm.status().status, LibraryStatus::Offline)
+            && self.vm.grid().tiles.is_empty();
+        if self.recovery.retry_due(offline, now) {
+            self.auto_retries += 1;
+            self.vm.send(LibraryIntent::Load);
+        }
+        if self.recovery.offering_overdue(self.offering.is_some(), now) {
+            self.vm.send(LibraryIntent::Load);
+        }
+    }
+
+    /// Takes the libraries of the section when they have arrived and starts the grid on them. The section behind the one
+    /// in front calls this too, so its grid is loaded when it is opened (it showed skeleton tiles first).
+    fn poll_offering(&mut self) {
+        match self.offering.as_ref().map(|p| p.0.try_recv()) {
+            Some(Ok((o, collections, playlists))) => {
+                self.offering = None;
+                let empty = !o.has_inventory();
+                self.vm.follow_offering(o);
+                self.vm.set_cards(collections, playlists);
+                // Nothing of this kind on the account: the grid has no source to follow, it reads the section itself.
+                if empty {
+                    self.vm.send(LibraryIntent::Load);
+                }
+            }
+            // The libraries could not be read: show the section as it is.
+            Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
+                self.offering = None;
+                self.vm.send(LibraryIntent::Load);
+            }
+            _ => {}
+        }
+    }
+
+    /// Whether the libraries of the section are still on their way.
+    pub fn awaiting_libraries(&self) -> bool {
+        self.offering.is_some()
+    }
+
+    /// A frame of the section while another one is in front: it reads what has arrived, it draws nothing.
+    pub fn pump(&mut self, now: f64) {
+        self.now = now;
+        self.poll_offering();
+    }
+
     /// One frame at `now` ms.
     pub fn frame(&mut self, now: f64) -> (DrawList, bool) {
         self.now = now;
         self.hub.frame(now);
-        if let Some(Ok(o)) = self.offering.as_ref().map(|p| p.0.try_recv()) {
-            self.offering = None;
-            self.vm.set_offering(o);
+        self.recover(now);
+        if let Some(rx) = &self.mosaic_rx {
+            let mut all = (*self.mosaics).clone();
+            let before = all.len();
+            let mut changed = false;
+            while let Ok((id, images)) = rx.try_recv() {
+                changed |= all.get(&id) != Some(&images);
+                all.insert(id, images);
+            }
+            if changed || all.len() != before {
+                self.mosaics = Arc::new(all);
+            }
         }
+        self.poll_offering();
         self.sync();
         let mut list = self.ui.frame(now);
         self.hub.finish(&mut list);
@@ -1389,6 +1587,11 @@ impl LibraryScreen {
         let wants = self.wants_frame();
         (list, wants)
     }
+    /// The owner the picture hub knows this screen by (see `ImageHub::set_hidden`).
+    pub(crate) fn hub_owner(&self) -> crate::hub::HubOwner {
+        Rc::downgrade(&self.hub)
+    }
+
     /// Shows the real pictures of the server through `hub` (without it the demo art stays).
     #[must_use]
     pub fn with_images(self, hub: Rc<crate::hub::ImageHub>) -> Self {
@@ -1435,28 +1638,107 @@ impl Drop for LibraryScreen {
     }
 }
 
-/// The library spec of the real app: all movies, or all series, of the server (the view model resolves the views).
-/// Asks the server for the libraries of the account that hold `series` or movies. Mixed libraries count only where they
-/// hold titles of that kind; collections and playlists are not offered yet (see real-app.md).
+/// What the title menu of a section is made of: the offering and the cards of its collections and playlists.
+type Offered = (
+    swiftly_playback::section_offering::SectionOffering,
+    Vec<Tile>,
+    Vec<Tile>,
+);
+
+/// Asks the server for the libraries of the account that hold `series` or movies, and for its collections and video
+/// playlists (`AppModel.offeringLoad`: mixed libraries count only where they hold titles of that kind; collections
+/// need two titles of the kind, playlists one).
 fn fetch_offering(
     w: &crate::live::Wiring,
     series: bool,
-) -> crate::login_screen::Pending<swiftly_playback::section_offering::SectionOffering> {
+) -> (
+    crate::login_screen::Pending<Offered>,
+    std::sync::mpsc::Receiver<(String, Vec<swiftly_vm::ImageRef>)>,
+) {
+    use swiftly_library::CollectionDirectory;
     let (tx, rx) = crate::login_screen::Pending::channel();
+    let (mosaic_tx, mosaic_rx) = std::sync::mpsc::channel();
     let art = if series { "tvshows" } else { "movies" };
+    let client = w.core.client_for(&w.account).ok();
+    let locale = w.core.host().locale;
     if let Ok(server) = w.core.server_for(&w.account) {
         w.core.spawn(async move {
             let Ok((views, shares)) = crate::live_server::views_and_shares(&server).await else {
                 return;
             };
-            let _ = tx.send(
-                swiftly_playback::section_offering::SectionOffering::compose(
-                    art, &views, &shares, None, None,
-                ),
+            let (mut directory, mut playlists) = (None, None);
+            if let Some(c) = &client {
+                let with_hidden = c.user_views(true).await.unwrap_or_else(|_| views.clone());
+                directory = if CollectionDirectory::hidden(&views, &with_hidden) {
+                    Some(CollectionDirectory::default())
+                } else {
+                    swiftly_library::client_ext::collection_directory(c, &with_hidden)
+                        .await
+                        .ok()
+                };
+                playlists = swiftly_library::client_ext::playlist_directory(c)
+                    .await
+                    .ok();
+            }
+            let offering = swiftly_playback::section_offering::SectionOffering::compose(
+                art,
+                &views,
+                &shares,
+                directory.as_ref(),
+                playlists.as_ref(),
             );
+            let (collections, lists) = client
+                .as_ref()
+                .map(|c| {
+                    swiftly_vm::section_cards(
+                        art,
+                        directory.as_ref(),
+                        playlists.as_ref(),
+                        c,
+                        locale.clone(),
+                    )
+                })
+                .unwrap_or_default();
+            let _ = tx.send((offering, collections, lists));
+            // The collections without a picture of their own get the mosaic of their first posters (the Mac's
+            // `AppModel.collectionPosters`: first four by year, ascending, in this section's kind).
+            if let (Some(c), Some(d)) = (&client, directory.as_ref()) {
+                let bare: Vec<_> = d
+                    .collections(art)
+                    .into_iter()
+                    .filter(|col| {
+                        !col.item
+                            .image_tags
+                            .as_ref()
+                            .is_some_and(|t| t.contains_key("Primary"))
+                    })
+                    .collect();
+                for col in &bare {
+                    let _ = mosaic_tx.send((format!("collection:{}", col.id()), Vec::new()));
+                }
+                for col in &bare {
+                    let source = ShelfSource::new(Some(col.id()), Some(art), true, &[]);
+                    let query = swiftly_jellyfin::ItemsQuery {
+                        parent_id: Some(col.id().to_owned()),
+                        limit: 4,
+                        sort_by: Sorting::Erscheinung.input_field().to_owned(),
+                        sort_order: source.bearing(Sorting::Erscheinung).to_owned(),
+                        recursive: source.recursive(),
+                        include_item_types: source.types().into_iter().map(str::to_owned).collect(),
+                        ..swiftly_jellyfin::ItemsQuery::default()
+                    };
+                    if let Ok(found) = c.items(&query).await {
+                        let images = swiftly_vm::poster_tiles(&found.items, c, locale.clone())
+                            .into_iter()
+                            .filter_map(|t| t.image)
+                            .collect();
+                        let _ = mosaic_tx.send((format!("collection:{}", col.id()), images));
+                    }
+                }
+            }
         });
     }
-    rx
+    (rx, mosaic_rx)
 }
 
 fn live_spec(kind: &Kind) -> LibrarySpec {
@@ -1471,6 +1753,12 @@ fn live_spec(kind: &Kind) -> LibrarySpec {
             Kind::Genre(g) => Some(g.clone()),
             _ => None,
         },
-        remember_name: None,
+        // Sort and filter are remembered per place like the Mac's `LibraryModel(rememberName:)`.
+        remember_name: match kind {
+            Kind::Movies => Some("movies".to_owned()),
+            Kind::Series => Some("tvshows".to_owned()),
+            Kind::Watchlist => Some("merkliste".to_owned()),
+            _ => None,
+        },
     }
 }

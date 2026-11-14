@@ -31,6 +31,21 @@ pub struct EmbyFound {
     pub version: String,
 }
 
+/// The answer of one Quick Connect poll (the screen feeds the core's `QuickConnectWait` with it).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum QuickAnswer {
+    /// Not approved yet.
+    Waiting,
+    /// The question did not get through (the wait goes on).
+    Failed,
+    /// The server says the code ran out.
+    Expired,
+    /// Approved and signed in: the user name.
+    SignedIn(String),
+    /// Approved, but the sign-in itself failed: the sentence.
+    SignInFailed(String),
+}
+
 /// The sentence when nothing answers at an Emby address (the "Server ist abgetaucht" banner shows it).
 pub const EMBY_DOWN: &str = "Der Server antwortet nicht.";
 /// The sentence when nothing answers at a Jellyfin address.
@@ -102,6 +117,20 @@ pub async fn emby_users<T: HttpTransport + 'static>(
     device: &(String, String, String),
     address: &str,
 ) -> Vec<String> {
+    emby_users_with_pictures(net, device, address)
+        .await
+        .into_iter()
+        .map(|u| u.0)
+        .collect()
+}
+
+/// The Emby users with the address of their picture (`MacEmbySignIn`'s `AccountCharacter` shows it; the server answers
+/// 404 for a user without one and the page then keeps the initial).
+pub async fn emby_users_with_pictures<T: HttpTransport + 'static>(
+    net: Arc<T>,
+    device: &(String, String, String),
+    address: &str,
+) -> Vec<(String, Option<String>)> {
     let Ok(client) = JellyfinClient::new(Shared(net), address, config(device, ServerKind::Emby))
     else {
         return Vec::new();
@@ -109,21 +138,54 @@ pub async fn emby_users<T: HttpTransport + 'static>(
     client
         .public_users()
         .await
-        .map(|u| u.into_iter().map(|u| u.name).collect())
+        .map(|list| {
+            list.iter()
+                .map(|u| {
+                    (
+                        u.name.clone(),
+                        client.user_image(u, 480).map(|a| a.to_string()),
+                    )
+                })
+                .collect()
+        })
         .unwrap_or_default()
 }
 
 // ---- Plex ----------------------------------------------------------------------------------------------------------
+
+/// The plex.tv account service: the real hosts, or one fixture server for every host (`SWIFTLY_PLEX_FIXTURE=http://127.0.0.1:PORT`,
+/// live runs only).
+pub fn plex_service<T: HttpTransport + 'static>(
+    identity: PlexIdentity,
+    net: Arc<T>,
+) -> PlexAccountService<T> {
+    match std::env::var("SWIFTLY_PLEX_FIXTURE") {
+        Ok(base) if !base.is_empty() => {
+            PlexAccountService::with_bases(identity, net, &base, &base, &base)
+        }
+        _ => PlexAccountService::new(identity, net),
+    }
+}
 
 /// What the Plex worker tells the screen.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PlexEvent {
     /// Open this page in the browser; the wait for plex.tv begins.
     Open(String),
+    /// How long the code lives, in seconds, as plex.tv reports it (`PlexPin.expires_in`): the countdown runs on it.
+    Expiry(u64),
+    /// The picture address of each profile in the `Profiles` that follows (`PlexHomeUser.thumb`).
+    Pictures(Vec<Option<String>>),
     /// Signed in at plex.tv: the profiles (name, asks for a PIN).
     Profiles(Vec<(String, bool)>),
     /// The flow failed, with the sentence.
     Failed(String),
+    /// The plex.tv account's name (the page title once signed in).
+    Account(String),
+    /// The code ran out before the sign-in was finished.
+    Expired,
+    /// plex.tv does not answer.
+    Unreachable,
 }
 
 /// What the flow remembers between its steps.
@@ -170,8 +232,18 @@ pub async fn plex_sign_in<T: HttpTransport + 'static>(
             .auth_url(&pin, None)
             .ok_or(PlexError::Request(ErrorKind::InvalidServerUrl))?;
         let _ = tx.send(PlexEvent::Open(url.to_string()));
+        if let Some(secs) = pin
+            .expires_in
+            .and_then(|s| u64::try_from(s).ok())
+            .filter(|s| *s > 0)
+        {
+            let _ = tx.send(PlexEvent::Expiry(secs));
+        }
         let token = svc.await_token(&pin, pause, limit, sleep).await?;
         let users = svc.home_users(&token).await?;
+        if let Ok(swiftly_plex::TokenState::Valid(account)) = svc.validate(&token).await {
+            let _ = tx.send(PlexEvent::Account(account.title));
+        }
         let shown = if users.is_empty() {
             vec![("Plex".to_owned(), false)]
         } else {
@@ -180,6 +252,9 @@ pub async fn plex_sign_in<T: HttpTransport + 'static>(
                 .map(|u| (u.title.clone(), u.is_protected))
                 .collect()
         };
+        let _ = tx.send(PlexEvent::Pictures(
+            users.iter().map(|u| u.thumb.clone()).collect(),
+        ));
         if let Ok(mut s) = state.lock() {
             s.account_token = token;
             s.users = users;
@@ -188,8 +263,30 @@ pub async fn plex_sign_in<T: HttpTransport + 'static>(
     };
     let _ = tx.send(match run.await {
         Ok(shown) => PlexEvent::Profiles(shown),
+        Err(PlexError::PinExpired) => PlexEvent::Expired,
+        Err(PlexError::Request(ErrorKind::Network { .. })) => PlexEvent::Unreachable,
         Err(e) => PlexEvent::Failed(plex_text(&e)),
     });
+}
+
+/// The line under a server's name (`MacPlexSignIn.serverLine`): whose it is, and where it can be reached.
+pub fn plex_server_line(s: &PlexServerResource) -> String {
+    let owner = if s.owned {
+        "Dein Server".to_owned()
+    } else {
+        match s.source_title.as_deref() {
+            Some(x) => format!("Von {x} freigegeben"),
+            None => "Dein Server".to_owned(),
+        }
+    };
+    let place = if !s.presence {
+        "laut Plex offline"
+    } else if s.connections.iter().any(|c| c.is_local) {
+        "im WLAN"
+    } else {
+        "über das Internet"
+    };
+    format!("{owner} · {place}")
 }
 
 /// Picks profile `index` (with its `pin`, empty for none) and loads the servers of the account: (name, detail).
@@ -216,24 +313,9 @@ pub async fn plex_pick<T: HttpTransport + 'static>(
         None => account_token,
     };
     let servers = svc.servers(&token).await.map_err(|e| plex_text(&e))?;
-    if servers.is_empty() {
-        return Err(plex_text(&PlexError::NoServer));
-    }
     let shown = servers
         .iter()
-        .map(|s| {
-            (
-                s.name.clone(),
-                if s.owned {
-                    "Zuhause · Plex Media Server".to_owned()
-                } else {
-                    format!(
-                        "Geteilt von {}",
-                        s.source_title.as_deref().unwrap_or("jemandem")
-                    )
-                },
-            )
-        })
+        .map(|s| (s.name.clone(), plex_server_line(s)))
         .collect();
     if let Ok(mut s) = state.lock() {
         s.token = token;
@@ -369,6 +451,10 @@ pub fn discover() -> std::sync::mpsc::Receiver<Vec<FoundServer>> {
 pub fn open_url(url: &str) -> bool {
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return false;
+    }
+    // Live runs in a private compositor never start a browser (`SWIFTLY_NO_BROWSER=1`).
+    if std::env::var_os("SWIFTLY_NO_BROWSER").is_some() {
+        return true;
     }
     let mut cmd = if cfg!(target_os = "macos") {
         let mut c = std::process::Command::new("open");
@@ -523,6 +609,42 @@ mod tests {
     }
 
     #[test]
+    fn plex_pin_flow_reports_the_real_expiry_of_the_code() {
+        let net = Arc::new(
+            MockTransport::new()
+                .route_method(Method::Post, "api/v2/pins", 200, r#"{"id":7,"code":"K7QMXXXX","expiresIn":900}"#)
+                .route_method(Method::Get, "api/v2/pins/7", 200, r#"{"id":7,"code":"K7QMXXXX","authToken":"acct-token"}"#)
+                .route_method(Method::Get, "api/v2/home/users", 200, r#"{"users":[{"id":"1","uuid":"u1","title":"Paul","thumb":"https://plex.tv/u/1.png"}]}"#),
+        );
+        let identity = PlexIdentity::new("client-1", "1", "Test", "pc", "Test");
+        let svc = PlexAccountService::with_bases(
+            identity,
+            net,
+            "https://plex.test",
+            "https://clients.test",
+            "https://app.test",
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        futures_executor::block_on(plex_sign_in(
+            &svc,
+            &instant(),
+            Duration::from_millis(1),
+            Duration::from_secs(5),
+            &SharedPlex::default(),
+            &tx,
+        ));
+        let events: Vec<PlexEvent> = rx.try_iter().collect();
+        assert!(matches!(&events[0], PlexEvent::Open(_)), "{events:?}");
+        assert_eq!(events[1], PlexEvent::Expiry(900), "{events:?}");
+        assert!(
+            events.contains(&PlexEvent::Pictures(vec![Some(
+                "https://plex.tv/u/1.png".into()
+            )])),
+            "the profile pictures come with the profiles: {events:?}"
+        );
+    }
+
+    #[test]
     fn plex_pin_flow_opens_the_browser_then_lists_profiles_and_servers() {
         let net = plex_net();
         let identity = PlexIdentity::new("client-1", "1", "Test", "pc", "Test");
@@ -548,8 +670,9 @@ mod tests {
             matches!(&events[0], PlexEvent::Open(u) if u.starts_with("https://app.test/auth#") && u.contains("code=K7QMXXXX")),
             "{events:?}"
         );
+        assert_eq!(events[1], PlexEvent::Pictures(vec![None, None]));
         assert_eq!(
-            events[1],
+            events[2],
             PlexEvent::Profiles(vec![("Paul".into(), false), ("Mama".into(), true)])
         );
         let servers =
@@ -559,9 +682,12 @@ mod tests {
             vec![
                 (
                     "Wohnzimmer".to_owned(),
-                    "Zuhause · Plex Media Server".to_owned()
+                    "Dein Server · über das Internet".to_owned()
                 ),
-                ("Kino".to_owned(), "Geteilt von Oma".to_owned())
+                (
+                    "Kino".to_owned(),
+                    "Von Oma freigegeben · über das Internet".to_owned()
+                )
             ]
         );
         // The switch carried the PIN.
@@ -612,7 +738,7 @@ mod tests {
             &tx,
         ));
         let last = rx.try_iter().last();
-        assert!(matches!(last, Some(PlexEvent::Failed(t)) if t.contains("abgelaufen")));
+        assert!(matches!(last, Some(PlexEvent::Expired)));
     }
 
     #[test]

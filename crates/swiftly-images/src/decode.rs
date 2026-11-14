@@ -279,6 +279,15 @@ pub fn downscale(src: Decoded, border: u32) -> Decoded {
         return src;
     }
     let (dw, dh) = target_size(src.width, src.height, border);
+    downscale_to(src, dw, dh)
+}
+
+/// [`downscale`] to exactly `dw` x `dh` pixels (the same area average, windows from the two sizes separately), for a
+/// picture that must match the device pixels of the quad it is drawn into one texel to one pixel.
+pub fn downscale_to(src: Decoded, dw: u32, dh: u32) -> Decoded {
+    if dw == 0 || dh == 0 || !src.is_consistent() || (src.width == dw && src.height == dh) {
+        return src;
+    }
     let (dw, dh) = (dw as usize, dh as usize);
     let (sw, sh) = (src.width as usize, src.height as usize);
     let xs: Vec<(usize, usize)> = (0..dw)

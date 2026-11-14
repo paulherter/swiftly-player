@@ -183,6 +183,8 @@ pub fn home_vm(scenario: Scenario) -> HomeVm<crate::net::AppTransport> {
         )
         .unwrap_or_else(|e| panic!("home vm: {e:?}"));
         vm.set_start_libraries(live_libraries(&w));
+        vm.set_hidden_rails(live_hidden(&w));
+        vm.set_row_order(live_order(&w));
         return vm;
     }
     let pool = ThreadPool::builder().pool_size(2).create();
@@ -225,6 +227,21 @@ pub fn wait_settled(vm: &HomeVm<crate::net::AppTransport>) {
     }
 }
 
+/// Everything the Start page reads from the settings, as one comparable text: when it changes while the app runs
+/// (Appearance page, a setting synced from another device), Start loads again (`HomeView.task(id:)`).
+pub fn live_fingerprint(w: &crate::live::Wiring) -> String {
+    let p = live_prefs(w);
+    format!(
+        "{}|{}|{:?}|{:?}|{:?}|{:?}",
+        p.disconnected,
+        p.genre_chips,
+        p.start_genres,
+        live_hidden(w),
+        live_order(w),
+        live_libraries(w)
+    )
+}
+
 /// The Start page settings of the stored account: genre chips and the chosen genres.
 fn live_prefs(w: &crate::live::Wiring) -> HomePrefs {
     use swiftly_settings::{KeyValueStore, Value};
@@ -235,9 +252,36 @@ fn live_prefs(w: &crate::live::Wiring) -> HomePrefs {
         _ => Vec::new(),
     };
     HomePrefs {
+        // Together by default? No: `neuGetrennt` is on by default (separate rows), as the core key says.
+        disconnected: !matches!(store.get("neuGetrennt"), Some(Value::Bool(false))),
         genre_chips: chips,
         start_genres: genres,
-        ..HomePrefs::default()
+    }
+}
+
+/// The fixed rows switched off (`startAus`).
+fn live_hidden(w: &crate::live::Wiring) -> Vec<String> {
+    use swiftly_settings::{KeyValueStore, Value};
+    match w.core.settings.get("startAus") {
+        Some(Value::StrList(l)) => l,
+        _ => Vec::new(),
+    }
+}
+
+/// The stored combined row order of this server (`startReihenfolge|<server>`, empty = the old order).
+fn live_order(w: &crate::live::Wiring) -> Vec<String> {
+    use swiftly_settings::{KeyValueStore, Value, key::server_key};
+    let suffix = w.core.active_entry().map_or_else(
+        || w.account.base_url.clone(),
+        |e| e.suffix.trim_start_matches('|').to_owned(),
+    );
+    match w
+        .core
+        .settings
+        .get(&server_key("startReihenfolge", &suffix))
+    {
+        Some(Value::StrList(l)) => l,
+        _ => Vec::new(),
     }
 }
 

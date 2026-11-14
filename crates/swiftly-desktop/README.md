@@ -1,7 +1,19 @@
 # swiftly-desktop
 
-The Windows, Linux and Mac window of the shared Swiftly Rust UI, with the gate G1 demo ("Startseite": three poster rails of
+The Windows and Linux app (and a Mac window for development): the shared Swiftly Rust UI in a winit window, with video
+through libmpv. Release builds start the real app; `--demo g1` starts the gate G1 demo ("Startseite": three poster rails of
 200 items, a tap opens a detail page, Esc / back button goes back).
+
+## Build and run
+
+```sh
+cargo build -p swiftly-desktop --release --features mpv   # without `mpv` the app has no video
+cargo run -p swiftly-desktop --release --features mpv     # the real app: sign in, browse, play
+```
+
+libmpv is loaded at run time: `libmpv.so.2` on Linux, `libmpv-2.dll` next to the `.exe` on Windows, or the path in
+`SWIFTLY_LIBMPV`. For a server to sign in to during development, run `cargo xtask fixture-server --port 8096 --real-shapes`
+(user `demo`, password `demo`). Packages: `Werkzeuge/package-desktop.sh`, see `Documentation/Building.md`.
 
 winit 0.30.13 (pinned) + wgpu 30 surface through `swiftly-render`, FIFO present, a frame is drawn only when something asked
 for one. Notes, estimates and measurements: [NOTES.md](NOTES.md).
@@ -26,8 +38,8 @@ cargo run -p swiftly-desktop --release -- --demo g1 --stats --autoplay --quit-af
 
 ## Run the demo (Windows)
 
-Build in the repo folder on the Windows machine with `cargo build -p swiftly-desktop --release`
-(or cross-compile with `cargo xwin build --target x86_64-pc-windows-msvc`). Then in PowerShell:
+Build in the repo folder on the Windows machine with `cargo build -p swiftly-desktop --release --features mpv`
+(or cross-compile with `cargo xwin build --release --target x86_64-pc-windows-msvc -p swiftly-desktop --features mpv`). Then in PowerShell:
 
 ```powershell
 .\swiftly-desktop.exe --demo g1 --stats
@@ -46,7 +58,9 @@ Build in the repo folder on the Windows machine with `cargo build -p swiftly-des
 ## Options
 
 ```
---demo g1            the gate G1 demo (default, only one)
+--demo g1            the gate G1 demo (the default of debug builds)
+--app                the real app (the default of release builds)
+--help               every option
 --stats              frame statistics to stderr every 5 s
 --autoplay           scripted run inside the process (no OS input)
 --quit-after N       close after N seconds

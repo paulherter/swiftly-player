@@ -248,15 +248,14 @@ fn sidebar_downloads_row_opens_the_downloads_page_and_merkliste_the_watchlist() 
 }
 
 #[test]
-fn type_to_search_opens_the_search() {
+fn the_search_shortcut_opens_the_search_with_the_field_focused() {
     let mut s = shell();
     let mut now = 0.0;
     run(&mut s, &mut now, 300.0);
-    assert!(s.command(
-        swiftly_desktop::shell::Command::TypeToSearch("m".into()),
-        now
-    ));
-    assert_eq!(s.suite_mut().unwrap().tab(), 3);
+    assert!(s.suite_mut().unwrap().run_command("cmd.search", now));
+    let suite = s.suite_mut().unwrap();
+    assert_eq!(suite.tab(), 3);
+    assert!(suite.search().wants_text());
 }
 
 fn step(s: &mut Shell, now: &mut f64) {
@@ -674,6 +673,38 @@ fn the_players_x_closes_the_player_and_not_the_app() {
     );
 }
 
+/// A title given at launch opens the player while the launch curtain still plays; the player draws no curtain, so it
+/// must not be left up to swallow the player's clicks (a video file opened from the file manager had a dead player).
+#[test]
+fn a_player_opened_under_the_launch_curtain_takes_clicks() {
+    let mut s = shell();
+    let mut now = 0.0;
+    run(&mut s, &mut now, 300.0);
+    run(&mut s, &mut now, 900.0);
+    let play = nodes(&s)
+        .into_iter()
+        .find(|n| n.label.starts_with("Der Weg zurück"))
+        .expect("the Continue tile");
+    let (x, y) = centre(&play);
+    s.tap_at((x as f32, y as f32), now);
+    run(&mut s, &mut now, 1500.0);
+    assert!(s.suite_mut().unwrap().player_open());
+    // The curtain comes up with the player already open.
+    s.suite_mut().unwrap().enable_curtain();
+    run(&mut s, &mut now, 100.0);
+    let close = nodes(&s)
+        .into_iter()
+        .find(|n| n.label.starts_with("Player schließen"))
+        .expect("the player's close button");
+    let (x, y) = centre(&close);
+    s.tap_at((x as f32, y as f32), now);
+    run(&mut s, &mut now, 600.0);
+    assert!(
+        !s.suite_mut().unwrap().player_open(),
+        "the curtain swallowed the click"
+    );
+}
+
 /// The left edge of the page that slides in: the widest ground quad that starts right of the sidebar and is furthest right.
 fn page_edge(s: &mut Shell, now: f64) -> f32 {
     let list = s.frame(now).0;
@@ -873,4 +904,94 @@ fn history_arrows_sit_where_the_mac_puts_them_over_every_area_and_page() {
     s.suite_mut().unwrap().open_page(Kind::Person, now);
     run(&mut s, &mut now, 800.0);
     assert!((spot(&s)[0] - 241.0).abs() < 0.6 && (spot(&s)[1] - 12.0).abs() < 0.6);
+}
+
+/// The accent progress strips (colour of the bar, clipped to a few points tall) in a frame, as their visible rectangles.
+fn bars(list: &swiftly_render::DrawList) -> Vec<swiftly_render::Rect> {
+    list.quads()
+        .iter()
+        .filter(|q| {
+            let (w, h) = (q.clip[2] - q.clip[0], q.clip[3] - q.clip[1]);
+            (q.color.r - 0.3137).abs() < 0.01
+                && (q.color.g - 0.8353).abs() < 0.01
+                && h < 6.0
+                && w > 20.0
+        })
+        .map(|q| {
+            swiftly_render::Rect::new(
+                q.clip[0],
+                q.clip[1],
+                q.clip[2] - q.clip[0],
+                q.clip[3] - q.clip[1],
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn the_continue_watching_progress_bar_grows_with_the_hovered_tile() {
+    let mut s = shell();
+    let mut now = 0.0;
+    run(&mut s, &mut now, 600.0);
+    let rest = s.frame(now).0;
+    let t = first_tile(&s);
+    let (x, y) = centre(&t);
+    let at_rest = bars(&rest);
+    let bar = *at_rest
+        .iter()
+        .find(|r| r.x <= x as f32 && x as f32 <= r.x + r.w + 200.0)
+        .expect("a progress bar on the first rail");
+    s.cursor_moved((x, y - 40.0), now);
+    run(&mut s, &mut now, 300.0);
+    let hot = bars(&s.frame(now).0);
+    // The bar of the same tile: the one nearest to the old one by its left edge.
+    let grown = hot
+        .iter()
+        .min_by(|a, b| (a.x - bar.x).abs().total_cmp(&(b.x - bar.x).abs()))
+        .unwrap();
+    assert!(
+        grown.w > bar.w * 1.02 && grown.y + grown.h > bar.y + bar.h + 0.5,
+        "the bar stayed put: {bar:?} -> {grown:?}"
+    );
+}
+
+/// The player has no text field: its keys must reach the window rules, not the text path. The real keyboard did nothing
+/// for Space and the arrows while `wants_text` was true for any open player (only M and T worked, by way of the text path).
+#[test]
+fn the_players_keys_are_not_text_with_a_player_open() {
+    use swiftly_desktop::window_rules::{Action, Ctx, resolve};
+    use winit::keyboard::{Key, ModifiersState, NamedKey};
+    let mut s = shell();
+    let mut now = 0.0;
+    run(&mut s, &mut now, 300.0);
+    run(&mut s, &mut now, 900.0);
+    let play = nodes(&s)
+        .into_iter()
+        .find(|n| n.label.starts_with("Der Weg zurück"))
+        .expect("the Continue tile");
+    let (x, y) = centre(&play);
+    s.tap_at((x as f32, y as f32), now);
+    run(&mut s, &mut now, 1500.0);
+    assert!(s.suite_mut().unwrap().player_open());
+    assert!(!s.wants_text(), "an open player took the keyboard as text");
+    let ctx = Ctx {
+        fullscreen: false,
+        player_open: s.player_open(),
+        text_focus: s.wants_text(),
+    };
+    let mods = ModifiersState::empty();
+    for named in [
+        NamedKey::Space,
+        NamedKey::ArrowLeft,
+        NamedKey::ArrowRight,
+        NamedKey::ArrowUp,
+        NamedKey::ArrowDown,
+    ] {
+        let key = Key::Named(named);
+        let action = resolve(&key, mods, false, ctx);
+        let Some(Action::Player(k)) = action else {
+            panic!("{named:?} is not a player key with a player open: {action:?}");
+        };
+        assert!(s.player_key(k, now), "{named:?} was not used by the player");
+    }
 }

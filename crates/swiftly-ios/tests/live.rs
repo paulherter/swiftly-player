@@ -12,6 +12,26 @@ use swiftly_render::RgbaImage;
 
 const TEST: &str = "login_and_home_of_the_real_app";
 
+/// The fixture server binary: built on the spot when `target/debug/xtask` is missing (a workspace test run does not
+/// build it), so the live tests start their own fixture; when it cannot be built the test says so and passes.
+fn fixture_binary() -> Option<PathBuf> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let xtask = root.join("target/debug/xtask");
+    if !xtask.exists() {
+        let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+        let built = Command::new(cargo)
+            .args(["build", "-q", "-p", "xtask"])
+            .current_dir(&root)
+            .status()
+            .is_ok_and(|s| s.success());
+        if !built || !xtask.exists() {
+            println!("skipped: the fixture server (xtask) could not be built");
+            return None;
+        }
+    }
+    Some(xtask)
+}
+
 struct Fixture(Child);
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -88,11 +108,9 @@ fn login_and_home_of_the_real_app() {
         assert!(out.status.success(), "{text}");
         return;
     }
-    let xtask = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/xtask");
-    if !xtask.exists() {
-        println!("skipped: build xtask first (cargo build -p xtask)");
+    let Some(xtask) = fixture_binary() else {
         return;
-    }
+    };
     let port = std::net::TcpListener::bind("127.0.0.1:0")
         .expect("port")
         .local_addr()
@@ -106,7 +124,13 @@ fn login_and_home_of_the_real_app() {
             .spawn()
             .expect("fixture"),
     );
-    std::thread::sleep(Duration::from_millis(800));
+    // Until the fixture accepts connections (a busy machine needs more than a fixed pause).
+    let ready = Instant::now();
+    while std::net::TcpStream::connect(("127.0.0.1", port)).is_err()
+        && ready.elapsed() < Duration::from_secs(30)
+    {
+        std::thread::sleep(Duration::from_millis(100));
+    }
     let address = format!("http://127.0.0.1:{port}");
     let px = (1170, 2532);
 

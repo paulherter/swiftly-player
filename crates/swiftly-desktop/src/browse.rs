@@ -265,7 +265,7 @@ pub fn metrics(env: &Env) -> Metrics {
             form,
             edge: desktop::EDGE_SPACING,
             gap: 16.0,
-            row_gap: 32.0,
+            row_gap: 24.0,
             tile_w: desktop::TILE_WIDTH,
             tile_h: desktop::TILE_HEIGHT,
             corner: desktop::CORNER_TILE,
@@ -372,7 +372,7 @@ impl Art {
 
 /// The Mac `TileBadge` in the top right corner of a poster: a checkmark (watched), "N offen" (a series that was started)
 /// or "N Staffeln" (a series nobody started); 10/600 white on `reason` 78 %, radius 8, 6 pt from the edges.
-fn tile_mark(cx: &Cx, icons: &Icons, tile: &Tile) -> Option<Node> {
+pub(crate) fn tile_mark(cx: &Cx, icons: &Icons, tile: &Tile) -> Option<Node> {
     let mut parts = Vec::new();
     let label = if tile.badges.contains(&Badge::Watched) {
         parts.push(icons.node("check", 10.0, true, color(colour::FONT)));
@@ -423,10 +423,76 @@ pub fn grid_tile(
     g: &Grid,
     key: &str,
 ) -> Node {
+    grid_tile_with(cx, icons, m, art, tile, g, key, None)
+}
+
+/// `CollectionMosaic` (`MacCollection.swift`): the placeholder poster of a collection without a picture of its own,
+/// made of the posters of its first titles with 2 pt gaps. One title fills the field, two sit side by side, from three
+/// on it is a 2 x 2 grid (the last row may hold one). No posters yet: one field with the film symbol.
+fn mosaic_node(
+    hub: &crate::hub::ImageHub,
+    images: &[swiftly_vm::ImageRef],
+    w: f32,
+    h: f32,
+    corner: f32,
+) -> Node {
+    const GAP: f32 = 2.0;
+    let rows: Vec<&[swiftly_vm::ImageRef]> = match images.len() {
+        0 => vec![&[]],
+        1 | 2 => vec![images],
+        _ => vec![&images[..2], &images[2..images.len().min(4)]],
+    };
+    let row_h = (h - (rows.len() as f32 - 1.0) * GAP) / rows.len() as f32;
+    let cells = rows
+        .iter()
+        .map(|row| {
+            let n = row.len().max(1) as f32;
+            let cell_w = (w - (n - 1.0) * GAP) / n;
+            let cells = if row.is_empty() {
+                vec![hub.node(None, cell_w, row_h, 0.0)]
+            } else {
+                row.iter()
+                    .map(|i| hub.node(Some(i), cell_w, row_h, 0.0))
+                    .collect()
+            };
+            Node::hstack(Align::Start, Some(GAP), cells)
+        })
+        .collect();
+    // The Mac clips the whole mosaic as one rounded card (`clipShape(RoundedRectangle)`), the cells themselves are square.
+    Node::vstack(Align::Start, Some(GAP), cells)
+        .frame(Some(w), Some(h), Alignment::TOP_LEADING)
+        .clipped_rounded(corner)
+}
+
+/// [`grid_tile`] with the mosaic of a collection card without a picture (`Some`: the posters found so far).
+#[allow(clippy::too_many_arguments)]
+pub fn grid_tile_with(
+    cx: &Cx,
+    icons: &Icons,
+    m: &Metrics,
+    art: &Art,
+    tile: &Tile,
+    g: &Grid,
+    key: &str,
+    mosaic: Option<&[swiftly_vm::ImageRef]>,
+) -> Node {
     let hub = art.hub.borrow().clone();
     let image = match (hub, tile.image.as_ref()) {
-        (Some(hub), Some(_)) => hub.node(tile.image.as_ref(), g.w, g.h, m.corner),
-        _ => match art.pick(&tile.id) {
+        (Some(hub), _) if mosaic.is_some() => {
+            mosaic_node(&hub, mosaic.unwrap_or_default(), g.w, g.h, m.corner)
+        }
+        // No picture: the ground and the symbol of the kind (`Theme.area`, `tileCharacter`), never demo art.
+        (Some(hub), _) => hub.node_with_symbol(
+            tile.image.as_ref(),
+            g.w,
+            g.h,
+            m.corner,
+            crate::detail_screen::tile_character_icon(
+                tile.facts.kind.as_deref(),
+                tile.facts.series_id.as_deref(),
+            ),
+        ),
+        (None, _) => match art.pick(&tile.id) {
             Some(id) => Node::image(id, g.w, g.h, m.corner),
             None => Node::rect(color(colour::AREA), m.corner).frame(
                 Some(g.w),
@@ -482,7 +548,7 @@ pub fn grid_tile(
         .frame(
             Some(g.w),
             if tv { Some(34.0) } else { None },
-            Alignment::LEADING,
+            swiftly_ui::components::natural_edge(&tile.title),
         ),
     ];
     if let Some(sub) = tile.subtitle.as_ref().filter(|_| !tv) {
@@ -495,9 +561,18 @@ pub fn grid_tile(
                 Some(1),
                 swiftly_text::Align::Start,
             )
-            .frame(Some(g.w), None, Alignment::LEADING),
+            .frame(Some(g.w), None, swiftly_ui::components::natural_edge(sub)),
         );
     }
+    // The focus ring sits on the picture, not around title and year (the Mac's focus outline).
+    let image = if m.form == Form::Desktop {
+        image
+            .on_tap(Action::from(format!("tile:{}", tile.id).as_str()))
+            .focusable(focus_id(key), None)
+            .focus_ring(color(colour::MARK_ACCENT), m.corner)
+    } else {
+        image
+    };
     let mut n = Node::vstack(
         Align::Start,
         Some(if tv { 18.0 } else { 8.0 }),
@@ -510,10 +585,7 @@ pub fn grid_tile(
         n = n.focusable(focus_id(key), Some(FocusLook::tile(m.corner)));
     }
     if m.form == Form::Desktop {
-        n = n
-            .on_secondary(Action::from(format!("menu:{}", tile.id).as_str()))
-            .focusable(focus_id(key), None)
-            .focus_ring(color(colour::MARK_ACCENT), m.corner);
+        n = n.on_secondary(Action::from(format!("menu:{}", tile.id).as_str()));
     }
     n
 }
@@ -601,6 +673,30 @@ pub fn value_pill(
     .background(Node::rect(color(colour::AREA), 15.0), Alignment::CENTER)
     .key(action)
     .on_tap(Action::from(action))
+}
+
+/// The Mac's popup pill (`Chip(caret: true)` under `SelectionButton`): an optional 14 pt symbol, the 13 pt semibold
+/// value and an 11 pt caret, 7 apart, 12 on the sides, 30 high, all in the quiet text colour on the area colour.
+pub fn popup_chip(cx: &Cx, icons: &Icons, asset: Option<&str>, label: &str, action: &str) -> Node {
+    let mut kids = Vec::new();
+    if let Some(asset) = asset {
+        kids.push(icons.node(asset, 14.0, true, color(colour::FONT_QUIET)));
+    }
+    kids.push(text(
+        cx,
+        label,
+        style(13.0, 600),
+        colour::FONT_QUIET,
+        Some(1),
+        swiftly_text::Align::Start,
+    ));
+    kids.push(icons.node("caret-down", 11.0, true, color(colour::FONT_QUIET)));
+    Node::hstack(Align::Center, Some(7.0), kids)
+        .padding(EdgeInsets::symmetric(12.0, 0.0))
+        .frame(None, Some(30.0), Alignment::CENTER)
+        .background(Node::rect(color(colour::AREA), 15.0), Alignment::CENTER)
+        .key(action)
+        .on_tap(Action::from(action))
 }
 
 /// `CountMark`: the total, 13 pt medium, very quiet (tv: `Theme.small`, 24).
@@ -871,10 +967,12 @@ pub fn search_look(tv: bool) -> swiftly_ui::field::FieldLook {
 }
 
 /// The chrome around a body: the touch header (`title`) and tab bar, the desktop sidebar and top strip, the tv top bar.
+#[allow(clippy::too_many_arguments)]
 pub fn page(
     cx: &Cx,
     env: &Env,
     icons: &Icons,
+    hub: &crate::hub::HubSlot,
     bar: Bar,
     title: &str,
     body: Node,
@@ -887,11 +985,15 @@ pub fn page(
             .overlay(home::tab_bar(cx, env, &bar, icons), Alignment::BOTTOM),
         Form::Desktop => {
             let strip = home::state_bar(cx, title, bar.header);
-            let side = fill_frame(body, Alignment::TOP_LEADING).overlay(strip, Alignment::TOP);
+            let side = crate::look_glow::behind(
+                fill_frame(body, Alignment::TOP_LEADING).overlay(strip, Alignment::TOP),
+                bar.glow,
+                env.size.w - desktop::SIDEBAR_WIDTH,
+            );
             Node::hstack(
                 Align::Start,
                 Some(0.0),
-                vec![home::sidebar(cx, &bar, icons), side],
+                vec![home::sidebar(cx, &bar, icons, hub), side],
             )
         }
         Form::Tv => fill_frame(body, Alignment::TOP_LEADING)
@@ -922,4 +1024,98 @@ pub fn heading(cx: &Cx, m: &Metrics, title: &str) -> Node {
 /// Size of the body width the grid may use.
 pub fn body_width(env: &Env, m: &Metrics) -> Size {
     Size::new(env.size.w - m.side, env.size.h)
+}
+
+#[cfg(test)]
+mod mosaic_tests {
+    use super::*;
+    use swiftly_images::fixture::FixtureImages;
+    use swiftly_images::{Device, ImageLoader};
+
+    #[test]
+    fn the_mosaic_is_one_rounded_card_with_square_cells() {
+        let cx = Cx::new();
+        let hub = crate::hub::ImageHub::new(
+            Box::new(ImageLoader::new(Arc::new(FixtureImages), None, Device::Mac)),
+            &cx,
+            1.0,
+            Device::Mac,
+        );
+        let images: Vec<swiftly_vm::ImageRef> = Vec::new();
+        let n = mosaic_node(&hub, &images, 120.0, 180.0, 12.0);
+        assert!(
+            n.clip && n.clip_radius == 12.0,
+            "the card clips its cells with the tile corner"
+        );
+    }
+}
+
+#[cfg(test)]
+mod no_demo_art_tests {
+    use super::*;
+    use crate::hub::HubSlotExt;
+    use swiftly_images::fixture::FixtureImages;
+    use swiftly_images::{Device, ImageLoader};
+    use swiftly_ui::Idiom;
+
+    fn uvs(n: &Node, out: &mut Vec<[f32; 4]>) {
+        for p in &n.paint {
+            if let Paint::Image { image, .. } = p {
+                out.push(image.uv);
+            }
+        }
+        for c in &n.children {
+            uvs(c, out);
+        }
+    }
+
+    fn bare(kind: &str) -> Tile {
+        Tile {
+            id: "t1".into(),
+            title: "Ohne Bild".into(),
+            subtitle: None,
+            progress: None,
+            image: None,
+            badges: Vec::new(),
+            remaining: None,
+            facts: swiftly_vm::TileFacts {
+                kind: Some(kind.into()),
+                ..Default::default()
+            },
+        }
+    }
+
+    /// A title without a picture is the tile ground and its kind's symbol over the real hub: never one of the generated
+    /// demo posters (`Theme.area` + `tileCharacter`).
+    #[test]
+    fn a_grid_tile_without_a_picture_never_draws_demo_art() {
+        let cx = Cx::new();
+        let env = Env::new(
+            swiftly_layout::Size::new(1280.0, 800.0),
+            2.0,
+            Idiom::Desktop,
+        );
+        let m = metrics(&env);
+        let g = grid(&m, 1000.0);
+        let icons = Icons::new(&cx, env.scale);
+        let art = Art::new(&cx);
+        let demo: Vec<[f32; 4]> = art.posters.iter().map(|p| p.uv).collect();
+        assert!(!demo.is_empty());
+        let hub = crate::hub::ImageHub::new(
+            Box::new(ImageLoader::new(Arc::new(FixtureImages), None, Device::Mac)),
+            &cx,
+            2.0,
+            Device::Mac,
+        );
+        art.hub.attach(hub);
+        for kind in ["Movie", "Series"] {
+            let n = grid_tile(&cx, &icons, &m, &art, &bare(kind), &g, "k");
+            let mut found = Vec::new();
+            uvs(&n, &mut found);
+            assert!(
+                found.iter().all(|u| !demo.contains(u)),
+                "{kind}: a generated poster is drawn"
+            );
+        }
+    }
 }

@@ -152,7 +152,9 @@ fn scroll_feel_of_the_desktop() {
     assert_eq!(w.notch_px, 100.0);
     assert_eq!(w.notch_smoothing_ms, 140.0);
     assert_eq!(w.touchpad_gain, 1.0);
-    assert!(w.rubber_band && !w.rail_snaps);
+    // Windows and Linux desktop apps never bounce; the Mac and touch do.
+    assert!(!w.rubber_band && !w.rail_snaps);
+    assert!(ScrollTuning::for_os(Os::MacOs).rubber_band && ScrollTuning::touch().rubber_band);
     assert_eq!(tuning::RUBBER_COEFFICIENT, 0.55);
     assert_eq!(tuning::BACK_SETTLE_SECONDS, 0.45);
     // The rubber band at 100 pt past the edge of a 800 pt viewport: (1 - 1 / (100 x 0.55 / 800 + 1)) x 800 = 51.46 pt.

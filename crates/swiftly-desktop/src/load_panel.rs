@@ -21,8 +21,12 @@ pub struct LoadSpec {
     pub title: String,
     /// Size of the file(s).
     pub bytes: i64,
-    /// The server converts (size is estimated, "≈").
+    /// The file is streamed to disk: converted or one audio track (size is estimated, "≈"; `Item.streamed`).
     pub converted: bool,
+    /// The server re-encodes the file (`Item.converted`).
+    pub recomputed: bool,
+    /// Removing the watched titles makes room (`SpaceInfo.suffices_to_clean_up`) and there are some.
+    pub can_clean: bool,
     /// Quality and container line ("MKV"), if known.
     pub quality: Option<String>,
     /// The chosen sound track, if the file has more than one.
@@ -44,6 +48,8 @@ impl LoadSpec {
             title: title.into(),
             bytes: 2_400_000_000,
             converted: false,
+            recomputed: false,
+            can_clean: false,
             quality: Some("Original (MKV)".into()),
             sound: Some("Original".into()),
             free: 48_000_000_000,
@@ -54,6 +60,17 @@ impl LoadSpec {
     }
     fn suffices(&self) -> bool {
         self.free_after >= 0
+    }
+}
+
+/// The sentence under "Laden" (`LoadPanel`, `MacDownloads.swift:230-236`).
+fn hint_text(spec: &LoadSpec) -> &'static str {
+    if spec.recomputed {
+        "Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit."
+    } else if spec.converted {
+        "Der Server legt die Datei beim Laden mit nur einer Tonspur an. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit."
+    } else {
+        "Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen."
     }
 }
 
@@ -262,14 +279,7 @@ pub fn load_sheet(cx: &Cx, icons: &Icons, env: &Env, spec: &LoadSpec) -> Node {
             false,
         ));
         col.push(btn("load.go", "Laden", true));
-        col.push(hint(
-            cx,
-            if spec.converted {
-                "Der Server legt die Datei beim Laden mit nur einer Tonspur an. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit."
-            } else {
-                "Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen."
-            },
-        ));
+        col.push(hint(cx, hint_text(spec)));
     }
     let handle = Node::rect(Color::new(1.0, 1.0, 1.0, 0.18), 2.5)
         .frame(Some(36.0), Some(5.0), Alignment::CENTER)
@@ -580,11 +590,11 @@ pub fn mac_load_panel(
             cx,
             icons,
             "hard-drive",
-            "Frei auf diesem Mac",
+            "Frei auf diesem PC",
             &size(spec.free),
             true,
         ));
-        if spec.dispensable > 0 && spec.free_after + spec.dispensable >= 0 {
+        if spec.can_clean {
             col.push(mac_detail(
                 cx,
                 icons,
@@ -660,14 +670,7 @@ pub fn mac_load_panel(
             sheet_button(cx, icons, &f, "load.go", "Laden", true)
                 .padding(ins(6.0, 14.0, 12.0, 14.0)),
         );
-        col.push(mac_hint(
-            cx,
-            if spec.converted {
-                "Der Server legt die Datei beim Laden mit nur einer Tonspur an. Die Gr\u{00F6}\u{00DF}e ist gesch\u{00E4}tzt, Untertitel kommen als eigene Dateien mit."
-            } else {
-                "Swiftly l\u{00E4}dt die Originaldatei, in derselben Qualit\u{00E4}t wie beim Streamen."
-            },
-        ));
+        col.push(mac_hint(cx, hint_text(spec)));
     }
     col.push(mac_cancel(cx, &f));
     raised_card(Node::vstack(Align::Start, Some(0.0), col), 320.0, &head)
@@ -701,4 +704,22 @@ pub(crate) fn scrim_at(card: Node, at: swiftly_ui::popover::Placement, env: &Env
     Node::zstack(Alignment::TOP_LEADING, vec![catcher, card])
         .frame(Some(env.size.w), Some(env.size.h), Alignment::TOP_LEADING)
         .key("load-anchored")
+}
+
+#[cfg(test)]
+mod hint_tests {
+    use super::*;
+
+    #[test]
+    fn the_hint_follows_the_mac_rule_recomputed_then_converted_then_original() {
+        let mut spec = LoadSpec::demo("Film");
+        assert!(hint_text(&spec).starts_with("Swiftly lädt die Originaldatei"));
+        spec.converted = true;
+        assert!(
+            hint_text(&spec)
+                .starts_with("Der Server legt die Datei beim Laden mit nur einer Tonspur an")
+        );
+        spec.recomputed = true;
+        assert!(hint_text(&spec).starts_with("Der Server wandelt die Datei beim Laden um."));
+    }
 }

@@ -5,7 +5,7 @@
 
 use crate::cx::{Cx, ImageId};
 use crate::view::{Node, Paint};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use swiftly_render::Color;
 
@@ -31,6 +31,7 @@ fn find(asset: &str) -> Option<&'static str> {
         .chain(crate::icon_data_audit::ICONS_AUDIT.iter())
         .chain(crate::icon_data_keys::ICONS_KEYS.iter())
         .chain(crate::icon_data_rest::ICONS_REST.iter())
+        .chain(crate::icon_data_kinds::ICONS_KINDS.iter())
         .chain(crate::icon_data_phos::ICONS_PHOS.iter())
         .find(|(n, _)| *n == asset)
         .map(|(_, d)| *d)
@@ -272,6 +273,30 @@ fn arc(out: &mut Vec<P>, p0: P, p1: P, rx: f32, ry: f32, rot_deg: f32, large: bo
 /// the drawing is centred on its bounding box at 100 template units per canvas; without it the path is in canvas units
 /// (0 to 100).
 pub fn rasterize(d: &str, px: u32, fit: bool) -> Vec<u8> {
+    raster(d, px, if fit { Origin::Bounds } else { Origin::Canvas })
+}
+
+/// The centre of the symbol template (Regular-M: margins 1594..1706, baseline 1126, capline 1055.54).
+pub const TEMPLATE_CENTRE: (f32, f32) = (1650.0, 1090.77);
+
+/// Like [`rasterize`] with `fit`, but centred on the symbol template's centre instead of the path's bounding box: how SwiftUI
+/// places a custom symbol, so an asymmetric glyph (an arrow ring with its head on one side) keeps its ring on the box centre.
+pub fn rasterize_template(d: &str, px: u32) -> Vec<u8> {
+    raster(d, px, Origin::At(TEMPLATE_CENTRE.0, TEMPLATE_CENTRE.1))
+}
+
+/// What the picture is centred on.
+#[derive(Clone, Copy)]
+enum Origin {
+    /// The path is already in canvas units (0 to 100).
+    Canvas,
+    /// The centre of the path's bounding box.
+    Bounds,
+    /// A fixed point of the path's own units.
+    At(f32, f32),
+}
+
+fn raster(d: &str, px: u32, origin: Origin) -> Vec<u8> {
     let subs = flatten(d);
     let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
     for p in subs.iter().flatten() {
@@ -280,10 +305,10 @@ pub fn rasterize(d: &str, px: u32, fit: bool) -> Vec<u8> {
         x1 = x1.max(p.0);
         y1 = y1.max(p.1);
     }
-    let (ox, oy) = if fit {
-        (50.0 - (x0 + x1) / 2.0, 50.0 - (y0 + y1) / 2.0)
-    } else {
-        (0.0, 0.0)
+    let (ox, oy) = match origin {
+        Origin::Bounds => (50.0 - (x0 + x1) / 2.0, 50.0 - (y0 + y1) / 2.0),
+        Origin::Canvas => (0.0, 0.0),
+        Origin::At(x, y) => (50.0 - x, 50.0 - y),
     };
     let k = px as f32 / 100.0;
     // Edges in pixel space: (x_top, y_top, x_bottom, y_bottom, dir).
@@ -475,22 +500,24 @@ pub const SPOKES: usize = 12;
 #[derive(Clone)]
 pub struct Icons {
     cx: Cx,
-    scale: f32,
+    /// Shared with the `Cx` (see [`Cx::scale`]): follows the window when its scale changes.
+    scale: Rc<Cell<f32>>,
     cache: Rc<RefCell<crate::cx::IconCache>>,
 }
 
 impl Icons {
     /// Icons for `cx` drawn at `scale` pixels per point.
     pub fn new(cx: &Cx, scale: f32) -> Icons {
+        cx.scale.set(scale);
         Icons {
             cx: cx.clone(),
-            scale,
+            scale: Rc::clone(&cx.scale),
             cache: Rc::clone(&cx.icon_cache),
         }
     }
 
     fn image(&self, key: &str, pt: f32, make: impl Fn(u32) -> Vec<u8>) -> Option<ImageId> {
-        let px = ((pt * self.scale).ceil() as u32).max(8);
+        let px = ((pt * self.scale.get()).round() as u32).max(8);
         let k = (key.to_owned(), px);
         if let Some(hit) = self.cache.borrow().get(&k) {
             return *hit;
@@ -503,6 +530,22 @@ impl Icons {
     /// An icon `pt` points square in `tint`. `asset` is the asset name without stroke suffix (`house`, `film-strip.fill`);
     /// `outlined` picks the stroke weight for `pt` like the Swift app (fill assets have one weight).
     pub fn node(&self, asset: &str, pt: f32, outlined: bool, tint: Color) -> Node {
+        self.node_placed(asset, pt, outlined, tint, false)
+    }
+
+    /// As [`Icons::node`], placed on the symbol template's centre (see [`rasterize_template`]).
+    pub fn node_template(&self, asset: &str, pt: f32, outlined: bool, tint: Color) -> Node {
+        self.node_placed(asset, pt, outlined, tint, true)
+    }
+
+    fn node_placed(
+        &self,
+        asset: &str,
+        pt: f32,
+        outlined: bool,
+        tint: Color,
+        template: bool,
+    ) -> Node {
         let name = if outlined {
             format!("{asset}{}", stroke_suffix(pt))
         } else {
@@ -514,7 +557,20 @@ impl Icons {
         } else {
             asset.to_owned()
         };
-        let id = path_data(&name).and_then(|d| self.image(&name, pt, |px| rasterize(d, px, true)));
+        let key = if template {
+            format!("tpl:{name}")
+        } else {
+            name.clone()
+        };
+        let id = path_data(&name).and_then(|d| {
+            self.image(&key, pt, |px| {
+                if template {
+                    rasterize_template(d, px)
+                } else {
+                    rasterize(d, px, true)
+                }
+            })
+        });
         match id {
             Some(id) => {
                 let mut n = Node::image(id, pt, pt, 0.0);
@@ -532,25 +588,34 @@ impl Icons {
         }
     }
 
+    /// The raster of a wordmark `height` points high: pixel size of the artwork (whole device pixels) and the size in
+    /// points that maps it one texel to one device pixel.
+    fn wordmark_raster(&self, height: f32) -> ((u32, u32), (f32, f32)) {
+        let s = self.scale.get();
+        let width = height * WORDMARK_BOX[2] / WORDMARK_BOX[3];
+        let px = (
+            ((width * s).round() as u32).max(8),
+            ((height * s).round() as u32).max(8),
+        );
+        (px, (px.0 as f32 / s, px.1 as f32 / s))
+    }
+
     /// The wordmark `height` points high (width follows the artwork's box): the letters in `font`, the play mark in `accent`.
     pub fn wordmark(&self, height: f32, font: Color, accent: Color) -> Node {
         let (letters, mark) = self.wordmark_layers(height, font, accent);
-        let width = height * WORDMARK_BOX[2] / WORDMARK_BOX[3];
+        let (_, (w, h)) = self.wordmark_raster(height);
         Node::zstack(swiftly_layout::Alignment::TOP_LEADING, vec![letters, mark]).frame(
-            Some(width),
-            Some(height),
+            Some(w),
+            Some(h),
             swiftly_layout::Alignment::TOP_LEADING,
         )
     }
 
     /// The wordmark as two layers of the same size, `(letters, play mark)`, to animate apart (the launch curtain).
+    /// Drawn one texel to one device pixel (the node is exactly the raster's size in points), never resampled.
     pub fn wordmark_layers(&self, height: f32, font: Color, accent: Color) -> (Node, Node) {
-        let width = height * WORDMARK_BOX[2] / WORDMARK_BOX[3];
+        let ((px_w, px_h), (width, height)) = self.wordmark_raster(height);
         let layer = |key: &str, d: &'static str, tint: Color| -> Node {
-            let (px_w, px_h) = (
-                ((width * self.scale).ceil() as u32).max(8),
-                ((height * self.scale).ceil() as u32).max(8),
-            );
             let k = (key.to_owned(), px_h);
             let cached = self.cache.borrow().get(&k).copied();
             let id = match cached {
@@ -623,5 +688,26 @@ mod tests {
         let ink = img.chunks(4).filter(|p| p[3] > 128).count();
         assert!(ink > 600 && ink < 64 * 64 - 600, "ink {ink}");
         assert!(path_data("hard-drive-x.light").is_some());
+    }
+
+    #[test]
+    fn a_template_placed_ring_keeps_its_ring_on_the_box_centre() {
+        // arrow-clockwise: ring centre (1650, 1090), outer radius 43.75, the arrow head sticks out to the right.
+        let d = path_data("arrow-clockwise").expect("asset");
+        let px = 400_u32;
+        let first_column = |img: &[u8]| {
+            let row = (px / 2) as usize;
+            (0..px as usize)
+                .find(|x| img[(row * px as usize + x) * 4 + 3] > 128)
+                .expect("ink on the centre row")
+        };
+        let placed = first_column(&rasterize_template(d, px));
+        let by_box = first_column(&rasterize(d, px, true));
+        // Left edge of the ring at 50 - 43.75 = 6.25 units = 25 px; the bounding box centre sits 6 units further right.
+        assert!((placed as i32 - 25).abs() <= 3, "template placed: {placed}");
+        assert!(
+            by_box + 8 < placed,
+            "bounding-box placed (old look): {by_box}"
+        );
     }
 }

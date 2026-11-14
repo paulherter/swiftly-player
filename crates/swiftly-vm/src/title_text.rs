@@ -233,3 +233,62 @@ pub(crate) fn user_image(user_id: &str, tag: &str, addresses: &ImageAddress) -> 
 pub fn minutes_text(locale: Locale, seconds: f64) -> String {
     TitleText::new(locale).time_text(seconds)
 }
+
+/// What the player shows over the picture at the top left (`PlayerScreen.titleLine`, `metaText`): for an episode the
+/// series and "Staffel 1 · Folge 3", for anything else the title and year, runtime and genre. The second line may be empty.
+pub fn player_head(locale: Locale, item: &Item) -> (String, String) {
+    let text = TitleText::new(locale);
+    let episode = item.type_.as_deref() == Some("Episode");
+    let title = match item.series_name.as_deref() {
+        Some(series) if episode && !series.is_empty() => series.to_string(),
+        _ => item.name.clone(),
+    };
+    let meta = if episode {
+        match (item.parent_index_number, item.index_number) {
+            (Some(season), Some(number)) => text.with(
+                "Staffel %lld · Folge %lld",
+                &[Arg::Int(season), Arg::Int(number)],
+            ),
+            _ => item.context_line().unwrap_or_default(),
+        }
+    } else {
+        text.secondary_line(item)
+    };
+    (title, meta)
+}
+
+/// The code a card names an episode by (`episode.episodeCode`: "S1 · F4"), `None` without both numbers.
+pub fn episode_code(locale: Locale, item: &Item) -> Option<String> {
+    item.episode_code_with(&crate::tile::Words::new(locale))
+}
+
+#[cfg(test)]
+mod player_head_tests {
+    use super::*;
+
+    fn item(json: &str) -> Item {
+        serde_json::from_str(json).expect("item")
+    }
+
+    #[test]
+    fn an_episode_shows_its_series_and_the_season_line() {
+        let ep = item(
+            r#"{"Id":"1","Name":"Pilot","Type":"Episode","SeriesName":"Show","ParentIndexNumber":1,"IndexNumber":3}"#,
+        );
+        assert_eq!(
+            player_head(Locale::parse("de"), &ep),
+            ("Show".into(), "Staffel 1 · Folge 3".into())
+        );
+    }
+
+    #[test]
+    fn a_film_shows_year_runtime_and_genre() {
+        let film = item(
+            r#"{"Id":"2","Name":"Film","Type":"Movie","ProductionYear":1999,"RunTimeTicks":54000000000,"Genres":["Drama","Krimi","Western"]}"#,
+        );
+        assert_eq!(
+            player_head(Locale::parse("de"), &film),
+            ("Film".into(), "1999 · 1 Std. 30 Min. · Drama, Krimi".into())
+        );
+    }
+}

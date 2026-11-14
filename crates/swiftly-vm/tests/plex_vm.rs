@@ -67,8 +67,8 @@ fn plex_search_groups_movies_and_series_only() {
     });
     wait_for("done", || vm.status().status == SearchStatus::Done);
     let kinds: Vec<_> = vm.results().groups.iter().map(|g| g.kind).collect();
-    assert_eq!(kinds, [SearchKind::Movies, SearchKind::Series]);
-    assert_eq!(vm.results().groups[0].tiles[0].title, "Dark Plex");
+    assert_eq!(kinds, [SearchKind::Series, SearchKind::Movies]);
+    assert_eq!(vm.results().groups[1].tiles[0].title, "Dark Plex");
 }
 
 #[test]

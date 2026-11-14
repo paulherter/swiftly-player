@@ -156,46 +156,120 @@ pub fn segments(cx: &Cx, f: &Fm, prefix: &str, cells: &[Cell], chosen: usize, ea
 }
 
 fn segment_row(cx: &Cx, icons: &Icons, title: &str, symbol: &str, strip: Node) -> Node {
-    let head = Node::hstack(
+    let head = || {
+        Node::hstack(
+            Align::Center,
+            Some(12.0),
+            vec![
+                icons
+                    .node(symbol, 20.0, true, color(colour::FONT_QUIET))
+                    .frame(Some(26.0), None, Alignment::CENTER),
+                label(
+                    cx,
+                    title,
+                    15.0,
+                    600,
+                    color(colour::FONT),
+                    Some(1),
+                    swiftly_text::Align::Start,
+                ),
+            ],
+        )
+    };
+    // `ViewThatFits(in: .horizontal)` of `MacSubtitleLook.segmentRow`: title left and segments right; when they do not
+    // fit side by side, the segments stack under the title (nothing is cut).
+    // The title keeps its unshrunk width: an hstack hands the title only half of what the rigid strip leaves (the
+    // spacer takes the other half), so a title that fits by its ideal width was still cut to "F..." beside its strip.
+    let inline = Node::hstack(
         Align::Center,
         Some(12.0),
         vec![
-            icons
-                .node(symbol, 20.0, true, color(colour::FONT_QUIET))
-                .frame(Some(26.0), None, Alignment::CENTER),
-            label(
-                cx,
-                title,
-                15.0,
-                600,
-                color(colour::FONT),
-                Some(1),
-                swiftly_text::Align::Start,
-            ),
+            head().fixed_size(true, false),
             Node::spacer(),
-            strip,
+            strip.clone(),
         ],
-    );
+    )
+    .padding(ins(8.0, 12.0, 8.0, 12.0))
+    .frame(None, Some(46.0), Alignment::LEADING);
+    let stacked = Node::vstack(Align::Start, Some(8.0), vec![head(), strip])
+        .padding(ins(10.0, 12.0, 10.0, 12.0));
     wide(
-        head.padding(ins(8.0, 16.0, 8.0, 16.0))
-            .frame(None, Some(46.0), Alignment::LEADING),
+        Node::view_that_fits(swiftly_layout::Axes::HORIZONTAL, vec![inline, stacked]),
         Alignment::LEADING,
     )
 }
 
-/// The sample picture: dark 16:9 with the look applied to a sample line.
+/// Memo key of the room [`reserve_preview_room`] keeps for the sample picture.
+const PREVIEW_ROOM: &str = "subtitle-preview-room";
+
+/// Keeps room for the sample picture (1280 x 720) on the image page, once, while the page is still empty. A long session
+/// of posters and icons fills the page, and a picture added only when the page opens found no room then: the preview
+/// had no background. The room is black until the page opens and fills it.
+pub fn reserve_preview_room(cx: &Cx) {
+    if cx.memo.borrow().contains_key(PREVIEW_ROOM) {
+        return;
+    }
+    let room = cx.images.borrow_mut().reserve(1280, 720);
+    cx.memo
+        .borrow_mut()
+        .insert(PREVIEW_ROOM, room.map(|s| s.id).into_iter().collect());
+}
+
+/// The picture behind the sample text (`subtitle-preview` of the Apple apps), cut to 16:9 around its middle like
+/// `scaledToFill`; `None` when it cannot be decoded (the dark ground stays).
+pub fn preview_picture(cx: &Cx) -> Option<swiftly_ui::ImageId> {
+    if let Some(v) = cx.memo.borrow().get("subtitle-preview") {
+        return v.first().copied();
+    }
+    let room = cx
+        .memo
+        .borrow()
+        .get(PREVIEW_ROOM)
+        .and_then(|v| v.first().copied());
+    let id = swiftly_images::decode::decode(PREVIEW_JPEG, 1280)
+        .ok()
+        .and_then(|d| {
+            let (w, h, rgba) = crop_16_9(d.width, d.height, &d.rgba);
+            match room {
+                Some(room) if cx.images.borrow_mut().rewrite_in(&room, w, h, &rgba) => Some(room),
+                _ => cx.add_image(w, h, &rgba),
+            }
+        });
+    cx.memo
+        .borrow_mut()
+        .insert("subtitle-preview", id.into_iter().collect());
+    id
+}
+
+const PREVIEW_JPEG: &[u8] = include_bytes!("../assets/subtitle-preview.jpg");
+
+/// The middle band of an RGBA picture that is 16:9 (or the middle columns when it is wider).
+fn crop_16_9(w: u32, h: u32, rgba: &[u8]) -> (u32, u32, Vec<u8>) {
+    let (cw, ch) = if u64::from(w) * 9 > u64::from(h) * 16 {
+        (h * 16 / 9, h)
+    } else {
+        (w, w * 9 / 16)
+    };
+    let (x0, y0) = ((w - cw) / 2, (h - ch) / 2);
+    let mut out = Vec::with_capacity(cw as usize * ch as usize * 4);
+    for row in y0..y0 + ch {
+        let start = (row as usize * w as usize + x0 as usize) * 4;
+        out.extend_from_slice(&rgba[start..start + cw as usize * 4]);
+    }
+    (cw, ch, out)
+}
+
+/// The sample picture: 16:9 with the look applied to a sample line.
 fn preview(cx: &Cx, look: &SubtitleLook, w: f32) -> Node {
     let h = (w * 9.0 / 16.0).round();
     let pts = (look.preview_points(f64::from(h), base_scale::IPAD_MAC) as f32).max(11.0);
+    // The Apple sample: two short lines.
     let line = |c: Color| {
-        label(
-            cx,
-            "So sehen deine Untertitel aus.",
-            pts,
-            600,
-            c,
-            Some(2),
-            swiftly_text::Align::Center,
+        let one = |t: &str| label(cx, t, pts, 600, c, Some(1), swiftly_text::Align::Center);
+        Node::vstack(
+            Align::Center,
+            Some(0.0),
+            vec![one("Hörst du das auch?"), one("Da hinten am See.")],
         )
     };
     let mut stack = line(rgb(look.colour.rgb()));
@@ -206,7 +280,7 @@ fn preview(cx: &Cx, look: &SubtitleLook, w: f32) -> Node {
     if t > 0.0 && look.outline.thickness() > 0 {
         for k in 0..8_i16 {
             let angle = f32::from(k) * std::f32::consts::FRAC_PI_4;
-            let copy = line(black(0.9)).offset(
+            let copy = line(black(0.9)).a11y_hidden().offset(
                 t * angle.cos(),
                 t * angle.sin(),
                 swiftly_ui::Motion::Instant,
@@ -215,7 +289,10 @@ fn preview(cx: &Cx, look: &SubtitleLook, w: f32) -> Node {
         }
     }
     if look.shadow {
-        let shade = line(black(0.63)).offset(0.0, pts * 0.04, swiftly_ui::Motion::Instant);
+        let shade =
+            line(black(0.63))
+                .a11y_hidden()
+                .offset(0.0, pts * 0.04, swiftly_ui::Motion::Instant);
         stack = stack.background(shade, Alignment::CENTER);
     }
     let stack = if look.background {
@@ -236,7 +313,10 @@ fn preview(cx: &Cx, look: &SubtitleLook, w: f32) -> Node {
         .padding(ins(0.0, 12.0, lift, 12.0))
         .frame(Some(w), Some(h), Alignment::BOTTOM)
         .background(
-            Node::rect(Color::new(0.06, 0.07, 0.09, 1.0), 16.0),
+            match preview_picture(cx) {
+                Some(id) => Node::image(id, w, h, 16.0),
+                None => Node::rect(Color::new(0.06, 0.07, 0.09, 1.0), 16.0),
+            },
             Alignment::CENTER,
         )
 }
@@ -273,7 +353,8 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
         word(Position::Raised.name_key()),
     ];
     let at = |all: &[Size]| all.iter().position(|s| *s == look.size).unwrap_or(1);
-    let appearance = forms::setting_group(
+    // `SheetLine().padding(.leading, Theme.separatorInsetCard)`: the hairlines of this page start at 52.
+    let appearance = forms::setting_group_at(
         cx,
         f,
         "Aussehen",
@@ -290,7 +371,7 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
                 cx,
                 icons,
                 "Farbe",
-                "text-aa",
+                "palette",
                 segments(
                     cx,
                     f,
@@ -307,7 +388,7 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
                 cx,
                 icons,
                 "Rand",
-                "text-aa",
+                "textbox",
                 segments(
                     cx,
                     f,
@@ -323,7 +404,7 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
             on_off("sub.shadow", "copy", "Schatten", look.shadow),
             on_off(
                 "sub.background",
-                "copy",
+                "square",
                 "Dunkler Hintergrund",
                 look.background,
             ),
@@ -331,7 +412,7 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
                 cx,
                 icons,
                 "Position",
-                "rows",
+                "align-bottom-simple",
                 segments(
                     cx,
                     f,
@@ -342,6 +423,7 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
                 ),
             ),
         ],
+        52.0,
     );
     let under = if v.adjustable {
         look.file_style_line().to_owned()
@@ -353,13 +435,13 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
         icons,
         f,
         "sub.file",
-        "text-align-left",
+        "file-text",
         "Gestaltung aus der Datei übernehmen",
         Some(&under),
         Trail::Switch(look.keep_file_style || !v.adjustable),
         v.adjustable,
     );
-    let fancy = forms::setting_group(cx, f, "Aufwendige Untertitel", 28.0, vec![file]);
+    let fancy = forms::setting_group_at(cx, f, "Aufwendige Untertitel", 28.0, vec![file], 52.0);
     let reset = forms::card_view(vec![forms::row_kb(
         cx,
         icons,
@@ -811,21 +893,21 @@ pub fn licences_page(
         "lic.offer",
         "text-align-left",
         "Quelltext und schriftliches Angebot",
-        Some("Woher VLCKit kommt und wie du es ersetzt"),
+        Some("Woher libmpv kommt und wie du es ersetzt"),
         Trail::Chevron,
         true,
     ));
     let mut body = vec![
         wide(
-            label(cx, "Swiftly Player nutzt VLCKit und libVLC von VideoLAN (LGPL 2.1 oder später). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.", 15.0, 400, color(colour::FONT_QUIET), None, swiftly_text::Align::Start),
+            label(cx, "Swiftly Player spielt mit libmpv und FFmpeg (LGPL 2.1 oder später). Was sonst noch drinsteckt, steht darunter, mit Lizenz und Urheber.", 15.0, 400, color(colour::FONT_QUIET), None, swiftly_text::Align::Start),
             Alignment::LEADING,
         )
         .padding(ins(10.0, 0.0, 4.0, 0.0)),
-        forms::setting_group(cx, f, "VLCKit und libVLC", 22.0, player),
+        forms::setting_group(cx, f, "libmpv und FFmpeg", 22.0, player),
     ];
     for (title, g) in [
         ("Weitere Bausteine", "app"),
-        ("In VLCKit eingebaut", "in-vlckit"),
+        ("In libmpv eingebaut", "in-vlckit"),
     ] {
         let rows = group(g);
         if !rows.is_empty() {
@@ -1001,4 +1083,244 @@ pub fn offering_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, data: &LicenseDa
         vec![body],
         None,
     )
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::*;
+
+    #[test]
+    fn the_sample_picture_is_part_of_the_app_and_is_cut_to_16_by_9() {
+        let d =
+            swiftly_images::decode::decode(PREVIEW_JPEG, 1280).expect("the sample picture decodes");
+        assert!(d.width > 0 && d.height > 0);
+        let (w, h, px) = crop_16_9(d.width, d.height, &d.rgba);
+        assert_eq!(u64::from(w) * 9, u64::from(h) * 16);
+        assert_eq!(px.len(), w as usize * h as usize * 4);
+        // A tall picture keeps its full width; a wide one keeps its full height.
+        assert_eq!(crop_16_9(100, 400, &vec![0; 100 * 400 * 4]).0, 100);
+        assert_eq!(crop_16_9(400, 100, &vec![0; 400 * 100 * 4]).1, 100);
+    }
+
+    #[test]
+    fn the_preview_gets_its_picture() {
+        let cx = Cx::deterministic();
+        assert!(preview_picture(&cx).is_some());
+        assert_eq!(preview_picture(&cx), preview_picture(&cx), "added once");
+    }
+
+    /// The outline and shadow copies of the sample are paint, not text: a screen reader reads the sentence once.
+    #[test]
+    fn the_sample_sentence_is_read_once() {
+        let mut env = Env::new(
+            swiftly_layout::Size::new(600.0, 400.0),
+            1.0,
+            swiftly_ui::Idiom::Desktop,
+        );
+        env.reduce_motion = true;
+        let look = SubtitleLook {
+            shadow: true,
+            ..SubtitleLook::default()
+        };
+        let mut u = swiftly_ui::Ui::new(
+            |look: &SubtitleLook, _: &Env, cx: &Cx| preview(cx, look, 480.0),
+            look,
+            env,
+            Cx::deterministic(),
+        );
+        let _ = u.frame(100.0);
+        fn count(n: &[swiftly_ui::a11y::A11yNode], what: &str) -> usize {
+            n.iter()
+                .map(|x| usize::from(x.label.contains(what)) + count(&x.children, what))
+                .sum()
+        }
+        assert_eq!(count(&u.a11y_nodes(), "Hörst du das auch?"), 1);
+    }
+}
+
+// ---- Home page choices ----------------------------------------------------------------------------------------------
+
+/// What a "Bibliothek hinzufügen" / "Genre hinzufügen" page shows (`GenreSelectionView`, `LibrarySelectionView`).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct PickView {
+    /// The server's answer.
+    pub offer: crate::home_choices::Offer<(String, String, bool)>,
+    /// The sentence for "the list is empty" (nothing there at all / everything chosen already).
+    pub none: &'static str,
+    /// The sentence when every entry is chosen already.
+    pub all_chosen: &'static str,
+    /// How many entries the server has, chosen ones included.
+    pub total: usize,
+    /// Libraries (true) or genres (false): decides the icon of an entry.
+    pub libraries: bool,
+}
+
+/// The page of choices: group "Auf deinem Server" with one row per entry (a tap adds it and goes back), or a sentence.
+pub fn pick_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, title: &str, v: &PickView) -> Node {
+    use crate::home_choices::Offer;
+    let mut col: Vec<Node> = Vec::new();
+    let sentence = |t: &str| {
+        wide(
+            label(
+                cx,
+                t,
+                15.0,
+                400,
+                color(colour::FONT_QUIET),
+                None,
+                swiftly_text::Align::Start,
+            ),
+            Alignment::LEADING,
+        )
+        .padding(ins(22.0, 0.0, 0.0, 0.0))
+    };
+    match &v.offer {
+        Offer::Failed => {
+            col.push(sentence(
+                "Der Server antwortet nicht. Läuft er noch, oder hängt das WLAN?",
+            ));
+            col.push(
+                forms::button(
+                    cx,
+                    icons,
+                    f,
+                    "pick.retry",
+                    "Erneut versuchen",
+                    Some("arrows-clockwise"),
+                    true,
+                    false,
+                    true,
+                )
+                .padding(ins(12.0, 0.0, 0.0, 0.0)),
+            );
+        }
+        Offer::Ready(list) if list.is_empty() => {
+            col.push(sentence(if v.total == 0 { v.none } else { v.all_chosen }));
+        }
+        Offer::Ready(list) => {
+            let rows = list
+                .iter()
+                .enumerate()
+                .map(|(i, (_, name, kind))| {
+                    forms::row_kb(
+                        cx,
+                        icons,
+                        f,
+                        &format!("pick.add.{i}"),
+                        match (v.libraries, *kind) {
+                            (false, _) => "tag",
+                            (true, true) => "stack",
+                            (true, false) => "rows",
+                        },
+                        name,
+                        None,
+                        Trail::None,
+                        true,
+                    )
+                })
+                .collect();
+            col.push(forms::setting_group_at(
+                cx,
+                f,
+                "Auf deinem Server",
+                22.0,
+                rows,
+                52.0,
+            ));
+        }
+        Offer::Idle | Offer::Loading => {}
+    }
+    shell(
+        cx,
+        icons,
+        env,
+        f,
+        title,
+        forms::Cols::One,
+        vec![vec![Node::vstack(Align::Start, Some(0.0), col)]],
+        None,
+    )
+}
+
+/// "Open-Source-Lizenzen" without the inventory (`LicensesView.Missing`).
+pub fn licences_missing_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm) -> Node {
+    let t = wide(
+        label(
+            cx,
+            "Die Lizenzliste fehlt in dieser Fassung. Du findest sie auf GitHub in THIRD-PARTY-NOTICES.md.",
+            15.0,
+            400,
+            color(colour::FONT_QUIET),
+            None,
+            swiftly_text::Align::Start,
+        ),
+        Alignment::LEADING,
+    )
+    .padding(ins(22.0, 0.0, 0.0, 0.0));
+    shell(
+        cx,
+        icons,
+        env,
+        f,
+        "Open-Source-Lizenzen",
+        forms::Cols::One,
+        vec![vec![t]],
+        None,
+    )
+}
+
+#[cfg(test)]
+mod segment_row_tests {
+    use super::*;
+    use swiftly_layout::{Placed, Proposal, Size, layout, size_that_fits};
+    use swiftly_ui::Paint;
+
+    fn to_layout(n: &Node) -> swiftly_layout::Node {
+        swiftly_layout::Node {
+            kind: n.kind.clone(),
+            children: n.children.iter().map(to_layout).collect(),
+            priority: n.priority,
+        }
+    }
+
+    /// The placed width and the unshrunk width of every text node `title` that takes part in the layout.
+    fn title_widths(n: &Node, p: &Placed, title: &str, out: &mut Vec<(f32, f32)>) {
+        if p.hidden {
+            return;
+        }
+        if n.paint
+            .iter()
+            .any(|a| matches!(a, Paint::Text { text, .. } if text == title))
+        {
+            let ideal = size_that_fits(&to_layout(n), Proposal::new(None, None)).w;
+            out.push((p.frame.w, ideal));
+        }
+        for (k, c) in n.children.iter().zip(&p.children) {
+            title_widths(k, c, title, out);
+        }
+    }
+
+    /// Whatever the width, a title is never squeezed below its own width: the row stacks the strip under it instead
+    /// ("F…" and "P…" beside a strip of three or two segments at 1280 px and 125 %).
+    #[test]
+    fn a_segment_row_never_cuts_its_title() {
+        let cx = Cx::deterministic();
+        let icons = Icons::new(&cx, 1.0);
+        for title in ["Farbe", "Position", "Größe", "Rand"] {
+            for w in (200..700).step_by(2) {
+                let strip = Node::fixed(144.0, 32.0);
+                let row = segment_row(&cx, &icons, title, "palette", strip);
+                let placed = layout(&to_layout(&row), Size::new(w as f32, 300.0));
+                let mut found = Vec::new();
+                title_widths(&row, &placed, title, &mut found);
+                assert!(!found.is_empty(), "{title} at {w}");
+                for (got, ideal) in found {
+                    assert!(
+                        got + 0.5 >= ideal,
+                        "{title} is squeezed to {got} of {ideal} at {w} pt"
+                    );
+                }
+            }
+        }
+    }
 }

@@ -304,6 +304,25 @@ fn pause_and_resume_report_at_once_and_a_long_pause_jumps_back() {
     );
 }
 
+/// The Mac's button follows the engine's own report (`runsDisplay`), not the next 500 ms tick: the click reaches the
+/// engine at once, and the report flips the shown state in the same call, so the glyph changes in the next frame.
+#[test]
+fn the_shown_state_flips_on_the_engines_report_without_waiting_for_a_tick() {
+    let r = rig();
+    r.picture(101.0, 1000.0, 3600.0);
+    r.vm.tick(101.5);
+    assert_eq!(r.vm.transport().phase, Phase::Playing);
+    r.vm.send(PlayerIntent::TogglePlay, 101.6);
+    assert!(r.engine.has("pause"), "the engine is told within the click");
+    r.vm.engine_event(EngineEvent::State(EngineState::Paused), 101.61);
+    assert_eq!(r.vm.transport().phase, Phase::Paused);
+    assert!(!r.vm.transport().running);
+    r.vm.send(PlayerIntent::TogglePlay, 102.0);
+    r.vm.engine_event(EngineEvent::State(EngineState::Playing), 102.01);
+    assert_eq!(r.vm.transport().phase, Phase::Playing);
+    assert!(r.vm.transport().running);
+}
+
 #[test]
 fn seek_stands_on_the_target_and_reports_it() {
     let r = rig();
@@ -519,6 +538,46 @@ fn auto_skip_outro_card_counts_down_first_then_advances_and_dismiss_cancels() {
     assert_eq!(r.vm.offer().view, OfferView::Hidden);
     r.run(106.0, 140.0, 3504.0);
     assert!(!started(&r));
+}
+
+#[test]
+fn a_pointer_wake_leaves_the_next_episode_card_up_and_a_deliberate_one_cancels_it() {
+    // The Mac: movement shows the controls (`controlsShow(through: .beside)`) and the card keeps running; a click or key
+    // (`.deliberate`) takes it away.
+    let card_up = || {
+        let r = rig_with(0.0, true, PlayerPrefs::default());
+        r.vm.set_sections(vec![Segment::new(Art::Credits, 3500.0, 3600.0)]);
+        r.picture(101.0, 3499.0, 3600.0);
+        r.run(101.0, 103.0, 3499.0);
+        r.run(103.0, 104.0, 3501.0);
+        assert!(matches!(r.vm.offer().view, OfferView::Card { .. }));
+        r
+    };
+    let r = card_up();
+    r.vm.send(PlayerIntent::WakeControlsBeside, 104.2);
+    assert!(r.vm.controls().visible);
+    assert!(
+        matches!(r.vm.offer().view, OfferView::Card { .. }),
+        "a pointer wake dismissed the card"
+    );
+    // After a pointer wake the countdown still runs out and starts the next episode.
+    let r = card_up();
+    r.vm.send(PlayerIntent::WakeControlsBeside, 104.2);
+    r.run(104.2, 125.0, 3502.0);
+    assert!(
+        r.vm.take_effects()
+            .iter()
+            .any(|e| matches!(e, PlayerEffect::StartEpisode { .. })),
+        "the card did not advance after a pointer wake"
+    );
+    let r = card_up();
+    r.vm.send(PlayerIntent::WakeControls, 104.2);
+    assert!(r.vm.controls().visible);
+    assert_eq!(
+        r.vm.offer().view,
+        OfferView::Hidden,
+        "a deliberate wake left the card"
+    );
 }
 
 #[test]
@@ -850,6 +909,21 @@ fn the_end_of_a_film_without_next_episode_stays_open() {
     assert!(effects.is_empty(), "{effects:?}");
 }
 
+#[test]
+fn the_bar_that_faded_during_the_film_comes_back_at_its_end() {
+    let r = rig();
+    r.picture(101.0, 3590.0, 3600.0);
+    r.run(101.0, 109.0, 3590.0);
+    assert!(!r.vm.controls().visible, "the bar faded while it played");
+    r.vm.engine_event(EngineEvent::State(EngineState::Ended), 110.0);
+    r.run(110.0, 140.0, 3600.0);
+    assert_eq!(r.vm.transport().phase, Phase::Ended);
+    assert!(
+        r.vm.controls().visible,
+        "the bar is up at the end and stays"
+    );
+}
+
 /// What the desktop engine sends with keep-open: the clock stops at the last frame, mpv pauses, then Ended arrives
 /// (no outro marker at all). The card counts down on its own, the next episode starts, the stop report says "the end".
 #[test]
@@ -899,6 +973,54 @@ fn ended_from_the_desktop_engine_runs_the_next_episode_card_and_reports_the_end(
         Some(3600.0),
         "the stop report carries the end"
     );
+}
+
+/// A short clip (10 s) with an outro from 0:07: the card counts 3 s, the clip ends on the last frame. The card must
+/// still finish its countdown and start the next episode, although the file is too short for the long-file rules.
+#[test]
+fn a_short_clip_ending_inside_the_outro_card_still_advances() {
+    let r = rig_with(0.0, true, PlayerPrefs::default());
+    r.vm.set_sections(vec![Segment::new(Art::Credits, 7.0, 10.0)]);
+    r.picture(101.0, 6.0, 10.0);
+    let mut t = r.run(101.0, 105.0, 6.0);
+    assert!(
+        matches!(r.vm.offer().view, OfferView::Card { .. }),
+        "the card is up in the outro"
+    );
+    r.vm.engine_event(
+        EngineEvent::Clock {
+            position: 9.98,
+            source_time: 9.98,
+        },
+        t,
+    );
+    r.vm.engine_event(EngineEvent::State(EngineState::Paused), t);
+    r.vm.engine_event(EngineEvent::State(EngineState::Ended), t);
+    let mut started = false;
+    for _ in 0..20 {
+        t += 0.5;
+        r.vm.display_tick(t - 0.25);
+        r.vm.tick(t);
+        started |= r.vm.take_effects().iter().any(
+            |e| matches!(e, PlayerEffect::StartEpisode { id, from_card: true, .. } if id == "ep2"),
+        );
+    }
+    assert!(started, "the next episode starts after the countdown");
+}
+
+/// A click on the card starts the next episode, as on the Mac (the card zooms and the switch runs).
+#[test]
+fn a_click_on_the_card_starts_the_next_episode_from_the_card() {
+    let r = rig_with(0.0, true, PlayerPrefs::default());
+    r.vm.set_sections(vec![Segment::new(Art::Credits, 3500.0, 3600.0)]);
+    r.picture(101.0, 3499.0, 3600.0);
+    r.run(101.0, 104.0, 3499.0);
+    assert!(matches!(r.vm.offer().view, OfferView::Card { .. }));
+    r.vm.take_effects();
+    r.vm.send(PlayerIntent::PressCard, 104.2);
+    assert!(r.vm.take_effects().iter().any(
+        |e| matches!(e, PlayerEffect::StartEpisode { id, from_card: true, .. } if id == "ep2")
+    ));
 }
 
 #[test]
@@ -1042,6 +1164,42 @@ fn rating_then_discord_prompt_after_finished_titles() {
     assert!(
         r.vm.take_effects()
             .contains(&PlayerEffect::Nudge(Nudge::Rating))
+    );
+}
+
+#[test]
+fn a_host_that_marks_when_shown_gets_the_same_nudge_again_until_it_marks() {
+    let kv = Arc::new(Kv::default());
+    let after = AfterPlay::marking_when_shown(kv.clone(), "1.0.3", false);
+    for _ in 0..4 {
+        assert_eq!(after.done_watch(3500.0, 3600.0), None);
+    }
+    // The fifth finished title: the Discord hint is due, but nothing marked it yet.
+    assert_eq!(after.done_watch(3500.0, 3600.0), Some(Nudge::Discord));
+    assert_eq!(
+        swiftly_library::KeyValue::get(&*kv, "discordHinweisGezeigt"),
+        None
+    );
+    assert_eq!(
+        after.done_watch(3500.0, 3600.0),
+        Some(Nudge::Discord),
+        "not shown, so it comes again"
+    );
+    after.mark_shown(Nudge::Discord);
+    assert_eq!(
+        after.done_watch(3500.0, 3600.0),
+        None,
+        "shown once, never again"
+    );
+    // Apple's host marks at once.
+    let kv = Arc::new(Kv::default());
+    let at_once = AfterPlay::new(kv.clone(), "1.0.3", false);
+    for _ in 0..5 {
+        let _ = at_once.done_watch(3500.0, 3600.0);
+    }
+    assert_eq!(
+        swiftly_library::KeyValue::get(&*kv, "discordHinweisGezeigt").as_deref(),
+        Some("true")
     );
 }
 

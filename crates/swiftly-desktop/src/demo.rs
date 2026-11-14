@@ -275,6 +275,11 @@ impl Demo {
         self.ui.set_env(env);
     }
 
+    /// Scrolling by this table instead of the running OS's (goldens that must not depend on the platform).
+    pub fn set_scroll_tuning(&mut self, t: swiftly_motion::ScrollTuning) {
+        self.ui.set_scroll_tuning(t);
+    }
+
     /// Opens the detail page of an item (as a tap on its tile does).
     pub fn open_detail(&mut self, rail: u8, index: u16, now: f64) {
         self.nav.push(Route::Detail { rail, index }, now);

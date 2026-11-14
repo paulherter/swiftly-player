@@ -121,6 +121,34 @@ fn sample(page: &dyn Atlas, u: f32, v: f32) -> Rgba {
     o
 }
 
+/// The point `(tx, ty)` (0..1 across the quad) of an image quad as a normalised page position, mirroring
+/// `region_clamped` of the shader: the uv rectangle is snapped to whole texels (a sub-texel offset up to 0.4 only tells
+/// handed-out rectangles apart) and the position stays on the texel centres inside it, so filtering never reaches the
+/// neighbouring picture of the page.
+fn region_uv(uv: [f32; 4], tx: f32, ty: f32, page_w: u32, page_h: u32) -> (f32, f32) {
+    let dims = [page_w as f32, page_h as f32];
+    let lo = [
+        (uv[0] * dims[0] + 0.5).floor(),
+        (uv[1] * dims[1] + 0.5).floor(),
+    ];
+    let hi = [
+        (uv[2] * dims[0] + 0.5).floor(),
+        (uv[3] * dims[1] + 0.5).floor(),
+    ];
+    let at = |i: usize, t: f32| {
+        let first = lo[i] + 0.5;
+        let last = first.max(hi[i] - 0.5);
+        (lo[i] + (hi[i] - lo[i]) * t).clamp(first, last) / dims[i]
+    };
+    (at(0, tx), at(1, ty))
+}
+
+/// Interleaved gradient noise in [0, 1), the dither of `quad.wgsl`.
+fn dither_noise(x: f32, y: f32) -> f32 {
+    let inner = (x * 0.067_110_56 + y * 0.005_837_15).fract();
+    (52.982_92 * inner).fract()
+}
+
 fn premul(c: [f32; 4]) -> Rgba {
     [c[0] * c[3], c[1] * c[3], c[2] * c[3], c[3]]
 }
@@ -129,8 +157,29 @@ fn lerp4(a: Rgba, b: Rgba, t: f32) -> Rgba {
     [0, 1, 2, 3].map(|i| a[i] * (1.0 - t) + b[i] * t)
 }
 
+/// Coverage of the rounded clip of `q` at pixel centre `(x, y)`, the oracle of `round_clip_mask` in `quad.wgsl`.
+fn round_clip_mask(q: &DrawQuad, x: f32, y: f32, s: f32) -> f32 {
+    let r = q.round_clip[4];
+    if r <= 0.0 {
+        return 1.0;
+    }
+    let c = q.round_clip;
+    let (lx, ly) = (c[0] * s, c[1] * s);
+    let (hx, hy) = ((c[2] - c[0]) * s * 0.5, (c[3] - c[1]) * s * 0.5);
+    (0.5 - sd_round_box(x - lx - hx, y - ly - hy, hx, hy, (r * s).min(hx.min(hy)))).clamp(0.0, 1.0)
+}
+
 /// Premultiplied colour of quad `q` at pixel centre `(x, y)`; `None` = untouched.
 fn shade(q: &DrawQuad, x: f32, y: f32, s: f32, src: &Sources) -> Option<Rgba> {
+    let mask = round_clip_mask(q, x, y, s);
+    if mask <= 0.0 {
+        return None;
+    }
+    let c = shade_unmasked(q, x, y, s, src)?;
+    Some(if mask < 1.0 { c.map(|v| v * mask) } else { c })
+}
+
+fn shade_unmasked(q: &DrawQuad, x: f32, y: f32, s: f32, src: &Sources) -> Option<Rgba> {
     if x < q.clip[0] * s || x >= q.clip[2] * s || y < q.clip[1] * s || y >= q.clip[3] * s {
         return None;
     }
@@ -159,6 +208,20 @@ fn shade(q: &DrawQuad, x: f32, y: f32, s: f32, src: &Sources) -> Option<Rgba> {
             let a = c[3] * sample(page, u, v)[0] * q.opacity;
             return Some([c[0] * a, c[1] * a, c[2] * a, a]);
         }
+        QuadKind::ColorGlyph => {
+            if x < ox || y < oy || x >= ox + w || y >= oy + h {
+                return None;
+            }
+            let page = src.glyphs?.color_page()?;
+            let (u, v) = (
+                q.uv[0] + (q.uv[2] - q.uv[0]) * ((x - ox) / w),
+                q.uv[1] + (q.uv[3] - q.uv[1]) * ((y - oy) / h),
+            );
+            // The page holds premultiplied texels: the sample is already the premultiplied colour.
+            let k = c[3] * q.opacity;
+            let t = sample(page, u, v);
+            return Some(t.map(|v| v * k));
+        }
         _ => {}
     }
 
@@ -175,12 +238,26 @@ fn shade(q: &DrawQuad, x: f32, y: f32, s: f32, src: &Sources) -> Option<Rgba> {
             };
             fill = lerp4(premul(c), premul(q.color2.to_array()), t);
         }
+        QuadKind::Radial => {
+            let (nx, ny) = (
+                ((x - ox) / w - q.gradient[0]) / q.gradient[2].max(0.0001),
+                ((y - oy) / h - q.gradient[1]) / q.gradient[3].max(0.0001),
+            );
+            let t = (nx * nx + ny * ny).sqrt();
+            if t < q.uv[0] || t >= q.uv[3] {
+                return None;
+            }
+            let span = (q.uv[2] - q.uv[1]).max(0.00001);
+            fill = lerp4(
+                premul(c),
+                premul(q.color2.to_array()),
+                ((t - q.uv[1]) / span).clamp(0.0, 1.0),
+            );
+        }
         QuadKind::Image => {
             let page = src.images?;
-            let (u, v) = (
-                q.uv[0] + (q.uv[2] - q.uv[0]) * ((x - ox) / w),
-                q.uv[1] + (q.uv[3] - q.uv[1]) * ((y - oy) / h),
-            );
+            let (pw, ph) = page.size();
+            let (u, v) = region_uv(q.uv, (x - ox) / w, (y - oy) / h, pw, ph);
             let t = sample(page, u, v);
             fill = premul([t[0] * c[0], t[1] * c[1], t[2] * c[2], t[3] * c[3]]);
         }
@@ -202,7 +279,19 @@ fn shade(q: &DrawQuad, x: f32, y: f32, s: f32, src: &Sources) -> Option<Rgba> {
         let ring = premul(q.border_color.to_array()).map(|v| v * ring_cov);
         result = [0, 1, 2, 3].map(|i| ring[i] + result[i] * (1.0 - ring[3]));
     }
-    Some(result.map(|v| v * q.opacity))
+    let mut result = result.map(|v| v * q.opacity);
+    if q.kind == QuadKind::Gradient || q.kind == QuadKind::Radial || q.dither {
+        let n = dither_noise(x, y) - 0.5;
+        let w = (result[3].min(1.0 - result[3]) * 255.0).clamp(0.0, 1.0);
+        let a = result[3];
+        result = [
+            result[0] + n * a / 255.0,
+            result[1] + n * a / 255.0,
+            result[2] + n * a / 255.0,
+            a + n * w / 255.0,
+        ];
+    }
+    Some(result)
 }
 
 impl SoftwareRenderer {
@@ -299,7 +388,8 @@ fn blur_backdrop(q: &DrawQuad, buf: &mut [f32], width: usize, height: usize, s: 
                 (y0 + y) as f32 + 0.5 - oy - hy,
             );
             let corner = (radius_at(rx, ry, q.radii.to_array()) * s).min(hx.min(hy));
-            let cov = (0.5 - sd_round_box(rx, ry, hx, hy, corner)).clamp(0.0, 1.0);
+            let cov = (0.5 - sd_round_box(rx, ry, hx, hy, corner)).clamp(0.0, 1.0)
+                * round_clip_mask(q, (x0 + x) as f32 + 0.5, (y0 + y) as f32 + 0.5, s);
             let i = ((y0 + y) * width + x0 + x) * 3;
             for k in 0..3 {
                 buf[i + k] = buf[i + k] * (1.0 - cov) + region[(y * w + x) * 3 + k] * cov;
@@ -363,6 +453,65 @@ mod tests {
 
     fn render(l: &DrawList, clear: Color) -> RgbaImage {
         SoftwareRenderer::render(l, clear, &Sources::default())
+    }
+
+    #[test]
+    fn round_clip_cuts_the_children_to_one_rounded_card() {
+        // Two cells side by side, clipped together as one card with radius 10: the card's corners are cut, the seam
+        // between the cells is not rounded, the middle is fully drawn.
+        let mut l = DrawList::new(40.0, 40.0, 1.0);
+        l.push_round_clip(Rect::new(0.0, 0.0, 40.0, 40.0), 10.0);
+        l.fill(Rect::new(0.0, 0.0, 19.0, 40.0), Color::WHITE, 0.0);
+        l.fill(Rect::new(21.0, 0.0, 19.0, 40.0), Color::WHITE, 0.0);
+        l.pop_clip();
+        l.fill(
+            Rect::new(0.0, 0.0, 2.0, 2.0),
+            Color::new(1.0, 0.0, 0.0, 1.0),
+            0.0,
+        );
+        let img = render(&l, Color::BLACK);
+        assert_eq!(
+            img.pixel(0, 0)[0],
+            255,
+            "after the pop the red corner square is drawn"
+        );
+        assert_eq!(img.pixel(1, 20)[0], 255, "left edge, straight part");
+        assert_eq!(img.pixel(20, 20)[0], 0, "the gap between the cells");
+        assert_eq!(img.pixel(1, 38)[1], 0, "bottom-left corner is cut away");
+        assert_eq!(img.pixel(38, 1)[1], 0, "top-right corner is cut away");
+        let edge = img.pixel(2, 3)[1];
+        assert!(edge > 0 && edge < 255, "the arc is anti-aliased: {edge}");
+        assert_eq!(img.pixel(10, 10)[1], 255);
+    }
+
+    #[test]
+    fn radial_gradient_fades_from_the_centre_and_has_no_seam_between_bands() {
+        let mut l = DrawList::new(100.0, 50.0, 1.0);
+        let w = |a: f32| Color::new(1.0, 1.0, 1.0, a);
+        l.radial_stops(
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+            [50.0, 0.0],
+            [50.0, 40.0],
+            &[(0.0, w(1.0)), (0.5, w(0.5)), (1.0, w(0.0))],
+        );
+        let img = render(&l, Color::BLACK);
+        let v = |x, y| img.pixel(x, y)[0] as i32;
+        assert!(v(50, 0) > 240, "the centre is full: {}", v(50, 0));
+        let (a, b, c) = (v(50, 10), v(50, 20), v(50, 30));
+        assert!(a > b && b > c, "it falls off monotonically {a} {b} {c}");
+        assert!((b - 128).abs() < 8, "half way at the middle stop: {b}");
+        assert!(
+            v(50, 45) < 4 && v(2, 45) < 4,
+            "beyond the last stop nothing"
+        );
+        // The ellipse is wider than tall: 30 px to the side is further in than 30 px down.
+        assert!(v(80, 0) > v(50, 30), "elliptical, not round");
+        for y in 10..30 {
+            assert!(
+                v(50, y) >= v(50, y + 1) - 2,
+                "no step at the band seam, row {y}"
+            );
+        }
     }
 
     #[test]
@@ -527,6 +676,80 @@ mod tests {
         assert_eq!(out.pixel(1, 1), [255, 128, 0, 255]);
         assert_eq!(out.pixel(4, 0)[0], 255);
         assert_eq!(out.pixel(5, 0)[0], 0);
+    }
+
+    /// A glyph page that carries a colour page, as the text atlas does.
+    struct WithColor {
+        coverage: PixelPage,
+        color: PixelPage,
+    }
+
+    impl Atlas for WithColor {
+        fn size(&self) -> (u32, u32) {
+            self.coverage.size()
+        }
+        fn format(&self) -> AtlasFormat {
+            self.coverage.format()
+        }
+        fn pixels(&self) -> &[u8] {
+            self.coverage.pixels()
+        }
+        fn take_dirty(&self) -> Option<crate::atlas::DirtyRect> {
+            self.coverage.take_dirty()
+        }
+        fn color_page(&self) -> Option<&dyn Atlas> {
+            Some(&self.color)
+        }
+    }
+
+    #[test]
+    fn color_glyphs_keep_their_colours_and_ignore_the_text_tint() {
+        let mut color = PixelPage::new(2, 2, AtlasFormat::Rgba8);
+        // Premultiplied: opaque red, half-transparent green (0, 128 * 0.5, 0, 128), and two empty texels.
+        color.put(
+            0,
+            0,
+            2,
+            2,
+            &[255, 0, 0, 255, 0, 64, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0],
+        );
+        let page = WithColor {
+            coverage: PixelPage::new(2, 2, AtlasFormat::R8),
+            color,
+        };
+        let mut l = DrawList::new(8.0, 4.0, 1.0);
+        // A blue text colour must not tint the emoji; its alpha does apply.
+        l.color_glyph(
+            Rect::new(0.0, 0.0, 2.0, 2.0),
+            [0.0, 0.0, 1.0, 1.0],
+            Color::new(0.0, 0.0, 1.0, 1.0),
+        );
+        l.color_glyph(
+            Rect::new(4.0, 0.0, 2.0, 2.0),
+            [0.0, 0.0, 1.0, 1.0],
+            Color::new(0.0, 0.0, 1.0, 0.5),
+        );
+        let src = Sources {
+            glyphs: Some(&page),
+            images: None,
+        };
+        let out = SoftwareRenderer::render(&l, Color::BLACK, &src);
+        // Bilinear sampling at the 2x2 quad's pixel centres blends the four texels; the corner pixels are exact enough
+        // to tell untinted red from blue.
+        let p = out.pixel(0, 0);
+        assert!(p[0] > 100 && p[2] == 0, "red stays red, got {p:?}");
+        let faded = out.pixel(4, 0);
+        assert!(
+            faded[0] > 30 && faded[0] < p[0] && faded[2] == 0,
+            "half alpha halves it, got {faded:?}"
+        );
+        // Without a colour page nothing is drawn.
+        let bare = Sources {
+            glyphs: Some(&PixelPage::new(2, 2, AtlasFormat::R8)),
+            images: None,
+        };
+        let none = SoftwareRenderer::render(&l, Color::BLACK, &bare);
+        assert_eq!(none.pixel(0, 0), [0, 0, 0, 255]);
     }
 
     #[test]

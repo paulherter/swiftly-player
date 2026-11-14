@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# RETIRED. This installer sets up the package source of the previous Linux app
+# (Swift and GTK4, `Linux/`), which the Rust desktop app replaces. The current
+# app is installed from the release: the AUR package `swiftly-player-bin` on
+# Arch, the .deb or .rpm on Debian, Ubuntu and Fedora, or the tar.gz on any
+# distribution (needs libmpv). See `Documentation/Building.md`.
 #
 # Swiftly Player: installation on Linux.
 #

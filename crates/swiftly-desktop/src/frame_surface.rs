@@ -141,7 +141,12 @@ pub const APP_IMAGE_PAGE: u32 = 4096;
 
 /// The shared services of the real app: the image page that posters, icons and video frames live on.
 pub fn app_cx() -> Cx {
-    Cx::new().with_image_page(APP_IMAGE_PAGE)
+    let cx = Cx::new().with_image_page(APP_IMAGE_PAGE);
+    // Room for the trickplay still, kept from the start: a long session fills the rest of the page.
+    cx.images.borrow_mut().keep_preview();
+    // And for the sample picture of the subtitle page (it was added when the page opened, after the posters).
+    crate::settings_pages::reserve_preview_room(&cx);
+    cx
 }
 
 /// Host side of the GPU video layer: tells the player screen that the host draws the picture (window size, texture

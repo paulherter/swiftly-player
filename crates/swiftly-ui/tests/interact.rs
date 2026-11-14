@@ -368,10 +368,12 @@ fn a_wheel_notch_scrolls_clamped_bounces_at_the_end_and_page_keys_animate() {
         "nothing scrollable under the pointer"
     );
     assert!(u.wheel_scroll(100.0, 300.0, 0.0, 5000.0, 30.0));
+    // The Mac's table gives at the end (28 pt bounce); Windows and Linux stop dead.
+    let bounce = u.scroll_tuning().rubber_band;
     assert_eq!(
         u.scroll_offsets()[0],
-        878.0,
-        "past the end by the 28 pt bounce: 1000 - 150 + 28"
+        if bounce { 878.0 } else { 850.0 },
+        "bounce: 1000 - 150 + 28, none: 1000 - 150"
     );
     run(&mut u, 30.0, 1000.0);
     assert!(
@@ -392,6 +394,26 @@ fn a_wheel_notch_scrolls_clamped_bounces_at_the_end_and_page_keys_animate() {
     assert!(u.scroll_key(ScrollKey::End, 2900.0));
     run(&mut u, 2900.0, 3700.0);
     assert!((u.scroll_offsets()[0] - 850.0).abs() < 0.5);
+}
+
+#[test]
+fn a_precision_touchpad_moves_1_to_1_and_stops_dead_at_the_ends() {
+    let mut u = ui();
+    let _ = u.frame(0.0);
+    swiftly_ui::set_precise_wheel(true);
+    assert!(u.wheel_scroll(100.0, 300.0, 0.0, 70.0, 10.0));
+    assert_eq!(u.scroll_offsets()[0], 70.0);
+    // Far past the end: the offset is the end (850), never past it, and it stays there when time passes.
+    u.wheel_scroll(100.0, 300.0, 0.0, 5000.0, 20.0);
+    swiftly_ui::set_precise_wheel(false);
+    assert_eq!(u.scroll_offsets()[0], 850.0, "no rubber band");
+    run(&mut u, 20.0, 600.0);
+    assert_eq!(u.scroll_offsets()[0], 850.0);
+    // Past the start likewise.
+    swiftly_ui::set_precise_wheel(true);
+    u.wheel_scroll(100.0, 300.0, 0.0, -5000.0, 700.0);
+    swiftly_ui::set_precise_wheel(false);
+    assert_eq!(u.scroll_offsets()[0], 0.0, "no rubber band at the start");
 }
 
 #[test]

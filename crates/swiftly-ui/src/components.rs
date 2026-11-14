@@ -15,6 +15,16 @@ pub fn color(c: swiftly_design::Colour) -> Color {
     Color::new(c.r, c.g, c.b, c.a)
 }
 
+/// Where a line of text sits in a frame wider than the text: the start edge of its own direction, like SwiftUI's
+/// natural alignment (Latin on the left, Arabic and Hebrew on the right).
+pub fn natural_edge(s: &str) -> Alignment {
+    if swiftly_text::is_rtl_text(s) {
+        Alignment::TRAILING
+    } else {
+        Alignment::LEADING
+    }
+}
+
 /// Height of `lines` lines of the tile title style.
 pub fn tile_title_height(cx: &Cx, lines: usize) -> f32 {
     let style = TextStyle::from(touch::text::TILE);
@@ -366,4 +376,18 @@ pub fn tv_rail(
     )
     .key(key)
     .focus_scope(ScopeSpec::section(focus_id(key)))
+}
+
+#[cfg(test)]
+mod natural_edge_tests {
+    use super::*;
+
+    #[test]
+    fn right_to_left_titles_sit_on_the_right_like_swiftui_natural_alignment() {
+        assert_eq!(natural_edge("Nordlicht"), Alignment::LEADING);
+        assert_eq!(natural_edge("العربية"), Alignment::TRAILING);
+        assert_eq!(natural_edge("עברית"), Alignment::TRAILING);
+        assert_eq!(natural_edge("123 العربية"), Alignment::TRAILING);
+        assert_eq!(natural_edge(""), Alignment::LEADING);
+    }
 }

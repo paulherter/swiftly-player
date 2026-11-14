@@ -811,6 +811,43 @@ fn header(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, title: &str, right: Option<
     row.background(fade, Alignment::CENTER)
 }
 
+/// `MacFlowPage`: the title and `body` in one column at the top (58 down); `centred` puts the column in the middle of the
+/// window (first start, no sidebar), else it sits at the left edge like every subpage. Touch and tv use [`page`].
+#[allow(clippy::too_many_arguments)]
+pub fn flow_page(
+    cx: &Cx,
+    icons: &Icons,
+    env: &Env,
+    f: &Fm,
+    title: &str,
+    body: Vec<Node>,
+    centred: bool,
+) -> Node {
+    if !centred || f.form != Form::Desktop {
+        return page(cx, icons, env, f, title, None, body, None);
+    }
+    let mut rows = vec![
+        page_title(cx, title)
+            .frame(Some(f.col), None, Alignment::LEADING)
+            .padding(ins(0.0, 0.0, 18.0, 0.0)),
+    ];
+    rows.extend(body);
+    let col = Node::vstack(Align::Start, Some(0.0), rows).frame(
+        Some(f.col),
+        None,
+        Alignment::TOP_LEADING,
+    );
+    let content =
+        col.padding(ins(58.0, 0.0, 40.0, 0.0))
+            .frame(Some(env.size.w), None, Alignment::TOP);
+    let scroll = Node::scroll(Axis::Vertical, None, content).key("form-scroll");
+    let strip = crate::home::state_bar(cx, title, BAR.with(Cell::get));
+    fill_frame(scroll, Alignment::TOP_LEADING)
+        .overlay(strip, Alignment::TOP)
+        .overlay(back_arrow(icons, f), Alignment::TOP_LEADING)
+        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+}
+
 /// A full page: `body` scrolls under the header (column at most `Fm::col` wide), `overlay` (a sheet) covers all.
 #[allow(clippy::too_many_arguments)]
 pub fn page(
@@ -883,7 +920,8 @@ pub fn page(
 /// How the columns of a desktop settings page are laid out (`SettingsView.swift:26`, `Style.swift:135-145`).
 #[derive(Clone, Copy, PartialEq)]
 pub enum Cols {
-    /// Two columns of at most 470, gap 24 (Allgemein, Profil).
+    /// Two columns of at most 470, gap 24 (Allgemein, Profil); narrower pages keep two columns of less width, like the Mac's
+    /// `HStack` of `maxWidth: 470` children.
     Fixed,
     /// Two equal columns, gap 72, at most 1366 together (Wiedergabe, Darstellung).
     Equal,
@@ -912,6 +950,48 @@ pub fn page_title(cx: &Cx, title: &str) -> Node {
     )
 }
 
+/// Where the Mac `NavArrows` chevron sits in a page (x, y, w, h): the window's drag strip must leave it alone when the
+/// sidebar and its arrows are not there (first start), or a click on it would move the window instead of going back.
+pub const BACK_RECT: [f32; 4] = [14.0, 6.0, 42.0, 40.0];
+
+/// Whether `(x, y)` is on the back chevron of a page ([`BACK_RECT`], the chevron plus its tap margin).
+pub fn on_back_arrow(x: f32, y: f32) -> bool {
+    let r = BACK_RECT;
+    x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]
+}
+
+/// The back chevron of a Mac page, 30 x 28 at (20, 12) like `NavArrows`.
+pub fn back_arrow(icons: &Icons, f: &Fm) -> Node {
+    tappable(
+        icons
+            .node("caret-left", 16.0, true, color(colour::FONT))
+            .frame(Some(30.0), Some(28.0), Alignment::CENTER)
+            .a11y_label(swiftly_ui::a11y::Role::Button, "Zurück"),
+        f,
+        "back",
+        6.0,
+    )
+    .tooltip("Zurück")
+    .padding(ins(12.0, 20.0, 0.0, 0.0))
+}
+
+/// A page of the first start (no sidebar): the column of `body` centred in the window, the big title at the top over the
+/// column's width and the back chevron top left, like the Mac's `ServerView` (a centred stack, the header as an overlay).
+pub fn centred_page(cx: &Cx, icons: &Icons, f: &Fm, title: &str, body: Vec<Node>) -> Node {
+    let col = Node::vstack(Align::Start, Some(0.0), body).frame(
+        Some(f.col),
+        None,
+        Alignment::TOP_LEADING,
+    );
+    let head = page_title(cx, title)
+        .frame(Some(f.col), None, Alignment::LEADING)
+        .padding(ins(58.0, 0.0, 0.0, 0.0));
+    fill_frame(col, Alignment::CENTER)
+        .overlay(fill_frame(head, Alignment::TOP), Alignment::TOP)
+        .overlay(back_arrow(icons, f), Alignment::TOP_LEADING)
+        .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+}
+
 /// A Mac settings page (`SettingsView.swift:20-75`): a scroll view with padding h 36, top 58, bottom 40, the title, the
 /// `columns` side by side (one column when the window is too narrow), the `footer` below, the back arrow top left and
 /// `overlay` centred over all.
@@ -930,7 +1010,7 @@ pub fn settings_page(
 ) -> Node {
     let avail = (env.size.w - 72.0).max(200.0);
     let (w, gap, two) = match cols {
-        Cols::Fixed if avail >= 964.0 => (470.0, 24.0, true),
+        Cols::Fixed if avail >= 560.0 => (((avail.min(964.0) - 24.0) / 2.0).floor(), 24.0, true),
         Cols::Equal if avail >= 700.0 => (((avail.min(1366.0) - 72.0) / 2.0).floor(), 72.0, true),
         Cols::Fixed | Cols::Equal => (avail.min(640.0), 0.0, false),
         Cols::One => (avail.min(700.0), 0.0, false),
@@ -945,7 +1025,18 @@ pub fn settings_page(
             columns.into_iter().map(col).collect(),
         )
     } else {
-        col(columns.into_iter().flatten().collect())
+        // One column: the groups of the second column follow the first with the gap of every other group.
+        let mut flat: Vec<Node> = Vec::new();
+        for (i, items) in columns.into_iter().enumerate() {
+            for (j, node) in items.into_iter().enumerate() {
+                flat.push(if i > 0 && j == 0 && !flat.is_empty() {
+                    node.padding(ins(18.0, 0.0, 0.0, 0.0))
+                } else {
+                    node
+                });
+            }
+        }
+        col(flat)
     };
     let mut page = vec![
         page_title(cx, title)
@@ -960,17 +1051,7 @@ pub fn settings_page(
     let scroll = Node::scroll(Axis::Vertical, None, content).key("form-scroll");
     // `StateBar` (the edge glow and the small page title once the large one has scrolled out); the arrows' column holds
     // the back chevron at the same place as the Mac's `NavArrows` (30 x 28 at 20, 12).
-    let back = tappable(
-        icons
-            .node("caret-left", 16.0, true, color(colour::FONT))
-            .frame(Some(30.0), Some(28.0), Alignment::CENTER)
-            .a11y_label(swiftly_ui::a11y::Role::Button, "Zurück"),
-        f,
-        "back",
-        6.0,
-    )
-    .tooltip("Zurück")
-    .padding(ins(12.0, 20.0, 0.0, 0.0));
+    let back = back_arrow(icons, f);
     let strip = crate::home::state_bar(cx, title, BAR.with(Cell::get));
     let p = fill_frame(scroll, Alignment::TOP_LEADING)
         .overlay(strip, Alignment::TOP)
@@ -1038,7 +1119,7 @@ macro_rules! form_io {
             down: bool,
             now: f64,
         ) -> swiftly_ui::Outcome {
-            if down && matches!(key, swiftly_ui::NavKey::Escape) && !self.wants_text() {
+            if down && matches!(key, swiftly_ui::NavKey::Escape) && self.escape_backs() {
                 self.back(now);
                 return swiftly_ui::Outcome::None;
             }
@@ -1048,16 +1129,20 @@ macro_rules! form_io {
         }
         /// One frame at `now` ms.
         pub fn frame(&mut self, now: f64) -> (swiftly_render::DrawList, bool) {
+            use $crate::hub::HubSlotExt as _;
             self.clock(now);
+            self.hub.frame(now);
             self.sync();
-            let list = self.ui.frame(now);
+            let mut list = self.ui.frame(now);
+            self.hub.finish(&mut list);
             self.drain();
-            let wants = self.ui.needs_frame();
+            let wants = self.ui.needs_frame() || self.hub.busy();
             (list, wants)
         }
         /// Another frame is wanted.
         pub fn wants_frame(&self) -> bool {
-            self.ui.needs_frame()
+            use $crate::hub::HubSlotExt as _;
+            self.ui.needs_frame() || self.hub.busy()
         }
         /// The services the renderers read.
         pub fn cx(&self) -> &swiftly_ui::Cx {
@@ -1082,4 +1167,82 @@ macro_rules! form_io {
             }
         }
     };
+}
+
+/// What one row of the Home group or the Genres group carries (`ChoiceRow` and `GenreRow` of `AppearanceView.swift`).
+pub struct HomeRowSpec<'a> {
+    /// The tap key of the row (it toggles the switch when there is one).
+    pub key: &'a str,
+    /// The icon.
+    pub symbol: &'a str,
+    /// The title (a name from the server is shown as it is).
+    pub title: &'a str,
+    /// The switch of a fixed row.
+    pub switch: Option<bool>,
+    /// The key of the remove cross (libraries and genres).
+    pub remove: Option<String>,
+    /// The Move Up and Move Down controls: key and whether there is a row to swap with.
+    pub moves: Option<[(String, bool); 2]>,
+}
+
+/// A small quiet icon button of a Home row: 22 x 22, dimmed while it has nothing to do.
+fn home_button(icons: &Icons, f: &Fm, key: &str, name: &str, size: f32, enabled: bool) -> Node {
+    let n = icons
+        .node(name, size, true, color(colour::FONT_QUIET))
+        .frame(Some(22.0), Some(22.0), Alignment::CENTER)
+        .opacity(if enabled { 0.6 } else { 0.2 }, Motion::Instant);
+    if enabled {
+        tappable(n, f, key, 6.0).hover_surface(rgba(colour::FONT, 0.10), 6.0)
+    } else {
+        n.key(key)
+    }
+}
+
+/// A row of the Home page group: icon 20 (quiet), title, then the switch or the cross and the two move arrows. 44 high,
+/// padding 12, gap 14 as on the Mac; the Mac's drag handle is the pair of arrows here (and Alt + Up / Down on a
+/// focused row), because the window has no drag-and-drop between rows.
+pub fn home_row(cx: &Cx, icons: &Icons, f: &Fm, s: &HomeRowSpec<'_>) -> Node {
+    let mut right: Vec<Node> = Vec::new();
+    if let Some(on) = s.switch {
+        right.push(toggle_switch_mac(on));
+    }
+    if let Some(k) = &s.remove {
+        right.push(home_button(icons, f, k, "x", 12.0, true));
+    }
+    if let Some([(up, can_up), (down, can_down)]) = &s.moves {
+        right.push(home_button(icons, f, up, "caret-up", 13.0, *can_up));
+        right.push(home_button(icons, f, down, "caret-down", 13.0, *can_down));
+    }
+    let body = Node::hstack(
+        Align::Center,
+        Some(14.0),
+        vec![
+            icons
+                .node(s.symbol, 20.0, true, color(colour::FONT_QUIET))
+                .frame(Some(20.0), None, Alignment::CENTER),
+            text(
+                cx,
+                s.title,
+                style(15.0, 600),
+                colour::FONT,
+                Some(1),
+                swiftly_text::Align::Start,
+            )
+            .layout_priority(1.0),
+            Node::spacer(),
+            Node::hstack(Align::Center, Some(8.0), right).layout_priority(2.0),
+        ],
+    )
+    .padding(EdgeInsets::symmetric(12.0, 0.0))
+    .flex_frame(swiftly_layout::FlexFrame {
+        min_h: Some(44.0),
+        align: Some(Alignment::LEADING),
+        ..Default::default()
+    });
+    let n = wide(body, Alignment::LEADING);
+    if s.switch.is_some() {
+        tappable_kb(n, f, s.key, 0.0).hover_surface(rgba(colour::FONT, 0.06), 0.0)
+    } else {
+        n.key(s.key).hover_surface(rgba(colour::FONT, 0.06), 0.0)
+    }
 }

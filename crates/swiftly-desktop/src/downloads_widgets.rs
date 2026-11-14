@@ -40,7 +40,7 @@ pub fn ring_label(state: Option<RowState>) -> &'static str {
         Some(RowState::Waiting) => "Wartet",
         Some(RowState::Loading) => "L\u{00E4}dt, anhalten",
         Some(RowState::Paused) => "Angehalten, fortsetzen",
-        Some(RowState::Done) => "Auf diesem Mac",
+        Some(RowState::Done) => "Auf diesem PC",
         Some(RowState::Failed) => "Fehlgeschlagen, erneut versuchen",
     }
 }

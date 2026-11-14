@@ -9,7 +9,7 @@ use swiftly_seerr::{NoCookies, SeerrAccess, SeerrClient, SeerrSessionState};
 use swiftly_settings::{KeyValueStore, Value};
 
 /// The shared transport of the app as an owned value for the client.
-struct Shared(Arc<crate::net::AppTransport>);
+pub(crate) struct Shared(pub(crate) Arc<crate::net::AppTransport>);
 
 impl swiftly_net::HttpTransport for Shared {
     async fn send(
@@ -43,6 +43,8 @@ pub trait SeerrLink {
     fn connect(&self, address: &str, user: &str, password: &str, headers: Vec<(String, String)>);
     /// Removes the stored session (nothing changes at Seerr itself).
     fn disconnect(&self);
+    /// Looks the stored session up again when the page opens (`seerr.lookUp()`), so the row says "Aktiv" or why not.
+    fn look_up(&self) {}
 }
 
 /// The German word of a session state (`SeerrSettingsView.sessionText`).
@@ -116,27 +118,32 @@ impl LiveSeerr {
             Some(Value::Data(d)) => serde_json::from_slice::<SeerrAccess>(&d).ok(),
             _ => None,
         };
-        if let Some(access) = stored {
-            if let Ok(mut s) = now.lock() {
-                *s = SeerrConn {
-                    connected: true,
-                    address: access.address.clone(),
-                    ..SeerrConn::default()
-                };
-            }
-            let (net, out) = (Arc::clone(&core.net), Arc::clone(&now));
-            core.spawn(async move {
-                let word = session_word(
-                    SeerrClient::with_jar(access, Shared(net), NoCookies)
-                        .applies()
-                        .await,
-                );
-                if let Ok(mut s) = out.lock() {
-                    s.session = word.into();
-                }
-            });
+        let link = LiveSeerr { core, now };
+        link.check(stored);
+        link
+    }
+
+    /// Shows the stored session as connected and asks Seerr in the background whether it still works.
+    fn check(&self, stored: Option<SeerrAccess>) {
+        let Some(access) = stored else { return };
+        if let Ok(mut s) = self.now.lock() {
+            *s = SeerrConn {
+                connected: true,
+                address: access.address.clone(),
+                ..SeerrConn::default()
+            };
         }
-        LiveSeerr { core, now }
+        let (net, out) = (Arc::clone(&self.core.net), Arc::clone(&self.now));
+        self.core.spawn(async move {
+            let word = session_word(
+                SeerrClient::with_jar(access, Shared(net), NoCookies)
+                    .applies()
+                    .await,
+            );
+            if let Ok(mut s) = out.lock() {
+                s.session = word.into();
+            }
+        });
     }
 }
 
@@ -174,7 +181,7 @@ impl SeerrLink for LiveSeerr {
             match result {
                 Ok(access) => {
                     if let Ok(data) = serde_json::to_vec(&access) {
-                        let _ = core.settings.set(KEY, Value::Data(data));
+                        crate::store::set_logged(&*core.settings, KEY, Value::Data(data));
                     }
                     *s = SeerrConn {
                         connected: true,
@@ -187,6 +194,16 @@ impl SeerrLink for LiveSeerr {
                 Err(e) => s.error = Some(say(&e)),
             }
         });
+    }
+    fn look_up(&self) {
+        let stored = match self.core.settings.get(KEY) {
+            Some(Value::Data(d)) => serde_json::from_slice::<SeerrAccess>(&d).ok(),
+            _ => None,
+        };
+        // Not while a sign-in runs: it would overwrite the answer.
+        if !self.now.lock().is_ok_and(|s| s.busy) {
+            self.check(stored);
+        }
     }
     fn disconnect(&self) {
         let _ = self.core.settings.remove(KEY);

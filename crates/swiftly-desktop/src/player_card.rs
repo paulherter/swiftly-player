@@ -301,6 +301,8 @@ enum Fetch {
 /// shows its gradient.
 pub struct CardStill {
     source: StillSource,
+    /// The device size the picture is drawn at: it is cut to that aspect and scaled to exactly that size (never up).
+    fit: Option<(u32, u32)>,
     fetch: Arc<Mutex<Fetch>>,
     slot: Option<ImageSlot>,
     arrived: Option<f64>,
@@ -311,10 +313,17 @@ impl CardStill {
     pub fn new(source: StillSource) -> CardStill {
         CardStill {
             source,
+            fit: None,
             fetch: Arc::new(Mutex::new(Fetch::Idle)),
             slot: None,
             arrived: None,
         }
+    }
+
+    /// Cut and scaled to `tw x th` device pixels once it has arrived (drawn 1:1 instead of stretched by the GPU).
+    pub fn fitted(mut self, tw: u32, th: u32) -> CardStill {
+        self.fit = Some((tw, th));
+        self
     }
 
     /// The image and its opacity at `now` (seconds), once it has arrived.
@@ -323,10 +332,15 @@ impl CardStill {
             let mut f = self.fetch.lock().unwrap_or_else(PoisonError::into_inner);
             if matches!(*f, Fetch::Idle) {
                 *f = Fetch::Loading;
-                let (state, source) = (Arc::clone(&self.fetch), Arc::clone(&self.source));
+                let (state, source, fit) =
+                    (Arc::clone(&self.fetch), Arc::clone(&self.source), self.fit);
                 std::thread::spawn(move || {
                     let done = source()
                         .and_then(|b| swiftly_images::decode::decode(&b, 0).ok())
+                        .map(|d| match fit {
+                            Some((tw, th)) => crate::hub::fit_fill(&d, tw, th),
+                            None => d,
+                        })
                         .map_or(Fetch::Failed, |d| Fetch::Ready(d.width, d.height, d.rgba));
                     *state.lock().unwrap_or_else(PoisonError::into_inner) = done;
                 });
@@ -335,7 +349,11 @@ impl CardStill {
                 && let Fetch::Ready(w, h, px) = &*f
             {
                 let mut images = cx.images.borrow_mut();
-                self.slot = images.reserve(*w, *h);
+                self.slot = images.reserve_still(*w, *h);
+                if self.slot.is_none() && std::env::var_os("SWIFTLY_DESKTOP_TRACE_IMAGES").is_some()
+                {
+                    eprintln!("swiftly-desktop: episode still {w}x{h}: the image page has no room");
+                }
                 if let Some(s) = &self.slot
                     && images.rewrite(s, *w, *h, px)
                 {

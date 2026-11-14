@@ -3,6 +3,14 @@
 # Not handled here: the very first submission. winget-releaser needs at least
 # one existing version in the community repository as a template; that one is
 # submitted by hand once (see Distribution/SETUP.md). Later runs build on it.
+#
+# The release asset is `Swiftly-Player-<version>-win-x64-Setup.exe`, an NSIS
+# installer (`/S` for a silent run). The portable zip in the same release does
+# not match the pattern below and is never submitted. The earlier releases used
+# an Inno Setup installer, and the action copies the installer type and switches
+# from the latest version already in winget-pkgs. So the first NSIS version
+# (1.1.0) is submitted by hand from `Distribution/winget/1.1.0/`, and
+# WINGET_READY is set only after that one is merged.
 
 name: winget
 
@@ -27,6 +35,6 @@ jobs:
         uses: vedantmgoyal9/winget-releaser@v2
         with:
           identifier: PaulHerter.SwiftlyPlayer
-          installers-regex: 'Swiftly-.*-Setup\.exe$'
+          installers-regex: '^Swiftly-Player-.*-win-x64-Setup\.exe$'
           release-tag: ${{ github.event.inputs.tag || github.event.release.tag_name }}
           token: ${{ secrets.WINGET_TOKEN }}

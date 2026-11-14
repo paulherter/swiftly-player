@@ -43,6 +43,7 @@ swiftly-support = { path = "../swiftly-support" }
 swiftly-downloads = { path = "../swiftly-downloads" }
 swiftly-model = { path = "../swiftly-model" }
 swiftly-playback = { path = "../swiftly-playback" }
+swiftly-sync = { path = "../swiftly-sync" }
 swiftly-rules = { path = "../swiftly-rules" }
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
@@ -53,6 +54,7 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 swiftly-jellyfin = { path = "../swiftly-jellyfin", default-features = false }
 swiftly-plex = { path = "../swiftly-plex" }
 futures-executor = { version = "0.3", features = ["thread-pool"] }
+futures-util = { version = "0.3", default-features = false, features = ["alloc", "std"] }
 # Window and input: pinned to the latest 0.30 (0.31 is still a beta); Apache-2.0.
 winit = { version = "=0.30.13", optional = true }
 # Screen readers: the tree (accesskit) and its winit adapter (UI Automation, AT-SPI); MIT OR Apache-2.0.
@@ -64,6 +66,18 @@ wgpu = { version = "=30.0.1", default-features = false, features = ["std", "park
 pollster = "1.0.1"
 workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 
+# The control channel's WebSocket (MIT); not on the mobile shells, which have their own.
+[target.'cfg(not(any(target_os = "android", target_os = "ios", target_os = "tvos")))'.dependencies]
+tungstenite = { version = "0.30", default-features = false, features = ["handshake", "rustls-tls-native-roots"] }
+# The socket honours the app's own certificate options (extra CA, accepted hosts); same versions as tungstenite uses.
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "std", "tls12"] }
+rustls-native-certs = "0.8"
+rustls-pki-types = "1"
+
+# The wss tests make their certificates at run time (authority, signed leaf, self-signed); MIT OR Apache-2.0, aws-lc-rs
+# like rustls above.
+[dev-dependencies]
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "aws_lc_rs", "pem"] }
 
 # The exe's icon and details resource, used when the TARGET is Windows (also when cross-compiling from Linux); MIT.
 [build-dependencies]
@@ -86,12 +100,14 @@ await_holding_lock = "deny"
 
 # Platform secret stores: Keychain on macOS, Credential Manager on Windows. Linux uses the 0600 file fallback
 # (Secret Service needs libdbus on the build machine).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", default-features = false, features = ["apple-native"] }
 # System media controls (Windows SMTC, Linux MPRIS over pure-Rust zbus, no libdbus); MIT.
 [target.'cfg(target_os = "windows")'.dependencies]
 souvlaki = { version = "0.9", default-features = false }
 keyring = { version = "3", default-features = false, features = ["windows-native"] }
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Console", "Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_WindowsAndMessaging", "Win32_System_SystemInformation"] }
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "ios", target_os = "android"))))'.dependencies]
 souvlaki = { version = "0.9", default-features = false, features = ["use_zbus"] }

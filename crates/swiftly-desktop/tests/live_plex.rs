@@ -110,13 +110,7 @@ fn a_stored_plex_account_loads_home_library_and_plan() {
     let device = swiftly_images::Device::Mac;
     let loader = swiftly_images::ImageLoader::new(Arc::clone(&core.net), None, device);
     let hub = swiftly_desktop::hub::ImageHub::new(Box::new(loader), &cx, 1.0, device);
-    let w = Rc::new(Wiring {
-        core: Arc::clone(&core),
-        account: account.clone(),
-        hub,
-        next_kind: Default::default(),
-        last_title: Default::default(),
-    });
+    let w = Rc::new(Wiring::new(Arc::clone(&core), account.clone(), hub));
     live::install(Some(Rc::clone(&w)));
 
     // Home: the rails come from the Plex hubs; the broken entry without a key is dropped.

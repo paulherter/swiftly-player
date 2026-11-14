@@ -56,6 +56,7 @@ pub fn hint_for(os: Os, key: &str, shift: bool) -> String {
 
 /// Prefix of the actions of the context menu rows.
 const ROW: &str = "ctxm.";
+const DEVICE_ROW: &str = "ctxd.";
 
 /// The open tile context menu of one screen: the entries come from [`tile_menu::entries`] (the Mac's eleven), drawn as a
 /// small anchored panel with the Mac's shortcuts.
@@ -64,6 +65,8 @@ pub struct TileMenu {
     ctl: MenuController,
     id: Option<String>,
     entries: Vec<Entry>,
+    /// The devices of an open "Abspielen auf \u{2026}" list: id and name, in row order.
+    devices: Vec<(String, String)>,
 }
 
 /// What a tap or key on the menu decided.
@@ -71,6 +74,8 @@ pub struct TileMenu {
 pub enum Pick {
     /// The row `index` of the entries of title `id` was chosen.
     Row(String, usize),
+    /// The device `.1` of the open device list of title `.0` was chosen.
+    Device(String, String),
     /// The menu closed without a choice.
     Closed,
 }
@@ -95,6 +100,40 @@ impl TileMenu {
         true
     }
 
+    /// Opens the device list of "Abspielen auf \u{2026}" for `title` at window point `p`.
+    pub fn open_devices(
+        &mut self,
+        title: &str,
+        devices: &[(String, String)],
+        p: Point,
+        keyboard: bool,
+    ) {
+        let rows = devices
+            .iter()
+            .enumerate()
+            .map(|(i, (_, name))| {
+                popover::MenuEntry::Item(popover::MenuItem::new(
+                    Action::from(format!("{DEVICE_ROW}{i}").as_str()),
+                    name.clone(),
+                ))
+            })
+            .collect();
+        self.ctl.open(rows, Anchor::Pointer(p), 0.0, keyboard);
+        self.id = Some(title.to_owned());
+        self.entries = Vec::new();
+        self.devices = devices.to_vec();
+    }
+
+    /// The device behind an activated row action of the device list.
+    fn device_of(&self, a: &Action) -> Option<(String, String)> {
+        let i = (0..self.devices.len())
+            .find(|i| *a == Action::from(format!("{DEVICE_ROW}{i}").as_str()))?;
+        Some((
+            self.id.clone().unwrap_or_default(),
+            self.devices[i].0.clone(),
+        ))
+    }
+
     /// The entry behind row `index` of the open menu.
     pub fn entry(&self, index: usize) -> Option<&Entry> {
         self.entries.get(index)
@@ -114,6 +153,10 @@ impl TileMenu {
             self.close();
             return Some(Pick::Closed);
         }
+        if let Some((title, device)) = self.device_of(a) {
+            self.close();
+            return Some(Pick::Device(title, device));
+        }
         let i =
             (0..self.entries.len()).find(|i| *a == Action::from(format!("{ROW}{i}").as_str()))?;
         let id = self.id.clone().unwrap_or_default();
@@ -126,6 +169,10 @@ impl TileMenu {
         let id = self.id.clone().unwrap_or_default();
         match self.ctl.key(key, now) {
             MenuOutcome::Activate(a) => {
+                if let Some((title, device)) = self.device_of(&a) {
+                    self.close();
+                    return Some(Pick::Device(title, device));
+                }
                 let i = (0..self.entries.len())
                     .find(|i| a == Action::from(format!("{ROW}{i}").as_str()))?;
                 self.close();
@@ -143,6 +190,7 @@ impl TileMenu {
     pub fn close(&mut self) {
         self.ctl.close();
         self.id = None;
+        self.devices.clear();
     }
 }
 
@@ -249,6 +297,483 @@ impl NavArrows {
     }
 }
 
+/// Which strip a message belongs to. The Mac stacks them at the bottom centre of the content, 10 pt apart, in this order
+/// from the top: what went wrong with the group (`SharedError`), then what a tile menu or a start failed to do
+/// (`TileMessageStrip`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Strip {
+    /// A failure of the shared session (the Mac's `SharedError`).
+    Shared,
+    /// What a menu action or a start failed to do (`TileMessageStrip`).
+    Tile,
+}
+
+/// The short messages at the bottom centre of the content (the Mac's `SharedError` and `TileMessageStrip`, both drawn as a
+/// `HintStrip`): a capsule 34 high on `raised` with a 1 px `margin` border, 20 pt above the bottom edge, at most one per
+/// [`Strip`], stacked 10 pt apart. A click on one or four seconds withdraws that one. They show what failed where no
+/// screen of its own can say it (a title whose plan the server refused).
+pub struct HintBar {
+    ui: Ui<Vec<(Strip, String)>>,
+    /// The strips in view with the time each appeared (ms).
+    strips: Vec<(Strip, String, f64)>,
+}
+
+/// How long a strip stays, in ms (`TileMessageStrip`: 4 s).
+pub const HINT_MS: f64 = 4000.0;
+
+fn strip_key(s: Strip) -> &'static str {
+    match s {
+        Strip::Shared => "hint.shared",
+        Strip::Tile => "hint",
+    }
+}
+
+impl HintBar {
+    /// A strip for a content area of `env`.
+    pub fn new(env: Env, cx: Cx) -> HintBar {
+        let ui = Ui::new(
+            move |p: &Vec<(Strip, String)>, env: &Env, cx: &Cx| {
+                let lk = crate::detail_screen::look(env);
+                let kids: Vec<Node> = p
+                    .iter()
+                    .map(|(kind, m)| {
+                        crate::detail_screen::txt(
+                            cx,
+                            m,
+                            crate::detail_screen::weight(lk.body, 15.0, 400),
+                            colour::FONT,
+                            Some(1),
+                        )
+                        .padding(home::ins(0.0, 14.0, 0.0, 14.0))
+                        .frame(None, Some(34.0), Alignment::CENTER)
+                        .background(
+                            Node::rect(color(colour::RAISED), 17.0).paint(
+                                swiftly_ui::Paint::Stroke {
+                                    color: color(colour::MARGIN),
+                                    width: 1.0,
+                                    radius: 17.0,
+                                },
+                            ),
+                            Alignment::CENTER,
+                        )
+                        .key(strip_key(*kind))
+                        .appear_from(0.97, 0.0)
+                        .exit_to(0.97, 0.0)
+                    })
+                    .collect();
+                home::fill_frame(
+                    Node::vstack(Align::Center, Some(10.0), kids)
+                        .padding(home::ins(0.0, 0.0, 20.0, 0.0)),
+                    Alignment::BOTTOM,
+                )
+            },
+            Vec::new(),
+            env,
+            cx,
+        );
+        HintBar {
+            ui,
+            strips: Vec::new(),
+        }
+    }
+
+    /// A new content size.
+    pub fn set_env(&mut self, env: Env) {
+        self.ui.set_env(env);
+    }
+
+    fn publish(&mut self) {
+        self.strips.sort_by_key(|s| s.0);
+        self.ui.set_parts(
+            self.strips
+                .iter()
+                .map(|(k, t, _)| (*k, t.clone()))
+                .collect(),
+        );
+    }
+
+    /// Shows `text` in the tile strip from `now` (a new text replaces the one in view and restarts the four seconds).
+    pub fn show(&mut self, text: &str, now: f64) {
+        self.show_in(Strip::Tile, text, now);
+    }
+
+    /// Shows `text` in `strip` from `now`.
+    pub fn show_in(&mut self, strip: Strip, text: &str, now: f64) {
+        self.strips.retain(|s| s.0 != strip);
+        self.strips.push((strip, text.to_owned(), now));
+        self.publish();
+    }
+
+    /// Withdraws every strip.
+    pub fn dismiss(&mut self) {
+        self.strips.clear();
+        self.publish();
+    }
+
+    /// Withdraws the strip at `(x, y)` (content points); whether there was one.
+    pub fn tap(&mut self, x: f32, y: f32) -> bool {
+        let hit = self
+            .strips
+            .iter()
+            .map(|s| s.0)
+            .find(|k| self.hits_strip(*k, x, y));
+        let Some(kind) = hit else { return false };
+        self.strips.retain(|s| s.0 != kind);
+        self.publish();
+        true
+    }
+
+    /// The text in the tile strip.
+    pub fn text(&self) -> Option<&str> {
+        self.text_in(Strip::Tile)
+    }
+
+    /// The text in `strip`.
+    pub fn text_in(&self, strip: Strip) -> Option<&str> {
+        self.strips
+            .iter()
+            .find(|s| s.0 == strip)
+            .map(|s| s.1.as_str())
+    }
+
+    fn hits_strip(&self, kind: Strip, x: f32, y: f32) -> bool {
+        self.ui
+            .frame_of(strip_key(kind))
+            .is_some_and(|f| x >= f[0] && x <= f[0] + f[2] && y >= f[1] && y <= f[1] + f[3])
+    }
+
+    /// Whether `(x, y)` (content points) is on a strip.
+    pub fn hits(&self, x: f32, y: f32) -> bool {
+        self.strips.iter().any(|s| self.hits_strip(s.0, x, y))
+    }
+
+    /// The strips over the content at `now`, and whether they still want frames.
+    pub fn frame(&mut self, now: f64) -> (DrawList, bool) {
+        if self.strips.iter().any(|s| now - s.2 >= HINT_MS) {
+            self.strips.retain(|s| now - s.2 < HINT_MS);
+            self.publish();
+        }
+        let list = self.ui.frame(now);
+        (list, self.ui.needs_frame() || !self.strips.is_empty())
+    }
+}
+
+/// The shell's "Fassung wählen" (`.versionChoice` on the Mac's `MainView`, a confirmation dialog): a title with several
+/// versions asks which one to start, wherever the play came from (a tile menu, a row, the player's next title). A card
+/// centred over the window on a dim ground: the heading, one row per version (`versionLabel`) and "Abbrechen".
+pub struct VersionDialog {
+    ui: Ui<Option<Vec<String>>>,
+    labels: Option<Vec<String>>,
+}
+
+/// What a click on the version dialog meant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VersionClick {
+    /// The version in this row.
+    Pick(usize),
+    /// "Abbrechen", or a click beside the card.
+    Cancel,
+    /// On the card but on nothing that acts.
+    Inside,
+}
+
+/// The heading of the dialog (the Mac's literal).
+pub const VERSION_TITLE: &str = "Fassung wählen";
+
+impl VersionDialog {
+    /// A dialog for a window of `env`.
+    pub fn new(env: Env, cx: Cx) -> VersionDialog {
+        let ui = Ui::new(
+            move |p: &Option<Vec<String>>, env: &Env, cx: &Cx| {
+                let lk = crate::detail_screen::look(env);
+                let Some(labels) = p else {
+                    return Node::spacer().frame(Some(0.0), Some(0.0), Alignment::CENTER);
+                };
+                let row = |text: &str, key: String, accent: bool| {
+                    crate::detail_screen::wide(
+                        crate::detail_screen::txt(
+                            cx,
+                            text,
+                            crate::detail_screen::weight(lk.body, lk.body.size, 600),
+                            if accent {
+                                colour::MARK_ACCENT
+                            } else {
+                                colour::FONT
+                            },
+                            Some(1),
+                        )
+                        .padding(home::ins(0.0, 16.0, 0.0, 16.0))
+                        .frame(None, Some(40.0), Alignment::LEADING),
+                        Alignment::LEADING,
+                    )
+                    .key(key.as_str())
+                    .a11y(swiftly_ui::a11y::A11yNode::new(
+                        key.as_str(),
+                        swiftly_ui::a11y::Role::Button,
+                        text,
+                    ))
+                };
+                let mut kids = vec![
+                    crate::detail_screen::txt(
+                        cx,
+                        VERSION_TITLE,
+                        crate::detail_screen::weight(lk.body, lk.body.size + 2.0, 600),
+                        colour::FONT,
+                        Some(1),
+                    )
+                    .padding(home::ins(0.0, 16.0, 8.0, 16.0)),
+                ];
+                for (i, l) in labels.iter().enumerate() {
+                    kids.push(row(l, format!("ver:{i}"), false));
+                }
+                kids.push(row("Abbrechen", "ver:cancel".to_owned(), true));
+                let card = Node::vstack(Align::Start, Some(2.0), kids)
+                    .padding(home::ins(8.0, 8.0, 8.0, 8.0))
+                    .frame(Some(420.0), None, Alignment::TOP_LEADING)
+                    .background(
+                        Node::rect(color(colour::RAISED), 16.0).paint(swiftly_ui::Paint::Stroke {
+                            color: color(colour::MARGIN),
+                            width: 1.0,
+                            radius: 16.0,
+                        }),
+                        Alignment::CENTER,
+                    )
+                    .key("ver:card")
+                    .a11y(swiftly_ui::a11y::A11yNode::new(
+                        "ver:card",
+                        swiftly_ui::a11y::Role::Dialog,
+                        VERSION_TITLE,
+                    ))
+                    .appear_from(0.97, 0.0);
+                home::fill_frame(card, Alignment::CENTER).background(
+                    Node::rect(Color::new(0.0, 0.0, 0.0, 0.35), 0.0),
+                    Alignment::CENTER,
+                )
+            },
+            None,
+            env,
+            cx,
+        );
+        VersionDialog { ui, labels: None }
+    }
+
+    /// A new window size.
+    pub fn set_env(&mut self, env: Env) {
+        self.ui.set_env(env);
+    }
+
+    /// Opens the dialog over `labels` (one per version), or closes it with `None`.
+    pub fn set(&mut self, labels: Option<Vec<String>>) {
+        self.labels = labels.clone();
+        self.ui.set_parts(labels);
+    }
+
+    /// Whether the dialog is open.
+    pub fn is_open(&self) -> bool {
+        self.labels.is_some()
+    }
+
+    /// What a screen reader gets: the dialog, its heading and one button per version and "Abbrechen"; nothing when closed.
+    pub fn a11y_nodes(&self) -> Vec<swiftly_ui::a11y::A11yNode> {
+        if self.is_open() {
+            self.ui.a11y_nodes()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// What a click at `(x, y)` meant; `None` when the dialog is closed.
+    pub fn click(&self, x: f32, y: f32) -> Option<VersionClick> {
+        let labels = self.labels.as_ref()?;
+        let inside = |key: &str| {
+            self.ui
+                .frame_of(key)
+                .is_some_and(|f| x >= f[0] && x <= f[0] + f[2] && y >= f[1] && y <= f[1] + f[3])
+        };
+        if let Some(i) = (0..labels.len()).find(|i| inside(&format!("ver:{i}"))) {
+            return Some(VersionClick::Pick(i));
+        }
+        Some(if inside("ver:cancel") || !inside("ver:card") {
+            VersionClick::Cancel
+        } else {
+            VersionClick::Inside
+        })
+    }
+
+    /// The dialog over the window at `now`, and whether it still wants frames.
+    pub fn frame(&mut self, now: f64) -> (DrawList, bool) {
+        let list = self.ui.frame(now);
+        (list, self.ui.needs_frame())
+    }
+}
+
+/// What a tap on the Discord card meant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CardTap {
+    /// "Discord beitreten": open the invitation and close the card.
+    Join,
+    /// The X: close the card.
+    Close,
+}
+
+/// The hint about the Discord after a few finished titles (`RootView.swift:110`, `DiscordHint`): a 320 pt card at the
+/// bottom right of the content, 20 pt in, `raised` with a 1 px `margin` border, title and X, two lines of text and the
+/// primary button. The Mac shows it 1.5 s after the player closed and never while a player is open.
+pub struct DiscordCard {
+    ui: Ui<bool>,
+    open: bool,
+}
+
+/// Delay between the player closing and the card showing, in ms (`RootView.swift:87`).
+pub const DISCORD_CARD_DELAY_MS: f64 = 1500.0;
+
+impl DiscordCard {
+    /// A card for a content area of `env`.
+    pub fn new(env: Env, cx: Cx) -> DiscordCard {
+        let icons = swiftly_ui::icons::Icons::new(&cx, env.scale);
+        let ui = Ui::new(
+            move |p: &bool, env: &Env, cx: &Cx| {
+                let lk = crate::detail_screen::look(env);
+                let txt = crate::detail_screen::txt;
+                let weight = crate::detail_screen::weight;
+                let mut kids = Vec::new();
+                if *p {
+                    let title = txt(
+                        cx,
+                        "Swiftly hat einen Discord",
+                        weight(lk.body, 17.0, 600),
+                        colour::FONT,
+                        Some(1),
+                    );
+                    let close = icons
+                        .node("x", 12.0, true, color(colour::FONT_QUIET))
+                        .frame(Some(24.0), Some(24.0), Alignment::CENTER)
+                        .hover_surface(Color::new(1.0, 1.0, 1.0, feel::HOVER_SURFACE_ALPHA), 6.0)
+                        .a11y(swiftly_ui::a11y::A11yNode::new(
+                            "",
+                            swiftly_ui::a11y::Role::Button,
+                            "Schlie\u{00DF}en",
+                        ))
+                        .key("discord-x")
+                        .on_tap(Action::from("discord-x"));
+                    let head = Node::hstack(
+                        Align::Center,
+                        Some(8.0),
+                        vec![crate::detail_screen::wide(title, Alignment::LEADING), close],
+                    );
+                    let body = txt(
+                        cx,
+                        "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst.",
+                        weight(lk.body, 14.0, 400),
+                        colour::FONT_QUIET,
+                        Some(3),
+                    );
+                    let join = Node::hstack(
+                        Align::Center,
+                        Some(9.0),
+                        vec![
+                            icons.node("chats", 17.0, true, color(colour::REASON)),
+                            txt(
+                                cx,
+                                "Discord beitreten",
+                                weight(lk.body, 17.0, 600),
+                                colour::REASON,
+                                Some(1),
+                            ),
+                        ],
+                    )
+                    .frame(Some(288.0), Some(48.0), Alignment::CENTER)
+                    .background(Node::rect(color(colour::FONT), 10.0), Alignment::CENTER)
+                    .hover_surface(Color::new(0.0, 0.0, 0.0, 0.12), 10.0)
+                    .key("discord-join")
+                    .on_tap(Action::from("discord-join"));
+                    kids.push(
+                        Node::vstack(
+                            Align::Start,
+                            Some(10.0),
+                            vec![head, body, join.padding(home::ins(4.0, 0.0, 0.0, 0.0))],
+                        )
+                        .padding(home::ins(16.0, 16.0, 16.0, 16.0))
+                        .frame(Some(320.0), None, Alignment::TOP_LEADING)
+                        .background(
+                            Node::rect(color(colour::RAISED), 16.0).paint(
+                                swiftly_ui::Paint::Stroke {
+                                    color: color(colour::MARGIN),
+                                    width: 1.0,
+                                    radius: 16.0,
+                                },
+                            ),
+                            Alignment::CENTER,
+                        )
+                        .key("discord-card")
+                        .appear_from(0.97, 0.0)
+                        .exit_to(0.97, 0.0),
+                    );
+                }
+                home::fill_frame(
+                    Node::vstack(Align::End, Some(0.0), kids)
+                        .padding(home::ins(0.0, 0.0, 20.0, 20.0)),
+                    Alignment::BOTTOM_TRAILING,
+                )
+            },
+            false,
+            env,
+            cx,
+        );
+        DiscordCard { ui, open: false }
+    }
+
+    /// A new content size.
+    pub fn set_env(&mut self, env: Env) {
+        self.ui.set_env(env);
+    }
+
+    /// Whether the card is in view.
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+
+    /// Shows or withdraws the card.
+    pub fn set_open(&mut self, open: bool) {
+        self.open = open;
+        self.ui.set_parts(open);
+    }
+
+    /// A click at `(x, y)` (content points): what it hit, if the card is open.
+    pub fn click(&self, x: f32, y: f32) -> Option<CardTap> {
+        if !self.open {
+            return None;
+        }
+        let on = |key: &str| {
+            self.ui
+                .frame_of(key)
+                .is_some_and(|f| x >= f[0] && x <= f[0] + f[2] && y >= f[1] && y <= f[1] + f[3])
+        };
+        if on("discord-join") {
+            Some(CardTap::Join)
+        } else if on("discord-x") {
+            Some(CardTap::Close)
+        } else {
+            None
+        }
+    }
+
+    /// Whether `(x, y)` is on the card (it swallows the click).
+    pub fn hits(&self, x: f32, y: f32) -> bool {
+        self.open
+            && self
+                .ui
+                .frame_of("discord-card")
+                .is_some_and(|f| x >= f[0] && x <= f[0] + f[2] && y >= f[1] && y <= f[1] + f[3])
+    }
+
+    /// The card over the content at `now`, and whether it still wants frames.
+    pub fn frame(&mut self, now: f64) -> (DrawList, bool) {
+        let list = self.ui.frame(now);
+        (list, self.ui.needs_frame())
+    }
+}
+
 /// `colour/reason`, for the callers that dim.
 pub fn ground() -> Color {
     color(colour::REASON)
@@ -268,6 +793,22 @@ pub enum Go {
     Downloads,
     /// A tab row of the sidebar was tapped (while a page is pushed the sidebar still belongs to the tabs).
     Tab(usize),
+    /// The offer row ("Hier weiterschauen", "Gemeinsam schauen", "Läuft gerade") was tapped.
+    Offer,
+}
+
+/// What the offer row at the bottom of the sidebar says (`OfferingRow`): something plays on another device, a group is
+/// open to join, or both. Set by the app, read by every sidebar.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Offer {
+    /// The icon: the first device's kind, or the group's.
+    pub symbol: String,
+    /// "Hier weiterschauen", "Gemeinsam schauen" or, with more than one entry, "Läuft gerade".
+    pub title: String,
+    /// What is running: the titles and group names in a row.
+    pub under: String,
+    /// How many entries the picker would have; a counter shows from two.
+    pub count: usize,
 }
 
 /// What the account card at the bottom left of the sidebar shows.
@@ -282,6 +823,8 @@ pub enum Card {
         name: String,
         /// The server's host, without the scheme.
         server: String,
+        /// The address of the user's picture (`userImageURL()`, 480 px, with the token); `None` without one.
+        picture: Option<String>,
     },
     /// The real app without an account (signing in): the card says nothing.
     Hidden,
@@ -298,6 +841,38 @@ impl Card {
         Card::Account {
             name: name.trim().to_owned(),
             server: host.to_owned(),
+            picture: None,
+        }
+    }
+
+    /// What the page error texts call the server: the account's address, else "Der Server" (`serverAddress ?? "Der
+    /// Server"`). The scripted demo names its sample host.
+    pub fn server_name(&self) -> String {
+        match self {
+            Card::Demo => crate::home_data::SERVER.to_owned(),
+            Card::Account { server, .. } if !server.is_empty() => server.clone(),
+            _ => "Der Server".to_owned(),
+        }
+    }
+
+    /// The same card with the user's picture address.
+    #[must_use]
+    pub fn with_picture(self, address: Option<String>) -> Card {
+        match self {
+            Card::Account { name, server, .. } => Card::Account {
+                name,
+                server,
+                picture: address,
+            },
+            other => other,
+        }
+    }
+
+    /// The address of the user's picture, when the card has one.
+    pub fn picture(&self) -> Option<&str> {
+        match self {
+            Card::Account { picture, .. } => picture.as_deref(),
+            _ => None,
         }
     }
 
@@ -313,12 +888,38 @@ impl Card {
     }
 }
 
+/// Whether the Downloads feature is switched on (`downloadsAn`). Without it the sidebar has no "Downloads" row and no
+/// download button shows (`AppModel.swift:228`). The demo app shows them.
+pub fn downloads_on() -> bool {
+    DOWNLOADS_ON.with(std::cell::Cell::get)
+}
+
+/// Sets [`downloads_on`] (the settings switch, and the stored value when the app signs in).
+pub fn set_downloads_on(on: bool) {
+    DOWNLOADS_ON.with(|d| d.set(on));
+}
+
 thread_local! {
+    static DOWNLOADS_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
     static CARD: std::cell::RefCell<Card> = const { std::cell::RefCell::new(Card::Demo) };
+    static OFFER: std::cell::RefCell<Option<Offer>> = const { std::cell::RefCell::new(None) };
     static GO: std::cell::Cell<Option<Go>> = const { std::cell::Cell::new(None) };
     static DOWNLOADS_FRONT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static SETTINGS_FRONT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static MINE: std::cell::Cell<(bool, bool)> = const { std::cell::Cell::new((true, true)) };
     static LIST_CHANGES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static HINTS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// A screen has something to say that no screen of its own can: the suite shows it in the strip at the bottom of the
+/// content (the Mac's `TileMessage.shared.text`), once, on its next frame.
+pub fn post_hint(text: String) {
+    HINTS.with(|h| h.borrow_mut().push(text));
+}
+
+/// The hints posted since the last call, oldest first.
+pub fn take_hints() -> Vec<String> {
+    HINTS.with(|h| std::mem::take(&mut *h.borrow_mut()))
 }
 
 /// A page changed what Start shows (Merkliste added or removed, watched state, a finished playback): the suite
@@ -342,6 +943,31 @@ pub fn set_downloads_front(on: bool) {
 /// selected one and no page row is.
 pub fn set_settings_front(on: bool) {
     SETTINGS_FRONT.with(|d| d.set(on));
+}
+
+/// The app tells the sidebars which "Meins" rows exist: the Merkliste and the Downloads, each only when its setting is on
+/// (`Region.mineGroup(downloads:watchlist:)`).
+pub fn set_mine(watchlist: bool, downloads: bool) {
+    MINE.with(|m| m.set((watchlist, downloads)));
+}
+
+/// The app tells the sidebars what the offer row shows (`None`: no row).
+pub fn set_offer(offer: Option<Offer>) {
+    OFFER.with(|o| {
+        if *o.borrow() != offer {
+            *o.borrow_mut() = offer;
+        }
+    });
+}
+
+/// The offer row of the sidebars now.
+pub fn offer() -> Option<Offer> {
+    OFFER.with(|o| o.borrow().clone())
+}
+
+/// The "Meins" rows that exist now: (Merkliste, Downloads).
+pub fn mine() -> (bool, bool) {
+    MINE.with(std::cell::Cell::get)
 }
 
 /// The app tells the sidebars what the account card shows.
@@ -374,6 +1000,8 @@ pub fn note_tap(a: &Action) {
         GO.with(|g| g.set(Some(Go::Watchlist)));
     } else if *a == Action::from("go:downloads") {
         GO.with(|g| g.set(Some(Go::Downloads)));
+    } else if *a == Action::from("go:offer") {
+        GO.with(|g| g.set(Some(Go::Offer)));
     } else if let Some(i) = (0..4).find(|i| *a == Action::from(format!("tab:{i}").as_str())) {
         GO.with(|g| g.set(Some(Go::Tab(i))));
     }
@@ -393,7 +1021,8 @@ pub fn tile_rows(entries: &[Entry], tile: &Tile, host: &TCx, prefix: &str) -> Ve
             let mut item = MenuItem::new(
                 Action::from(format!("{prefix}{i}").as_str()),
                 tile_menu::label(e, host, Some(tile)),
-            );
+            )
+            .icon(tile_menu::icon(e, host));
             match e {
                 Entry::Play => item = item.shortcut("\u{21B5}"),
                 Entry::Remember => item = item.shortcut(hint("D")),
@@ -505,6 +1134,8 @@ pub enum WinAction {
     Close,
     /// Start moving the window (a press on the toolbar row); a second press within the double-click time maximises.
     DragMove,
+    /// Start moving the window from a drag of the bare background (the player); never a double-click maximise.
+    MoveWindow,
 }
 
 /// One of the three buttons.
@@ -796,14 +1427,16 @@ mod card_tests {
             Card::account(" demo ", "http://192.168.122.1:18097/"),
             Card::Account {
                 name: "demo".into(),
-                server: "192.168.122.1:18097".into()
+                server: "192.168.122.1:18097".into(),
+                picture: None,
             }
         );
         assert_eq!(
             Card::account("Paul", "https://jf.local.example"),
             Card::Account {
                 name: "Paul".into(),
-                server: "jf.local.example".into()
+                server: "jf.local.example".into(),
+                picture: None,
             }
         );
     }
@@ -816,5 +1449,40 @@ mod card_tests {
         assert_eq!(Card::account("  _-7", "x").initial(), "7");
         assert_eq!(Card::Demo.initial(), "S");
         assert_eq!(Card::Hidden.initial(), "S");
+    }
+}
+
+#[cfg(test)]
+mod version_dialog_a11y_tests {
+    use super::*;
+    use swiftly_ui::a11y::Role;
+
+    /// The "Fassung wählen" card is a dialog with one button per version and "Abbrechen" for a screen reader.
+    #[test]
+    fn the_version_choice_is_in_the_accessibility_tree() {
+        let env = Env::new(
+            swiftly_layout::Size::new(1280.0, 800.0),
+            1.0,
+            swiftly_ui::Idiom::Desktop,
+        );
+        let mut d = VersionDialog::new(env, Cx::deterministic());
+        let _ = d.frame(0.0);
+        assert!(d.a11y_nodes().is_empty(), "closed: nothing");
+        d.set(Some(vec!["1080p HEVC".into(), "4K Dolby Vision".into()]));
+        let _ = d.frame(100.0);
+        let tree = d.a11y_nodes();
+        let all: Vec<&swiftly_ui::a11y::A11yNode> = tree.iter().flat_map(|n| n.walk()).collect();
+        let dialog = all
+            .iter()
+            .find(|n| n.role == Role::Dialog)
+            .expect("a dialog");
+        assert_eq!(dialog.label, VERSION_TITLE);
+        for label in ["1080p HEVC", "4K Dolby Vision", "Abbrechen"] {
+            assert!(
+                all.iter()
+                    .any(|n| n.role == Role::Button && n.label == label),
+                "{label}: no button"
+            );
+        }
     }
 }

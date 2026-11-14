@@ -19,7 +19,7 @@ use swiftly_images::ImageSelection;
 use swiftly_jellyfin::Watcher;
 use swiftly_l10n::Arg;
 use swiftly_library::SeasonSelectionRule;
-use swiftly_model::{Item, MediaSource, MediaVersions};
+use swiftly_model::Item;
 use swiftly_net::{ErrorKind, HttpTransport, Url};
 use swiftly_playback::playback_plan::PlaybackPlan;
 
@@ -251,7 +251,7 @@ pub enum SeriesEffect {
 pub struct MorePart {
     /// Version of the part.
     pub version: u64,
-    /// The cast of the state episode, else of the series.
+    /// The cast of the state episode, else of the fresh series item, else of the list entry.
     pub cast: Vec<CastTile>,
     /// Extras (specials, behind the scenes).
     pub extras: Vec<Tile>,
@@ -348,8 +348,6 @@ struct Live<T: HttpTransport + 'static> {
     effect_seq: u64,
     watched: bool,
     favorite: bool,
-    /// The version of the episode played last (kept for the next one, `MediaVersions::matching`).
-    kept: Option<MediaSource>,
     toggle_error: Option<String>,
     message: Option<String>,
     similar: Vec<Item>,
@@ -438,7 +436,6 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
             effect_seq: 0,
             watched: data.as_ref().and_then(|d| d.played).unwrap_or(false),
             favorite: data.as_ref().and_then(|d| d.is_favorite).unwrap_or(false),
-            kept: None,
             toggle_error: None,
             message: None,
             similar: Vec::new(),
@@ -604,6 +601,23 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
         self.inner.rating_of(&live)
     }
 
+    /// The series' directors for the line under the description (`DetailHero.overview`: `title.direction`): the fresh
+    /// series item's, else the opened entry's.
+    pub fn directors(&self) -> Vec<String> {
+        let live = self.inner.live();
+        let from = |item: &Item| {
+            item.direction()
+                .iter()
+                .map(|d| (*d).to_owned())
+                .collect::<Vec<_>>()
+        };
+        live.fresh
+            .as_ref()
+            .map(from)
+            .filter(|d| !d.is_empty())
+            .unwrap_or_else(|| from(&self.inner.series))
+    }
+
     /// The playback plan of the state (next) episode, fetched for the proof row; `None` until
     /// answered or when there is none. Starting with it saves the request on press.
     pub fn plan(&self) -> Option<Arc<PlaybackPlan>> {
@@ -705,15 +719,6 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
         }
     }
 
-    /// Remembers the version that is playing now (the player's `source`), for the next episode: the next
-    /// start without a pick takes the version with the same name, else the same resolution
-    /// (`MediaVersions::matching`), and only asks again when there is none. Picks made through
-    /// [`Self::play_episode`]/[`Self::play_next`] are remembered by themselves; this is for hosts that learn
-    /// the version elsewhere (a resumed session). `None` forgets.
-    pub fn keep_version(&self, source: Option<MediaSource>) {
-        self.inner.live().kept = source;
-    }
-
     /// Several versions are asked for episodes too (#33): an episode known only from a list that
     /// carries no `MediaSources` (the next-up entry) takes its sources from the episode list when that
     /// has it; while the list still loads the button is gray (`Wait`), and only a failed list lets a
@@ -731,14 +736,7 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
             .find(|e| e.id == episode.id && e.media_sources.is_some())
             .unwrap_or(episode)
             .clone();
-        let sources = full.media_sources.as_deref();
         if let Some(source) = pick {
-            // The pick is the version to keep for the next episode.
-            if let Some(chosen) =
-                sources.and_then(|all| all.iter().find(|s| s.id.as_deref() == Some(source)))
-            {
-                live.kept = Some(chosen.clone());
-            }
             return PlayAction::Start {
                 item_id: episode.id.clone(),
                 since,
@@ -748,20 +746,8 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
         if full.media_sources.is_none() && live.episodes_loads {
             return PlayAction::Wait;
         }
-        // The version of the episode before wins over asking again.
-        if let Some(found) = live
-            .kept
-            .as_ref()
-            .and_then(|k| MediaVersions::matching(k, sources))
-            && let Some(id) = found.id.clone()
-        {
-            live.kept = Some(found);
-            return PlayAction::Start {
-                item_id: full.id.clone(),
-                since,
-                source_id: Some(id),
-            };
-        }
+        // One rule for every press: several versions ask, one version starts. Nothing is remembered between
+        // presses (the player's own next episode keeps the version that plays, in the player).
         play_action(
             &full,
             false,
@@ -1010,10 +996,17 @@ impl<T: HttpTransport + 'static> Inner<T> {
             },
             effect_seq: live.effect_seq,
         };
-        let folks: Vec<_> = match state.map(Item::actors).filter(|a| !a.is_empty()) {
-            Some(a) => a,
-            None => self.series.actors(),
-        };
+        // The resume episode's people, else the fresh series item's (the list entry usually carries none), else the entry's.
+        let folks: Vec<_> = state
+            .map(Item::actors)
+            .filter(|a| !a.is_empty())
+            .or_else(|| {
+                live.fresh
+                    .as_ref()
+                    .map(Item::actors)
+                    .filter(|a| !a.is_empty())
+            })
+            .unwrap_or_else(|| self.series.actors());
         let more = MorePart {
             version: live.more.version,
             cast: folks

@@ -8,6 +8,8 @@
 struct Place {
     // left, top, right, bottom in clip space
     rect: vec4<f32>,
+    // target width and height in pixels, the window's corner radius in pixels (0 = plain rectangle)
+    window: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> place: Place;
@@ -35,5 +37,14 @@ fn vs_main(@builtin(vertex_index) vertex: u32) -> Varyings {
 
 @fragment
 fn fs_main(in: Varyings) -> @location(0) vec4<f32> {
-    return vec4<f32>(textureSample(frame_tex, frame_sampler, in.uv).rgb, 1.0);
+    var cover = 1.0;
+    if place.window.z > 0.0 {
+        let hs = place.window.xy * 0.5;
+        let r = min(place.window.z, min(hs.x, hs.y));
+        let q = abs(in.position.xy - hs) - hs + vec2<f32>(r);
+        let sd = length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - r;
+        cover = clamp(0.5 - sd, 0.0, 1.0);
+    }
+    // Premultiplied, like the quads.
+    return vec4<f32>(textureSample(frame_tex, frame_sampler, in.uv).rgb * cover, cover);
 }

@@ -5,7 +5,7 @@
 #![allow(unsafe_code)]
 
 /// The identity the taskbar groups the app under (also the notification and jump-list identity).
-pub const APP_USER_MODEL_ID: &str = "de.swiftly.player";
+pub const APP_USER_MODEL_ID: &str = crate::window_extras::APP_ID;
 
 /// A rectangle in physical pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,6 +30,17 @@ pub fn fit_to_work_area(wanted: (i32, i32), work: Rect) -> Rect {
         w,
         h,
     }
+}
+
+/// The smallest window size (points) the window may be dragged to: the app's minimum, but never more than the work area
+/// holds at this `scale`. A 900x560 pt minimum does not fit a 1366x768 laptop at 150 % (910x485 pt of work area): the
+/// window would then be forced larger than the screen and its buttons would sit off the edge.
+pub fn min_size_for_work(min: (f64, f64), work: Rect, scale: f64) -> (f64, f64) {
+    let scale = if scale > 0.0 { scale } else { 1.0 };
+    (
+        min.0.min((f64::from(work.w) / scale).floor().max(1.0)),
+        min.1.min((f64::from(work.h) / scale).floor().max(1.0)),
+    )
 }
 
 /// Lets a release exe (GUI subsystem, no console of its own) print to the terminal it was started from. A redirect the
@@ -195,13 +206,32 @@ pub fn work_area(window: &winit::window::Window) -> Option<Rect> {
     }
 }
 
-/// Moves a not yet shown window into its work area at its first show: never larger than the work area, centred.
+/// After the system changed the window's scale (a 100 % to 125 % switch with the app open): when the window is now larger
+/// than its work area, it is fitted and centred again, so no button ends up off screen. Other sizes stay as they are.
 #[cfg(all(feature = "window", target_os = "windows"))]
-pub fn place_in_work_area(window: &winit::window::Window) {
-    use winit::dpi::{PhysicalPosition, PhysicalSize};
+pub fn keep_in_work_area(window: &winit::window::Window, min: (f64, f64)) {
     let Some(work) = work_area(window) else {
         return;
     };
+    if window.is_maximized() {
+        return;
+    }
+    let outer = window.outer_size();
+    if outer.width as i32 > work.w || outer.height as i32 > work.h {
+        place_in_work_area(window, min);
+    }
+}
+
+/// Moves a not yet shown window into its work area at its first show: never larger than the work area, centred.
+#[cfg(all(feature = "window", target_os = "windows"))]
+pub fn place_in_work_area(window: &winit::window::Window, min: (f64, f64)) {
+    use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
+    let Some(work) = work_area(window) else {
+        return;
+    };
+    // The minimum size must fit the work area too (see `min_size_for_work`), or the clamp below is overruled by it.
+    let m = min_size_for_work(min, work, window.scale_factor());
+    window.set_min_inner_size(Some(LogicalSize::new(m.0, m.1)));
     let outer = window.outer_size();
     let inner = window.inner_size();
     let fit = fit_to_work_area((outer.width as i32, outer.height as i32), work);
@@ -270,6 +300,35 @@ mod tests {
         assert_eq!(r, work);
         let r = fit_to_work_area((1440, 900), work);
         assert_eq!((r.x, r.y), (-1920 + 240, 40 + 70));
+    }
+
+    #[test]
+    fn the_minimum_size_never_exceeds_a_small_work_area() {
+        // 1366x768 laptop at 150 %: 910x485 pt of work area (taskbar 40 px) against the 900x560 pt minimum.
+        let work = Rect {
+            x: 0,
+            y: 0,
+            w: 1366,
+            h: 728,
+        };
+        assert_eq!(min_size_for_work((900.0, 560.0), work, 1.5), (900.0, 485.0));
+        // A roomy screen keeps the app's minimum.
+        let big = Rect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1040,
+        };
+        assert_eq!(min_size_for_work((900.0, 560.0), big, 1.5), (900.0, 560.0));
+        // The VM case: 1280x740 work area at 125 %.
+        let vm = Rect {
+            x: 0,
+            y: 0,
+            w: 1280,
+            h: 740,
+        };
+        assert_eq!(min_size_for_work((900.0, 560.0), vm, 1.5), (853.0, 493.0));
+        assert_eq!(min_size_for_work((900.0, 560.0), vm, 0.0), (900.0, 560.0));
     }
 
     #[test]

@@ -108,6 +108,13 @@ fn the_film_page_downloads_the_title_and_it_plays_offline_with_its_subtitle() {
     }
     let (mut fx, addr) = Fixture::start(&xtask, "fx-film-dl");
     let core = Arc::new(Core::open().expect("core"));
+    // Downloads are off until the user enables them (like the Mac): this test is that user.
+    swiftly_settings::KeyValueStore::set(
+        &*core.settings,
+        "downloadsAn",
+        swiftly_settings::Value::Bool(true),
+    )
+    .expect("settings");
     let backend = core.sign_in_backend();
     let wait = Duration::from_secs(30);
     backend
@@ -152,7 +159,24 @@ fn the_film_page_downloads_the_title_and_it_plays_offline_with_its_subtitle() {
         run_until(&mut suite, &clock, 15.0, |s| s.load_open()),
         "Laden on the film page did not open the add sheet"
     );
-    suite.downloads().expect("Downloads page").press("load.go");
+    suite
+        .downloads()
+        .expect("the sheet's screen")
+        .press("load.go");
+    // The sheet floated over the film page: it is still the page in front, and Downloads was never shown. Open the
+    // Downloads page by the sidebar row to read the finished row.
+    run_until(&mut suite, &clock, 1.0, |_| false);
+    assert!(
+        suite.title_open(),
+        "the film page stays in front of the sheet"
+    );
+    suite.back(now(&clock));
+    run_until(&mut suite, &clock, 1.0, |_| false);
+    swiftly_desktop::desk::note_tap(&swiftly_ui::Action::from("go:downloads"));
+    assert!(
+        run_until(&mut suite, &clock, 5.0, |s| s.downloads().is_some()),
+        "the Downloads page did not open"
+    );
 
     // The file arrives.
     let done = run_until(&mut suite, &clock, 90.0, |s| {

@@ -307,49 +307,33 @@ fn an_episode_with_two_versions_asks_which() {
     assert!(matches!(vm.play_episode("nope", None), PlayAction::Wait));
 }
 
-/// The version of the episode played before is kept for the next one (`MediaVersions::matching`): same
-/// name (trimmed, any case), else same resolution, else the question is asked again.
+/// One rule for every press on Play: several versions ask, every time. A pick starts that version for that press
+/// only; the next press on the same or another episode asks again (the player's own next episode keeps the version,
+/// in the player).
 #[test]
-fn the_next_episode_keeps_the_version_of_the_one_before() {
+fn every_press_on_an_episode_with_several_versions_asks() {
     let net = server();
     let vm = vm(&net, SeriesSpec::default());
     vm.send(SeriesIntent::Load);
     wait_for("page", || ready(&vm));
     vm.send(SeriesIntent::SelectSeason { id: "se1".into() });
     wait_for("season 1", || vm.episodes().total == 100);
-    // Nothing played yet: it asks.
     assert!(matches!(
         vm.play_episode("e1-6", None),
-        PlayAction::Choose { .. }
+        PlayAction::Choose { ref versions, .. } if versions.len() == 2
     ));
-    // The user picks 4K on episode 5; episode 6 has two versions on its own ids and starts the 4K one.
+    // The pick starts exactly that version ...
     assert!(matches!(
         vm.play_episode("e1-5", Some("uhd")),
         PlayAction::Start { source_id: Some(ref id), .. } if id == "uhd"
     ));
-    assert!(matches!(
-        vm.play_episode("e1-6", None),
-        PlayAction::Start { ref item_id, source_id: Some(ref id), .. } if item_id == "e1-6" && id == "uhd6"
-    ));
-    // Different names but the same resolution (kept: 2160 p): the 2160 p version of episode 7.
-    let kept: swiftly_model::MediaSource =
-        serde_json::from_value(serde_json::json!({"Id": "x", "Name": "Other", "MediaStreams": [{"Type": "Video", "Height": 2160}]})).unwrap();
-    vm.keep_version(Some(kept));
-    assert!(matches!(
-        vm.play_episode("e1-7", None),
-        PlayAction::Start { source_id: Some(ref id), .. } if id == "b7"
-    ));
-    // No match by name or resolution: the default applies, which here is to ask.
-    assert!(matches!(
-        vm.play_episode("e1-8", None),
-        PlayAction::Choose { ref versions, .. } if versions.len() == 2
-    ));
-    // The main button follows the same rule through the episode list only when asked for; forgetting asks again.
-    vm.keep_version(None);
-    assert!(matches!(
-        vm.play_episode("e1-6", None),
-        PlayAction::Choose { .. }
-    ));
+    // ... and nothing is remembered: the next episode, and the same one again, ask.
+    for id in ["e1-6", "e1-7", "e1-5"] {
+        assert!(
+            matches!(vm.play_episode(id, None), PlayAction::Choose { ref versions, .. } if versions.len() == 2),
+            "{id}"
+        );
+    }
 }
 
 /// Line 11 (#6): the page never asks for episodes the server only knows by name (missing files).

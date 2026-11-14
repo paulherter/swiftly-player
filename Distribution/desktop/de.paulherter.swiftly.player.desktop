@@ -11,3 +11,4 @@ Terminal=false
 Categories=AudioVideo;Video;Player;TV;
 Keywords=Jellyfin;Media;Video;Movie;Show;Streaming;
 StartupNotify=true
+StartupWMClass=de.paulherter.swiftly.player

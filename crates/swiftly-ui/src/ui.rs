@@ -143,6 +143,8 @@ struct PointerState {
     tip: Option<(u64, String, swiftly_layout::Rect, f64)>,
     /// A click hides the tooltip of that node until the pointer leaves it.
     tip_dismissed: Option<u64>,
+    /// Text of a tooltip a click hid on another screen: the same tooltip under the resting pointer is born hidden.
+    tip_carry: Option<String>,
 }
 
 type ViewFn<P> = Box<dyn Fn(&P, &Env, &Cx) -> Node>;
@@ -152,7 +154,7 @@ thread_local! {
     static PRECISE_WHEEL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Marks the `wheel_scroll` calls that follow as a precision touchpad's (1:1, rubber band) instead of a wheel notch's
+/// Marks the `wheel_scroll` calls that follow as a precision touchpad's (1:1, clamped, no rubber band) instead of a wheel notch's
 /// (clamped). The screens forward `wheel_scroll` unchanged, so the mode travels beside the call. Clear it after the call.
 pub fn set_precise_wheel(on: bool) {
     PRECISE_WHEEL.with(|c| c.set(on));
@@ -238,6 +240,8 @@ impl<P: PartialEq + Clone> Ui<P> {
             return false;
         }
         self.env = env;
+        // Icons and the wordmark are rasterised at the surface's scale: tell them before the view runs again.
+        self.cx.scale.set(env.scale);
         self.rebuild();
         true
     }
@@ -577,6 +581,22 @@ impl<P: PartialEq + Clone> Ui<P> {
             mode,
             samples: vec![(now_ms, x, y)],
         });
+    }
+
+    /// Whether the touch that is down went down on nothing: no pressable node, no scroller and no gesture under it. A host
+    /// uses it to let a drag of the bare background move the window.
+    pub fn touch_is_bare(&self) -> bool {
+        self.arena.as_ref().is_some_and(|a| {
+            a.press_node.is_none()
+                && a.entries.iter().all(|e| {
+                    !e.press
+                        && e.scroll.is_none()
+                        && e.gestures.tap.is_none()
+                        && e.gestures.long_press.is_none()
+                        && e.gestures.pan.is_none()
+                        && e.gestures.edge_pan.is_none()
+                })
+        })
     }
 
     /// The finger moved to `(x, y)`.
@@ -1044,6 +1064,22 @@ impl<P: PartialEq + Clone> Ui<P> {
         self.pointer.cursor
     }
 
+    /// The text of the tooltip a click hid, to hand to the next screen when the click changes the page.
+    pub fn dismissed_tooltip(&self) -> Option<String> {
+        let (id, text, _, _) = self.pointer.tip.as_ref()?;
+        (self.pointer.tip_dismissed == Some(*id)).then(|| text.clone())
+    }
+
+    /// Keeps the tooltip `text` hidden under the resting pointer: the click that hid it left another screen.
+    pub fn inherit_dismissed_tooltip(&mut self, text: Option<String>) {
+        self.pointer.tip_carry = text;
+        if let (Some((id, t, _, _)), Some(c)) = (&self.pointer.tip, &self.pointer.tip_carry)
+            && t == c
+        {
+            self.pointer.tip_dismissed = Some(*id);
+        }
+    }
+
     /// The tooltip to draw at `now` (text and anchor), once the pointer has rested long enough.
     pub fn visible_tooltip(&self, now: f64) -> Option<(String, swiftly_layout::Rect)> {
         let (id, text, anchor, since) = self.pointer.tip.as_ref()?;
@@ -1153,10 +1189,30 @@ impl<P: PartialEq + Clone> Ui<P> {
             (Some((id, text, rect)), Some((old, _, _, since))) if id == old => {
                 self.pointer.tip = Some((id, text, rect, since));
             }
-            (Some((id, text, rect)), _) => self.pointer.tip = Some((id, text, rect, now)),
+            // The tree was rebuilt under the resting pointer (a click re-renders the page): the row is a new node with the
+            // same tooltip in the same place. A tooltip the click hid stays hidden until the pointer leaves the row.
+            (Some((id, text, rect)), Some((old, old_text, old_rect, since)))
+                if self.pointer.tip_dismissed == Some(old)
+                    && text == old_text
+                    && rect == old_rect =>
+            {
+                self.pointer.tip_dismissed = Some(id);
+                self.pointer.tip = Some((id, text, rect, since));
+            }
+            (Some((id, text, rect)), _) => {
+                // A click on another screen hid this very tooltip and the page changed under the resting pointer:
+                // the Mac's help tag stays away until the pointer leaves the row.
+                if self.pointer.tip_carry.as_deref() == Some(text.as_str()) {
+                    self.pointer.tip_dismissed = Some(id);
+                } else {
+                    self.pointer.tip_carry = None;
+                }
+                self.pointer.tip = Some((id, text, rect, now));
+            }
             (None, _) => {
                 self.pointer.tip = None;
                 self.pointer.tip_dismissed = None;
+                self.pointer.tip_carry = None;
             }
         }
     }
@@ -1174,7 +1230,7 @@ impl<P: PartialEq + Clone> Ui<P> {
 
     /// A discrete wheel notch (or a touchpad delta) of `(dx, dy)` points at window point `(x, y)`: scrolls the innermost
     /// scroll view under the pointer that can move that way, clamped (the outermost one of the axis gives a soft stop of at
-    /// most 28 pt at its end, see `ScrollBody::notch_by`; a precision touchpad has the rubber band). Returns
+    /// most 28 pt at its end, see `ScrollBody::notch_by`; a precision touchpad is 1:1, clamped, no band). Returns
     /// whether anything moved.
     pub fn wheel_scroll(&mut self, x: f32, y: f32, dx: f32, dy: f32, now_ms: f64) -> bool {
         let precise = PRECISE_WHEEL.with(std::cell::Cell::get);
@@ -1183,11 +1239,27 @@ impl<P: PartialEq + Clone> Ui<P> {
         if let Some(root) = &self.root {
             hit(root, Point::new(x, y), &self.states, &mut entries);
         }
-        let (axis, delta) = if dy.abs() >= dx.abs() {
+        let (mut axis, mut delta) = if dy.abs() >= dx.abs() {
             (Axis::Vertical, f64::from(dy))
         } else {
             (Axis::Horizontal, f64::from(dx))
         };
+        // A wheel only turns up and down: over a horizontal scroll view with no vertical one around it (the player's
+        // episode strip) the notch moves that view sideways, as it does on the Mac.
+        let has = |a: Axis| {
+            entries.iter().any(|e| {
+                e.scroll.is_some_and(|s| s.axis == a)
+                    && self
+                        .states
+                        .get(&e.id)
+                        .and_then(|st| st.scroll.as_ref())
+                        .is_some_and(|b| b.metrics.scrollable())
+            })
+        };
+        if axis == Axis::Vertical && !has(Axis::Vertical) && has(Axis::Horizontal) {
+            axis = Axis::Horizontal;
+            delta = f64::from(dy);
+        }
         // The content moves with the fingers: wheel down (negative dy on most systems) scrolls later content into view.
         // Only the outermost scroller of the axis gives at its end (the soft stop); inner ones chain outward first.
         let outermost = entries.iter().find_map(|e| {
@@ -1206,12 +1278,10 @@ impl<P: PartialEq + Clone> Ui<P> {
             let Some(b) = st.scroll.as_mut() else {
                 continue;
             };
-            // A precision touchpad (the OS already shapes its stream) moves the content 1:1 with the rubber band at the ends;
-            // a wheel notch is clamped.
+            // A precision touchpad (the OS already shapes its stream) moves the content 1:1 and stops dead at the ends:
+            // no rubber band on Windows and Linux, not even for the touchpad.
             let moved = if precise && b.metrics.scrollable() {
-                let before = b.position();
-                b.wheel_by(delta, now_ms);
-                (b.position() - before).abs().max(delta.abs())
+                b.scroll_by_clamped(delta).abs()
             } else if Some(e.id) == outermost {
                 b.notch_by(delta, now_ms)
             } else {

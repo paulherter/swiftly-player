@@ -2,8 +2,8 @@
 //! screens only record the request ([`Effect`]); the window shell performs it ([`perform`]). That keeps the screens
 //! testable (the test reads the effect) and the platform calls in one place.
 
-/// "Swiftly bewerten" (`Community.appStoreRating`).
-pub const RATE_URL: &str = "https://apps.apple.com/app/id6806824067?action=write-review";
+/// "Swiftly unterstützen": the supporter page of the website (the old Linux and Windows apps opened it too).
+pub const SUPPORT_URL: &str = "https://swiftlyplayer.com/supporter";
 /// "Discord beitreten" (`Community.discord`).
 pub const DISCORD_URL: &str = "https://discord.gg/MeGwfv3UwN";
 /// Base of "Fehler melden" (`Community.errorReport`).

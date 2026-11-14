@@ -94,6 +94,11 @@ fn scenes(form: &Form) {
         form.idiom,
     );
     let mut demo = Demo::new(env, Cx::deterministic());
+    // The frames are pinned by one scroll table, the Mac's, so the golden is the same on every OS (Windows and Linux
+    // scrolling has no end bounce, which a touch drag past the page start would otherwise show).
+    demo.set_scroll_tuning(swiftly_motion::ScrollTuning::for_os(
+        swiftly_motion::Os::MacOs,
+    ));
     let (w, h) = form.size_pt;
     let mut now = 0.0;
 

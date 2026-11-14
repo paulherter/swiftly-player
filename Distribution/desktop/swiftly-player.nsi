@@ -3,6 +3,10 @@
 Unicode true
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+!include "nsDialogs.nsh"
+!include "FileFunc.nsh"
+!insertmacro un.GetParameters
+!insertmacro un.GetOptions
 Name "Swiftly Player"
 OutFile "${OUTFILE}"
 InstallDir "$LOCALAPPDATA\Programs\Swiftly Player"
@@ -16,9 +20,16 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
+; The usual choice of an uninstaller: keep the user's data (default) or remove it too. Off by default; a silent uninstall
+; ("/S") keeps the data unless "/PURGE" is given as well.
+UninstPage custom un.PurgePage un.PurgeLeave
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "German"
 !insertmacro MUI_LANGUAGE "English"
+LangString PurgeText ${LANG_GERMAN} "Deine Anmeldungen, Einstellungen und Downloads bleiben sonst auf diesem PC."
+LangString PurgeText ${LANG_ENGLISH} "Otherwise your sign-ins, settings and downloads stay on this PC."
+LangString PurgeBox ${LANG_GERMAN} "Auch Anmeldungen, Einstellungen und Downloads entfernen"
+LangString PurgeBox ${LANG_ENGLISH} "Also remove sign-ins, settings and downloads"
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "Swiftly Player"
 VIAddVersionKey "FileDescription" "Swiftly Player Setup"
@@ -66,6 +77,38 @@ Section "Install"
   WriteRegStr HKCU "Software\Classes\swiftly\shell\open\command" "" '"$INSTDIR\Swiftly Player.exe" "%1"'
 SectionEnd
 
+Var PurgeCheck
+Var Purge
+
+Function un.onInit
+  StrCpy $Purge 0
+  ${un.GetParameters} $0
+  ${un.GetOptions} $0 "/PURGE" $1
+  ${IfNot} ${Errors}
+    StrCpy $Purge 1
+  ${EndIf}
+FunctionEnd
+
+Function un.PurgePage
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+  ${NSD_CreateLabel} 0 0 100% 24u "$(PurgeText)"
+  Pop $0
+  ${NSD_CreateCheckbox} 0 30u 100% 12u "$(PurgeBox)"
+  Pop $PurgeCheck
+  ${If} $Purge == 1
+    ${NSD_Check} $PurgeCheck
+  ${EndIf}
+  nsDialogs::Show
+FunctionEnd
+
+Function un.PurgeLeave
+  ${NSD_GetState} $PurgeCheck $Purge
+FunctionEnd
+
 Section "Uninstall"
   Delete "$INSTDIR\Swiftly Player.exe"
   Delete "$INSTDIR\libmpv-2.dll"
@@ -76,4 +119,15 @@ Section "Uninstall"
   DeleteRegKey HKCU "Software\Classes\swiftly"
   DeleteRegKey HKCU "Software\Swiftly Player"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Swiftly Player"
+  ; The single-instance lock is never user data: always gone (the folder only when nothing else is in it).
+  Delete "$LOCALAPPDATA\Swiftly\swiftly-desktop.lock"
+  RMDir "$LOCALAPPDATA\Swiftly"
+  ; The user's data only on request: settings, library, downloads, secrets file, and the Credential Manager entries the app
+  ; made (target "<name>.de.swiftly.player": aktiveArt..., konten..., konten.plex...).
+  ${If} $Purge == 1
+    RMDir /r "$APPDATA\Swiftly"
+    RMDir /r "$LOCALAPPDATA\Swiftly"
+    nsExec::Exec `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "cmdkey /list | ForEach-Object { if ($$_ -match 'target=(\S+\.de\.swiftly\.player)\s*$$') { cmdkey /delete:$$($$Matches[1]) | Out-Null } }"`
+    Pop $0
+  ${EndIf}
 SectionEnd

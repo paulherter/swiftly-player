@@ -37,6 +37,9 @@ pub struct MenuItem {
     pub destructive: bool,
     /// A check mark in front (the current choice in a dropdown).
     pub checked: bool,
+    /// The symbol in front of the label (the Mac's `Label(_, systemImage:)`): an icon asset name. A menu in which any row
+    /// has one keeps an icon column on every row, so the labels line up.
+    pub icon: Option<&'static str>,
 }
 
 impl MenuItem {
@@ -49,7 +52,14 @@ impl MenuItem {
             enabled: true,
             destructive: false,
             checked: false,
+            icon: None,
         }
+    }
+    /// With the symbol `name` in front of the label.
+    #[must_use]
+    pub fn icon(mut self, name: &'static str) -> MenuItem {
+        self.icon = Some(name);
+        self
     }
     /// With a shortcut label.
     #[must_use]
@@ -292,13 +302,24 @@ pub fn panel_size(cx: &Cx, entries: &[MenuEntry], min_width: f32) -> Size {
             }
         }
     }
-    let w = (widest + 2.0 * (ROW_PAD + PANEL_PAD) + CHECK_COLUMN).max(min_width);
+    let icons = if has_icons(entries) { ICON_COLUMN } else { 0.0 };
+    let w = (widest + 2.0 * (ROW_PAD + PANEL_PAD) + CHECK_COLUMN + icons).max(min_width);
     Size::new(w, height + 2.0 * PANEL_PAD)
 }
 
 const PANEL_PAD: f32 = 6.0;
 const ROW_PAD: f32 = 10.0;
 const CHECK_COLUMN: f32 = 18.0;
+/// The symbol (13 pt) plus its gap to the label.
+const ICON_COLUMN: f32 = 24.0;
+const ICON_SIZE: f32 = 13.0;
+
+/// Whether any row carries a symbol (then every row keeps the column).
+pub fn has_icons(entries: &[MenuEntry]) -> bool {
+    entries
+        .iter()
+        .any(|e| matches!(e, MenuEntry::Item(i) if i.icon.is_some()))
+}
 const SHORTCUT_GAP: f32 = 24.0;
 const SEPARATOR_HEIGHT: f32 = 9.0;
 
@@ -308,7 +329,20 @@ fn quiet() -> Color {
 
 /// The panel: rows on a raised rounded rectangle with a hairline and the shared panel shadow.
 pub fn panel_node(cx: &Cx, entries: &[MenuEntry], state: &MenuState, size: Size) -> Node {
+    panel_node_tinted(cx, entries, state, size, None)
+}
+
+/// [`panel_node`] with the page's mood colour under the rows (the Mac's season list: the `reason` ground, the colour of
+/// the page at that point, then the translucent white of the other surfaces) instead of the plain raised grey.
+pub fn panel_node_tinted(
+    cx: &Cx,
+    entries: &[MenuEntry],
+    state: &MenuState,
+    size: Size,
+    tint: Option<Color>,
+) -> Node {
     let style = row_style();
+    let icons = has_icons(entries);
     let rows: Vec<Node> = entries
         .iter()
         .enumerate()
@@ -322,7 +356,9 @@ pub fn panel_node(cx: &Cx, entries: &[MenuEntry], state: &MenuState, size: Size)
                     trailing: ROW_PAD,
                 })
                 .key(1000 + i),
-            MenuEntry::Item(it) => item_row(cx, &style, it, state.highlighted == Some(i)).key(i),
+            MenuEntry::Item(it) => {
+                item_row(cx, &style, it, state.highlighted == Some(i), icons).key(i)
+            }
         })
         .collect();
     let (a, blur, dy) = feel::PANEL_SHADOW;
@@ -340,12 +376,28 @@ pub fn panel_node(cx: &Cx, entries: &[MenuEntry], state: &MenuState, size: Size)
         .paint(Paint::Fill {
             color: color(colour::RAISED),
             radius: feel::MENU_RADIUS,
-        })
-        .paint(Paint::Stroke {
-            color: color(colour::MARGIN),
-            width: 1.0,
-            radius: feel::MENU_RADIUS,
         });
+    let back = match tint {
+        Some(mood) => back
+            .paint(Paint::Fill {
+                color: color(colour::REASON),
+                radius: feel::MENU_RADIUS,
+            })
+            .paint(Paint::Fill {
+                color: mood,
+                radius: feel::MENU_RADIUS,
+            })
+            .paint(Paint::Fill {
+                color: color(colour::SURFACE_TRANSLUCENT),
+                radius: feel::MENU_RADIUS,
+            }),
+        None => back,
+    };
+    let back = back.paint(Paint::Stroke {
+        color: color(colour::MARGIN),
+        width: 1.0,
+        radius: feel::MENU_RADIUS,
+    });
     Node::vstack(Align::Start, Some(0.0), rows)
         .padding(EdgeInsets {
             top: PANEL_PAD,
@@ -357,7 +409,7 @@ pub fn panel_node(cx: &Cx, entries: &[MenuEntry], state: &MenuState, size: Size)
         .frame(Some(size.w), Some(size.h), Alignment::TOP_LEADING)
 }
 
-fn item_row(cx: &Cx, style: &TextStyle, it: &MenuItem, highlighted: bool) -> Node {
+fn item_row(cx: &Cx, style: &TextStyle, it: &MenuItem, highlighted: bool, icons: bool) -> Node {
     let ink = if !it.enabled {
         color(colour::FONT_VERY_QUIET)
     } else if it.destructive {
@@ -378,8 +430,17 @@ fn item_row(cx: &Cx, style: &TextStyle, it: &MenuItem, highlighted: bool) -> Nod
         Node::spacer()
     }
     .frame(Some(CHECK_COLUMN), None, Alignment::LEADING);
-    let mut cells = vec![
-        check,
+    let mut cells = vec![check];
+    if icons {
+        let glyph = match it.icon {
+            Some(name) => crate::icons::Icons::new(cx, cx.scale.get())
+                .node(name, ICON_SIZE, true, ink)
+                .frame(Some(ICON_SIZE), Some(ICON_SIZE), Alignment::CENTER),
+            None => Node::spacer().frame(Some(ICON_SIZE), None, Alignment::CENTER),
+        };
+        cells.push(glyph.frame(Some(ICON_COLUMN), None, Alignment::LEADING));
+    }
+    cells.extend([
         // The panel is measured to fit the label: it never shrinks to an ellipsis because the spacer shares the row.
         Node::text(
             cx,
@@ -391,7 +452,7 @@ fn item_row(cx: &Cx, style: &TextStyle, it: &MenuItem, highlighted: bool) -> Nod
         )
         .fixed_size(true, false),
         Node::spacer_min(SHORTCUT_GAP),
-    ];
+    ]);
     if let Some(s) = &it.shortcut {
         cells.push(
             Node::text(cx, s, style, quiet(), Some(1), swiftly_text::Align::End)
@@ -433,6 +494,7 @@ struct Open {
     state: MenuState,
     anchor: Anchor,
     min_width: f32,
+    tint: Option<Color>,
 }
 
 impl MenuController {
@@ -463,7 +525,15 @@ impl MenuController {
             state,
             anchor,
             min_width,
+            tint: None,
         });
+    }
+    /// Puts the page's mood colour under the rows of the open menu (see [`panel_node_tinted`]); `None` keeps the plain
+    /// raised grey. Call it after [`open`](Self::open).
+    pub fn set_tint(&mut self, tint: Option<Color>) {
+        if let Some(o) = self.open.as_mut() {
+            o.tint = tint;
+        }
     }
     /// Closes the menu.
     pub fn close(&mut self) {
@@ -494,7 +564,7 @@ impl MenuController {
         // A menu opened at the pointer is the system's (`.contextMenu`): it appears at once and fades out after a choice
         // (`NativeFade`). One anchored to a button is the app's own panel: it grows out of the button's corner with `leap`.
         let native = matches!(o.anchor, Anchor::Pointer(_));
-        let panel = panel_node(cx, &o.entries, &o.state, size);
+        let panel = panel_node_tinted(cx, &o.entries, &o.state, size, o.tint);
         let panel = if native {
             let fade = Motion::of(Id::NativeFade);
             panel.scaled(1.0, fade).exit_to(1.0, 0.0).opacity(1.0, fade)
@@ -632,5 +702,53 @@ mod tests {
             bounds,
         );
         assert_eq!((up.rect.y, up.pivot.1), (296.0, 1.0));
+    }
+
+    fn paints(n: &Node, f: &dyn Fn(&Paint) -> bool) -> usize {
+        n.paint.iter().filter(|p| f(p)).count()
+            + n.children.iter().map(|c| paints(c, f)).sum::<usize>()
+    }
+
+    #[test]
+    fn a_menu_with_symbols_keeps_an_icon_column_on_every_row_and_draws_one_per_symbol() {
+        let cx = Cx::deterministic();
+        let plain = vec![
+            MenuEntry::Item(MenuItem::new("a", "Abspielen")),
+            MenuEntry::Item(MenuItem::new("b", "Info")),
+        ];
+        let iconic = vec![
+            MenuEntry::Item(MenuItem::new("a", "Abspielen").icon("play.fill")),
+            MenuEntry::Item(MenuItem::new("b", "Info")),
+        ];
+        let (w0, w1) = (
+            panel_size(&cx, &plain, 0.0).w,
+            panel_size(&cx, &iconic, 0.0).w,
+        );
+        assert!(
+            w1 - w0 >= ICON_COLUMN - 0.5,
+            "the column widens the panel: {w0} -> {w1}"
+        );
+        let state = MenuState::default();
+        let image = |p: &Paint| matches!(p, Paint::Image { .. });
+        let none = panel_node(&cx, &plain, &state, panel_size(&cx, &plain, 0.0));
+        let some = panel_node(&cx, &iconic, &state, panel_size(&cx, &iconic, 0.0));
+        assert_eq!(paints(&none, &image), 0);
+        assert_eq!(
+            paints(&some, &image),
+            1,
+            "one symbol, the plain row only reserves room"
+        );
+    }
+
+    #[test]
+    fn a_tinted_panel_lays_the_page_colour_and_the_surface_white_over_the_raised_grey() {
+        let cx = Cx::deterministic();
+        let e = entries();
+        let size = panel_size(&cx, &e, 0.0);
+        let state = MenuState::default();
+        let fill = |p: &Paint| matches!(p, Paint::Fill { .. });
+        let plain = panel_node(&cx, &e, &state, size);
+        let tinted = panel_node_tinted(&cx, &e, &state, size, Some(Color::new(0.1, 0.2, 0.4, 1.0)));
+        assert_eq!(paints(&tinted, &fill), paints(&plain, &fill) + 3);
     }
 }

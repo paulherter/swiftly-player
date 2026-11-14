@@ -4,7 +4,9 @@
 //! [`ImeState`] is what the screen in front wants; [`ImeSync`] remembers what the window was told and turns a new state
 //! into the few `winit` calls that changed ([`plan`], pure so a host test can check it).
 
+#[cfg(feature = "window")]
 use winit::dpi::{LogicalPosition, LogicalSize};
+#[cfg(feature = "window")]
 use winit::window::{ImePurpose, Window};
 
 /// What the input method needs right now.
@@ -56,6 +58,7 @@ pub struct ImeSync {
 
 impl ImeSync {
     /// Sends what changed since the last call.
+    #[cfg(feature = "window")]
     pub fn sync(&mut self, window: &Window, now: ImeState) {
         for call in plan(self.last.as_ref(), &now) {
             match call {

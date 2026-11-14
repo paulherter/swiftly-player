@@ -28,7 +28,10 @@ struct Pool(ThreadPool);
 
 impl Spawner for Pool {
     fn spawn(&self, task: Pin<Box<dyn Future<Output = ()> + Send>>) {
-        self.0.spawn_ok(task);
+        use futures_util::FutureExt;
+        // A panicking task must not take its worker thread down (the panic hook has already written `crash.log`).
+        self.0
+            .spawn_ok(std::panic::AssertUnwindSafe(task).catch_unwind().map(drop));
     }
 }
 
@@ -39,11 +42,11 @@ impl Sleeper for TokioSleeper {
     fn sleep(&self, seconds: f64) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         let h = self.0.clone();
         Box::pin(async move {
-            let _ = h
-                .spawn(tokio::time::sleep(std::time::Duration::from_secs_f64(
-                    seconds,
-                )))
-                .await;
+            // The timer is made inside the runtime: this future is polled on the view model pool, where tokio's
+            // `sleep(..)` has no reactor and panics ("there is no reactor running"), which left the search on
+            // its skeleton tiles for good.
+            let d = std::time::Duration::from_secs_f64(seconds.max(0.0));
+            let _ = h.spawn(async move { tokio::time::sleep(d).await }).await;
         })
     }
 }
@@ -69,7 +72,7 @@ pub struct Core {
 
 /// The TLS cases read from the settings file (`tls.ca` path to a PEM/DER file, `tls.acceptSelfSigned`, `net.proxy`)
 /// or from `SWIFTLY_CA_FILE`, `SWIFTLY_ACCEPT_SELF_SIGNED=1`, `SWIFTLY_PROXY`.
-fn tls_options(settings: &JsonFileStore) -> TlsOptions {
+pub(crate) fn tls_options(settings: &JsonFileStore) -> TlsOptions {
     let text = |key: &str, env: &str| {
         std::env::var(env).ok().or_else(|| match settings.get(key) {
             Some(Value::Str(s)) if !s.is_empty() => Some(s),
@@ -170,7 +173,7 @@ impl Core {
             Some(Value::Str(s)) if !s.is_empty() => s,
             _ => {
                 let id = new_device_id();
-                let _ = settings.set("device.id", Value::Str(id.clone()));
+                crate::store::set_logged(&*settings, "device.id", Value::Str(id.clone()));
                 id
             }
         };
@@ -247,6 +250,18 @@ impl Core {
         Arc::new(TokioSleeper(self.rt().handle().clone()))
     }
 
+    /// The scripted transport of the tests is in use: nothing here talks to a real server.
+    pub fn is_scripted(&self) -> bool {
+        matches!(*self.net, AppTransport::Mock(_))
+    }
+
+    /// The display name of the signed-in user, as the server names it (excluded from "mit A und B").
+    pub fn account_name(&self) -> Option<String> {
+        let bundles = load_bundles(&*self.secrets);
+        let name = bundles.active()?.active().session.user_name.clone();
+        (!name.is_empty()).then_some(name)
+    }
+
     /// The active stored account, if there is one.
     pub fn account(&self) -> Option<AccountRef> {
         let bundles = load_bundles(&*self.secrets);
@@ -278,7 +293,7 @@ impl Core {
         })
     }
 
-    fn client(
+    pub(crate) fn client(
         &self,
         base: &str,
         kind: ServerKind,
@@ -322,6 +337,8 @@ struct Flow {
     code: Option<LoginCode>,
     kind: ServerKind,
     headers: Vec<OwnHeader>,
+    /// The picture addresses of the Emby users the last list held (`emby_user_pictures`).
+    user_pictures: Vec<Option<String>>,
     plex: SharedPlex,
 }
 
@@ -330,24 +347,18 @@ struct Backend {
     state: Arc<Mutex<Flow>>,
 }
 
-/// The German line for a failed step (`ErrorText`, short form).
-fn say(e: &ErrorKind) -> String {
-    match e {
-        ErrorKind::Certificate(_) => "Dem Zertifikat des Servers wird nicht vertraut.".into(),
-        ErrorKind::Http {
-            status: 401 | 403, ..
-        }
-        | ErrorKind::NotAuthenticated => "Benutzername oder Passwort stimmt nicht.".into(),
-        ErrorKind::TwoFactor => {
-            "Der Server verlangt einen zweiten Faktor. Das geht hier noch nicht.".into()
-        }
-        ErrorKind::QuickConnectExpired => "Der Code ist abgelaufen. Hol dir einen neuen.".into(),
-        ErrorKind::Transport(swiftly_net::TransportReason::QuickConnectDisabled) => {
-            "Quick Connect ist auf diesem Server aus.".into()
-        }
-        ErrorKind::InvalidServerUrl => "Die Adresse ist nicht gültig.".into(),
-        _ => signin_flows::JELLYFIN_DOWN.into(),
-    }
+/// The line for a failed step: the core's `readableError`, the same sentences as the Mac.
+pub(crate) fn say(e: &ErrorKind) -> String {
+    swiftly_l10n::error_text::readable_error(&swiftly_l10n::Translator::new(Locale::parse("de")), e)
+}
+
+/// The line for a failed address check (`AppModel.connectionError`).
+fn connection_say(e: &ErrorKind, address: &str) -> String {
+    swiftly_vm::connection_error_text(
+        &swiftly_l10n::Translator::new(Locale::parse("de")),
+        e,
+        address,
+    )
 }
 
 impl Backend {
@@ -411,20 +422,37 @@ impl SignInBackend for Backend {
     fn connect(&self, typed: &str) -> Pending<Result<String, String>> {
         let core = Arc::clone(&self.core);
         let state = Arc::clone(&self.state);
-        let candidates = Seerr::addresses(typed);
+        let typed = typed.to_owned();
         let headers = self
             .state
             .lock()
             .map(|s| s.headers.clone())
             .unwrap_or_default();
         self.spawn(async move {
-            let mut last = ErrorKind::InvalidServerUrl;
+            // The core's probe (`AccountsHost.linkUp`): as typed, the other scheme only for an address typed without
+            // one; the reason of the FIRST attempt is the one shown; the headers of an address that did not answer
+            // are taken back.
+            let first = swiftly_jellyfin::normalize_server_url_string(&typed)
+                .ok_or_else(|| say(&ErrorKind::InvalidServerUrl))?;
+            let mut candidates = vec![first];
+            if !typed.contains("://")
+                && let Some(other) = swiftly_jellyfin::reversed_server_url_string(&candidates[0])
+            {
+                candidates.push(other);
+            }
+            let cleaned = OwnHeaders::cleaned(&headers);
+            let mut shown: Option<String> = None;
             for address in candidates {
-                put_headers(&core, &headers, &address);
-                let client = core
-                    .client(&address, ServerKind::Jellyfin)
-                    .map_err(|e| say(&e))?;
-                match client.check_reachability().await {
+                let url = swiftly_net::Url::parse(&address).ok();
+                let before = url.as_ref().map(OwnHeaders::registered);
+                if !cleaned.is_empty() {
+                    put_headers(&core, &cleaned, &address);
+                }
+                let answer = match core.client(&address, ServerKind::Jellyfin) {
+                    Ok(c) => c.check_reachability().await,
+                    Err(e) => Err(e),
+                };
+                match answer {
                     Ok(_) => {
                         if let Ok(mut s) = state.lock() {
                             s.base = Some(address.clone());
@@ -433,15 +461,22 @@ impl SignInBackend for Backend {
                         return Ok(address);
                     }
                     Err(e) => {
-                        let again = e.fallback_pays_off();
-                        last = e;
-                        if !again {
+                        if let (Some(u), Some(b), false) =
+                            (url.as_ref(), before, cleaned.is_empty())
+                        {
+                            OwnHeaders::set_down(&b, u);
+                            let _ = core
+                                .settings
+                                .set("net.ownHeaders", Value::Str(OwnHeaders::store()));
+                        }
+                        shown.get_or_insert_with(|| connection_say(&e, &address));
+                        if !e.fallback_pays_off() {
                             break;
                         }
                     }
                 }
             }
-            Err(say(&last))
+            Err(shown.unwrap_or_else(|| say(&ErrorKind::InvalidServerUrl)))
         })
     }
 
@@ -477,30 +512,55 @@ impl SignInBackend for Backend {
         })
     }
 
-    fn quick_poll(&self) -> Pending<Result<Option<String>, String>> {
+    fn quick_poll(&self) -> Pending<signin_flows::QuickAnswer> {
+        use signin_flows::QuickAnswer;
         let (core, base, state) = (Arc::clone(&self.core), self.base(), Arc::clone(&self.state));
         self.spawn(async move {
-            let base = base.ok_or("Erst die Serveradresse eingeben.")?;
-            let code = state
-                .lock()
-                .ok()
-                .and_then(|s| s.code.clone())
-                .ok_or("Kein Code.")?;
-            let client = core
-                .client(&base, ServerKind::Jellyfin)
-                .map_err(|e| say(&e))?;
+            let Some(base) = base else {
+                return QuickAnswer::Failed;
+            };
+            let Some(code) = state.lock().ok().and_then(|s| s.code.clone()) else {
+                return QuickAnswer::Failed;
+            };
+            let Ok(client) = core.client(&base, ServerKind::Jellyfin) else {
+                return QuickAnswer::Failed;
+            };
             match client.quick_connect_ask_again(&code).await {
                 QuickConnectState::Released => {
-                    let session = client
-                        .sign_in_with_quick_connect(&code)
-                        .await
-                        .map_err(|e| say(&e))?;
-                    let name = session.user_name.clone();
-                    core.store_session(session);
-                    Ok(Some(name))
+                    match client.sign_in_with_quick_connect(&code).await {
+                        Ok(session) => {
+                            let name = session.user_name.clone();
+                            core.store_session(session);
+                            QuickAnswer::SignedIn(name)
+                        }
+                        Err(e) => QuickAnswer::SignInFailed(say(&e)),
+                    }
                 }
-                QuickConnectState::Expired => Err(say(&ErrorKind::QuickConnectExpired)),
-                _ => Ok(None),
+                QuickConnectState::Expired => QuickAnswer::Expired,
+                QuickConnectState::Failed => QuickAnswer::Failed,
+                QuickConnectState::Opened => QuickAnswer::Waiting,
+            }
+        })
+    }
+
+    fn quick_share(&self, code: &str) -> Pending<Result<(), String>> {
+        let (core, code) = (Arc::clone(&self.core), code.to_owned());
+        self.spawn(async move {
+            let account = core
+                .account()
+                .ok_or_else(|| say(&ErrorKind::NotAuthenticated))?;
+            let client = core.client_for(&account).map_err(|e| say(&e))?;
+            client.quick_connect_share(&code).await.map_err(|e| say(&e))
+        })
+    }
+
+    fn quick_offered(&self) -> Pending<bool> {
+        let (core, base) = (Arc::clone(&self.core), self.base());
+        self.spawn(async move {
+            let Some(base) = base else { return false };
+            match core.client(&base, ServerKind::Jellyfin) {
+                Ok(c) => c.quick_connect_enabled().await,
+                Err(_) => false,
             }
         })
     }
@@ -514,6 +574,15 @@ impl SignInBackend for Backend {
                     .collect::<Vec<_>>(),
             );
         }
+    }
+
+    fn known_servers(&self) -> Vec<String> {
+        self.core
+            .accounts_list()
+            .into_iter()
+            .filter(|e| e.kind != ServerKind::Plex)
+            .map(|e| e.server)
+            .collect()
     }
 
     fn discover(&self) -> Option<std::sync::mpsc::Receiver<Vec<FoundServer>>> {
@@ -546,13 +615,31 @@ impl SignInBackend for Backend {
     }
 
     fn emby_users(&self) -> Pending<Vec<String>> {
-        let (core, device, base) = (Arc::clone(&self.core), self.device(), self.base());
+        let (core, device, base, state) = (
+            Arc::clone(&self.core),
+            self.device(),
+            self.base(),
+            Arc::clone(&self.state),
+        );
         self.spawn(async move {
-            match base {
-                Some(b) => signin_flows::emby_users(Arc::clone(&core.net), &device, &b).await,
+            let users = match base {
+                Some(b) => {
+                    signin_flows::emby_users_with_pictures(Arc::clone(&core.net), &device, &b).await
+                }
                 None => Vec::new(),
+            };
+            if let Ok(mut s) = state.lock() {
+                s.user_pictures = users.iter().map(|u| u.1.clone()).collect();
             }
+            users.into_iter().map(|u| u.0).collect()
         })
+    }
+
+    fn emby_user_pictures(&self) -> Vec<Option<String>> {
+        self.state
+            .lock()
+            .map(|s| s.user_pictures.clone())
+            .unwrap_or_default()
     }
 
     fn plex_begin(&self) -> Option<std::sync::mpsc::Receiver<PlexEvent>> {
@@ -565,7 +652,7 @@ impl SignInBackend for Backend {
         );
         *plex.lock().ok()? = Default::default();
         self.core.rt().spawn(async move {
-            let svc = swiftly_plex::PlexAccountService::new(identity, Arc::clone(&core.net));
+            let svc = signin_flows::plex_service(identity, Arc::clone(&core.net));
             let pause = std::time::Duration::from_secs(1);
             signin_flows::plex_sign_in(
                 &svc,
@@ -586,7 +673,7 @@ impl SignInBackend for Backend {
             return Pending::channel().1;
         };
         self.spawn(async move {
-            let svc = swiftly_plex::PlexAccountService::new(identity, Arc::clone(&core.net));
+            let svc = signin_flows::plex_service(identity, Arc::clone(&core.net));
             signin_flows::plex_pick(&svc, &plex, index, &pin).await
         })
     }
@@ -636,6 +723,16 @@ pub struct Wiring {
     pub next_kind: std::cell::RefCell<String>,
     /// Id and name of the title about to be pushed (series pages read it).
     pub last_title: std::cell::RefCell<(String, String)>,
+    /// Where the series page about to be pushed starts (the season of the episode or season tile that was tapped).
+    pub next_spec: std::cell::RefCell<swiftly_vm::SeriesSpec>,
+    /// Full titles fetched ahead while the pointer rested on their tile (the Mac's `SeriesCache.prefetch`): a page that
+    /// opens on one starts from the whole title, not from the tile's name.
+    pub ahead: Arc<std::sync::Mutex<std::collections::HashMap<String, swiftly_model::Item>>>,
+    /// What the server says about the account's right to download (the Mac's `AppModel.downloadPermission`), asked
+    /// once by [`Wiring::ask_download_right`]; unknown until the answer arrives.
+    pub download_right: Arc<std::sync::Mutex<swiftly_rules::download_right::DownloadPermission>>,
+    asked_right: std::cell::Cell<bool>,
+    together: std::cell::OnceCell<Option<Arc<crate::together::Hub>>>,
 }
 
 thread_local! {
@@ -652,9 +749,102 @@ pub fn install(w: Option<Rc<Wiring>>) {
     CURRENT.with(|c| *c.borrow_mut() = w);
 }
 
+/// Whether the account's server has the Jellyfin-only parts: SyncPlay, the remote control socket, the other devices'
+/// sessions. The Mac runs them for servers that can (`can(.remoteControl)`, `.syncPlay`); a Plex server cannot, and
+/// the pollers would only fill its log with routes it does not have.
+fn runs_hub(kind: ServerKind) -> bool {
+    kind != ServerKind::Plex
+}
+
 impl Wiring {
+    /// The wiring of a signed-in account over `core`.
+    pub fn new(core: Arc<Core>, account: AccountRef, hub: Rc<crate::hub::ImageHub>) -> Self {
+        Self {
+            core,
+            account,
+            hub,
+            next_kind: Default::default(),
+            last_title: Default::default(),
+            next_spec: Default::default(),
+            ahead: Default::default(),
+            download_right: Arc::new(std::sync::Mutex::new(
+                swiftly_rules::download_right::DownloadPermission::Unknown,
+            )),
+            asked_right: std::cell::Cell::new(false),
+            together: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// Watching together, the remote control and the other devices of this account. Built and started on the first
+    /// ask; `None` for the scripted transport of the tests.
+    pub fn together(&self) -> Option<Arc<crate::together::Hub>> {
+        self.together
+            .get_or_init(|| {
+                if self.core.is_scripted() || !runs_hub(self.account.server_kind) {
+                    return None;
+                }
+                let name = self.core.account_name();
+                let hub =
+                    crate::together::Hub::new(&self.core, &self.account, name.as_deref()).ok()?;
+                hub.start();
+                Some(Arc::new(hub))
+            })
+            .clone()
+    }
+
+    /// A bool of the settings file, `default` when unset.
+    fn flag(&self, key: &str, default: bool) -> bool {
+        use swiftly_settings::KeyValueStore;
+        self.core.settings.get_bool(key).unwrap_or(default)
+    }
+
+    /// The "Gesehen von" setting (`AppModel.watchersShown`, key `gesehenVonAn`, on by default).
+    pub fn watchers_shown(&self) -> bool {
+        self.flag("gesehenVonAn", true)
+    }
+
+    /// The watchlist setting (`AppModel.watchlistShown`, key `merklisteAn`, on by default).
+    pub fn watchlist_shown(&self) -> bool {
+        self.flag("merklisteAn", true)
+    }
+
+    /// Whether a download button appears at all (`AppModel.downloadButtonShow`): the switch (`downloadsAn`, off by
+    /// default) and the account's right, decided by `DownloadPermission.offer`.
+    pub fn download_button(&self) -> bool {
+        let right = *self
+            .download_right
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        swiftly_rules::download_right::DownloadPermission::offer(
+            right,
+            self.flag("downloadsAn", false),
+        )
+    }
+
+    /// Asks the server once for the account's download right (`GET Users/{id}`); a failed answer stays unknown.
+    pub fn ask_download_right(&self) {
+        if self.asked_right.replace(true) {
+            return;
+        }
+        let Ok(server) = self.core.server_for(&self.account) else {
+            return;
+        };
+        let cell = Arc::clone(&self.download_right);
+        self.core.spawn(async move {
+            if let Some(gift) = server.account_defaults().await {
+                *cell
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                    gift.download_permission();
+            }
+        });
+    }
+
     /// A stand-in `Item` for a tapped tile; the view model loads the full title itself.
     pub fn stand_in(&self, id: &str, name: &str) -> swiftly_model::Item {
+        if let Some(item) = self.ahead.lock().ok().and_then(|a| a.get(id).cloned()) {
+            return item;
+        }
         let kind = self.next_kind.borrow().clone();
         let kind = if kind.is_empty() {
             "Movie".to_owned()
@@ -730,13 +920,7 @@ pub fn smoke(address: &str, user: &str, password: &str) -> Result<String, String
         device,
     );
     let hub = crate::hub::ImageHub::new(Box::new(loader), &cx, 1.0, device);
-    let w = Rc::new(Wiring {
-        core: Arc::clone(&core),
-        account,
-        hub: Rc::clone(&hub),
-        next_kind: Default::default(),
-        last_title: Default::default(),
-    });
+    let w = Rc::new(Wiring::new(Arc::clone(&core), account, Rc::clone(&hub)));
     install(Some(Rc::clone(&w)));
     let vm = crate::home_data::home_vm(crate::home_data::Scenario::Ready);
     vm.send(HomeIntent::Load);
@@ -790,6 +974,7 @@ pub fn smoke(address: &str, user: &str, password: &str) -> Result<String, String
         .or_else(|| detail.hero().image.clone())
         .ok_or("no picture address")?;
     let t = Instant::now();
+    let owner = std::rc::Rc::new(std::cell::RefCell::new(None));
     loop {
         hub.begin_build();
         let slot = hub.slot(
@@ -798,7 +983,7 @@ pub fn smoke(address: &str, user: &str, password: &str) -> Result<String, String
             174.0,
             swiftly_images::Priority::Visible,
         );
-        hub.after_build();
+        hub.after_build(&std::rc::Rc::downgrade(&owner));
         hub.frame(t.elapsed().as_secs_f64() * 1000.0);
         match slot {
             crate::hub::RemoteSlot::Ready { .. } => {
@@ -830,4 +1015,70 @@ pub fn fetch_genres(w: &Wiring) -> crate::login_screen::Pending<Vec<String>> {
         });
     }
     rx
+}
+
+#[cfg(test)]
+mod say_tests {
+    use super::*;
+
+    #[test]
+    fn failed_steps_read_like_the_cores_readable_error() {
+        let http = |status| ErrorKind::Http { status, body: None };
+        assert_eq!(say(&http(401)), "Benutzername oder Passwort stimmt nicht.");
+        assert_eq!(say(&http(403)), "Dieses Konto darf das nicht.");
+        assert_eq!(say(&http(500)), "Der Server hat einen Fehler gemeldet.");
+        assert!(
+            say(&ErrorKind::TwoFactor)
+                .starts_with("Dein Server will eine Zwei-Faktor-Bestätigung.")
+        );
+        assert_eq!(
+            say(&ErrorKind::InvalidServerUrl),
+            "Die Adresse konnte nicht gelesen werden."
+        );
+        // A timeout is not "kein Jellyfin": it names the connection.
+        assert!(!say(&ErrorKind::Network { code: -1001 }).contains("kein Jellyfin"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_plex_account_runs_no_jellyfin_pollers() {
+        assert!(!super::runs_hub(super::ServerKind::Plex));
+        assert!(super::runs_hub(super::ServerKind::Jellyfin));
+        assert!(super::runs_hub(super::ServerKind::Emby));
+    }
+
+    use super::*;
+
+    /// The view model pool is no tokio thread; the search debounce is polled there (it panicked: no reactor).
+    #[test]
+    fn the_sleeper_works_when_polled_outside_the_runtime() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap_or_else(|e| panic!("runtime: {e}"));
+        let sleeper = TokioSleeper(rt.handle().clone());
+        let started = std::time::Instant::now();
+        futures_executor::block_on(sleeper.sleep(0.05));
+        assert!(started.elapsed() >= std::time::Duration::from_millis(45));
+    }
+
+    /// A panicking task must not kill the pool: the next task still runs.
+    #[test]
+    fn a_panicking_task_does_not_take_the_pool_down() {
+        let pool = Pool(
+            ThreadPool::builder()
+                .pool_size(1)
+                .create()
+                .unwrap_or_else(|e| panic!("{e}")),
+        );
+        pool.spawn(Box::pin(async { panic!("boom") }));
+        let (tx, rx) = std::sync::mpsc::channel();
+        pool.spawn(Box::pin(async move {
+            let _ = tx.send(());
+        }));
+        assert!(rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok());
+    }
 }

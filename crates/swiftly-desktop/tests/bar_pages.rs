@@ -13,7 +13,9 @@ use swiftly_render::RgbaImage;
 use swiftly_ui::{Cx, Env, Idiom};
 
 const FRAME_MS: f64 = 1000.0 / 60.0;
-const TOLERANCE: u8 = 12;
+// Icon edges are rasterised through the system libm, so macOS differs from the Linux goldens by a few edge pixels:
+// there a difference above 2 levels may touch at most 0.05 % of the pixels (see `forms_golden`).
+const TOLERANCE: u8 = if cfg!(target_os = "macos") { 16 } else { 12 };
 const MAC_PIXEL_SHARE: f64 = 0.0005;
 
 fn env(w: f32, h: f32) -> Env {
@@ -37,6 +39,9 @@ fn check(name: &str, img: &RgbaImage) {
         "golden {name}: size"
     );
     let (max, share) = img.diff(&golden);
+    if let (true, Some(dir)) = (max > 0, std::env::var_os("GOLDEN_ACTUAL_DIR")) {
+        let _ = img.write_png(&PathBuf::from(dir).join(format!("{name}.png")));
+    }
     let share_ok = !cfg!(target_os = "macos") || max <= 2 || share <= MAC_PIXEL_SHARE;
     assert!(
         max <= TOLERANCE && share_ok,
@@ -119,6 +124,9 @@ fn title_pages_show_the_bar_when_scrolled_in_the_demo_too() {
         Kind::Person,
         Scenario::Ready,
     );
+    p.set_scroll_tuning(swiftly_motion::ScrollTuning::for_os(
+        swiftly_motion::Os::Linux,
+    ));
     let _ = p.frame(0.0);
     p.open(0.0);
     let rest = drive!(p, &mut now, 1200.0);

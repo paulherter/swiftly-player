@@ -152,6 +152,10 @@ pub struct Item {
     /// `Video`, `Audio` ...
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media_type: Option<String>,
+    /// `FileSystem` for a title with a file, `Virtual` for a placeholder the server lists without one (a missing movie
+    /// or episode); there is nothing to play then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location_type: Option<String>,
     /// The name the server sorts by (Models.swift:179).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sort_name: Option<String>,

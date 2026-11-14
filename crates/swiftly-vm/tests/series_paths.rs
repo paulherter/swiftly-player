@@ -31,23 +31,33 @@ fn episode(n: usize) -> serde_json::Value {
 /// One season with three episodes; the viewer is at E2, whose cast is listed. `episodes_up` switches
 /// the episode list off for the failure tests; the flag calls always succeed.
 fn server(episodes_up: Arc<AtomicBool>) -> Arc<Script> {
+    server_with(episodes_up, true, false)
+}
+
+/// `state_cast`: the resume episode lists people; `series_cast`: the series itself (`GET /Items/ser`) does.
+fn server_with(episodes_up: Arc<AtomicBool>, state_cast: bool, series_cast: bool) -> Arc<Script> {
     Script::new(move |r| {
         let p = r.url.path();
         if p.ends_with("/Items/ser") {
-            return Some(
-                serde_json::json!({"Id": "ser", "Name": "Serie", "Type": "Series",
+            let mut s = serde_json::json!({"Id": "ser", "Name": "Serie", "Type": "Series",
                 "ProductionYear": 2015, "CommunityRating": 8.1, "OfficialRating": "TV-MA",
-                "Overview": "Full text.", "UserData": {"IsFavorite": false}})
-                .to_string(),
-            );
+                "Overview": "Full text.", "UserData": {"IsFavorite": false}});
+            if series_cast {
+                s["People"] = serde_json::json!([
+                    {"Id": "p9", "Name": "Anna Test", "Type": "Actor", "Role": "Serie"}
+                ]);
+            }
+            return Some(s.to_string());
         }
         if p.ends_with("Shows/NextUp") {
             let mut e = episode(2);
-            e["People"] = serde_json::json!([
-                {"Id": "p1", "Name": "Anna", "Type": "Actor", "Role": "Hauptrolle",
-                 "PrimaryImageTag": "t1"},
-                {"Id": "p2", "Name": "Regie", "Type": "Director"}
-            ]);
+            if state_cast {
+                e["People"] = serde_json::json!([
+                    {"Id": "p1", "Name": "Anna", "Type": "Actor", "Role": "Hauptrolle",
+                     "PrimaryImageTag": "t1"},
+                    {"Id": "p2", "Name": "Regie", "Type": "Director"}
+                ]);
+            }
             return Some(list(&[e], 1));
         }
         if p.ends_with("Shows/ser/Seasons") {
@@ -231,6 +241,18 @@ fn the_cast_comes_from_the_resume_episode_with_its_own_pictures() {
             .as_ref()
             .is_some_and(|i| i.address.contains("/Items/p1/Images/"))
     );
+}
+
+#[test]
+fn the_cast_falls_back_to_the_series_people_of_the_fresh_item() {
+    // The resume episode lists nobody and the list entry has no people: the series item the page loads does.
+    let net = server_with(up(), false, true);
+    let vm = vm_with(&net, host(), Some(account("TOKEN-A")));
+    vm.send(SeriesIntent::Load);
+    wait_for("page", || ready(&vm) && !vm.more().cast.is_empty());
+    let cast = vm.more().cast.clone();
+    assert_eq!(cast.len(), 1);
+    assert_eq!(cast[0].name, "Anna Test");
 }
 
 fn headers_of(net: &Script, path_part: &str) -> Vec<String> {

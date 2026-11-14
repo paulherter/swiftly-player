@@ -17,8 +17,8 @@ use swiftly_design::tokens::colour;
 use swiftly_downloads::item::{audio_streams, first_source};
 use swiftly_downloads::load_selection::SeasonRight;
 use swiftly_downloads::{
-    Art, AudioStream, AudioTrackRules, CheckboxState, DownloadAudioChoice, DownloadAudioOption,
-    DownloadItem, DownloadRules, DownloadState, FootSpace, LoadSelection,
+    Art, AudioStream, CheckboxState, DownloadAudioChoice, DownloadAudioOption, DownloadItem,
+    DownloadRules, DownloadState, FootSpace, LoadSelection,
 };
 use swiftly_layout::{Align, Alignment, Axis, Rect, Size};
 use swiftly_model::Item;
@@ -37,7 +37,7 @@ pub enum LoadRequest {
     /// The add popover for these titles (a film, or the episodes already chosen). `quality_select` is true when the
     /// server may convert, so the quality can be picked.
     Add {
-        /// "{title} laden".
+        /// The bare title; the sheet's header makes "{title} laden".
         title: String,
         /// The titles, in the original quality.
         items: Vec<DownloadItem>,
@@ -75,50 +75,8 @@ pub(crate) enum Sheet {
     Season(Box<SeasonSheet>),
 }
 
-/// The wording rules of the track names for the sheet (German, as the player's panel words them).
-pub(crate) struct TrackNames {
-    words: swiftly_vm::LabelWords,
-    tr: swiftly_l10n::Translator,
-}
-
-impl TrackNames {
-    pub fn new() -> TrackNames {
-        TrackNames {
-            words: swiftly_vm::LabelWords::new(swiftly_l10n::Locale::parse("de")),
-            tr: swiftly_l10n::Translator::new(swiftly_l10n::Locale::parse("de")),
-        }
-    }
-}
-
-impl AudioTrackRules for TrackNames {
-    fn language_key(&self, language: Option<&str>) -> Option<String> {
-        swiftly_playback::track_mapping::language_key(language)
-    }
-    fn language_label(&self, key: &str) -> Option<String> {
-        swiftly_playback::track_label::language(Some(key), &self.words)
-    }
-    fn audio_label(
-        &self,
-        language: Option<&str>,
-        codec: Option<&str>,
-        channels: Option<i64>,
-    ) -> Option<String> {
-        let codec = swiftly_playback::track_label::codec_name_value(codec);
-        swiftly_playback::track_label::audio(language, codec.as_deref(), channels, &self.words)
-    }
-    fn distinct(&self, labels: Vec<String>) -> Vec<String> {
-        swiftly_playback::track_label::distinct(&labels)
-    }
-    fn preferred_audio_index(&self, _: &[AudioStream], _: &str) -> Option<i64> {
-        None
-    }
-    fn all_label(&self) -> String {
-        self.tr.t("Alle Tonspuren")
-    }
-    fn track_word(&self) -> String {
-        self.tr.t("Tonspur")
-    }
-}
+/// The rules of the track names and the preselected track: the shared core ones (what the Mac uses).
+pub(crate) type TrackNames = swiftly_vm::TrackNames;
 
 fn menu_of<T>(
     list: &[T],
@@ -176,7 +134,7 @@ impl Sheet {
                     .then(|| menu_of(&offered, "sel.q:", |q| label(*q), |q| *q == s.sel.quality))
             }
             (Sheet::Season(s), "sel.sound") => {
-                let rules = TrackNames::new();
+                let rules = TrackNames::german();
                 let (options, chosen) = (s.sel.audio_options(&rules), s.sel.audio(&rules, ""));
                 s.sel.audio_offered(&rules).then(|| {
                     menu_of(
@@ -226,7 +184,7 @@ impl Sheet {
                 .to_vec();
                 v.extend((0..s.sel.offered(s.select_quality).len()).map(|i| format!("sel.q:{i}")));
                 v.extend(
-                    (0..s.sel.audio_options(&TrackNames::new()).len())
+                    (0..s.sel.audio_options(&TrackNames::german()).len())
                         .map(|i| format!("sel.a:{i}")),
                 );
                 for season in &s.seasons {
@@ -297,7 +255,7 @@ impl AddSheet {
     ) -> AddSheet {
         streams.resize(items.len(), Vec::new());
         // A film chooses one track, several titles choose a language that the files share.
-        let rules = TrackNames::new();
+        let rules = TrackNames::german();
         let audio_opts = match streams.as_slice() {
             [one] => track_options(&rules, one),
             many => language_options(&rules, many),
@@ -310,6 +268,8 @@ impl AddSheet {
             title,
             bytes: 0,
             converted: false,
+            recomputed: false,
+            can_clean: false,
             quality: None,
             sound: None,
             free: 0,
@@ -338,7 +298,7 @@ impl AddSheet {
     }
 
     fn version(&self) -> Vec<DownloadItem> {
-        let rules = TrackNames::new();
+        let rules = TrackNames::german();
         self.base
             .iter()
             .zip(&self.streams)
@@ -370,9 +330,9 @@ impl AddSheet {
             (!parts.is_empty()).then(|| parts.join(" \u{00B7} "))
         };
         self.spec.bytes = bytes;
-        self.spec.converted = v
-            .iter()
-            .any(|i| i.quality.is_some_and(|q| !q.is_original()));
+        self.spec.converted = v.iter().any(DownloadItem::streamed);
+        self.spec.recomputed = v.iter().any(DownloadItem::converted);
+        self.spec.can_clean = inq.suffices_to_clean_up() && !inq.dispensable.is_empty();
         self.spec.quality = quality;
         self.spec.sound = self
             .sound_pick()
@@ -478,7 +438,7 @@ impl SeasonSheet {
 
     /// The titles the selection yields, in the chosen quality.
     pub fn items(&self, now: f64) -> Vec<DownloadItem> {
-        let rules = TrackNames::new();
+        let rules = TrackNames::german();
         let choice = self.sel.audio(&rules, "");
         self.sel
             .selected_episodes()
@@ -542,7 +502,7 @@ impl SeasonSheet {
                 self.sel.quality = *q;
             }
         } else if let Some(i) = k.strip_prefix("a:").and_then(|i| i.parse::<usize>().ok()) {
-            if let Some(o) = self.sel.audio_options(&TrackNames::new()).get(i) {
+            if let Some(o) = self.sel.audio_options(&TrackNames::german()).get(i) {
                 self.sel.audio_chosen = Some(o.choice.clone());
             }
         } else if k == "retry" {
@@ -914,7 +874,7 @@ fn footer(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
             Alignment::LEADING,
         )
     };
-    let rules = TrackNames::new();
+    let rules = TrackNames::german();
     let sound = s.sel.audio_offered(&rules).then(|| {
         mac_pick(
             cx,

@@ -71,6 +71,7 @@ pub fn settings_sync_entries() -> Vec<SyncEntry> {
 /// The synced settings of one account.
 #[derive(uniffi::Object)]
 pub struct SettingsSyncModel {
+    core: swiftly_vm::SettingsSyncCore<CoreTransport>,
     transport: CoreTransport,
     base: String,
     user_id: String,
@@ -135,7 +136,9 @@ impl SettingsSyncModel {
         host: &Host,
         account: &AccountRef,
     ) -> Result<Arc<Self>, CoreError> {
-        let client = swiftly_vm::account_client(&Arc::new(transport.clone()), host, account)?;
+        let shared = Arc::new(transport.clone());
+        let core = swiftly_vm::SettingsSyncCore::new(&shared, host, account)?;
+        let client = swiftly_vm::account_client(&shared, host, account)?;
         let mut headers: Vec<(String, String)> = Url::parse(&account.base_url)
             .ok()
             .map(|u| {
@@ -148,6 +151,7 @@ impl SettingsSyncModel {
         headers.push(("Authorization".into(), client.authorization_header()));
         headers.push(("Accept".into(), "application/json".into()));
         Ok(Arc::new(Self {
+            core,
             transport,
             base: account.base_url.trim_end_matches('/').to_owned(),
             user_id: account.user_id.clone(),
@@ -262,110 +266,41 @@ impl SettingsSyncModel {
         seerr: Option<String>,
         seerr_changed: Option<f64>,
     ) -> SettingsSyncRound {
-        use swiftly_seerr::SeerrAccess;
-        use swiftly_sync::settings::SeerrStep;
-        let unreachable = || SettingsSyncRound {
-            settings: SettingsSyncOutcome::Unreachable,
-            remote_changed: 0.0,
-            seerr: SeerrSyncOutcome::Nothing,
-        };
-        let Some(get) = self.request(Method::Get, None) else {
-            return unreachable();
-        };
-        let copy = match self.transport.send(get).await {
-            Ok(a) if a.is_success() => DisplayPreferencesCopy::from_body(&a.body),
-            _ => None,
-        };
-        let Some(copy) = copy else {
-            return unreachable();
-        };
-        let prefs = copy.custom_prefs();
-        let access: Option<SeerrAccess> = seerr
-            .as_deref()
-            .filter(|t| !t.is_empty())
-            .and_then(|t| serde_json::from_str(t).ok());
-        let mut seerr_out = SeerrSyncOutcome::Nothing;
-        let mut seerr_fields = BTreeMap::new();
-        match SettingsSync::seerr_step(&prefs, seerr_changed, access.is_some()) {
-            SeerrStep::Adopt(theirs, changed) => {
-                seerr_out = SeerrSyncOutcome::Adopt {
-                    access: theirs
-                        .and_then(|a| serde_json::to_string(&a).ok())
-                        .unwrap_or_default(),
+        use swiftly_vm::{SeerrOutcome, SyncOutcome};
+        let local: Vec<(String, String)> = local.into_iter().map(|s| (s.name, s.value)).collect();
+        let round = self
+            .core
+            .round(
+                &local,
+                local_changed,
+                remote_seen,
+                other_account,
+                now,
+                seerr.as_deref(),
+                seerr_changed,
+            )
+            .await;
+        SettingsSyncRound {
+            settings: match round.settings {
+                SyncOutcome::Apply { values, changed } => SettingsSyncOutcome::Apply {
+                    values: values
+                        .into_iter()
+                        .map(|(name, value)| SyncSetting { name, value })
+                        .collect(),
                     changed,
-                };
-            }
-            SeerrStep::Push => {
-                let stamp = seerr_changed.unwrap_or(now);
-                seerr_out = SeerrSyncOutcome::Pushed { changed: stamp };
-                seerr_fields = SettingsSync::seerr_fields(access.as_ref(), stamp);
-            }
-            SeerrStep::Nothing => {}
-        }
-        let remote = SettingsSync::remote(&prefs);
-        let remote_changed = remote.changed.unwrap_or(0.0);
-        let decision = SettingsSync::decide(&remote, local_changed, other_account);
-        let done = |settings| SettingsSyncRound {
-            settings,
-            remote_changed,
-            seerr: seerr_out.clone(),
-        };
-        // Each write replaces all of CustomPrefs from the copy: Seerr goes alone only without a push.
-        if decision != Decision::Push && !seerr_fields.is_empty() {
-            let Some(post) = self.request(Method::Post, Some(copy.merged(&seerr_fields))) else {
-                return unreachable();
-            };
-            if !matches!(self.transport.send(post).await, Ok(a) if a.is_success()) {
-                return unreachable();
-            }
-        }
-        match decision {
-            Decision::Apply => done(SettingsSyncOutcome::Apply {
-                values: remote
-                    .values
-                    .iter()
-                    .map(|(name, v)| SyncSetting {
-                        name: name.clone(),
-                        value: v.encoded(),
-                    })
-                    .collect(),
-                changed: remote_changed,
-            }),
-            Decision::Nothing => done(SettingsSyncOutcome::Nothing),
-            Decision::Push => {
-                let values: BTreeMap<String, Value> = local
-                    .iter()
-                    .filter_map(|s| {
-                        let entry = SettingsSync::ENTRIES.iter().find(|e| e.name == s.name)?;
-                        Some((s.name.clone(), Value::decode(&s.value, entry.kind)?))
-                    })
-                    .collect();
-                // Nothing of the device's own to write: only the connection travels, if there is one.
-                if values.is_empty() {
-                    if !seerr_fields.is_empty() {
-                        let Some(post) =
-                            self.request(Method::Post, Some(copy.merged(&seerr_fields)))
-                        else {
-                            return unreachable();
-                        };
-                        if !matches!(self.transport.send(post).await, Ok(a) if a.is_success()) {
-                            return unreachable();
-                        }
-                    }
-                    return done(SettingsSyncOutcome::Nothing);
+                },
+                SyncOutcome::Pushed { changed } => SettingsSyncOutcome::Pushed { changed },
+                SyncOutcome::Nothing => SettingsSyncOutcome::Nothing,
+                SyncOutcome::Unreachable => SettingsSyncOutcome::Unreachable,
+            },
+            remote_changed: round.remote_changed,
+            seerr: match round.seerr {
+                SeerrOutcome::Nothing => SeerrSyncOutcome::Nothing,
+                SeerrOutcome::Adopt { access, changed } => {
+                    SeerrSyncOutcome::Adopt { access, changed }
                 }
-                let stamp =
-                    local_changed.unwrap_or_else(|| SettingsSync::change_time(now, remote_seen));
-                let mut fields = SettingsSync::fields(&values, stamp);
-                fields.extend(seerr_fields);
-                let Some(post) = self.request(Method::Post, Some(copy.merged(&fields))) else {
-                    return unreachable();
-                };
-                match self.transport.send(post).await {
-                    Ok(a) if a.is_success() => done(SettingsSyncOutcome::Pushed { changed: stamp }),
-                    _ => unreachable(),
-                }
-            }
+                SeerrOutcome::Pushed { changed } => SeerrSyncOutcome::Pushed { changed },
+            },
         }
     }
 }

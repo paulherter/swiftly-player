@@ -1,4 +1,12 @@
-# Swiftly for Windows
+# Swiftly for Windows (retired)
+
+> **Retired.** This GTK4 and Swift app is replaced by the Rust desktop app in
+> [`crates/swiftly-desktop`](../crates/swiftly-desktop), which ships for Windows
+> and Linux from one code base. How to build, run and package it is in
+> [`Documentation/Building.md`](../Documentation/Building.md). The Windows
+> installer is now an NSIS Setup (`Distribution/desktop/swiftly-player.nsi`)
+> built by `Werkzeuge/package-desktop.sh`. The rest of this page describes the
+> old app and is kept for reference only.
 
 The same UI as on Linux, not a second one.
 

@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "workspace-hack", "xtask"]
+# Vendored third-party code, built as a path dependency through `[patch.crates-io]`; not linted or formatted here.
+exclude = ["third_party"]
 
 [workspace.package]
 version = "0.1.0"
@@ -48,3 +50,7 @@ opt-level = "s"
 lto = "fat"
 codegen-units = 1
 strip = "symbols"
+
+# souvlaki 0.9.3 (MIT) with playback rate support for MPRIS and SMTC, see `third_party/souvlaki/CHANGES-VENDORED.md`.
+[patch.crates-io]
+souvlaki = { path = "third_party/souvlaki" }

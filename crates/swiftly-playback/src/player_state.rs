@@ -602,8 +602,23 @@ impl PlayerState {
 
     /// A file on the device has no server description: the lists then come from the engine's own
     /// tracks (same numbers) so panels, memory and selection work as for a server title (`:381`).
+    /// A kind the stored title already lists (the subtitles a download kept in `info.json`) stays as it is; only the
+    /// missing kinds come from the engine, as on the Mac (`AetherPlayerEngine.adoptEngineTracks`).
     fn adopt_engine_tracks(&mut self, out: &mut Vec<Command>) {
-        if !self.request.item_id.is_empty() || !self.request.streams.is_empty() {
+        if !self.request.item_id.is_empty() {
+            return;
+        }
+        let kind = |ty: &str| {
+            self.request
+                .streams
+                .iter()
+                .any(|s| s.type_.as_deref() == Some(ty))
+        };
+        let want_audio = !kind("Audio");
+        let want_subtitles = !kind("Subtitle");
+        if !((want_audio && !self.engine_audio.is_empty())
+            || (want_subtitles && !self.engine_subtitles.is_empty()))
+        {
             return;
         }
         let entry = |t: &EngineTrack, ty: &str| MediaStream {
@@ -617,12 +632,13 @@ impl PlayerState {
             is_forced: Some(t.is_forced),
             ..MediaStream::default()
         };
-        let mut streams: Vec<MediaStream> = self
-            .engine_audio
-            .iter()
-            .map(|t| entry(t, "Audio"))
-            .collect();
-        streams.extend(self.engine_subtitles.iter().map(|t| entry(t, "Subtitle")));
+        let mut streams = std::mem::take(&mut self.request.streams);
+        if want_audio {
+            streams.extend(self.engine_audio.iter().map(|t| entry(t, "Audio")));
+        }
+        if want_subtitles {
+            streams.extend(self.engine_subtitles.iter().map(|t| entry(t, "Subtitle")));
+        }
         self.request.streams = streams;
         if self.audio_index.is_none() {
             self.audio_index = self
@@ -641,9 +657,26 @@ impl PlayerState {
             subtitle: Some(self.subtitle_index),
         }));
         out.push(Command::Log(format!(
-            "[Aether] Datei ohne Beschreibung: {} Töne, {} Untertitel aus der Engine",
-            self.engine_audio.len(),
-            self.engine_subtitles.len()
+            "[Aether] Datei ohne Beschreibung: {} Töne, {} Untertitel {}",
+            if want_audio {
+                self.engine_audio.len()
+            } else {
+                0
+            },
+            if want_subtitles {
+                self.engine_subtitles.len()
+            } else {
+                self.request
+                    .streams
+                    .iter()
+                    .filter(|s| s.type_.as_deref() == Some("Subtitle"))
+                    .count()
+            },
+            if want_subtitles {
+                "aus der Engine"
+            } else {
+                "aus dem Download"
+            }
         )));
     }
 
@@ -1185,6 +1218,35 @@ mod tests {
             subtitle: Some(-1)
         })));
         assert_eq!(s.streams().len(), 4);
+        assert_eq!(s.audio_index(), Some(1));
+    }
+
+    /// A download keeps its subtitles in `info.json` but has no audio rows: the audio list comes from the engine's
+    /// tracks while the stored subtitles stay as they are.
+    #[test]
+    fn download_with_stored_subtitles_takes_its_audio_from_the_engine() {
+        let stored = MediaStream {
+            index: Some(3),
+            type_: Some("Subtitle".to_owned()),
+            codec: Some("subrip".to_owned()),
+            is_external: Some(true),
+            ..MediaStream::default()
+        };
+        let mut req = request(vec![]);
+        req.item_id = String::new();
+        req.streams = vec![stored];
+        let mut s = PlayerState::new(req, None, -1);
+        s.intent(Intent::Start(0.0));
+        s.apply(tracks_event(None, None));
+        let of = |ty: &str| {
+            s.streams()
+                .iter()
+                .filter(|m| m.type_.as_deref() == Some(ty))
+                .map(|m| m.index)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(of("Audio"), [Some(1), Some(2)]);
+        assert_eq!(of("Subtitle"), [Some(3)], "the stored subtitles stay");
         assert_eq!(s.audio_index(), Some(1));
     }
 

@@ -280,8 +280,6 @@ pub enum Intent {
     Forward,
     /// Scroll the page.
     Scroll(ScrollKey),
-    /// Typing with nothing focused starts a search with this text.
-    TypeToSearch(String),
     /// Quit: Ctrl+Q / Cmd+Q, Alt+F4 is the window manager's.
     Quit,
 }
@@ -320,12 +318,9 @@ pub fn intent(chord: &Chord, text: Option<&str>, typing_target: bool, os: Os) ->
         }
         _ => {}
     }
-    if typing_target || !nothing {
-        return None;
-    }
-    let t = text?;
-    (t.chars().count() == 1 && t.chars().all(|c| !c.is_control() && !c.is_whitespace()))
-        .then(|| Intent::TypeToSearch(t.to_owned()))
+    // The Mac has no type-to-search: typing with nothing focused does nothing; the search opens with Cmd+F (Ctrl+F).
+    let _ = text;
+    None
 }
 
 /// One menu of the in-window bar. A `&` in the title marks the mnemonic letter ("&File" shows "File", Alt+F opens it).
@@ -568,12 +563,9 @@ mod tests {
     }
 
     #[test]
-    fn typing_with_nothing_focused_starts_a_search_but_never_inside_a_field_or_with_a_shortcut() {
+    fn typing_with_nothing_focused_does_nothing_like_the_mac() {
         let a = Chord::plain(Key::Char('a'));
-        assert_eq!(
-            intent(&a, Some("a"), false, Os::Linux),
-            Some(Intent::TypeToSearch("a".into()))
-        );
+        assert_eq!(intent(&a, Some("a"), false, Os::Linux), None);
         assert_eq!(intent(&a, Some("a"), true, Os::Linux), None);
         assert_eq!(intent(&ctrl('a'), Some("a"), false, Os::Linux), None);
         assert_eq!(

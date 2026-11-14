@@ -16,6 +16,7 @@ use swiftly_layout::Size;
 use swiftly_ui::{Cx, Env, Idiom};
 
 const TEST: &str = "start_refetches_after_the_grace_period_when_it_comes_back";
+const TEST_SETTINGS: &str = "start_loads_again_when_its_settings_change_while_it_runs";
 
 struct Fixture {
     child: Child,
@@ -142,4 +143,75 @@ fn start_refetches_after_the_grace_period_when_it_comes_back() {
         "stale rows were not fetched again: {:?}",
         fx.lines()
     );
+}
+
+#[test]
+fn start_loads_again_when_its_settings_change_while_it_runs() {
+    if std::env::var_os("SWIFTLY_CONFIG_DIR").is_none() {
+        let dir =
+            std::env::temp_dir().join(format!("swiftly-start-settings-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let out = Command::new(std::env::current_exe().expect("exe"))
+            .args(["--exact", TEST_SETTINGS, "--nocapture", "--test-threads=1"])
+            .env("SWIFTLY_CONFIG_DIR", &dir)
+            .output()
+            .expect("child");
+        let _ = std::fs::remove_dir_all(&dir);
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        println!("{text}");
+        assert!(out.status.success(), "{text}");
+        return;
+    }
+    let xtask = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/xtask");
+    if !xtask.exists() {
+        println!("skipped: build xtask first (cargo build -p xtask)");
+        return;
+    }
+    let tmp = std::env::temp_dir().join(format!(
+        "swiftly-start-settings-logs-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::create_dir_all(&tmp);
+    let (fx, addr) = Fixture::start(&xtask, "fx-s", tmp.join("s.log"));
+    let core = Arc::new(Core::open().expect("core"));
+    let backend = core.sign_in_backend();
+    let wait = Duration::from_secs(30);
+    backend
+        .connect(&addr)
+        .0
+        .recv_timeout(wait)
+        .expect("connect")
+        .expect("address");
+    backend
+        .password("demo", "demo")
+        .0
+        .recv_timeout(wait)
+        .expect("password")
+        .expect("sign-in");
+    let env = Env::new(Size::new(1280.0, 800.0), 1.0, Idiom::Desktop);
+    let mut suite = Suite::new_live(env, Cx::new(), Arc::clone(&core));
+    let clock = Instant::now();
+
+    run(&mut suite, &clock, 4.0);
+    let first = fx.resumes();
+    assert!(first > 0, "Start did not load");
+
+    // A row switched off on the Appearance page (or on another device) builds Start again and loads it.
+    use swiftly_settings::{KeyValueStore, Value};
+    core.settings
+        .set("startAus", Value::StrList(vec!["weiterschauen".into()]))
+        .expect("setting");
+    run(&mut suite, &clock, 4.0);
+    assert!(
+        fx.resumes() > first,
+        "Start did not load again after its settings changed: {:?}",
+        fx.lines()
+    );
+    let after = fx.resumes();
+    run(&mut suite, &clock, 3.0);
+    assert_eq!(fx.resumes(), after, "unchanged settings must not reload");
 }

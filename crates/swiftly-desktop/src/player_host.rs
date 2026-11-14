@@ -131,6 +131,8 @@ pub struct Switched {
     pub still: Option<crate::player_card::StillSource>,
     /// The title's poster for the system's media widgets: source, directory, file name.
     pub poster: Option<(crate::player_card::StillSource, std::path::PathBuf, String)>,
+    /// What the screen takes from the item and the account (next card code, original language, season).
+    pub extra: Option<crate::live_play::ReadyExtra>,
 }
 
 impl Switched {
@@ -144,6 +146,7 @@ impl Switched {
             trickplay: None,
             still: None,
             poster: None,
+            extra: None,
         }
     }
 }
@@ -160,6 +163,157 @@ pub trait Planner: Send + Sync {
     fn prepare_next(&self, _ask: PlanAsk) {}
     /// Drops what `prepare_next` made (it carries the old quality).
     fn forget_prepared(&self) {}
+}
+
+/// What the technical overlay says about the file (`TechBadge`): the plan's delivery and the file's tracks. The lines are
+/// built from it every 2 seconds with the tracks that play (`TechBadge.audio`, `.subtitle`).
+#[derive(Debug, Clone, Default)]
+pub struct TechFacts {
+    /// The delivery word ("Direct Play") and whether it is the good kind (accent) or a transcode (warning).
+    pub delivery: String,
+    /// Direct Play and Direct Stream.
+    pub good: bool,
+    /// The file's video track.
+    pub video: Option<swiftly_model::MediaStream>,
+    /// Audio tracks, subtitle tracks.
+    pub audios: Vec<swiftly_model::MediaStream>,
+    /// Subtitle tracks.
+    pub subtitles: Vec<swiftly_model::MediaStream>,
+    /// Container name and file size.
+    pub container: Option<String>,
+    /// Bytes.
+    pub size: Option<i64>,
+    /// Why the server transcodes, the first reason in words (`plan.reasons.first.text`); `None` unless it transcodes.
+    pub reason: Option<String>,
+}
+
+impl TechFacts {
+    /// From the plan the server gave.
+    pub fn from_plan(plan: &swiftly_playback::playback_plan::PlaybackPlan) -> TechFacts {
+        use swiftly_playback::tech_details as td;
+        let streams = plan
+            .source
+            .as_ref()
+            .and_then(|s| s.media_streams.clone())
+            .unwrap_or_default();
+        let of = |kind: &str| -> Vec<swiftly_model::MediaStream> {
+            streams
+                .iter()
+                .filter(|m| m.type_.as_deref() == Some(kind))
+                .cloned()
+                .collect()
+        };
+        TechFacts {
+            delivery: td::delivery(plan.method, &swiftly_model::Source),
+            good: td::weight(plan.method) == td::Weight::Good,
+            video: of("Video").into_iter().next(),
+            audios: of("Audio"),
+            subtitles: of("Subtitle"),
+            container: plan.source.as_ref().and_then(|s| s.container.clone()),
+            size: plan.source.as_ref().and_then(|s| s.size),
+            reason: (plan.method == swiftly_model::DeliveryMethod::Transcode)
+                .then(|| plan.reasons.first())
+                .flatten()
+                .map(|r| {
+                    swiftly_vm::reason_text(
+                        r,
+                        &swiftly_l10n::Translator::new(swiftly_l10n::current_locale()),
+                    )
+                }),
+        }
+    }
+
+    /// The lines "Bild", "Ton", "Untertitel", "Datei" for the tracks that play now (server indexes).
+    pub fn rows(
+        &self,
+        audio: Option<i64>,
+        subtitle: Option<i64>,
+        duration: f64,
+        words: &dyn swiftly_playback::track_label::LabelText,
+    ) -> Vec<(String, String)> {
+        use swiftly_playback::tech_details::MeasuredBadge as B;
+        let pick = |list: &[swiftly_model::MediaStream], at: Option<i64>| {
+            at.and_then(|i| list.iter().find(|m| m.index == Some(i)))
+                .cloned()
+        };
+        // Without a report yet the first audio track stands in (`TechBadge.audio`).
+        let audio_t = pick(&self.audios, audio).or_else(|| self.audios.first().cloned());
+        let sub_t = pick(&self.subtitles, subtitle);
+        let container = self.container.as_deref().map(|c| {
+            let name = c.split(',').next().unwrap_or(c).to_uppercase();
+            match self.size.filter(|b| *b > 0) {
+                Some(b) if b >= 1_000_000_000 => {
+                    format!("{name} · {:.1} GB", b as f64 / 1e9).replace('.', ",")
+                }
+                Some(b) => format!("{name} · {} MB", (b as f64 / 1e6).round() as i64),
+                None => name,
+            }
+        });
+        B::upper_lines(
+            B::image(self.video.as_ref(), false),
+            B::audio(audio_t.as_ref(), words),
+            B::subtitle(sub_t.as_ref(), words),
+            B::file(container.as_deref(), None, Some(duration)).map(|f| {
+                match self.size.filter(|b| *b > 0) {
+                    Some(b) if duration > 1.0 => {
+                        let rate = swiftly_playback::tech_details::bitrate(Some(
+                            b as f64 * 8.0 / duration,
+                        ));
+                        match rate {
+                            Some(r) => format!("{} · Ø {r}", container.clone().unwrap_or_default()),
+                            None => f,
+                        }
+                    }
+                    _ => f,
+                }
+            }),
+            &swiftly_model::Source,
+        )
+        .into_iter()
+        .map(|l| (l.name.unwrap_or_default(), l.text))
+        .collect()
+    }
+}
+
+/// One season of the episodes layer's picker (`SeasonSelection`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeasonRow {
+    /// The season's item id.
+    pub id: String,
+    /// "Staffel 2".
+    pub name: String,
+}
+
+/// One episode card of the layer (`EpisodeCardMac`): the lines are ready text.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EpisodeCardData {
+    /// The episode's item id.
+    pub id: String,
+    /// The title for the next card and the switch.
+    pub title: String,
+    /// "F3 · Name", or the name alone without a number.
+    pub header: String,
+    /// "52 Min." and, for a started one, "Noch 12 Min.".
+    pub sub: Option<String>,
+    /// Watched share while not watched.
+    pub progress: Option<f32>,
+    /// Watched.
+    pub watched: bool,
+    /// The still's address, chosen like the Mac's card (`imageURL(for: episode, maxHeight: 360)`, else the landscape
+    /// picture of the title): `None` when the server has no picture for it (the card keeps its ground).
+    pub image: Option<String>,
+}
+
+/// Where the episodes layer gets its data (`model.seasons`, `model.episodes`). Every call returns at once.
+pub trait EpisodeSource: Send + Sync {
+    /// The seasons of a series and the one to open on (`SeasonSelectionRule.choose` for the season the episode is in).
+    #[allow(clippy::type_complexity)]
+    fn seasons(&self, series: &str, hint: Option<&str>)
+    -> Pending<Option<(Vec<SeasonRow>, usize)>>;
+    /// The episodes of one season; `None` is a failure (the list stays as it was).
+    fn episodes(&self, series: &str, season: &str) -> Pending<Option<Vec<EpisodeCardData>>>;
+    /// The picture of an episode card: `address` (the card's still, sized for the device) is fetched; without one nothing is.
+    fn still(&self, id: &str, address: Option<&str>) -> crate::player_card::StillSource;
 }
 
 /// Where the screen stands while a switch runs. One value, one place that changes it ([`SwitchState::step`]).

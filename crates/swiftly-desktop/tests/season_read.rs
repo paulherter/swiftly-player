@@ -97,9 +97,12 @@ fn the_series_page_asks_for_the_season_sheet() {
     s.touch_up(x, y, now + 40.0);
     let _ = s.frame(now + 60.0);
     assert!(s.menu_open(), "the more menu is open");
-    // "Laden" is the first row.
-    s.nav_key(NavKey::Arrow(Dir::Down), true, now + 100.0);
-    s.nav_key(NavKey::Enter, true, now + 140.0);
+    // The rows are the core's entries (`more_menu`), "Laden" follows them.
+    let rows = s.vm().more_menu().len() + 1;
+    for i in 0..rows {
+        s.nav_key(NavKey::Arrow(Dir::Down), true, now + 100.0 + i as f64);
+    }
+    s.nav_key(NavKey::Enter, true, now + 140.0 + rows as f64);
     let asked = s.take_download().expect("Laden emits the request");
     assert!(asked.is_some(), "with the rect of the button it came from");
     assert_eq!(s.take_download(), None, "once");

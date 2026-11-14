@@ -51,6 +51,15 @@ impl Kind {
         }
     }
 
+    /// The drawn mark of the kind (`ServerKindMark`: bell, orbit, stack) in the icon set.
+    pub fn mark_asset(self) -> &'static str {
+        match self {
+            Kind::Jellyfin => "kind-jellyfin",
+            Kind::Plex => "kind-plex",
+            Kind::Emby => "kind-emby",
+        }
+    }
+
     /// `ServerKind.tint`: Jellyfin blue, Plex amber, Emby green.
     fn tint(self) -> Color {
         match self {
@@ -95,9 +104,28 @@ pub enum PinState {
     Wrong,
 }
 
+/// The picture hub of the pages that show faces ("Wer schaut?", the Plex profiles). Every instance counts as equal: the
+/// pages rebuild when `Mac::pictures` (the hub's stamp) changes, not when the hub is swapped.
+#[derive(Clone, Default)]
+pub struct HubRef(pub crate::hub::HubSlot);
+
+impl PartialEq for HubRef {
+    fn eq(&self, _: &HubRef) -> bool {
+        true
+    }
+}
+
 /// What the desktop flow needs besides the shared parts.
 #[derive(Clone, PartialEq)]
 pub struct Mac {
+    /// The picture hub (without one the pages show initials).
+    pub hub: HubRef,
+    /// The hub's stamp: a finished load rebuilds the page.
+    pub pictures: u64,
+    /// The picture address of each Emby user in `users`.
+    pub user_pics: Vec<Option<String>>,
+    /// The picture address of each Plex profile in `profiles`.
+    pub profile_pics: Vec<Option<String>>,
     /// The kind the flow is for.
     pub kind: Kind,
     /// Reached through the picker (the arrow goes back to it).
@@ -136,12 +164,54 @@ pub struct Mac {
     pub servers: Vec<(String, String)>,
     /// Whether the code was just copied.
     pub copied: bool,
+    /// Whether the checked server has Quick Connect on (`quickConnectOffered`).
+    pub quick_offered: bool,
+    /// The plex.tv account's name, the page title after the browser step.
+    pub plex_account: String,
+    /// Why the Plex sign-in failed (picks the page).
+    pub plex_problem: PlexProblem,
+    /// The server row that connects right now.
+    pub server_busy: Option<usize>,
+    /// The server rows that did not answer.
+    pub server_failed: Vec<usize>,
+    /// The code typed on the Quick Connect share page.
+    pub share_code: String,
+    /// What became of the share.
+    pub share: ShareState,
+}
+
+/// The approval of a code another device shows (`QuickConnectView`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ShareState {
+    /// Waiting for the code.
+    Idle,
+    /// The server is asked ("Moment…").
+    Running,
+    /// Approved; the page closes by itself.
+    Done,
+    /// Failed, with the sentence.
+    Failed(String),
+}
+
+/// Why the Plex sign-in ended (`PlexSignInProblem`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlexProblem {
+    /// plex.tv does not answer.
+    Unreachable,
+    /// The code ran out.
+    Expired,
+    /// Anything else (the sentence is in `Parts::error`).
+    Other,
 }
 
 impl Mac {
     /// The scripted state of the demo.
     pub fn new() -> Mac {
         Mac {
+            hub: HubRef::default(),
+            pictures: 0,
+            user_pics: Vec::new(),
+            profile_pics: Vec::new(),
             kind: Kind::Jellyfin,
             via_picker: false,
             add: false,
@@ -160,10 +230,20 @@ impl Mac {
             pin_state: PinState::Idle,
             plex_left: 300,
             servers: vec![
-                ("Wohnzimmer".into(), "Zuhause · Plex Media Server".into()),
-                ("Kino".into(), "Geteilt von Oma".into()),
+                ("Wohnzimmer".into(), "Dein Server · im WLAN".into()),
+                (
+                    "Kino".into(),
+                    "Von Oma freigegeben · über das Internet".into(),
+                ),
             ],
+            plex_account: String::new(),
+            plex_problem: PlexProblem::Other,
+            server_busy: None,
+            server_failed: Vec::new(),
+            share_code: String::new(),
+            share: ShareState::Idle,
             copied: false,
+            quick_offered: true,
         }
     }
 }
@@ -213,7 +293,7 @@ fn left(n: Node) -> Node {
 }
 
 /// Type size of the text in an `InputRow`.
-pub const FIELD_SIZE: f32 = 14.0;
+pub const FIELD_SIZE: f32 = 15.0;
 
 /// `InputRow`: 38 high, 12 inside, corner 12 on the area colour, a stroke of 1 that becomes 2 while it has the keyboard.
 #[allow(clippy::too_many_arguments)]
@@ -291,6 +371,21 @@ pub fn input_row(
     forms::tappable(n, f, key, 12.0)
 }
 
+/// The server row's symbol: the Mac's `server.rack` (a stack of server units), nearest in the Phosphor set.
+const SERVER_SYMBOL: &str = "hard-drives";
+
+/// The symbol and placeholder of the address field. First start is `ServerView` (globe, "tv.beispiel.de",
+/// `RootView.swift:179`); "Server hinzuf\u{00FC}gen" is `ServerOnboardingView` (server.rack, "jellyfin.beispiel.de",
+/// `ServerOnboardingView.swift:113`).
+#[doc(hidden)]
+pub fn address_look(add: bool) -> (&'static str, &'static str) {
+    if add {
+        (SERVER_SYMBOL, "jellyfin.beispiel.de")
+    } else {
+        ("globe", "tv.beispiel.de")
+    }
+}
+
 /// `PrimaryButton`: 48 high, white, the label (17 semibold) in the ground colour and an arrow; `enabled == false` dims it to 0.4.
 pub fn primary(cx: &Cx, icons: &Icons, f: &Fm, key: &str, label: &str, enabled: bool) -> Node {
     // `PrimaryButton(symbol: "arrow.right")`: the arrow stands before the label, both in the 17 semibold of `categoryLarge`.
@@ -325,7 +420,7 @@ pub fn primary(cx: &Cx, icons: &Icons, f: &Fm, key: &str, label: &str, enabled: 
 /// the symbol and the label (15 medium) in the accent.
 pub fn outline(cx: &Cx, icons: &Icons, f: &Fm, key: &str, label: &str, symbol: &str) -> Node {
     let parts = vec![
-        icons.node(symbol, 16.0, true, color(colour::MARK_ACCENT)),
+        icons.node(symbol, 15.0, true, color(colour::MARK_ACCENT)),
         t(
             cx,
             label,
@@ -350,7 +445,7 @@ fn kind_mark(icons: &Icons, kind: Kind, size: f32, grey: bool) -> Node {
         kind.tint()
     };
     icons
-        .node("hard-drives", size, true, c)
+        .node_template(kind.mark_asset(), size, false, c)
         .frame(Some(44.0), Some(44.0), Alignment::CENTER)
 }
 
@@ -365,17 +460,19 @@ fn dot7() -> Node {
     Node::rect(color(colour::MARK_ACCENT), 3.5).frame(Some(7.0), Some(7.0), Alignment::CENTER)
 }
 
+/// `Theme.warning` 12: the error line of the Jellyfin pages (the Emby and Plex pages use `warn_error`).
 fn warn(cx: &Cx, s: &str) -> Node {
+    warn_in(cx, s, colour::ORIGINAL_WARNING)
+}
+
+/// `Theme.error` 12: the error line of the Emby and Plex pages.
+fn warn_error(cx: &Cx, s: &str) -> Node {
+    warn_in(cx, s, colour::ERROR)
+}
+
+fn warn_in(cx: &Cx, s: &str, c: swiftly_design::Colour) -> Node {
     wide(
-        t(
-            cx,
-            s,
-            13.0,
-            400,
-            colour::ERROR,
-            3,
-            swiftly_text::Align::Center,
-        ),
+        t(cx, s, 12.0, 400, c, 3, swiftly_text::Align::Center),
         Alignment::CENTER,
     )
     .padding(ins(12.0, 0.0, 0.0, 0.0))
@@ -435,7 +532,7 @@ fn kind_card(cx: &Cx, icons: &Icons, m: &Mac, i: usize) -> Node {
             left(t(
                 cx,
                 line,
-                14.0,
+                15.0,
                 400,
                 line_c,
                 3,
@@ -478,7 +575,7 @@ fn kind_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
             left(t(
                 cx,
                 "Du bleibst bei allen angemeldet und wechselst auf der Profilseite zwischen ihnen.",
-                14.0,
+                15.0,
                 400,
                 colour::FONT_QUIET,
                 4,
@@ -519,7 +616,7 @@ fn kind_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
             t(
                 cx,
                 "Weitere Server kannst du sp\u{00E4}ter dazunehmen, auch gemischt.",
-                14.0,
+                15.0,
                 400,
                 colour::FONT_QUIET,
                 2,
@@ -546,7 +643,7 @@ fn advanced(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Node {
                 t(
                     cx,
                     "Erweitert",
-                    13.0,
+                    12.0,
                     400,
                     colour::FONT_QUIET,
                     1,
@@ -623,7 +720,7 @@ fn advanced(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Node {
                     t(
                         cx,
                         "Header hinzuf\u{00FC}gen",
-                        13.0,
+                        12.0,
                         400,
                         colour::FONT_QUIET,
                         1,
@@ -713,7 +810,7 @@ fn address_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts, emby: bool
             left(t(
                 cx,
                 "Wo steht dein Emby-Server?",
-                14.0,
+                15.0,
                 400,
                 colour::FONT_QUIET,
                 2,
@@ -768,7 +865,7 @@ fn address_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts, emby: bool
             if e == crate::signin_flows::EMBY_DOWN {
                 b.push(disturb(cx, icons, f, &p.address, e));
             } else {
-                b.push(warn(cx, e));
+                b.push(warn_error(cx, e));
             }
         }
     } else {
@@ -776,7 +873,7 @@ fn address_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts, emby: bool
             left(t(
                 cx,
                 "Wo steht dein Jellyfin-Server?",
-                14.0,
+                15.0,
                 400,
                 colour::FONT_QUIET,
                 2,
@@ -790,8 +887,8 @@ fn address_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts, emby: bool
                 icons,
                 f,
                 "field:addr",
-                "globe",
-                "tv.beispiel.de",
+                address_look(p.mac.add).0,
+                address_look(p.mac.add).1,
                 &p.shown(Field::Address),
                 false,
                 p.field == Field::Address,
@@ -801,12 +898,8 @@ fn address_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts, emby: bool
         );
         b.push(advanced(cx, icons, f, p).padding(ins(10.0, 0.0, 0.0, 0.0)));
         if let Some(e) = &p.error {
-            // `DisturbHint` for a silent server, the plain warning line for every other failure.
-            if e == crate::signin_flows::JELLYFIN_DOWN {
-                b.push(disturb(cx, icons, f, &p.address, e));
-            } else {
-                b.push(warn(cx, e));
-            }
+            // The Mac shows the plain `errorMessage` here; `DisturbHint` is Emby's only.
+            b.push(warn(cx, e));
         }
         b.push(
             primary(
@@ -814,10 +907,13 @@ fn address_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts, emby: bool
                 icons,
                 f,
                 "connect",
-                if p.checking {
-                    "Verbinden\u{2026}"
-                } else {
-                    "Verbinden"
+                // First start is `ServerView` ("Verbinden", `RootView.swift:202`); "Server hinzuf\u{00FC}gen" is
+                // `ServerOnboardingView` ("Weiter", `ServerOnboardingView.swift:124`).
+                match (p.mac.add, p.checking) {
+                    (false, true) => "Verbinden\u{2026}",
+                    (false, false) => "Verbinden",
+                    (true, true) => "Moment\u{2026}",
+                    (true, false) => "Weiter",
                 },
                 !empty && !p.checking,
             )
@@ -827,40 +923,60 @@ fn address_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts, emby: bool
             b.push(n);
         }
     }
-    let title = if emby {
-        "Emby (Beta)"
-    } else {
-        "Mit Jellyfin anmelden"
-    };
-    forms::page(cx, icons, env, f, title, None, b, None)
+    if emby {
+        return forms::flow_page(cx, icons, env, f, "Mit Emby anmelden", b, !p.mac.add);
+    }
+    if !p.mac.add {
+        return forms::centred_page(cx, icons, f, "Mit Jellyfin anmelden", b);
+    }
+    forms::page(cx, icons, env, f, "Mit Jellyfin anmelden", None, b, None)
 }
 
 /// `DisturbHint`: "Server ist abgetaucht" with the address and a retry.
 fn disturb(cx: &Cx, icons: &Icons, f: &Fm, address: &str, _error: &str) -> Node {
     let b = vec![
+        icons.node("hard-drives", 30.0, true, color(colour::FONT_QUIET)),
         t(
             cx,
             "Server ist abgetaucht",
-            17.0,
+            20.0,
             600,
             colour::FONT,
-            1,
+            2,
             swiftly_text::Align::Center,
-        ),
+        )
+        .padding(ins(10.0, 0.0, 0.0, 0.0)),
         t(
             cx,
             &format!(
                 "{address} antwortet nicht. L\u{00E4}uft er noch, oder h\u{00E4}ngt das WLAN?"
             ),
-            13.0,
+            15.0,
             400,
-            colour::FONT_QUIET,
-            3,
+            colour::FONT_VERY_QUIET,
+            4,
             swiftly_text::Align::Center,
         )
+        .frame(Some(262.0), None, Alignment::CENTER)
         .padding(ins(6.0, 0.0, 0.0, 0.0)),
-        outline(cx, icons, f, "retry", "Erneut versuchen", "arrow-up-right")
-            .padding(ins(14.0, 0.0, 0.0, 0.0)),
+        // The retry is an accent text button, not a full-width outline.
+        forms::tappable(
+            t(
+                cx,
+                "Erneut versuchen",
+                15.0,
+                500,
+                colour::MARK_ACCENT,
+                1,
+                swiftly_text::Align::Center,
+            )
+            .padding(ins(0.0, 16.0, 0.0, 16.0))
+            .frame(None, Some(44.0), Alignment::CENTER),
+            f,
+            "retry",
+            8.0,
+        )
+        .padding(ins(8.0, 0.0, 0.0, 0.0)),
     ];
     Node::vstack(Align::Center, Some(0.0), b).padding(ins(22.0, 0.0, 0.0, 0.0))
 }
@@ -887,7 +1003,7 @@ fn header_block(cx: &Cx, version_line: &str, name: &str, dot: bool) -> Node {
         t(
             cx,
             version_line,
-            13.0,
+            12.0,
             400,
             colour::FONT_VERY_QUIET,
             1,
@@ -913,7 +1029,15 @@ fn header_block(cx: &Cx, version_line: &str, name: &str, dot: bool) -> Node {
 }
 
 /// A round character with the name below (`AccountCharacter`), `selected` ringed in the accent.
-fn character(cx: &Cx, f: &Fm, key: &str, name: &str, selected: bool) -> Node {
+fn character(
+    cx: &Cx,
+    f: &Fm,
+    hub: &HubRef,
+    pic: Option<&str>,
+    key: &str,
+    name: &str,
+    selected: bool,
+) -> Node {
     let initial: String = name
         .chars()
         .next()
@@ -924,15 +1048,17 @@ fn character(cx: &Cx, f: &Fm, key: &str, name: &str, selected: bool) -> Node {
     } else {
         color(colour::LINE)
     };
-    let face = t(
-        cx,
-        &initial,
-        24.0,
-        700,
-        colour::FONT,
-        1,
-        swiftly_text::Align::Center,
-    )
+    let face = crate::hub::avatar_node(&hub.0, pic, 56.0, || {
+        t(
+            cx,
+            &initial,
+            24.0,
+            700,
+            colour::FONT,
+            1,
+            swiftly_text::Align::Center,
+        )
+    })
     .frame(Some(56.0), Some(56.0), Alignment::CENTER)
     .background(Node::rect(color(colour::RAISED), 28.0), Alignment::CENTER)
     .padding(ins(2.0, 2.0, 2.0, 2.0))
@@ -958,7 +1084,8 @@ fn character(cx: &Cx, f: &Fm, key: &str, name: &str, selected: bool) -> Node {
 }
 
 /// `Wer schaut?` with a skeleton while the users load.
-fn who(cx: &Cx, f: &Fm, users: &Option<Vec<String>>, picked: &str, key: &str) -> Option<Node> {
+fn who(cx: &Cx, f: &Fm, p: &Parts, picked: &str, key: &str) -> Option<Node> {
+    let users = &p.mac.users;
     let title = left(t(
         cx,
         "Wer schaut?",
@@ -988,7 +1115,18 @@ fn who(cx: &Cx, f: &Fm, users: &Option<Vec<String>>, picked: &str, key: &str) ->
             Some(8.0),
             list.iter()
                 .enumerate()
-                .map(|(i, n)| character(cx, f, &format!("{key}:{i}"), n, n == picked))
+                .map(|(i, n)| {
+                    let pic = p.mac.user_pics.get(i).and_then(|a| a.as_deref());
+                    character(
+                        cx,
+                        f,
+                        &p.mac.hub,
+                        pic,
+                        &format!("{key}:{i}"),
+                        n,
+                        n == picked,
+                    )
+                })
                 .collect(),
         ),
     };
@@ -1029,6 +1167,39 @@ fn credentials_fields(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts, top: f32) -> Ve
     ]
 }
 
+/// "oder" and the Quick Connect button: only when the server has Quick Connect on (`quickConnectOffered`).
+fn quick_choice(cx: &Cx, icons: &Icons, f: &Fm) -> Vec<Node> {
+    vec![
+        Node::hstack(
+            Align::Center,
+            Some(12.0),
+            vec![
+                hair(),
+                t(
+                    cx,
+                    "oder",
+                    12.0,
+                    400,
+                    colour::FONT_VERY_QUIET,
+                    1,
+                    swiftly_text::Align::Center,
+                ),
+                hair(),
+            ],
+        )
+        .padding(ins(18.0, 0.0, 0.0, 0.0)),
+        outline(
+            cx,
+            icons,
+            f,
+            "quick",
+            "Mit Quick Connect anmelden",
+            "quick-connect",
+        )
+        .padding(ins(18.0, 0.0, 0.0, 0.0)),
+    ]
+}
+
 /// `SignInView`: the server, user name and password, the "oder" divider and the Quick Connect button.
 fn credentials_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
     let m = &p.mac;
@@ -1050,7 +1221,7 @@ fn credentials_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Nod
             } else {
                 format!("Jellyfin {}", m.version)
             },
-            13.0,
+            12.0,
             400,
             colour::FONT_VERY_QUIET,
             1,
@@ -1077,37 +1248,9 @@ fn credentials_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Nod
         )
         .padding(ins(24.0, 0.0, 0.0, 0.0)),
     );
-    b.push(
-        Node::hstack(
-            Align::Center,
-            Some(12.0),
-            vec![
-                hair(),
-                t(
-                    cx,
-                    "oder",
-                    12.0,
-                    400,
-                    colour::FONT_VERY_QUIET,
-                    1,
-                    swiftly_text::Align::Center,
-                ),
-                hair(),
-            ],
-        )
-        .padding(ins(18.0, 0.0, 0.0, 0.0)),
-    );
-    b.push(
-        outline(
-            cx,
-            icons,
-            f,
-            "quick",
-            "Mit Quick Connect anmelden",
-            "television",
-        )
-        .padding(ins(18.0, 0.0, 0.0, 0.0)),
-    );
+    if m.quick_offered {
+        b.extend(quick_choice(cx, icons, f));
+    }
     if !m.add {
         return signin_centred(cx, icons, f, p);
     }
@@ -1168,72 +1311,58 @@ fn signin_centred(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Node {
         )
         .padding(ins(24.0, 0.0, 0.0, 0.0)),
     );
-    b.push(
-        Node::hstack(
-            Align::Center,
-            Some(12.0),
-            vec![
-                hair(),
-                t(
-                    cx,
-                    "oder",
-                    12.0,
-                    400,
-                    colour::FONT_VERY_QUIET,
-                    1,
-                    swiftly_text::Align::Center,
-                ),
-                hair(),
-            ],
-        )
-        .padding(ins(18.0, 0.0, 0.0, 0.0)),
-    );
-    b.push(
-        outline(
-            cx,
-            icons,
-            f,
-            "quick",
-            "Mit Quick Connect anmelden",
-            "television",
-        )
-        .padding(ins(18.0, 0.0, 0.0, 0.0)),
-    );
+    if p.mac.quick_offered {
+        b.extend(quick_choice(cx, icons, f));
+    }
     // The fields and buttons are `formWidth` (420) wide; the heading lines centre over them.
     let col = Node::vstack(Align::Center, Some(0.0), b).frame(Some(f.col), None, Alignment::TOP);
     fill_frame(col, Alignment::CENTER)
         .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
 }
 
-/// `QuickConnectCode` inside the window: hint, the code in one copyable box, the countdown, the way back.
-fn quick_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
-    let mut b = vec![
-        left(t(cx, &p.mac.server_name, 26.0, 700, colour::FONT, 2, swiftly_text::Align::Start)).padding(ins(10.0, 0.0, 0.0, 0.0)),
-        left(t(cx, "Gib diesen Code in Jellyfin auf einem Ger\u{00E4}t ein, an dem du schon angemeldet bist.", 13.0, 400, colour::FONT_QUIET, 4, swiftly_text::Align::Start)).padding(ins(26.0, 0.0, 0.0, 0.0)),
-    ];
-    if let Some(e) = &p.error {
-        b.push(
-            left(t(
+/// `QuickConnectCode` (hint, the code in one copyable box, the countdown) and the way back, the rows under the server's
+/// name: `SignInView.codePart`. Each row is `formWidth` wide.
+fn quick_rows(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
+    let mut b = Vec::new();
+    if p.code.is_empty() {
+        // The code is coming; until then its shape is shown (`QuickConnectCode`: only the failure of the start shows a
+        // sentence, in `Theme.warning`).
+        b.push(match &p.error {
+            Some(e) => left(t(
                 cx,
                 e,
-                13.0,
+                12.0,
                 400,
-                colour::ERROR,
+                colour::ORIGINAL_WARNING,
                 3,
                 swiftly_text::Align::Start,
             ))
             .padding(ins(26.0, 0.0, 0.0, 0.0)),
-        );
-    } else if p.code.is_empty() {
-        b.push(left(skeleton(240.0, 64.0, 12.0)).padding(ins(26.0, 0.0, 0.0, 0.0)));
+            None => left(skeleton(240.0, 64.0, 12.0)).padding(ins(26.0, 0.0, 0.0, 0.0)),
+        });
     } else {
-        let code = t(
+        b.push(
+            left(t(
+                cx,
+                "Gib diesen Code in Jellyfin auf einem Ger\u{00E4}t ein, an dem du schon angemeldet bist.",
+                12.0,
+                400,
+                colour::FONT_QUIET,
+                4,
+                swiftly_text::Align::Start,
+            ))
+            .padding(ins(26.0, 0.0, 0.0, 0.0)),
+        );
+        // `titleLarge` 30 bold, monospaced digits, tracking 6.
+        let code = tabular_text(
             cx,
             &p.code,
-            28.0,
-            700,
+            swiftly_design::TextStyle {
+                tracking: 6.0,
+                ..st(30.0, 700)
+            },
             colour::FONT,
-            1,
+            Some(1),
             swiftly_text::Align::Center,
         )
         .frame(None, None, Alignment::CENTER);
@@ -1249,7 +1378,7 @@ fn quick_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
             left(tt(
                 cx,
                 &line,
-                13.0,
+                12.0,
                 400,
                 colour::FONT_VERY_QUIET,
                 1,
@@ -1257,25 +1386,73 @@ fn quick_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
             ))
             .padding(ins(14.0, 0.0, 0.0, 0.0)),
         );
+        // The sentence of a sign-in that failed after the approval (`model.errorMessage`).
+        if let Some(e) = p.error.as_ref().filter(|_| p.left > 0) {
+            b.push(warn(cx, e));
+        }
     }
     b.push(
         outline(cx, icons, f, "password", "Lieber Name und Passwort", "user")
             .padding(ins(22.0, 0.0, 0.0, 0.0)),
     );
-    forms::page(
-        cx,
-        icons,
-        env,
-        f,
-        if p.mac.add {
-            "Server hinzuf\u{00FC}gen"
-        } else {
-            "Mit Jellyfin anmelden"
-        },
-        None,
-        b,
-        None,
-    )
+    b
+}
+
+/// The Quick Connect step: at first start it is `SignInView` with the code under the server's name (wordmark, name
+/// 28 bold, version), in "Server hinzuf\u{00FC}gen" the page of the added server.
+fn quick_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
+    let m = &p.mac;
+    if !m.add {
+        let title = swiftly_design::TextStyle {
+            tracking: -0.6,
+            ..st(28.0, 700)
+        };
+        let mut b = vec![
+            icons.wordmark(44.0, color(colour::FONT), color(colour::MARK_ACCENT)),
+            text(
+                cx,
+                &m.server_name,
+                title,
+                colour::FONT,
+                Some(2),
+                swiftly_text::Align::Center,
+            )
+            .padding(ins(34.0, 0.0, 0.0, 0.0)),
+            t(
+                cx,
+                &if m.version.is_empty() {
+                    "Jellyfin".to_owned()
+                } else {
+                    format!("Jellyfin {}", m.version)
+                },
+                12.0,
+                400,
+                colour::FONT_VERY_QUIET,
+                1,
+                swiftly_text::Align::Center,
+            )
+            .padding(ins(4.0, 0.0, 0.0, 0.0)),
+        ];
+        b.extend(quick_rows(cx, icons, f, p));
+        let col =
+            Node::vstack(Align::Center, Some(0.0), b).frame(Some(f.col), None, Alignment::TOP);
+        return fill_frame(col, Alignment::CENTER)
+            .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER);
+    }
+    let mut b = vec![
+        left(t(
+            cx,
+            &m.server_name,
+            26.0,
+            700,
+            colour::FONT,
+            2,
+            swiftly_text::Align::Start,
+        ))
+        .padding(ins(10.0, 0.0, 0.0, 0.0)),
+    ];
+    b.extend(quick_rows(cx, icons, f, p));
+    forms::page(cx, icons, env, f, "Server hinzuf\u{00FC}gen", None, b, None)
 }
 
 /// `MacEmbySignIn.signInStep`.
@@ -1290,7 +1467,7 @@ fn emby_creds_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node
         )
         .padding(ins(22.0, 0.0, 0.0, 0.0)),
     ];
-    if let Some(n) = who(cx, f, &m.users, &p.user, "user") {
+    if let Some(n) = who(cx, f, p, &p.user, "user") {
         b.push(n);
     }
     let mut form = credentials_fields(cx, icons, f, p, 0.0);
@@ -1310,10 +1487,10 @@ fn emby_creds_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node
         .padding(ins(10.0, 0.0, 0.0, 0.0)),
     );
     if let Some(e) = &p.error {
-        form.push(warn(cx, e));
+        form.push(warn_error(cx, e));
     }
     b.push(Node::vstack(Align::Start, Some(0.0), form).padding(ins(26.0, 0.0, 0.0, 0.0)));
-    forms::page(cx, icons, env, f, "Emby (Beta)", None, b, None)
+    forms::flow_page(cx, icons, env, f, "Mit Emby anmelden", b, !p.mac.add)
 }
 
 fn step_line(cx: &Cx, n: u8, s: &str) -> Node {
@@ -1334,7 +1511,7 @@ fn step_line(cx: &Cx, n: u8, s: &str) -> Node {
             t(
                 cx,
                 s,
-                14.0,
+                15.0,
                 400,
                 colour::FONT_QUIET,
                 3,
@@ -1365,41 +1542,163 @@ fn plex_intro(cx: &Cx, icons: &Icons, f: &Fm, opening: bool) -> Vec<Node> {
     ]
 }
 
+/// `CodeBoxes`: one 46 x 60 box per character (30 semibold), the box the next digit goes into with the stronger edge.
+fn code_boxes(cx: &Cx, chars: &[char], active: Option<usize>) -> Node {
+    let boxes = chars
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let w = if active == Some(i) { 2.0 } else { 0.0 };
+            let face = tabular_text(
+                cx,
+                &c.to_string(),
+                st(30.0, 600),
+                colour::FONT,
+                Some(1),
+                swiftly_text::Align::Center,
+            )
+            .frame(
+                Some(46.0 - 2.0 * w),
+                Some(60.0 - 2.0 * w),
+                Alignment::CENTER,
+            )
+            .background(Node::rect(color(colour::AREA), 12.0 - w), Alignment::CENTER);
+            if w > 0.0 {
+                face.padding(ins(w, w, w, w))
+                    .background(Node::rect(color(colour::MARGIN), 12.0), Alignment::CENTER)
+            } else {
+                face
+            }
+        })
+        .collect();
+    Node::hstack(Align::Center, Some(8.0), boxes)
+}
+
+/// `EmptyState`: the 78 disc with its symbol, the heading, the text (262 wide), the main button as accent text and the
+/// quiet one under it.
+#[allow(clippy::too_many_arguments)]
+fn plex_empty(
+    cx: &Cx,
+    icons: &Icons,
+    f: &Fm,
+    symbol: &str,
+    head: &str,
+    body: &str,
+    primary: (&str, &str),
+    quiet: Option<(&str, &str)>,
+) -> Vec<Node> {
+    let disc = icons
+        .node(symbol, 44.0, true, color(colour::FONT_QUIET))
+        .frame(Some(78.0), Some(78.0), Alignment::CENTER)
+        .background(Node::rect(color(colour::AREA), 39.0), Alignment::CENTER);
+    let mut col = vec![
+        disc.padding(ins(0.0, 0.0, 22.0, 0.0)),
+        t(
+            cx,
+            head,
+            20.0,
+            600,
+            colour::FONT,
+            2,
+            swiftly_text::Align::Center,
+        )
+        .padding(ins(0.0, 0.0, 7.0, 0.0)),
+        t(
+            cx,
+            body,
+            15.0,
+            400,
+            colour::FONT_QUIET,
+            6,
+            swiftly_text::Align::Center,
+        )
+        .frame(Some(262.0), None, Alignment::CENTER),
+        forms::tappable(
+            t(
+                cx,
+                primary.0,
+                15.0,
+                500,
+                colour::MARK_ACCENT,
+                1,
+                swiftly_text::Align::Center,
+            )
+            .padding(ins(0.0, 16.0, 0.0, 16.0))
+            .frame(None, Some(44.0), Alignment::CENTER),
+            f,
+            primary.1,
+            8.0,
+        )
+        .padding(ins(10.0, 0.0, 0.0, 0.0)),
+    ];
+    if let Some((label, key)) = quiet {
+        col.push(forms::tappable(
+            t(
+                cx,
+                label,
+                12.0,
+                400,
+                colour::FONT_VERY_QUIET,
+                1,
+                swiftly_text::Align::Center,
+            )
+            .padding(ins(0.0, 16.0, 0.0, 16.0))
+            .frame(None, Some(32.0), Alignment::CENTER),
+            f,
+            key,
+            8.0,
+        ));
+    }
+    vec![
+        wide(
+            Node::vstack(Align::Center, Some(0.0), col),
+            Alignment::CENTER,
+        )
+        .padding(ins(30.0, 0.0, 0.0, 0.0)),
+    ]
+}
+
 fn plex_waiting(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
     let l = p.mac.plex_left;
-    vec![
-        left(kind_mark(icons, Kind::Plex, 34.0, false).opacity(0.6, Motion::Instant))
+    let mut b = vec![
+        left(kind_mark(icons, Kind::Plex, 44.0, false).opacity(0.6, Motion::Instant))
             .padding(ins(22.0, 0.0, 0.0, 0.0)),
         left(t(
             cx,
             "Melde dich auf der Seite von Plex an. Danach gehts hier von selbst weiter.",
-            14.0,
+            15.0,
             400,
             colour::FONT_QUIET,
             4,
             swiftly_text::Align::Start,
         ))
         .padding(ins(18.0, 0.0, 0.0, 0.0)),
-        left(t(
-            cx,
-            "Kein Fenster zu sehen? Auf plex.tv/link geht es auch, mit diesem Code.",
-            13.0,
-            400,
-            colour::FONT_VERY_QUIET,
-            3,
-            swiftly_text::Align::Start,
-        ))
-        .padding(ins(30.0, 0.0, 0.0, 0.0)),
-        left(t(
-            cx,
-            &p.code,
-            28.0,
-            700,
-            colour::FONT,
-            1,
-            swiftly_text::Align::Start,
-        ))
-        .padding(ins(12.0, 0.0, 0.0, 0.0)),
+    ];
+    if !p.code.is_empty() {
+        let chars: Vec<char> = p.code.chars().collect();
+        b.push(
+            left(t(
+                cx,
+                "Kein Fenster zu sehen? Auf plex.tv/link geht es auch, mit diesem Code.",
+                12.0,
+                400,
+                colour::FONT_VERY_QUIET,
+                3,
+                swiftly_text::Align::Start,
+            ))
+            .padding(ins(30.0, 0.0, 0.0, 0.0)),
+        );
+        b.push(
+            left(forms::tappable(
+                code_boxes(cx, &chars, None),
+                f,
+                "copy",
+                12.0,
+            ))
+            .padding(ins(12.0, 0.0, 0.0, 0.0)),
+        );
+    }
+    b.push(
         Node::hstack(
             Align::Center,
             Some(9.0),
@@ -1412,7 +1711,7 @@ fn plex_waiting(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
                 tt(
                     cx,
                     &format!("Warte auf Plex \u{00B7} noch {}:{:02}", l / 60, l % 60),
-                    13.0,
+                    12.0,
                     400,
                     colour::FONT_QUIET,
                     1,
@@ -1421,6 +1720,8 @@ fn plex_waiting(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
             ],
         )
         .padding(ins(22.0, 0.0, 0.0, 0.0)),
+    );
+    b.push(
         outline(
             cx,
             icons,
@@ -1430,7 +1731,8 @@ fn plex_waiting(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
             "arrow-up-right",
         )
         .padding(ins(22.0, 0.0, 0.0, 0.0)),
-    ]
+    );
+    b
 }
 
 fn plex_loading() -> Vec<Node> {
@@ -1461,7 +1763,10 @@ fn plex_profiles(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
             .profiles
             .iter()
             .enumerate()
-            .map(|(i, (n, _))| character(cx, f, &format!("profile:{i}"), n, false))
+            .map(|(i, (n, _))| {
+                let pic = p.mac.profile_pics.get(i).and_then(|a| a.as_deref());
+                character(cx, f, &p.mac.hub, pic, &format!("profile:{i}"), n, false)
+            })
             .collect(),
     );
     vec![
@@ -1469,7 +1774,7 @@ fn plex_profiles(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
         left(t(
             cx,
             "Jedes Profil hat seinen eigenen Fortschritt.",
-            13.0,
+            12.0,
             400,
             colour::FONT_VERY_QUIET,
             2,
@@ -1480,6 +1785,7 @@ fn plex_profiles(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
 }
 
 fn plex_pin(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
+    let _ = icons;
     let name = p
         .mac
         .profiles
@@ -1493,61 +1799,110 @@ fn plex_pin(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
         ),
         PinState::Idle => (None, colour::FONT_QUIET),
     };
+    let initial = name
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_default();
+    let pic = p
+        .mac
+        .profile_pics
+        .get(p.mac.profile)
+        .and_then(|a| a.as_deref());
+    let face = crate::hub::avatar_node(&p.mac.hub.0, pic, 44.0, || {
+        t(
+            cx,
+            &initial,
+            18.0,
+            700,
+            colour::FONT,
+            1,
+            swiftly_text::Align::Center,
+        )
+    })
+    .frame(Some(44.0), Some(44.0), Alignment::CENTER)
+    .background(Node::rect(color(colour::RAISED), 22.0), Alignment::CENTER);
+    let typed = p.mac.pin.chars().count().min(4);
+    let dots: Vec<char> = (0..4)
+        .map(|i| if i < typed { '\u{2022}' } else { ' ' })
+        .collect();
+    let active = (p.field == Field::Pin).then_some(typed.min(3));
     let mut b = vec![
-        left(character(cx, f, "noop", name, true)).padding(ins(22.0, 0.0, 0.0, 0.0)),
+        left(Node::hstack(
+            Align::Center,
+            Some(14.0),
+            vec![
+                face,
+                t(
+                    cx,
+                    name,
+                    15.0,
+                    600,
+                    colour::FONT,
+                    2,
+                    swiftly_text::Align::Start,
+                ),
+            ],
+        ))
+        .padding(ins(22.0, 0.0, 0.0, 0.0)),
         left(t(
             cx,
             "Dieses Profil hat eine PIN. Gib sie hier ein.",
-            14.0,
+            15.0,
             400,
             colour::FONT_QUIET,
             2,
             swiftly_text::Align::Start,
         ))
         .padding(ins(20.0, 0.0, 0.0, 0.0)),
-        input_row(
-            cx,
-            icons,
+        left(forms::tappable(
+            code_boxes(cx, &dots, active),
             f,
-            "field:pin",
-            "lock",
-            "PIN",
-            &p.mac.pin,
-            true,
-            p.field == Field::Pin,
-            p.edit.as_ref(),
-        )
+            "pinboxes",
+            12.0,
+        ))
         .padding(ins(16.0, 0.0, 0.0, 0.0)),
     ];
     if let Some(l) = line {
         b.push(
-            left(t(cx, l, 13.0, 400, c, 2, swiftly_text::Align::Start))
+            left(t(cx, l, 12.0, 400, c, 2, swiftly_text::Align::Start))
                 .padding(ins(14.0, 0.0, 0.0, 0.0)),
         );
     }
     b
 }
 
+/// The server list (`MacPlexSignIn.serverList`): a card of rows, "Als <profile>" and "Anderes Plex-Konto" under it; an
+/// account without a server gets the empty state.
 fn plex_servers(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
-    let name = p
-        .mac
-        .profiles
-        .get(p.mac.profile)
-        .map_or("", |x| x.0.as_str());
-    let mut b = vec![
-        left(t(
+    let m = &p.mac;
+    if m.servers.is_empty() {
+        return plex_empty(
             cx,
-            &format!("Als {name}"),
-            13.0,
-            600,
-            colour::FONT_VERY_QUIET,
-            1,
-            swiftly_text::Align::Start,
-        ))
-        .padding(ins(22.0, 0.0, 8.0, 0.0)),
-        hair(),
-    ];
-    for (i, (n, d)) in p.mac.servers.iter().enumerate() {
+            icons,
+            f,
+            "hard-drives",
+            "Kein Server auf diesem Konto",
+            "Richte Plex Media Server ein oder lass dir einen freigeben. Danach hier noch mal suchen.",
+            ("Noch mal suchen", "plexreload"),
+            Some(("Anderes Plex-Konto", "plexother")),
+        );
+    }
+    let name = m.profiles.get(m.profile).map_or("", |x| x.0.as_str());
+    let mut rows = Vec::new();
+    for (i, (n, d)) in m.servers.iter().enumerate() {
+        let busy = m.server_busy == Some(i);
+        let failed = m.server_failed.contains(&i);
+        let (line, c) = if busy {
+            ("Verbinden\u{2026}", colour::FONT)
+        } else if failed {
+            (
+                "Antwortet gerade nicht. Tipp f\u{00FC}r einen neuen Versuch.",
+                colour::ERROR,
+            )
+        } else {
+            (d.as_str(), colour::FONT_VERY_QUIET)
+        };
         let words = Node::vstack(
             Align::Start,
             Some(2.0),
@@ -1558,85 +1913,225 @@ fn plex_servers(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
                     15.0,
                     600,
                     colour::FONT,
-                    1,
+                    2,
                     swiftly_text::Align::Start,
                 )),
-                left(t(
-                    cx,
-                    d,
-                    12.0,
-                    400,
-                    colour::FONT_VERY_QUIET,
-                    1,
-                    swiftly_text::Align::Start,
-                )),
+                left(t(cx, line, 12.0, 400, c, 3, swiftly_text::Align::Start)),
             ],
         );
-        let row = Node::hstack(
-            Align::Center,
-            Some(12.0),
-            vec![
-                dot7(),
-                words.frame(None, None, Alignment::LEADING),
-                Node::spacer(),
-                icons.node("caret-right", 13.0, true, color(colour::FONT)),
-            ],
-        )
-        .padding(ins(14.0, 0.0, 14.0, 0.0));
-        b.push(
-            forms::tappable(
-                wide(row, Alignment::LEADING),
-                f,
-                &format!("server:{i}"),
-                0.0,
-            )
-            .hover_surface(color(colour::PRESSED_AREA), 8.0),
+        let mut parts = vec![
+            icons
+                .node("hard-drives", 17.0, true, color(colour::FONT_QUIET))
+                .frame(Some(20.0), None, Alignment::CENTER),
+            words.frame(None, None, Alignment::LEADING),
+            Node::spacer(),
+        ];
+        if !busy {
+            parts.push(icons.node("caret-right", 13.0, true, color(colour::FONT_VERY_QUIET)));
+        }
+        let row = wide(
+            Node::hstack(Align::Center, Some(14.0), parts).padding(ins(14.0, 14.0, 14.0, 14.0)),
+            Alignment::LEADING,
         );
-        b.push(hair());
+        if i > 0 {
+            rows.push(hair().padding(ins(0.0, 48.0, 0.0, 0.0)));
+        }
+        // The other rows wait while one connects.
+        rows.push(if m.server_busy.is_some() {
+            row.opacity(if busy { 1.0 } else { 0.5 }, Motion::Instant)
+        } else {
+            forms::tappable(row, f, &format!("server:{i}"), 14.0)
+                .hover_surface(color(colour::PRESSED_AREA), 14.0)
+        });
     }
-    b
-}
-
-fn plex_failed(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
-    let e = p
-        .error
-        .clone()
-        .unwrap_or_else(|| "Die Anmeldung bei Plex hat nicht geklappt.".into());
-    vec![
+    let card = Node::vstack(Align::Start, Some(0.0), rows).background(
+        Node::rect(color(colour::GROUPS_AREA), 14.0),
+        Alignment::CENTER,
+    );
+    let mut under = vec![
         left(t(
             cx,
-            &e,
-            14.0,
+            "Deine Server",
+            13.0,
+            600,
+            colour::FONT_VERY_QUIET,
+            1,
+            swiftly_text::Align::Start,
+        )),
+        card,
+        left(t(
+            cx,
+            &format!("Als {name}"),
+            12.0,
             400,
-            colour::ERROR,
-            4,
+            colour::FONT_VERY_QUIET,
+            1,
             swiftly_text::Align::Start,
         ))
-        .padding(ins(22.0, 0.0, 0.0, 0.0)),
-        outline(
+        .padding(ins(0.0, 2.0, 0.0, 0.0)),
+    ];
+    let other = t(
+        cx,
+        "Anderes Plex-Konto",
+        12.0,
+        400,
+        colour::FONT_VERY_QUIET,
+        1,
+        swiftly_text::Align::Start,
+    )
+    .frame(None, Some(32.0), Alignment::LEADING);
+    under.push(left(if m.server_busy.is_some() {
+        other
+    } else {
+        forms::tappable(other, f, "plexother", 8.0)
+    }));
+    vec![Node::vstack(Align::Start, Some(12.0), under).padding(ins(22.0, 0.0, 0.0, 0.0))]
+}
+
+/// `QuickConnectView`: the rows of the page that approves the code another device shows.
+pub(crate) fn share_rows(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
+    let m = &p.mac;
+    let digits = tabular_text(
+        cx,
+        if m.share_code.is_empty() && p.field != Field::Share {
+            "000000"
+        } else {
+            ""
+        },
+        st(30.0, 700),
+        colour::FONT_VERY_QUIET,
+        Some(1),
+        swiftly_text::Align::Center,
+    );
+    let shown = if m.share_code.is_empty() {
+        digits
+    } else {
+        tabular_text(
+            cx,
+            &p.shown(Field::Share),
+            st(30.0, 700),
+            colour::FONT,
+            Some(1),
+            swiftly_text::Align::Center,
+        )
+    };
+    let field = wide(shown.padding(ins(16.0, 0.0, 16.0, 0.0)), Alignment::CENTER)
+        .background(Node::rect(color(colour::AREA), 12.0), Alignment::CENTER);
+    let mut b = vec![
+        left(t(
+            cx,
+            "Auf dem anderen Ger\u{00E4}t steht ein sechsstelliger Code. Gib ihn hier ein, dann meldet es sich mit deinem Konto an.",
+            15.0,
+            400,
+            colour::FONT_QUIET,
+            5,
+            swiftly_text::Align::Start,
+        ))
+        .padding(ins(14.0, 0.0, 0.0, 0.0)),
+        forms::tappable(field, f, "field:share", 12.0).padding(ins(26.0, 0.0, 0.0, 0.0)),
+    ];
+    match &m.share {
+        ShareState::Done => b.push(
+            left(t(
+                cx,
+                "Freigegeben. Das andere Ger\u{00E4}t ist gleich angemeldet.",
+                15.0,
+                400,
+                colour::MARK_ACCENT,
+                3,
+                swiftly_text::Align::Start,
+            ))
+            .padding(ins(12.0, 0.0, 0.0, 0.0)),
+        ),
+        ShareState::Failed(e) => b.push(
+            left(t(
+                cx,
+                e,
+                15.0,
+                400,
+                colour::ERROR,
+                3,
+                swiftly_text::Align::Start,
+            ))
+            .padding(ins(12.0, 0.0, 0.0, 0.0)),
+        ),
+        _ => {}
+    }
+    let running = m.share == ShareState::Running;
+    b.push(
+        primary(
             cx,
             icons,
             f,
-            "plexagain",
-            "Noch mal versuchen",
-            "arrow-up-right",
+            "share",
+            if running {
+                "Moment\u{2026}"
+            } else {
+                "Freigeben"
+            },
+            !running && m.share_code.chars().count() >= 4,
         )
         .padding(ins(22.0, 0.0, 0.0, 0.0)),
-    ]
+    );
+    b
+}
+
+/// The three ways the sign-in can end (`MacPlexSignIn.failure`).
+fn plex_failed(cx: &Cx, icons: &Icons, f: &Fm, p: &Parts) -> Vec<Node> {
+    match p.mac.plex_problem {
+        PlexProblem::Unreachable => plex_empty(
+            cx,
+            icons,
+            f,
+            "wifi-high",
+            "plex.tv antwortet nicht",
+            "Ohne plex.tv klappt die Anmeldung nicht. H\u{00E4}ngt vielleicht das WLAN?",
+            ("Erneut versuchen", "plexagain"),
+            None,
+        ),
+        PlexProblem::Expired => plex_empty(
+            cx,
+            icons,
+            f,
+            "clock",
+            "Die Anmeldung ist abgelaufen",
+            "Der Code war zu lange offen. Hol dir einfach einen neuen.",
+            ("Neuen Code holen", "plexagain"),
+            None,
+        ),
+        PlexProblem::Other => plex_empty(
+            cx,
+            icons,
+            f,
+            "warning.fill",
+            "Anmeldung hat nicht geklappt",
+            p.error
+                .as_deref()
+                .unwrap_or("Die Anmeldung bei Plex hat nicht geklappt."),
+            ("Erneut versuchen", "plexagain"),
+            None,
+        ),
+    }
 }
 
 fn plex_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, p: &Parts) -> Node {
+    // `PlexSignInModel.pageTitle`: the account's name once signed in at plex.tv.
+    let account = if p.mac.plex_account.is_empty() {
+        "Plex"
+    } else {
+        p.mac.plex_account.as_str()
+    };
     let (title, body) = match p.mac.plex {
         PlexStep::Start => ("Mit Plex anmelden", plex_intro(cx, icons, f, false)),
         PlexStep::Opening => ("Mit Plex anmelden", plex_intro(cx, icons, f, true)),
         PlexStep::Waiting => ("Plex (Beta)", plex_waiting(cx, icons, f, p)),
         PlexStep::Failed => ("Plex (Beta)", plex_failed(cx, icons, f, p)),
-        PlexStep::Loading => ("Plex", plex_loading()),
-        PlexStep::Profiles => ("Plex", plex_profiles(cx, f, p)),
-        PlexStep::Pin => ("Plex", plex_pin(cx, icons, f, p)),
-        PlexStep::Servers => ("Plex", plex_servers(cx, icons, f, p)),
+        PlexStep::Loading => (account, plex_loading()),
+        PlexStep::Profiles => (account, plex_profiles(cx, f, p)),
+        PlexStep::Pin => (account, plex_pin(cx, icons, f, p)),
+        PlexStep::Servers => (account, plex_servers(cx, icons, f, p)),
     };
-    forms::page(cx, icons, env, f, title, None, body, None)
+    forms::flow_page(cx, icons, env, f, title, body, !p.mac.add)
 }
 
 /// The desktop picture of step `p.step`.
@@ -1649,6 +2144,7 @@ pub(crate) fn view(
     accounts: impl FnOnce() -> Node,
 ) -> Node {
     let icons = &ctx.icons;
+    crate::hub::HubSlotExt::begin_build(&p.mac.hub.0);
     match p.step {
         Step::Kind => kind_page(cx, icons, env, f, p),
         Step::Address => address_page(cx, icons, env, f, p, false),
@@ -1657,6 +2153,16 @@ pub(crate) fn view(
         Step::EmbyCredentials => emby_creds_page(cx, icons, env, f, p),
         Step::Quick => quick_page(cx, icons, env, f, p),
         Step::Plex => plex_page(cx, icons, env, f, p),
+        Step::Share => forms::page(
+            cx,
+            icons,
+            env,
+            f,
+            "Quick Connect",
+            None,
+            share_rows(cx, icons, f, p),
+            None,
+        ),
         Step::Accounts => accounts(),
     }
 }

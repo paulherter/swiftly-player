@@ -1154,9 +1154,18 @@ public actor JellyfinClient {
         return try await send(try sessionsRequest(s), as: [RemoteSession].self)
     }
 
-    /// The same answer as ``remoteSession()``, undecoded, for the core's takeover flow.
-    public func remoteSessionData() async throws -> Data {
-        try await sendData(try sessionsRequest(try requireSession())).0
+    /// The same answer as ``remoteSession()``, together with its undecoded bytes: the core's takeover flow reads
+    /// the bytes, the views read the sessions. **Decoded here, with the client's own decoder**: `LastActivityDate`
+    /// is a string with seven fractional digits, which a bare `JSONDecoder` cannot read as a `Date`, so every
+    /// session of a real server was dropped and nothing was ever offered.
+    public func remoteSessionAnswer() async throws -> (data: Data, sessions: [RemoteSession]) {
+        let (data, http) = try await sendData(try sessionsRequest(try requireSession()))
+        do {
+            return (data, try decoder.decode([RemoteSession].self, from: data))
+        } catch {
+            if OwnHeaders.loginPage(http) { throw JellyfinError.transport(OwnHeaders.loginPageText) }
+            throw JellyfinError.decoding(String(describing: error))
+        }
     }
 
     private func sessionsRequest(_ s: Session) throws -> URLRequest {

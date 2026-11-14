@@ -392,6 +392,40 @@ mod tests {
         c
     }
 
+    /// A playing session as Jellyfin 10.10 writes it: the item carries streams, chapters, blur hashes
+    /// and more than the library lists ever ask for. The whole answer must still decode.
+    #[test]
+    fn a_playing_session_in_the_servers_own_shape_decodes() {
+        let body = r#"[{"PlayState":{"PositionTicks":1234567890,"CanSeek":true,"IsPaused":false,"IsMuted":false,
+            "RepeatMode":"RepeatNone","PlaybackOrder":"Default","PlayMethod":"DirectPlay","MediaSourceId":"abc"},
+          "AdditionalUsers":[],"Capabilities":{"PlayableMediaTypes":["Audio","Video"],"SupportedCommands":["Play"],
+            "SupportsMediaControl":true,"SupportsPersistentIdentifier":true},
+          "RemoteEndPoint":"192.168.1.20","PlayableMediaTypes":["Audio","Video"],"Id":"3a1b5c","UserId":"9f8e7d",
+          "UserName":"paul","Client":"Swiftly Player","LastActivityDate":"2026-11-14T10:00:00.1234567Z",
+          "LastPlaybackCheckIn":"0001-01-01T00:00:00.0000000Z","DeviceName":"Mac","DeviceId":"MAC-1",
+          "ApplicationVersion":"1.1.0","IsActive":true,"SupportsMediaControl":true,"SupportsRemoteControl":true,
+          "NowPlayingItem":{"Name":"Pilot","OriginalTitle":"Pilot","ServerId":"srv","Id":"e1",
+            "DateCreated":"2025-01-01T00:00:00.0000000Z","Container":"mkv","PremiereDate":"2008-01-20T00:00:00.0000000Z",
+            "ChannelId":null,"CommunityRating":8.9,"RunTimeTicks":29000000000,"ProductionYear":2008,"IndexNumber":1,
+            "ParentIndexNumber":1,"IsFolder":false,"Type":"Episode","ParentBackdropItemId":"s1",
+            "ParentBackdropImageTags":["t"],"UserData":{"PlaybackPositionTicks":0,"PlayCount":0,"IsFavorite":false,"Played":false,"Key":"x"},
+            "SeriesName":"Show","SeriesId":"s1","SeasonId":"se1","PrimaryImageAspectRatio":1.7777777777777777,
+            "SeriesPrimaryImageTag":"p","SeasonName":"Season 1","MediaStreams":[
+              {"Codec":"h264","TimeBase":"1/1000","VideoRange":"SDR","DisplayTitle":"1080p H264","IsInterlaced":false,
+               "BitRate":8000000,"BitDepth":8,"RefFrames":4,"IsDefault":true,"IsForced":false,"Height":1080,"Width":1920,
+               "AverageFrameRate":23.976025,"RealFrameRate":23.976025,"Profile":"High","Type":"Video","AspectRatio":"16:9",
+               "Index":0,"IsExternal":false,"IsTextSubtitleStream":false,"SupportsExternalStream":false,"PixelFormat":"yuv420p","Level":41},
+              {"Codec":"ac3","Language":"ger","ChannelLayout":"5.1","Channels":6,"SampleRate":48000,"IsDefault":true,
+               "Type":"Audio","Index":1,"IsExternal":false}],
+            "ImageTags":{"Primary":"tag"},"BackdropImageTags":[],"ImageBlurHashes":{"Primary":{"tag":"LKO2"}},
+            "Chapters":[],"MediaType":"Video","Width":1920,"Height":1080}}]"#;
+        let c = client(MockTransport::new().route("/Sessions", 200, body));
+        let list = block_on(c.remote_sessions()).expect("sessions");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].running.as_ref().map(|i| i.id.as_str()), Some("e1"));
+        assert!(list[0].takes_commands);
+    }
+
     // JellyfinClient.swift:1145
     #[test]
     fn remote_sessions_asks_for_controllable_active_ones_and_reads_leniently() {

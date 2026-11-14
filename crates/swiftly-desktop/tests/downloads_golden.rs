@@ -104,7 +104,7 @@ fn ring_labels_and_sublines_follow_the_mac_app() {
         "Wartet",
         "L\u{00E4}dt, anhalten",
         "Angehalten, fortsetzen",
-        "Auf diesem Mac",
+        "Auf diesem PC",
         "Fehlgeschlagen, erneut versuchen",
     ] {
         assert!(

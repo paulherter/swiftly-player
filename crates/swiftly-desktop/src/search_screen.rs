@@ -38,11 +38,15 @@ struct Parts {
     bar: Bar,
     pictures: u64,
     menu: crate::desk::TileMenu,
+    /// What Seerr knows and the own server does not (empty when nothing is connected).
+    seerr: Vec<swiftly_vm::SeerrTile>,
 }
 
 struct Ctx {
     art: Art,
     icons: Icons,
+    /// The pictures of the Seerr tiles (TMDB addresses through the same hub).
+    seerr_art: crate::detail_screen::Art,
 }
 
 /// Fills the width only (`fill_frame` also takes all the height).
@@ -63,10 +67,16 @@ fn st(size: f32, weight: u16) -> swiftly_design::TextStyle {
     }
 }
 
-fn section_title(cx: &Cx, m: &Metrics, s: &str) -> Node {
+fn section_title(cx: &Cx, m: &Metrics, s: &str, tracking: f32) -> Node {
     // tv: `Theme.rail` 44 bold.
     let style = if m.form == Form::Tv {
         st(44.0, 700)
+    } else if m.form == Form::Desktop {
+        // Mac `category` and `group`: `Theme.section` 22 bold; blocks track -0.484, group titles -0.2.
+        swiftly_design::TextStyle {
+            tracking,
+            ..st(22.0, 700)
+        }
     } else {
         st(17.0, 600)
     };
@@ -77,6 +87,44 @@ fn section_title(cx: &Cx, m: &Metrics, s: &str) -> Node {
         colour::FONT,
         Some(1),
         swiftly_text::Align::Start,
+    )
+}
+
+/// "Über Seerr anfragen" with its count and the tiles (`SearchView`): 40 below the library's groups (30 when there are
+/// none), the grid 18 under the heading.
+fn seerr_block(
+    cx: &Cx,
+    env: &Env,
+    m: &Metrics,
+    ctx: &Ctx,
+    tiles: &[swiftly_vm::SeerrTile],
+    alone: bool,
+) -> Node {
+    let kit = crate::detail_screen::Kit {
+        cx,
+        env,
+        lk: crate::detail_screen::look(env),
+        art: &ctx.seerr_art,
+        icons: &ctx.icons,
+    };
+    let per = browse::grid(m, env.size.w).columns;
+    Node::vstack(
+        Align::Start,
+        Some(0.0),
+        vec![
+            Node::hstack(
+                Align::Center,
+                Some(8.0),
+                vec![
+                    section_title(cx, m, "Über Seerr anfragen", -0.484),
+                    Node::spacer(),
+                    browse::count_mark(cx, tiles.len() as i64, false),
+                ],
+            )
+            .padding(ins(if alone { 30.0 } else { 40.0 }, m.edge, 0.0, m.edge)),
+            crate::pages_screen::seerr_grid(&kit, tiles, per, "seerr")
+                .padding(ins(18.0, m.edge, 0.0, m.edge)),
+        ],
     )
 }
 
@@ -92,7 +140,7 @@ fn recents_block(cx: &Cx, m: &Metrics, ctx: &Ctx, recents: &[String]) -> Node {
             Align::Center,
             Some(8.0),
             vec![
-                section_title(cx, m, "Zuletzt gesucht"),
+                section_title(cx, m, "Zuletzt gesucht", -0.484),
                 Node::spacer(),
                 text(
                     cx,
@@ -146,6 +194,37 @@ fn recents_block(cx: &Cx, m: &Metrics, ctx: &Ctx, recents: &[String]) -> Node {
     Node::vstack(Align::Start, Some(0.0), rows)
 }
 
+/// The Mac's result tiles (`SearchView.SearchPoster`): 120 x 180, 16 between tiles, 20 between rows, name 14/600.
+/// Touch and tv keep their own grids.
+fn result_metrics(m: Metrics) -> Metrics {
+    if m.form != Form::Desktop {
+        return m;
+    }
+    Metrics {
+        tile_w: 120.0,
+        tile_h: 180.0,
+        row_gap: 20.0,
+        gap: 16.0,
+        title: swiftly_design::TextStyle {
+            size: 14.0,
+            weight: 600,
+            tracking: 0.0,
+            uppercase: false,
+        },
+        ..m
+    }
+}
+
+/// The adaptive grid of the Mac (`GridItem(.adaptive(minimum: 120), spacing: 16)`): tiles start at the left edge and
+/// are never spread apart. Touch and tv use the shared grid.
+fn result_grid(m: &Metrics, page_w: f32) -> browse::Grid {
+    let mut g = browse::grid(m, page_w);
+    if m.form == Form::Desktop {
+        g.gap = m.gap;
+    }
+    g
+}
+
 fn group_node(
     cx: &Cx,
     m: &Metrics,
@@ -187,7 +266,8 @@ fn group_node(
         Align::Start,
         Some(0.0),
         vec![
-            section_title(cx, m, title).padding(ins(22.0, m.edge, 12.0, m.edge)),
+            // Mac group title: 30 above, 12 below (`SearchView.group`).
+            section_title(cx, m, title, -0.2).padding(ins(30.0, m.edge, 12.0, m.edge)),
             Node::vstack(Align::Start, Some(m.row_gap), rows)
                 .padding(ins(0.0, m.edge, 10.0, m.edge)),
         ]
@@ -199,7 +279,7 @@ fn group_node(
 }
 
 fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
-    let m = browse::metrics(env);
+    let m = result_metrics(browse::metrics(env));
     let w = env.size.w;
     if m.form == Form::Tv {
         return tv_body(cx, &m, p, ctx);
@@ -236,7 +316,8 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
             Form::Tv => 0.0,
         },
         m.edge,
-        16.0,
+        // The Mac field has nothing under it: the blocks below bring their own gap (`SearchView.swift` group 30).
+        if m.form == Form::Desktop { 0.0 } else { 16.0 },
         m.edge,
     )));
     let term = p.results.query.clone();
@@ -294,7 +375,7 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
             });
         }
         SearchStatus::Searching if p.results.groups.is_empty() => {
-            let g = browse::grid(&m, w);
+            let g = result_grid(&m, w);
             col.push(
                 browse::grid_placeholder(&m, &g, 2)
                     .padding(ins(12.0, m.edge, 0.0, m.edge))
@@ -309,21 +390,33 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                 "Server ist abgetaucht",
                 &format!(
                     "{} antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                    browse::SERVER
+                    crate::desk::card().server_name()
                 ),
                 "Erneut versuchen",
             )
             .padding(ins(24.0, 0.0, 0.0, 0.0)),
         ),
+        // With Seerr tiles to show the library's empty state stays away (the block below is what the search found).
+        SearchStatus::Empty if !p.seerr.is_empty() => {}
         SearchStatus::Empty => col.push(nothing(&p.recents)),
         _ => {
             let mut n = 0;
             for g in &p.results.groups {
-                let (node, used) = group_node(cx, &m, ctx, g, browse::grid(&m, w), n, true);
+                let (node, used) = group_node(cx, &m, ctx, g, result_grid(&m, w), n, true);
                 n += used;
                 col.push(node);
             }
         }
+    }
+    if !p.seerr.is_empty() && m.form != Form::Tv {
+        col.push(seerr_block(
+            cx,
+            env,
+            &m,
+            ctx,
+            &p.seerr,
+            p.results.groups.is_empty(),
+        ));
     }
     let bottom = if m.form == Form::Touch {
         touch::STRIP_HEIGHT + env.safe.bottom + 12.0
@@ -727,7 +820,7 @@ fn tv_body(cx: &Cx, m: &Metrics, p: &Parts, ctx: &Ctx) -> Node {
             "Server ist abgetaucht",
             &format!(
                 "{} antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-                browse::SERVER
+                crate::desk::card().server_name()
             ),
             Some("Erneut versuchen"),
         )),
@@ -795,6 +888,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
         cx,
         env,
         &ctx.icons,
+        &ctx.art.hub,
         p.bar.clone(),
         "Suche",
         body(cx, env, p, ctx),
@@ -821,6 +915,16 @@ pub struct SearchScreen {
     tab: usize,
     scenario: Scenario,
     menu: crate::desk::TileMenu,
+    /// "Abspielen auf \u{2026}" and "Gemeinsam schauen" of the tile menu, for the host.
+    requests: Vec<swiftly_vm::TileRequest>,
+    /// Where the last right click was (the device list opens there).
+    menu_at: swiftly_layout::Point,
+    /// The Seerr flow behind the block "Über Seerr anfragen"; none without a Seerr session.
+    flow: Option<crate::seerr_flow::Flow>,
+    /// The term the flow was last given.
+    flow_term: String,
+    /// The Seerr tile that was tapped, once.
+    seerr_tapped: Option<swiftly_seerr::models::SeerrHit>,
 }
 
 impl SearchScreen {
@@ -867,9 +971,13 @@ impl SearchScreen {
         }
         let touch_idiom = Form::of(env.idiom) == Form::Touch;
         let cx_text = cx.clone();
+        let art = Art::new(&cx);
+        let mut seerr_art = crate::detail_screen::Art::new(&cx);
+        seerr_art.hub = Rc::clone(&art.hub);
         let ctx = Rc::new(Ctx {
-            art: Art::new(&cx),
+            art,
             icons: Icons::new(&cx, env.scale),
+            seerr_art,
         });
         let parts = Parts {
             status: vm.status(),
@@ -883,9 +991,13 @@ impl SearchScreen {
                 downloads: false,
                 settings: false,
                 card: crate::desk::Card::Demo,
+                offer: None,
+                mine: (true, true),
+                glow: (crate::look_glow::Glow::default(), 0),
             },
             pictures: 0,
             menu: crate::desk::TileMenu::default(),
+            seerr: Vec::new(),
         };
         let hub = Rc::clone(&ctx.art.hub);
         let ui = Ui::new(
@@ -907,6 +1019,11 @@ impl SearchScreen {
             tab: 3,
             scenario,
             menu: crate::desk::TileMenu::default(),
+            requests: Vec::new(),
+            menu_at: swiftly_layout::Point::new(0.0, 0.0),
+            flow: None,
+            flow_term: String::new(),
+            seerr_tapped: None,
         };
         s.sync();
         s
@@ -1010,6 +1127,10 @@ impl SearchScreen {
             area,
         }
     }
+    /// Gives the keyboard to the field (`SearchView`: `onAppear { inField = true }` and Cmd+F).
+    pub fn focus(&mut self) {
+        self.field.set_focused(true, self.now);
+    }
     /// Takes the keyboard from the field.
     pub fn unfocus(&mut self) {
         self.field.set_focused(false, self.now);
@@ -1050,7 +1171,35 @@ impl SearchScreen {
         self.vm.send(SearchIntent::Remember);
     }
 
+    /// Connects the block "Über Seerr anfragen" (the Mac's `model.seerr.searching`): what is typed in the field is
+    /// asked of Seerr as well, after its own 300 ms.
+    pub fn set_seerr(&mut self, flow: crate::seerr_flow::Flow) {
+        self.flow = Some(flow);
+    }
+
+    /// Whether the block is connected.
+    pub fn has_seerr(&self) -> bool {
+        self.flow.is_some()
+    }
+
+    /// The Seerr title that was tapped, once (the shell opens its page).
+    pub fn take_seerr(&mut self) -> Option<swiftly_seerr::models::SeerrHit> {
+        self.seerr_tapped.take()
+    }
+
+    /// Hands the typed term to Seerr and takes its answers.
+    fn sync_seerr(&mut self) {
+        let Some(f) = self.flow.as_mut() else { return };
+        let typed = self.field.editor.text().trim().to_owned();
+        if typed != self.flow_term {
+            self.flow_term = typed.clone();
+            f.search(&typed, std::time::Instant::now());
+        }
+        f.poll(std::time::Instant::now());
+    }
+
     fn sync(&mut self) {
+        self.sync_seerr();
         let header = if self.ui.env().idiom == swiftly_ui::Idiom::Desktop {
             crate::home::bar_strength(
                 self.ui.scroll_offsets().first().copied().unwrap_or(0.0) as f32,
@@ -1079,9 +1228,19 @@ impl SearchScreen {
                 downloads: crate::desk::downloads_front(),
                 settings: crate::desk::settings_front(),
                 card: crate::desk::card(),
+                offer: crate::desk::offer(),
+                mine: crate::desk::mine(),
+                glow: crate::look_glow::bar_state(
+                    self.ui.scroll_offsets().first().copied().unwrap_or(0.0),
+                ),
             },
             pictures: self.hub.stamp(),
             menu: self.menu.clone(),
+            seerr: self
+                .flow
+                .as_ref()
+                .map(|f| f.vm().discover().tiles.clone())
+                .unwrap_or_default(),
         });
     }
 
@@ -1097,10 +1256,11 @@ impl SearchScreen {
                     .find(|t| *action == Action::from(format!("menu:{}", t.id).as_str()))
                     .cloned();
                 if let Some(t) = tile {
+                    self.menu_at = swiftly_layout::Point::new(*x, *y);
                     self.menu.open(
                         &t,
-                        &crate::tile_menu::demo_cx(false),
-                        swiftly_layout::Point::new(*x, *y),
+                        &crate::tile_menu::context_for(Some(&t)),
+                        self.menu_at,
                         false,
                     );
                 }
@@ -1109,8 +1269,13 @@ impl SearchScreen {
             if let UiEvent::Tap(a) = &ev
                 && self.menu.is_open()
             {
-                if let Some(crate::desk::Pick::Row(id, i)) = self.menu.tap(a) {
-                    self.picked(&id, i);
+                match self.menu.tap(a) {
+                    Some(crate::desk::Pick::Row(id, i)) => self.picked(&id, i),
+                    Some(crate::desk::Pick::Device(id, device)) => {
+                        self.requests
+                            .push(swiftly_vm::TileRequest::PlayOn { id, device });
+                    }
+                    _ => {}
                 }
                 continue;
             }
@@ -1150,6 +1315,13 @@ impl SearchScreen {
                         self.vm.send(SearchIntent::Pick { term: w.clone() });
                     }
                 }
+                if let Some(f) = &self.flow {
+                    for (i, t) in f.vm().discover().tiles.iter().enumerate() {
+                        if is(&format!("seerr:{i}")) {
+                            self.seerr_tapped = Some(t.hit.clone());
+                        }
+                    }
+                }
                 for g in &self.vm.results().groups {
                     for t in &g.tiles {
                         if is(&format!("tile:{}", t.id)) {
@@ -1173,18 +1345,34 @@ impl SearchScreen {
             .flat_map(|g| g.tiles.iter())
             .find(|t| t.id == id)
             .cloned();
-        let entries = crate::tile_menu::entries(
-            crate::home::Form::Desktop,
-            &crate::tile_menu::demo_cx(false),
-            tile.as_ref(),
-        );
-        if matches!(
-            entries.get(row),
-            Some(Entry::Play | Entry::FromStart | Entry::Info | Entry::Overview | Entry::ToSeries)
-        ) {
-            self.opened.push(id.to_owned());
-            self.vm.send(SearchIntent::Remember);
+        let cx = crate::tile_menu::context_for(tile.as_ref());
+        let entries = crate::tile_menu::entries(crate::home::Form::Desktop, &cx, tile.as_ref());
+        match entries.get(row) {
+            Some(
+                Entry::Play | Entry::FromStart | Entry::Info | Entry::Overview | Entry::ToSeries,
+            ) => {
+                self.opened.push(id.to_owned());
+                self.vm.send(SearchIntent::Remember);
+            }
+            Some(Entry::Together) => self
+                .requests
+                .push(swiftly_vm::TileRequest::Together { id: id.to_owned() }),
+            Some(Entry::PlayOn) => {
+                self.menu
+                    .open_devices(id, &cx.host.play_on, self.menu_at, false)
+            }
+            _ => {}
         }
+    }
+
+    /// The frame `[x, y, w, h]` of a keyed node (tests).
+    pub fn frame_of(&self, key: &str) -> Option<[f32; 4]> {
+        self.ui.frame_of(key)
+    }
+
+    /// The requests of the tile menu for the host since the last call.
+    pub fn take_requests(&mut self) -> Vec<swiftly_vm::TileRequest> {
+        std::mem::take(&mut self.requests)
     }
 
     /// Whether the right-click menu is open.
@@ -1204,6 +1392,21 @@ impl SearchScreen {
     pub fn set_env(&mut self, env: Env) {
         self.ui.set_env(env);
     }
+    /// The tooltip to draw at `now` (tests).
+    pub fn visible_tooltip(&self, now: f64) -> Option<(String, swiftly_layout::Rect)> {
+        self.ui.visible_tooltip(now)
+    }
+
+    /// The text of the tooltip the last click hid.
+    pub fn dismissed_tooltip(&self) -> Option<String> {
+        self.ui.dismissed_tooltip()
+    }
+
+    /// Keeps a tooltip hidden that a click on the screen before hid.
+    pub fn inherit_dismissed_tooltip(&mut self, text: Option<String>) {
+        self.ui.inherit_dismissed_tooltip(text);
+    }
+
     /// The pointer moved over the window (no button held): hover, cursor, tooltips.
     pub fn pointer_move(&mut self, x: f32, y: f32, now: f64) {
         self.ui.pointer_move(x, y, now);
@@ -1247,10 +1450,15 @@ impl SearchScreen {
                 swiftly_ui::NavKey::Escape => Some(K::Escape),
                 _ => None,
             };
-            if let (Some(k), true) = (k, down)
-                && let Some(crate::desk::Pick::Row(id, i)) = self.menu.key(k, now)
-            {
-                self.picked(&id, i);
+            if let (Some(k), true) = (k, down) {
+                match self.menu.key(k, now) {
+                    Some(crate::desk::Pick::Row(id, i)) => self.picked(&id, i),
+                    Some(crate::desk::Pick::Device(id, device)) => {
+                        self.requests
+                            .push(swiftly_vm::TileRequest::PlayOn { id, device });
+                    }
+                    _ => {}
+                }
             }
             return swiftly_ui::Outcome::None;
         }
@@ -1333,6 +1541,11 @@ impl SearchScreen {
         let wants = self.wants_frame();
         (list, wants)
     }
+    /// The owner the picture hub knows this screen by (see `ImageHub::set_hidden`).
+    pub(crate) fn hub_owner(&self) -> crate::hub::HubOwner {
+        Rc::downgrade(&self.hub)
+    }
+
     /// Shows the real pictures of the server through `hub` (without it the demo art stays).
     #[must_use]
     pub fn with_images(self, hub: Rc<crate::hub::ImageHub>) -> Self {
@@ -1350,6 +1563,10 @@ impl SearchScreen {
         self.hub.busy()
             || self.ui.needs_frame()
             || self.field.focused
+            || self
+                .flow
+                .as_ref()
+                .is_some_and(crate::seerr_flow::Flow::busy)
             || matches!(self.vm.status().status, SearchStatus::Searching)
     }
     /// The services the renderers read.

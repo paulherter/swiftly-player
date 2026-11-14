@@ -1,6 +1,7 @@
 //! Where a `swiftly://` link goes once the app has it, as one explicit state machine (`reduce`): the Mac family opens
 //! `titel/<id>` as a title page on Start and `abspielen/<id>` as playback from the remembered position, always from a
-//! fresh read of the title (`Sources/tvOS/MainView.swift`, `onOpenURL`). All transitions live in [`reduce`]; the suite
+//! fresh read of the title (`Sources/tvOS/MainView.swift`, `onOpenURL`; the Mac has no link handler of its own). A play
+//! link while a player is open replaces the film, as a play order from the hub does. All transitions live in [`reduce`]; the suite
 //! only runs the [`Action`] it returns.
 
 use crate::deep_link::DeepLink;
@@ -70,6 +71,8 @@ pub enum Action {
     Settings,
     /// The search tab with this text.
     Search(String),
+    /// A page link came while the player is open: it stays closed and the player shows a line about it.
+    PlayerBusy,
 }
 
 /// The outside world the machine looks at.
@@ -85,8 +88,12 @@ pub struct Ctx {
 #[must_use]
 pub fn reduce(state: LinkState, ctx: Ctx, event: Event) -> (LinkState, Action) {
     match (state, event) {
-        // The player has the screen: a new link is dropped (the window still comes to the front).
-        (s, Event::Arrived(_)) if ctx.player_busy => (s, Action::None),
+        // The player has the screen. A play link is an order for this device and replaces the film, the way a play order
+        // from the hub does (`pump_hub`); a page, search or settings link cannot show under the picture, so the player says
+        // so instead of dropping it silently.
+        (s, Event::Arrived(link)) if ctx.player_busy && !matches!(link, DeepLink::Play(_)) => {
+            (s, Action::PlayerBusy)
+        }
         (_, Event::Arrived(link)) if !ctx.signed_in => {
             (LinkState::WaitingForAccount(link), Action::None)
         }
@@ -95,10 +102,10 @@ pub fn reduce(state: LinkState, ctx: Ctx, event: Event) -> (LinkState, Action) {
         (LinkState::Fetching { id, play }, Event::Fetched(Some(found)))
             if found.id == id || id.is_empty() =>
         {
-            if ctx.player_busy {
-                (LinkState::Idle, Action::None)
-            } else if play && found.plays() {
+            if play && found.plays() {
                 (LinkState::Idle, Action::Play(found.id))
+            } else if ctx.player_busy {
+                (LinkState::Idle, Action::PlayerBusy)
             } else {
                 (LinkState::Idle, Action::Show(found))
             }
@@ -262,22 +269,36 @@ mod tests {
     }
 
     #[test]
-    fn an_open_player_keeps_the_film_it_has() {
+    fn a_play_link_replaces_the_film_of_an_open_player() {
+        let (s, a) = reduce(
+            LinkState::Idle,
+            BUSY,
+            Event::Arrived(DeepLink::Play("a1".into())),
+        );
+        assert_eq!(a, Action::Fetch("a1".into()));
+        assert_eq!(
+            reduce(s, BUSY, Event::Fetched(Some(found("Movie")))),
+            (LinkState::Idle, Action::Play("a1".into()))
+        );
+    }
+
+    #[test]
+    fn a_page_link_cannot_show_under_an_open_player_and_says_so() {
         assert_eq!(
             reduce(
                 LinkState::Idle,
                 BUSY,
-                Event::Arrived(DeepLink::Play("a1".into()))
+                Event::Arrived(DeepLink::Title("a1".into()))
             ),
-            (LinkState::Idle, Action::None)
+            (LinkState::Idle, Action::PlayerBusy)
         );
         let f = LinkState::Fetching {
             id: "a1".into(),
             play: true,
         };
         assert_eq!(
-            reduce(f, BUSY, Event::Fetched(Some(found("Movie")))),
-            (LinkState::Idle, Action::None)
+            reduce(f, BUSY, Event::Fetched(Some(found("Series")))),
+            (LinkState::Idle, Action::PlayerBusy)
         );
     }
 

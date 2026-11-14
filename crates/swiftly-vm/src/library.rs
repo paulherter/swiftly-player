@@ -45,6 +45,8 @@ use swiftly_rules::alphabet_index::AlphabetIndex;
 
 /// Where the Merkliste page keeps its kind (`WatchlistModel`).
 const WATCHLIST_KIND_KEY: &str = "gattung.merkliste";
+/// Where it keeps its sort order (`sortierung.merkliste`, the key `LibraryState` writes for the remember name `merkliste`).
+const WATCHLIST_SORT_KEY: &str = "sortierung.merkliste";
 
 /// What the grid shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -297,6 +299,23 @@ impl<T: HttpTransport + 'static> Backend<T> {
     }
 
     #[allow(clippy::too_many_arguments)] // the Swift signature, kept 1:1
+    async fn remembered_items(
+        &self,
+        types: &[String],
+        sort_by: &str,
+        sort_order: &str,
+        start_index: usize,
+        limit: usize,
+        libraries: Option<&[Item]>,
+    ) -> Result<ItemsResponse, ErrorKind> {
+        self.noting(
+            self.kind
+                .remembered_items(types, sort_by, sort_order, start_index, limit, libraries)
+                .await,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)] // the Swift signature, kept 1:1
     async fn natural_list(
         &self,
         collator: &NaturalCollator,
@@ -338,6 +357,44 @@ impl<T: HttpTransport + 'static> Kind<T> {
         match self {
             Self::Jelly(c) => c.items(query).await,
             Self::Plex(c) => c.items_page(query).await.map_err(|e| e.into_kind()),
+        }
+    }
+
+    /// The watchlist, one entry per work, paged (`rememberedItems`, `Items.swift:226-246`).
+    #[allow(clippy::too_many_arguments)] // the Swift signature, kept 1:1
+    async fn remembered_items(
+        &self,
+        types: &[String],
+        sort_by: &str,
+        sort_order: &str,
+        start_index: usize,
+        limit: usize,
+        libraries: Option<&[Item]>,
+    ) -> Result<ItemsResponse, ErrorKind> {
+        match self {
+            Self::Jelly(c) => {
+                swiftly_library::client_ext::remembered_items(
+                    &**c,
+                    types,
+                    sort_by,
+                    sort_order,
+                    start_index,
+                    limit,
+                    libraries,
+                )
+                .await
+            }
+            Self::Plex(c) => {
+                MediaServer::remembered_items(
+                    &**c,
+                    types,
+                    sort_by,
+                    sort_order,
+                    i64::try_from(start_index).unwrap_or(i64::MAX),
+                    i64::try_from(limit).unwrap_or(i64::MAX),
+                )
+                .await
+            }
         }
     }
 
@@ -555,18 +612,64 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
     /// The host tells which libraries, collections and playlists exist for this page's kind (`model.sectionOffering`).
     /// The choice is kept when it is still offered, else "All".
     pub fn set_offering(&self, offering: SectionOffering) {
+        self.take_offering(offering);
+    }
+
+    /// [`LibraryVm::set_offering`], and the grid reads from what the choice means (`LibraryView.source`): "All" is the
+    /// libraries of this section, each title once, not the whole server. For a page that started from the bare
+    /// section; it reloads when the source changes. (The Merkliste page keeps its own source: its kinds are fixed.)
+    pub fn follow_offering(&self, offering: SectionOffering) {
+        if let Some(source) = self.take_offering(offering) {
+            self.reload_from(source);
+        }
+    }
+
+    /// Stores the offer and the kept choice; returns the source that choice means.
+    fn take_offering(&self, offering: SectionOffering) -> Option<ShelfSource> {
         let mut s = self
             .inner
             .section
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let keep = s.choice.clone().unwrap_or(SectionSelection::All);
-        s.choice = Some(if offering.entries().contains(&keep) {
+        let choice = if offering.entries().contains(&keep) {
             keep
         } else {
             SectionSelection::All
-        });
+        };
+        let watchlist = self
+            .inner
+            .kind
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some();
+        let source = library_list::source_for(&offering, &choice).filter(|_| !watchlist);
+        s.choice = Some(choice);
         s.offering = Some(offering);
+        source
+    }
+
+    /// Reads the grid from `source`; nothing happens when it already does.
+    fn reload_from(&self, source: ShelfSource) {
+        {
+            let mut current = self
+                .inner
+                .source
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if current.key() == source.key() {
+                return;
+            }
+            *current = source;
+        }
+        // The store is foreign code: read it before the lock is taken.
+        let inner = &self.inner;
+        let fresh = LibraryState::new(inner.spec.remember_name.as_deref(), &*inner.kv);
+        let mut live = self.inner.live();
+        live.state = fresh;
+        live.more_running = false;
+        drop(live);
+        Inner::start_load(&self.inner);
     }
 
     /// Collection and playlist cards (title, count line as subtitle, poster) for the card lists of the title menu.
@@ -628,20 +731,7 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
             library_list::source_for(&offering, &wish)
         };
         if let Some(source) = source {
-            *self
-                .inner
-                .source
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner) = source;
-            {
-                // The store is foreign code: read it before the lock is taken.
-                let inner = &self.inner;
-                let fresh = LibraryState::new(inner.spec.remember_name.as_deref(), &*inner.kv);
-                let mut live = self.inner.live();
-                live.state = fresh;
-                live.more_running = false;
-            }
-            Inner::start_load(&self.inner);
+            self.reload_from(source);
         }
         true
     }
@@ -683,6 +773,11 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
         let writes = Writes::default();
         {
             let mut live = self.inner.live();
+            // The Merkliste reads most recently saved first until the viewer picks another order
+            // (`WatchlistModel.sorting = .latest`, remembered under `sortierung.merkliste`).
+            if self.inner.kv.get(WATCHLIST_SORT_KEY).is_none() {
+                live.state.sorting = Sorting::Latest;
+            }
             if live.state.filter != LibraryFilter::Watchlist {
                 live.state.set_filter(LibraryFilter::Watchlist, &writes);
             }
@@ -895,6 +990,14 @@ impl<T: HttpTransport + 'static> Inner<T> {
             .unwrap_or_else(PoisonError::into_inner)
             .is_some()
             || self.source().recursive()
+    }
+
+    /// Whether this grid is the Merkliste page (`set_remember_kind` was called).
+    fn is_watchlist(&self) -> bool {
+        self.kind
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some()
     }
 
     fn source(&self) -> ShelfSource {
@@ -1128,9 +1231,26 @@ impl<T: HttpTransport + 'static> Inner<T> {
         command: Option<LibraryCommand>,
     ) {
         let inner = Arc::clone(self);
-        self.host.spawner.spawn(Box::pin(async move {
-            inner.drive(mode, switch, &client, command).await;
-        }));
+        let lost = Arc::clone(self);
+        self.host.spawn_guarded(
+            Box::pin(async move {
+                inner.drive(mode, switch, &client, command).await;
+            }),
+            // A panic in the fetch is a failed load ("Erneut versuchen"), not tiles that never fill.
+            move || {
+                let mut live = lost.live();
+                if live.switch != switch {
+                    return;
+                }
+                live.state.loads = false;
+                live.state.running = false;
+                live.state.disrupted = true;
+                live.more_running = false;
+                *live.failure.lock().unwrap_or_else(PoisonError::into_inner) =
+                    Some(swiftly_net::ErrorTopic::Server);
+                lost.publish(&mut live);
+            },
+        );
     }
 
     /// Does the fetches the state machine asks for until it asks for none.
@@ -1268,6 +1388,28 @@ impl<T: HttpTransport + 'static> Inner<T> {
         count: usize,
     ) -> Option<Page> {
         let source = &self.source();
+        if self.is_watchlist() {
+            // The Merkliste page: one entry per work and paged by works, like the Mac's `AppModel.remembered`. It
+            // always asks in the server's own sort field (no natural list). The desktop keeps no list of the
+            // account's libraries, so it passes none (the Mac's `views.isEmpty ? nil : views`): the merge fetches
+            // `UserViews` itself, and only when a work really appears twice.
+            let types: Vec<String> = self.types().into_iter().map(String::from).collect();
+            let answer = client
+                .remembered_items(
+                    &types,
+                    sorting.input_field(),
+                    sorting.bearing(),
+                    since,
+                    count,
+                    None,
+                )
+                .await
+                .ok()?;
+            return Some(Page {
+                items: answer.items,
+                total: answer.total_record_count,
+            });
+        }
         if sorting == Sorting::Name && self.collator.is_some() {
             let list = self.natural(client, switch, filter, since == 0).await?;
             let page = client.natural_page(&list, since, count).await.ok()?;

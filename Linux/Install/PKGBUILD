@@ -1,3 +1,11 @@
+# RETIRED. This builds the previous Linux app (Swift and GTK4, `Linux/`), which
+# the Rust desktop app (`crates/swiftly-desktop`) replaces. It is kept only to
+# rebuild that old release. For the current app on Arch use the AUR package
+# `swiftly-player-bin` (`Distribution/aur/swiftly-player-bin/PKGBUILD`), which
+# installs the prebuilt release tarball and provides `swiftly-jellyfin`. On
+# Debian, Ubuntu and Fedora use the .deb or .rpm from the release, built by
+# `Werkzeuge/package-desktop.sh`. See `Documentation/Building.md`.
+#
 #
 # For Arch, CachyOS, Manjaro, EndeavourOS. Build and install:
 #

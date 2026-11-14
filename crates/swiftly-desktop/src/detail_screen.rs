@@ -33,6 +33,14 @@ pub(crate) const TV_EDGE: f32 = 80.0;
 const HERO_TOUCH: f32 = 350.0;
 /// Height of the Mac backdrop (`DetailPageMetric.heroImage`).
 pub(crate) const HERO_DESKTOP: f32 = 454.0;
+/// Room above and below a tile row inside its scroll view for the hover growth: at least the Mac's
+/// `.padding(.vertical, 4)` of `PagingRail`, more when the tile is taller than the Mac's 174 points (it grows by
+/// `(scale - 1) / 2` of its height on each side).
+pub(crate) fn hover_room(tile_height: f32) -> f32 {
+    (tile_height * (swiftly_ui::feel::HOVER_TILE_SCALE - 1.0) / 2.0)
+        .ceil()
+        .max(4.0)
+}
 
 // ---- small helpers ---------------------------------------------------------------------------------------------------
 
@@ -98,6 +106,27 @@ pub(crate) fn txt_center(
 
 pub(crate) fn rgba(c: swiftly_design::Colour, a: f32) -> Color {
     Color::new(c.r, c.g, c.b, a)
+}
+
+/// The 44 heavy hero title as SwiftUI sets it: `lineLimit(1)` + `minimumScaleFactor(0.5)` in a 700 x 44 frame. The
+/// font's own line (44 x 1.21 = 53.2 pt) is taller than the frame, so SwiftUI scales the text (size and tracking)
+/// down to fit the height, and further for a title wider than the frame, but never below half.
+fn fitted_hero_title(cx: &Cx, title: &str, width: f32, height: f32) -> swiftly_design::TextStyle {
+    let full = weight(desktop::text::DETAIL_TITLE, 44.0, 800);
+    let natural = cx.measure_text(
+        title,
+        &swiftly_text::TextStyle::from(full),
+        Some(1),
+        swiftly_layout::Proposal::NIL,
+    );
+    let k = (width / natural.w.max(1.0))
+        .min(height / natural.h.max(1.0))
+        .clamp(0.5, 1.0);
+    swiftly_design::TextStyle {
+        size: full.size * k,
+        tracking: full.tracking * k,
+        ..full
+    }
 }
 
 pub(crate) fn weight(
@@ -371,6 +400,8 @@ pub(crate) enum Route {
 pub(crate) struct UiState {
     /// Header strength in eighths.
     pub header: u8,
+    /// The look's glow and how far the page has scrolled (only the playlist page draws it, like the Mac).
+    pub glow: (crate::look_glow::Glow, u16),
     /// The overview is expanded.
     pub overview_open: bool,
     /// A sheet (more menu, version picker, season list) is open: 0 none, 1 more, 2 versions, 3 seasons.
@@ -381,7 +412,21 @@ pub(crate) struct UiState {
     pub focus: Option<u64>,
     /// The anchored panel of the Mac (More, season list, tile and episode menus).
     pub menu: MenuController,
+    /// The rail the pointer is over (its paging arrows show) and whether it can page left and right (`PagingRail`).
+    pub rail_hover: Option<(String, bool, bool)>,
+    /// The page tab under the pointer (the series page's `TabButton` turns bright on hover).
+    pub hover_tab: Option<u8>,
 }
+
+thread_local! {
+    /// What `segment` reads while the view is built: the rail with the pointer on it and its arrows (`UiState::rail_hover`).
+    static RAIL_HOVER: std::cell::RefCell<Option<(String, bool, bool)>> = const { std::cell::RefCell::new(None) };
+    /// The rails the last build drew (keys), so a hover event can be matched to one.
+    static RAIL_KEYS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Pages a rail by three tiles (`PagingRail.stepRange`).
+const RAIL_STEP_TILES: f64 = 3.0;
 
 #[derive(Clone, PartialEq)]
 pub(crate) struct PageParts<D: Clone + PartialEq> {
@@ -408,6 +453,8 @@ pub(crate) struct Pushed<D: Clone + PartialEq + 'static> {
     pub(crate) injected: Vec<Action>,
     /// Scroll views the root page owns before the title page's (1: the demo's poster row, 0: a bare root).
     root_scrolls: usize,
+    /// The rail the pointer is over.
+    hovered_rail: Option<String>,
 }
 
 fn root_page(cx: &Cx, env: &Env, art: &Art) -> Node {
@@ -513,6 +560,7 @@ impl<D: Clone + PartialEq + 'static> Pushed<D> {
             pointer: (0.0, 0.0),
             injected: Vec::new(),
             root_scrolls: usize::from(!bare),
+            hovered_rail: None,
         };
         s.sync();
         s
@@ -525,6 +573,12 @@ impl<D: Clone + PartialEq + 'static> Pushed<D> {
     pub(crate) fn sync(&mut self) {
         self.hub.frame(self.now);
         self.sx.focus = self.ui.focused().map(|f| f.0);
+        // The paging arrows of the rail under the pointer: left past 4 pt, right before the end less 4 pt (`PagingRail`).
+        self.sx.rail_hover = self.hovered_rail.clone().and_then(|key| {
+            let (offset, max, _) = self.ui.scroll_of(format!("rail-row:{key}").as_str())?;
+            Some((key, offset > 4.0, offset < max - 4.0))
+        });
+        RAIL_HOVER.with(|h| *h.borrow_mut() = self.sx.rail_hover.clone());
         let off = self.page_offset() as f32;
         // Touch: 30 pt to full strength; Mac `DetailHeader`: opacity = clamp((offset - 74) / 42).
         let t = if self.ui.env().idiom == swiftly_ui::Idiom::Desktop {
@@ -537,6 +591,7 @@ impl<D: Clone + PartialEq + 'static> Pushed<D> {
         } else {
             (t.clamp(0.0, 1.0) * 8.0).round() as u8
         };
+        self.sx.glow = crate::look_glow::bar_state(off as f64);
         self.ui.set_parts(PageParts {
             pos_bits: self.nav.position().to_bits(),
             pages: self.nav.pages().map(|(s, r)| (s, *r)).collect(),
@@ -609,8 +664,46 @@ impl<D: Clone + PartialEq + 'static> Pushed<D> {
                 taps.push(*action);
             } else if let UiEvent::LongPress(a) = &ev {
                 taps.push(*a);
+            } else if let UiEvent::HoverChanged { action, entered } = &ev {
+                for i in 0..4_u8 {
+                    if *action == Action::from(format!("tab-hover:{i}").as_str()) {
+                        if *entered {
+                            self.sx.hover_tab = Some(i);
+                        } else if self.sx.hover_tab == Some(i) {
+                            self.sx.hover_tab = None;
+                        }
+                    }
+                }
+                let keys = RAIL_KEYS.with(|k| k.borrow().clone());
+                for key in keys {
+                    if *action == Action::from(format!("rail:{key}").as_str()) {
+                        if *entered {
+                            self.hovered_rail = Some(key);
+                        } else if self.hovered_rail.as_deref() == Some(key.as_str()) {
+                            self.hovered_rail = None;
+                        }
+                        break;
+                    }
+                }
             } else if let UiEvent::Tap(a) = ev {
-                if a == Action::from("open") {
+                let keys = RAIL_KEYS.with(|k| k.borrow().clone());
+                let paged = keys.iter().find_map(|key| {
+                    if a == Action::from(format!("page.l:{key}").as_str()) {
+                        Some((key.clone(), -1.0))
+                    } else if a == Action::from(format!("page.r:{key}").as_str()) {
+                        Some((key.clone(), 1.0))
+                    } else {
+                        None
+                    }
+                });
+                if let Some((key, dir)) = paged {
+                    let step = f64::from(look(self.ui.env()).poster.w + 16.0);
+                    self.ui.scroll_key_by(
+                        format!("rail-row:{key}").as_str(),
+                        dir * RAIL_STEP_TILES * step,
+                        now,
+                    );
+                } else if a == Action::from("open") {
                     self.push(now);
                 } else if a == Action::from("back") {
                     self.pop(now);
@@ -684,6 +777,16 @@ pub(crate) struct Head {
     pub trailer: bool,
 }
 
+/// "12", "12+" and "FSK 12" all read "ab 12"; names of other systems ("PG-13") stay (`DetailView.ageText`).
+pub(crate) fn age_text(raw: &str) -> String {
+    let bare = raw.replace("FSK ", "").replace('+', "");
+    if !bare.is_empty() && bare.chars().all(|c| c.is_ascii_digit()) {
+        format!("ab {bare}")
+    } else {
+        raw.to_owned()
+    }
+}
+
 pub(crate) struct Kit<'a> {
     pub cx: &'a Cx,
     pub env: &'a Env,
@@ -693,7 +796,7 @@ pub(crate) struct Kit<'a> {
 }
 
 /// A picture or text whose colour changes with the focus of the nearest focusable (tv buttons: white on the white pill).
-fn focus_tint(mut n: Node, rest: Color, focused: Color) -> Node {
+pub(crate) fn focus_tint(mut n: Node, rest: Color, focused: Color) -> Node {
     n.paint = n
         .paint
         .into_iter()
@@ -816,7 +919,8 @@ pub(crate) fn proof_row(k: &Kit, h: &Head) -> Node {
 pub(crate) fn play_button(k: &Kit, h: &Head, action: &str) -> Node {
     let lk = &k.lk;
     let on = h.enabled;
-    let (fg, bg) = if on {
+    // The Mac's `DetailPlayButton` has no disabled look: it stays white (a press without an episode does nothing).
+    let (fg, bg) = if on || lk.form == Form::Desktop {
         (colour::REASON, colour::FONT)
     } else {
         (colour::FONT_VERY_QUIET, colour::AREA)
@@ -1009,17 +1113,23 @@ fn action_button(k: &Kit, key: &str, icon: &str, caption: &str, active: bool) ->
 
 /// The row of small actions: watchlist, download, trailer, watched, more.
 pub(crate) fn action_rail(k: &Kit, h: &Head) -> Node {
-    let mut kids = vec![action_button(
-        k,
-        "favorite",
-        if h.favorite {
-            "bookmark-simple.fill"
-        } else {
-            "bookmark-simple"
-        },
-        &h.fav_caption,
-        h.favorite,
-    )];
+    let mut kids = Vec::new();
+    // The Mac shows the watchlist button only while the watchlist is switched on (`DetailView.swift:644`).
+    let watchlist =
+        k.lk.form != Form::Desktop || crate::live::current().is_none_or(|w| w.watchlist_shown());
+    if watchlist {
+        kids.push(action_button(
+            k,
+            "favorite",
+            if h.favorite {
+                "bookmark-simple.fill"
+            } else {
+                "bookmark-simple"
+            },
+            &h.fav_caption,
+            h.favorite,
+        ));
+    }
     // Mac and tv keep the download in the More list; only touch has the "Laden" field.
     let state = h.download.filter(|_| k.lk.form == Form::Touch);
     if let Some(state) = state {
@@ -1048,7 +1158,16 @@ pub(crate) fn action_rail(k: &Kit, h: &Head) -> Node {
             } else {
                 "check-circle"
             },
-            "Gesehen",
+            // The Mac's tooltip names what the click does (`DetailView.swift:659`).
+            if k.lk.form == Form::Desktop {
+                if h.watched {
+                    "Als ungesehen markieren"
+                } else {
+                    "Als gesehen markieren"
+                }
+            } else {
+                "Gesehen"
+            },
             h.watched,
         ));
     }
@@ -1103,6 +1222,22 @@ pub(crate) fn description(k: &Kit, h: &Head, open: bool) -> Option<Node> {
         swiftly_text::Align::Start,
     )
     .frame(Some(width), None, Alignment::LEADING);
+    // `withAnimation(Theme.leap)` around the toggle: the frame follows the text's height, the rest is clipped away.
+    let mut target_h = None;
+    if long && open {
+        target_h = Some(
+            k.cx.text
+                .borrow_mut()
+                .layout(
+                    &shown,
+                    &style,
+                    Some(width),
+                    None,
+                    swiftly_text::Align::Start,
+                )
+                .height(),
+        );
+    }
     if long && !open {
         let l = k.cx.text.borrow_mut().layout(
             &shown,
@@ -1111,6 +1246,7 @@ pub(crate) fn description(k: &Kit, h: &Head, open: bool) -> Option<Node> {
             None,
             swiftly_text::Align::Start,
         );
+        target_h = Some(l.height());
         if let Some(last) = l.lines().last() {
             let more_style = TextStyle::from(weight(k.lk.body, 14.0, 600));
             let more = Node::text(
@@ -1132,6 +1268,7 @@ pub(crate) fn description(k: &Kit, h: &Head, open: bool) -> Option<Node> {
             if last.width + 4.0 + word > width {
                 let pitch = 14.0 * 1.21 + 4.5;
                 let rows = l.lines().len() as f32 + 1.0;
+                target_h = Some(rows * pitch);
                 body = body
                     .frame(Some(width), Some(rows * pitch), Alignment::TOP_LEADING)
                     .overlay(
@@ -1145,6 +1282,16 @@ pub(crate) fn description(k: &Kit, h: &Head, open: bool) -> Option<Node> {
                 );
             }
         }
+    }
+    if let Some(h) = target_h {
+        body = body
+            .animated_frame(
+                Some(width),
+                Some(h),
+                Alignment::TOP_LEADING,
+                swiftly_ui::feel::leap(),
+            )
+            .clipped();
     }
     let mut kids = vec![body.key("overview").on_tap(Action::from("overview"))];
     if !h.directors.is_empty() {
@@ -1171,7 +1318,7 @@ pub(crate) fn description(k: &Kit, h: &Head, open: bool) -> Option<Node> {
     Some(Node::vstack(Align::Start, Some(8.0), kids))
 }
 
-fn gradient(from: [f32; 2], to: [f32; 2], a: Color, b: Color, w: f32, h: f32) -> Node {
+pub(crate) fn gradient(from: [f32; 2], to: [f32; 2], a: Color, b: Color, w: f32, h: f32) -> Node {
     Node::rect(a, 0.0)
         .paint(Paint::Linear {
             gradient: LinearGradient {
@@ -1255,6 +1402,41 @@ pub(crate) fn mood_sampler(tones: &[f64], since: f32) -> impl Fn(f32, f32) -> Co
     }
 }
 
+/// The cover of the Mac backdrop as one small picture: per texel the page colour (`sample`) with alpha `1 - h(x) * v(y)`
+/// (the two multiplied masks, `Backdrop.swift:59-85`). The Mac lays a mask over the picture; here the GPU stretches this
+/// picture with bilinear filtering over the whole backdrop, so the fade is smooth in both directions: no seams where
+/// pieces meet, no steps where a strip ends, and the renderer adds the noise that keeps the 8-bit ramp from banding.
+/// The ends of both axes are sampled exactly on the edge, so the foot is fully opaque and the left edge fully covered.
+/// `None` when the image page is full.
+fn backdrop_cover(
+    cx: &Cx,
+    key: String,
+    sample: &dyn Fn(f32, f32) -> Color,
+    page_w: f32,
+    bw: f32,
+) -> Option<ImageId> {
+    const COLUMNS: usize = 96;
+    let cache_key = (key, 0);
+    if let Some(hit) = cx.icon_cache.borrow().get(&cache_key) {
+        return *hit;
+    }
+    let rows = (HERO_DESKTOP / 4.0).ceil() as usize;
+    let mut px = Vec::with_capacity(COLUMNS * rows * 4);
+    for j in 0..rows {
+        let t = j as f32 / (rows - 1) as f32;
+        let (y, v) = (t * HERO_DESKTOP, curve_at(&BACKDROP_V, t));
+        for i in 0..COLUMNS {
+            let x = i as f32 / (COLUMNS - 1) as f32;
+            let c = sample((page_w - bw + x * bw) / page_w, y);
+            let a = 1.0 - curve_at(&BACKDROP_H, x) * v;
+            px.extend([c.r, c.g, c.b, a].map(|f| (f.clamp(0.0, 1.0) * 255.0 + 0.5) as u8));
+        }
+    }
+    let id = cx.add_image(COLUMNS as u32, rows as u32, &px);
+    cx.icon_cache.borrow_mut().insert(cache_key, id);
+    id
+}
+
 /// The Mac backdrop: the picture right aligned and 454 high, covered by the page colour with alpha `1 - h(x) * v(y)`.
 fn desktop_backdrop(k: &Kit, h: &Head, w: f32) -> Node {
     let bw = (w * 0.62).max(520.0).min(w);
@@ -1263,6 +1445,24 @@ fn desktop_backdrop(k: &Kit, h: &Head, w: f32) -> Node {
         .node_for(h.image.as_ref(), true, &h.id, bw, HERO_DESKTOP, 0.0);
     let tones = k.art.tones_for(h.image.as_ref(), &h.id);
     let sample = mood_sampler(&tones, HERO_DESKTOP);
+    let hues = tones
+        .iter()
+        .fold(0u64, |a, t| a.rotate_left(7) ^ t.to_bits());
+    let key = format!("backdrop:{}:{}:{hues:x}", h.id, (bw / w * 1000.0).round());
+    let cover = match backdrop_cover(k.cx, key, &sample, w, bw) {
+        Some(id) => Node::ramp_image(id, bw, HERO_DESKTOP),
+        None => strip_cover(&sample, w, bw),
+    };
+    let covered = img.overlay(cover, Alignment::TOP_LEADING);
+    Node::hstack(Align::Start, Some(0.0), vec![Node::spacer(), covered]).frame(
+        Some(w),
+        Some(HERO_DESKTOP),
+        Alignment::TOP_LEADING,
+    )
+}
+
+/// The same cover as 6 point strips of horizontal gradients, for a full image page.
+fn strip_cover(sample: &dyn Fn(f32, f32) -> Color, w: f32, bw: f32) -> Node {
     let band = 6.0_f32;
     let n = (HERO_DESKTOP / band).ceil() as usize;
     let bands: Vec<Node> = (0..n)
@@ -1286,15 +1486,7 @@ fn desktop_backdrop(k: &Kit, h: &Head, w: f32) -> Node {
                 .frame(Some(bw), Some(y1 - y0), Alignment::CENTER)
         })
         .collect();
-    let covered = img.overlay(
-        Node::vstack(Align::Start, Some(0.0), bands),
-        Alignment::TOP_LEADING,
-    );
-    Node::hstack(Align::Start, Some(0.0), vec![Node::spacer(), covered]).frame(
-        Some(w),
-        Some(HERO_DESKTOP),
-        Alignment::TOP_LEADING,
-    )
+    Node::vstack(Align::Start, Some(0.0), bands)
 }
 
 /// The hero: picture with the page's ground running out at the foot, title and the quiet line on it (touch, desktop);
@@ -1372,7 +1564,7 @@ pub(crate) fn hero(k: &Kit, h: &Head, buttons: Vec<Node>) -> Node {
                 txt(
                     k.cx,
                     &h.title,
-                    weight(desktop::text::DETAIL_TITLE, 44.0, 800),
+                    fitted_hero_title(k.cx, &h.title, 700.0, 44.0),
                     colour::FONT,
                     Some(1),
                 )
@@ -1580,13 +1772,101 @@ pub(crate) fn segment(
     } else {
         0.0
     };
-    let scroll = Node::scroll(
+    // The row scrolls sideways and clips what leaves it, so a tile that grows on hover needs room above and below it:
+    // the Mac row pads its content by 4 points vertically ("so the tiles are not clipped at the top when they grow on
+    // hover", `PagingRail` in `MacComponents.swift`).
+    let grow = if k.lk.form == Form::Desktop {
+        hover_room(k.lk.poster.h)
+    } else {
+        0.0
+    };
+    let mut scroll = Node::scroll(
         Axis::Horizontal,
         None,
-        row.padding(ins(headroom, 0.0, headroom, 0.0)),
+        row.padding(ins(headroom + grow, 0.0, headroom + grow, 0.0)),
     )
-    .frame(None, Some(height + 2.0 * headroom), Alignment::TOP_LEADING);
+    .key(format!("rail-row:{key}").as_str())
+    .frame(
+        None,
+        Some(height + 2.0 * (headroom + grow)),
+        Alignment::TOP_LEADING,
+    );
     let _ = h_scroll;
+    if k.lk.form == Form::Desktop {
+        RAIL_KEYS.with(|keys| {
+            let mut keys = keys.borrow_mut();
+            if !keys.iter().any(|x| x == key) {
+                keys.push(key.to_owned());
+            }
+        });
+        // Mac `PagingRail`: arrows of 34 x 34 over the middle of the images while the pointer is on the rail, none
+        // where there is nothing to fetch. Both overlay slots stay so the scroll view keeps its identity and offset.
+        let (show, left, right) = RAIL_HOVER.with(|h| match &*h.borrow() {
+            Some((hovered, l, r)) if hovered == key => (true, *l, *r),
+            _ => (false, false, false),
+        });
+        let arrow = |asset: &str, label: &str, action: String, trailing: bool| {
+            let at = grow + k.lk.poster.h / 2.0 - 17.0;
+            let b = k
+                .icons
+                .node(asset, 15.0, false, color(colour::FONT))
+                .frame(Some(34.0), Some(34.0), Alignment::CENTER)
+                .background(Node::rect(color(colour::AREA), 8.0), Alignment::CENTER)
+                .hover_surface(
+                    Color::new(1.0, 1.0, 1.0, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
+                    8.0,
+                )
+                .a11y(swiftly_ui::a11y::A11yNode::new(
+                    "",
+                    swiftly_ui::a11y::Role::Button,
+                    label,
+                ))
+                .key(action.as_str())
+                .on_tap(Action::from(action.as_str()))
+                .appear_from(1.0, 0.0)
+                .exit_to(1.0, 0.0)
+                .opacity(1.0, swiftly_ui::feel::arrow());
+            fill_frame(
+                b.padding(if trailing {
+                    ins(at, 0.0, 0.0, 6.0)
+                } else {
+                    ins(at, 6.0, 0.0, 0.0)
+                }),
+                if trailing {
+                    Alignment::TOP_TRAILING
+                } else {
+                    Alignment::TOP_LEADING
+                },
+            )
+        };
+        let none = || Node::fixed(0.0, 0.0);
+        scroll = scroll.overlay(
+            if show && left {
+                arrow(
+                    "caret-left",
+                    "Zur\u{fc}ckbl\u{e4}ttern",
+                    format!("page.l:{key}"),
+                    false,
+                )
+            } else {
+                none()
+            },
+            Alignment::TOP_LEADING,
+        );
+        scroll = scroll.overlay(
+            if show && right {
+                arrow(
+                    "caret-right",
+                    "Weiterbl\u{e4}ttern",
+                    format!("page.r:{key}"),
+                    true,
+                )
+            } else {
+                none()
+            },
+            Alignment::TOP_TRAILING,
+        );
+    }
     let n = Node::vstack(
         Align::Start,
         Some(if k.lk.form == Form::Tv { 20.0 } else { 12.0 }),
@@ -1603,7 +1883,38 @@ pub(crate) fn segment(
     )
     .frame(Some(k.env.size.w), None, Alignment::TOP_LEADING)
     .key(key);
+    let n = if k.lk.form == Form::Desktop {
+        n.on_hover(Action::from(format!("rail:{key}").as_str()))
+    } else {
+        n
+    };
     focus_section(n, k, key)
+}
+
+/// `NetworkImage(symbolText:)`: a title the server has no picture for (a live page, so a hub is attached) shows its
+/// character, a TV for series and episodes and a film strip for the rest (`Item.tileCharacter`), 22 pt in the font
+/// colour on the area ground, instead of a borrowed demo poster.
+pub(crate) fn placeholder_symbol(k: &Kit, t: &Tile, size: Size) -> Option<Node> {
+    if k.lk.form != Form::Desktop || t.image.is_some() || k.art.hub.borrow().is_none() {
+        return None;
+    }
+    let glyph = tile_character_icon(t.facts.kind.as_deref(), t.facts.series_id.as_deref());
+    Some(
+        Node::rect(color(colour::AREA), k.lk.corner)
+            .frame(Some(size.w), Some(size.h), Alignment::CENTER)
+            .overlay(
+                k.icons.node(glyph, 22.0, true, color(colour::FONT)),
+                Alignment::CENTER,
+            ),
+    )
+}
+
+/// The drawn symbol for `swiftly_rules::display_rules::tile_character` ("tv" / "film").
+pub(crate) fn tile_character_icon(kind: Option<&str>, series_id: Option<&str>) -> &'static str {
+    match swiftly_rules::display_rules::tile_character(kind, series_id) {
+        "tv" => "television",
+        _ => "film-strip",
+    }
 }
 
 pub(crate) fn poster_tile(k: &Kit, t: &Tile, key: &str, landscape: bool) -> Node {
@@ -1613,21 +1924,37 @@ pub(crate) fn poster_tile(k: &Kit, t: &Tile, key: &str, landscape: bool) -> Node
     } else {
         lk.poster
     };
-    let img = k
-        .art
-        .node_for(
-            t.image.as_ref(),
-            landscape,
-            &t.id,
-            size.w,
-            size.h,
-            lk.corner,
-        )
+    let mut img = placeholder_symbol(k, t, size)
+        .unwrap_or_else(|| {
+            k.art.node_for(
+                t.image.as_ref(),
+                landscape,
+                &t.id,
+                size.w,
+                size.h,
+                lk.corner,
+            )
+        })
         .paint(Paint::Stroke {
             color: color(colour::TILE_BORDER),
             width: 1.0,
             radius: lk.corner,
         });
+    if lk.form == Form::Desktop {
+        // Mac `PosterCell(progress:, mark:)`: the corner mark (watched, open episodes, seasons) and the progress bar.
+        if let Some(mark) = crate::browse::tile_mark(k.cx, k.icons, t) {
+            img = img.overlay(mark, Alignment::TOP_TRAILING);
+        }
+        if let Some(share) = t.progress.filter(|p| *p > 0.0) {
+            img = img.overlay(
+                crate::home::progress_bar(size.w, lk.corner, share),
+                Alignment::BOTTOM_LEADING,
+            );
+        }
+        // Mac `PosterCell`: the picture alone grows 1.04 on hover (`.scaleEffect(hovers ? 1.04 : 1)` on the image area);
+        // the title and the line under it stay where they are.
+        img = img.hover_scale(swiftly_ui::feel::HOVER_TILE_SCALE);
+    }
     let mut lines = vec![txt(k.cx, &t.title, lk.tile, colour::FONT, Some(1)).frame(
         Some(size.w),
         None,
@@ -1651,10 +1978,8 @@ pub(crate) fn poster_tile(k: &Kit, t: &Tile, key: &str, landscape: bool) -> Node
     .on_tap(Action::from(format!("tile:{}", t.id).as_str()))
     .on_long_press(Action::from(format!("tilemenu:{}", t.id).as_str()));
     if lk.form == Form::Desktop {
-        // Mac `PosterCell`: hover grows the picture 1.04 (`timeFloat`), a right click opens the tile menu.
-        n = n
-            .hover_scale(swiftly_ui::feel::HOVER_TILE_SCALE)
-            .on_secondary(Action::from(format!("tilemenu:{}", t.id).as_str()));
+        // A right click opens the tile menu.
+        n = n.on_secondary(Action::from(format!("tilemenu:{}", t.id).as_str()));
     }
     if lk.form == Form::Tv {
         n = n.focusable(focus_id(key), Some(FocusLook::tile(lk.corner)));
@@ -1723,6 +2048,7 @@ pub(crate) fn cast_rail(k: &Kit, cast: &[CastTile]) -> Node {
                 .frame(Some(84.0), None, Alignment::TOP_LEADING)
                 .key(key.as_str())
                 .on_tap(Action::from(format!("person:{}", c.id).as_str()))
+                .hover_scale(swiftly_ui::feel::HOVER_TILE_SCALE)
             })
             .collect();
         return segment(
@@ -1861,7 +2187,7 @@ fn disturbed(k: &Kit, title: &str, retry: &str) -> Node {
 /// The accent arc runs from 12 o'clock clockwise (`Paint::Arc`, round caps). On tv name and caption fade in with the focus
 /// (`opacity(focus ? 1 : 0)`, the 70 pt is reserved) and the tile grows with it.
 /// Design name: WatcherAvatar
-fn watchers_rail(k: &Kit, ws: &[swiftly_vm::WatcherTile]) -> Node {
+pub(crate) fn watchers_rail(k: &Kit, ws: &[swiftly_vm::WatcherTile]) -> Node {
     let tvf = k.lk.form == Form::Tv;
     let (size, line) = if tvf { (150.0, 5.0) } else { (60.0, 3.0) };
     let inner = if tvf {
@@ -1990,7 +2316,14 @@ pub(crate) fn bottom(k: &Kit, b: &BottomPart, pad_top: f32) -> Node {
         kids.push(cast_rail(k, &b.cast));
     }
     if !b.extras.is_empty() {
-        kids.push(tile_rail(k, "extras", "Extras", &b.extras, true));
+        // `TitleRail(play: true)` shows the extras as posters like the other rails (`DetailView.swift:169`).
+        kids.push(tile_rail(
+            k,
+            "extras",
+            "Extras",
+            &b.extras,
+            k.lk.form != Form::Desktop,
+        ));
     }
     for c in &b.collections {
         kids.push(tile_rail(
@@ -2008,7 +2341,8 @@ pub(crate) fn bottom(k: &Kit, b: &BottomPart, pad_top: f32) -> Node {
             "Ähnliche Titel"
         };
         kids.push(tile_rail(k, "similar", title, &b.similar, false));
-    } else if b.similar_failed {
+    } else if b.similar_failed && k.lk.form != Form::Desktop {
+        // The Mac's film page shows nothing for a failed list of similar titles (`TitleRail` of an empty list).
         kids.push(disturbed(k, "Ähnliche Titel", "retry-similar"));
     }
     if let Some(f) = file_excerpt(k, b) {
@@ -2019,11 +2353,26 @@ pub(crate) fn bottom(k: &Kit, b: &BottomPart, pad_top: f32) -> Node {
 
 /// A sheet over the page: scrim and a list of rows (the More panel, the version picker, the season list).
 pub(crate) fn sheet(k: &Kit, title: &str, rows: &[(String, bool)], prefix: &str) -> Node {
+    sheet_with(k, title, rows, prefix, false)
+}
+
+/// The version choice ("Fassung wählen", the Mac's `confirmationDialog`): the rows of `sheet`, wider, with the closing
+/// "Abbrechen" row at the end.
+pub(crate) fn version_sheet(k: &Kit, title: &str, rows: &[(String, bool)]) -> Node {
+    sheet_with(k, title, rows, "version", true)
+}
+
+/// The key of the closing row of the version choice; it taps `close-sheet`.
+pub(crate) const VERSION_CANCEL_KEY: &str = "version-cancel";
+
+fn sheet_with(k: &Kit, title: &str, rows: &[(String, bool)], prefix: &str, cancel: bool) -> Node {
     let lk = &k.lk;
     let w = if lk.form == Form::Touch {
         k.env.size.w
     } else if lk.form == Form::Tv {
         760.0
+    } else if cancel {
+        440.0
     } else {
         360.0
     };
@@ -2037,25 +2386,49 @@ pub(crate) fn sheet(k: &Kit, title: &str, rows: &[(String, bool)], prefix: &str)
         )
         .padding(ins(0.0, 4.0, 8.0, 4.0)),
     ];
+    // A row grows with its text (a long version label wraps instead of ending in "..."), never below the row height.
+    let row_node = |text: &str, key: &str, c: swiftly_design::Colour| {
+        let mut r = wide(
+            txt(k.cx, text, weight(lk.body, lk.body.size, 600), c, None)
+                .padding(ins(8.0, 16.0, 8.0, 16.0))
+                .flex_frame(FlexFrame {
+                    min_h: Some(lk.row_height + 8.0),
+                    align: Some(Alignment::LEADING),
+                    ..FlexFrame::default()
+                }),
+            Alignment::LEADING,
+        )
+        .key(key)
+        .on_tap(Action::from(if key == VERSION_CANCEL_KEY {
+            "close-sheet"
+        } else {
+            key
+        }));
+        if lk.form == Form::Desktop {
+            r = r.hover_surface(
+                Color::new(1.0, 1.0, 1.0, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
+                10.0,
+            );
+        }
+        if lk.form == Form::Tv {
+            r = r.focusable(focus_id(key), Some(FocusLook::tile(16.0)));
+        }
+        r
+    };
     for (i, (s, on)) in rows.iter().enumerate() {
-        let key = format!("{prefix}:{i}");
         let c = if *on {
             colour::MARK_ACCENT
         } else {
             colour::FONT
         };
-        let mut r = wide(
-            txt(k.cx, s, weight(lk.body, lk.body.size, 600), c, Some(1))
-                .padding(ins(0.0, 16.0, 0.0, 16.0))
-                .frame(None, Some(lk.row_height + 8.0), Alignment::LEADING),
-            Alignment::LEADING,
-        )
-        .key(key.as_str())
-        .on_tap(Action::from(key.as_str()));
-        if lk.form == Form::Tv {
-            r = r.focusable(focus_id(key.as_str()), Some(FocusLook::tile(16.0)));
-        }
-        kids.push(r);
+        kids.push(row_node(s, &format!("{prefix}:{i}"), c));
+    }
+    if cancel {
+        kids.push(row_node(
+            "Abbrechen",
+            VERSION_CANCEL_KEY,
+            colour::MARK_ACCENT,
+        ));
     }
     if lk.form == Form::Touch {
         // `SheetModifier`: the grab handle, 36 x 5, white 18 %.
@@ -2150,19 +2523,11 @@ pub(crate) fn top_bar(k: &Kit, title: &str, strength: u8) -> Node {
             .overlay(back, Alignment::TOP_LEADING);
     }
     if lk.form == Form::Desktop {
-        // `DetailHeader`: 52 high, the chevron 30 x 28 at 20 (the arrows' column is 62 wide), the title 14 semibold fading in
-        // with the scroll; the bar's ground is the page ground.
+        // `DetailHeader`: 52 high; the arrows' 62 pt column is a clear spacer, the real ‹ › belong to the window bar
+        // (`desk.rs`), so this bar has no back button of its own (it would be a second, misplaced "Zurück").
+        // The title is 14 semibold after that column and fades in with the scroll; the bar's ground is the page ground.
         let s = f32::from(strength) / f32::from(crate::home::BAR_STEPS);
-        let back = k
-            .icons
-            .node("caret-left", 16.0, true, color(colour::FONT))
-            .frame(Some(30.0), Some(28.0), Alignment::CENTER)
-            .a11y_label(swiftly_ui::a11y::Role::Button, "Zurück")
-            .key("back-button")
-            .on_tap(Action::from("back"))
-            .tooltip("Zurück")
-            .padding(ins(12.0, 20.0, 0.0, 0.0));
-        // The title sits left, after the arrows' 62 pt column (20 + 62 + 12), like `StateBar`.
+        // The title is only read once it is visible: before, the large title of the page says the same.
         let name = Node::text(
             k.cx,
             title,
@@ -2173,10 +2538,13 @@ pub(crate) fn top_bar(k: &Kit, title: &str, strength: u8) -> Node {
         )
         .padding(ins(0.0, 94.0, 0.0, 16.0))
         .frame(None, Some(52.0), Alignment::LEADING);
+        let name = if strength == 0 {
+            name.a11y_hidden()
+        } else {
+            name
+        };
         let name = wide(name, Alignment::LEADING);
-        return crate::home::header_backdrop(s)
-            .overlay(name, Alignment::TOP)
-            .overlay(back, Alignment::TOP_LEADING);
+        return crate::home::header_backdrop(s).overlay(name, Alignment::TOP);
     }
     let ground = Node::rect(rgba(colour::REASON, s), 0.0).frame(None, Some(h), Alignment::CENTER);
     let ground = wide(ground, Alignment::CENTER).overlay(
@@ -2267,6 +2635,8 @@ struct Data {
     bottom: Arc<BottomPart>,
     menu: Vec<String>,
     versions: Vec<String>,
+    /// The heading of the version choice (the core's word).
+    version_title: String,
     /// Title and rows of the tile menu on a rail, the device names and the download sheet (sheets 3, 4 and 5).
     tile_title: String,
     tile_rows: Vec<String>,
@@ -2305,7 +2675,7 @@ fn head_of(h: &HeroPart, a: &ActionsPart, trailer: bool) -> Head {
                 a.proof.direct_play,
                 a.proof.hint.clone(),
                 a.proof.rating.clone(),
-                a.proof.age_rating.clone(),
+                a.proof.age_rating.as_deref().map(age_text),
             )
         }),
         message: a.message.clone(),
@@ -2407,13 +2777,24 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
     let scroll = Node::scroll(Axis::Vertical, None, content).key("detail-scroll");
     let mut page = fill_frame(scroll, Alignment::TOP_LEADING);
     page = page.overlay(top_bar(&k, &h.title, sx.header), Alignment::TOP);
-    if d.failed
-        && d.bottom.ready
-        && d.bottom.similar.is_empty()
-        && !d.bottom.similar_failed
-        && h.proof.is_none()
-    {
-        // The fresh title never came: the list entry stays; nothing more to say here.
+    if let (Some(failure), Form::Desktop) = (d.hero.failure, lk.form) {
+        // The fresh title never came (`page.trouble`): the whole page says so, with a way to ask again.
+        let (title, text) = failure.copy(&crate::desk::card().server_name());
+        page = page.overlay(
+            fill_frame(
+                crate::pages_screen::empty_state(
+                    &k,
+                    "wifi-x",
+                    title,
+                    &text,
+                    Some(("Erneut versuchen", "retry")),
+                ),
+                Alignment::CENTER,
+            )
+            .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
+            .reveal_as("detail.trouble"),
+            Alignment::TOP_LEADING,
+        );
     }
     if let Some(m) = h.message.as_ref().filter(|_| lk.form != Form::Desktop) {
         let strip = txt(cx, m, lk.small, colour::FONT, Some(2))
@@ -2439,7 +2820,7 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
         2 => {
             let rows: Vec<(String, bool)> = d.versions.iter().map(|s| (s.clone(), false)).collect();
             page = page.overlay(
-                sheet(&k, "Fassung wählen", &rows, "version"),
+                version_sheet(&k, &d.version_title, &rows),
                 Alignment::CENTER,
             );
         }
@@ -2478,6 +2859,23 @@ pub(crate) fn menu_key(key: swiftly_ui::NavKey) -> Option<popover::MenuKey> {
     })
 }
 
+/// How long a Play that needs the title fetched again waits for the answer (ms).
+const RESOLVE_WAIT_MS: f64 = 8000.0;
+
+/// The hint when the second fetch did not bring the versions either (the Mac's wording).
+const FAILED_VERSIONS: &str =
+    "Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal.";
+
+/// The heading of the version choice, the core's own word (`film.model.actions.play.versionTitle`).
+fn actions_version_title(vm: &DetailVm<AppTransport>) -> String {
+    let t = vm.actions().play.version_title.clone();
+    if t.is_empty() {
+        "Fassung wählen".into()
+    } else {
+        t
+    }
+}
+
 /// The Detail screen: a UI over a `DetailVm`, pushed from a poster of a list.
 pub struct DetailScreen {
     host: Pushed<Data>,
@@ -2502,10 +2900,26 @@ pub struct DetailScreen {
     play_req: Option<crate::live_play::PlayRequest>,
     /// "Laden" asked for in the live app (once): the button the add sheet grows out of.
     download_req: Option<Option<swiftly_layout::Rect>>,
+    person_req: Option<crate::pages_screen::PersonTap>,
+    /// The similar or collection tile that was tapped (the Mac's `navigator.openIt(.title)`), once.
+    tile_req: Option<Tile>,
     /// Title and start second of the open version sheet.
     choose: Option<(String, f64)>,
     /// When the message strip appeared (ms); it withdraws itself after 3 s (`HintStrip`).
     message_since: Option<f64>,
+    /// Trailer links the core wants opened in the browser (`DetailEffect::OpenWeb`), taken by the app.
+    web_req: Vec<String>,
+    /// A press on Play found a title without its versions: the fresh title is fetched again (the Mac's
+    /// `film.resolve`). Second to start at and when it began.
+    resolving: Option<(f64, f64)>,
+    /// A line of the host itself in the hint strip (the Mac's `notify`) and when it appeared.
+    notice: Option<(String, f64)>,
+    /// The options last sent to the core, to send them again when a setting or the account's right changes.
+    sent_options: Option<swiftly_vm::DetailOptions>,
+    /// View models of tile-menu writes (watched, watchlist) kept until the request has gone out.
+    writers: Vec<DetailVm<AppTransport>>,
+    /// The list changes already reloaded for (`desk::list_changes`, the Mac's `pagesRefresh`).
+    seen_changes: u64,
 }
 
 impl DetailScreen {
@@ -2567,8 +2981,16 @@ impl DetailScreen {
             requests: Vec::new(),
             play_req: None,
             download_req: None,
+            person_req: None,
+            tile_req: None,
             choose: None,
             message_since: None,
+            web_req: Vec::new(),
+            resolving: None,
+            notice: None,
+            sent_options: crate::live::current().map(|w| title_data::live_detail_options(&w)),
+            writers: Vec::new(),
+            seen_changes: crate::desk::list_changes(),
         };
         s.refresh();
         s
@@ -2584,16 +3006,9 @@ impl DetailScreen {
             tile_rows: Vec::new(),
             devices: Vec::new(),
             load: crate::load_panel::LoadSpec::demo(""),
-            versions: versions
-                .iter()
-                .map(|v| {
-                    if v.name.is_empty() {
-                        "Fassung".into()
-                    } else {
-                        v.name.clone()
-                    }
-                })
-                .collect(),
+            // `MediaSource.versionLabel` of the core: the name (or "Fassung"), then the technical line.
+            versions: versions.iter().map(|v| v.label.clone()).collect(),
+            version_title: actions_version_title(vm),
             failed: bottom.ready && !actions.proof.visible,
             hero,
             actions,
@@ -2610,8 +3025,8 @@ impl DetailScreen {
     fn refresh(&mut self) {
         self.menu = self.vm.more_menu();
         let mut d = Self::data(&self.vm, &self.versions);
-        let mcx = crate::tile_menu::demo_cx(false);
         let tile = self.tile_id.as_ref().and_then(|id| self.rail_tile(id));
+        let mcx = crate::tile_menu::context_for(tile.as_ref());
         let form = Form::of(self.host.ui().env().idiom);
         d.tile_title = tile.as_ref().map(|t| t.title.clone()).unwrap_or_default();
         d.tile_rows = crate::tile_menu::rows(form, &mcx, tile.as_ref())
@@ -2623,6 +3038,9 @@ impl DetailScreen {
             .map(|r| r.label)
             .collect();
         d.load = self.load.clone();
+        if let Some((m, _)) = &self.notice {
+            d.head.message = Some(m.clone());
+        }
         // `InTravel`: the Mac sets late data (the fetched title, the rails, the tone) only when the push has settled.
         if self.host.depth() > 1 && self.host.covers() {
             self.settled_once = true;
@@ -2706,8 +3124,12 @@ impl DetailScreen {
         self.host.push(now);
     }
 
-    /// Back: pops the page.
+    /// Back (Esc): closes the open panel or sheet first (the Mac closes only the popover), then pops the page.
     pub fn back(&mut self, now: f64) -> bool {
+        if self.host.sx.menu.is_open() || self.host.sx.sheet != 0 {
+            let _ = self.nav_key(swiftly_ui::NavKey::Escape, true, now);
+            return true;
+        }
         self.host.pop(now)
     }
 
@@ -2724,9 +3146,150 @@ impl DetailScreen {
         self.host.sx.sheet = 2;
     }
 
+    /// What the core tells the host to do (the Mac's `DetailView.drain`): play, open a trailer page, open the add
+    /// sheet, hand the title to another device, and the two "something changed on the server" notes.
+    fn pump_effects(&mut self, now: f64) {
+        use swiftly_vm::{DetailEffect as E, MenuKind};
+        self.pump_resolve(now);
+        if let Some(w) = crate::live::current() {
+            let options = title_data::live_detail_options(&w);
+            if self.sent_options.as_ref() != Some(&options) {
+                self.sent_options = Some(options.clone());
+                self.vm.send(DetailIntent::Options(Box::new(options)));
+            }
+            // After the player, a state change or a watchlist change the page loads the title again, so the resume
+            // point, the watched mark and "Weiter mit ..." are current (`model.pagesRefresh` -> `refresh()`).
+            let n = crate::desk::list_changes();
+            if n != self.seen_changes {
+                self.seen_changes = n;
+                self.vm.send(DetailIntent::Refresh);
+            }
+        }
+        for effect in self.vm.take_effects() {
+            match effect {
+                E::Play(action) => self.launch(action, None, now),
+                E::PlayTrailer { item, .. } => {
+                    self.play_req = Some(crate::live_play::PlayRequest {
+                        item_id: item.id.clone(),
+                        since: 0.0,
+                        source_id: None,
+                    });
+                    self.log.push(format!("play trailer {}", item.id));
+                }
+                E::OpenWeb(url) => self.web_req.push(url.to_string()),
+                E::OpenDownload | E::Menu(MenuKind::Download) => {
+                    let at = self
+                        .host
+                        .ui()
+                        .frame_of("more")
+                        .map(|f| swiftly_layout::Rect::new(f[0], f[1], f[2], f[3]));
+                    self.download_req = Some(at);
+                }
+                E::Menu(MenuKind::PlayOn { id, .. }) => {
+                    let title = self.vm.hero().id.clone();
+                    self.requests.push(swiftly_vm::TileRequest::PlayOn {
+                        id: title,
+                        device: id,
+                    });
+                }
+                E::Menu(MenuKind::Together) => {
+                    let id = self.vm.hero().id.clone();
+                    self.requests.push(swiftly_vm::TileRequest::Together { id });
+                }
+                E::Menu(_) => {}
+                E::StateChanged | E::WatchlistChanged => crate::desk::note_list_change(),
+            }
+        }
+        if let Some((_, since)) = &self.notice
+            && now - since >= 3000.0
+        {
+            self.notice = None;
+        }
+    }
+
+    /// What a press on Play (or a menu entry that plays) does, as the core decides it (the Mac's `launch`).
+    fn launch(&mut self, action: PlayAction, since: Option<f64>, now: f64) {
+        // A placeholder the server lists without a file: say so at once (the Mac's "no data to play" strip at the bottom
+        // of the content, `TileMessage`) instead of a button that waits for versions that never come.
+        if self.vm.is_placeholder() {
+            crate::desk::post_hint(crate::suite::plan_refused_text(None));
+            return;
+        }
+        match action {
+            // The versions are not known yet (the entry came without them and the fresh title is on its way): the press
+            // waits for them, with the same time limit as the second fetch, instead of vanishing.
+            PlayAction::Wait => {
+                if self.resolving.is_none() {
+                    // NaN: no position of its own, the page's resume point applies once the versions are there.
+                    self.resolving = Some((since.unwrap_or(f64::NAN), now));
+                    self.vm.send(DetailIntent::Refresh);
+                }
+            }
+            PlayAction::Choose {
+                item_id,
+                since: at,
+                versions,
+            } => {
+                self.offer_versions(item_id, since.unwrap_or(at), versions);
+            }
+            PlayAction::Resolve { since: at, .. } => {
+                // The fresh title never came: fetch it once more and decide again.
+                if self.resolving.is_none() {
+                    self.resolving = Some((since.unwrap_or(at), now));
+                    self.vm.send(DetailIntent::Refresh);
+                }
+            }
+            PlayAction::Start {
+                item_id,
+                since: at,
+                source_id,
+            } => {
+                self.play_req = Some(crate::live_play::PlayRequest {
+                    item_id,
+                    since: since.unwrap_or(at),
+                    source_id,
+                });
+                self.log.push("play start".into());
+            }
+        }
+    }
+
+    /// Waits for the second fetch of a title that came without versions: decides again, or says it failed.
+    fn pump_resolve(&mut self, now: f64) {
+        let Some((since, began)) = self.resolving else {
+            return;
+        };
+        match self.vm.play(None) {
+            PlayAction::Resolve { .. } | PlayAction::Wait if now - began < RESOLVE_WAIT_MS => {}
+            PlayAction::Resolve { .. } | PlayAction::Wait => {
+                self.resolving = None;
+                self.notice = Some((FAILED_VERSIONS.into(), now));
+            }
+            again => {
+                self.resolving = None;
+                self.launch(again, (!since.is_nan()).then_some(since), now);
+            }
+        }
+    }
+
+    /// Trailer links of the core for the browser, once.
+    pub fn take_web(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.web_req)
+    }
+
     /// The play request of the last press, once.
     pub fn take_play(&mut self) -> Option<crate::live_play::PlayRequest> {
         self.play_req.take()
+    }
+
+    /// The cast tile that was tapped, once.
+    pub fn take_person(&mut self) -> Option<crate::pages_screen::PersonTap> {
+        self.person_req.take()
+    }
+
+    /// The similar or collection tile that was tapped, once: the title page of that tile opens next.
+    pub fn take_tile(&mut self) -> Option<Tile> {
+        self.tile_req.take()
     }
 
     /// The "Laden" request of the last press, once: the rect of the More button the add sheet grows out of (`None`
@@ -2753,19 +3316,10 @@ impl DetailScreen {
             } else if desktop && let Some(id) = pressed.clone() {
                 // Right click on a rail tile: the menu at the pointer, same entries as the sheet.
                 self.tile_id = Some(id);
-                let mcx = crate::tile_menu::demo_cx(false);
                 let tile = self.tile_id.as_ref().and_then(|id| self.rail_tile(id));
+                let mcx = crate::tile_menu::context_for(tile.as_ref());
                 let form = Form::of(self.host.ui().env().idiom);
-                let items: Vec<PopEntry> = crate::tile_menu::rows(form, &mcx, tile.as_ref())
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, r)| {
-                        PopEntry::Item(MenuItem::new(
-                            Action::from(format!("tmenu:{i}").as_str()),
-                            r.label,
-                        ))
-                    })
-                    .collect();
+                let items = crate::tile_menu::pop_items(form, &mcx, tile.as_ref());
                 if !items.is_empty() {
                     let p = self.host.pointer;
                     self.host.sx.menu.open(
@@ -2790,23 +3344,34 @@ impl DetailScreen {
                     source_id: None,
                 });
                 self.log.push(format!("play extra {id}"));
+            } else if let Some(tile) = self
+                .rail_ids()
+                .into_iter()
+                .find(|id| is(&format!("tile:{id}")))
+                .and_then(|id| self.rail_tile(&id))
+            {
+                // Mac `TitleRail` / `CollectionRail`: a tile opens that title's page (`navigator.openIt(.title)`).
+                self.log.push(format!("open {}", tile.id));
+                self.tile_req = Some(tile);
             } else if is("play") {
-                match self.vm.play(None) {
-                    PlayAction::Choose {
-                        versions,
-                        item_id,
-                        since,
-                    } => {
-                        self.choose = Some((item_id, since));
-                        self.versions = versions;
-                        self.log.push("play choose".into());
-                        self.host.sx.sheet = 2;
-                    }
-                    other => {
-                        self.play_req = crate::live_play::request_of(&other);
-                        self.log.push(format!("play {other:?}"));
-                    }
-                }
+                let action = self.vm.play(None);
+                self.launch(action, None, now);
+            } else if let Some(c) = self
+                .vm
+                .bottom()
+                .cast
+                .iter()
+                .find(|c| is(&format!("person:{}", c.id)))
+                .cloned()
+            {
+                // Mac `navigator.openIt(.person(person, origin:))`: the page of the person opens over this one.
+                self.person_req = Some(crate::pages_screen::PersonTap {
+                    id: c.id,
+                    name: c.name,
+                    role: c.role,
+                    image: c.image,
+                    origin: Some(self.vm.hero().title.clone()),
+                });
             } else if is("favorite") {
                 self.vm.send(DetailIntent::SetWatchlist {
                     on: !self.vm.actions().favorite,
@@ -2819,19 +3384,7 @@ impl DetailScreen {
                 crate::desk::note_list_change();
             } else if is("download") && crate::live::current().is_some() {
                 // The live app: the view model answers with `OpenDownload`, the host opens the add sheet (as on the Mac).
-                let at = self
-                    .host
-                    .ui()
-                    .frame_of("more")
-                    .map(|f| swiftly_layout::Rect::new(f[0], f[1], f[2], f[3]));
                 self.vm.send(DetailIntent::DownloadPressed);
-                if self
-                    .vm
-                    .take_effects()
-                    .contains(&swiftly_vm::DetailEffect::OpenDownload)
-                {
-                    self.download_req = Some(at);
-                }
             } else if is("download") {
                 // Touch: the "Laden" field opens the download sheet (`LoadSheet`) before anything is fetched.
                 self.load = crate::load_panel::LoadSpec::demo(&self.vm.hero().title);
@@ -2910,6 +3463,16 @@ impl DetailScreen {
             .cloned()
     }
 
+    /// What the create panel says the group will watch when `id` (the page's title or a tile on it) is chosen.
+    pub fn together_line(&self, id: &str) -> Option<String> {
+        let hero = self.vm.hero();
+        if hero.id == id {
+            return Some(hero.title.clone());
+        }
+        self.rail_tile(id)
+            .map(|t| crate::together_ui::tile_line(&t))
+    }
+
     /// Host requests of the tile menu ("Laden", "Abspielen auf ...", "Gemeinsam schauen") since the last call.
     pub fn take_requests(&mut self) -> Vec<swiftly_vm::TileRequest> {
         std::mem::take(&mut self.requests)
@@ -2921,8 +3484,8 @@ impl DetailScreen {
         let Some(id) = self.tile_id.clone() else {
             return;
         };
-        let mcx = crate::tile_menu::demo_cx(false);
         let tile = self.rail_tile(&id);
+        let mcx = crate::tile_menu::context_for(tile.as_ref());
         let form = Form::of(self.host.ui().env().idiom);
         for (i, e) in crate::tile_menu::entries(form, &mcx, tile.as_ref())
             .into_iter()
@@ -2943,13 +3506,22 @@ impl DetailScreen {
                 Entry::Together => self
                     .requests
                     .push(swiftly_vm::TileRequest::Together { id: id.clone() }),
-                Entry::Play
-                | Entry::FromStart
-                | Entry::Info
-                | Entry::Overview
-                | Entry::ToSeries => self.log.push(format!("open {id}")),
-                Entry::Watched | Entry::Unwatched | Entry::Remember | Entry::Remove => {
-                    self.log.push(format!("menu {e:?} {id}"))
+                other => {
+                    let Some(t) = tile.clone() else { continue };
+                    match crate::tile_menu::run(&other, &t, &mcx, &mut self.writers) {
+                        crate::tile_menu::Outcome::Play(req) => {
+                            self.log.push(format!("play {}", t.id));
+                            self.play_req = Some(req);
+                        }
+                        crate::tile_menu::Outcome::Open => {
+                            self.log.push(format!("open {}", t.id));
+                            self.tile_req = Some(t);
+                        }
+                        crate::tile_menu::Outcome::Wrote => {
+                            self.log.push(format!("menu {other:?} {id}"));
+                        }
+                        crate::tile_menu::Outcome::Nothing => {}
+                    }
                 }
             }
         }
@@ -3045,6 +3617,7 @@ impl DetailScreen {
         let mut r = self.host.frame_list(now);
         r.1 |= self.mood_busy;
         self.drain(now);
+        self.pump_effects(now);
         r
     }
 
@@ -3091,6 +3664,11 @@ impl DetailScreen {
         self.host.ui().visible_tooltip(now)
     }
 
+    /// Closes the anchored panel: the sheet that came from it is up (or gone), and the Mac shows no menu there.
+    pub fn close_menu(&mut self) {
+        self.host.sx.menu.close();
+    }
+
     /// The anchored panel (More, tile menu) is open.
     pub fn menu_open(&mut self) -> bool {
         self.host.sx.menu.is_open()
@@ -3114,17 +3692,16 @@ impl DetailScreen {
             .iter()
             .enumerate()
             .map(|(i, e)| {
-                PopEntry::Item(MenuItem::new(
-                    Action::from(format!("menu:{i}").as_str()),
-                    e.text.clone(),
-                ))
+                PopEntry::Item(
+                    MenuItem::new(Action::from(format!("menu:{i}").as_str()), e.text.clone())
+                        .icon(crate::tile_menu::more_icon(&e.kind)),
+                )
             })
             .collect();
         if self.vm.actions().download.is_some() {
-            items.push(PopEntry::Item(MenuItem::new(
-                Action::from("download"),
-                "Laden",
-            )));
+            items.push(PopEntry::Item(
+                MenuItem::new(Action::from("download"), "Laden").icon("arrow-circle-down"),
+            ));
         }
         // The Mac panel is 260 wide, right aligned under the button.
         self.host.sx.menu.open(items, anchor, 260.0, false);
@@ -3186,5 +3763,342 @@ impl DetailScreen {
     pub fn open_sheet(&mut self, which: u8) {
         self.host.sx.sheet = which;
         self.refresh();
+    }
+}
+
+#[cfg(test)]
+mod round2_tests {
+    use super::age_text;
+    use super::*;
+
+    fn demo() -> DetailScreen {
+        let env = Env::new(Size::new(1280.0, 800.0), 1.0, swiftly_ui::Idiom::Desktop);
+        let mut s = DetailScreen::new(env, Cx::deterministic(), Scenario::Ready);
+        let _ = s.frame(0.0);
+        s
+    }
+
+    /// Esc with the "Mehr" panel open closes only the panel; the next Esc leaves the page (`DetailView`'s catcher layer).
+    #[test]
+    fn escape_with_the_more_panel_open_closes_only_the_panel() {
+        let mut s = demo();
+        s.open(0.0);
+        let mut now = 0.0;
+        for _ in 0..60 {
+            now += 16.0;
+            let _ = s.frame(now);
+        }
+        let at = s.frame_of("more").expect("the More button");
+        let (x, y) = (at[0] + at[2] / 2.0, at[1] + at[3] / 2.0);
+        s.touch_down(x, y, now);
+        s.touch_up(x, y, now + 30.0);
+        now += 60.0;
+        for _ in 0..20 {
+            now += 16.0;
+            let _ = s.frame(now);
+        }
+        assert!(s.menu_open(), "the More panel is open");
+        assert!(s.back(now));
+        assert!(!s.menu_open(), "the panel is closed");
+        assert!(s.is_open(), "the film page stays");
+        assert!(s.back(now + 16.0));
+        assert!(!s.is_open(), "the second Esc leaves the page");
+    }
+
+    /// The version choice is the Mac's "Fassung wählen": a centred card, a wrapping row per version, "Abbrechen" at the
+    /// end, and Esc or "Abbrechen" closes it without starting anything.
+    #[test]
+    fn the_version_choice_is_a_centred_card_with_wrapping_rows_and_a_cancel_row() {
+        let mut s = demo();
+        s.open(0.0);
+        let long = "Director's Cut with a very long name of the file \u{b7} 2160p \u{b7} HEVC \u{b7} Dolby Vision \u{b7} 17,2 GB";
+        s.offer_versions(
+            "m0".into(),
+            0.0,
+            vec![
+                swiftly_vm::VersionOption {
+                    id: "a".into(),
+                    name: "A".into(),
+                    label: long.into(),
+                },
+                swiftly_vm::VersionOption {
+                    id: "b".into(),
+                    name: "B".into(),
+                    label: "1080p".into(),
+                },
+            ],
+        );
+        let mut now = 0.0;
+        for _ in 0..30 {
+            now += 16.0;
+            let _ = s.frame(now);
+        }
+        let cancel = s.frame_of(VERSION_CANCEL_KEY).expect("an Abbrechen row");
+        let long_row = s.frame_of("version:0").expect("first row");
+        let short_row = s.frame_of("version:1").expect("second row");
+        assert!(long_row[3] > short_row[3] + 8.0, "the long label wraps");
+        assert!(cancel[1] > short_row[1], "Abbrechen comes last");
+        let centre = long_row[0] + long_row[2] / 2.0;
+        assert!(
+            (centre - 640.0).abs() < 4.0,
+            "centred over the window: {centre}"
+        );
+        // A tap on "Abbrechen" closes the sheet and starts nothing.
+        let (x, y) = (cancel[0] + cancel[2] / 2.0, cancel[1] + cancel[3] / 2.0);
+        s.touch_down(x, y, now);
+        s.touch_up(x, y, now + 30.0);
+        for _ in 0..10 {
+            now += 16.0;
+            let _ = s.frame(now);
+        }
+        assert_eq!(s.sheet_kind(), 0, "closed");
+        assert!(s.play_req.is_none(), "nothing started");
+    }
+
+    #[test]
+    fn a_title_that_came_without_versions_is_fetched_again_and_then_decided() {
+        let mut s = demo();
+        s.launch(
+            PlayAction::Resolve {
+                item_id: "m0".into(),
+                since: 0.0,
+            },
+            None,
+            0.0,
+        );
+        assert!(s.resolving.is_some(), "the second fetch is out");
+        // The demo title is complete: the core now says what to do and the page starts it.
+        s.pump_resolve(100.0);
+        assert!(s.resolving.is_none(), "decided");
+        assert!(s.notice.is_none(), "nothing failed");
+    }
+
+    #[test]
+    fn a_press_while_the_versions_are_unknown_waits_and_then_says_it_failed() {
+        let mut s = demo();
+        s.launch(PlayAction::Wait, None, 0.0);
+        assert!(
+            s.resolving.is_some(),
+            "a press on a gray Play must not vanish: it waits for the versions"
+        );
+        assert!(s.play_req.is_none() && s.choose.is_none());
+        // The demo title is complete, so the wait ends with the core's decision; the position stays the page's own.
+        s.pump_resolve(100.0);
+        assert!(s.resolving.is_none(), "decided");
+        assert!(s.notice.is_none(), "nothing failed");
+        match (&s.play_req, &s.choose) {
+            (Some(req), _) => assert!(!req.since.is_nan(), "{req:?}"),
+            (None, Some(_)) => {}
+            _ => panic!("the press neither started the title nor asked for a version"),
+        }
+    }
+
+    #[test]
+    fn age_ratings_read_ab_n_and_foreign_systems_stay() {
+        assert_eq!(age_text("12"), "ab 12");
+        assert_eq!(age_text("12+"), "ab 12");
+        assert_eq!(age_text("FSK 16"), "ab 16");
+        assert_eq!(age_text("PG-13"), "PG-13");
+        assert_eq!(age_text(""), "");
+    }
+}
+
+#[cfg(test)]
+mod round3_tests {
+    use super::*;
+    use swiftly_images::fixture::FixtureImages;
+    use swiftly_images::{Device, ImageLoader};
+    use swiftly_vm::{Badge, TileFacts};
+
+    fn tile(kind: &str, series: Option<&str>, badges: Vec<Badge>, progress: Option<f32>) -> Tile {
+        Tile {
+            id: "t1".into(),
+            title: "Nordlicht".into(),
+            subtitle: None,
+            progress,
+            image: None,
+            badges,
+            remaining: None,
+            facts: TileFacts {
+                kind: Some(kind.into()),
+                series_id: series.map(str::to_owned),
+                ..TileFacts::default()
+            },
+        }
+    }
+
+    fn nodes(n: &Node) -> usize {
+        1 + n.children.iter().map(nodes).sum::<usize>()
+    }
+
+    struct World {
+        cx: Cx,
+        env: Env,
+        art: Art,
+        icons: Icons,
+    }
+
+    fn world(live: bool) -> World {
+        let env = Env::new(Size::new(1280.0, 800.0), 1.0, swiftly_ui::Idiom::Desktop);
+        let cx = Cx::deterministic();
+        let art = Art::new(&cx);
+        if live {
+            let loader = ImageLoader::new(Arc::new(FixtureImages), None, Device::Mac);
+            art.hub.attach(crate::hub::ImageHub::new(
+                Box::new(loader),
+                &cx,
+                1.0,
+                Device::Mac,
+            ));
+        }
+        let icons = Icons::new(&cx, 1.0);
+        World {
+            cx,
+            env,
+            art,
+            icons,
+        }
+    }
+
+    fn kit(w: &World) -> Kit<'_> {
+        Kit {
+            cx: &w.cx,
+            env: &w.env,
+            lk: look(&w.env),
+            art: &w.art,
+            icons: &w.icons,
+        }
+    }
+
+    #[test]
+    fn a_live_tile_without_a_picture_shows_the_character_of_its_kind() {
+        let w = world(true);
+        let k = kit(&w);
+        let size = Size::new(150.0, 225.0);
+        assert!(placeholder_symbol(&k, &tile("Movie", None, vec![], None), size).is_some());
+        let demo = world(false);
+        assert!(
+            placeholder_symbol(&kit(&demo), &tile("Movie", None, vec![], None), size).is_none(),
+            "the demo keeps its art"
+        );
+        assert_eq!(tile_character_icon(Some("Series"), None), "television");
+        assert_eq!(
+            tile_character_icon(Some("Episode"), Some("s1")),
+            "television"
+        );
+        assert_eq!(tile_character_icon(Some("Movie"), None), "film-strip");
+        assert_eq!(tile_character_icon(None, None), "film-strip");
+    }
+
+    #[test]
+    fn a_rail_tile_grows_a_mark_and_a_progress_bar_only_when_the_title_has_them() {
+        let w = world(false);
+        let k = kit(&w);
+        let plain = nodes(&poster_tile(
+            &k,
+            &tile("Movie", None, vec![], None),
+            "r:0",
+            false,
+        ));
+        let seen = nodes(&poster_tile(
+            &k,
+            &tile("Movie", None, vec![Badge::Watched], None),
+            "r:0",
+            false,
+        ));
+        let open = nodes(&poster_tile(
+            &k,
+            &tile(
+                "Series",
+                None,
+                vec![Badge::Unplayed { count: 3 }],
+                Some(0.4),
+            ),
+            "r:0",
+            false,
+        ));
+        let zero = nodes(&poster_tile(
+            &k,
+            &tile("Movie", None, vec![], Some(0.0)),
+            "r:0",
+            false,
+        ));
+        assert!(seen > plain, "the watched check is a corner mark");
+        assert!(
+            open > seen,
+            "the open-episodes label and the bar come on top"
+        );
+        assert_eq!(zero, plain, "no bar at zero progress");
+        for badges in [
+            vec![Badge::Watched],
+            vec![Badge::Unplayed { count: 2 }],
+            vec![Badge::Seasons { count: 1 }],
+            vec![Badge::Seasons { count: 4 }],
+        ] {
+            assert!(
+                crate::browse::tile_mark(&w.cx, &w.icons, &tile("Series", None, badges, None))
+                    .is_some()
+            );
+        }
+        assert!(
+            crate::browse::tile_mark(&w.cx, &w.icons, &tile("Movie", None, vec![], None)).is_none()
+        );
+    }
+
+    #[test]
+    fn the_whole_page_error_names_the_accounts_server() {
+        crate::desk::set_card(crate::desk::Card::account(
+            "paul",
+            "https://nas.example.org/",
+        ));
+        let env = Env::new(Size::new(1280.0, 800.0), 1.0, swiftly_ui::Idiom::Desktop);
+        let mut s = DetailScreen::new(env, Cx::deterministic(), Scenario::Offline);
+        s.open(0.0);
+        let mut now = 0.0;
+        for _ in 0..90 {
+            now += 16.0;
+            let _ = s.frame(now);
+        }
+        let said: Vec<String> = s
+            .a11y_nodes()
+            .into_iter()
+            .map(|n| format!("{n:?}"))
+            .collect();
+        assert!(
+            said.iter().any(|t| t.contains("nas.example.org")),
+            "the error text names the account's server: {said:?}"
+        );
+    }
+
+    #[test]
+    fn the_description_grows_to_its_full_height_with_the_leap_instead_of_jumping() {
+        let env = Env::new(Size::new(1280.0, 800.0), 1.0, swiftly_ui::Idiom::Desktop);
+        let mut s = DetailScreen::new(env, Cx::deterministic(), Scenario::Ready);
+        s.open(0.0);
+        let mut now = 0.0;
+        for _ in 0..120 {
+            now += 16.0;
+            let _ = s.frame(now);
+        }
+        let before = s.frame_of("overview").expect("the description")[3];
+        let at = s.frame_of("overview").unwrap();
+        s.touch_down(at[0] + 40.0, at[1] + 10.0, now);
+        s.touch_up(at[0] + 40.0, at[1] + 10.0, now + 30.0);
+        now += 30.0;
+        let mut seen = Vec::new();
+        for _ in 0..90 {
+            now += 16.0;
+            let _ = s.frame(now);
+            seen.push(s.frame_of("overview").unwrap()[3]);
+        }
+        let end = *seen.last().unwrap();
+        assert!(
+            end > before + 20.0,
+            "the whole text is taller: {before} -> {end}"
+        );
+        assert!(
+            seen.iter().any(|h| *h > before + 2.0 && *h < end - 2.0),
+            "in between it is mid-way, not a jump: {seen:?}"
+        );
     }
 }

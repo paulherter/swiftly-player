@@ -8,7 +8,7 @@ error and writes a log entry; it does not switch to another engine.
 | iPhone, iPad, Mac, Apple TV | [AetherEngine](https://github.com/superuser404notfound/AetherEngine) 7.58.0 | FFmpeg n8.1.3 from [FFmpegBuild](https://github.com/superuser404notfound/FFmpegBuild) 3.13.0, plus VideoToolbox |
 | Android, Android TV | Media3 / ExoPlayer 1.9.4 | the device's decoders, plus an FFmpeg 6.0.1 audio decoder built by `Werkzeuge/media3-ffmpeg-bauen.sh` |
 | Windows | libmpv | `libmpv-2.dll` from [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild/releases/tag/2026-11-05-3138fc8eea), release 2026-11-05-3138fc8eea |
-| Linux | libmpv | the libmpv of the system, loaded dynamically; needs GTK 4.14 or newer |
+| Linux | libmpv | the libmpv of the system, loaded at run time |
 
 ## Apple
 
@@ -35,9 +35,11 @@ configuration are `Werkzeuge/media3-ffmpeg-bauen.sh` in this repository.
 
 ## Windows and Linux
 
-Both use libmpv through one C bridge (`Linux/Sources/CMPVBridge`). The Windows
-installer contains the unmodified LGPL build of `libmpv-2.dll`; the Linux
-packages depend on the system libmpv.
+Both use libmpv from the Rust desktop app (`crates/swiftly-desktop`, with the
+engine in `crates/swiftly-player-surface`). libmpv is loaded at run time, never
+linked. The Windows installer and the portable zip contain the unmodified LGPL
+build of `libmpv-2.dll` next to the program; the Linux packages depend on the
+system libmpv. How to build and package the app is in [Building](Building.md).
 
 ## Licenses and source
 

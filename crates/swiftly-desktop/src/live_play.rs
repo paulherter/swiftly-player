@@ -104,6 +104,25 @@ pub struct Ready {
     duration_ms: Option<i64>,
     account: String,
     memory: Arc<SettingsMemory>,
+    /// What the Mac's player takes from the item and the account (see [`ReadyExtra`]).
+    extra: ReadyExtra,
+}
+
+/// Facts about the title and the account that only the screen needs.
+#[derive(Debug, Clone, Default)]
+pub struct ReadyExtra {
+    /// The next episode's code ("S1 · F4"), for the next card (`episode.episodeCode`).
+    pub next_code: Option<String>,
+    /// The Jellyfin account's own "play the next episode by itself" (`EnableNextEpisodeAutoPlay`).
+    pub account_next: Option<bool>,
+    /// The title's `OriginalLanguage`, so the audio track in it is listed "(Original)".
+    pub original_language: Option<String>,
+    /// The season this episode is in (the episodes layer opens on it).
+    pub season_id: Option<String>,
+    /// What the technical overlay says about the file.
+    pub tech: Option<crate::player_host::TechFacts>,
+    /// This episode's code ("S1 · F3").
+    pub code: Option<String>,
 }
 
 /// The track memory (`utJeTitel` / `tonJeTitel`) as JSON texts in settings.json.
@@ -123,6 +142,24 @@ impl TrackMemoryStore for SettingsMemory {
     }
 }
 
+/// The few counters and flags of the nudge after a finished title (`bewertungFertig`, `discordHinweisGezeigt`) as
+/// texts in settings.json, the same keys the Apple apps keep in their defaults.
+pub struct SettingsKv(Arc<swiftly_settings::JsonFileStore>);
+
+impl swiftly_library::KeyValue for SettingsKv {
+    fn get(&self, key: &str) -> Option<String> {
+        match self.0.get(key) {
+            Some(Value::Str(s)) => Some(s),
+            Some(Value::Int(i)) => Some(i.to_string()),
+            Some(Value::Bool(b)) => Some(b.to_string()),
+            _ => None,
+        }
+    }
+    fn set(&self, key: &str, value: &str) {
+        let _ = self.0.set(key, Value::Str(value.to_owned()));
+    }
+}
+
 fn text(store: &swiftly_settings::JsonFileStore, key: &str) -> String {
     match store.get(key) {
         Some(Value::Str(s)) => s,
@@ -131,6 +168,11 @@ fn text(store: &swiftly_settings::JsonFileStore, key: &str) -> String {
 }
 
 impl Ready {
+    /// The id of the title that is about to play.
+    pub fn item_id(&self) -> &str {
+        &self.spec.item_id
+    }
+
     /// The address the engine opens.
     pub fn url(&self) -> &str {
         &self.spec.request.url
@@ -176,6 +218,7 @@ impl Prepared {
             duration_ms,
             account,
             memory,
+            extra: ReadyExtra::default(),
         }))
     }
 }
@@ -242,13 +285,21 @@ async fn sections(client: &Client, id: &str) -> Vec<Segment> {
 
 /// The episode after this one: the next in its season, else the first of the next season (specials, season 0, are
 /// skipped unless the title itself is one). `None` for a film or the last episode of the series.
-async fn next_episode(client: &Client, item: &swiftly_model::Item) -> Option<NextEpisode> {
+async fn next_episode(
+    client: &Client,
+    item: &swiftly_model::Item,
+) -> Option<(NextEpisode, Option<String>)> {
     let series = item.series_id.as_deref()?;
     let here = (item.parent_index_number?, item.index_number?);
     let all = client.episodes(series, None).await.ok()?;
-    next_after(&all, here).map(|e| NextEpisode {
-        id: e.id.clone(),
-        title: e.name.clone(),
+    next_after(&all, here).map(|e| {
+        (
+            NextEpisode {
+                id: e.id.clone(),
+                title: e.name.clone(),
+            },
+            swiftly_vm::episode_code(swiftly_l10n::Locale::parse("de"), e),
+        )
     })
 }
 
@@ -351,17 +402,30 @@ async fn prepare(
             swiftly_playback::trickplay::DEFAULT_TARGET,
         )
         .await;
-    let next = next_episode(&client, &item).await;
+    let (next, next_code) = match next_episode(&client, &item).await {
+        Some((n, code)) => (Some(n), code),
+        None => (None, None),
+    };
+    // The account's own wish for the next episode (`loadViews`: `nextAutomaticAccount`); a failure leaves it unset.
+    let account_next = Server::Jellyfin(Arc::clone(&client))
+        .account_defaults()
+        .await
+        .and_then(|g| g.next_episode_automatic);
+    let extra = ReadyExtra {
+        next_code,
+        account_next,
+        original_language: item.original_language.clone(),
+        season_id: item.season_id.clone(),
+        tech: Some(crate::player_host::TechFacts::from_plan(&plan)),
+        code: swiftly_vm::episode_code(swiftly_l10n::Locale::parse("de"), &item),
+    };
     let runtime = plan
         .source
         .as_ref()
         .and_then(|s| s.run_time_ticks)
         .or(item.run_time_ticks)
         .map_or(0.0, |t| t as f64 / 1e7);
-    let second = match (item.parent_index_number, item.index_number) {
-        (Some(s), Some(e)) => format!("S{s} · F{e}"),
-        _ => String::new(),
-    };
+    let head = swiftly_vm::player_head(swiftly_l10n::Locale::parse("de"), &item);
     let spec = PlayerSpec {
         item_id: req.item_id.clone(),
         title: item.name.clone(),
@@ -406,7 +470,7 @@ async fn prepare(
     };
     Ok(Prepared::Ready(Box::new(Ready {
         spec,
-        head: (item.name, second),
+        head,
         sections,
         chapters,
         trickplay,
@@ -415,6 +479,7 @@ async fn prepare(
         duration_ms: None,
         account,
         memory,
+        extra,
     })))
 }
 
@@ -509,10 +574,7 @@ async fn prepare_plex(
         .and_then(|s| s.run_time_ticks)
         .or(r.item.run_time_ticks)
         .map_or(0.0, |t| t as f64 / 1e7);
-    let second = match (r.item.parent_index_number, r.item.index_number) {
-        (Some(s), Some(e)) => format!("S{s} · F{e}"),
-        _ => String::new(),
-    };
+    let head = swiftly_vm::player_head(swiftly_l10n::Locale::parse("de"), &r.item);
     let spec = PlayerSpec {
         item_id: req.item_id.clone(),
         title: r.item.name.clone(),
@@ -564,7 +626,7 @@ async fn prepare_plex(
     };
     Ok(Prepared::Ready(Box::new(Ready {
         spec,
-        head: (r.item.name.clone(), second),
+        head,
         sections: r.sections,
         chapters: r.chapters,
         trickplay,
@@ -573,6 +635,17 @@ async fn prepare_plex(
         duration_ms: (runtime > 0.0).then_some((runtime * 1000.0) as i64),
         account: key,
         memory,
+        extra: ReadyExtra {
+            next_code: r
+                .next
+                .as_ref()
+                .and_then(|n| swiftly_vm::episode_code(swiftly_l10n::Locale::parse("de"), n)),
+            original_language: r.item.original_language.clone(),
+            season_id: r.item.season_id.clone(),
+            tech: Some(crate::player_host::TechFacts::from_plan(&r.plan)),
+            code: swiftly_vm::episode_code(swiftly_l10n::Locale::parse("de"), &r.item),
+            ..ReadyExtra::default()
+        },
     })))
 }
 
@@ -633,6 +706,140 @@ impl Core {
             server,
             next_id,
         )
+    }
+}
+
+/// The seasons and episodes of the player's episodes layer, from a Jellyfin server (`model.seasons`, `model.episodes`).
+pub struct CoreEpisodes {
+    handle: tokio::runtime::Handle,
+    client: Arc<Client>,
+}
+
+/// One episode as a card: "F3 · Name" and "52 Min." with the remainder for a started one.
+pub fn episode_card(e: &swiftly_model::Item) -> crate::player_host::EpisodeCardData {
+    let header = match e.index_number {
+        Some(n) => format!("F{n} · {}", e.name),
+        None => e.name.clone(),
+    };
+    let minutes = e
+        .runtime_seconds()
+        .filter(|s| *s > 0.0)
+        .map(|s| (s / 60.0).floor() as i64);
+    let share = e.watched_share().map(|s| s as f32);
+    let rest = match (minutes, share) {
+        (Some(m), Some(s)) if !e.is_watched() && s > 0.0 && s < 1.0 => {
+            Some(((m as f32) * (1.0 - s)).ceil().max(1.0) as i64)
+        }
+        _ => None,
+    };
+    let sub = [
+        minutes.map(|m| format!("{m} Min.")),
+        rest.map(|r| format!("Noch {r} Min.")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ");
+    crate::player_host::EpisodeCardData {
+        id: e.id.clone(),
+        title: e.name.clone(),
+        header,
+        sub: (!sub.is_empty()).then_some(sub),
+        progress: if e.is_watched() { None } else { share },
+        watched: e.is_watched(),
+        image: None,
+    }
+}
+
+/// The still of an episode card as the Mac asks for it (`imageURL(for: episode, maxHeight: 360)`, else
+/// `landscapeImageURL(for: episode, width: 640)`): the episode's own picture when it has a tag, else the title's
+/// landscape picture. `None` when the server holds neither.
+pub fn episode_still_address(client: &Client, e: &swiftly_model::Item) -> Option<String> {
+    if let Some(url) = client.image_url(e, 360) {
+        return Some(url.to_string());
+    }
+    let session = client.current_session()?;
+    let addresses = swiftly_images::ImageAddress::new(
+        client.base_url().clone(),
+        Some(session.access_token),
+        client.server_kind(),
+    );
+    swiftly_images::ImageSelection::landscape(e, &addresses, 640).map(|l| l.url.to_string())
+}
+
+impl crate::player_host::EpisodeSource for CoreEpisodes {
+    fn seasons(
+        &self,
+        series: &str,
+        hint: Option<&str>,
+    ) -> Pending<Option<(Vec<crate::player_host::SeasonRow>, usize)>> {
+        let (tx, rx) = Pending::channel();
+        let (client, series, hint) = (
+            Arc::clone(&self.client),
+            series.to_owned(),
+            hint.map(str::to_owned),
+        );
+        self.handle.spawn(async move {
+            let found = client
+                .seasons(&series)
+                .await
+                .ok()
+                .filter(|l| !l.is_empty())
+                .map(|list| {
+                    let chosen = swiftly_library::SeasonSelectionRule::choose(
+                        &list,
+                        hint.as_deref(),
+                        None,
+                        None,
+                    )
+                    .and_then(|c| list.iter().position(|s| s.id == c.id))
+                    .unwrap_or(0);
+                    let rows = list
+                        .iter()
+                        .map(|s| crate::player_host::SeasonRow {
+                            id: s.id.clone(),
+                            name: s.name.clone(),
+                        })
+                        .collect();
+                    (rows, chosen)
+                });
+            let _ = tx.send(found);
+        });
+        rx
+    }
+
+    fn episodes(
+        &self,
+        series: &str,
+        season: &str,
+    ) -> Pending<Option<Vec<crate::player_host::EpisodeCardData>>> {
+        let (tx, rx) = Pending::channel();
+        let (client, series, season) = (
+            Arc::clone(&self.client),
+            series.to_owned(),
+            season.to_owned(),
+        );
+        self.handle.spawn(async move {
+            let found = client.episodes(&series, Some(&season)).await.ok().map(|l| {
+                l.iter()
+                    .map(|e| {
+                        let mut card = episode_card(e);
+                        card.image = episode_still_address(&client, e);
+                        card
+                    })
+                    .collect()
+            });
+            let _ = tx.send(found);
+        });
+        rx
+    }
+
+    fn still(&self, _id: &str, address: Option<&str>) -> crate::player_card::StillSource {
+        let Some(url) = address.and_then(|a| a.parse::<swiftly_images::Url>().ok()) else {
+            return Arc::new(|| None);
+        };
+        let (client, handle) = (Arc::clone(&self.client), self.handle.clone());
+        Arc::new(move || handle.block_on(client.get_bytes(url.clone())))
     }
 }
 
@@ -723,6 +930,16 @@ pub fn card_still_with(
 }
 
 impl Core {
+    /// What comes after a finished title: there is no review prompt on the desktop, so only the Discord hint is ever due,
+    /// and it counts as shown only when the card really appears ([`AfterPlay::mark_shown`]).
+    pub fn after_play(&self) -> Arc<swiftly_vm::AfterPlay> {
+        Arc::new(swiftly_vm::AfterPlay::marking_when_shown(
+            Arc::new(SettingsKv(Arc::clone(&self.settings))),
+            env!("CARGO_PKG_VERSION"),
+            false,
+        ))
+    }
+
     /// The player screen for a prepared title, over libmpv. `Err` names why the engine could not start.
     pub fn open_player(
         &self,
@@ -768,8 +985,21 @@ impl Core {
             .next
             .as_ref()
             .map(|n| self.card_still_source(&p.server, &n.id));
+        let extra = p.extra.clone();
         let mut screen =
             PlayerScreen::live(env, cx, now, p.spec, p.head, engine, feed, reporter, |_| {});
+        screen.set_title_facts(extra.next_code, extra.account_next);
+        screen.vm().set_original_language(extra.original_language);
+        screen.set_season_id(extra.season_id);
+        screen.vm().set_after_play(Some(self.after_play()));
+        screen.set_tech_facts(extra.tech);
+        screen.set_episode_code(extra.code);
+        if let Server::Jellyfin(client) = &p.server {
+            screen.set_episode_source(Arc::new(CoreEpisodes {
+                handle: self.runtime_handle(),
+                client: Arc::clone(client),
+            }));
+        }
         screen.set_marks(p.chapters, p.sections);
         screen.set_store(Arc::clone(&self.settings), now);
         screen
@@ -828,6 +1058,7 @@ impl Ready {
             trickplay: preview,
             still,
             poster: Some(poster),
+            extra: Some(self.extra),
         }
     }
 }
@@ -984,11 +1215,13 @@ impl Planner for CorePlanner {
 
     fn save_quality(&self, quality: Quality) {
         let key = self.server_key();
-        let _ = self.settings.set(
+        crate::store::set_logged(
+            &*self.settings,
             &swiftly_settings::server_key("immerDirectPlay", &key),
             Value::Bool(quality.direct_play),
         );
-        let _ = self.settings.set(
+        crate::store::set_logged(
+            &*self.settings,
             &swiftly_settings::server_key("bitratenGrenze", &key),
             Value::Int(quality.limit),
         );

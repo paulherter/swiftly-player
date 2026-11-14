@@ -138,6 +138,31 @@ pub enum LoadFailure {
 }
 
 impl LoadFailure {
+    /// The heading and sentence of the whole-page error (`Trouble.copy(server:)`); `server` is the address or
+    /// "Der Server". Unreachable and a server error keep the shipping wording; a refused sign-in and an unreadable
+    /// answer get their own, because "does it still run?" is the wrong question for them.
+    #[must_use]
+    pub fn copy(self, server: &str) -> (&'static str, String) {
+        match self {
+            Self::Offline | Self::Failed(FailKind::Server) => (
+                "Server ist abgetaucht",
+                format!("{server} antwortet nicht. Läuft er noch, oder hängt das WLAN?"),
+            ),
+            Self::Failed(FailKind::Denied) => (
+                "Anmeldung abgelehnt",
+                format!(
+                    "{server} hat die Anmeldung abgelehnt. Wechsel den Server oder melde dich neu an."
+                ),
+            ),
+            Self::Failed(FailKind::Unreadable) => (
+                "Antwort unlesbar",
+                format!(
+                    "{server} hat etwas geschickt, das die App nicht lesen kann. Versuch es gleich nochmal."
+                ),
+            ),
+        }
+    }
+
     /// What a failed request means for the page's own error text: the network could not be
     /// reached, the account was refused, the server errored, or the answer was unreadable.
     #[must_use]

@@ -365,42 +365,64 @@ impl<T: HttpTransport + 'static> Inner<T> {
         let (generation, switch) = (live.generation, live.switch);
         drop(live);
         let inner = Arc::clone(self);
-        self.host.spawner.spawn(Box::pin(async move {
-            if debounce {
-                inner.sleeper.sleep(DEBOUNCE).await;
-                if !inner.current(generation, switch) {
-                    return;
+        let lost = (Arc::clone(self), clean.clone());
+        self.host.spawn_guarded(
+            Box::pin(async move {
+                if debounce {
+                    inner.sleeper.sleep(DEBOUNCE).await;
+                    if !inner.current(generation, switch) {
+                        return;
+                    }
                 }
+                let found = inner.find(&backend, &clean).await;
+                inner.finish(generation, switch, &clean, found);
+            }),
+            // A panic in the task is an error like any other: "search failed, retry", never a search that runs forever.
+            move || {
+                let (inner, clean) = lost;
+                inner.finish(
+                    generation,
+                    switch,
+                    &clean,
+                    Err(LoadFailure::Failed(crate::load_state::FailKind::Server)),
+                );
+            },
+        );
+    }
+
+    /// Takes the outcome of the search of `generation` (an answer from an older one is dropped).
+    fn finish(
+        &self,
+        generation: u64,
+        switch: u64,
+        clean: &str,
+        found: Result<Vec<SearchGroup>, LoadFailure>,
+    ) {
+        let mut live = self.live();
+        if live.generation != generation || live.switch != switch {
+            return;
+        }
+        // One transition decides the outcome; the exported status derives from it.
+        live.failure = found.as_ref().err().copied();
+        let (load, groups) = match found {
+            Err(LoadFailure::Failed(kind)) => {
+                (Load::Loading.reduce(LoadEvent::Failed(kind)), Vec::new())
             }
-            let found = inner.find(&backend, &clean).await;
-            let mut live = inner.live();
-            if live.generation != generation || live.switch != switch {
-                return;
-            }
-            // One transition decides the outcome; the exported status derives from it.
-            live.failure = found.as_ref().err().copied();
-            let (load, groups) = match found {
-                Err(LoadFailure::Failed(kind)) => {
-                    (Load::Loading.reduce(LoadEvent::Failed(kind)), Vec::new())
-                }
-                Err(LoadFailure::Offline) => {
-                    (Load::Loading.reduce(LoadEvent::WentOffline), Vec::new())
-                }
-                Ok(groups) => (
-                    Load::Loading.reduce(LoadEvent::Answered {
-                        items: groups.len(),
-                    }),
-                    groups,
-                ),
-            };
-            inner.set(
-                &mut live,
-                &clean,
+            Err(LoadFailure::Offline) => (Load::Loading.reduce(LoadEvent::WentOffline), Vec::new()),
+            Ok(groups) => (
+                Load::Loading.reduce(LoadEvent::Answered {
+                    items: groups.len(),
+                }),
                 groups,
-                SearchStatus::from_load(load),
-                None,
-            );
-        }));
+            ),
+        };
+        self.set(
+            &mut live,
+            clean,
+            groups,
+            SearchStatus::from_load(load),
+            None,
+        );
     }
 
     fn current(&self, generation: u64, switch: u64) -> bool {
@@ -449,9 +471,11 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 })
                 .collect()
         };
+        // The Mac's page lists "Serien" before "Filme" (`SearchView`), so the groups come in that order. The core's search
+        // asks for movies and series only, so the Mac's "Folgen" and "Weiteres" groups stay empty there too.
         let groups = [
-            (SearchKind::Movies, grid(&of(ItemKind::Movie))),
             (SearchKind::Series, grid(&of(ItemKind::Series))),
+            (SearchKind::Movies, grid(&of(ItemKind::Movie))),
         ];
         Ok(groups
             .into_iter()
