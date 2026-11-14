@@ -36,8 +36,7 @@ fn wait_for(what: &str, mut ok: impl FnMut() -> bool) {
 /// A signed-in core with its own config directory (so its own device id).
 fn client(dir: &std::path::Path, addr: &str) -> Arc<Core> {
     let _ = std::fs::remove_dir_all(dir);
-    swiftly_desktop::store::set_config_dir_override(dir);
-    let core = Arc::new(Core::open().expect("core"));
+    let core = Arc::new(swiftly_desktop::store::open_in_config_dir(dir, Core::open).expect("core"));
     let backend = core.sign_in_backend();
     let wait = Duration::from_secs(30);
     backend
@@ -102,7 +101,10 @@ fn rig() -> Option<Rig> {
     );
     std::thread::sleep(Duration::from_millis(800));
     let addr = format!("http://127.0.0.1:{port}");
-    let tmp = std::env::temp_dir().join(format!("swiftly-together-{}", std::process::id()));
+    // One folder per rig: the two tests of this file run in parallel in one process.
+    static RIGS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = RIGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = std::env::temp_dir().join(format!("swiftly-together-{}-{n}", std::process::id()));
     let core_a = client(&tmp.join("a"), &addr);
     let core_b = client(&tmp.join("b"), &addr);
     let (acc_a, acc_b) = (core_a.account().unwrap(), core_b.account().unwrap());

@@ -33,6 +33,11 @@ impl HttpTransport for CompatTransport {
 /// Upper bound (never slept in full) for a library step: a debug build on a busy machine parses the whole list per view model.
 pub const LIBRARY_WAIT_MS: u64 = 20_000;
 
+/// Upper bound for a home screen to leave `Loading`. Alone it takes about 50 ms, but a debug build on a few busy cores
+/// runs it behind the whole-list parses of the library view models that run beside it (measured on two cores: 1 to
+/// 7 s, always ending). The check is that a load ends and does not hang, so it gets the library's bound.
+pub const HOME_WAIT_MS: u64 = LIBRARY_WAIT_MS;
+
 pub const IMAGE_BUDGET: usize = 4 * 1024 * 1024;
 
 pub struct Rig {
@@ -181,8 +186,10 @@ fn home_session(r: &Rig, rng: &mut Rng, st: &Stats) {
         return;
     };
     vm.send(HomeIntent::Load);
-    if !wait_until(5000, || !matches!(vm.status().status, Status::Loading)) {
-        st.problem("home: still loading after 5 s".into());
+    if !wait_until(HOME_WAIT_MS, || {
+        !matches!(vm.status().status, Status::Loading)
+    }) {
+        st.problem(format!("home: still loading after {HOME_WAIT_MS} ms"));
     }
     if let Some(rail) = vm.rails().rails.first() {
         let _ = vm.tiles(rail.id.clone(), 0, 12);

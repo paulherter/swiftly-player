@@ -35,8 +35,7 @@ fn wait_for(what: &str, secs: u64, mut ok: impl FnMut() -> bool) {
 
 fn client(dir: &std::path::Path, addr: &str) -> Arc<Core> {
     let _ = std::fs::remove_dir_all(dir);
-    swiftly_desktop::store::set_config_dir_override(dir);
-    let core = Arc::new(Core::open().expect("core"));
+    let core = Arc::new(swiftly_desktop::store::open_in_config_dir(dir, Core::open).expect("core"));
     let backend = core.sign_in_backend();
     let wait = Duration::from_secs(30);
     backend
@@ -148,7 +147,10 @@ fn rig() -> Option<Rig> {
     );
     std::thread::sleep(Duration::from_millis(800));
     let addr = format!("http://127.0.0.1:{port}");
-    let tmp = std::env::temp_dir().join(format!("swiftly-handoff-{}", std::process::id()));
+    // One folder per rig: the two tests of this file run in parallel in one process.
+    static RIGS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = RIGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = std::env::temp_dir().join(format!("swiftly-handoff-{}-{n}", std::process::id()));
     let linux = Device::new(&tmp.join("linux"), &addr, "Linux");
     let mac = Device::new(&tmp.join("mac"), &addr, "Mac");
     assert_ne!(linux.account.device_id, mac.account.device_id);

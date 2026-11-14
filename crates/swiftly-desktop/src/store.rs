@@ -10,12 +10,34 @@ use swiftly_library::{KeyValue, Store};
 /// A directory set by a test in this process (see [`set_config_dir_override`]); it wins over the environment.
 static CONFIG_DIR_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
 
+/// Held while a test sets the override and opens its core, so two tests of one process cannot swap the directory
+/// between the two steps.
+static OVERRIDE_OPEN: Mutex<()> = Mutex::new(());
+
 /// Points [`config_dir`] at `dir` for the rest of this process (tests that open several cores with their own device
 /// ids; changing the environment of a running process is not safe, so they pass the directory here instead).
+/// Like `SWIFTLY_CONFIG_DIR` it also turns the system vault off: the secrets go to a file in `dir`.
 pub fn set_config_dir_override(dir: &Path) {
     if let Ok(mut slot) = CONFIG_DIR_OVERRIDE.lock() {
         *slot = Some(dir.to_path_buf());
     }
+}
+
+/// Sets the override to `dir` and runs `open` (a core that reads the directory while it opens), as one step against
+/// other tests of the process doing the same.
+pub fn open_in_config_dir<T>(dir: &Path, open: impl FnOnce() -> T) -> T {
+    let _one_at_a_time = OVERRIDE_OPEN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    set_config_dir_override(dir);
+    open()
+}
+
+/// Whether a test or the environment chose the config directory (`SWIFTLY_CONFIG_DIR` or the override): the secrets
+/// then live in a file there, never in the system vault.
+fn config_dir_is_chosen() -> bool {
+    CONFIG_DIR_OVERRIDE.lock().is_ok_and(|slot| slot.is_some())
+        || std::env::var_os("SWIFTLY_CONFIG_DIR").is_some()
 }
 
 /// The directory with the settings (`SWIFTLY_CONFIG_DIR` overrides it, for tests and the fixture runs).
@@ -178,8 +200,7 @@ impl PlatformSecrets {
     /// Whether a system vault is in use on this build.
     pub fn uses_vault() -> bool {
         SECRET_BACKEND.get().is_some()
-            || cfg!(any(target_os = "macos", target_os = "windows"))
-                && std::env::var_os("SWIFTLY_CONFIG_DIR").is_none()
+            || cfg!(any(target_os = "macos", target_os = "windows")) && !config_dir_is_chosen()
     }
 }
 
