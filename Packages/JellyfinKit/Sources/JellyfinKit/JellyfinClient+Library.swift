@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// What the Seerr screens ask of the media server: which library item carries a TMDB id, and a new scan.
 extension JellyfinClient {

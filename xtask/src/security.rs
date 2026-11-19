@@ -30,6 +30,14 @@ const UNSAFE_ALLOWED: &[&str] = &[
     "crates/swiftly-desktop/src/live_downloads.rs",
     // The Wayland window icon over winit's own connection: two pointer handles, each commented.
     "crates/swiftly-desktop/src/toplevel_icon.rs",
+    // The Windows GPU video path: the Vulkan device's raw handles (wgpu hal) and the exported memory images, each block
+    // commented where it is used, plus the display-language query (`GetUserPreferredUILanguages`, two calls).
+    "crates/swiftly-desktop/src/win_gpu_video.rs",
+    "crates/swiftly-desktop/src/device_language.rs",
+    // The libmpv OpenGL engine on Windows (WGL context, GL entry points loaded at run time) and its two probe tools.
+    "crates/swiftly-player-surface/src/mpv_gl_win.rs",
+    "crates/swiftly-player-surface/examples/wgl_probe.rs",
+    "crates/swiftly-player-surface/examples/angle_probe.rs",
 ];
 
 struct Line {
