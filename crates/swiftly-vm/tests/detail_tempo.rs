@@ -376,9 +376,17 @@ fn play_after_the_page_starts_from_what_the_page_holds() {
         !asked_again,
         "the start asked again for what the page holds"
     );
+    // A start from the page never waits for the plan call it already holds (PLAN_MS) and is clearly cheaper than the whole
+    // sequence. Not a tight round-trip bound: a loaded shared runner stretches every sleep (168 ms measured against the
+    // old 140 ms limit for a 40 ms round trip), while a repeated plan call or a sequential start would cost 400 ms or more.
+    let (warm, cold) = (median(warm), median(cold));
     assert!(
-        median(warm) < 2 * OTHER_MS as u128 + 60,
-        "a start from the page is one parallel round trip"
+        warm < u128::from(PLAN_MS),
+        "a start from the page waited like a plan call ({warm} ms)"
+    );
+    assert!(
+        warm + u128::from(PLAN_MS) / 2 < cold,
+        "a start from the page ({warm} ms) is not clearly cheaper than one without ({cold} ms)"
     );
 }
 
