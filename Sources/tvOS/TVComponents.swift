@@ -134,6 +134,26 @@ extension View {
     }
 }
 
+extension TVSpec {
+    /// The rest level of a small profile picture (header, account strip): the veil that opens on focus instead of a ring.
+    /// (Not in `tv-spec.json`: Android TV dims through its own helper.)
+    static let pictureDimIdle: Double = 0.22
+}
+
+extension View {
+    /// **Focus on a picture (profile pictures, round or square): no ring, anywhere** (Paul, 17.11.).
+    /// The same two signals the tiles give, lift (the soft shadow) and growth, and instead of an outline the picture
+    /// brightens: it rests under a dark veil of `dim` strength that opens when focus arrives. One place for the profile
+    /// picker, the header picture and the account strip; `TVSpec.pictureDimIdle` is the quiet rest level of the small
+    /// ones, the picker passes its stronger one. `Werkzeuge/check.sh` fails on a focus-conditioned outline in `Sources/tvOS`.
+    func pictureFocus<S: Shape>(_ on: Bool, shape: S, dim: Double, grow: CGFloat = Theme.focusMagnifierSmall) -> some View {
+        self.overlay { shape.fill(Theme.reason.opacity(on ? 0 : dim)).allowsHitTesting(false) }
+            .lift(on)
+            .scaleEffect(on ? grow : 1)
+            .animation(Theme.focusAnimation, value: on)
+    }
+}
+
 extension EnvironmentValues {
     /// What a tile preloads while it holds focus. Set by `TileMenu`, read by
     /// `TileStyle`.
@@ -422,9 +442,9 @@ struct RowsStyle: ButtonStyle {
 
 // MARK: - Profile picker
 
-/// **A large profile picture in the cold-start picker.** Focus is the white ring with a
-/// gap (the backdrop shows through) and the tile's magnification; at rest the picture is
-/// dimmed. Never the accent: see the header rule in `Style.swift`.
+/// **A large profile picture in the cold-start picker.** Focus is the tile's lift and magnification and the picture
+/// brightening (``View/pictureFocus(_:shape:dim:grow:)``); at rest it is dimmed. No ring, never the accent: see the header
+/// rule in `Style.swift`.
 struct ProfilePickerStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         ContentBody(configuration: configuration)
@@ -438,16 +458,10 @@ struct ProfilePickerStyle: ButtonStyle {
         var body: some View {
             let on = focus && released
             configuration.label
-                .overlay {
-                    Circle().fill(Theme.reason.opacity(!released ? TVSpec.pickerDimWaitingOpacity : (focus ? 0 : TVSpec.pickerDimIdleOpacity)))
-                }
-                .overlay {
-                    Circle().strokeBorder(Theme.font, lineWidth: TVSpec.pickerRingWidth)
-                        .padding(-(TVSpec.pickerRingGap + TVSpec.pickerRingWidth))
-                        .opacity(on ? 1 : 0)
-                }
-                .scaleEffect(configuration.isPressed && released ? TVSpec.pressScale : (on ? Theme.focusMagnifier : 1))
-                .animation(Theme.focusAnimation, value: focus)
+                // At rest dimmed (stronger while the picker waits), brightened and lifted on focus; no ring.
+                .pictureFocus(on, shape: Circle(), dim: !released ? TVSpec.pickerDimWaitingOpacity : TVSpec.pickerDimIdleOpacity,
+                              grow: Theme.focusMagnifier)
+                .scaleEffect(configuration.isPressed && released ? TVSpec.pressScale : 1)
                 .animation(Theme.focusAnimation, value: released)
                 .animation(Theme.pressCurve(configuration.isPressed), value: configuration.isPressed)
         }
@@ -487,6 +501,10 @@ struct TileContent: View {
     var substitute: CollectionMosaic? = nil
     /// The symbol shown when there is no image: `Item.tileCharacter`.
     var symbolText: String? = nil
+    /// The picture's BlurHash from the core: the slot shows it in final size until the sharp picture replaces it in place.
+    var blur: String? = nil
+    /// The picture's place in a row that fills in index order (the episode stills).
+    var slot: ArrivalSlot? = nil
     /// The tile's button: focus is set on it, and the label below reads it.
     @Environment(\.isFocused) private var focus
 
@@ -500,7 +518,7 @@ struct TileContent: View {
                     substitute
                 } else {
                     Picture(url: image, width: width, height: height, progress: progress,
-                         symbolText: symbolText)
+                         blur: blur, slot: slot, symbolText: symbolText)
                 }
             }
                 // **Multiplied, not translucent**, like `Gesehenhaken` on iPhone. With
@@ -863,10 +881,9 @@ struct CastTile: View {
 
 /// Focus on the profile picture.
 ///
-/// `TileStyle` alone is not enough here: `focusMagnifier` (1.06) on 60 pt is four points, which
-/// is invisible from three meters. Hence `focusMagnifierSmall`, and because an image cannot
-/// brighten like a tile, additionally a ring in the accent color, which has the same role
-/// as everywhere: it shows a selection.
+/// `TileStyle` alone is not enough here: `focusMagnifier` (1.06) on 60 pt is four points, which is invisible from three
+/// meters. Hence `focusMagnifierSmall`, and because an image cannot brighten like a tile surface, the picture rests under a
+/// light veil that opens on focus (``View/pictureFocus(_:shape:dim:grow:)``). No ring, no accent.
 struct ProfileStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         ContentBody(configuration: configuration)
@@ -878,15 +895,7 @@ struct ProfileStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .overlay {
-                    if focus {
-                        Circle()
-                            .strokeBorder(Theme.accent, lineWidth: TVSpec.headerProfileRingWidth)
-                            .padding(-(TVSpec.headerProfileRingGap + TVSpec.headerProfileRingWidth))
-                    }
-                }
-                .scaleEffect(focus ? Theme.focusMagnifierSmall : 1)
-                .animation(Theme.focusAnimation, value: focus)
+                .pictureFocus(focus, shape: Circle(), dim: TVSpec.pictureDimIdle)
         }
     }
 }
@@ -1405,22 +1414,37 @@ final class BackdropImage {
 
 struct Backdrop: View {
     let url: URL?
+    /// A detail page's head: the tile pictures and the BlurHash stand in frame 1 (the first tile picture the picture
+    /// memory holds, else the blurred hash), in the backdrop's final size; the sharp picture replaces it in place.
+    var blur: String? = nil
+    var stand: [URL] = []
     @State private var image: Image?
+    @State private var standIn: Image?
     /// What is known appears immediately, not in the next pass. The same consideration as
     /// for `ImageReason`: a value supplied later comes too late, the empty pass has already
     /// happened.
-    @MainActor init(url: URL?) {
+    @MainActor init(url: URL?, blur: String? = nil, stand: [URL] = []) {
         self.url = url
-        _image = State(initialValue: url.flatMap { BackdropImage.shared.image($0) })
+        self.blur = blur
+        self.stand = stand
+        let known = url.flatMap { BackdropImage.shared.image($0) }
+        _image = State(initialValue: known)
+        if known == nil {
+            _standIn = State(initialValue: stand.lazy.compactMap { ImageCache.shared.image($0) }.first)
+        }
     }
 
     var body: some View {
         ZStack {
             if let image {
                 image.resizable().aspectRatio(contentMode: .fill)
+            } else if let standIn {
+                standIn.resizable().aspectRatio(contentMode: .fill)
+            } else if let blur {
+                BlurFill(hash: blur)
             }
         }
-        // **Via `ImageCache`, not `AsyncImage`**, like `Picture` (see `Style.swift`):
+        // **Via `ImageCache`, not `AsyncImage`**, like `Picture` (see `Sources/Shared/Picture.swift`):
         // `AsyncImage` decodes on the main thread, stores nothing on disk and cancels when
         // it disappears, and on the home page the backdrop changes with every focus stop.
         // `ImageCache` can also send custom headers (front-end proxy, #4). The result is
@@ -1432,7 +1456,11 @@ struct Backdrop: View {
             guard let loaded = await ImageCache.shared.load(url, preRank: true) else { return }
             guard !Task.isCancelled else { return }
             BackdropImage.shared.remember(loaded, for: url)
-            withAnimation(Theme.motion(.easeInOut(duration: 0.4))) { image = loaded }
+            // A stand-in is replaced by a short ease-out dissolve; an empty backdrop fades in slowly.
+            let hasStandIn = standIn != nil || blur != nil
+            withAnimation(Theme.motion(hasStandIn ? .easeOut(duration: 0.15) : .easeInOut(duration: 0.4))) {
+                image = loaded
+            }
         }
         // A new URL while the view stays: do not keep showing the old image, take what is
         // known for the new one.
@@ -1595,8 +1623,13 @@ struct SeasonPill: View {
 
     var body: some View {
         // Design: the same pill as the library rail (h56, pad 24, 26/600, .10, white on focus).
-        Button { opened.toggle() } label: { Text(name) }
-            .buttonStyle(CapsuleStyle())
+        Button { opened.toggle() } label: {
+            HStack(spacing: 10) {
+                Text(name)
+                Image(icon: "chevron.up.chevron.down", size: 18).accessibilityHidden(true)
+            }
+        }
+        .buttonStyle(CapsuleStyle())
         .accessibilityLabel(Text("Staffel wählen, \(name)"))
     }
 }
@@ -1880,3 +1913,21 @@ enum DebugLaunch {
     }
 }
 #endif
+
+extension View {
+    /// For a list that sits under a header and has `scrollClipDisabled` (the focus ring needs room outside the
+    /// rows): the list starts `height` below the header and fades out in that strip, so a scrolled row never runs
+    /// over the header. Sides and bottom stay open for the ring.
+    func fadesUnderHeader(_ height: CGFloat = 36) -> some View {
+        padding(.top, height)
+            .mask {
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: height)
+                    Rectangle().fill(.black)
+                }
+                .padding(.horizontal, -Theme.edgePage)
+                .padding(.bottom, -Theme.edgePage)
+            }
+    }
+}

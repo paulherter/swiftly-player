@@ -153,6 +153,9 @@ table! {
     Land, "Motion.land", Spec::Response(0.45, 0.86), 0.0, Repeat::Once,
         ".spring(response: 0.45, dampingFraction: 0.86)", "Shared/Motion.swift:39, Shared/LookGiftSheet.swift:184,575",
         "gift icon landing";
+    ArrivalStack, "ArrivalMotion.spring", Spec::Response(0.42, 0.84), 0.0, Repeat::Once,
+        ".spring(response: 0.42, dampingFraction: 0.84)", "Shared/ArrivalMotion.swift:13",
+        "the arrival stack: opening, closing and the cards that close a gap, one spring for the whole change";
     Recolor, "Motion.recolor (CATransition)", Spec::EaseInOut(0.28), 0.0, Repeat::Once,
         "CATransition fade 0.28, .easeInEaseOut", "Shared/Motion.swift:57-60",
         "look switch: cross-fade of the whole window layer";
@@ -288,6 +291,9 @@ table! {
     TouchSettle, "touch page settle", Spec::SettlingIn(0.35), 0.0, Repeat::Once,
         "(none: iPhone UINavigationController feel, Android back swipe)", "n/a",
         "Android push, pop and released back swipe";
+    RowReorder, "row reorder", Spec::Response(0.32, 0.86), 0.0, Repeat::Once,
+        "(none: iPhone List move feel; the rows that make room and the released row)", "n/a",
+        "a dragged list row settles into its slot, the others make room";
 }
 
 /// How well a catalogued curve is known.
@@ -309,7 +315,7 @@ impl Id {
         match self {
             Id::SheetNative => Basis::Documented,
             Id::NativeFade | Id::SymbolReplace => Basis::Estimated,
-            Id::TouchSettle => Basis::Rust,
+            Id::TouchSettle | Id::RowReorder => Basis::Rust,
             _ => Basis::MacSource,
         }
     }

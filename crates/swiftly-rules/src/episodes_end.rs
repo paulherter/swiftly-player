@@ -25,6 +25,12 @@ pub fn at_end(position: f64, duration: f64) -> bool {
     duration > 60.0 && position >= duration - 1.0
 }
 
+/// A file of a minute or less that has played to its end ([`at_end`] ignores those, so a card
+/// opened in the last seconds of a very short episode still finishes its countdown).
+pub fn short_at_end(position: f64, duration: f64) -> bool {
+    duration > 0.0 && duration <= 60.0 && position >= duration - 1.0
+}
+
 /// Whether playback advances to the next episode by itself: not while the card counts down
 /// (`card_counts`), not within [`RAMP_UP_IDLE`] seconds of opening, only for files longer
 /// than a minute and at the end. (`EpisodesEnd.swift:70-77`)
@@ -75,6 +81,14 @@ mod tests {
         assert!(!advance(1500.0, 1500.0, 600.0, true));
         // Without a card (cancelled or none) as before.
         assert!(advance(1500.0, 1500.0, 600.0, false));
+    }
+
+    #[test]
+    fn short_files_end_too() {
+        assert!(short_at_end(4.5, 5.0));
+        assert!(!short_at_end(3.0, 5.0));
+        assert!(!short_at_end(3599.5, 3600.0), "long files have at_end");
+        assert!(!short_at_end(0.0, 0.0));
     }
 
     // Swift: EpisodesCardTests.atEndLimit

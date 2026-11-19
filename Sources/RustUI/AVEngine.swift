@@ -14,6 +14,27 @@ final class VideoView: UIView {
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 }
 
+/// The command names (`c`) the core queues for a native engine, as `crates/swiftly-player-surface/src/wire.rs` sends them.
+/// `CoreWordsContractTests` (Packages/SwiftlyCore) reads this enum and `crates/swiftly-uniffi/data/core-words.json` (group
+/// `engine.command`) and fails when they differ, so a command the core adds cannot be dropped unnoticed. Keep one
+/// `case` per line.
+enum EngineCommand: String, CaseIterable {
+    case load
+    case play
+    case pause
+    case seek
+    case rate
+    case volume
+    case delay
+    case subdelay
+    case audio
+    case sub
+    case fill
+    case place
+    case stop
+    case pip
+}
+
 /// The Apple half of the player contract: AVPlayer drawing into a `VideoView` under the UI. It speaks to Rust in JSON
 /// lines only (`swiftly_rust_engine_commands` in, `swiftly_rust_engine_event` out; format in
 /// crates/swiftly-player-surface/src/wire.rs), so the Rust player screen sees the same events as with libmpv or Media3.
@@ -37,6 +58,11 @@ final class AVEngine: NSObject, AVPlayerItemOutputPushDelegate, AVPlayerItemLegi
     private var audioGroup: AVMediaSelectionGroup?
     private var subtitleGroup: AVMediaSelectionGroup?
     private var desiredRate: Float = 1
+    /// The pause the app put on a playing title when it entered the background (see `suspend`): ONE state, not a flag next to the player's own.
+    private enum AppPause { case none, pausedByApp }
+    private var appPause = AppPause.none
+    /// Commands the core sends that this shell does not wire yet; each is logged once, never dropped silently.
+    private var warnedUnwired: Set<EngineCommand> = []
 
     override init() {
         super.init()
@@ -79,12 +105,19 @@ final class AVEngine: NSObject, AVPlayerItemOutputPushDelegate, AVPlayerItemLegi
     /// Applies the command lines Rust queued since the last frame.
     func apply(_ lines: String) {
         for line in lines.split(separator: "\n") {
-            guard let c = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any], let cmd = c["c"] as? String else { continue }
+            guard let c = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any], let name = c["c"] as? String else {
+                NSLog("[AVEngine] command line without a name: \(line)")
+                continue
+            }
+            guard let cmd = EngineCommand(rawValue: name) else {
+                NSLog("[AVEngine] unknown command: \(line)")
+                continue
+            }
             switch cmd {
-            case "load": load(c)
-            case "play": player.playImmediately(atRate: desiredRate)
-            case "pause": player.pause()
-            case "seek":
+            case .load: load(c)
+            case .play: appPause = .none; player.playImmediately(atRate: desiredRate)
+            case .pause: appPause = .none; player.pause()
+            case .seek:
                 guard let s = c["s"] as? Double else { break }
                 seeking = true
                 send(["e": "state", "s": "seeking"])
@@ -95,15 +128,17 @@ final class AVEngine: NSObject, AVPlayerItemOutputPushDelegate, AVPlayerItemLegi
                         self.send(["e": "state", "s": self.player.timeControlStatus == .playing ? "playing" : "paused"])
                     }
                 }
-            case "rate":
+            case .rate:
                 desiredRate = Float((c["v"] as? Double) ?? 1)
                 if player.timeControlStatus != .paused { player.rate = desiredRate }
-            case "volume": player.volume = Float((c["v"] as? Double) ?? 100) / 100
-            case "audio": select(c["i"] as? Int ?? -1, audio: true)
-            case "sub": select(c["i"] as? Int ?? -1, audio: false)
-            case "fill": view.playerLayer.videoGravity = (c["on"] as? Bool) == true ? .resizeAspectFill : .resizeAspect
-            case "stop": stop()
-            default: break // place, delay, pip: not wired (ios-shell.md)
+            case .volume: player.volume = Float((c["v"] as? Double) ?? 100) / 100
+            case .audio: select(c["i"] as? Int ?? -1, audio: true)
+            case .sub: select(c["i"] as? Int ?? -1, audio: false)
+            case .fill: view.playerLayer.videoGravity = (c["on"] as? Bool) == true ? .resizeAspectFill : .resizeAspect
+            case .stop: stop()
+            case .delay, .subdelay, .place, .pip:
+                // Not wired in this shell (ios-shell.md). Logged once per command, not dropped silently.
+                if warnedUnwired.insert(cmd).inserted { NSLog("[AVEngine] command not wired yet: \(name)") }
             }
         }
     }
@@ -201,6 +236,7 @@ final class AVEngine: NSObject, AVPlayerItemOutputPushDelegate, AVPlayerItemLegi
     }
 
     private func stop() {
+        appPause = .none
         itemObservers.removeAll()
         if let t = endToken { NotificationCenter.default.removeObserver(t); endToken = nil }
         player.pause()
@@ -214,6 +250,24 @@ final class AVEngine: NSObject, AVPlayerItemOutputPushDelegate, AVPlayerItemLegi
         Task { @MainActor in self.send(["e": "cue", "text": text]) }
     }
 
-    /// The app left the foreground: a paused picture, no stray audio.
-    func suspend() { player.pause() }
+    /// The app left the foreground: a paused picture, no stray audio. Returns whether the player stands paused now
+    /// (the rate is zero at once; the KVO report of the status comes later).
+    ///
+    /// Only the background calls this (`didEnterBackground`); an app that is merely inactive (Notification Center, Control Center)
+    /// is never suspended. A title that plays is paused unless AirPlay carries it, and `resumeAfterSuspend` plays it again on the
+    /// return. A title the user had paused stays paused.
+    @discardableResult func suspend() -> Bool {
+        if appPause == .none, player.timeControlStatus != .paused, !player.isExternalPlaybackActive {
+            player.pause()
+            appPause = .pausedByApp
+        }
+        return player.rate == 0
+    }
+
+    /// The app is in front again: plays what `suspend` paused. A press, a seek or a new title in between cancelled it.
+    func resumeAfterSuspend() {
+        guard appPause == .pausedByApp, item != nil else { appPause = .none; return }
+        appPause = .none
+        player.playImmediately(atRate: desiredRate)
+    }
 }

@@ -22,6 +22,7 @@ extension SeerrState {
         case .loads: "arrow.down.circle"
         case .partWayPresent: "circle.lefthalf.filled"
         case .present: "checkmark"
+        case .blocklisted: "nosign"
         }
     }
 
@@ -38,6 +39,7 @@ extension SeerrState {
         case .loads: String(localized: "Angefragt")
         case .partWayPresent: String(localized: "Teilweise vorhanden")
         case .present: String(localized: "Auf deinem Server")
+        case .blocklisted: String(localized: "Gesperrt")
         }
     }
 
@@ -53,6 +55,7 @@ extension SeerrState {
         case .waitsSharing: String(localized: "wartet")
         case .loads: String(localized: "angefragt")
         case .partWayPresent: String(localized: "teilweise")
+        case .blocklisted: String(localized: "gesperrt")
         case .present: nil
         }
     }
@@ -74,7 +77,7 @@ extension SeerrState {
         switch self {
         case .waitsSharing: Theme.warning
         case .present: Theme.font
-        case .opened, .deleted: Theme.fontQuiet
+        case .opened, .deleted, .blocklisted: Theme.fontQuiet
         default: Theme.accent
         }
     }
@@ -87,6 +90,7 @@ extension SeerrState {
         case .loads: String(localized: "angefragt")
         case .partWayPresent: String(localized: "teilweise vorhanden")
         case .present: String(localized: "auf deinem Server")
+        case .blocklisted: String(localized: "gesperrt")
         }
     }
 
@@ -97,8 +101,34 @@ extension SeerrState {
             String(localized: "Deine Anfrage liegt beim Verwalter des Servers. Du musst nichts weiter tun.")
         case .loads:
             String(localized: "Deine Anfrage ist durch. Der Titel erscheint von selbst in deiner Bibliothek.")
+        case .blocklisted:
+            String(localized: "Dieser Titel ist gesperrt und kann nicht angefragt werden.")
         default:
             String(localized: "Dieser Titel liegt bereits auf deinem Server.")
         }
+    }
+}
+
+/// The capsule the core's badge becomes, **the same on tiles and in season rows**: a 10 pt symbol and,
+/// where it adds something, the short word (`wartet`, `62 %`, `28. Nov.`), dark text on the state colour.
+struct SeerrBadgeCapsule: View {
+    let symbol: String
+    let word: String?
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(icon: symbol, size: 10)
+                // A glyph is not on any type ladder; only the weight is set.
+                .font(.app(size: 10, weight: .semibold))
+            // "+" is the symbol's own word (plus.circle); drawing both would read "+ +".
+            if let word, !word.isEmpty, word != "+" {
+                Text(verbatim: word).font(Theme.badge)
+            }
+        }
+        .foregroundStyle(Theme.reason)
+        .padding(.horizontal, (word ?? "").isEmpty || word == "+" ? 5 : 7)
+        .padding(.vertical, 3)
+        .background(tint, in: Capsule())
     }
 }

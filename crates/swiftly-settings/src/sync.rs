@@ -64,7 +64,7 @@ const fn e(name: &'static str, kind: Kind, per_server: bool) -> Entry {
 /// The synced settings, in the order of `SettingsSync.entries` (`SettingsSync.swift:59-79`).
 /// **Per user and independent of the device, nothing else:** Wi-Fi only, volume, fill screen,
 /// buffer, counters, debug and everything about downloads stay on the device.
-pub const ENTRIES: [Entry; 19] = [
+pub const ENTRIES: [Entry; 22] = [
     e("tonSprache", Kind::Text, false),
     e("utSprache", Kind::Text, false),
     e("utAuto", Kind::Bool, false),
@@ -79,11 +79,14 @@ pub const ENTRIES: [Entry; 19] = [
     e("merklisteAn", Kind::Bool, false),
     e("alphabetAn", Kind::Bool, false),
     e("neuGetrennt", Kind::Bool, false),
+    e("seerrArrivalHint", Kind::Bool, false),
+    e("seerrRequestsRail", Kind::Bool, false),
     e("startReihen", Kind::List, false),
     e("startAus", Kind::List, false),
     e("genreChips", Kind::Bool, false),
     e("startGenres", Kind::List, false),
     e("startBibliotheken", Kind::Json, true),
+    e("seerrServer", Kind::Json, true),
 ];
 
 /// The entry for a device key as `UserDefaults` knows it; a `|server` suffix is ignored.

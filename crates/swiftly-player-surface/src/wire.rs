@@ -15,6 +15,64 @@ use swiftly_playback::engine::{
     EngineEvent, EngineLoad, EngineState, EngineTrack, PipCmd, PlaybackEngine, Rect, SubtitleRoute,
 };
 
+/// The command names Rust queues (the `c` key) and the values of the `pip` command, in one place.
+///
+/// A native shell (Media3 in Kotlin, AVPlayer in Swift) matches on these. `swiftly-uniffi`'s contract test writes the
+/// lists to `crates/swiftly-uniffi/data/core-words.json`, and the Kotlin and Swift tests fail for a command name a shell handles
+/// that is not in it. The test below drives every [`PlaybackEngine`] method and checks that the list is what is sent.
+pub mod command {
+    /// Open a title.
+    pub const LOAD: &str = "load";
+    /// Play.
+    pub const PLAY: &str = "play";
+    /// Pause.
+    pub const PAUSE: &str = "pause";
+    /// Seek to a second.
+    pub const SEEK: &str = "seek";
+    /// Playback speed.
+    pub const RATE: &str = "rate";
+    /// Volume in percent.
+    pub const VOLUME: &str = "volume";
+    /// Audio delay in milliseconds.
+    pub const DELAY: &str = "delay";
+    /// Subtitle delay in milliseconds (positive: the text comes later).
+    pub const SUBDELAY: &str = "subdelay";
+    /// Select an audio track.
+    pub const AUDIO: &str = "audio";
+    /// Select a subtitle track (`-1` none).
+    pub const SUB: &str = "sub";
+    /// Fill the surface (crop) or fit it.
+    pub const FILL: &str = "fill";
+    /// Place the video rectangle.
+    pub const PLACE: &str = "place";
+    /// Stop.
+    pub const STOP: &str = "stop";
+    /// Picture-in-picture; the `v` value is one of [`PIP_VALUES`].
+    pub const PIP: &str = "pip";
+    /// Every command name, in the order of the engine trait.
+    pub const ALL: [&str; 14] = [
+        LOAD, PLAY, PAUSE, SEEK, RATE, VOLUME, DELAY, SUBDELAY, AUDIO, SUB, FILL, PLACE, STOP, PIP,
+    ];
+
+    /// `v` of the `pip` command: start.
+    pub const PIP_START: &str = "start";
+    /// `v` of the `pip` command: stop.
+    pub const PIP_STOP: &str = "stop";
+    /// `v` of the `pip` command: rebuild or refresh the controller.
+    pub const PIP_REFRESH: &str = "refresh";
+    /// Every `pip` value.
+    pub const PIP_VALUES: [&str; 3] = [PIP_START, PIP_STOP, PIP_REFRESH];
+}
+
+/// The wire word of a [`PipCmd`] (explicit, no `Debug` name: renaming a variant must not change the wire).
+fn pip_word(c: PipCmd) -> &'static str {
+    match c {
+        PipCmd::Start => command::PIP_START,
+        PipCmd::Stop => command::PIP_STOP,
+        PipCmd::Refresh => command::PIP_REFRESH,
+    }
+}
+
 #[derive(Default)]
 struct Inner {
     commands: Vec<String>,
@@ -146,34 +204,37 @@ impl QueueEngine {
 
 impl PlaybackEngine for QueueEngine {
     fn load(&self, r: EngineLoad) {
-        self.push(json!({"c":"load","url":r.url,"headers":r.headers,"start":r.start,"audio":r.audio_server_index,
+        self.push(json!({"c":command::LOAD,"url":r.url,"headers":r.headers,"start":r.start,"audio":r.audio_server_index,
             "sub":r.subtitle_server_index,"software":r.software_decode,"fps_match":r.frame_rate_match,
             "external":r.external_subtitles.iter().map(|e| json!({"url":e.url,"name":e.name,"lang":e.language,"forced":e.is_forced})).collect::<Vec<_>>()}));
     }
     fn play(&self) {
-        self.push(json!({"c":"play"}));
+        self.push(json!({"c":command::PLAY}));
     }
     fn pause(&self) {
-        self.push(json!({"c":"pause"}));
+        self.push(json!({"c":command::PAUSE}));
     }
     fn seek(&self, seconds: f64) {
-        self.push(json!({"c":"seek","s":seconds}));
+        self.push(json!({"c":command::SEEK,"s":seconds}));
     }
     fn set_rate(&self, tempo: f32) {
-        self.push(json!({"c":"rate","v":tempo}));
+        self.push(json!({"c":command::RATE,"v":tempo}));
     }
     fn set_volume(&self, percent: u8) {
-        self.push(json!({"c":"volume","v":percent}));
+        self.push(json!({"c":command::VOLUME,"v":percent}));
     }
     fn set_audio_delay(&self, milliseconds: i32) {
-        self.push(json!({"c":"delay","ms":milliseconds}));
+        self.push(json!({"c":command::DELAY,"ms":milliseconds}));
+    }
+    fn set_subtitle_delay(&self, milliseconds: i32) {
+        self.push(json!({"c":command::SUBDELAY,"ms":milliseconds}));
     }
     fn select_audio(&self, server_index: i32) -> bool {
         let known = lock(&self.inner)
             .audio_ids
             .contains(&i64::from(server_index));
         if known {
-            self.push(json!({"c":"audio","i":server_index}));
+            self.push(json!({"c":command::AUDIO,"i":server_index}));
         }
         known
     }
@@ -185,20 +246,20 @@ impl PlaybackEngine for QueueEngine {
         {
             return SubtitleRoute::Unsupported;
         }
-        self.push(json!({"c":"sub","i":server_index}));
+        self.push(json!({"c":command::SUB,"i":server_index}));
         SubtitleRoute::Cues
     }
     fn set_fill(&self, on: bool) {
-        self.push(json!({"c":"fill","on":on}));
+        self.push(json!({"c":command::FILL,"on":on}));
     }
     fn place(&self, rect: Rect) {
-        self.push(json!({"c":"place","x":rect.x,"y":rect.y,"w":rect.width,"h":rect.height}));
+        self.push(json!({"c":command::PLACE,"x":rect.x,"y":rect.y,"w":rect.width,"h":rect.height}));
     }
     fn stop(&self, reset_display: bool) {
-        self.push(json!({"c":"stop","reset":reset_display}));
+        self.push(json!({"c":command::STOP,"reset":reset_display}));
     }
-    fn pip(&self, command: PipCmd) {
-        self.push(json!({"c":"pip","v":format!("{command:?}")}));
+    fn pip(&self, cmd: PipCmd) {
+        self.push(json!({"c":command::PIP,"v":pip_word(cmd)}));
     }
 }
 
@@ -257,6 +318,74 @@ mod tests {
         assert_eq!(lines.lines().count(), 3);
         assert!(lines.contains(r#""c":"seek""#) && lines.contains("12.5"));
         assert_eq!(e.take_commands(), "");
+    }
+
+    #[test]
+    fn every_command_sent_is_listed_and_every_listed_one_is_sent() {
+        use swiftly_rules::buffer_level::BufferLevel;
+        let e = QueueEngine::new();
+        e.feed(r#"{"e":"tracks","audio":[{"id":1}],"sub":[{"id":2}]}"#);
+        PlaybackEngine::load(
+            &e,
+            EngineLoad {
+                url: "u".into(),
+                headers: Vec::new(),
+                start: None,
+                audio_server_index: None,
+                subtitle_server_index: -1,
+                external_subtitles: Vec::new(),
+                software_decode: false,
+                buffer_level: BufferLevel::Normal,
+                frame_rate_match: false,
+            },
+        );
+        e.play();
+        e.pause();
+        e.seek(1.0);
+        e.set_rate(1.0);
+        e.set_volume(50);
+        e.set_audio_delay(100);
+        e.set_subtitle_delay(-500);
+        assert!(e.select_audio(1));
+        assert_eq!(e.select_subtitle(2), SubtitleRoute::Cues);
+        e.set_fill(true);
+        PlaybackEngine::place(
+            &e,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+        );
+        e.stop(false);
+        for cmd in [PipCmd::Start, PipCmd::Stop, PipCmd::Refresh] {
+            e.pip(cmd);
+        }
+        let lines: Vec<Value> = e
+            .take_commands()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap_or(Value::Null))
+            .collect();
+        let sent: Vec<&str> = lines.iter().filter_map(|v| v["c"].as_str()).collect();
+        for name in command::ALL {
+            assert!(
+                sent.contains(&name),
+                "command {name} is listed but never sent"
+            );
+        }
+        for name in &sent {
+            assert!(
+                command::ALL.contains(name),
+                "command {name} is sent but not listed"
+            );
+        }
+        let pips: Vec<&str> = lines
+            .iter()
+            .filter(|v| v["c"] == command::PIP)
+            .filter_map(|v| v["v"].as_str())
+            .collect();
+        assert_eq!(pips, command::PIP_VALUES);
     }
 
     #[test]

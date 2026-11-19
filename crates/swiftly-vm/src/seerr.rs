@@ -65,12 +65,24 @@ pub struct SeerrSeasonRow {
 /// One person of the cast row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeerrCast {
+    /// TMDB person id; the cast tile opens the person page with it.
+    pub person: i64,
     /// Name.
     pub name: String,
     /// Role.
     pub role: Option<String>,
     /// Portrait address.
     pub image: Option<String>,
+}
+
+impl SeerrCast {
+    /// What a person page needs of this tile: the one "open person" rule every host uses for a Seerr cast tile.
+    pub fn person_ref(&self) -> crate::SeerrPersonRef {
+        crate::SeerrPersonRef {
+            tmdb: self.person,
+            image: self.image.clone(),
+        }
+    }
 }
 
 /// The detail page of one Seerr title.
@@ -187,6 +199,7 @@ fn short_word(t: &Translator, state: SeerrState) -> Option<String> {
         SeerrState::WaitsSharing => "wartet",
         SeerrState::Loads => "angefragt",
         SeerrState::PartWayPresent => "teilweise",
+        SeerrState::Blocklisted => "gesperrt",
     }))
 }
 
@@ -198,6 +211,7 @@ pub fn state_word(t: &Translator, state: SeerrState) -> String {
         SeerrState::Loads => "Angefragt",
         SeerrState::PartWayPresent => "Teilweise vorhanden",
         SeerrState::Present => "Auf deinem Server",
+        SeerrState::Blocklisted => "Gesperrt",
     })
 }
 
@@ -209,6 +223,7 @@ pub fn state_announcement(t: &Translator, state: SeerrState) -> String {
         SeerrState::Loads => "angefragt",
         SeerrState::PartWayPresent => "teilweise vorhanden",
         SeerrState::Present => "auf deinem Server",
+        SeerrState::Blocklisted => "gesperrt",
     })
 }
 
@@ -221,6 +236,7 @@ pub fn state_hint(t: &Translator, state: SeerrState) -> String {
         SeerrState::Loads => {
             "Deine Anfrage ist durch. Der Titel erscheint von selbst in deiner Bibliothek."
         }
+        SeerrState::Blocklisted => "Dieser Titel ist gesperrt und kann nicht angefragt werden.",
         _ => "Dieser Titel liegt bereits auf deinem Server.",
     })
 }
@@ -384,6 +400,7 @@ impl SeerrVm {
                     .iter()
                     .take(12)
                     .map(|p| SeerrCast {
+                        person: p.id,
                         name: p.name.clone(),
                         role: p.role.clone(),
                         image: p.image(185),

@@ -171,6 +171,14 @@ pub(crate) fn tile_at(
             wanted_height: poster_height,
         })
     });
+    // The page this tile opens shows this picture in frame 1 (an episode's poster is its series' poster, so the series
+    // page finds it too).
+    if let Some(image) = &image {
+        crate::seed::note_tile_image(&item.id, image);
+        if let (Some(series), ImageKind::Poster) = (&item.series_id, image.kind) {
+            crate::seed::note_tile_image(series, image);
+        }
+    }
     build_tile(item, kind, image, words)
 }
 
@@ -195,6 +203,25 @@ pub(crate) fn plex_grid_tile<T: HttpTransport + 'static>(
             wanted_height: poster_height,
         });
     build_tile(item, RailKind::Genre, image, words)
+}
+
+/// The number of seasons a series tile may claim, or `None` when `ChildCount` cannot be trusted as one. On the
+/// "new" rails (the shape `Items/Latest` serves in other clients) it counts the NEW EPISODES grouped under the
+/// series, and on episode rails it is not a season count at all. Reading that as seasons made the season picker's
+/// chevron appear for a one-season series, or a "5 Staffeln" badge for five new episodes. Only a plain list (genre,
+/// library) carries the series' own child count, which is its seasons.
+fn season_count(item: &Item, kind: RailKind) -> Option<i64> {
+    if item.type_.as_deref() != Some("Series") {
+        return item.child_count;
+    }
+    match kind {
+        RailKind::Genre => item.child_count,
+        RailKind::ContinueWatching
+        | RailKind::NextEpisode
+        | RailKind::NewMovies
+        | RailKind::NewSeries
+        | RailKind::NewArrivals => None,
+    }
 }
 
 fn build_tile(item: &Item, kind: RailKind, image: Option<ImageRef>, words: &Words) -> Tile {
@@ -241,7 +268,7 @@ fn build_tile(item: &Item, kind: RailKind, image: Option<ImageRef>, words: &Word
             badges.push(Badge::Unplayed {
                 count: u32::try_from(n).unwrap_or(u32::MAX),
             });
-        } else if let Some(n) = item.child_count.filter(|n| *n > 0) {
+        } else if let Some(n) = season_count(item, kind).filter(|n| *n > 0) {
             badges.push(Badge::Seasons {
                 count: u32::try_from(n).unwrap_or(u32::MAX),
             });
@@ -263,7 +290,12 @@ fn build_tile(item: &Item, kind: RailKind, image: Option<ImageRef>, words: &Word
             season_id: item.season_id.clone(),
             season_number: item.parent_index_number.and_then(|n| i32::try_from(n).ok()),
             episode_number: item.index_number.and_then(|n| i32::try_from(n).ok()),
-            child_count: item.child_count.and_then(|n| i32::try_from(n).ok()),
+            child_count: season_count(item, kind).and_then(|n| i32::try_from(n).ok()),
+            position_ticks: item
+                .user_data
+                .as_ref()
+                .and_then(|d| d.playback_position_ticks),
+            run_time_ticks: item.run_time_ticks,
         },
     }
 }
@@ -382,6 +414,33 @@ mod tests {
             serde_json::from_str(r#"{"Id":"m1","Name":"A Film","Type":"Movie"}"#).unwrap();
         let tile = build_tile(&movie, RailKind::Genre, None, &words);
         assert_eq!(tile.facts.child_count, None);
+    }
+
+    #[test]
+    fn a_new_rail_never_reads_the_child_count_as_a_season_count() {
+        // `Items/Latest` fills a series' ChildCount with the grouped new episodes (5 here, a one-season series).
+        let item: Item = serde_json::from_str(
+            r#"{"Id":"s1","Name":"Dark Matter","Type":"Series","ChildCount":5}"#,
+        )
+        .unwrap();
+        let words = Words::new(Locale::parse("de"));
+        for kind in [
+            RailKind::NewSeries,
+            RailKind::NewArrivals,
+            RailKind::NewMovies,
+            RailKind::NextEpisode,
+            RailKind::ContinueWatching,
+        ] {
+            let tile = build_tile(&item, kind, None, &words);
+            assert_eq!(tile.facts.child_count, None, "{kind:?}");
+            assert!(
+                !tile
+                    .badges
+                    .iter()
+                    .any(|b| matches!(b, Badge::Seasons { .. })),
+                "{kind:?}"
+            );
+        }
     }
 
     #[test]

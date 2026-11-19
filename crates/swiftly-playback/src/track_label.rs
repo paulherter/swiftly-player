@@ -234,7 +234,9 @@ pub fn extra_title(title: Option<&str>) -> Option<String> {
     if title.is_empty() {
         return None;
     }
-    let repeated: HashSet<&str> = REPEATED_WORDS.iter().copied().collect();
+    static REPEATED: std::sync::LazyLock<HashSet<&str>> =
+        std::sync::LazyLock::new(|| REPEATED_WORDS.iter().copied().collect());
+    let repeated = &*REPEATED;
     let lowered = title.to_lowercase();
     let remaining = lowered
         .split(|c: char| !c.is_alphabetic())
@@ -611,6 +613,26 @@ mod tests {
         assert_eq!(
             subtitle_of_track(&known, &Names("ru")).as_deref(),
             Some("Русский · Erzwungen · ASS")
+        );
+    }
+
+    /// The player builds its track rows on every frame; a title with 45 subtitle tracks stalled the desktop UI
+    /// thread when every word of every title composed the whole language table again (17.11.).
+    #[test]
+    fn many_titled_tracks_label_quickly_frame_after_frame() {
+        let titles: Vec<String> = (0..45)
+            .map(|i| format!("Deutsch Forced SDH Kommentar Regie Fassung {i}"))
+            .collect();
+        let start = std::time::Instant::now();
+        for _ in 0..300 {
+            for t in &titles {
+                let _ = extra_title(Some(t));
+            }
+        }
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(2),
+            "13 500 track titles took {:?}",
+            start.elapsed()
         );
     }
 }

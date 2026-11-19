@@ -166,8 +166,10 @@ fn item(i: usize, series: bool) -> String {
         _ => r#""UserData":{"Played":false}"#.to_owned(),
     };
     let kind = if series { "Series" } else { "Movie" };
+    // Audio German for every third title, English for the rest: what the filter sheet's language rows are read from.
+    let language = if i.is_multiple_of(3) { "deu" } else { "eng" };
     format!(
-        r#"{{"Id":"x{i}","Name":"{name}","Type":"{kind}","ProductionYear":{},"ChildCount":3,"RunTimeTicks":54000000000,"ImageTags":{{"Primary":"p-x{i}"}},{user}}}"#,
+        r#"{{"Id":"x{i}","Name":"{name}","Type":"{kind}","ProductionYear":{},"ChildCount":3,"RunTimeTicks":54000000000,"ImageTags":{{"Primary":"p-x{i}"}},"MediaSources":[{{"MediaStreams":[{{"Type":"Audio","Language":"{language}"}}]}}],{user}}}"#,
         2008 + i % 16
     )
 }
@@ -202,11 +204,15 @@ pub fn transport(scenario: Scenario, count: usize, series: bool) -> MockTranspor
                 .replace("\"ChildCount\":3", "\"ChildCount\":12345")
                 .replace("\"ProductionYear\":20", "\"ProductionYear\":99"),
         ),
-        _ => MockTransport::new().route("UserViews", 200, views).route(
-            "/Items",
-            200,
-            &list(count, series),
-        ),
+        _ => MockTransport::new()
+            .route("UserViews", 200, views)
+            // The production years the filter sheet offers as decades (the titles' years are 2008..2023).
+            .route(
+                "Items/Filters",
+                200,
+                r#"{"Years":[2023,2020,2015,2010,2008]}"#,
+            )
+            .route("/Items", 200, &list(count, series)),
     }
 }
 
@@ -510,26 +516,7 @@ pub fn grid_tile_with(
         image = image.overlay(mark, Alignment::TOP_TRAILING);
     }
     if let Some(share) = tile.progress.filter(|p| *p > 0.0) {
-        let bar = if m.form == Form::Desktop {
-            home::progress_bar(g.w, m.corner, share)
-        } else {
-            let share = share.clamp(0.0, 1.0);
-            Node::zstack(
-                Alignment::BOTTOM_LEADING,
-                vec![
-                    Node::rect(Color::new(1.0, 1.0, 1.0, 0.30), 0.0).frame(
-                        Some(g.w),
-                        Some(4.0),
-                        Alignment::CENTER,
-                    ),
-                    Node::rect(color(colour::MARK_ACCENT), 0.0).frame(
-                        Some(g.w * share),
-                        Some(4.0),
-                        Alignment::CENTER,
-                    ),
-                ],
-            )
-        };
+        let bar = home::progress_bar(g.w, m.corner, share);
         image = image.overlay(bar, Alignment::BOTTOM_LEADING);
     }
     if m.form == Form::Desktop {

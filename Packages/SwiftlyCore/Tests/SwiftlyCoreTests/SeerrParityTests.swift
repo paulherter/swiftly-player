@@ -90,7 +90,8 @@ import JellyfinKit
         case .loads: 3
         case .partWayPresent: 4
         case .present: 5
-        case .deleted: 6
+        case .blocklisted: 6
+        case .deleted: 7
         }
     }
 

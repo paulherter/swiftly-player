@@ -15,8 +15,9 @@ mod real {
     use std::io::ErrorKind as IoKind;
     use std::net::TcpStream;
     use std::sync::Arc;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     use swiftly_net::TlsOptions;
+    use swiftly_sync::{LinkPulse, PulseStep};
     use tungstenite::client::IntoClientRequest;
     use tungstenite::stream::MaybeTlsStream;
     use tungstenite::{Connector, Error, Message, WebSocket};
@@ -144,9 +145,15 @@ mod real {
         Ok(builder.with_root_certificates(roots).with_no_client_auth())
     }
 
+    /// A write that cannot finish within this long ends the link: on a vanished peer (sleep, a Wi-Fi switch) the
+    /// kernel buffer fills and a blocking write would hang for good.
+    const WRITE_LIMIT: Duration = Duration::from_secs(10);
+
     /// An open socket.
     pub struct Link {
         socket: WebSocket<MaybeTlsStream<TcpStream>>,
+        /// The sign-of-life rule: a Ping after a quiet quarter minute, dead without any answer ten seconds later.
+        pulse: LinkPulse,
     }
 
     fn failure(e: &Error) -> LinkError {
@@ -164,6 +171,24 @@ mod real {
         /// # Errors
         /// Why the upgrade did not work.
         pub fn connect(url: &str, tls: &TlsOptions) -> Result<Link, LinkError> {
+            Self::connect_with(
+                url,
+                tls,
+                Duration::from_secs_f64(swiftly_sync::PING_AFTER),
+                Duration::from_secs_f64(swiftly_sync::PONG_WITHIN),
+            )
+        }
+
+        /// [`Link::connect`] with other sign-of-life limits (tests).
+        ///
+        /// # Errors
+        /// Why the upgrade did not work.
+        pub fn connect_with(
+            url: &str,
+            tls: &TlsOptions,
+            ping_after: Duration,
+            pong_within: Duration,
+        ) -> Result<Link, LinkError> {
             let request = url.into_client_request().map_err(|e| failure(&e))?;
             let secure = request.uri().scheme_str() == Some("wss");
             let host = request
@@ -196,24 +221,44 @@ mod real {
             };
             if let Some(tcp) = tcp {
                 let _ = tcp.set_read_timeout(Some(Duration::from_millis(SLICE_MS)));
+                let _ = tcp.set_write_timeout(Some(WRITE_LIMIT));
             }
-            Ok(Link { socket })
+            Ok(Link {
+                socket,
+                pulse: LinkPulse::with_limits(ping_after, pong_within, Instant::now()),
+            })
         }
 
         /// The next text message, `Ok(None)` after one slice without news or for a frame to skip.
         ///
         /// # Errors
-        /// The link ended.
+        /// The link ended, or the peer did not answer a Ping in time.
         pub fn read(&mut self) -> Result<Option<String>, LinkError> {
-            match self.socket.read() {
-                Ok(Message::Text(t)) => Ok(Some(t.as_str().to_owned())),
-                Ok(Message::Close(_)) => Err(LinkError::Other("closed".into())),
-                Ok(_) => Ok(None),
-                Err(Error::Io(e)) if matches!(e.kind(), IoKind::WouldBlock | IoKind::TimedOut) => {
-                    Ok(None)
+            let got = match self.socket.read() {
+                Ok(Message::Text(t)) => {
+                    self.pulse.heard(Instant::now());
+                    Some(t.as_str().to_owned())
                 }
-                Err(e) => Err(failure(&e)),
+                Ok(Message::Close(_)) => return Err(LinkError::Other("closed".into())),
+                // Pong (our Ping answered), Ping, binary: the peer is there.
+                Ok(_) => {
+                    self.pulse.heard(Instant::now());
+                    None
+                }
+                Err(Error::Io(e)) if matches!(e.kind(), IoKind::WouldBlock | IoKind::TimedOut) => {
+                    None
+                }
+                Err(e) => return Err(failure(&e)),
+            };
+            match self.pulse.step(Instant::now()) {
+                PulseStep::Wait => {}
+                PulseStep::SendPing => self
+                    .socket
+                    .send(Message::Ping(Vec::new().into()))
+                    .map_err(|e| failure(&e))?,
+                PulseStep::Dead => return Err(LinkError::Other("no answer to ping".into())),
             }
+            Ok(got)
         }
 
         /// Sends a text message.
@@ -269,3 +314,97 @@ mod real {
 }
 
 pub use real::Link;
+
+#[cfg(all(
+    test,
+    not(any(target_os = "android", target_os = "ios", target_os = "tvos"))
+))]
+// The configured `allow-unwrap-in-tests` knows only a plain `#[cfg(test)]`, not this `all(test, ...)`.
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::Link;
+    use std::net::TcpListener;
+    use std::time::{Duration, Instant};
+    use swiftly_net::TlsOptions;
+    use swiftly_sync::LinkError;
+    use tungstenite::Message;
+
+    /// A server that finishes the handshake and then never reads or answers: a peer that vanished after sleep or a
+    /// Wi-Fi switch (the TCP connection stays open, nothing comes back).
+    fn half_open() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let mut keep = Vec::new();
+            while let Ok((stream, _)) = listener.accept() {
+                if let Ok(ws) = tungstenite::accept(stream) {
+                    keep.push(ws);
+                }
+            }
+        });
+        format!("ws://127.0.0.1:{port}/socket")
+    }
+
+    fn echo() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            while let Ok((stream, _)) = listener.accept() {
+                std::thread::spawn(move || {
+                    let Ok(mut ws) = tungstenite::accept(stream) else {
+                        return;
+                    };
+                    while let Ok(m) = ws.read() {
+                        if let Message::Text(t) = m {
+                            let _ = ws.send(Message::text(format!("echo:{}", t.as_str())));
+                        }
+                    }
+                });
+            }
+        });
+        format!("ws://127.0.0.1:{port}/socket")
+    }
+
+    #[test]
+    fn a_peer_that_stops_answering_ends_the_read_with_an_error() {
+        let mut link = Link::connect_with(
+            &half_open(),
+            &TlsOptions::default(),
+            Duration::from_millis(200),
+            Duration::from_millis(300),
+        )
+        .unwrap();
+        let began = Instant::now();
+        let ended = loop {
+            match link.read() {
+                Ok(_) if began.elapsed() < Duration::from_secs(5) => {}
+                other => break other,
+            }
+        };
+        assert_eq!(ended, Err(LinkError::Other("no answer to ping".into())));
+        let waited = began.elapsed();
+        assert!(
+            waited >= Duration::from_millis(450) && waited < Duration::from_secs(2),
+            "ended after {waited:?}"
+        );
+    }
+
+    #[test]
+    fn a_quiet_answering_server_keeps_the_link_up() {
+        let mut link = Link::connect_with(
+            &echo(),
+            &TlsOptions::default(),
+            Duration::from_millis(150),
+            Duration::from_millis(250),
+        )
+        .unwrap();
+        let began = Instant::now();
+        while began.elapsed() < Duration::from_millis(1500) {
+            assert_eq!(link.read(), Ok(None), "quiet, but alive");
+        }
+        link.send("x").unwrap();
+        let echoed = (0..30).find_map(|_| link.read().unwrap());
+        assert_eq!(echoed.as_deref(), Some("echo:x"));
+        link.close();
+    }
+}

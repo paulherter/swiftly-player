@@ -74,6 +74,17 @@ fun ProfilePage(app: SwiftlyApplication, open: (Destination) -> Unit, back: () -
                 de.paulherter.swiftly.support.SupportStatusCard(app)
             }
         }
+        // **One entry for requests, reports and the server**: the core decides which one (or none), as on iPhone.
+        val management by produceState(ManagementEntry.last(app), app.accountSwitch.intValue, app.seerrConnected.value) {
+            value = ManagementEntry.load(app)
+        }
+        management?.let { entry ->
+            Spacer(Modifier.height(Theme.cardGap))
+            CardView {
+                ProfileRow(if (entry.kind == de.paulherter.swiftly.rustcore.ProfileEntryKind.ADMIN) Glyph.Gauge else Glyph.ArrowDown,
+                           entry.title, entry.under, count = ManagementEntry.mark(entry)) { open(ManagementEntry.destination) }
+            }
+        }
         Spacer(Modifier.height(Theme.cardGap))
         CardView {
             ProfileRow(Glyph.Play, translated("Wiedergabe"), translated("Qualität, Sprache, Player")) {
@@ -208,7 +219,7 @@ fun PlaybackSettingsPage(app: SwiftlyApplication, back: () -> Unit, open: (Desti
     val dv7 = remember { listOf(Choice("auto", translated("Automatisch")), Choice("off", translated("Aus (spielt als HDR10)"))) }
     val buffer = remember { JSONArray(KernRules.bufferLevels()).let { a -> (0 until a.length()).map { a.getJSONObject(it).let { o -> Choice(o.getString("wert"), o.getString("text")) } } } }
     val seconds = remember { JSONArray(KernRules.span()).let { a -> (0 until a.length()).map { a.getInt(it) } } }
-    val audioChoice = remember { selectionRead(KernRules.languages("")) }
+    val audioChoice = remember { selectionRead(KernRules.audioLanguages()) }
     val subtitleSelection = remember { selectionRead(KernRules.languages(translated("Aus"))) }
     fun sheet(title: String, entries: List<Choice>, selected: String, select: (String) -> Unit) {
         app.sheet.value = SheetRequest(title, entries, selected, select = select)
@@ -304,23 +315,37 @@ fun PresentationPage(app: SwiftlyApplication, open: (Destination) -> Unit, back:
     SettingPage(translated("Darstellung"), back) {
         // Order of `PresentationView` (narrow): Startseite, Bibliotheken, Genres, Filme und Serien, Looks.
         SettingGroup(translated("Startseite")) {
-            val rails = remember(e.startRails, e.newAccessDisconnected) {
-                selectionRead(KernRules.startRails(e.startRails.toTypedArray(), e.newAccessDisconnected))
+            // ONE list in the core's order (`startReihenfolge`): fixed rows, chosen libraries and, with Seerr connected, its two sections.
+            val names = remember(e.startRails, e.newAccessDisconnected) {
+                selectionRead(KernRules.startRails(e.startRails.toTypedArray(), e.newAccessDisconnected)).associate { it.value to it.text }
             }
-            SortBar(rails, { it.value }, move = { r, step ->
-                e.startRails = JSONArray(KernRules.startRailShifted(r.value, step.toLong(), e.startRails.toTypedArray(), e.newAccessDisconnected))
-                    .let { a -> (0 until a.length()).map { a.getString(it) } }
-            }) { r ->
-                // Each row with its own icon (`StartRail.symbol`).
-                val symbolText = when (r.value) {
-                    "weiterschauen" -> Glyph.PlayCircle
-                    "naechsteFolge" -> Glyph.SkipOutline
-                    "neueFilme" -> Glyph.Film
-                    "neueSerien" -> Glyph.Tv
-                    else -> Glyph.Funkeln
-                }
-                ChoiceRow(symbolText, translated(r.text), an = r.value !in e.startOut) { an ->
-                    e.startOut = if (an) e.startOut - r.value else e.startOut + r.value
+            var arrivalOn by remember { mutableStateOf(seerrArrivalOn(app)) }
+            var requestsOn by remember { mutableStateOf(seerrRequestsOn(app)) }
+            SortBar(startOrderEffective(app), { it }, move = { id, step -> startOrderShift(app, id, step) }) { id ->
+                when {
+                    id == SEERR_ARRIVAL_ROW -> ChoiceRow(Glyph.SparkleSearch, translated("Anfrage ist da"), an = arrivalOn) { arrivalOn = it; seerrArrivalSet(app, it) }
+                    id == SEERR_REQUESTS_ROW -> ChoiceRow(Glyph.Funkeln, translated("Meine Anfragen"), an = requestsOn) { requestsOn = it; seerrRequestsSet(app, it) }
+                    id.startsWith("library:") -> e.startLibraries.firstOrNull { "library:" + it.id == id }?.let { b ->
+                        Row(Modifier.fillMaxWidth().padding(start = Theme.edgeSpacing).heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
+                            // The name comes from the server, not translated.
+                            Text(b.name, style = Theme.body, color = Theme.font, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Box(Modifier.size(44.dp).tapOn { e.startLibraries = e.startLibraries.filter { it.id != b.id } }, contentAlignment = Alignment.Center) {
+                                Symbol(Glyph.CrossCircle, 17.dp, color = Theme.fontVeryQuiet, description = translated("Löschen"))
+                            }
+                        }
+                    }
+                    else -> {
+                        val symbolText = when (id) {
+                            "weiterschauen" -> Glyph.PlayCircle
+                            "naechsteFolge" -> Glyph.SkipOutline
+                            "neueFilme" -> Glyph.Film
+                            "neueSerien" -> Glyph.Tv
+                            else -> Glyph.Funkeln
+                        }
+                        ChoiceRow(symbolText, translated(names[id] ?: id), an = id !in e.startOut) { an ->
+                            e.startOut = if (an) e.startOut - id else e.startOut + id
+                        }
+                    }
                 }
             }
             SeparatorLine()
@@ -332,21 +357,6 @@ fun PresentationPage(app: SwiftlyApplication, open: (Destination) -> Unit, back:
         // Mirrors `libraryRails` in `PresentationView`: custom rows from the server's libraries and
         // collections, after the fixed rows, sortable among themselves.
         SettingGroup(translated("Bibliotheken und Sammlungen")) {
-            SortBar(e.startLibraries, { it.id }, move = { b, step ->
-                val list = e.startLibraries.toMutableList()
-                val from = list.indexOfFirst { it.id == b.id }
-                val to = (from + step).coerceIn(0, list.lastIndex)
-                if (from >= 0 && from != to) { list.removeAt(from); list.add(to, b); e.startLibraries = list }
-            }) { b ->
-                Row(Modifier.fillMaxWidth().padding(start = Theme.edgeSpacing).heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
-                    // The name comes from the server, not translated.
-                    Text(b.name, style = Theme.body, color = Theme.font, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Box(Modifier.size(44.dp).tapOn { e.startLibraries = e.startLibraries.filter { it.id != b.id } }, contentAlignment = Alignment.Center) {
-                        Symbol(Glyph.CrossCircle, 17.dp, color = Theme.fontVeryQuiet, description = translated("Löschen"))
-                    }
-                }
-            }
-            if (e.startLibraries.isNotEmpty()) SeparatorLine()
             Row(Modifier.fillMaxWidth().pressRow { open(Destination("bibliothekswahl", translated("Bibliothek hinzufügen"), "Bibliothekswahl")) }
                     .padding(horizontal = Theme.edgeSpacing, vertical = 15.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {

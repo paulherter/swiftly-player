@@ -354,10 +354,11 @@ fn a_second_visit_paints_the_facts_from_the_stored_copy_while_offline() {
         ..host()
     };
     let second = vm_with(&offline, host_b, Some(account("TOKEN-A")));
+    // The stored copy of the first visit stands in frame 1 (the page seed); the load only confirms it.
     assert_eq!(
         second.rating().community_rating,
-        None,
-        "nothing before the load"
+        Some(8.1),
+        "the stored copy is there before the load"
     );
     second.send(SeriesIntent::Load);
     wait_for("stored facts", || {

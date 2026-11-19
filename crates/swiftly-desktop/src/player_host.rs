@@ -4,10 +4,14 @@
 //! position ([`SwitchState`] is the only state of that wait).
 
 use crate::login_screen::Pending;
+use std::sync::Arc;
 use swiftly_playback::sections::Segment;
 use swiftly_playback::trickplay::Trickplay;
 use swiftly_rules::chapter::Chapter;
-use swiftly_vm::{Nudge, PlayerEffect, PlayerSpec, Quality};
+use swiftly_vm::{
+    Nudge, PlayerEffect, PlayerSpec, Quality, SubtitleSearchIntent, SubtitleSearchPart,
+    SubtitleSearchVm,
+};
 
 /// One look at the core's effects, folded (the last one of a kind wins, like the Swift `PlayerCalls.init`).
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -163,6 +167,32 @@ pub trait Planner: Send + Sync {
     fn prepare_next(&self, _ask: PlanAsk) {}
     /// Drops what `prepare_next` made (it carries the old quality).
     fn forget_prepared(&self) {}
+    /// Whether this account's server can search subtitles for the player's menu (Jellyfin and Emby; not Plex).
+    fn offers_subtitle_search(&self) -> bool {
+        false
+    }
+    /// The subtitle search of the title `item_id` (the core's `SubtitleSearchVm`); `None` when there is no server to ask.
+    fn subtitle_search(&self, _item_id: &str) -> Option<Arc<dyn SubtitleSearch>> {
+        None
+    }
+}
+
+/// The core's subtitle search of one title as the screen drives it, without the transport type. The screen draws
+/// [`SubtitleSearchPart`] exactly as the core made it and sends intents; it keeps no search state of its own.
+pub trait SubtitleSearch: Send + Sync {
+    /// The state to draw.
+    fn part(&self) -> Arc<SubtitleSearchPart>;
+    /// Search (a language) or download (a row).
+    fn send(&self, intent: SubtitleSearchIntent);
+}
+
+impl<T: swiftly_net::HttpTransport + 'static> SubtitleSearch for SubtitleSearchVm<T> {
+    fn part(&self) -> Arc<SubtitleSearchPart> {
+        SubtitleSearchVm::part(self)
+    }
+    fn send(&self, intent: SubtitleSearchIntent) {
+        SubtitleSearchVm::send(self, intent);
+    }
 }
 
 /// What the technical overlay says about the file (`TechBadge`): the plan's delivery and the file's tracks. The lines are
@@ -314,6 +344,21 @@ pub trait EpisodeSource: Send + Sync {
     fn episodes(&self, series: &str, season: &str) -> Pending<Option<Vec<EpisodeCardData>>>;
     /// The picture of an episode card: `address` (the card's still, sized for the device) is fetched; without one nothing is.
     fn still(&self, id: &str, address: Option<&str>) -> crate::player_card::StillSource;
+}
+
+/// The subtitle search of the open Audio and subtitles layer: one value, changed only by the screen's actions.
+#[derive(Default)]
+pub enum SearchState {
+    /// The layer shows its columns.
+    #[default]
+    Closed,
+    /// The search panel is up; `reported` is set once the finished download reloaded the title.
+    Open {
+        /// The core's search of the running title.
+        vm: Arc<dyn SubtitleSearch>,
+        /// The reload for the finished download was started.
+        reported: bool,
+    },
 }
 
 /// Where the screen stands while a switch runs. One value, one place that changes it ([`SwitchState::step`]).

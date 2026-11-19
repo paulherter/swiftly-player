@@ -15,6 +15,7 @@ android_cleaner = true
 [bindings.kotlin.rename]
 "CoreError.Failed.message" = "detail"
 "HttpFailure.Other.message" = "detail"
+"LibraryFailure.Other.message" = "detail"
 "SocketFailure.Other.message" = "detail"
 "WebSocketLink.close" = "closeLink"
 "SettingValue.List" = "Items"

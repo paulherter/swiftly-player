@@ -13,6 +13,7 @@ mod l10n;
 mod lenient;
 mod media;
 mod server;
+pub mod switches;
 mod time;
 mod versions;
 mod works;

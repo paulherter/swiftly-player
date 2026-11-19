@@ -277,6 +277,14 @@ impl Host {
         }
     }
 
+    /// The app went to the background: a running player reports its position now (on the clock of the last frame).
+    ///
+    /// `paused`: the shell paused its engine on the way out; the position is reported as paused.
+    pub fn app_backgrounded(&mut self, paused: bool) {
+        let now = self.last_ms;
+        self.shell.app_backgrounded(now, paused);
+    }
+
     fn rel(&mut self, clock_s: f64) -> f64 {
         let ms = clock_s * 1000.0;
         let o = *self.origin.get_or_insert(ms);

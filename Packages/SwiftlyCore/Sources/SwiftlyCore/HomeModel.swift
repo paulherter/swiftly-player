@@ -48,6 +48,38 @@ public final class HomeModel {
     /// Another account (or `nil`: signed out). The page is empty at once.
     public func switchAccount(_ account: AccountRef?) { vm.send(intent: .accountSwitched(account: account)) }
 
+    /// **"Remove from Continue Watching".** The core takes the title out of the row and publishes in this very call, so the
+    /// rails read back here are already without it (the caller adopts them in the same frame); the request runs in the
+    /// background and a refusal puts the title back and raises a hint (see ``watchNotices(_:)``).
+    public func removeFromContinue(_ id: String) {
+        vm.send(intent: .removeFromContinue(itemId: id))
+        rails = vm.rails()
+        status = vm.status()
+    }
+
+    /// Calls `show` once for every hint the core raises by itself (a refused removal), after the rails it changed were
+    /// re-read, and clears the hint. Returns when the calling Task is cancelled; the core keeps running.
+    public func watchNotices(_ show: @MainActor (String) -> Void) async {
+        let noticeBit = partNotice()
+        let railsBit = partRails()
+        let statusBit = partStatus()
+        var seen = vm.version()
+        while !Task.isCancelled {
+            do {
+                let change = try await vm.changed(seen: seen)
+                seen = change.version
+                if change.parts & railsBit != 0 { rails = vm.rails() }
+                if change.parts & statusBit != 0 { status = vm.status() }
+                if change.parts & noticeBit != 0, let message = vm.notice().message {
+                    show(message)
+                    vm.send(intent: .dismissNotice)
+                }
+            } catch {
+                return  // cancelled
+            }
+        }
+    }
+
     /// A rail scrolled into view: the core prepares tile data for all of it.
     public func railVisible(_ id: String) { vm.send(intent: .visible(rail: id)) }
 

@@ -4,6 +4,7 @@ import CoreText
 import CryptoKit
 import ImageIO
 import OSLog
+import SwiftlyCore
 import JellyfinKit
 import Network
 import SwiftUI
@@ -429,6 +430,9 @@ final class VLCPlayerView: BaseView {
         intentionalEnded = true
         finallyStopped = true
         avCall += 1
+        // The core must see the close before the engine goes away: without it the screen's tick loop finds no core
+        // after the stop, takes the old computation and sends a Start for a title that is already closed.
+        (avEngine as? CorePlaybackBackend)?.close()
         avEngine?.stop(resetDisplay: true)
         avEngine = nil
         // The screen's closures capture its whole state; release them.
@@ -529,6 +533,14 @@ final class VLCPlayerView: BaseView {
         }
     }
 
+    // MARK: Player menu (rows from the core)
+
+    /// `nil` when the old way plays (no core).
+    var playerModel: PlayerModel? { (avEngine as? CorePlaybackBackend)?.playerModel }
+    func playerMenu() -> PlayerMenu? { (avEngine as? CorePlaybackBackend)?.playerMenu() }
+    func offsetStep(_ stepMs: Int32) { (avEngine as? CorePlaybackBackend)?.offsetStep(stepMs) }
+    func offsetReset() { (avEngine as? CorePlaybackBackend)?.offsetReset() }
+
     // MARK: Delay
 
     var subtitleDelay = Delay.null {
@@ -553,6 +565,12 @@ final class VLCPlayerView: BaseView {
     var positionSeconds: Double { avEngine?.position ?? 0 }
     var durationSeconds: Double { avEngine?.durationSeconds ?? trackSource?.runtimeSeconds ?? 0 }
     var isPlaying: Bool { avEngine?.isPlaying ?? false }
+    #if os(iOS) && DEBUG
+    /// Live run only (`background` scenario with `-SwiftlyLiveBgDeadProducer`): see `AetherPlayerEngine.debugForceProducerTeardown`.
+    #if os(iOS) && DEBUG
+    func debugForceProducerTeardown(silent: Bool) { (avEngine as? CorePlaybackBackend)?.runningEngine?.debugForceProducerTeardown(silent: silent) }
+    #endif
+    #endif
 
     func seek(toSeconds seconds: Double) {
         // A target of NaN or infinity must not reach the engine.

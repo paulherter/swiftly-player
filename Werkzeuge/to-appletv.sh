@@ -53,6 +53,15 @@ if [ -z "${UDID:-}" ]; then
 fi
 echo "Geraet: ${NAME:-Apple TV} ($UDID)"
 
+# A core framework older than the crates fails the build with missing UniFFI symbols: rebuild the device slice first.
+FRAMEWORK=Packages/SwiftlyCore/SwiftlyCoreFFI.xcframework/Info.plist
+if [ ! -f "$FRAMEWORK" ] || [ -n "$(find crates -newer "$FRAMEWORK" -name '*.rs' -print -quit)" ]; then
+  echo "Kern veraltet, baue ihn neu ..."
+  SWIFTLY_SLICES="${SWIFTLY_SLICES:-tvos}" Werkzeuge/rust-kern.sh --rebuild
+fi
+# A project.yml newer than the generated project misses new files ("cannot find … in scope").
+[ project.yml -nt Swiftly.xcodeproj/project.pbxproj ] && xcodegen generate
+
 # ARCHS=arm64: built for one device, Xcode 27 picks arm64e on an A15 Apple TV, and the
 # Rust core framework only has an arm64 tvOS slice ("no library for this platform").
 xcodebuild -project Swiftly.xcodeproj -scheme Swiftly-tvOS \

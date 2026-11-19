@@ -47,6 +47,23 @@ const GESTURES: Check = Check {
         "ui",
     ],
 };
+/// The Apple core builds `swiftly-desktop` without its window (winit has no iOS or tvOS backend). A module that needs winit
+/// but sits outside the `window` feature breaks only that build, so it is checked on its own, then through the Apple core.
+const APPLE_NO_WINDOW: Check = Check {
+    name: "desktop crate without window",
+    args: &[
+        "check",
+        "-q",
+        "-p",
+        "swiftly-desktop",
+        "--no-default-features",
+        "--lib",
+    ],
+};
+const APPLE_CORE: Check = Check {
+    name: "apple core (swiftly-ios)",
+    args: &["check", "-q", "-p", "swiftly-ios"],
+};
 /// Focus-plan tests of the shared focus engine (pure plans over hand-built maps) and its use in the `Ui`
 /// (keys over the laid-out tv scene, spring lift, scroll-into-view, long press). Run for every target with a D-pad or a
 /// keyboard; the phones and tablets are touch only.
@@ -422,6 +439,17 @@ pub fn check_all(root: &Path, args: &[String]) -> Result<(), String> {
                 check.name,
                 if ok { "ok" } else { "FAILED" }
             ));
+        }
+        if matches!(t.name, "iphone" | "ipad" | "appletv") {
+            for check in [&APPLE_NO_WINDOW, &APPLE_CORE] {
+                let ok = run_once(check);
+                any_failed |= !ok;
+                parts.push(format!(
+                    "{} {}",
+                    check.name,
+                    if ok { "ok" } else { "FAILED" }
+                ));
+            }
         }
         parts.push(match t.focus {
             Some(check) => {

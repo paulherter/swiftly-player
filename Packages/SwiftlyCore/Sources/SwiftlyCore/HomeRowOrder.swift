@@ -7,17 +7,36 @@ public enum HomeRowOrder {
     /// The id of a library or collection row.
     public static func libraryId(_ id: String) -> String { "library:" + id }
 
+    /// The id of the Seerr "ist da" section (banner and the manager's line); a row only while Seerr is connected.
+    public static let seerrArrival = "seerr:arrival"
+    /// The id of the Seerr "Meine Anfragen" section; a row only while Seerr is connected.
+    public static let seerrRequests = "seerr:requests"
+
     /// The library id of a row id, or `nil` for a fixed row.
     public static func library(of row: String) -> String? {
         row.hasPrefix("library:") ? String(row.dropFirst("library:".count)) : nil
     }
 
+    /// The Start page form of this build; the core decides which Seerr sections that form shows (handheld both,
+    /// desktop only "ist da", TV none).
+    public static var deviceForm: HomeForm {
+        #if os(macOS)
+        .desktop
+        #elseif os(tvOS)
+        .tv
+        #else
+        .handheld
+        #endif
+    }
+
     /// The effective list: `stored` healed against the rows that exist. Without a stored list the user's
     /// earlier order of the fixed rows (`fallbackFixed`, raw values) comes first, then the libraries.
     public static func effective(
-        stored: [String], fallbackFixed: [String], disconnected: Bool, libraries: [HomeLibraryChoice]
+        stored: [String], fallbackFixed: [String], disconnected: Bool, libraries: [HomeLibraryChoice], seerr: Bool,
+        form: HomeForm = deviceForm
     ) -> [String] {
-        homeRowOrder(stored: stored.isEmpty ? fallbackFixed : stored, disconnected: disconnected, libraries: libraries)
+        homeRowOrder(stored: stored.isEmpty ? fallbackFixed : stored, disconnected: disconnected, libraries: libraries,
+                     seerr: seerr, form: form)
     }
 
     /// A SwiftUI `onMove` (`source`, `destination` = insertion index in the list before the move) applied to

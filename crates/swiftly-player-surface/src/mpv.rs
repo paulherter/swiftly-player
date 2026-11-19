@@ -3,9 +3,12 @@
 //! libmpv is loaded at run time (`libmpv-2.dll`, `libmpv.so.2`, `libmpv.dylib`, or the path in `SWIFTLY_LIBMPV`), so the
 //! crate builds without any mpv files. Video goes through the render API with the software renderer (`MPV_RENDER_API_TYPE_SW`):
 //! the host asks for a frame at the size it wants and gets RGBA. This is the last rung of the G3 ladder and the one that
-//! works on every GPU; the GL/Vulkan rungs replace [`MpvEngine::render_into`] and nothing above it.
+//! works on every GPU. Neither way draws on the UI thread: the software renderer runs on the render pump's thread
+//! (`crate::pump`), and the GPU way (`crate::mpv_gl`, Linux) draws with libmpv's OpenGL renderer into DMA-bufs the host
+//! samples. [`MpvEngine::new`] is the software way (tests, tools), [`MpvEngine::new_with`] may pick the GPU way.
 #![allow(unsafe_code)]
 
+use crate::pump::{RenderPump, Renderer, WakeSlot, Waker};
 use crate::translate::{self, EofGate, EofInput, ParsedTracks};
 use crate::{
     AudioDevice, Capabilities, DisplayHints, FrameBuffer, FrameDelivery, FrameStatus,
@@ -16,8 +19,8 @@ use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char, c_double, c_int, c_void};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
+use std::time::Duration;
 use swiftly_playback::engine::{
     EngineEvent, EngineLoad, EngineState, PipCmd, PlaybackEngine, Rect, SubtitleRoute,
     SubtitleTextStyle,
@@ -27,9 +30,9 @@ use swiftly_rules::buffer_level::BufferLevel;
 // ---- the C API -----------------------------------------------------------------------------------------------------
 
 #[repr(C)]
-struct RenderParam {
-    kind: c_int,
-    data: *mut c_void,
+pub(crate) struct RenderParam {
+    pub(crate) kind: c_int,
+    pub(crate) data: *mut c_void,
 }
 
 #[repr(C)]
@@ -54,6 +57,7 @@ struct EventEndFile {
 }
 
 const EV_NONE: c_int = 0;
+const EV_SHUTDOWN: c_int = 1;
 const EV_START_FILE: c_int = 6;
 const EV_END_FILE: c_int = 7;
 const EV_FILE_LOADED: c_int = 8;
@@ -67,13 +71,21 @@ const FMT_INT64: c_int = 4;
 const FMT_DOUBLE: c_int = 5;
 const END_EOF: c_int = 0;
 const END_ERROR: c_int = 4;
-const RP_API_TYPE: c_int = 1;
-const RP_BLOCK_FOR_TARGET_TIME: c_int = 12;
+pub(crate) const RP_API_TYPE: c_int = 1;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) const RP_OPENGL_INIT_PARAMS: c_int = 2;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) const RP_OPENGL_FBO: c_int = 3;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) const RP_FLIP_Y: c_int = 4;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) const RP_DRM_DISPLAY_V2: c_int = 16;
+pub(crate) const RP_BLOCK_FOR_TARGET_TIME: c_int = 12;
 const RP_SW_SIZE: c_int = 17;
 const RP_SW_FORMAT: c_int = 18;
 const RP_SW_STRIDE: c_int = 19;
 const RP_SW_POINTER: c_int = 20;
-const UPDATE_FRAME: u64 = 1;
+pub(crate) const UPDATE_FRAME: u64 = 1;
 
 type FnCreate = unsafe extern "C" fn() -> *mut c_void;
 type FnHandle = unsafe extern "C" fn(*mut c_void) -> c_int;
@@ -89,11 +101,13 @@ type FnRcCreate = unsafe extern "C" fn(*mut *mut c_void, *mut c_void, *mut Rende
 type FnRcRender = unsafe extern "C" fn(*mut c_void, *mut RenderParam) -> c_int;
 type FnRcUpdate = unsafe extern "C" fn(*mut c_void) -> u64;
 type FnRcFree = unsafe extern "C" fn(*mut c_void);
+type FnRcSetCb =
+    unsafe extern "C" fn(*mut c_void, Option<unsafe extern "C" fn(*mut c_void)>, *mut c_void);
 type FnErr = unsafe extern "C" fn(c_int) -> *const c_char;
 type FnVersion = unsafe extern "C" fn() -> u64;
 
 /// The functions we use, resolved once. The library stays loaded as long as this value lives.
-struct Api {
+pub(crate) struct Api {
     create: FnCreate,
     initialize: FnHandle,
     terminate_destroy: FnDestroy,
@@ -109,6 +123,8 @@ struct Api {
     rc_render: FnRcRender,
     rc_update: FnRcUpdate,
     rc_free: FnRcFree,
+    rc_set_cb: FnRcSetCb,
+    set_wakeup: FnRcSetCb,
     error_string: FnErr,
     version: FnVersion,
     _lib: Library,
@@ -164,6 +180,8 @@ impl Api {
             rc_render: sym!(b"mpv_render_context_render\0"),
             rc_update: sym!(b"mpv_render_context_update\0"),
             rc_free: sym!(b"mpv_render_context_free\0"),
+            rc_set_cb: sym!(b"mpv_render_context_set_update_callback\0"),
+            set_wakeup: sym!(b"mpv_set_wakeup_callback\0"),
             error_string: sym!(b"mpv_error_string\0"),
             version: sym!(b"mpv_client_api_version\0"),
             _lib: lib,
@@ -176,6 +194,30 @@ impl Api {
             format!("mpv error {code}")
         } else {
             unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
+        }
+    }
+}
+
+/// The render functions of libmpv a render thread needs, by value (they stay valid while the engine's `Api` lives).
+#[derive(Clone, Copy)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) struct RcApi {
+    pub(crate) create: FnRcCreate,
+    pub(crate) render: FnRcRender,
+    pub(crate) update: FnRcUpdate,
+    pub(crate) free: FnRcFree,
+    pub(crate) set_cb: FnRcSetCb,
+}
+
+impl Api {
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pub(crate) fn rc(&self) -> RcApi {
+        RcApi {
+            create: self.rc_create,
+            render: self.rc_render,
+            update: self.rc_update,
+            free: self.rc_free,
+            set_cb: self.rc_set_cb,
         }
     }
 }
@@ -245,6 +287,300 @@ fn bounded<T: Send + 'static>(
     rx.recv_timeout(limit).ok()
 }
 
+/// Sets a property on a handle from any thread (libmpv's client API is thread-safe).
+pub(crate) fn set_prop_raw(api: &Api, handle: usize, k: &str, v: &str) -> bool {
+    let (k, v) = (cstr(k), cstr(v));
+    unsafe { (api.set_property_string)(handle as *mut c_void, k.as_ptr(), v.as_ptr()) >= 0 }
+}
+
+/// Applies the stored subtitle look at the picture size `out_w x out_h` (libass sizes and margins are relative to it).
+pub(crate) fn apply_style_raw(
+    api: &Api,
+    handle: usize,
+    style: &Mutex<Option<SubtitleTextStyle>>,
+    out_w: u32,
+    out_h: u32,
+) {
+    let Some(style) = lock(style).clone() else {
+        return;
+    };
+    for (k, v) in translate::text_options(&style, out_w, out_h) {
+        set_prop_raw(api, handle, k, &v);
+    }
+}
+
+/// libmpv's wake-up callback: events wait in its queue.
+unsafe extern "C" fn mpv_wakeup_callback(user: *mut c_void) {
+    // `user` is the engine's `WakeSlot`, alive until `Drop` clears the callback.
+    let wake = unsafe { &*user.cast::<WakeSlot>() };
+    wake.fire();
+}
+
+/// libmpv's update callback of the software way: wakes the render pump (it only sets a flag).
+unsafe extern "C" fn sw_update_callback(user: *mut c_void) {
+    // `user` is the pump's shared state, alive until the callback is cleared in `Drop`.
+    let shared = unsafe { &*user.cast::<crate::pump::Shared>() };
+    shared.notify();
+}
+
+/// Work an event asks for that calls into libmpv and so waits for the player core: opening a file keeps the core busy
+/// for a while (decoder, video output), and a call made then held the UI thread for over 100 ms. These run on the
+/// worker thread; the UI thread only reads the event queue (`mpv_wait_event` with no timeout never waits).
+enum Job {
+    /// A new file started: it plays (keep-open leaves mpv paused on the last frame of the previous one).
+    StartFile,
+    /// The file is loaded: add the external subtitles, then the subtitle look.
+    FileLoaded(Vec<translate::PendingSub>, u32, u32),
+    TrackList,
+    VideoParams,
+}
+
+struct Worker {
+    api: Arc<Api>,
+    handle: usize,
+    st: Arc<Mutex<State>>,
+    style: Arc<Mutex<Option<SubtitleTextStyle>>>,
+}
+
+impl Worker {
+    fn get_string(&self, k: &str) -> Option<String> {
+        let k = cstr(k);
+        let p = unsafe { (self.api.get_property_string)(self.handle as *mut c_void, k.as_ptr()) };
+        if p.is_null() {
+            return None;
+        }
+        let s = unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned();
+        unsafe { (self.api.free)(p.cast()) };
+        Some(s)
+    }
+
+    /// **One subtitle rule for every renderer** (`swiftly_playback::subtitle_cues::chain_text`): libass shows a cue
+    /// exactly from its start to its end, so back-to-back cues with a small gap flash a blank frame (mpv's own
+    /// `sub-fix-timing` closes 210 ms at most and has no threshold). The external file is read once (through a
+    /// second silent libmpv handle with `stream-dump`, so the player needs no HTTP client and keeps its headers and
+    /// proxies), its ends are held to the next start, and the result is added as a local file. `None` when the
+    /// text is not SRT/WebVTT, has nothing to close, or could not be read.
+    fn chained_sub(&self, url: &str, temp: &mut Vec<std::path::PathBuf>) -> Option<String> {
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            return None;
+        }
+        let text = self.fetch_text(url)?;
+        let chained = swiftly_playback::subtitle_cues::chain_text(&text);
+        if chained == text {
+            return None;
+        }
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        let ext = if chained.contains("WEBVTT") {
+            "vtt"
+        } else {
+            "srt"
+        };
+        let path = std::env::temp_dir().join(format!(
+            "swiftly-subchain-{}-{}.{ext}",
+            std::process::id(),
+            COUNT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::write(&path, chained).ok()?;
+        let shown = path.to_str().map(str::to_owned);
+        // Removed with the next file's subtitles and when the player thread ends: no temp files are left behind.
+        temp.push(path);
+        shown
+    }
+
+    /// The text behind `url`, dumped by a throwaway libmpv handle (no video, no audio, no config, 15 s at most).
+    fn fetch_text(&self, url: &str) -> Option<String> {
+        const LIMIT: Duration = Duration::from_secs(15);
+        let dump = std::env::temp_dir().join(format!(
+            "swiftly-subdump-{}-{}",
+            std::process::id(),
+            self.handle
+        ));
+        let h = unsafe { (self.api.create)() };
+        if h.is_null() {
+            return None;
+        }
+        let set = |k: &str, v: &str| {
+            let (k, v) = (cstr(k), cstr(v));
+            unsafe { (self.api.set_option_string)(h, k.as_ptr(), v.as_ptr()) };
+        };
+        for (k, v) in [
+            ("config", "no"),
+            ("load-scripts", "no"),
+            ("ytdl", "no"),
+            ("vo", "null"),
+            ("ao", "null"),
+            ("idle", "yes"),
+            ("terminal", "no"),
+        ] {
+            set(k, v);
+        }
+        set("stream-dump", dump.to_str()?);
+        if let Some(headers) = self.get_string("http-header-fields")
+            && !headers.is_empty()
+        {
+            set("http-header-fields", &headers);
+        }
+        let mut text = None;
+        if unsafe { (self.api.initialize)(h) } >= 0 {
+            let args = [cstr("loadfile"), cstr(url)];
+            let mut ptrs: Vec<*const c_char> = args.iter().map(|c| c.as_ptr()).collect();
+            ptrs.push(std::ptr::null());
+            if unsafe { (self.api.command)(h, ptrs.as_mut_ptr()) } >= 0 {
+                let started = std::time::Instant::now();
+                while started.elapsed() < LIMIT {
+                    let ev = unsafe { (self.api.wait_event)(h, 0.2) };
+                    if ev.is_null() {
+                        continue;
+                    }
+                    let id = unsafe { (*ev).id };
+                    if id == EV_END_FILE || id == EV_SHUTDOWN {
+                        text = std::fs::read(&dump)
+                            .ok()
+                            .map(|b| String::from_utf8_lossy(&b).into_owned());
+                        break;
+                    }
+                }
+            }
+        }
+        unsafe { (self.api.terminate_destroy)(h) };
+        std::fs::remove_file(&dump).ok();
+        text
+    }
+
+    fn run(self, rx: std::sync::mpsc::Receiver<Job>) {
+        let mut temp: Vec<std::path::PathBuf> = Vec::new();
+        while let Ok(job) = rx.recv() {
+            match job {
+                Job::StartFile => {
+                    set_prop_raw(&self.api, self.handle, "pause", "no");
+                }
+                Job::FileLoaded(subs, w, h) => {
+                    for old in temp.drain(..) {
+                        std::fs::remove_file(old).ok();
+                    }
+                    for sub in subs {
+                        // Text subtitles come back with short gaps closed (the core's chain rule); anything
+                        // else, or a failed read, is added from its address as before.
+                        let chained = self.chained_sub(&sub.url, &mut temp);
+                        let source = chained.as_deref().unwrap_or(sub.url.as_str());
+                        let mut args = vec!["sub-add", source, "auto"];
+                        if let Some(n) = sub.title.as_deref() {
+                            args.push(n);
+                        }
+                        if let Some(l) = sub.language.as_deref() {
+                            if args.len() == 3 {
+                                args.push("external");
+                            }
+                            args.push(l);
+                        }
+                        let owned: Vec<CString> = args.iter().map(|a| cstr(a)).collect();
+                        let mut ptrs: Vec<*const c_char> =
+                            owned.iter().map(|c| c.as_ptr()).collect();
+                        ptrs.push(std::ptr::null());
+                        unsafe {
+                            (self.api.command)(self.handle as *mut c_void, ptrs.as_mut_ptr())
+                        };
+                    }
+                    apply_style_raw(&self.api, self.handle, &self.style, w, h);
+                }
+                Job::TrackList => {
+                    if let Some(json) = self.get_string("track-list") {
+                        let t = translate::parse_tracks(&json);
+                        let mut s = lock(&self.st);
+                        s.events.push(t.event());
+                        s.tracks = t;
+                    }
+                }
+                Job::VideoParams => {
+                    if let Some(json) = self.get_string("video-params") {
+                        let mut s = lock(&self.st);
+                        let hints = translate::parse_hints(&json, s.fps);
+                        if let Some((w, h)) = hints.size
+                            && s.video_size != Some((f64::from(w), f64::from(h)))
+                        {
+                            s.video_size = Some((f64::from(w), f64::from(h)));
+                            s.events.push(EngineEvent::VideoSize {
+                                width: f64::from(w),
+                                height: f64::from(h),
+                            });
+                        }
+                        s.hints = hints;
+                    }
+                }
+            }
+        }
+        for old in temp.drain(..) {
+            std::fs::remove_file(old).ok();
+        }
+    }
+}
+
+/// The software renderer behind the render pump: `mpv_render_context_render(sw)` into the pump's buffer.
+struct SwRenderer {
+    api: Arc<Api>,
+    ctx: usize,
+    handle: usize,
+    style: Arc<Mutex<Option<SubtitleTextStyle>>>,
+    st: Arc<Mutex<State>>,
+}
+
+impl Renderer for SwRenderer {
+    fn frame_due(&mut self) -> bool {
+        (unsafe { (self.api.rc_update)(self.ctx as *mut c_void) } & UPDATE_FRAME) != 0
+    }
+
+    fn resized(&mut self, width: u32, height: u32) {
+        lock(&self.st).last_size = (width, height);
+        apply_style_raw(&self.api, self.handle, &self.style, width, height);
+    }
+
+    fn render(&mut self, width: u32, height: u32, rgba: &mut [u8], skip_alpha: bool) -> bool {
+        let mut size: [c_int; 2] = [width as c_int, height as c_int];
+        let format = cstr("rgb0");
+        // The pump has its own thread: mpv need not sleep inside render until the frame's display time either.
+        let mut block: c_int = 0;
+        let mut stride: usize = width as usize * 4;
+        let mut params = [
+            RenderParam {
+                kind: RP_BLOCK_FOR_TARGET_TIME,
+                data: std::ptr::from_mut(&mut block).cast(),
+            },
+            RenderParam {
+                kind: RP_SW_SIZE,
+                data: size.as_mut_ptr().cast(),
+            },
+            RenderParam {
+                kind: RP_SW_FORMAT,
+                data: format.as_ptr().cast_mut().cast(),
+            },
+            RenderParam {
+                kind: RP_SW_STRIDE,
+                data: std::ptr::from_mut(&mut stride).cast(),
+            },
+            RenderParam {
+                kind: RP_SW_POINTER,
+                data: rgba.as_mut_ptr().cast(),
+            },
+            RenderParam {
+                kind: 0,
+                data: std::ptr::null_mut(),
+            },
+        ];
+        let rc = unsafe { (self.api.rc_render)(self.ctx as *mut c_void, params.as_mut_ptr()) };
+        if rc < 0 {
+            return false;
+        }
+        // "rgb0" leaves the fourth byte undefined. A host that draws the frame with a shader that ignores alpha (the GPU
+        // layer) skips this pass: at 4K it is 8 million writes per frame.
+        if !skip_alpha {
+            for px in rgba.as_chunks_mut::<4>().0 {
+                px[3] = 255;
+            }
+        }
+        true
+    }
+}
+
 // ---- the engine ------------------------------------------------------------------------------------------------------
 
 #[derive(Default)]
@@ -264,8 +600,6 @@ struct State {
     fps: Option<f64>,
     video_size: Option<(f64, f64)>,
     fill: bool,
-    frames_rendered: u64,
-    render_ns: u128,
     last_size: (u32, u32),
     sub_text: String,
     position: f64,
@@ -287,22 +621,47 @@ impl State {
 pub struct MpvEngine {
     api: Arc<Api>,
     handle: *mut c_void,
-    render: Mutex<*mut c_void>,
-    st: Mutex<State>,
+    /// The render context of the software way (null on the GPU way, where the render thread owns it).
+    sw_ctx: *mut c_void,
+    /// The way the picture takes to the host, chosen once in [`MpvEngine::create`].
+    path: OnceLock<RenderPath>,
+    st: Arc<Mutex<State>>,
     /// The look of text subtitles, drawn by libass into the picture.
-    style: Mutex<Option<SubtitleTextStyle>>,
-    skip_alpha: AtomicBool,
+    style: Arc<Mutex<Option<SubtitleTextStyle>>>,
+    skip_alpha: Arc<AtomicBool>,
+    /// The `hwdec` value a title plays with unless the player asks for software decoding.
+    hwdec: String,
+    /// The host's waker: called when a frame is ready or libmpv has events (see [`MpvEngine::set_waker`]).
+    wake: Arc<WakeSlot>,
+    /// Runs the libmpv calls an event needs and that wait for the player core (see [`Worker`]).
+    jobs: Option<std::sync::mpsc::Sender<Job>>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+/// The name of the GPU way in the logs and the technical badge.
+#[cfg(target_os = "linux")]
+const GPU_PATH: &str = "gpu-dmabuf";
+#[cfg(windows)]
+const GPU_PATH: &str = "gpu-wgl";
+
+/// How the picture reaches the host.
+enum RenderPath {
+    /// libmpv's software renderer on the render pump's thread, RGBA buffers.
+    Sw(RenderPump),
+    /// libmpv's OpenGL renderer on its own thread, DMA-bufs the host samples.
+    #[cfg(any(target_os = "linux", windows))]
+    Gl(crate::mpv_gl::GlPump),
 }
 
 // The raw pointers are libmpv handles; the client API may be called from any thread and the render context sits behind a mutex.
 unsafe impl Send for MpvEngine {}
 unsafe impl Sync for MpvEngine {}
 
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn cstr(s: &str) -> CString {
+pub(crate) fn cstr(s: &str) -> CString {
     CString::new(s.replace('\0', "")).unwrap_or_default()
 }
 
@@ -331,12 +690,7 @@ impl MpvEngine {
 
     /// Applies the stored look at this picture size (libass sizes and margins are relative to it).
     fn apply_style(&self, out_w: u32, out_h: u32) {
-        let Some(style) = lock(&self.style).clone() else {
-            return;
-        };
-        for (k, v) in translate::text_options(&style, out_w, out_h) {
-            self.set_prop(k, &v);
-        }
+        apply_style_raw(&self.api, self.handle as usize, &self.style, out_w, out_h);
     }
 
     /// The host's shader ignores alpha: leave the fourth byte of every pixel as libmpv wrote it.
@@ -344,35 +698,83 @@ impl MpvEngine {
         self.skip_alpha.store(on, Ordering::Relaxed);
     }
 
-    /// Loads libmpv, creates the player and the software render context. Never blocks for good: a start that hangs
-    /// (an audio stack that does not answer) is given up after [`START_LIMIT`] and tried once more with the silent
-    /// output, then it is an error the player screen shows as a failed start.
+    /// Loads libmpv, creates the player and the software render context (frames come as CPU buffers through
+    /// [`VideoSurface::acquire_frame`]). Never blocks for good: a start that hangs (an audio stack that does not
+    /// answer) is given up after [`START_LIMIT`] and tried once more with the silent output, then it is an error the
+    /// player screen shows as a failed start.
     pub fn new() -> Result<MpvEngine, String> {
-        match bounded(START_LIMIT, Self::create) {
+        Self::new_with(false)
+    }
+
+    /// Like [`MpvEngine::new`]; with `gpu` the engine draws on the GPU into shared DMA-bufs
+    /// ([`VideoSurface::acquire_shared`]) when it can (Linux, EGL, GBM and an OpenGL libmpv), and falls back to the
+    /// software renderer when it cannot. `SWIFTLY_VIDEO_PATH=cpu` forces the software way. The way taken is printed
+    /// to stderr and named in [`VideoStats::path`].
+    pub fn new_with(gpu: bool) -> Result<MpvEngine, String> {
+        let gpu = gpu
+            && std::env::var("SWIFTLY_VIDEO_PATH")
+                .map(|v| v != "cpu")
+                .unwrap_or(true);
+        match bounded(START_LIMIT, move || Self::create(gpu)) {
             Some(r) => r,
             None => {
                 FORCE_NULL_AUDIO.store(true, Ordering::Relaxed);
-                bounded(START_LIMIT, Self::create)
+                bounded(START_LIMIT, move || Self::create(gpu))
                     .unwrap_or_else(|| Err("libmpv did not start in time".into()))
             }
         }
     }
 
-    fn create() -> Result<MpvEngine, String> {
+    fn create(gpu: bool) -> Result<MpvEngine, String> {
         let api = Arc::new(Api::load()?);
         let h = unsafe { (api.create)() };
         if h.is_null() {
             return Err("mpv_create failed".into());
         }
-        let engine = MpvEngine {
+        // Software way: the frame is copied to the CPU, so only the copying decoders can serve it. GPU way: the decoder
+        // hands its surface to OpenGL (zero copy), where the system allows it.
+        let hwdec_default = if gpu {
+            if cfg!(target_os = "linux") {
+                // Zero copy where OpenGL can take the decoder's surface, the copying decoders where it cannot.
+                "vaapi,nvdec,vaapi-copy,nvdec-copy"
+            } else if cfg!(windows) {
+                // The GPU decodes (on the adapter the window draws on, see `d3d11-adapter` below); libmpv's WGL
+                // renderer takes the picture back through system memory, which it can do at 4K without effort.
+                "d3d11va-copy"
+            } else {
+                "auto-safe"
+            }
+        } else {
+            "auto-copy-safe"
+        };
+        let hwdec = std::env::var("SWIFTLY_MPV_HWDEC").unwrap_or_else(|_| hwdec_default.into());
+        let mut engine = MpvEngine {
             api,
             handle: h,
-            render: Mutex::new(std::ptr::null_mut()),
-            st: Mutex::new(State::default()),
-            style: Mutex::new(None),
-            skip_alpha: AtomicBool::new(false),
+            sw_ctx: std::ptr::null_mut(),
+            path: OnceLock::new(),
+            st: Arc::new(Mutex::new(State::default())),
+            style: Arc::new(Mutex::new(None)),
+            skip_alpha: Arc::new(AtomicBool::new(false)),
+            hwdec: hwdec.clone(),
+            wake: Arc::new(WakeSlot::default()),
+            jobs: None,
+            worker: None,
         };
-        let hwdec = std::env::var("SWIFTLY_MPV_HWDEC").unwrap_or_else(|_| "auto-copy-safe".into());
+        {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let w = Worker {
+                api: Arc::clone(&engine.api),
+                handle: h as usize,
+                st: Arc::clone(&engine.st),
+                style: Arc::clone(&engine.style),
+            };
+            engine.worker = std::thread::Builder::new()
+                .name("mpv-events".into())
+                .spawn(move || w.run(rx))
+                .ok();
+            engine.jobs = Some(tx);
+        }
         for (k, v) in [
             ("config", "no"),
             ("terminal", "no"),
@@ -399,6 +801,11 @@ impl MpvEngine {
             ("hwdec", hwdec.as_str()),
         ] {
             engine.set_option(k, v);
+        }
+        #[cfg(windows)]
+        if gpu && let Some(name) = crate::mpv_gl::adapter_name() {
+            // The decoder runs on the GPU the window draws on, never on the basic display adapter.
+            engine.set_option("d3d11-adapter", name);
         }
         if let Some(dir) = Self::fonts_dir() {
             engine.set_option("sub-fonts-dir", &dir);
@@ -429,26 +836,94 @@ impl MpvEngine {
         if rc < 0 {
             return Err(format!("mpv_initialize: {}", engine.api.err(rc)));
         }
-        let api_type = cstr("sw");
-        let mut params = [
-            RenderParam {
-                kind: RP_API_TYPE,
-                data: api_type.as_ptr().cast_mut().cast(),
-            },
-            RenderParam {
-                kind: 0,
-                data: std::ptr::null_mut(),
-            },
-        ];
-        let mut ctx: *mut c_void = std::ptr::null_mut();
-        let rc = unsafe { (engine.api.rc_create)(&mut ctx, h, params.as_mut_ptr()) };
-        if rc < 0 {
-            return Err(format!(
-                "mpv_render_context_create(sw): {}",
-                engine.api.err(rc)
-            ));
+        #[cfg(any(target_os = "linux", windows))]
+        if gpu {
+            let on_resize: Box<dyn Fn(u32, u32) + Send> = {
+                let (api, style, st, handle) = (
+                    Arc::clone(&engine.api),
+                    Arc::clone(&engine.style),
+                    Arc::clone(&engine.st),
+                    h as usize,
+                );
+                Box::new(move |w, hh| {
+                    lock(&st).last_size = (w, hh);
+                    apply_style_raw(&api, handle, &style, w, hh);
+                })
+            };
+            match crate::mpv_gl::GlPump::start(
+                engine.api.rc(),
+                h as usize,
+                on_resize,
+                Arc::clone(&engine.wake),
+            ) {
+                Ok(pump) => {
+                    eprintln!(
+                        "swiftly-player: video path {GPU_PATH} (libmpv OpenGL into shared buffers)"
+                    );
+                    let _ = engine.path.set(RenderPath::Gl(pump));
+                }
+                Err(e) => {
+                    eprintln!(
+                        "swiftly-player: GPU video path unavailable ({e}); using the software renderer"
+                    );
+                    // The software renderer copies frames to the CPU: its decoders are the copying ones.
+                    engine.hwdec = "auto-copy-safe".into();
+                    engine.set_option("hwdec", "auto-copy-safe");
+                }
+            }
         }
-        *lock(&engine.render) = ctx;
+        if engine.path.get().is_none() {
+            let api_type = cstr("sw");
+            let mut params = [
+                RenderParam {
+                    kind: RP_API_TYPE,
+                    data: api_type.as_ptr().cast_mut().cast(),
+                },
+                RenderParam {
+                    kind: 0,
+                    data: std::ptr::null_mut(),
+                },
+            ];
+            let mut ctx: *mut c_void = std::ptr::null_mut();
+            let rc = unsafe { (engine.api.rc_create)(&mut ctx, h, params.as_mut_ptr()) };
+            if rc < 0 {
+                return Err(format!(
+                    "mpv_render_context_create(sw): {}",
+                    engine.api.err(rc)
+                ));
+            }
+            engine.sw_ctx = ctx;
+            let pump = RenderPump::spawn_with(
+                SwRenderer {
+                    api: Arc::clone(&engine.api),
+                    ctx: ctx as usize,
+                    handle: h as usize,
+                    style: Arc::clone(&engine.style),
+                    st: Arc::clone(&engine.st),
+                },
+                Arc::clone(&engine.wake),
+            )
+            .map_err(|e| format!("render thread: {e}"))?;
+            unsafe {
+                (engine.api.rc_set_cb)(
+                    ctx,
+                    Some(sw_update_callback),
+                    Arc::as_ptr(pump.shared()).cast_mut().cast(),
+                );
+            }
+            eprintln!(
+                "swiftly-player: video path cpu-sw (libmpv software renderer on the render thread)"
+            );
+            let _ = engine.path.set(RenderPath::Sw(pump));
+        }
+        // libmpv tells the host when events wait (time, track and state changes), so the host need not poll for them.
+        unsafe {
+            (engine.api.set_wakeup)(
+                h,
+                Some(mpv_wakeup_callback),
+                Arc::as_ptr(&engine.wake).cast_mut().cast(),
+            );
+        }
         for (id, (name, fmt)) in [
             ("time-pos", FMT_DOUBLE),
             ("duration", FMT_DOUBLE),
@@ -469,6 +944,17 @@ impl MpvEngine {
         Ok(engine)
     }
 
+    /// Registers the host's waker. It is called (from libmpv's and the render threads) whenever a new frame is ready or
+    /// libmpv has events waiting, so a host that redraws only on wake-ups never polls while the picture is still.
+    pub fn set_waker(&self, waker: Waker) {
+        self.wake.set(waker);
+    }
+
+    /// Whether a waker is registered (the host redraws on wake-ups).
+    pub fn wakes_host(&self) -> bool {
+        self.wake.is_set()
+    }
+
     /// The version of the loaded libmpv client API as `major.minor`.
     pub fn api_version(&self) -> String {
         let v = unsafe { (self.api.version)() };
@@ -487,8 +973,7 @@ impl MpvEngine {
     }
 
     fn set_prop(&self, k: &str, v: &str) -> bool {
-        let (k, v) = (cstr(k), cstr(v));
-        unsafe { (self.api.set_property_string)(self.handle, k.as_ptr(), v.as_ptr()) >= 0 }
+        set_prop_raw(&self.api, self.handle as usize, k, v)
     }
 
     fn get_string(&self, k: &str) -> Option<String> {
@@ -542,62 +1027,10 @@ impl MpvEngine {
         }
     }
 
-    /// Renders the current picture as `width x height` RGBA (alpha forced to 255). Returns the time it took.
-    fn render_into(
-        &self,
-        width: u32,
-        height: u32,
-        out: &mut FrameBuffer,
-    ) -> Option<std::time::Duration> {
-        let ctx = *lock(&self.render);
-        if ctx.is_null() || width == 0 || height == 0 {
-            return None;
+    fn job(&self, job: Job) {
+        if let Some(tx) = &self.jobs {
+            let _ = tx.send(job);
         }
-        out.resize(width, height);
-        let started = Instant::now();
-        let mut size: [c_int; 2] = [width as c_int, height as c_int];
-        let format = cstr("rgb0");
-        // The host paces itself; mpv must not sleep inside render until the frame's display time.
-        let mut block: c_int = 0;
-        let mut stride: usize = width as usize * 4;
-        let mut params = [
-            RenderParam {
-                kind: RP_BLOCK_FOR_TARGET_TIME,
-                data: std::ptr::from_mut(&mut block).cast(),
-            },
-            RenderParam {
-                kind: RP_SW_SIZE,
-                data: size.as_mut_ptr().cast(),
-            },
-            RenderParam {
-                kind: RP_SW_FORMAT,
-                data: format.as_ptr().cast_mut().cast(),
-            },
-            RenderParam {
-                kind: RP_SW_STRIDE,
-                data: std::ptr::from_mut(&mut stride).cast(),
-            },
-            RenderParam {
-                kind: RP_SW_POINTER,
-                data: out.rgba.as_mut_ptr().cast(),
-            },
-            RenderParam {
-                kind: 0,
-                data: std::ptr::null_mut(),
-            },
-        ];
-        let rc = unsafe { (self.api.rc_render)(ctx, params.as_mut_ptr()) };
-        if rc < 0 {
-            return None;
-        }
-        // "rgb0" leaves the fourth byte undefined. A host that draws the frame with a shader that ignores alpha (the GPU
-        // layer) skips this pass: at 4K it is 8 million writes per frame.
-        if !self.skip_alpha.load(Ordering::Relaxed) {
-            for px in out.rgba.as_chunks_mut::<4>().0 {
-                px[3] = 255;
-            }
-        }
-        Some(started.elapsed())
     }
 
     fn drain(&self) {
@@ -624,27 +1057,17 @@ impl MpvEngine {
                 s.paused = false;
                 s.events.push(EngineEvent::State(EngineState::Loading));
                 drop(s);
-                // keep-open leaves mpv paused on the last frame of the previous file; the new file plays.
-                self.set_prop("pause", "no");
+                self.job(Job::StartFile);
             }
             EV_FILE_LOADED => {
                 let subs = std::mem::take(&mut lock(&self.st).pending_subs);
-                for sub in subs {
-                    let mut args = vec!["sub-add", sub.url.as_str(), "auto"];
-                    if let Some(n) = sub.title.as_deref() {
-                        args.push(n);
-                    }
-                    if let Some(l) = sub.language.as_deref() {
-                        if args.len() == 3 {
-                            args.push("external");
-                        }
-                        args.push(l);
-                    }
-                    let _ = self.command(&args);
-                }
                 lock(&self.st).loaded = true;
                 let (w, h) = lock(&self.st).last_size;
-                self.apply_style(if w == 0 { 1920 } else { w }, if h == 0 { 1080 } else { h });
+                self.job(Job::FileLoaded(
+                    subs,
+                    if w == 0 { 1920 } else { w },
+                    if h == 0 { 1080 } else { h },
+                ));
             }
             EV_SEEK => {
                 let mut s = lock(&self.st);
@@ -742,30 +1165,8 @@ impl MpvEngine {
                     lock(&self.st).report_eof(EofInput::Flag(reached));
                 }
             }
-            "track-list" => {
-                if let Some(json) = self.get_string("track-list") {
-                    let t = translate::parse_tracks(&json);
-                    let mut s = lock(&self.st);
-                    s.events.push(t.event());
-                    s.tracks = t;
-                }
-            }
-            "video-params" => {
-                if let Some(json) = self.get_string("video-params") {
-                    let mut s = lock(&self.st);
-                    let hints = translate::parse_hints(&json, s.fps);
-                    if let Some((w, h)) = hints.size
-                        && s.video_size != Some((f64::from(w), f64::from(h)))
-                    {
-                        s.video_size = Some((f64::from(w), f64::from(h)));
-                        s.events.push(EngineEvent::VideoSize {
-                            width: f64::from(w),
-                            height: f64::from(h),
-                        });
-                    }
-                    s.hints = hints;
-                }
-            }
+            "track-list" => self.job(Job::TrackList),
+            "video-params" => self.job(Job::VideoParams),
             "container-fps" => {
                 if let Some(f) = number() {
                     let mut s = lock(&self.st);
@@ -795,16 +1196,33 @@ impl Drop for MpvEngine {
     /// Closing never blocks the caller for good: libmpv's audio output can hang while it shuts down (libpipewire's
     /// `pw_thread_loop_stop`, a sound server that stops answering). The teardown runs on its own thread; when it
     /// does not finish in [`CLOSE_LIMIT`] the engine is left behind (the stuck thread dies with the process).
+    /// The render thread stops first (the GPU way frees its render context on that thread), then the software
+    /// context goes, then the player.
     fn drop(&mut self) {
-        let ctx = std::mem::replace(&mut *lock(&self.render), std::ptr::null_mut()) as usize;
+        let path = self.path.take();
+        let wake = Arc::clone(&self.wake);
+        let ctx = std::mem::replace(&mut self.sw_ctx, std::ptr::null_mut()) as usize;
         let handle = self.handle as usize;
         let api = Arc::clone(&self.api);
+        drop(self.jobs.take());
+        let worker = self.worker.take();
         let (tx, rx) = std::sync::mpsc::channel();
         let spawned = std::thread::Builder::new()
             .name("mpv-close".into())
             .spawn(move || {
+                // No more wake-ups for the host; joins the render thread: nothing draws any more after this.
+                unsafe { (api.set_wakeup)(handle as *mut c_void, None, std::ptr::null_mut()) };
+                drop(path);
+                drop(wake);
                 if ctx != 0 {
-                    unsafe { (api.rc_free)(ctx as *mut c_void) };
+                    unsafe {
+                        (api.rc_set_cb)(ctx as *mut c_void, None, std::ptr::null_mut());
+                        (api.rc_free)(ctx as *mut c_void);
+                    }
+                }
+                // The worker leaves when its queue is closed; it must be gone before the handle is destroyed.
+                if let Some(w) = worker {
+                    let _ = w.join();
                 }
                 unsafe { (api.terminate_destroy)(handle as *mut c_void) };
                 let _ = tx.send(());
@@ -855,8 +1273,20 @@ impl PlaybackEngine for MpvEngine {
         // Server indexes are mapped to mpv ids once the track list is known; until then the default pick plays.
         self.set_prop("aid", "auto");
         self.set_prop("sid", "no");
-        if r.software_decode {
-            self.set_prop("hwdec", "no");
+        // A title the player wants decoded in software must not leave the next one without hardware decoding.
+        self.set_prop(
+            "hwdec",
+            if r.software_decode {
+                "no"
+            } else {
+                self.hwdec.as_str()
+            },
+        );
+        match self.path.get() {
+            Some(RenderPath::Sw(p)) => p.reset(),
+            #[cfg(any(target_os = "linux", windows))]
+            Some(RenderPath::Gl(p)) => p.reset(),
+            None => {}
         }
         let (secs, bytes) = match r.buffer_level {
             BufferLevel::Normal => ("30", "150MiB"),
@@ -995,48 +1425,33 @@ impl VideoSurface for MpvEngine {
 
     fn place(&self, _rect: Rect) {}
 
+    /// Never draws and never waits: it tells the render thread which size the UI wants and takes the newest frame that
+    /// thread has finished, if there is one.
     fn acquire_frame(&self, max_width: u32, max_height: u32, out: &mut FrameBuffer) -> FrameStatus {
-        self.drain_for_frame();
-        let (fill, source, last_size) = {
-            let s = lock(&self.st);
-            (s.fill, s.hints.size, s.last_size)
-        };
-        let Some((sw, sh)) = source else {
+        self.drain();
+        let Some(RenderPath::Sw(pump)) = self.path.get() else {
             return FrameStatus::NotReady;
         };
-        let (w, h) = if fill {
-            (max_width, max_height)
-        } else {
-            let k =
-                (f64::from(max_width) / f64::from(sw)).min(f64::from(max_height) / f64::from(sh));
-            (
-                ((f64::from(sw) * k) as u32).max(2) & !1,
-                ((f64::from(sh) * k) as u32).max(2) & !1,
-            )
-        };
-        let ctx = *lock(&self.render);
-        if ctx.is_null() {
+        let Some((w, h)) = self.frame_box(max_width, max_height) else {
             return FrameStatus::NotReady;
+        };
+        pump.want(w, h, self.skip_alpha.load(Ordering::Relaxed));
+        pump.take(out)
+    }
+
+    #[cfg(any(unix, windows))]
+    fn acquire_shared(&self, max_width: u32, max_height: u32) -> crate::SharedStatus {
+        #[cfg(any(target_os = "linux", windows))]
+        if let Some(RenderPath::Gl(pump)) = self.path.get() {
+            self.drain();
+            let Some((w, h)) = self.frame_box(max_width, max_height) else {
+                return crate::SharedStatus::NotReady;
+            };
+            pump.want(w, h);
+            return pump.take();
         }
-        let flags = unsafe { (self.api.rc_update)(ctx) };
-        if flags & UPDATE_FRAME == 0 && last_size == (w, h) {
-            return FrameStatus::Unchanged;
-        }
-        if last_size != (w, h) {
-            self.apply_style(w, h);
-        }
-        match self.render_into(w, h, out) {
-            Some(took) => {
-                let mut s = lock(&self.st);
-                s.last_size = (w, h);
-                if flags & UPDATE_FRAME != 0 {
-                    s.frames_rendered += 1;
-                    s.render_ns += took.as_nanos();
-                }
-                FrameStatus::New
-            }
-            None => FrameStatus::NotReady,
-        }
+        let _ = (max_width, max_height);
+        crate::SharedStatus::Unsupported
     }
 
     fn display_hints(&self) -> DisplayHints {
@@ -1045,8 +1460,24 @@ impl VideoSurface for MpvEngine {
 }
 
 impl MpvEngine {
-    fn drain_for_frame(&self) {
-        self.drain();
+    /// The picture size to draw for a box of `max_width x max_height`: the box (fill), or the largest size of the
+    /// source's aspect that fits it (fit). `None` until the source size is known.
+    fn frame_box(&self, max_width: u32, max_height: u32) -> Option<(u32, u32)> {
+        let (fill, source) = {
+            let s = lock(&self.st);
+            (s.fill, s.hints.size)
+        };
+        let (sw, sh) = source?;
+        Some(if fill {
+            (max_width, max_height)
+        } else {
+            let k =
+                (f64::from(max_width) / f64::from(sw)).min(f64::from(max_height) / f64::from(sh));
+            (
+                ((f64::from(sw) * k) as u32).max(2) & !1,
+                ((f64::from(sh) * k) as u32).max(2) & !1,
+            )
+        })
     }
 }
 
@@ -1065,19 +1496,22 @@ impl SurfaceEngine for MpvEngine {
     }
 
     fn stats(&self) -> VideoStats {
-        let (frames, ns) = {
-            let s = lock(&self.st);
-            (s.frames_rendered, s.render_ns)
+        let (name, p) = match self.path.get() {
+            Some(RenderPath::Sw(p)) => ("cpu-sw", p.stats()),
+            #[cfg(any(target_os = "linux", windows))]
+            Some(RenderPath::Gl(p)) => (GPU_PATH, p.stats()),
+            None => ("", crate::pump::PumpStats::default()),
         };
         VideoStats {
-            frames_rendered: frames,
+            path: name.to_owned(),
+            render_p50_ms: p.p50_ms,
+            render_p99_ms: p.p99_ms,
+            frames_superseded: p.superseded,
+            render_size: p.size,
+            frames_rendered: p.rendered,
             decoder_drops: self.get_i64("decoder-frame-drop-count").unwrap_or(0).max(0) as u64,
             output_drops: self.get_i64("frame-drop-count").unwrap_or(0).max(0) as u64,
-            avg_render_ms: if frames == 0 {
-                0.0
-            } else {
-                ns as f64 / 1.0e6 / frames as f64
-            },
+            avg_render_ms: p.avg_ms,
             decoded_fps: self.get_f64("estimated-vf-fps").unwrap_or(0.0),
             hwdec: self
                 .get_string("hwdec-current")

@@ -7,6 +7,7 @@ use crate::fixture_server::{Reply, list};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static ON: AtomicBool = AtomicBool::new(false);
+static FILTER_SET: AtomicBool = AtomicBool::new(false);
 
 pub(crate) const MOVIES: usize = 300;
 pub(crate) const SERIES: usize = 40;
@@ -48,6 +49,44 @@ const WORDS: [&str; 16] = [
 
 pub(crate) fn enable() {
     ON.store(true, Ordering::Relaxed);
+}
+
+/// `SWIFTLY_FIXTURE_FILTER_SET=1` (the library filter proof): the films fall in three decades (1990-2019), carry audio
+/// languages (`deu`, `eng`, `jpn`; every tenth also `eng`) and every fourth one is watched. Without it the catalogue is as it was.
+pub(crate) fn filter_set() -> bool {
+    FILTER_SET.load(Ordering::Relaxed) || std::env::var_os("SWIFTLY_FIXTURE_FILTER_SET").is_some()
+}
+
+fn movie_year(n: usize) -> usize {
+    if filter_set() {
+        1990 + (n * 7) % 30
+    } else {
+        1980 + (n * 7) % 45
+    }
+}
+
+/// The audio tracks of film `n` as JSON (one plain track without a language outside the filter set).
+fn audio_tracks(n: usize) -> String {
+    if !filter_set() {
+        return r#"{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"DisplayTitle":"Ton","IsDefault":true}"#.into();
+    }
+    let first = ["deu", "eng", "jpn"][n % 3];
+    let mut langs = vec![first];
+    if n.is_multiple_of(10) && first != "eng" {
+        langs.push("eng");
+    }
+    langs
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            format!(
+                r#"{{"Type":"Audio","Codec":"aac","Channels":1,"Index":{},"Language":"{l}","DisplayTitle":"Ton {l}","IsDefault":{}}}"#,
+                i + 1,
+                i == 0
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 pub(crate) fn enabled() -> bool {
@@ -106,6 +145,8 @@ fn episodes_of(s: usize, season: usize) -> usize {
 fn movie(n: usize) -> String {
     let resume = if n < 14 && n.is_multiple_of(2) {
         r#""PlaybackPositionTicks":3000000000,"PlayedPercentage":25.0,"Played":false"#
+    } else if filter_set() && n % 4 == 1 {
+        r#""Played":true"#
     } else {
         r#""Played":false"#
     };
@@ -115,10 +156,11 @@ fn movie(n: usize) -> String {
         ""
     };
     format!(
-        r#"{{"Id":"bg-m{n}","Name":"{name}","SortName":"{sort}","Type":"Movie","ProductionYear":{year},"PremiereDate":"{year}-0{month}-15T00:00:00.0000000Z","DateCreated":"2026-0{month}-{day:02}T10:00:00.0000000Z","RunTimeTicks":{runtime},"Overview":"Ein Film aus dem grossen Testkatalog, Nummer {n}. Er hat einen Beschreibungstext, der ueber mehrere Zeilen laufen darf, damit die Detailseite ihre Hoehe zeigt.","Genres":[{genres}],"CommunityRating":{rating:.1},"OfficialRating":"FSK 12","People":[{{"Id":"p1","Name":"Anna Test","Type":"Actor","Role":"Hauptrolle","PrimaryImageTag":"pp1"}},{{"Id":"p2","Name":"Ben Regie","Type":"Director"}}],"ImageTags":{{"Primary":"p{n}"}},"BackdropImageTags":["b{n}"],"MediaSources":[{{"Id":"src-bg-m{n}","Name":"Test","Container":"mp4","Size":{clip},"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":{runtime},"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"DisplayTitle":"Ton","IsDefault":true}}]}}],"UserData":{{{resume}}}{fav}}}"#,
+        r#"{{"Id":"bg-m{n}","Name":"{name}","SortName":"{sort}","Type":"Movie","ProductionYear":{year},"PremiereDate":"{year}-0{month}-15T00:00:00.0000000Z","DateCreated":"2026-0{month}-{day:02}T10:00:00.0000000Z","RunTimeTicks":{runtime},"Overview":"Ein Film aus dem grossen Testkatalog, Nummer {n}. Er hat einen Beschreibungstext, der ueber mehrere Zeilen laufen darf, damit die Detailseite ihre Hoehe zeigt.","Genres":[{genres}],"CommunityRating":{rating:.1},"OfficialRating":"FSK 12","People":[{{"Id":"p1","Name":"Anna Test","Type":"Actor","Role":"Hauptrolle","PrimaryImageTag":"pp1"}},{{"Id":"p2","Name":"Ben Regie","Type":"Director"}}],"ImageTags":{{"Primary":"p{n}"}},"BackdropImageTags":["b{n}"],"MediaSources":[{{"Id":"src-bg-m{n}","Name":"Test","Container":"mp4","Size":{clip},"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":{runtime},"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{audio}]}}],"UserData":{{{resume}}}{fav}}}"#,
+        audio = audio_tracks(n),
         name = movie_name(n),
         sort = movie_name(n).to_lowercase(),
-        year = 1980 + (n * 7) % 45,
+        year = movie_year(n),
         month = 1 + n % 9,
         day = 1 + n % 27,
         runtime = 36_000_000_000_u64 + (n as u64 % 40) * 1_800_000_000,
@@ -157,7 +199,12 @@ fn season(s: usize, k: usize) -> String {
 
 fn episode(s: usize, k: usize, e: usize) -> String {
     format!(
-        r#"{{"Id":"bg-e{s}-{k}-{e}","Name":"Folge {e}: {title}","Type":"Episode","SeriesId":"bg-s{s}","SeriesName":"{series}","SeasonId":"bg-s{s}-se{k}","ParentIndexNumber":{k},"IndexNumber":{e},"RunTimeTicks":{runtime},"Overview":"Folge {e} der Staffel {k}.","ImageTags":{{"Primary":"pe{s}{k}{e}"}},"MediaSources":[{{"Id":"src-bg-e{s}-{k}-{e}","Name":"Test","Container":"mp4","SupportsDirectPlay":true,"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1}}]}}],"UserData":{{"Played":false}}}}"#,
+        r#"{{"Id":"bg-e{s}-{k}-{e}","Name":"Folge {e}: {title}","Type":"Episode","SeriesId":"bg-s{s}","SeriesName":"{series}","SeasonId":"bg-s{s}-se{k}","ParentIndexNumber":{k},"IndexNumber":{e},"RunTimeTicks":{runtime},"Overview":"Folge {e} der Staffel {k}.","ImageTags":{{"Primary":"pe{s}{k}{e}"}},"MediaSources":[{{"Id":"src-bg-e{s}-{k}-{e}","Name":"Test","Container":"mp4","SupportsDirectPlay":true,"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{audio}]}}],"UserData":{{"Played":false}}}}"#,
+        audio = if filter_set() {
+            audio_tracks(s)
+        } else {
+            r#"{"Type":"Audio","Codec":"aac","Channels":1,"Index":1}"#.into()
+        },
         title = WORDS[(s + k + e) % WORDS.len()],
         series = series_name(s),
         runtime = 24_000_000_000_u64 + (e as u64) * 600_000_000,
@@ -248,6 +295,64 @@ fn number(item: &str, key: &str) -> f64 {
         .map(|(_, r)| r.split([',', '}']).next().unwrap_or("0"))
         .and_then(|t| t.parse().ok())
         .unwrap_or(0.0)
+}
+
+/// The titles a `/Items` request is about: the films / series / episodes of the asked kinds and library, cut by genre, favourites,
+/// resumable and search. With `strict`, also by `Years=` and the watched state; without it (`Items/Filters`, which names the
+/// years that exist) those two do not cut.
+fn narrowed(param: &dyn Fn(&str) -> Option<String>, strict: bool) -> Vec<String> {
+    let kinds = param("IncludeItemTypes").unwrap_or_default();
+    let parent = param("ParentId").unwrap_or_default();
+    let want_movies = kinds.is_empty() && parent != "lib-shows" || kinds.contains("Movie");
+    let want_series = kinds.is_empty() && parent != "lib-movies" || kinds.contains("Series");
+    let mut items: Vec<String> = Vec::new();
+    if want_movies {
+        items.extend(all_movies().into_iter().map(|(_, m)| m));
+    }
+    if want_series {
+        items.extend((0..SERIES).map(series));
+    }
+    if kinds.contains("Episode") && parent != "lib-movies" {
+        for s in 0..SERIES {
+            for k in 1..=seasons_of(s) {
+                items.extend((1..=episodes_of(s, k)).map(|e| episode(s, k, e)));
+            }
+        }
+    }
+    if let Some(g) = param("Genres") {
+        let wanted: Vec<String> = g.split('|').map(str::to_owned).collect();
+        items.retain(|it| wanted.iter().any(|w| it.contains(&format!("\"{w}\""))));
+    }
+    if param("Filters").is_some_and(|f| f.contains("IsFavorite")) {
+        items.retain(|it| it.contains(r#""IsFavorite":true"#));
+    }
+    if param("Filters").is_some_and(|f| f.contains("IsResumable")) {
+        items.retain(|it| it.contains("PlaybackPositionTicks"));
+    }
+    if let Some(t) = param("SearchTerm") {
+        let t = t.to_lowercase();
+        items.retain(|it| field(it, "Name").to_lowercase().contains(&t));
+    }
+    if strict {
+        // `Years=2010,2011,...` (the web client's production-year filter).
+        if let Some(y) = param("Years") {
+            let wanted: Vec<f64> = y.split(',').filter_map(|v| v.trim().parse().ok()).collect();
+            items.retain(|it| wanted.contains(&number(it, "ProductionYear")));
+        }
+        // `IsPlayed=false|true` and `Filters=IsUnplayed|IsPlayed`.
+        let filters = param("Filters").unwrap_or_default();
+        let unplayed =
+            param("IsPlayed").is_some_and(|v| v == "false") || filters.contains("IsUnplayed");
+        let played = param("IsPlayed").is_some_and(|v| v == "true")
+            || filters.split(',').any(|f| f == "IsPlayed");
+        if unplayed {
+            items.retain(|it| !it.contains(r#""Played":true"#));
+        }
+        if played {
+            items.retain(|it| it.contains(r#""Played":true"#));
+        }
+    }
+    items
 }
 
 /// Pages a filtered, sorted list by `StartIndex` / `Limit`; `TotalRecordCount` is the full match count.
@@ -377,6 +482,21 @@ fn answer_on(method: &str, path: &str, query: &str) -> Option<Reply> {
     if path.ends_with("/Similar") {
         return json(list(&(1..7).map(movie).collect::<Vec<_>>()));
     }
+    if path.ends_with("/Items/Filters") {
+        // What the web client's year filter reads: the production years among the titles of these kinds.
+        let mut years: Vec<i64> = narrowed(&param, false)
+            .iter()
+            .map(|it| number(it, "ProductionYear") as i64)
+            .collect();
+        years.sort_unstable();
+        years.dedup();
+        let list = years
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        return json(format!(r#"{{"Years":[{list}],"Genres":[]}}"#));
+    }
     if path.ends_with("/Items") {
         // By ids: the big ones from here, the small catalogue's from the normal `find`.
         if let Some(ids) = param("Ids").or_else(|| param("ids")) {
@@ -400,30 +520,7 @@ fn answer_on(method: &str, path: &str, query: &str) -> Option<Reply> {
         if kinds.contains("Playlist") {
             return json(list(&[]));
         }
-        let want_movies = kinds.is_empty() && parent != "lib-shows" || kinds.contains("Movie");
-        let want_series = kinds.is_empty() && parent != "lib-movies" || kinds.contains("Series");
-        let mut items: Vec<String> = Vec::new();
-        if want_movies {
-            items.extend(all_movies().into_iter().map(|(_, m)| m));
-        }
-        if want_series {
-            items.extend((0..SERIES).map(series));
-        }
-        if let Some(g) = param("Genres") {
-            let wanted: Vec<String> = g.split('|').map(str::to_owned).collect();
-            items.retain(|it| wanted.iter().any(|w| it.contains(&format!("\"{w}\""))));
-        }
-        if param("Filters").is_some_and(|f| f.contains("IsFavorite")) {
-            items.retain(|it| it.contains(r#""IsFavorite":true"#));
-        }
-        if param("Filters").is_some_and(|f| f.contains("IsResumable")) {
-            items.retain(|it| it.contains("PlaybackPositionTicks"));
-        }
-        if let Some(t) = param("SearchTerm") {
-            let t = t.to_lowercase();
-            items.retain(|it| field(it, "Name").to_lowercase().contains(&t));
-        }
-        return json(page(items, &param));
+        return json(page(narrowed(&param, true), &param));
     }
     if path.rsplit('/').nth(1) == Some("Items") {
         let id = path.rsplit('/').next().unwrap_or("");
@@ -508,5 +605,44 @@ mod tests {
                 "/Users/u/Items?IncludeItemTypes=Movie&Filters=IsFavorite"
             )) >= 30
         );
+    }
+
+    #[test]
+    fn years_audio_languages_and_played_follow_the_filter_set() {
+        FILTER_SET.store(true, Ordering::Relaxed);
+        let movies = "/Users/u/Items?IncludeItemTypes=Movie&Recursive=true&ParentId=lib-movies";
+        // The years that exist: three decades, 1990-2019, from `Items/Filters`.
+        let years = get(&format!(
+            "/Items/Filters?{}",
+            movies.split_once('?').unwrap().1
+        ));
+        assert!(
+            years.starts_with(r#"{"Years":[1990,"#) && years.contains("2019]"),
+            "{years}"
+        );
+        // `Years=` cuts the list and keeps the exact total.
+        let nineties = get(&format!(
+            "{movies}&Years=2010,2011,2012,2013,2014,2015,2016,2017,2018,2019&Limit=500"
+        ));
+        let n = total(&nineties);
+        assert!(n > 60 && n < 140, "{n}");
+        assert_eq!(nineties.matches("\"Type\":\"Movie\"").count(), n);
+        assert!(
+            !nineties.contains(r#""ProductionYear":199"#)
+                && !nineties.contains(r#""ProductionYear":200"#)
+        );
+        // German is every third film (plus nothing else), read from the tracks.
+        let all = get(&format!("{movies}&Fields=MediaSources&Limit=500"));
+        assert_eq!(all.matches(r#""Language":"deu""#).count(), 100);
+        assert_eq!(all.matches(r#""Language":"jpn""#).count(), 100);
+        assert!(all.matches(r#""Language":"eng""#).count() > 100);
+        // Every fourth film (n % 4 == 1) is watched: unwatched cuts them.
+        let unwatched = get(&format!("{movies}&IsPlayed=false&Limit=500"));
+        assert_eq!(total(&unwatched), MOVIES - 75);
+        assert_eq!(
+            total(&get(&format!("{movies}&Filters=IsUnplayed&Limit=500"))),
+            MOVIES - 75
+        );
+        FILTER_SET.store(false, Ordering::Relaxed);
     }
 }

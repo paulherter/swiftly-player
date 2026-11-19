@@ -248,6 +248,15 @@ final class ImageCache {
         URL(string: ImageKey.of(url)) ?? url
     }
 
+    /// Starts a page head's picture ahead (finger-down on the tile that opens the page), in the size the head decodes at
+    /// (`Picture` passes `height * 3.2`), so the page's own request finds it running or done instead of starting 0.5 s
+    /// later. Nothing happens when it is in memory or on its way already.
+    func warmHead(_ url: URL, height: CGFloat) {
+        guard image(url) == nil else { return }
+        let border = Int(height * 3.2)
+        Task { _ = await load(url, preRank: true, border: border) }
+    }
+
     /// `vorrang` skips the gate.
     ///
     /// **For the one image someone is actually waiting for.** On a detail page that is
@@ -427,6 +436,30 @@ final class ImageCache {
     }
 }
 
+/// **Whether images that arrive late fade in.** On by default (a tile in a grid fades its poster in). A detail page
+/// turns it off for everything inside it (`arrivesStill()`): the page slides in as a whole, and nothing inside it
+/// may animate in afterwards. Logo, colour mood and `NetworkImage` read it where they would otherwise call `withAnimation`.
+/// `Picture` does not: it always cross-fades once from its placeholder (a picture replacing a preview is a change in place,
+/// not an element appearing).
+private struct ArrivalFadesKey: EnvironmentKey { static let defaultValue = true }
+
+extension EnvironmentValues {
+    var arrivalFades: Bool {
+        get { self[ArrivalFadesKey.self] }
+        set { self[ArrivalFadesKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Everything below this view appears in place, without a fade or a slide, when its data arrives.
+    func arrivesStill() -> some View { environment(\.arrivalFades, false) }
+}
+
+extension Animation {
+    /// `Theme.reveal` for content that may fade in, `nil` (no animation at all) where `arrivalFades` is off.
+    @MainActor static func arrival(_ fades: Bool) -> Animation? { fades ? Theme.reveal : nil }
+}
+
 struct NetworkImage: View {
     let url: URL?
     /// How the image fills its area.
@@ -452,6 +485,7 @@ struct NetworkImage: View {
     /// away.
     var characterSize: CGFloat = 22
 
+    @Environment(\.arrivalFades) private var arrivalFades
     @State private var image: Image?
     @State private var visible = false
     /// No image expected: no URL, or the request came back without an image. Only
@@ -520,7 +554,7 @@ struct NetworkImage: View {
             //
             // With the token every platform uses its own curve, and "Reduce Motion" applies
             // here at last.
-            withAnimation(Theme.reveal) { visible = true }
+            withAnimation(.arrival(arrivalFades)) { visible = true }
         }
     }
 }

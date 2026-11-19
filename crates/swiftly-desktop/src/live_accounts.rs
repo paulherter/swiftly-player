@@ -4,6 +4,8 @@
 use crate::live::Core;
 use swiftly_accounts::{ServerBundles, load_bundles, save_bundles};
 use swiftly_jellyfin::ServerKind;
+use swiftly_seerr::SeerrAccess;
+use swiftly_settings::{KeyValueStore, Value};
 use swiftly_vm::Capabilities;
 
 /// One stored account as the screens show it.
@@ -21,6 +23,15 @@ pub struct Entry {
     pub suffix: String,
     /// The account in use.
     pub active: bool,
+}
+
+impl Entry {
+    /// The server part of a per-server settings key (`Session.serverSuffix` without the `|` the sync keys carry): the one
+    /// every `server_key(name, server)` reader and writer takes. Handing `suffix` itself to the settings page stored its
+    /// per-server values under `name||server`, where the Start page (reading `name|server`) never looked.
+    pub fn server_part(&self) -> &str {
+        self.suffix.trim_start_matches('|')
+    }
 }
 
 /// The picture address of one account (see [`Core::avatar_address`]); pure, so it is tested without a secret store.
@@ -97,6 +108,49 @@ impl Core {
             &account.session.user_id,
             account.plex.as_ref().and_then(|p| p.user_image.as_deref()),
         )
+    }
+
+    /// The per-server suffix of the active account (the Seerr session is kept per server); empty without an account.
+    /// Looked up at most once a second: screens ask every frame and the accounts sit in the secret store.
+    pub fn seerr_suffix(&self) -> String {
+        static CACHE: std::sync::Mutex<Option<(std::time::Instant, String)>> =
+            std::sync::Mutex::new(None);
+        let mut cache = CACHE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((at, suffix)) = &*cache
+            && at.elapsed() < std::time::Duration::from_secs(1)
+        {
+            return suffix.clone();
+        }
+        let suffix = self.active_entry().map(|e| e.suffix).unwrap_or_default();
+        *cache = Some((std::time::Instant::now(), suffix.clone()));
+        suffix
+    }
+
+    /// The Seerr session of the active account's server (taken over from the server's other devices by the settings
+    /// sync, see `swiftly_vm::StoreSync`). A session kept under the old single key is moved to its server once; it
+    /// carries no change time, so whatever the server says about Seerr wins over it.
+    pub fn seerr_stored(&self) -> Option<SeerrAccess> {
+        let suffix = self.seerr_suffix();
+        if let Some(access) = swiftly_vm::stored_seerr(&*self.settings, &suffix) {
+            return Some(access);
+        }
+        let legacy = match self.settings.get("seerr") {
+            Some(Value::Data(d)) => serde_json::from_slice::<SeerrAccess>(&d).ok()?,
+            _ => return None,
+        };
+        swiftly_vm::store_seerr(&*self.settings, &suffix, Some(&legacy), 0.0);
+        let _ = self.settings.remove("seerr");
+        Some(legacy)
+    }
+
+    /// Keeps (or with `None` drops) the active server's Seerr session; the sync carries it to the other devices.
+    pub fn seerr_set(&self, access: Option<&SeerrAccess>) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0.0, |d| d.as_secs_f64());
+        swiftly_vm::store_seerr(&*self.settings, &self.seerr_suffix(), access, now);
     }
 
     /// The active account's entry.
@@ -196,6 +250,29 @@ mod tests {
         assert_eq!(
             avatar_address_of(ServerKind::Jellyfin, "not a url", "t", "1", None),
             None
+        );
+    }
+}
+
+#[cfg(test)]
+mod server_part_tests {
+    use super::*;
+
+    #[test]
+    fn the_server_part_has_no_leading_bar() {
+        let entry = |suffix: &str| Entry {
+            key: "k".into(),
+            name: "n".into(),
+            server: "http://h:1".into(),
+            kind: ServerKind::Jellyfin,
+            suffix: suffix.into(),
+            active: true,
+        };
+        assert_eq!(entry("|http://h:1").server_part(), "http://h:1");
+        assert_eq!(entry("|plex:abc").server_part(), "plex:abc");
+        assert_eq!(
+            swiftly_settings::server_key("startReihenfolge", entry("|http://h:1").server_part()),
+            "startReihenfolge|http://h:1"
         );
     }
 }

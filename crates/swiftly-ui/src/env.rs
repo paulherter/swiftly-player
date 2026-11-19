@@ -67,6 +67,9 @@ pub struct Env {
     pub input: InputMode,
     /// Reduce Motion is on: every curve becomes linear 0.14 s.
     pub reduce_motion: bool,
+    /// The window draws the back and forward arrows itself (desktop with a sidebar). A pushed page then draws no back
+    /// control of its own: a second copy would slide in with the page while the window's stays still.
+    pub window_nav: bool,
 }
 
 /// Size classes by RF section 6: a phone is horizontally regular from 900 pt (only Plus/Max landscape, ~930; a plain iPhone landscape is ~852 and compact; the research text says "~700", which contradicts its own table) and
@@ -108,6 +111,7 @@ impl Env {
                 Idiom::Desktop => InputMode::Pointer,
             },
             reduce_motion: false,
+            window_nav: false,
         }
     }
 

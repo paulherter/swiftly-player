@@ -1,15 +1,16 @@
 //! The Seerr connection behind the Settings page (`SeerrModel.swift`): connect with address, name and password,
 //! show the session state, disconnect. The page talks to [`SeerrLink`]; the demo uses [`ScriptedSeerr`], the real app
-//! [`LiveSeerr`] over `swiftly-seerr` (the session is kept in `settings.json` under `seerr`, never the password).
+//! [`LiveSeerr`] over `swiftly-seerr` (the session is kept per server in `settings.json` under `seerr|<server>` and travels with the settings sync, never the password).
 
 use std::sync::{Arc, Mutex};
 use swiftly_jellyfin::OwnHeader;
-use swiftly_net::{ErrorKind, TransportReason};
-use swiftly_seerr::{NoCookies, SeerrAccess, SeerrClient, SeerrSessionState};
-use swiftly_settings::{KeyValueStore, Value};
+use swiftly_net::ErrorKind;
+use swiftly_seerr::{
+    NoCookies, SeerrAccess, SeerrClient, SeerrSessionState, SignInCause, SignInKind, SignInMethod,
+};
 
 /// The shared transport of the app as an owned value for the client.
-pub(crate) struct Shared(pub(crate) Arc<crate::net::AppTransport>);
+pub struct Shared(pub(crate) Arc<crate::net::AppTransport>);
 
 impl swiftly_net::HttpTransport for Shared {
     async fn send(
@@ -41,6 +42,13 @@ pub trait SeerrLink {
     fn state(&self) -> SeerrConn;
     /// Connects; the result shows in [`state`](SeerrLink::state).
     fn connect(&self, address: &str, user: &str, password: &str, headers: Vec<(String, String)>);
+    /// Connects with any of the three ways (Jellyfin account, Seerr e-mail account, Plex token). The page
+    /// offers the other two once its forms exist; until then only `connect` is called.
+    fn connect_as(&self, address: &str, kind: SignInKind, headers: Vec<(String, String)>) {
+        if let SignInKind::Jellyfin { user, password } = kind {
+            self.connect(address, &user, &password, headers);
+        }
+    }
     /// Removes the stored session (nothing changes at Seerr itself).
     fn disconnect(&self);
     /// Looks the stored session up again when the page opens (`seerr.lookUp()`), so the row says "Aktiv" or why not.
@@ -56,16 +64,12 @@ pub fn session_word(s: SeerrSessionState) -> &'static str {
     }
 }
 
-fn say(e: &ErrorKind) -> String {
-    match e {
-        ErrorKind::Transport(TransportReason::Other(t)) => t.clone(),
-        ErrorKind::Transport(TransportReason::LoginPage) => {
-            "Vor Seerr sitzt eine Anmeldeseite. Unter Erweitert kannst du Header setzen.".into()
-        }
-        ErrorKind::Certificate(_) => "Dem Zertifikat wird nicht vertraut.".into(),
-        ErrorKind::InvalidServerUrl => "Die Adresse ist nicht gültig.".into(),
-        _ => "Seerr antwortet nicht. Stimmt die Adresse?".into(),
-    }
+/// The German sentence of a failed sign-in: the core's cause words (`swiftly_vm::cause_text`), the same on every platform.
+fn say(e: &ErrorKind, method: SignInMethod) -> String {
+    swiftly_vm::cause_text(
+        &swiftly_l10n::Translator::new(swiftly_l10n::Locale::parse("de")),
+        &SignInCause::classify(e, method),
+    )
 }
 
 /// The scripted Seerr of the demo: a password of "falsch" fails, anything else connects.
@@ -108,16 +112,11 @@ pub struct LiveSeerr {
     now: Arc<Mutex<SeerrConn>>,
 }
 
-const KEY: &str = "seerr";
-
 impl LiveSeerr {
     /// Reads the stored session and checks it in the background.
     pub fn new(core: Arc<crate::live::Core>) -> LiveSeerr {
         let now = Arc::new(Mutex::new(SeerrConn::default()));
-        let stored = match core.settings.get(KEY) {
-            Some(Value::Data(d)) => serde_json::from_slice::<SeerrAccess>(&d).ok(),
-            _ => None,
-        };
+        let stored = core.seerr_stored();
         let link = LiveSeerr { core, now };
         link.check(stored);
         link
@@ -152,6 +151,13 @@ impl SeerrLink for LiveSeerr {
         self.now.lock().map(|g| g.clone()).unwrap_or_default()
     }
     fn connect(&self, address: &str, user: &str, password: &str, headers: Vec<(String, String)>) {
+        let kind = SignInKind::Jellyfin {
+            user: user.to_owned(),
+            password: password.to_owned(),
+        };
+        self.connect_as(address, kind, headers);
+    }
+    fn connect_as(&self, address: &str, kind: SignInKind, headers: Vec<(String, String)>) {
         if let Ok(mut s) = self.now.lock() {
             if s.busy {
                 return;
@@ -164,25 +170,17 @@ impl SeerrLink for LiveSeerr {
             Arc::clone(&self.now),
             Arc::clone(&self.core),
         );
-        let (typed, user, password) = (address.to_owned(), user.to_owned(), password.to_owned());
+        let typed = address.to_owned();
         let headers: Vec<OwnHeader> = headers.iter().map(|(n, v)| OwnHeader::new(n, v)).collect();
         self.core.spawn(async move {
-            let result = SeerrClient::sign_in_typed(
-                &Shared(net),
-                &NoCookies,
-                &typed,
-                &user,
-                &password,
-                &headers,
-            )
-            .await;
+            let result =
+                SeerrClient::sign_in_typed_with(&Shared(net), &NoCookies, &typed, &kind, &headers)
+                    .await;
             let Ok(mut s) = out.lock() else { return };
             s.busy = false;
             match result {
                 Ok(access) => {
-                    if let Ok(data) = serde_json::to_vec(&access) {
-                        crate::store::set_logged(&*core.settings, KEY, Value::Data(data));
-                    }
+                    core.seerr_set(Some(&access));
                     *s = SeerrConn {
                         connected: true,
                         address: access.address,
@@ -191,22 +189,19 @@ impl SeerrLink for LiveSeerr {
                         error: None,
                     };
                 }
-                Err(e) => s.error = Some(say(&e)),
+                Err(e) => s.error = Some(say(&e, kind.method())),
             }
         });
     }
     fn look_up(&self) {
-        let stored = match self.core.settings.get(KEY) {
-            Some(Value::Data(d)) => serde_json::from_slice::<SeerrAccess>(&d).ok(),
-            _ => None,
-        };
+        let stored = self.core.seerr_stored();
         // Not while a sign-in runs: it would overwrite the answer.
         if !self.now.lock().is_ok_and(|s| s.busy) {
             self.check(stored);
         }
     }
     fn disconnect(&self) {
-        let _ = self.core.settings.remove(KEY);
+        self.core.seerr_set(None);
         if let Ok(mut s) = self.now.lock() {
             *s = SeerrConn::default();
         }

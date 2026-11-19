@@ -109,7 +109,7 @@ fn list(items: &[String]) -> String {
     )
 }
 
-fn transport(scenario: Scenario) -> MockTransport {
+pub(crate) fn transport(scenario: Scenario) -> MockTransport {
     let views = r#"{"Items":[{"Id":"lib-movies","Name":"Filme","Type":"CollectionFolder","CollectionType":"movies"},{"Id":"lib-shows","Name":"Serien","Type":"CollectionFolder","CollectionType":"tvshows"}],"TotalRecordCount":2}"#;
     match scenario {
         Scenario::Offline => ["UserViews", "UserItems/Resume", "Shows/NextUp", "/Items"]
@@ -187,8 +187,35 @@ pub fn home_vm(scenario: Scenario) -> HomeVm<crate::net::AppTransport> {
         vm.set_row_order(live_order(&w));
         return vm;
     }
+    mock_vm(transport(scenario), scenario != Scenario::Loading)
+}
+
+/// A `HomeVm` over a scripted server of the caller's (tests make the server refuse a request); the load has finished
+/// when this returns.
+///
+/// # Panics
+/// If the view model cannot be built or does not settle within ten seconds.
+pub fn home_vm_over(server: MockTransport) -> HomeVm<crate::net::AppTransport> {
+    mock_vm(server, true)
+}
+
+/// Like [`home_vm_over`] over a transport of the caller's (tests hold an answer back for as long as they like).
+///
+/// # Panics
+/// If the view model cannot be built or does not settle within ten seconds.
+#[cfg(test)]
+pub fn home_vm_through(transport: crate::net::AppTransport) -> HomeVm<crate::net::AppTransport> {
+    build_vm(transport, true)
+}
+
+fn mock_vm(server: MockTransport, load: bool) -> HomeVm<crate::net::AppTransport> {
+    build_vm(crate::net::AppTransport::Mock(server), load)
+}
+
+/// The host of the scripted server: two worker threads, a fixed clock, a store in memory.
+pub(crate) fn scripted_host() -> Host {
     let pool = ThreadPool::builder().pool_size(2).create();
-    let host = Host {
+    Host {
         spawner: Arc::new(Pool(pool.unwrap_or_else(|e| panic!("thread pool: {e}")))),
         clock: Arc::new(FixedClock),
         store: Arc::new(MemoryStore::new()),
@@ -196,15 +223,18 @@ pub fn home_vm(scenario: Scenario) -> HomeVm<crate::net::AppTransport> {
         device_name: "Demo".into(),
         client_version: "0.0.0".into(),
         cache: None,
-    };
+    }
+}
+
+fn build_vm(transport: crate::net::AppTransport, load: bool) -> HomeVm<crate::net::AppTransport> {
     let vm = HomeVm::new(
-        Arc::new(crate::net::AppTransport::Mock(transport(scenario))),
-        host,
+        Arc::new(transport),
+        scripted_host(),
         HomePrefs::default(),
         Some(account()),
     )
     .unwrap_or_else(|e| panic!("home vm: {e:?}"));
-    if scenario != Scenario::Loading {
+    if load {
         vm.send(HomeIntent::Load);
         wait_settled(&vm);
     }
@@ -259,6 +289,22 @@ fn live_prefs(w: &crate::live::Wiring) -> HomePrefs {
     }
 }
 
+/// The genre chips above the rails of Start (`HomeView.genreChips`): only when the Appearance page shows genres "as chips"
+/// and at least one genre is chosen, and then exactly the chosen genres in their order. Without a chosen genre there is no
+/// chips row (the first version asked the server for its genres and showed the first eight of them, chosen or not).
+pub fn live_chips(w: &crate::live::Wiring) -> Vec<String> {
+    let p = live_prefs(w);
+    chips_for(&p)
+}
+
+fn chips_for(p: &HomePrefs) -> Vec<String> {
+    if p.genre_chips {
+        p.start_genres.clone()
+    } else {
+        Vec::new()
+    }
+}
+
 /// The fixed rows switched off (`startAus`).
 fn live_hidden(w: &crate::live::Wiring) -> Vec<String> {
     use swiftly_settings::{KeyValueStore, Value};
@@ -273,7 +319,7 @@ fn live_order(w: &crate::live::Wiring) -> Vec<String> {
     use swiftly_settings::{KeyValueStore, Value, key::server_key};
     let suffix = w.core.active_entry().map_or_else(
         || w.account.base_url.clone(),
-        |e| e.suffix.trim_start_matches('|').to_owned(),
+        |e| e.server_part().to_owned(),
     );
     match w
         .core
@@ -291,7 +337,7 @@ fn live_libraries(w: &crate::live::Wiring) -> Vec<swiftly_library::start_librari
     // Per server: the address for Jellyfin and Emby, `plex:<machine id>` for Plex (a Plex address can change).
     let suffix = w.core.active_entry().map_or_else(
         || w.account.base_url.clone(),
-        |e| e.suffix.trim_start_matches('|').to_owned(),
+        |e| e.server_part().to_owned(),
     );
     let chosen = match w
         .core
@@ -302,4 +348,31 @@ fn live_libraries(w: &crate::live::Wiring) -> Vec<swiftly_library::start_librari
         _ => None,
     };
     swiftly_library::start_libraries::StartLibraries::read(chosen.as_deref())
+}
+
+#[cfg(test)]
+mod chips_tests {
+    use super::*;
+
+    fn prefs(chips: bool, genres: &[&str]) -> HomePrefs {
+        HomePrefs {
+            disconnected: true,
+            genre_chips: chips,
+            start_genres: genres.iter().map(|g| (*g).to_owned()).collect(),
+        }
+    }
+
+    #[test]
+    fn chips_show_only_the_chosen_genres_and_only_in_chip_mode() {
+        // Nothing chosen: no chips, whatever the mode (the server's own genre list never shows up on its own).
+        assert!(chips_for(&prefs(true, &[])).is_empty());
+        assert!(chips_for(&prefs(false, &[])).is_empty());
+        // Rows mode: the genres are rails, not chips.
+        assert!(chips_for(&prefs(false, &["Drama"])).is_empty());
+        // Chip mode: the chosen ones in their order.
+        assert_eq!(
+            chips_for(&prefs(true, &["Krimi", "Drama"])),
+            ["Krimi", "Drama"]
+        );
+    }
 }

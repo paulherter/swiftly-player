@@ -133,10 +133,21 @@ for key, entry in catalog.items():
     elif en.get("stringUnit", {}).get("state") != "translated":
         raw.add(("Katalog", key))
 
-for name, amount in (("nicht im Katalog", missing), ("ohne englische Fassung", raw)):
+# The Android tables are generated from the catalog and committed: a key added to the catalog and never regenerated
+# (`python3 Werkzeuge/texts-to-android.py`) shows its German key to every English and Russian user on Android.
+import tempfile
+stale = set()
+with tempfile.TemporaryDirectory() as tmp:
+    subprocess.run([sys.executable, str(root / "Werkzeuge/texts-to-android.py"), tmp], check=True, capture_output=True)
+    for fresh in sorted(pathlib.Path(tmp).glob("*.json")):
+        committed = root / "Android/shared/src/main/assets/texts" / fresh.name
+        if not committed.exists() or committed.read_text(encoding="utf-8") != fresh.read_text(encoding="utf-8"):
+            stale.add(("Android-Texte", f"{fresh.name} ist veraltet: python3 Werkzeuge/texts-to-android.py"))
+
+for name, amount in (("nicht im Katalog", missing), ("ohne englische Fassung", raw), ("nicht erzeugt", stale)):
     for distance, text in sorted(amount):
         print(f"  {name}: {distance.split('/')[-1]} · {text[:64]}")
 
-count = len(missing) + len(raw)
+count = len(missing) + len(raw) + len(stale)
 print(f"Katalog{'':26}{'ok' if count == 0 else f'{count} offen'}")
 sys.exit(1 if count else 0)

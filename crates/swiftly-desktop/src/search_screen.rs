@@ -38,8 +38,22 @@ struct Parts {
     bar: Bar,
     pictures: u64,
     menu: crate::desk::TileMenu,
-    /// What Seerr knows and the own server does not (empty when nothing is connected).
-    seerr: Vec<swiftly_vm::SeerrTile>,
+    /// What Seerr knows and the own server does not, and the discover rails (`None` when nothing is connected).
+    seerr: Option<Box<SeerrView>>,
+}
+
+/// The core's Seerr search block and discover rails of the moment.
+#[derive(Clone, PartialEq)]
+struct SeerrView {
+    search: swiftly_vm::SeerrSearchInfo,
+    discover: swiftly_vm::SeerrDiscoverRails,
+}
+
+impl SeerrView {
+    /// Tiles of the search block are there (the library's empty state then stays away).
+    fn has_tiles(&self) -> bool {
+        self.search.groups.iter().any(|g| !g.tiles.is_empty())
+    }
 }
 
 struct Ctx {
@@ -90,16 +104,17 @@ fn section_title(cx: &Cx, m: &Metrics, s: &str, tracking: f32) -> Node {
     )
 }
 
-/// "Über Seerr anfragen" with its count and the tiles (`SearchView`): 40 below the library's groups (30 when there are
-/// none), the grid 18 under the heading.
+/// The Seerr search block "Noch nicht auf deinem Server" (`SearchView`): 40 below the library's groups (30 when there are
+/// none), drawn by `pages_screen::seerr_views` from the core's search info.
 fn seerr_block(
     cx: &Cx,
     env: &Env,
     m: &Metrics,
     ctx: &Ctx,
-    tiles: &[swiftly_vm::SeerrTile],
+    v: &SeerrView,
+    typed: bool,
     alone: bool,
-) -> Node {
+) -> Option<Node> {
     let kit = crate::detail_screen::Kit {
         cx,
         env,
@@ -108,24 +123,11 @@ fn seerr_block(
         icons: &ctx.icons,
     };
     let per = browse::grid(m, env.size.w).columns;
-    Node::vstack(
-        Align::Start,
-        Some(0.0),
-        vec![
-            Node::hstack(
-                Align::Center,
-                Some(8.0),
-                vec![
-                    section_title(cx, m, "Über Seerr anfragen", -0.484),
-                    Node::spacer(),
-                    browse::count_mark(cx, tiles.len() as i64, false),
-                ],
-            )
-            .padding(ins(if alone { 30.0 } else { 40.0 }, m.edge, 0.0, m.edge)),
-            crate::pages_screen::seerr_grid(&kit, tiles, per, "seerr")
-                .padding(ins(18.0, m.edge, 0.0, m.edge)),
-        ],
-    )
+    if typed {
+        crate::pages_screen::seerr_views::search_block(&kit, &v.search, per, alone)
+    } else {
+        crate::pages_screen::seerr_views::discover_rails(&kit, &v.discover)
+    }
 }
 
 fn recents_block(cx: &Cx, m: &Metrics, ctx: &Ctx, recents: &[String]) -> Node {
@@ -368,11 +370,12 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
     };
     match p.status.status {
         SearchStatus::Idle | SearchStatus::SignedOut => {
-            col.push(if p.recents.is_empty() {
-                wide(hint(), Alignment::TOP)
-            } else {
-                recents_block(cx, &m, ctx, &p.recents)
-            });
+            if !p.recents.is_empty() {
+                col.push(recents_block(cx, &m, ctx, &p.recents));
+            } else if m.form != Form::Desktop {
+                // The desktop field says what it is for; only touch and TV keep the hint.
+                col.push(wide(hint(), Alignment::TOP));
+            }
         }
         SearchStatus::Searching if p.results.groups.is_empty() => {
             let g = result_grid(&m, w);
@@ -397,7 +400,7 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
             .padding(ins(24.0, 0.0, 0.0, 0.0)),
         ),
         // With Seerr tiles to show the library's empty state stays away (the block below is what the search found).
-        SearchStatus::Empty if !p.seerr.is_empty() => {}
+        SearchStatus::Empty if p.seerr.as_ref().is_some_and(|v| v.has_tiles()) => {}
         SearchStatus::Empty => col.push(nothing(&p.recents)),
         _ => {
             let mut n = 0;
@@ -408,15 +411,18 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
             }
         }
     }
-    if !p.seerr.is_empty() && m.form != Form::Tv {
-        col.push(seerr_block(
+    if let (Some(v), false) = (&p.seerr, m.form == Form::Tv)
+        && let Some(block) = seerr_block(
             cx,
             env,
             &m,
             ctx,
-            &p.seerr,
+            v,
+            !p.text.trim().is_empty(),
             p.results.groups.is_empty(),
-        ));
+        )
+    {
+        col.push(block);
     }
     let bottom = if m.form == Form::Touch {
         touch::STRIP_HEIGHT + env.safe.bottom + 12.0
@@ -919,10 +925,14 @@ pub struct SearchScreen {
     requests: Vec<swiftly_vm::TileRequest>,
     /// Where the last right click was (the device list opens there).
     menu_at: swiftly_layout::Point,
-    /// The Seerr flow behind the block "Über Seerr anfragen"; none without a Seerr session.
-    flow: Option<crate::seerr_flow::Flow>,
+    /// The core's Seerr screens behind the block "Noch nicht auf deinem Server"; none without a Seerr session.
+    desk: Option<crate::seerr_desk::Desk>,
+    /// The typed term waits for its 300 ms before Seerr is asked.
+    seerr_wait: Option<(String, std::time::Instant)>,
     /// The term the flow was last given.
     flow_term: String,
+    /// The count of Seerr answers the last drawn parts held.
+    seerr_seen: u64,
     /// The Seerr tile that was tapped, once.
     seerr_tapped: Option<swiftly_seerr::models::SeerrHit>,
 }
@@ -997,7 +1007,7 @@ impl SearchScreen {
             },
             pictures: 0,
             menu: crate::desk::TileMenu::default(),
-            seerr: Vec::new(),
+            seerr: None,
         };
         let hub = Rc::clone(&ctx.art.hub);
         let ui = Ui::new(
@@ -1021,7 +1031,9 @@ impl SearchScreen {
             menu: crate::desk::TileMenu::default(),
             requests: Vec::new(),
             menu_at: swiftly_layout::Point::new(0.0, 0.0),
-            flow: None,
+            desk: None,
+            seerr_wait: None,
+            seerr_seen: 0,
             flow_term: String::new(),
             seerr_tapped: None,
         };
@@ -1173,13 +1185,14 @@ impl SearchScreen {
 
     /// Connects the block "Über Seerr anfragen" (the Mac's `model.seerr.searching`): what is typed in the field is
     /// asked of Seerr as well, after its own 300 ms.
-    pub fn set_seerr(&mut self, flow: crate::seerr_flow::Flow) {
-        self.flow = Some(flow);
+    pub fn set_seerr(&mut self, desk: crate::seerr_desk::Desk) {
+        desk.load_discover();
+        self.desk = Some(desk);
     }
 
     /// Whether the block is connected.
     pub fn has_seerr(&self) -> bool {
-        self.flow.is_some()
+        self.desk.is_some()
     }
 
     /// The Seerr title that was tapped, once (the shell opens its page).
@@ -1187,15 +1200,30 @@ impl SearchScreen {
         self.seerr_tapped.take()
     }
 
-    /// Hands the typed term to Seerr and takes its answers.
+    /// Hands the typed term to Seerr after its 300 ms (an empty term clears the block and shows the discover rails).
     fn sync_seerr(&mut self) {
-        let Some(f) = self.flow.as_mut() else { return };
+        let Some(d) = self.desk.clone() else { return };
+        self.seerr_seen = d.changed();
         let typed = self.field.editor.text().trim().to_owned();
+        let now = std::time::Instant::now();
         if typed != self.flow_term {
             self.flow_term = typed.clone();
-            f.search(&typed, std::time::Instant::now());
+            self.seerr_wait = Some((typed, now + crate::seerr_flow::SEARCH_WAIT));
         }
-        f.poll(std::time::Instant::now());
+        if let Some((term, at)) = self.seerr_wait.clone()
+            && now >= at
+        {
+            self.seerr_wait = None;
+            let lists = std::sync::Arc::clone(d.lists());
+            let term = if swiftly_rules::display_rules::search_term_fits(&term) {
+                term
+            } else {
+                String::new()
+            };
+            d.run(async move {
+                let _ = lists.search(term).await;
+            });
+        }
     }
 
     fn sync(&mut self) {
@@ -1236,11 +1264,12 @@ impl SearchScreen {
             },
             pictures: self.hub.stamp(),
             menu: self.menu.clone(),
-            seerr: self
-                .flow
-                .as_ref()
-                .map(|f| f.vm().discover().tiles.clone())
-                .unwrap_or_default(),
+            seerr: self.desk.as_ref().map(|d| {
+                Box::new(SeerrView {
+                    search: d.lists().search_info(),
+                    discover: d.lists().discover(),
+                })
+            }),
         });
     }
 
@@ -1315,11 +1344,30 @@ impl SearchScreen {
                         self.vm.send(SearchIntent::Pick { term: w.clone() });
                     }
                 }
-                if let Some(f) = &self.flow {
-                    for (i, t) in f.vm().discover().tiles.iter().enumerate() {
-                        if is(&format!("seerr:{i}")) {
-                            self.seerr_tapped = Some(t.hit.clone());
+                if let Some(d) = &self.desk {
+                    let lists = d.lists();
+                    for (g, group) in lists.search_info().groups.iter().enumerate() {
+                        for (i, t) in group.tiles.iter().enumerate() {
+                            if is(&format!("seerr-{g}:{i}")) {
+                                self.seerr_tapped =
+                                    Some(crate::pages_screen::seerr_views::hit_of(t));
+                            }
                         }
+                    }
+                    for (r, rail) in lists.discover().rails.iter().enumerate() {
+                        for (i, t) in rail.tiles.iter().enumerate() {
+                            if is(&format!("rail-{r}:{i}")) {
+                                self.seerr_tapped =
+                                    Some(crate::pages_screen::seerr_views::hit_of(t));
+                            }
+                        }
+                    }
+                    if is("seerr-retry") {
+                        let term = self.flow_term.clone();
+                        let lists = std::sync::Arc::clone(lists);
+                        d.run(async move {
+                            let _ = lists.search(term).await;
+                        });
                     }
                 }
                 for g in &self.vm.results().groups {
@@ -1354,6 +1402,7 @@ impl SearchScreen {
                 self.opened.push(id.to_owned());
                 self.vm.send(SearchIntent::Remember);
             }
+            Some(Entry::Load) => crate::desk::request_download(id),
             Some(Entry::Together) => self
                 .requests
                 .push(swiftly_vm::TileRequest::Together { id: id.to_owned() }),
@@ -1564,9 +1613,9 @@ impl SearchScreen {
             || self.ui.needs_frame()
             || self.field.focused
             || self
-                .flow
+                .desk
                 .as_ref()
-                .is_some_and(crate::seerr_flow::Flow::busy)
+                .is_some_and(|d| d.busy() || d.changed() != self.seerr_seen)
             || matches!(self.vm.status().status, SearchStatus::Searching)
     }
     /// The services the renderers read.

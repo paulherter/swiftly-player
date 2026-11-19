@@ -16,7 +16,7 @@ use swiftly_playback::playback_plan::PlaybackPlan;
 use swiftly_playback::sections::Segment;
 use swiftly_playback::track_mapping::{SubtitleFile, TrackImprint};
 use swiftly_playback::track_rule::{
-    self, AUDIO_KEY, Choice, SUBTITLE_KEY, Subtitle, SubtitleInput,
+    self, AUDIO_KEY, Choice, LanguageWishes, OriginalStep, SUBTITLE_KEY, Subtitle, SubtitleInput,
 };
 use swiftly_playback::trickplay::{DEFAULT_TARGET, Trickplay, TrickplayResponse};
 use swiftly_rules::buffer_level::BufferLevel;
@@ -52,6 +52,9 @@ pub struct StartSettings {
     pub subtitle_language: String,
     /// `utAuto`.
     pub automatic_subtitles: bool,
+    /// The language of the device as the system names it ("de-DE", "pt_BR"), `None` when the host
+    /// does not know it. The start language rule (`track_rule`) takes it after the settings.
+    pub device_language: Option<String>,
     /// The bitrate the profile reports (`BitratesLimit.of`).
     pub max_bitrate: i64,
     /// `pufferstufe`.
@@ -169,34 +172,49 @@ pub enum StartAnswer {
     Failed(ErrorKind),
 }
 
-/// The starting tracks of a title: remembered choice, then the server's default, then the
-/// settings; an order from another client wins (`TrackRule.start` with `ordered`).
-/// `audio_fallback`: the audio track already playing, used when no rule names one.
+/// The starting tracks of a title, by one rule for every host (`track_rule`): the choice by hand for
+/// the series or film, the audio language of the settings, the device language, the title's
+/// original-language track, then the server's default; an order from another client wins
+/// (`TrackRule.start` with `ordered`). Subtitles by the subtitle mode rules (off, forced,
+/// automatic) with the subtitle language of the settings, else the device language.
+/// `original_language`: the title's `OriginalLanguage`. `audio_fallback`: the audio track already
+/// playing, used when no rule names one.
+#[allow(clippy::too_many_arguments)]
 pub fn start_tracks(
     streams: &[MediaStream],
     server_defaults: (Option<i64>, Option<i64>),
     memory: Option<&dyn TrackMemoryStore>,
     title: &str,
     settings: &StartSettings,
+    original_language: Option<&str>,
     ordered: Option<TrackIndices>,
     audio_fallback: Option<i64>,
 ) -> (Option<i64>, i64) {
+    let device = settings
+        .device_language
+        .as_deref()
+        .filter(|d| !d.is_empty());
     let (remembered_audio, remembered_subtitle): (Option<TrackImprint>, Option<Choice>) = memory
         .map_or((None, None), |m| {
             let audio = track_rule::read_audio(&m.load(AUDIO_KEY), title);
             let subtitle = track_rule::read_choice(&m.load(SUBTITLE_KEY), title);
             (audio, subtitle)
         });
-    let audio = track_rule::audio(
+    let pick = track_rule::audio_pick(
         streams,
         remembered_audio.as_ref(),
-        &settings.audio_language,
+        &LanguageWishes {
+            setting: &settings.audio_language,
+            device,
+            original: OriginalStep::On(original_language),
+        },
         server_defaults.0,
         ordered.and_then(|o| o.audio),
-    )
+        &|_| true,
+    );
     // The track the engine already plays stands in when no rule names one (it also feeds the
     // subtitle rule, as `avTracksApply` always did).
-    .or(audio_fallback);
+    let audio = pick.and_then(|p| p.index).or(audio_fallback);
     let choice = track_rule::subtitle(
         streams,
         &SubtitleInput {
@@ -204,8 +222,10 @@ pub fn start_tracks(
             server_default: server_defaults.1,
             automatic: settings.automatic_subtitles,
             audio_index: audio,
+            audio_by_device: pick.is_some_and(|p| p.by == track_rule::AudioBy::Device),
             audio_wish: &settings.audio_language,
             preferred_language: &settings.subtitle_language,
+            device_language: device,
             ordered: ordered.and_then(|o| o.subtitle),
         },
     );
@@ -227,6 +247,19 @@ fn segments_of(value: &serde_json::Value) -> Vec<Segment> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Whether the title lists `source` as one of several versions (a single version names no title of its own).
+fn lists_version(title: &serde_json::Value, source: &str) -> bool {
+    let Some(all) = title.get("MediaSources").and_then(|v| v.as_array()) else {
+        return false;
+    };
+    all.len() > 1
+        && all.iter().any(|m| {
+            m.get("Id")
+                .and_then(|id| id.as_str())
+                .is_some_and(|id| id.eq_ignore_ascii_case(source))
+        })
 }
 
 /// `Chapters` of an item answer, cleaned for the bar (`ChapterBar.usable`).
@@ -271,21 +304,52 @@ impl<T: HttpTransport + 'static> Server<T> {
         }
     }
 
-    async fn trickplay_of(&self, item_id: &str, source: Option<&str>) -> Option<Trickplay> {
-        match self {
-            Self::Jelly(c) => {
-                let s = c.current_session()?;
-                if s.kind == ServerKind::Emby {
-                    return None;
-                }
-                let v = c
+    /// The title with its chapters and preview-sheet information, as raw JSON: one request that the chapters and the
+    /// trickplay lookups of a start (and of the host's separate calls a moment apart) share while it is on its way ([`crate::prefetch::extras`]).
+    async fn title_extras(
+        &self,
+        scope: &str,
+        item_id: &str,
+    ) -> Option<std::sync::Arc<serde_json::Value>> {
+        let Self::Jelly(c) = self else {
+            return None;
+        };
+        let s = c.current_session()?;
+        // Emby knows no trickplay.
+        let fields = if s.kind == ServerKind::Emby {
+            "Chapters"
+        } else {
+            "Chapters,Trickplay"
+        };
+        let (client, id) = (std::sync::Arc::clone(c), item_id.to_owned());
+        crate::prefetch::extras(&self.who(scope).unwrap_or_default(), item_id, move || {
+            Box::pin(async move {
+                client
                     .raw_json(
-                        &format!("Items/{item_id}"),
-                        &[("userId", s.user_id.as_str()), ("Fields", "Trickplay")],
+                        &format!("Items/{id}"),
+                        &[("userId", s.user_id.as_str()), ("Fields", fields)],
                     )
                     .await
-                    .ok()?;
-                serde_json::from_value::<TrickplayResponse>(v)
+                    .ok()
+                    .map(std::sync::Arc::new)
+            })
+        })
+        .await
+    }
+
+    async fn trickplay_of(
+        &self,
+        scope: &str,
+        item_id: &str,
+        source: Option<&str>,
+    ) -> Option<Trickplay> {
+        match self {
+            Self::Jelly(c) => {
+                if c.current_session()?.kind == ServerKind::Emby {
+                    return None;
+                }
+                let v = self.title_extras(scope, item_id).await?;
+                serde_json::from_value::<TrickplayResponse>((*v).clone())
                     .ok()?
                     .of_target(source, DEFAULT_TARGET)
             }
@@ -293,31 +357,28 @@ impl<T: HttpTransport + 'static> Server<T> {
         }
     }
 
-    async fn chapters_for(&self, item_id: &str, source: Option<&str>) -> Vec<Chapter> {
+    async fn chapters_for(&self, scope: &str, item_id: &str, source: Option<&str>) -> Vec<Chapter> {
         match self {
             Self::Jelly(c) => {
-                let Some(s) = c.current_session() else {
-                    return Vec::new();
-                };
-                let query = |id: String| {
-                    let user = s.user_id.clone();
-                    async move {
-                        c.raw_json(
-                            &format!("Items/{id}"),
-                            &[("userId", user.as_str()), ("Fields", "Chapters")],
+                let title = self.title_extras(scope, item_id).await;
+                // Each version of a movie that the server lists next to others is a title of its own, and its source
+                // id is that title's id (a director's cut has other chapters). A source id of a title with one
+                // version is not an item id (the server answers 404, and Emby's `mediasource_…` never is one): the
+                // title's own chapters are the answer then.
+                if let (Some(src), Some(listed)) = (source, title.as_deref())
+                    && !src.eq_ignore_ascii_case(item_id)
+                    && lists_version(listed, src)
+                    && let Some(s) = c.current_session()
+                    && let Ok(found) = c
+                        .raw_json(
+                            &format!("Items/{src}"),
+                            &[("userId", s.user_id.as_str()), ("Fields", "Chapters")],
                         )
                         .await
-                        .ok()
-                        .map(|v| chapters_of(&v))
-                    }
-                };
-                // The version asks first: each version of a movie is a title of its own.
-                if let Some(src) = source.filter(|x| !x.eq_ignore_ascii_case(item_id))
-                    && let Some(found) = query(src.to_owned()).await
                 {
-                    return found;
+                    return chapters_of(&found);
                 }
-                query(item_id.to_owned()).await.unwrap_or_default()
+                title.as_deref().map(chapters_of).unwrap_or_default()
             }
             Self::Plex(c) => MediaServer::chapter(&**c, item_id, source).await,
         }
@@ -341,6 +402,51 @@ impl<T: HttpTransport + 'static> Server<T> {
                 swiftly_jellyfin::token_name(ServerKind::Plex),
             ),
         }
+    }
+
+    /// The account behind this server object, for the page's short-term memory ([`crate::prefetch`]); Jellyfin only.
+    pub(crate) fn who(&self, scope: &str) -> Option<String> {
+        match self {
+            Self::Jelly(c) => Some(format!(
+                "{scope}|{}|{}",
+                c.base_url(),
+                c.current_session().map(|s| s.user_id).unwrap_or_default()
+            )),
+            Self::Plex(_) => None,
+        }
+    }
+
+    /// The plan the detail page asked for moments ago, when it is exactly what this start would ask: the same
+    /// version choice, bitrate and engine profile, and a title that needs no transcode of its own
+    /// (AV1 Dolby Vision 10.0 without a decoder, profile 5 without a Dolby Vision decoder).
+    fn page_plan(
+        &self,
+        who: Option<&str>,
+        request: &StartRequest,
+        now: f64,
+    ) -> Option<PlaybackPlan> {
+        if !matches!(
+            request.flavour,
+            Flavour::Aether | Flavour::Media3 | Flavour::Mpv
+        ) {
+            return None;
+        }
+        let plan = crate::prefetch::plan(
+            who?,
+            &request.item_id,
+            request.settings.max_bitrate,
+            request.source_id.as_deref(),
+            now,
+        )?;
+        let host = HostDecoders {
+            hardware_av1: request.hardware_av1,
+            no_dolby_vision: request.no_dolby_vision_decoder,
+        };
+        let needs_transcode = plan.method != DeliveryMethod::Transcode
+            && plan.source.as_ref().is_some_and(|s| {
+                swiftly_playback::dolby_vision::needs_server_transcode(s, request.flavour, host)
+            });
+        (!needs_transcode).then_some(plan)
     }
 
     async fn plan_with(
@@ -446,16 +552,26 @@ impl<T: HttpTransport + 'static> Server<T> {
     /// The whole start (`PlayRequest.start`).
     pub(crate) async fn start(
         &self,
+        scope: &str,
         request: &StartRequest,
         memory: Option<&dyn TrackMemoryStore>,
         words: &crate::tile::Words,
         language: &str,
+        clock: &dyn crate::host::Clock,
     ) -> StartAnswer {
         let downloaded = request.downloaded.is_some();
         let open = request.ask_versions && request.source_id.is_none();
         // The full title: the list entry has no `MediaSources`. A copy on the device plays
         // without the server, so a title that cannot be fetched is not an error there.
-        let fetched = self.item(&request.item_id).await;
+        let who = self.who(scope);
+        // The page the title was opened from asked for it moments ago: that answer is used instead of asking again.
+        let remembered = who
+            .as_deref()
+            .and_then(|who| crate::prefetch::item(who, &request.item_id, clock.now()));
+        let fetched = match remembered {
+            Some(item) => Ok(item),
+            None => self.item(&request.item_id).await,
+        };
         let item = match fetched {
             Ok(item) => item,
             Err(e) if !downloaded => {
@@ -493,6 +609,8 @@ impl<T: HttpTransport + 'static> Server<T> {
                 file.source.as_deref(),
                 file.video_codec.as_deref(),
             )
+        } else if let Some(plan) = self.page_plan(who.as_deref(), request, clock.now()) {
+            plan
         } else {
             match self
                 .plan_with(
@@ -540,27 +658,56 @@ impl<T: HttpTransport + 'static> Server<T> {
             memory,
             &title,
             &request.settings,
+            item.original_language.as_deref(),
             request.ordered,
             None,
         );
-        // A transcode carries no bitmap subtitle unless the request names it: ask again with the chosen
-        // track (burned in by the server). Direct play and text tracks keep the first plan.
-        if request.downloaded.is_none()
-            && let Some(again) = self
-                .replan(
+        // What the start still needs, all at once (they depend only on the title and the chosen version): a transcode
+        // carries no bitmap subtitle unless the request names it, so it is asked again with the chosen track (burned in
+        // by the server; direct play and text tracks keep the first plan); the episode after this one; the skip
+        // sections, preview sheets and chapters (a copy on the device brings its stored sections and has no others).
+        let host_decoders = HostDecoders {
+            hardware_av1: request.hardware_av1,
+            no_dolby_vision: request.no_dolby_vision_decoder,
+        };
+        let source_id = plan.media_source_id.clone();
+        let (again, next, (sections, trickplay, chapters)) = futures_util::future::join3(
+            async {
+                if request.downloaded.is_some() {
+                    return None;
+                }
+                self.replan(
                     &request.item_id,
                     request.flavour,
-                    HostDecoders {
-                        hardware_av1: request.hardware_av1,
-                        no_dolby_vision: request.no_dolby_vision_decoder,
-                    },
+                    host_decoders,
                     request.settings.max_bitrate,
                     &plan,
                     &streams,
                     subtitle,
                 )
                 .await
-        {
+            },
+            self.next_of(&item, &request.next),
+            async {
+                if let Some(file) = &request.downloaded {
+                    // Stored sections first; offline there are no others.
+                    let sections = match file.sections.clone() {
+                        Some(s) => s,
+                        None => self.sections_of(&item.id).await,
+                    };
+                    (sections, None, Vec::new())
+                } else {
+                    futures_util::future::join3(
+                        self.sections_of(&item.id),
+                        self.trickplay_of(scope, &item.id, source_id.as_deref()),
+                        self.chapters_for(scope, &item.id, source_id.as_deref()),
+                    )
+                    .await
+                }
+            },
+        )
+        .await;
+        if let Some(again) = again {
             plan = again;
         }
         // A transcode (HLS) carries no text track: the server delivers it as a file, which the players load as one.
@@ -585,25 +732,11 @@ impl<T: HttpTransport + 'static> Server<T> {
                 ),
             )
         };
-        let next = self.next_of(&item, &request.next).await;
-        let (sections, trickplay, chapters) = if let Some(file) = &request.downloaded {
-            // Stored sections first; offline there are no others.
-            let stored = file.sections.clone();
-            let sections = match stored {
-                Some(s) => s,
-                None => self.sections_of(&item.id).await,
-            };
-            (sections, None, Vec::new())
-        } else {
-            let source_id = plan.media_source_id.clone();
-            let (sections, trickplay, chapters) = futures_util::future::join3(
-                self.sections_of(&item.id),
-                self.trickplay_of(&item.id, source_id.as_deref()),
-                self.chapters_for(&item.id, source_id.as_deref()),
-            )
-            .await;
-            (sections, trickplay, chapters)
-        };
+        // The page's answers served this start. What is watched from here changes the resume point, so a later start
+        // asks the server again instead of taking the title as it was.
+        if let Some(who) = who.as_deref() {
+            crate::prefetch::forget(who, &request.item_id);
+        }
         StartAnswer::Ready(Box::new(ReadyStart {
             plan,
             item,
@@ -650,10 +783,12 @@ pub async fn play_start<T: HttpTransport + 'static>(
     let server = server_of(&transport, host, account)?;
     let mut answer = server
         .start(
+            &crate::prefetch::scope(host),
             request,
             memory,
             &crate::tile::Words::new(host.locale.clone()),
             host.locale.language(),
+            host.clock.as_ref(),
         )
         .await;
     if let StartAnswer::Ready(ready) = &mut answer {
@@ -711,7 +846,7 @@ pub async fn play_trickplay<T: HttpTransport + 'static>(
     source: Option<&str>,
 ) -> Result<Option<Trickplay>, ErrorKind> {
     Ok(server_of(&transport, host, account)?
-        .trickplay_of(item_id, source)
+        .trickplay_of(&crate::prefetch::scope(host), item_id, source)
         .await)
 }
 
@@ -727,7 +862,7 @@ pub async fn play_chapters<T: HttpTransport + 'static>(
     source: Option<&str>,
 ) -> Result<Vec<Chapter>, ErrorKind> {
     Ok(server_of(&transport, host, account)?
-        .chapters_for(item_id, source)
+        .chapters_for(&crate::prefetch::scope(host), item_id, source)
         .await)
 }
 
@@ -798,4 +933,20 @@ pub async fn play_next<T: HttpTransport + 'static>(
     Ok(server_of(&transport, host, account)?
         .next_of(item, source)
         .await)
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::lists_version;
+    use serde_json::json;
+
+    #[test]
+    fn only_a_source_listed_next_to_others_can_be_a_title_of_its_own() {
+        let one = json!({"MediaSources": [{"Id": "s0"}]});
+        let two = json!({"MediaSources": [{"Id": "a"}, {"Id": "B"}]});
+        assert!(!lists_version(&one, "s0"), "a single version is the title");
+        assert!(lists_version(&two, "b"), "ids compare without case");
+        assert!(!lists_version(&two, "c"), "not listed");
+        assert!(!lists_version(&json!({}), "a"), "no sources named");
+    }
 }

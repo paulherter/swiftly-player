@@ -187,5 +187,11 @@ fn gpu_layer_matches_software() {
         "gpu vs software on {}: max {max}, mean {mean:.4}",
         ctx.adapter_info().name
     );
+    if let Some(dir) = std::env::var_os("SWIFTLY_PROOF_DIR") {
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        img.write_png(&dir.join("gpu.png")).unwrap();
+        oracle.write_png(&dir.join("software.png")).unwrap();
+    }
     assert!(max <= 6, "gpu video layer differs from the oracle by {max}");
 }

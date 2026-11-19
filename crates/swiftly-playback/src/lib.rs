@@ -17,6 +17,7 @@ pub mod first_frame;
 pub mod handoff_card;
 pub mod handoff_flow;
 pub mod header_scroll;
+pub mod iso_639;
 pub mod media_server;
 pub mod offering_layer;
 pub mod original_audio;

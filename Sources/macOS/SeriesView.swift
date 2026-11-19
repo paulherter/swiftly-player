@@ -32,7 +32,6 @@ struct SeriesView: View {
     @State private var loadTitle = ""
     /// The download selection: whole series, seasons, episodes.
     @State private var selectionOpen = false
-    @State private var versionPick: VersionPick?
     /// For the header image, which is saved along with a download on the Mac.
     @Environment(\.displayScale) private var pixelMetric
     @State private var pagesWidth: CGFloat = 0
@@ -53,6 +52,8 @@ struct SeriesView: View {
     private var current: Item { page?.item ?? series }
     private var button: SeriesButtonPart? { page?.model.button }
     private var seasonRows: [SwiftlyCore.SeasonRow] { page?.model.seasons.seasons ?? [] }
+    /// **The season button's chevron is the core's rule** (`SeasonsPart.chevron`), the same value as on iPhone and Apple TV.
+    private var seasonsOffered: Bool { page?.model.seasons.chevron ?? false }
     private var selectedSeasonID: String? { page?.model.seasons.selected }
     private var more: MorePart? { page?.model.more }
     private var extras: [Item] { (more?.extras ?? []).map(Item.init(rust:)) }
@@ -160,10 +161,10 @@ struct SeriesView: View {
                         // The season choice lives in the first tab; a click on the open first tab opens the list.
                         firstLabel: seasons.isEmpty ? nil
                             : (selected?.name ?? String(localized: "Staffel")),
-                        firstChevron: seasons.count > 1,
+                        firstChevron: seasonsOffered,
                         chevronOpen: seasonOpen,
                         onReselect: {
-                            if seasons.count > 1 { withAnimation(Theme.leap) { seasonOpen.toggle() } }
+                            if seasonsOffered { withAnimation(Theme.leap) { seasonOpen.toggle() } }
                         })
                     .padding(.top, 34)
 
@@ -249,11 +250,6 @@ struct SeriesView: View {
         .onChange(of: model.downloadButtonShow) { _, _ in page?.send(options: model) }
         .onChange(of: PlayOutputs.shared.targets.map(\.id)) { _, _ in page?.send(options: model) }
         .onChange(of: extras.isEmpty) { _, none in if none && tab == .extras { tab = .episodes } }
-        .versionPick($versionPick) { choice, version in
-            guard let page else { return }
-            page.launch(page.episodeAction(choice.itemId, pick: version.id), since: choice.since,
-                        controls: controls) { versionPick = $0 }
-        }
     }
 
     // MARK: Sections
@@ -279,7 +275,17 @@ struct SeriesView: View {
             let folks = (more?.cast ?? []).map(Person.init(core:))
             if folks.isEmpty {
                 if more?.similarLoads == true {
-                    Color.clear.frame(height: 200)
+                    // The row's final shape (round pictures, name lines), not a blank gap.
+                    HStack(alignment: .top, spacing: 22) {
+                        ForEach(0 ..< 6, id: \.self) { _ in
+                            VStack(spacing: 8) {
+                                LoadField(corner: 42).frame(width: 84, height: 84)
+                                LoadField(corner: 4).frame(width: 64, height: 12)
+                            }
+                        }
+                    }
+                    .frame(height: 200, alignment: .top)
+                    .accessibilityHidden(true)
                 } else {
                     EmptyHint(text: "Keine Besetzung hinterlegt.")
                         .frame(height: 200)
@@ -293,7 +299,13 @@ struct SeriesView: View {
 
         case .similarOne:
             if similar.isEmpty, more?.similarLoads == true {
-                Color.clear.frame(height: 200)
+                HStack(alignment: .top, spacing: Theme.tileSpacing) {
+                    ForEach(0 ..< 5, id: \.self) { _ in
+                        LoadField().frame(width: Theme.tileWidth, height: 200)
+                    }
+                }
+                .frame(height: 200, alignment: .top)
+                .accessibilityHidden(true)
             } else if similar.isEmpty, more?.similarFailed == true {
                 DisturbHint(model: model) { page?.model.refresh() }
                     .frame(height: 200)
@@ -405,7 +417,7 @@ struct SeriesView: View {
 
     private func startEpisode(_ id: String) {
         guard let page else { return }
-        page.launch(page.episodeAction(id, pick: nil), since: nil, controls: controls) { versionPick = $0 }
+        page.launch(page.episodeAction(id, pick: nil), since: nil, controls: controls)
     }
 }
 
@@ -418,16 +430,12 @@ extension SeriesCore {
     }
 
     /// What a press on Play (or a menu entry that plays) does, as the core decides it. `since` overrides the
-    /// core's start second; `choose` shows the version list.
-    func launch(_ action: PlayAction?, since: Double? = nil, controls: PlayControls,
-                choose: (VersionPick) -> Void) {
+    /// core's start second.
+    func launch(_ action: PlayAction?, since: Double? = nil, controls: PlayControls) {
         guard let action else { return }
         switch action {
         case .wait:
             return
-        case .choose(let id, let at, let versions):
-            choose(VersionPick(heading: String(localized: "Fassung wählen"), options: versions,
-                               since: since ?? at, itemId: id))
         case .resolve(let id, let at):
             // The list entry has no `MediaSources`: the player fetches and asks itself.
             guard let episode = item(id) else { return }
@@ -542,7 +550,7 @@ struct TabButton: View {
 /// would be the obvious choice and is wrong for that reason: it brings system
 /// metrics, system corners and a system material.
 /// The season button of the design: 34 high, radius 8, surface fill, name 15/600 and a caret.
-fileprivate struct SeasonPill: View {
+struct SeasonPill: View {
     let label: String
     let opened: Bool
     let pick: () -> Void

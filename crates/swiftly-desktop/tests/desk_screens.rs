@@ -348,7 +348,7 @@ fn library_filter_and_sort_open_as_anchored_popovers() {
 }
 
 #[test]
-fn library_right_click_opens_a_popover_with_the_macs_entries() {
+fn library_right_click_opens_a_popover_with_the_macs_entries_and_laden() {
     let mut s = shell();
     let mut now = 0.0;
     run(&mut s, &mut now, 300.0);
@@ -371,9 +371,10 @@ fn library_right_click_opens_a_popover_with_the_macs_entries() {
         l.iter()
             .any(|t| t.starts_with("Abspielen") || t.starts_with("Fortsetzen"))
     );
+    // Windows and Linux have no download button on a tile: the right-click menu carries "Laden" (a film, downloads on).
     assert!(
-        !l.iter().any(|t| t.starts_with("Laden")),
-        "the Mac has no Laden entry"
+        l.iter().any(|t| t.starts_with("Laden")),
+        "no Laden entry: {l:?}"
     );
 }
 

@@ -74,6 +74,21 @@ fn step(name: &str) -> String {
     text(json!({ "step": name }))
 }
 
+/// Every `step` word the answers of this flow carry; a UI compares against these (`crates/swiftly-uniffi/data/core-words.json`).
+/// `words_tests` fails when a word is sent that is not listed, or listed and never sent.
+#[cfg(test)]
+pub(crate) const STEP_WORDS: [&str; 9] = [
+    "waiting",
+    "profiles",
+    "servers",
+    "plexUnreachable",
+    "expired",
+    "failed",
+    "done",
+    "pinWrong",
+    "unreachable",
+];
+
 impl LegacyPlexSignIn {
     /// `plexFail`: a network failure is its own page, anything else carries the sentence.
     fn fail_text(&self, message: String) -> String {
@@ -315,5 +330,39 @@ impl LegacyPlexSignIn {
     /// `Kern.plexReset`: forgets everything the flow holds.
     pub fn reset(&self) {
         self.reset_flow();
+    }
+}
+
+#[cfg(test)]
+mod words_tests {
+    use super::STEP_WORDS;
+
+    /// The step words in the production part of this file: `"step": "x"` and `step("x")`.
+    fn sent_words() -> Vec<String> {
+        let source = include_str!("legacy.rs");
+        let production = source
+            .split("#[cfg(test)]\nmod words_tests")
+            .next()
+            .unwrap_or(source);
+        let mut found = Vec::new();
+        for needle in ["\"step\": \"", "step(\""] {
+            let mut rest = production;
+            while let Some(at) = rest.find(needle) {
+                rest = &rest[at + needle.len()..];
+                if let Some(end) = rest.find('"') {
+                    found.push(rest[..end].to_owned());
+                }
+            }
+        }
+        found.sort();
+        found.dedup();
+        found
+    }
+
+    #[test]
+    fn step_words_match_what_is_sent() {
+        let mut listed: Vec<String> = STEP_WORDS.iter().map(|w| (*w).to_owned()).collect();
+        listed.sort();
+        assert_eq!(sent_words(), listed);
     }
 }

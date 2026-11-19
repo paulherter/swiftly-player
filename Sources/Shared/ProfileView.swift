@@ -28,6 +28,9 @@ struct ProfileView: View {
     /// without (new server), once with (another account on a known server).
     @State private var serverTarget: ServerRoute?
     @State private var log: LogFile?
+    /// The Seerr rows (Meine Anfragen, Meine Meldungen, Verwaltung): the core lists what the account may open.
+    /// The server page row (Verwaltung), for an administrator of a Jellyfin server.
+    @State private var management = ManagementEntryFlow()
     /// Someone tapped "Add server"; see there. Another account on a server we are
     /// not currently connected to, from the plus on its card.
 
@@ -71,6 +74,16 @@ struct ProfileView: View {
                         .animation(Theme.reveal, value: SupportModel.shared.isSupporter)
                         .animation(Theme.reveal, value: lookEntry)
                     }
+
+                    // **One entry for requests, reports and the server**: the core decides which one (or none).
+                    Group {
+                        if let entry = management.entry {
+                            Color.clear.frame(height: Theme.cardGap)
+                            CardView { ManagementEntryRow(entry: entry) }
+                        }
+                    }
+                    .transition(.opacity)
+                    .animation(Theme.reveal, value: management.entry)
 
                     // 18 as between all other cards on this page; the only gap here used to be 20.
                     Color.clear.frame(height: Theme.cardGap)
@@ -219,6 +232,7 @@ struct ProfileView: View {
         // **If the page opens in the middle of an account switch** (experiment
         // `experiment-glas`), it finishes immediately: new account active, profile
         // picture in place. See `AccountSwitchTransition.complete`.
+        .task { await management.load(model) }
         .onAppear {
             AccountSwitchTransition.shared.complete()
             AccountSwitchTransition.note("profil offen: angemeldet \(model.session?.userName ?? "-")")

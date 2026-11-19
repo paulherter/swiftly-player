@@ -9,9 +9,13 @@ struct SwiftlyApp: App {
             #if BETA_REDIRECT
             BetaRedirectView()
             #else
+            #if DEBUG
+            if let scene = PlayerMenuPreview.requested { PlayerMenuPreview(scene: scene) } else { RootView().font(.app(size: 17)) }
+            #else
             RootView()
                 // Text without its own font is Inter too, not SF.
                 .font(.app(size: 17))
+            #endif
             #endif
         }
             // **Without this a background download is left hanging.**

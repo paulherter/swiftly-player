@@ -13,6 +13,9 @@ public final class SeriesModel {
     @ObservationIgnored private let vm: SeriesVm
     @ObservationIgnored private let seen: UInt64
 
+    /// The series' TMDB id (`ProviderIds.Tmdb`), once the series is loaded; the Seerr screens key on it.
+    public func tmdbId() -> Int64? { vm.tmdbId() }
+
     public init(vm: SeriesVm) {
         self.vm = vm
         self.seen = vm.version()
@@ -51,6 +54,12 @@ public final class SeriesModel {
     public func playNext(pick: String? = nil) -> PlayAction { vm.playNext(pick: pick) }
     /// What a tap on an episode does.
     public func playEpisode(_ id: String, pick: String? = nil) -> PlayAction { vm.playEpisode(id: id, pick: pick) }
+
+    /// The versions a long press on the main button lists (the next episode's), the default marked; empty when there is nothing to choose.
+    public func versionsNext() -> [VersionOption] { vm.versionsNext() }
+
+    /// The same for one episode of the list.
+    public func versionsOf(_ id: String) -> [VersionOption] { vm.versionsOf(id: id) }
 
     /// Sends `load` and returns when seasons, the main button, the first episodes and the extra rows have
     /// settled (`true`), or after `timeout` / on cancel (`false`). Independent of `observe()`.

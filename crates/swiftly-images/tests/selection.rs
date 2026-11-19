@@ -21,6 +21,55 @@ fn item(json: &str) -> Item {
     serde_json::from_str(json).expect("item json")
 }
 
+/// An episode that names its series but not the series' poster tag (the same cause as a film without a `Primary`
+/// tag: a catalog plugin, an endpoint that leaves the field out) still gets the series poster, untagged. Its own
+/// image is a 16:9 still, so it must not win over the series poster.
+#[test]
+fn episode_without_series_poster_tag_gets_the_untagged_series_poster() {
+    for json in [
+        r#"{"Id":"e1","Name":"Folge","Type":"Episode","SeriesId":"s1"}"#,
+        r#"{"Id":"e1","Name":"Folge","Type":"Episode","SeriesId":"s1","ImageTags":{"Primary":"still"}}"#,
+    ] {
+        let url = ImageSelection::portrait(&item(json), &jellyfin(), 480).expect("poster");
+        assert!(url.path().contains("/Items/s1/Images/Primary"), "{url}");
+        let q = url.query().unwrap_or_default();
+        assert!(q.contains("maxHeight=480") && !q.contains("tag="), "{url}");
+    }
+    // The tag goes in when the server names it, and an episode without a series stays without a guess.
+    let tagged = item(
+        r#"{"Id":"e1","Name":"Folge","Type":"Episode","SeriesId":"s1","SeriesPrimaryImageTag":"sp"}"#,
+    );
+    let url = ImageSelection::portrait(&tagged, &jellyfin(), 480).expect("poster");
+    assert!(
+        url.path().contains("/Items/s1/") && url.query().unwrap_or_default().contains("tag=sp")
+    );
+    let orphan = item(r#"{"Id":"e1","Name":"Folge","Type":"Episode"}"#);
+    assert_eq!(ImageSelection::portrait(&orphan, &jellyfin(), 480), None);
+}
+
+/// The head of a page never gets a guessed address: a title with no image at all (nothing tagged) shows the page's
+/// placeholder, not a picture the server answers with 404. A poster the item names by a tag still serves as head.
+#[test]
+fn header_fallback_has_no_guess_for_a_title_without_any_image() {
+    let a = jellyfin();
+    for json in [
+        r#"{"Id":"m1","Name":"F","Type":"Movie"}"#,
+        r#"{"Id":"m1","Name":"F","Type":"Movie","ImageTags":{}}"#,
+        r#"{"Id":"s1","Name":"S","Type":"Series"}"#,
+        r#"{"Id":"e1","Name":"E","Type":"Episode","SeriesId":"s1"}"#,
+    ] {
+        let title = item(json);
+        assert_eq!(
+            ImageSelection::header_with_fallback(&title, None, &a, 1200),
+            None,
+            "{json}"
+        );
+    }
+    let tagged = item(r#"{"Id":"m1","Name":"F","Type":"Movie","ImageTags":{"Primary":"pp"}}"#);
+    let url = ImageSelection::header_with_fallback(&tagged, None, &a, 1200).expect("poster");
+    assert!(url.query().unwrap_or_default().contains("tag=pp"));
+}
+
 // MARK: Landscape: the chain
 
 #[test]
@@ -100,6 +149,40 @@ fn film_poster() {
     let film = item(r#"{"Id":"m1","Name":"Film","ImageTags":{"Primary":"pp"}}"#);
     let url = ImageSelection::portrait(&film, &jellyfin(), 480).expect("url");
     assert!(url.path().contains("/Items/m1/Images/Primary"));
+}
+
+/// A title from a catalog plugin on an endpoint that names no `Primary` tag (Gelato-like): the poster address
+/// is still built, untagged, and it is the same one the library grid gets for the same item.
+#[test]
+fn poster_without_primary_tag_is_untagged_not_missing() {
+    for json in [
+        r#"{"Id":"m1","Name":"Last Holiday","Type":"Movie"}"#,
+        r#"{"Id":"m1","Name":"Last Holiday","Type":"Movie","ImageTags":{}}"#,
+        r#"{"Id":"m1","Name":"Last Holiday","Type":"Movie","ImageTags":{"Backdrop":"b"}}"#,
+    ] {
+        let url = ImageSelection::portrait(&item(json), &jellyfin(), 480).expect("poster");
+        assert!(url.path().contains("/Items/m1/Images/Primary"), "{url}");
+        let q = url.query().unwrap_or_default();
+        assert!(q.contains("maxHeight=480") && !q.contains("tag="), "{url}");
+    }
+    let series = item(r#"{"Id":"s1","Name":"S","Type":"Series"}"#);
+    assert!(ImageSelection::portrait(&series, &jellyfin(), 480).is_some());
+    // The tag still goes in when the server names it.
+    let tagged = item(r#"{"Id":"m1","Name":"F","Type":"Movie","ImageTags":{"Primary":"pp"}}"#);
+    let url = ImageSelection::portrait(&tagged, &jellyfin(), 480).expect("poster");
+    assert!(url.query().unwrap_or_default().contains("tag=pp"));
+    // No guess for what has no poster of its own: an episode without tags, a person, an untyped item.
+    for json in [
+        r#"{"Id":"f1","Name":"E","Type":"Episode"}"#,
+        r#"{"Id":"p1","Name":"P","Type":"Person"}"#,
+        r#"{"Id":"b1","Name":"B","Type":"BoxSet"}"#,
+        r#"{"Id":"x","Name":"X"}"#,
+    ] {
+        assert_eq!(
+            ImageSelection::portrait(&item(json), &jellyfin(), 480),
+            None
+        );
+    }
 }
 
 // MARK: Watched fraction

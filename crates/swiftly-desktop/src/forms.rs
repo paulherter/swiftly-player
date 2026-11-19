@@ -549,6 +549,9 @@ pub fn setting_group_at(
         tracking: -0.2,
         uppercase: false,
     };
+    // An untitled group has no heading to carry the gap above it, so the whole group takes it (the title's own
+    // padding would be missing: the groups under "Wiedergabe" and the Seerr rows stood flush against the one above).
+    let lift = if title.is_empty() { top } else { 0.0 };
     let head = if title.is_empty() {
         Node::fixed(0.0, 0.0)
     } else {
@@ -562,15 +565,23 @@ pub fn setting_group_at(
         )
         .padding(ins(top, 0.0, 10.0, 0.0))
     };
-    wide(
+    let group = wide(
         Node::vstack(
             Align::Start,
             Some(0.0),
             vec![wide(head, Alignment::LEADING), card_view_at(rows, inset)],
         ),
         Alignment::TOP_LEADING,
-    )
+    );
+    if lift > 0.0 {
+        group.padding(ins(lift, 0.0, 0.0, 0.0))
+    } else {
+        group
+    }
 }
+
+/// The one gap between two groups of a settings page (an untitled group sits this far below the one above).
+pub const GROUP_GAP: f32 = 18.0;
 
 /// `PrimaryButtonStyle` (white, 52 high) or `SecondaryButtonStyle` (area colour; `accent` writes the label in the accent).
 #[allow(clippy::too_many_arguments)]
@@ -874,7 +885,7 @@ pub fn page(
             env,
             f,
             title,
-            18.0,
+            GROUP_GAP,
             Cols::One,
             vec![vec![col]],
             vec![],
@@ -992,6 +1003,17 @@ pub fn centred_page(cx: &Cx, icons: &Icons, f: &Fm, title: &str, body: Vec<Node>
         .background(Node::rect(color(colour::REASON), 0.0), Alignment::CENTER)
 }
 
+/// The width of one column of [`settings_page`], the gap between two and whether there are two.
+pub fn column_layout(env: &Env, cols: Cols) -> (f32, f32, bool) {
+    let avail = (env.size.w - 72.0).max(200.0);
+    match cols {
+        Cols::Fixed if avail >= 560.0 => (((avail.min(964.0) - 24.0) / 2.0).floor(), 24.0, true),
+        Cols::Equal if avail >= 700.0 => (((avail.min(1366.0) - 72.0) / 2.0).floor(), 72.0, true),
+        Cols::Fixed | Cols::Equal => (avail.min(640.0), 0.0, false),
+        Cols::One => (avail.min(700.0), 0.0, false),
+    }
+}
+
 /// A Mac settings page (`SettingsView.swift:20-75`): a scroll view with padding h 36, top 58, bottom 40, the title, the
 /// `columns` side by side (one column when the window is too narrow), the `footer` below, the back arrow top left and
 /// `overlay` centred over all.
@@ -1009,12 +1031,7 @@ pub fn settings_page(
     overlay: Option<Node>,
 ) -> Node {
     let avail = (env.size.w - 72.0).max(200.0);
-    let (w, gap, two) = match cols {
-        Cols::Fixed if avail >= 560.0 => (((avail.min(964.0) - 24.0) / 2.0).floor(), 24.0, true),
-        Cols::Equal if avail >= 700.0 => (((avail.min(1366.0) - 72.0) / 2.0).floor(), 72.0, true),
-        Cols::Fixed | Cols::Equal => (avail.min(640.0), 0.0, false),
-        Cols::One => (avail.min(700.0), 0.0, false),
-    };
+    let (w, gap, two) = column_layout(env, cols);
     let col = |items: Vec<Node>| {
         Node::vstack(Align::Start, Some(0.0), items).frame(Some(w), None, Alignment::TOP_LEADING)
     };
@@ -1030,7 +1047,7 @@ pub fn settings_page(
         for (i, items) in columns.into_iter().enumerate() {
             for (j, node) in items.into_iter().enumerate() {
                 flat.push(if i > 0 && j == 0 && !flat.is_empty() {
-                    node.padding(ins(18.0, 0.0, 0.0, 0.0))
+                    node.padding(ins(GROUP_GAP, 0.0, 0.0, 0.0))
                 } else {
                     node
                 });
@@ -1051,7 +1068,12 @@ pub fn settings_page(
     let scroll = Node::scroll(Axis::Vertical, None, content).key("form-scroll");
     // `StateBar` (the edge glow and the small page title once the large one has scrolled out); the arrows' column holds
     // the back chevron at the same place as the Mac's `NavArrows` (30 x 28 at 20, 12).
-    let back = back_arrow(icons, f);
+    // The arrows are the window's own once there is a sidebar: a chevron inside the page would slide in with it.
+    let back = if env.window_nav {
+        Node::fixed(0.0, 0.0)
+    } else {
+        back_arrow(icons, f)
+    };
     let strip = crate::home::state_bar(cx, title, BAR.with(Cell::get));
     let p = fill_frame(scroll, Alignment::TOP_LEADING)
         .overlay(strip, Alignment::TOP)
@@ -1136,13 +1158,13 @@ macro_rules! form_io {
             let mut list = self.ui.frame(now);
             self.hub.finish(&mut list);
             self.drain();
-            let wants = self.ui.needs_frame() || self.hub.busy();
+            let wants = self.ui.needs_frame() || self.hub.busy() || self.extra_frame();
             (list, wants)
         }
         /// Another frame is wanted.
         pub fn wants_frame(&self) -> bool {
             use $crate::hub::HubSlotExt as _;
-            self.ui.needs_frame() || self.hub.busy()
+            self.ui.needs_frame() || self.hub.busy() || self.extra_frame()
         }
         /// The services the renderers read.
         pub fn cx(&self) -> &swiftly_ui::Cx {
@@ -1161,8 +1183,15 @@ macro_rules! form_io {
         }
         fn drain(&mut self) {
             for ev in self.ui.take_events() {
-                if let swiftly_ui::UiEvent::Tap(a) = ev {
-                    self.tapped(&a);
+                match ev {
+                    swiftly_ui::UiEvent::Tap(a) => self.tapped(&a),
+                    swiftly_ui::UiEvent::Pan {
+                        action,
+                        phase,
+                        translation,
+                        ..
+                    } => self.panned(&action, phase, translation),
+                    _ => {}
                 }
             }
         }
@@ -1183,6 +1212,8 @@ pub struct HomeRowSpec<'a> {
     pub remove: Option<String>,
     /// The Move Up and Move Down controls: key and whether there is a row to swap with.
     pub moves: Option<[(String, bool); 2]>,
+    /// The pan action of the drag reorder (`swiftly_ui::reorder`): the whole row on the desktop, the grip on touch.
+    pub drag: Option<Action>,
 }
 
 /// A small quiet icon button of a Home row: 22 x 22, dimmed while it has nothing to do.
@@ -1213,6 +1244,22 @@ pub fn home_row(cx: &Cx, icons: &Icons, f: &Fm, s: &HomeRowSpec<'_>) -> Node {
         right.push(home_button(icons, f, up, "caret-up", 13.0, *can_up));
         right.push(home_button(icons, f, down, "caret-down", 13.0, *can_down));
     }
+    if let (Some(a), Form::Touch) = (s.drag, f.form) {
+        // The finger drags by the grip (a drag of the row itself scrolls the page): two columns of three dots.
+        let dot = || {
+            Node::rect(color(colour::FONT_QUIET), 1.5).frame(
+                Some(3.0),
+                Some(3.0),
+                Alignment::CENTER,
+            )
+        };
+        let col = || Node::vstack(Align::Center, Some(3.0), vec![dot(), dot(), dot()]);
+        right.push(
+            Node::hstack(Align::Center, Some(3.0), vec![col(), col()])
+                .frame(Some(34.0), Some(44.0), Alignment::CENTER)
+                .on_pan(Some(Axis::Vertical), a),
+        );
+    }
     let body = Node::hstack(
         Align::Center,
         Some(14.0),
@@ -1240,9 +1287,15 @@ pub fn home_row(cx: &Cx, icons: &Icons, f: &Fm, s: &HomeRowSpec<'_>) -> Node {
         ..Default::default()
     });
     let n = wide(body, Alignment::LEADING);
-    if s.switch.is_some() {
+    let row = if s.switch.is_some() {
         tappable_kb(n, f, s.key, 0.0).hover_surface(rgba(colour::FONT, 0.06), 0.0)
     } else {
         n.key(s.key).hover_surface(rgba(colour::FONT, 0.06), 0.0)
+    };
+    match (s.drag, f.form) {
+        (Some(a), Form::Desktop) => row
+            .on_pan(Some(Axis::Vertical), a)
+            .cursor(swiftly_ui::Cursor::Grab),
+        _ => row,
     }
 }

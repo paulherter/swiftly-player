@@ -28,6 +28,7 @@ pub enum SeerrState {
     Loads,
     PartWayPresent,
     Present,
+    Blocklisted,
     Deleted,
 }
 
@@ -146,7 +147,7 @@ impl From<swiftly_seerr::AutoSignIn> for SeerrAutoState {
     }
 }
 
-pub(crate) struct JarAdapter(Option<Arc<dyn SeerrCookieJar>>);
+pub(crate) struct JarAdapter(pub(crate) Option<Arc<dyn SeerrCookieJar>>);
 
 impl CookieJar for JarAdapter {
     fn session_cookie(&self, address: &Url) -> Option<String> {
@@ -174,7 +175,7 @@ pub(crate) fn readable(e: &swiftly_net::ErrorKind) -> CoreError {
 /// A Seerr connection to talk to.
 #[derive(uniffi::Object)]
 pub struct SeerrModel {
-    client: SeerrClient<CoreTransport, JarAdapter>,
+    client: Arc<SeerrClient<CoreTransport, JarAdapter>>,
 }
 
 impl SeerrModel {
@@ -183,14 +184,38 @@ impl SeerrModel {
         &self.client
     }
 
+    /// The same client, shared with the hub of the screens (one session, one cookie state).
+    pub(crate) fn shared_client(&self) -> Arc<SeerrClient<CoreTransport, JarAdapter>> {
+        Arc::clone(&self.client)
+    }
+
+    #[cfg(test)]
     pub(crate) fn build(
         transport: CoreTransport,
         connection: SeerrConnection,
         jar: Option<Arc<dyn SeerrCookieJar>>,
     ) -> Arc<Self> {
+        Self::build_stashed(transport, connection, jar, None, None)
+    }
+
+    /// The same, keeping the answer of every read in `stash` (the screens paint it before the live read).
+    pub(crate) fn build_stashed(
+        transport: CoreTransport,
+        connection: SeerrConnection,
+        jar: Option<Arc<dyn SeerrCookieJar>>,
+        stash: Option<Arc<dyn swiftly_seerr::BodyStash>>,
+        log: Option<swiftly_seerr::SeerrLog>,
+    ) -> Arc<Self> {
         let access = SeerrAccess::new(&connection.address, &connection.cookie, &connection.headers);
+        let mut client = SeerrClient::with_jar(access, transport, JarAdapter(jar));
+        if let Some(stash) = stash {
+            client = client.with_stash(stash);
+        }
+        if let Some(log) = log {
+            client = client.with_log(log);
+        }
         Arc::new(Self {
-            client: SeerrClient::with_jar(access, transport, JarAdapter(jar)),
+            client: Arc::new(client),
         })
     }
 

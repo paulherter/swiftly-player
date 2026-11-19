@@ -1,5 +1,6 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.rustcore.host.CoreWords
 import de.paulherter.swiftly.rustcore.legacyEpisodeCardDragged
 import de.paulherter.swiftly.rustcore.legacyEpisodeCardSwipedAway
 import de.paulherter.swiftly.rustcore.legacyEpisodeCardFadeFrom
@@ -356,7 +357,7 @@ fun CountdownRing(share: Float, throughMeasure: Dp, modifier: Modifier = Modifie
  */
 @Composable
 fun cardsFill(mediaWork: PlayItem, counts: Boolean): Float {
-    val share = mediaWork.countdown.takeIf { mediaWork.overlay == "karte" }
+    val share = mediaWork.countdown.takeIf { mediaWork.overlay == CoreWords.Einblendung.CARD }
     val value = remember { Animatable(0f) }
     LaunchedEffect(share != null, mediaWork.running, mediaWork.atFileEnd, counts, mediaWork.fillNew) {
         if (!counts) { value.stop(); return@LaunchedEffect }

@@ -29,13 +29,9 @@ struct SeriesView: View {
             startSeasonNumber: startEpisodeValue?.parentIndexNumber))
     }
 
-    /// Rows and header fade in once the page is up, as before.
-    @State private var inFade = false
     @State private var message: String?
     @Environment(\.playRequest) private var play
     @State private var prepares = false
-    @State private var versionChoice: VersionChoice?
-    @State private var versionPick: VersionPick?
     @State private var moreOpen = false
     @State private var seasonSelectionOpen = false
     @FocusState private var atEpisode: String?
@@ -56,6 +52,12 @@ struct SeriesView: View {
     private var actors: [Person] { (more?.cast ?? []).map(Person.init(core:)) }
     private var similar: [Item] { (more?.similar ?? []).map(Item.init(rust:)) }
     private var extras: [Item] { (more?.extras ?? []).map(Item.init(rust:)) }
+    /// The BlurHash of each still, from the core's rows.
+    private var episodeBlurs: [String: String] {
+        Dictionary(uniqueKeysWithValues: (page?.model.episodes.rows ?? []).compactMap { row in
+            row.imageBlurHash.map { (row.id, $0) }
+        })
+    }
     private var episodes: [Item] {
         let items = page?.episodeItems() ?? [:]
         return (page?.model.episodes.rows ?? []).map {
@@ -81,7 +83,6 @@ struct SeriesView: View {
             }
             .modifier(CoreLifecycle(run: {
                 atPrimaryButton = true
-                withAnimation(Theme.motion(.timingCurve(0.23, 1, 0.32, 1, duration: 0.22))) { inFade = true }
                 await page?.run(app: model)
             }))
             .onChange(of: model.pagesRefresh) { _, _ in page?.model.refresh() }
@@ -100,7 +101,9 @@ struct SeriesView: View {
                 railsSection {
                     HStack(spacing: 24) {
                         RailTitle(text: "Folgen")
-                        if seasonList.count > 1 || selectedSeason != nil {
+                        // The core's rule (`SeasonsPart.chevron`): the button is always a menu, so it stands with its chevron
+                        // from frame 1; no list, count or Seerr answer toggles it. Its place is kept while the name is unknown.
+                        if page?.model.seasons.chevron ?? false {
                             SeasonPill(name: selectedSeason?.name ?? seasonList.first?.name ?? String(localized: "Staffel 1"),
                                        opened: $seasonSelectionOpen)
                                 .focused($atSeasonPill)
@@ -110,11 +113,9 @@ struct SeriesView: View {
                 } content: {
                     episodesStrip
                 }
-                .opacity(inFade ? 1 : 0)
 
                 WatchersStrip(model: model, item: series,
                               fromCore: (more?.watchers ?? []).map(Watcher.init(core:)))
-                    .opacity(inFade ? 1 : 0)
 
                 if !actors.isEmpty {
                     railsSection {
@@ -122,8 +123,6 @@ struct SeriesView: View {
                     } content: {
                         CastStrip(model: model, folks: actors, origin: current.name)
                     }
-                    .opacity(inFade ? 1 : 0)
-                    .transition(.opacity)
                 }
                 if more?.similarFailed == true, similar.isEmpty {
                     railsSection {
@@ -132,16 +131,12 @@ struct SeriesView: View {
                         DisturbState(model: model, retry: { page?.model.refresh() })
                             .frame(height: Theme.posterHeight)
                     }
-                    .opacity(inFade ? 1 : 0)
-                    .transition(.opacity)
                 } else if !similar.isEmpty {
                     railsSection {
                         RailTitle(text: "Ähnliches")
                     } content: {
                         TitleStrip(model: model, items: similar)
                     }
-                    .opacity(inFade ? 1 : 0)
-                    .transition(.opacity)
                 }
                 if !extras.isEmpty {
                     railsSection {
@@ -153,13 +148,13 @@ struct SeriesView: View {
                                               play: { play.wrappedValue = $0 })
                         }
                     }
-                    .opacity(inFade ? 1 : 0)
-                    .transition(.opacity)
                 }
             }
             .padding(.bottom, Theme.completionPadding)
         }
         .scrollIndicators(.hidden)
+        // Nothing inside the page animates in: pictures, stills and rows appear in place.
+        .arrivesStill()
         .ignoresSafeArea()
         .imageReason(url: model.landscapeImageURL(for: current, width: 1600)
                         ?? model.headerImageURL(for: current))
@@ -175,18 +170,6 @@ struct SeriesView: View {
         }
         .animation(Theme.motion(.timingCurve(0.23, 1, 0.32, 1, duration: 0.22)), value: moreOpen)
         .animation(Theme.motion(.timingCurve(0.23, 1, 0.32, 1, duration: 0.22)), value: seasonSelectionOpen)
-        .versionChoice($versionChoice) { choice, version in
-            PlayRequest.start(choice, picking: version, model: model, prepares: $prepares,
-                              missing: { message = AppModel.episodeNotLoaded },
-                              play: { play.wrappedValue = $0 })
-        }
-        .versionPick($versionPick) { choice, version in
-            guard let page else { return }
-            let id = choice.itemId
-            let action = (id == nil || id == button?.nextEpisode)
-                ? page.model.playNext(pick: version.id) : page.model.playEpisode(id!, pick: version.id)
-            launch(action, since: choice.since)
-        }
         .overlay(alignment: .top) {
             if let message {
                 HintStrip(text: message) { self.message = nil; page?.model.dismissMessage() }
@@ -207,7 +190,10 @@ struct SeriesView: View {
     private var header: some View {
         let remembered = button?.favorite ?? false
         return DetailHeader(model: model, item: current, plan: page?.next.flatMap { page?.plan(app: model, for: $0.id) },
-                            heroTrim: 40) {
+                            heroTrim: 40,
+                            blur: button?.imageBlurHash,
+                            stand: button?.tileImages.compactMap { URL(string: $0.address) } ?? [],
+                            proofWaiting: button?.proof.phase != .settled) {
             HStack(spacing: 24) {
                 Button { launch(page?.model.playNext()) } label: {
                     ZStack(alignment: .leading) {
@@ -223,7 +209,10 @@ struct SeriesView: View {
                 .buttonStyle(ThemedButtonStyle())
                 .disabled(prepares || button?.enabled != true)
                 .focused($atPrimaryButton)
-                .tileMenu(current, model: model)
+                // Long press (select held): the next episode's versions, nothing else; a press starts the default.
+                .versionMenu(page?.model.versionsNext() ?? []) { version in
+                    launch(page?.model.playNext(pick: version.id))
+                }
 
                 if begun {
                     Button { launch(page?.model.playNext(), since: 0) } label: {
@@ -252,7 +241,6 @@ struct SeriesView: View {
                     .focused($atMoreButton)
                     .panelTrigger("mehr")
             }
-            .opacity(inFade ? 1 : 0)
         }
     }
 
@@ -275,13 +263,12 @@ struct SeriesView: View {
             } else {
             switch page?.model.episodes.status {
             case .ready:
-                EpisodesStrip(model: model, episodes: episodes,
-                              nextWith: episodeFront, atEpisode: $atEpisode) { episode in
+                EpisodesStrip(model: model, episodes: episodes, nextWith: episodeFront, atEpisode: $atEpisode,
+                              blurs: episodeBlurs) { episode in
                     launch(page?.model.playEpisode(episode.id))
                 }
                 .equatable()
                 .id(episodes.first?.id ?? "leer")
-                .transition(.opacity)
             case .disturbed:
                 DisturbState(model: model, retry: { page?.model.retryEpisodes() })
                     .frame(height: height)
@@ -291,16 +278,8 @@ struct SeriesView: View {
                            button: ("Erneut versuchen", { page?.model.retryEpisodes() }))
                     .frame(height: height)
             default:
-                // Landscape tiles in their final size instead of a blank strip.
-                HStack(spacing: 40) {
-                    ForEach(0 ..< 4, id: \.self) { _ in
-                        LoadField().frame(width: Theme.landscapeWidth, height: Theme.landscapeHeight)
-                    }
-                }
-                .padding(.top, Theme.railsPadding)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Lädt")
+                // The same strip and tiles as the real one, empty: nothing moves when the episodes arrive.
+                EpisodesStripPlaceholder()
             }
             }
         }
@@ -415,14 +394,10 @@ struct SeriesView: View {
         switch action {
         case .wait:
             return
-        case .choose(let id, let at, let versions):
-            versionPick = VersionPick(
-                heading: String(localized: "Fassung wählen"), options: versions, since: since ?? at, itemId: id)
         case .resolve(let id, let at):
-            // The list entry has no `MediaSources`: the app fetches the full episode and asks itself.
+            // The list entry has no `MediaSources`: the plan needs only the id, the default version starts.
             guard !prepares, let episode = page.item(id) else { return }
             PlayRequest.start(episode, since: since ?? at,
-                              ask: VersionAsk(choose: { versionChoice = $0 }, failed: { message = $0 }),
                               model: model, prepares: $prepares,
                               missing: { message = AppModel.episodeNotLoaded }) { play.wrappedValue = $0 }
         case .start(let id, let at, let source):
@@ -443,7 +418,6 @@ struct SeriesView: View {
 
     private func episodeStart(_ episode: Item, since: Double) {
         PlayRequest.start(episode, since: since,
-                          ask: VersionAsk(choose: { versionChoice = $0 }, failed: { message = $0 }),
                           model: model, prepares: $prepares,
                           missing: { message = AppModel.episodeNotLoaded }) { play.wrappedValue = $0 }
     }

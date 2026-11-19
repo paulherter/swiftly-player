@@ -208,12 +208,12 @@ impl LoadSelection {
         rules: &dyn AudioTrackRules,
         preferred_language: &str,
     ) -> DownloadAudioChoice {
-        let wished = self
-            .audio_chosen
-            .clone()
-            .unwrap_or_else(|| DownloadAudioChoice::Language(preferred_language.to_owned()));
-        if self.audio_offered(rules) && self.audio_options(rules).iter().any(|o| o.choice == wished)
-        {
+        let options = self.audio_options(rules);
+        let wished = self.audio_chosen.clone().unwrap_or_else(|| {
+            audio::wished_language(rules, &options, preferred_language)
+                .map_or(DownloadAudioChoice::All, DownloadAudioChoice::Language)
+        });
+        if self.audio_offered(rules) && options.iter().any(|o| o.choice == wished) {
             wished
         } else {
             DownloadAudioChoice::All

@@ -106,9 +106,11 @@ libc = "0.2"
 keyring = { version = "3", default-features = false, features = ["apple-native"] }
 # System media controls (Windows SMTC, Linux MPRIS over pure-Rust zbus, no libdbus); MIT.
 [target.'cfg(target_os = "windows")'.dependencies]
+# The same version wgpu-hal uses: the video images of the GPU path are made on its Vulkan device; MIT OR Apache-2.0.
+ash = { version = "0.38", default-features = false }
 souvlaki = { version = "0.9", default-features = false }
 keyring = { version = "3", default-features = false, features = ["windows-native"] }
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_WindowsAndMessaging", "Win32_System_SystemInformation"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_WindowsAndMessaging", "Win32_System_SystemInformation"] }
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "ios", target_os = "android"))))'.dependencies]
 souvlaki = { version = "0.9", default-features = false, features = ["use_zbus"] }
 # The window icon through xdg-toplevel-icon-v1 (winit 0.30 has no icon on Wayland); the same versions winit uses; MIT.

@@ -1,4 +1,5 @@
 import JellyfinKit
+import SwiftlyCore
 import SwiftUI
 
 /// **Search: the keyboard on the left, the hits next to it, live.**
@@ -17,10 +18,21 @@ struct SearchView: View {
     /// Whether the section is currently open. When it turns true, focus goes to the keyboard.
     var active: Bool = false
 
+    init(model: AppModel, active: Bool = false) {
+        self.model = model
+        self.active = active
+        _seerr = State(initialValue: SeerrSearchFlow(model: model))
+    }
+
     @State private var term = ""
     @State private var hit: [Item] = []
-    /// What Seerr knows and the user's own server doesn't; empty if nothing is connected.
-    @State private var seerrHit: [SeerrHit] = []
+    /// What Seerr adds (the merged block): one flow, shared with iPhone and Mac. Its answer joins the page when it arrives.
+    @State private var seerr: SeerrSearchFlow
+
+    /// Titles Seerr has that the own server does not (the flow decides; the library's TMDB ids are dropped).
+    private var seerrTiles: [SeerrCard] {
+        seerr.tiles(known: Set(hit.compactMap { $0.providerIds?["Tmdb"] }))
+    }
     /// An answer has arrived since the page was cleared.
     @State private var answered = false
     /// The first answer takes longer than 300 ms. Only then the placeholder shows; before that
@@ -62,11 +74,11 @@ struct SearchView: View {
 
     private var screen: SearchScreen {
         SearchScreen.state(term: term, historyCount: last.count,
-                           hasHits: !hit.isEmpty || !seerrHit.isEmpty,
+                           hasHits: !hit.isEmpty || !seerrTiles.isEmpty,
                            answered: answered, disrupted: disrupted, waited: waited)
     }
 
-    private var hitIds: [String] { hit.map { "\($0.id)" } + seerrHit.map { "\($0.id)" } }
+    private var hitIds: [String] { hit.map { "\($0.id)" } + seerrTiles.map(\.id) }
 
     var body: some View {
         // Design: keyboard card 80..540, hits and history from 620.
@@ -122,7 +134,7 @@ struct SearchView: View {
                 waitRun?.cancel()
                 withAnimation(Theme.reveal) {
                     hit = []
-                    seerrHit = []
+                    seerr.reset()
                     answered = false
                     disrupted = false
                     waited = false
@@ -138,13 +150,15 @@ struct SearchView: View {
             }
         }
         .onDisappear { searchRun?.cancel(); waitRun?.cancel() }
+        // Another section: its own page decides the shade (it is shared, `LibraryScroll`).
+        .onChange(of: active) { _, now in if !now { LibraryScroll.shared.scrolled = false } }
         // Hits and term belong to the previous account.
         .onChange(of: model.accountSwitch) { _, _ in
             searchRun?.cancel()
             waitRun?.cancel()
             term = ""
             hit = []
-            seerrHit = []
+            seerr.reset()
             answered = false
             disrupted = false
             waited = false
@@ -158,6 +172,9 @@ struct SearchView: View {
             searchRun = Task { await searching() }
         }
         .onAppear { historyLoad() }
+        .tvFocusGuard("search", key: active)
+        // The discover rails follow the connection (and are read again when the page opens).
+        .task(id: "\(model.seerr.connected)-\(active)") { if active { await seerr.loadDiscover() } }
         .ignoresSafeArea(edges: .horizontal)
     }
 
@@ -185,6 +202,12 @@ struct SearchView: View {
             .frame(width: SearchLayout.resultsWidth)
             .scrollIndicators(.hidden)
             .scrollClipDisabled()
+            // The soft shade under the tabs, the one Filme and Serien have (`MainView`, `LibraryScroll`): it
+            // shows once the hits have moved under the bar. The scroll area starts below the bar, so the inset
+            // counts: at rest the offset is minus the top inset.
+            .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.contentInsets.top > 4 } action: { _, now in
+                if active { LibraryScroll.shared.scrolled = now }
+            }
             // The look's glow, the same on every main page; goes up with the content.
             .lookGlow()
             // Safe area, not padding and not `contentMargins`. Padding belongs to the content, which tvOS
@@ -234,13 +257,21 @@ struct SearchView: View {
             .transition(.opacity)
 
         case .history:
-            recent.transition(.opacity)
+            VStack(alignment: .leading, spacing: Theme.railsSpacing) {
+                recent
+                discoverRails
+            }
+            .transition(.opacity)
 
         case .start:
-            note(symbol: "magnifyingglass",
-                 sentence: "Titel, Serie oder Name. Ab zwei Zeichen wird gesucht.")
-                .padding(.top, 240)
-                .transition(.opacity)
+            if railsShown {
+                discoverRails.padding(.top, 20).transition(.opacity)
+            } else {
+                note(symbol: "magnifyingglass",
+                     sentence: "Titel, Serie oder Name. Ab zwei Zeichen wird gesucht.")
+                    .padding(.top, 240)
+                    .transition(.opacity)
+            }
 
         case .hits:
             hits.transition(.opacity)
@@ -308,7 +339,7 @@ struct SearchView: View {
     private var titles: Bool {
         let split = SearchGroups.split(hit, type: { $0.type })
         return SearchGroups.showsTitles(series: split.series.count, films: split.films.count,
-                                        requests: seerrHit.count)
+                                        requests: seerrTiles.count)
     }
 
     private var hits: some View {
@@ -320,14 +351,14 @@ struct SearchView: View {
         return VStack(alignment: .leading, spacing: Theme.railsSpacing) {
             block("Serien", split.series)
             block("Filme", split.films)
-            if !seerrHit.isEmpty {
+            if !seerrTiles.isEmpty {
                 VStack(alignment: .leading, spacing: Theme.titleSpacing) {
-                    if titles { blockTitle("Kann angefragt werden", seerrHit.count) }
+                    if titles { blockTitle(LocalizedStringKey(seerr.found?.blockTitle ?? ""), seerrTiles.count) }
                     LazyVGrid(columns: columns, alignment: .leading, spacing: Theme.latticeRow) {
-                        ForEach(seerrHit) { t in
-                            NavigationLink(value: t) { SeerrTile(hit: t) }
+                        ForEach(seerrTiles) { card in
+                            NavigationLink(value: card.route) { SeerrTile(card: card, width: Theme.posterWidth) }
                                 .buttonStyle(TileStyle())
-                                .focused($focused, equals: .hit("\(t.id)"))
+                                .focused($focused, equals: .hit(card.id))
                         }
                     }
                 }
@@ -377,6 +408,59 @@ struct SearchView: View {
                 .foregroundStyle(Theme.font)
             CountMark(count: count)
             Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: Discover rails (empty search)
+
+    /// Seerr's trending / popular / coming-soon rails; the flow is the one iPhone and Mac use, nothing is drawn
+    /// while Seerr is not connected or has nothing.
+    private var railsShown: Bool {
+        seerr.ready && seerr.rails?.load == .content && !(seerr.rails?.rails.isEmpty ?? true)
+    }
+
+    @ViewBuilder
+    private var discoverRails: some View {
+        if railsShown, let rails = seerr.rails {
+            VStack(alignment: .leading, spacing: Theme.railsSpacing - Theme.railsPadding) {
+                ForEach(rails.rails, id: \.id) { rail in
+                    VStack(alignment: .leading, spacing: Theme.titleSpacing - Theme.railsPadding) {
+                        Text(verbatim: rail.title)
+                            .font(Theme.rail)
+                            .tracking(Theme.lockRail)
+                            .foregroundStyle(Theme.font)
+                        // The surface may not clip: the focused tile grows beyond its layout size.
+                        ScrollView(.horizontal) {
+                            LazyHStack(alignment: .top, spacing: Theme.tileSpacing) {
+                                ForEach(rail.tiles) { card in railTile(card) }
+                            }
+                        }
+                        .padding(.vertical, Theme.railsPadding)
+                        .scrollClipDisabled()
+                        .scrollIndicators(.hidden)
+                    }
+                }
+            }
+            .focusSection()
+        }
+    }
+
+    /// A title the own server has is a normal poster that opens its normal page; every other one is a Seerr tile.
+    @ViewBuilder
+    private func railTile(_ card: SeerrCard) -> some View {
+        if case .title(let item)? = seerr.own[card.id] {
+            NavigationLink(value: item) {
+                TileContent(image: model.portraitURL(item), title: item.name, subline: item.hitInfo,
+                            progress: item.userData?.playedPercentage.map { $0 / 100 },
+                            mark: DisplayRules.tileMark(art: item.type, seasons: item.childCount,
+                                                        watched: item.userData?.played,
+                                                        openEpisodes: item.userData?.unplayedItemCount),
+                            symbolText: item.tileCharacter)
+            }
+            .buttonStyle(TileStyle())
+        } else {
+            NavigationLink(value: card.route) { SeerrTile(card: card, width: Theme.posterWidth) }
+                .buttonStyle(TileStyle())
         }
     }
 
@@ -474,7 +558,7 @@ struct SearchView: View {
         // The placeholder only after 300 ms, and only while nothing at all is on screen. Old hits stay
         // untouched until the new ones are in: no dimming, no sign, no flicker per letter.
         waitRun?.cancel()
-        if hit.isEmpty, seerrHit.isEmpty, !answered {
+        if hit.isEmpty, seerrTiles.isEmpty, !answered {
             waitRun = Task {
                 try? await Task.sleep(for: .milliseconds(300))
                 guard !Task.isCancelled else { return }
@@ -489,8 +573,8 @@ struct SearchView: View {
         #else
         async let ownOnes = model.search(word)
         #endif
-        async let foreignOnes = model.seerr.searching(word)
-        let (a, b) = await (ownOnes, foreignOnes)
+        async let foreignOnes: Void = seerr.search(word)
+        let (a, _) = await (ownOnes, foreignOnes)
         // Overtaken: a newer term is already searching.
         guard !Task.isCancelled else { return }
         waitRun?.cancel()
@@ -499,8 +583,6 @@ struct SearchView: View {
             disrupted = a == nil
             // Without double IDs: a `ForEach` assigns by id, and the server occasionally returns the same title twice.
             hit = ListRules.withoutDouble(a ?? [])
-            // What is already on the server belongs in the upper block, otherwise the same title would appear twice on the page.
-            seerrHit = b.filter { !$0.state.alreadyPresent }
             answered = true
             waited = false
         }

@@ -48,7 +48,7 @@ fun TvPlaylist(app: SwiftlyApplication, target: Destination, open: (Destination)
                             // `finally`: if asking or starting fails, the button must not stay dead.
                             try {
                                 val first = try { state.start(app.rk) } catch (e: CancellationException) { throw e } catch (_: Exception) { "" }
-                                if (first.isNotEmpty()) de.paulherter.swiftly.playAsking(app, first, null)
+                                if (first.isNotEmpty()) de.paulherter.swiftly.playDefault(app, first, null)
                             } finally { prepares = false }
                         }
                     }

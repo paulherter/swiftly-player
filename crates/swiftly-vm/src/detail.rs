@@ -11,12 +11,14 @@
 //! * What a press on Play does is decided by [`DetailVm::play`]: ask for a version, start, or
 //!   resolve the title first. The player itself is the host's business.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use futures_util::future::{join, join4};
+use futures_util::future::{join, join_all, join4};
 use swiftly_jellyfin::{JellyfinClient, Watcher};
 use swiftly_l10n::Arg;
-use swiftly_library::{LibraryGenre, client_ext::collection_directory};
+use swiftly_library::{CollectionDirectory, LibraryGenre, client_ext::collection_directory};
 use swiftly_model::{DeliveryMethod, Item, MediaSource, MediaVersions, VersionStart};
 use swiftly_net::{ErrorKind, HttpTransport, Url};
 use swiftly_playback::device_profile::{DeviceProfile, Flavour};
@@ -26,8 +28,8 @@ use crate::account::AccountRef;
 use crate::bell::{Bell, Changed, part};
 use crate::detail_more::{
     CollectionRailPart, DownloadField, DownloadState, FileExcerpt, MenuContext, MenuEntry,
-    MenuKind, ProofPart, TrailerCandidate, WatcherTile, age_rating_text, file_excerpt, more_menu,
-    rating_text, tile_menu, trailer_candidates,
+    MenuKind, ProofPart, ProofPhase, TrailerCandidate, WatcherTile, age_rating_text, file_excerpt,
+    more_menu, rating_text, tile_menu, trailer_candidates,
 };
 use crate::home::{Client, build_client};
 use crate::host::Host;
@@ -36,8 +38,8 @@ use crate::parts::{ImageRef, Tile};
 use crate::plex::{Plex, build_plex_client, is_plex};
 use crate::tile::{Words, grid_tile, plex_grid_tile};
 use crate::title_text::{
-    TitleText, addresses, header_image, logo_image, person_image, progress, resume_from,
-    similar_cleaned, user_image, without_double,
+    TitleText, addresses, header_blur_hash, header_image_waiting, logo_image, person_image,
+    progress, resume_from, similar_cleaned, user_image, without_double,
 };
 use swiftly_images::ImageAddress;
 use swiftly_playback::media_server::MediaServer;
@@ -62,6 +64,11 @@ pub struct HeroPart {
     pub image: Option<ImageRef>,
     /// The title as a logo, if the server has one.
     pub logo: Option<ImageRef>,
+    /// The BlurHash of the head image, for the blurred stand-in until the image itself is there.
+    pub image_blur_hash: Option<String>,
+    /// The pictures the tiles of this title showed so far (the landscape one first), for frame 1 of the page: the host
+    /// shows the first one it still has in its picture memory until the head image is there.
+    pub tile_images: Vec<ImageRef>,
     /// The description.
     pub overview: Option<String>,
     /// Directors, in order.
@@ -86,10 +93,51 @@ pub struct VersionOption {
     /// What the choice shows (`MediaSource.versionLabel`): the name, or the word "Fassung" when
     /// it has none, then " · " and "2160p · HEVC · 18,6 GB" when that is not empty.
     pub label: String,
+    /// The version a tap on Play starts (the menu marks it). One of the options has it set.
+    pub is_default: bool,
+}
+
+/// The version a tap on Play starts when none was picked, and so the one the version menu marks:
+/// the one that takes the least work and, on a tie, the top one as the server orders them. It is
+/// the rule the playback plan itself uses without a named version (`best_source`), applied to the
+/// sources the title lists. That is only the fallback for while no plan has answered: the server's
+/// answer to the device profile can rule the top version out (over the bitrate cap, a container the
+/// device cannot read), and the start then takes another one, so the mark follows the plan
+/// ([`VersionOption::list`]). `None` without a usable source.
+pub fn default_version(sources: &[MediaSource]) -> Option<&MediaSource> {
+    let usable: Vec<MediaSource> = sources.iter().filter(|s| s.id.is_some()).cloned().collect();
+    let best = swiftly_playback::playback_plan::best_source(&usable)?;
+    sources.iter().find(|s| s.id == best.id)
 }
 
 impl VersionOption {
-    /// The option for a media source; `None` without an id.
+    /// The options of a title with several versions in the server's order, the default one marked.
+    /// Empty when there is no choice (fewer than two usable versions). The mark is the version the
+    /// title's live plan (`planned`, its `media_source_id`) starts when one is among the options,
+    /// the one a tap on Play really starts; before the plan has answered it is the least-work
+    /// rule on the sources ([`default_version`]).
+    pub(crate) fn list(
+        sources: &[MediaSource],
+        words: &Words,
+        language: &str,
+        planned: Option<&str>,
+    ) -> Vec<Self> {
+        let offered = MediaVersions::choices(Some(sources));
+        let default = planned
+            .filter(|id| offered.iter().any(|s| s.id.as_deref() == Some(*id)))
+            .map(str::to_owned)
+            .or_else(|| default_version(&offered).and_then(|d| d.id.clone()));
+        offered
+            .iter()
+            .filter_map(|v| Self::of(v, words, language))
+            .map(|o| Self {
+                is_default: Some(&o.id) == default.as_ref(),
+                ..o
+            })
+            .collect()
+    }
+
+    /// The option for a media source; `None` without an id. Not marked as the default.
     pub(crate) fn of(source: &MediaSource, words: &Words, language: &str) -> Option<Self> {
         let id = source.id.clone()?;
         let separator = crate::downloads_vm::decimal_separator(language);
@@ -104,6 +152,7 @@ impl VersionOption {
                 format!("{name} · {detail}")
             },
             name: source.name.clone().unwrap_or_default(),
+            is_default: false,
         })
     }
 }
@@ -113,14 +162,43 @@ impl VersionOption {
 pub struct PlayButton {
     /// "Abspielen" or "Fortsetzen ab 1:23" in the user's language.
     pub label: String,
-    /// False until the versions are known and while nothing can start.
-    pub enabled: bool,
-    /// "Noch 12 Min." under the button.
+    /// Whether a press decides at once. The button is drawn the same either way (white, with `label`): a press
+    /// while it is `Waiting` is held by the core and starts the title when the versions are there.
+    pub ready: PlayReadiness,
+    /// "Noch 12 Min." under the button; the runtime ("1 Std. 52 Min.") for a title not started.
     pub remaining: Option<String>,
     /// Watched share under the button, 0 to 1.
     pub progress: Option<f32>,
     /// The heading of the version sheet ("Fassung wählen").
     pub version_title: String,
+}
+
+/// Whether a press on Play can start the title now. One state: the press itself is held in `Waiting`, so no host
+/// keeps a press of its own and the look of the button never depends on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayReadiness {
+    /// The versions are known (or a copy on the device decides): a press returns the action at once.
+    Ready,
+    /// The versions are on their way. `queued`: the viewer already pressed Play; the core starts the title when they
+    /// arrive (a [`DetailEffect::Play`]), once.
+    Waiting {
+        /// A press is waiting for the versions.
+        queued: bool,
+    },
+}
+
+impl PlayReadiness {
+    /// A press decides at once.
+    pub fn is_ready(self) -> bool {
+        self == Self::Ready
+    }
+}
+
+/// A press on Play held until the versions are known.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct QueuedPress {
+    /// From the beginning ("Play from start" in the More panel).
+    from_start: bool,
 }
 
 /// The play button and the two toggles.
@@ -168,10 +246,17 @@ pub struct CastTile {
 pub struct BottomPart {
     /// Version of the part.
     pub version: u64,
-    /// Everything has been answered; the view fades the sections in together.
+    /// Everything has been answered; the view puts the sections in together.
     pub ready: bool,
-    /// The first twelve cast members.
+    /// The first twelve cast members. Filled before `ready` when the page's seed already knows them (the stored copy of
+    /// an earlier visit), so they stand in frame 1.
     pub cast: Vec<CastTile>,
+    /// A cast row is expected but not known yet (a film whose title has not answered): the host keeps its place with a
+    /// placeholder of the row's final height until `cast` fills in or this turns false.
+    pub cast_pending: bool,
+    /// The "Gesehen von" row can still arrive (the setting is on and the viewers have not answered): the host keeps its
+    /// place after the cast row with a placeholder of the row's final height. False once `ready`.
+    pub watchers_pending: bool,
     /// Extras (featurettes, scenes).
     pub extras: Vec<Tile>,
     /// Similar titles.
@@ -251,16 +336,8 @@ pub enum PlayAction {
         /// Second to start at.
         since: f64,
     },
-    /// Several versions: ask which.
-    Choose {
-        /// The title.
-        item_id: String,
-        /// Second to start at.
-        since: f64,
-        /// The versions.
-        versions: Vec<VersionOption>,
-    },
-    /// Start now.
+    /// Start now. A title with several versions starts its default version (`source_id` `None`);
+    /// the others are offered by `versions()` for a long press on Play, never in front of the start.
     Start {
         /// The title.
         item_id: String,
@@ -328,6 +405,9 @@ struct Live<T: HttpTransport + 'static> {
     cached: Option<Item>,
     fresh: Option<Item>,
     versions_failed: bool,
+    /// A press on Play that came before the versions were known; the next publish with versions turns it into a
+    /// [`DetailEffect::Play`].
+    queued: Option<QueuedPress>,
     /// What kind of failure `versions_failed` was (for the page's own error text).
     title_failure: Option<LoadFailure>,
     watched: bool,
@@ -342,6 +422,8 @@ struct Live<T: HttpTransport + 'static> {
     plan: Option<Arc<PlaybackPlan>>,
     local_plan: Option<Arc<PlaybackPlan>>,
     plan_present: bool,
+    /// The proof line's answer of an earlier visit, shown until the fresh plan answers.
+    mark: Option<crate::proof_mark::ProofMark>,
     options: DetailOptions,
     download_state: DownloadState,
     message: Option<String>,
@@ -400,25 +482,30 @@ pub(crate) fn watcher_tile(w: &Watcher, addresses: Option<&ImageAddress>) -> Wat
     }
 }
 
-/// What a press does for `item`, with `downloaded` as the host knows it (`launch(since:)`).
-pub(crate) fn play_action(
-    item: &Item,
-    downloaded: bool,
-    since: f64,
-    words: &Words,
-    language: &str,
-) -> PlayAction {
+/// The same action, from the beginning.
+fn from_start_of(action: PlayAction) -> PlayAction {
+    match action {
+        PlayAction::Start {
+            item_id, source_id, ..
+        } => PlayAction::Start {
+            item_id,
+            since: 0.0,
+            source_id,
+        },
+        PlayAction::Resolve { item_id, .. } => PlayAction::Resolve {
+            item_id,
+            since: 0.0,
+        },
+        PlayAction::Wait => PlayAction::Wait,
+    }
+}
+
+/// What a press does for `item`, with `downloaded` as the host knows it (`launch(since:)`). Several
+/// versions do not ask: the press starts the default one, the choice is [`DetailVm::versions`].
+pub(crate) fn play_action(item: &Item, downloaded: bool, since: f64) -> PlayAction {
     let item_id = item.id.clone();
     match MediaVersions::start(item.media_sources.as_deref(), downloaded) {
-        VersionStart::Choose(versions) => PlayAction::Choose {
-            item_id,
-            since,
-            versions: versions
-                .iter()
-                .filter_map(|v| VersionOption::of(v, words, language))
-                .collect(),
-        },
-        VersionStart::Play => PlayAction::Start {
+        VersionStart::Choose(_) | VersionStart::Play => PlayAction::Start {
             item_id,
             since,
             source_id: None,
@@ -441,6 +528,10 @@ impl<T: HttpTransport + 'static> DetailVm<T> {
     ) -> Result<Self, ErrorKind> {
         let (client, plex) = clients(&transport, &host, account.as_ref())?;
         let text = TitleText::new(host.locale.clone());
+        // The page opens complete from what the list answer and an earlier visit stored: description, genres, ratings,
+        // picture tags and BlurHashes are in frame 1, nothing of it waits for the server.
+        let scope = account.as_ref().map(crate::cache::ViewCache::scope);
+        let item = crate::seed::from_store(item, host.cache.as_ref(), scope.as_ref());
         let hero = HeroPart {
             version: 1,
             id: String::new(),
@@ -449,6 +540,8 @@ impl<T: HttpTransport + 'static> DetailVm<T> {
             secondary_line: String::new(),
             image: None,
             logo: None,
+            image_blur_hash: None,
+            tile_images: Vec::new(),
             overview: None,
             directors: Vec::new(),
             community_rating: None,
@@ -457,12 +550,13 @@ impl<T: HttpTransport + 'static> DetailVm<T> {
         };
         let live = Live {
             switch: 1,
-            scope: account.as_ref().map(crate::cache::ViewCache::scope),
+            scope,
             client,
             plex,
             cached: None,
             fresh: None,
             versions_failed: false,
+            queued: None,
             title_failure: None,
             watched: item
                 .user_data
@@ -484,6 +578,7 @@ impl<T: HttpTransport + 'static> DetailVm<T> {
             plan: None,
             local_plan: None,
             plan_present: false,
+            mark: None,
             options: DetailOptions::default(),
             download_state: DownloadState::Nothing,
             message: None,
@@ -496,7 +591,7 @@ impl<T: HttpTransport + 'static> DetailVm<T> {
                 version: 1,
                 play: PlayButton {
                     label: String::new(),
-                    enabled: false,
+                    ready: PlayReadiness::Waiting { queued: false },
                     remaining: None,
                     progress: None,
                     version_title: String::new(),
@@ -506,6 +601,7 @@ impl<T: HttpTransport + 'static> DetailVm<T> {
                 favorite_caption: String::new(),
                 toggle_error: None,
                 proof: ProofPart {
+                    phase: ProofPhase::Waiting,
                     visible: false,
                     direct_play: false,
                     hint: None,
@@ -520,6 +616,8 @@ impl<T: HttpTransport + 'static> DetailVm<T> {
                 version: 1,
                 ready: false,
                 cast: Vec::new(),
+                cast_pending: false,
+                watchers_pending: false,
                 extras: Vec::new(),
                 similar: Vec::new(),
                 similar_failed: false,
@@ -609,6 +707,12 @@ impl<T: HttpTransport + 'static> DetailVm<T> {
         serde_json::to_string(self.inner.current(&live)).ok()
     }
 
+    /// The TMDB id of the title (`ProviderIds.Tmdb`), for Seerr.
+    pub fn tmdb_id(&self) -> Option<i64> {
+        let live = self.inner.live();
+        crate::series::tmdb_of(self.inner.current(&live))
+    }
+
     /// The host's work queued since the last call.
     pub fn take_effects(&self) -> Vec<DetailEffect> {
         std::mem::take(&mut self.inner.live().effects)
@@ -639,6 +743,13 @@ impl<T: HttpTransport + 'static> DetailVm<T> {
         self.inner.bell.changed(seen)
     }
 
+    /// Whether a background request of this view model is still running (a watched or watchlist write that has not
+    /// been answered). A handle that is kept only for such a write can be dropped once this is false. Other clones of
+    /// the handle count as busy too.
+    pub fn busy(&self) -> bool {
+        Arc::strong_count(&self.inner) > 1
+    }
+
     /// Observers currently parked in [`DetailVm::changed`].
     pub fn waiters(&self) -> u32 {
         self.inner.bell.waiting()
@@ -648,25 +759,43 @@ impl<T: HttpTransport + 'static> DetailVm<T> {
     /// start. `Wait` while the button is gray. `pick` is the version the user chose; with it the
     /// press starts that version.
     pub fn play(&self, pick: Option<&str>) -> PlayAction {
+        self.press(pick, false)
+    }
+
+    /// One press: the action now, or `Wait` and the press is held (no second one is queued) until the versions
+    /// arrive. A press with a picked version is never held (the version list only exists once they are known).
+    fn press(&self, pick: Option<&str>, from_start: bool) -> PlayAction {
+        let mut live = self.inner.live();
+        let action = self.inner.decide(&live, pick);
+        if action == PlayAction::Wait && pick.is_none() {
+            live.queued = Some(QueuedPress { from_start });
+            self.inner.publish(&mut live, false);
+        }
+        if from_start {
+            from_start_of(action)
+        } else {
+            action
+        }
+    }
+
+    /// The versions for the long press on Play: the title's versions in the server's order with the
+    /// default one marked, only when there is a real choice. Empty while the versions are not known,
+    /// for a title with one version and for a copy on the device (it plays that copy). Picking one
+    /// goes to [`DetailVm::play`] as `pick`.
+    pub fn versions(&self) -> Vec<VersionOption> {
         let live = self.inner.live();
         let current = self.inner.current(&live);
-        if !self.inner.versions_known(&live, current) {
-            return PlayAction::Wait;
+        if live.downloaded || !self.inner.versions_known(&live, current) {
+            return Vec::new();
         }
-        let since = resume_from(current).unwrap_or(0.0);
-        if let Some(source) = pick {
-            return PlayAction::Start {
-                item_id: current.id.clone(),
-                since,
-                source_id: Some(source.to_owned()),
-            };
-        }
-        play_action(
-            current,
-            live.downloaded,
-            since,
+        VersionOption::list(
+            current.media_sources.as_deref().unwrap_or_default(),
             &self.inner.words,
             self.inner.text.locale().language(),
+            live.plan
+                .as_deref()
+                .filter(|p| p.item_id.as_deref() == Some(current.id.as_str()))
+                .and_then(|p| p.media_source_id.as_deref()),
         )
     }
 
@@ -679,27 +808,7 @@ impl<T: HttpTransport + 'static> DetailVm<T> {
 
     /// Like [`DetailVm::play`], but from the beginning ("Play from start" in the More panel).
     pub fn play_from_start(&self, pick: Option<&str>) -> PlayAction {
-        match self.play(pick) {
-            PlayAction::Choose {
-                item_id, versions, ..
-            } => PlayAction::Choose {
-                item_id,
-                since: 0.0,
-                versions,
-            },
-            PlayAction::Start {
-                item_id, source_id, ..
-            } => PlayAction::Start {
-                item_id,
-                since: 0.0,
-                source_id,
-            },
-            PlayAction::Resolve { item_id, .. } => PlayAction::Resolve {
-                item_id,
-                since: 0.0,
-            },
-            PlayAction::Wait => PlayAction::Wait,
-        }
+        self.press(pick, true)
     }
 
     /// An intent from the view. Never blocks.
@@ -760,6 +869,24 @@ impl<T: HttpTransport + 'static> Inner<T> {
             .unwrap_or(&self.item)
     }
 
+    /// What a press does now: from the resume point when there is one, else from the start; `Wait` while the
+    /// versions are not known.
+    fn decide(&self, live: &Live<T>, pick: Option<&str>) -> PlayAction {
+        let current = self.current(live);
+        if !self.versions_known(live, current) {
+            return PlayAction::Wait;
+        }
+        let since = resume_from(current).unwrap_or(0.0);
+        if let Some(source) = pick {
+            return PlayAction::Start {
+                item_id: current.id.clone(),
+                since,
+                source_id: Some(source.to_owned()),
+            };
+        }
+        play_action(current, live.downloaded, since)
+    }
+
     /// The versions are known, or a copy on the device decides (`versionsKnown`).
     fn versions_known(&self, live: &Live<T>, current: &Item) -> bool {
         live.versions_failed
@@ -770,9 +897,23 @@ impl<T: HttpTransport + 'static> Inner<T> {
 
     /// Rebuilds the parts and moves the version for the ones that differ.
     fn publish(&self, live: &mut Live<T>, first: bool) {
+        // A press that waited for the versions starts the title now, once (the host sees it as an effect).
+        if let Some(press) = live.queued
+            && self.versions_known(live, self.current(live))
+        {
+            live.queued = None;
+            let action = self.decide(live, None);
+            live.effects.push(DetailEffect::Play(if press.from_start {
+                from_start_of(action)
+            } else {
+                action
+            }));
+            live.effect_seq += 1;
+        }
         let current = self.current(live);
         let server = live.server();
         let addresses = server.as_ref().and_then(Server::addresses);
+        let placeholder = current.location_type.as_deref() == Some("Virtual");
         let hero = HeroPart {
             version: live.hero.version,
             id: current.id.clone(),
@@ -783,12 +924,14 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 Some(plex) => plex_image(plex, current, swiftly_plex::ImageKind::Background),
                 None => addresses
                     .as_ref()
-                    .and_then(|a| header_image(current, None, a)),
+                    .and_then(|a| header_image_waiting(current, None, a, live.title_answered)),
             },
             logo: match &live.plex {
                 Some(plex) => plex_image(plex, current, swiftly_plex::ImageKind::Logo),
                 None => addresses.as_ref().and_then(|a| logo_image(current, a)),
             },
+            image_blur_hash: header_blur_hash(current),
+            tile_images: crate::seed::head_stand_ins(&current.id),
             overview: current.overview.clone().filter(|o| !o.is_empty()),
             directors: current
                 .direction()
@@ -810,11 +953,31 @@ impl<T: HttpTransport + 'static> Inner<T> {
                     .with("Fortsetzen ab %@", &[Arg::Str(self.text.time_text(since))]),
                 None => self.text.key("Abspielen"),
             },
-            enabled: server.is_some() && self.versions_known(live, current),
-            remaining: self.text.remaining(current),
+            ready: if server.is_some() && self.versions_known(live, current) {
+                PlayReadiness::Ready
+            } else {
+                PlayReadiness::Waiting {
+                    queued: live.queued.is_some(),
+                }
+            },
+            remaining: self.text.resume_slot(current),
             progress: progress(current),
             version_title: self.text.key("Fassung wählen"),
         };
+        let mark = live.mark.as_ref().filter(|m| {
+            m.usable(
+                &self.item.id,
+                live.options.max_bitrate,
+                live.fresh
+                    .as_ref()
+                    .map(crate::proof_mark::version_of)
+                    .as_deref(),
+            )
+        });
+        let plan_known = live.plan_present || mark.is_some();
+        let title_known = live.title_answered || (mark.is_some() && live.cached.is_some());
+        let proof_ready = title_known && plan_known;
+        let shown = crate::proof_mark::shown(live.plan.as_deref(), live.plan_present, mark);
         let actions = ActionsPart {
             version: live.actions.version,
             play,
@@ -825,15 +988,24 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 .key(if live.favorite { "Gemerkt" } else { "Merken" }),
             toggle_error: live.toggle_error.clone(),
             proof: ProofPart {
-                visible: live.plan_present && current.location_type.as_deref() != Some("Virtual"),
-                direct_play: live.plan.as_ref().is_some_and(|p| p.is_lossless()),
-                hint: live
-                    .plan
-                    .as_ref()
-                    .filter(|p| !p.is_lossless())
-                    .map(|p| p.method.raw_value().to_owned()),
-                rating: current.community_rating.map(rating_text),
-                age_rating: age_rating_text(&self.text, current.official_rating.clone()),
+                // The chips depend on the title (stars, age rating) and on the plan (Direct Play or a hint). The answer
+                // of an earlier visit stands in for both from frame 1 (the stored copy carries the title's chips).
+                phase: if proof_ready {
+                    ProofPhase::Settled
+                } else {
+                    ProofPhase::Waiting
+                },
+                visible: proof_ready && !placeholder,
+                direct_play: shown.0,
+                hint: shown.1,
+                // The title chips are known from the seed, so the host draws them at once; a placeholder without a file
+                // never shows any, so it is not offered one.
+                rating: current
+                    .community_rating
+                    .filter(|_| !placeholder)
+                    .map(rating_text),
+                age_rating: age_rating_text(&self.text, current.official_rating.clone())
+                    .filter(|_| !placeholder),
             },
             download: (live.options.download_button && current.type_.as_deref() != Some("Series"))
                 .then(|| DownloadField {
@@ -843,23 +1015,42 @@ impl<T: HttpTransport + 'static> Inner<T> {
             message: live.message.clone(),
             effect_seq: live.effect_seq,
         };
-        let bottom = match (&server, live.bottom_ready && live.title_answered) {
+        let ready = live.bottom_ready && live.title_answered;
+        // The cast of the seed (the stored copy of an earlier visit) stands in frame 1; the fresh title replaces it.
+        let cast: Vec<CastTile> = if server.is_some() {
+            current
+                .actors()
+                .into_iter()
+                .take(CAST_LIMIT)
+                .map(|p| CastTile {
+                    id: p.id.clone(),
+                    name: p.name.clone(),
+                    role: p.role.clone(),
+                    image: addresses
+                        .as_ref()
+                        .and_then(|a| person_image(&p.id, p.primary_image_tag.as_deref(), a)),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        // Which rows can still arrive, so the host reserves their final height instead of letting them push in.
+        let cast_pending = cast.is_empty()
+            && !live.title_answered
+            && server.is_some()
+            && current.type_.as_deref() == Some("Movie");
+        let watchers_pending = !ready
+            && live.options.watchers_shown
+            && live.client.is_some()
+            && !placeholder
+            && current.type_.as_deref() != Some("Series");
+        let bottom = match (&server, ready) {
             (Some(client), true) => BottomPart {
                 version: live.bottom.version,
                 ready: true,
-                cast: current
-                    .actors()
-                    .into_iter()
-                    .take(CAST_LIMIT)
-                    .map(|p| CastTile {
-                        id: p.id.clone(),
-                        name: p.name.clone(),
-                        role: p.role.clone(),
-                        image: addresses
-                            .as_ref()
-                            .and_then(|a| person_image(&p.id, p.primary_image_tag.as_deref(), a)),
-                    })
-                    .collect(),
+                cast,
+                cast_pending: false,
+                watchers_pending: false,
                 extras: live
                     .extras
                     .iter()
@@ -897,7 +1088,9 @@ impl<T: HttpTransport + 'static> Inner<T> {
             _ => BottomPart {
                 version: live.bottom.version,
                 ready: false,
-                cast: Vec::new(),
+                cast,
+                cast_pending,
+                watchers_pending,
                 extras: Vec::new(),
                 similar: Vec::new(),
                 similar_failed: false,
@@ -944,6 +1137,11 @@ impl<T: HttpTransport + 'static> Inner<T> {
         };
         let jelly = live.client.clone();
         let switch = live.switch;
+        // What the account offers is remembered under the key of the account, as everything else kept for it is.
+        let offering = crate::offered::Whose::new(
+            live.scope.as_ref().map_or("", |scope| scope.0.as_str()),
+            &self.host,
+        );
         // Paint the stored copy of the title (once per visit) while the fresh one is on its way.
         let remembered = self
             .host
@@ -960,37 +1158,46 @@ impl<T: HttpTransport + 'static> Inner<T> {
             && let Some(mut stored) = cache.read_title(scope, &self.item.id)
         {
             stored.media_sources = None;
+            // The tile the page was opened with carries the newest user data (resume position, played). An older
+            // stored copy never overrides it: that flipped the Play label "Fortsetzen ab 20 Min." -> "Abspielen"
+            // -> "Fortsetzen ..." on a second visit. The copy fills the user data only when the tile has none.
+            stored.user_data = self.item.user_data.clone().or(stored.user_data);
             live.cached = Some(stored);
             self.publish(&mut live, false);
         }
+        // The proof line of an earlier visit: shown from this first frame until the fresh plan answers.
+        if let Some((cache, scope, _)) = &remembered
+            && live.mark.is_none()
+            && let Some(mark) = crate::proof_mark::read(cache, scope, &self.item.id)
+        {
+            live.mark = Some(mark);
+            self.publish(&mut live, false);
+        }
+        let proof_store = remembered
+            .as_ref()
+            .map(|(cache, scope, _)| (cache.clone(), cache.ticket(scope)));
         drop(live);
+        // The title and the playback plan are asked side by side and each is published when it arrives: the plan is a
+        // PlaybackInfo call (the server may probe the file), and nothing needed only to start Play may hold the page.
+        let who = client.who(&crate::prefetch::scope(&self.host));
         let inner = Arc::clone(self);
         let c = client.clone();
+        let who_item = who.clone();
         self.host.spawner.spawn(Box::pin(async move {
-            let (bitrate, local) = {
-                let live = inner.live();
-                (live.options.max_bitrate, live.local_plan.clone())
-            };
-            let (answer, planned) = join(c.item(&inner.item.id), async {
-                match local {
-                    Some(p) => Ok(Some((*p).clone())),
-                    None => c.plan(&inner.item.id, bitrate, None).await,
-                }
-            })
-            .await;
+            let answer = c.item(&inner.item.id).await;
             let mut live = inner.live();
             if live.switch != switch {
                 return;
             }
-            // The plan is replaced even by "none" (a refresh asks again), the page shows the
-            // proof row once it is answered.
-            live.plan = planned.ok().flatten().map(Arc::new);
             live.title_answered = true;
-            live.plan_present = true;
             match answer {
                 Ok(fresh) => {
                     if let Some((cache, _, ticket)) = &remembered {
                         cache.write_title(ticket, &fresh);
+                    }
+                    // The start of Play takes this copy instead of asking for the title again.
+                    if let Some(who) = &who_item {
+                        crate::prefetch::remember_item(who, &fresh, inner.host.clock.now());
                     }
                     live.fresh = Some(fresh);
                     if all {
@@ -1013,15 +1220,64 @@ impl<T: HttpTransport + 'static> Inner<T> {
             }
             inner.publish(&mut live, false);
         }));
+        let inner = Arc::clone(self);
+        let c = client.clone();
+        self.host.spawner.spawn(Box::pin(async move {
+            let (bitrate, local) = {
+                let live = inner.live();
+                (live.options.max_bitrate, live.local_plan.clone())
+            };
+            let planned = match &local {
+                Some(p) => Ok(Some((**p).clone())),
+                None => c.plan(&inner.item.id, bitrate, None).await,
+            };
+            if local.is_none()
+                && let (Some(who), Ok(Some(plan))) = (&who, &planned)
+            {
+                // Play starts from this plan when it is the one the engine would ask for.
+                crate::prefetch::remember_plan(
+                    who,
+                    &inner.item.id,
+                    bitrate,
+                    None,
+                    plan,
+                    inner.host.clock.now(),
+                );
+            }
+            let mut live = inner.live();
+            if live.switch != switch {
+                return;
+            }
+            // The plan is replaced even by "none" (a refresh asks again), the page shows the
+            // proof row once it is answered. A copy on the device keeps standing in for it.
+            live.plan = live
+                .local_plan
+                .clone()
+                .or_else(|| planned.ok().flatten().map(Arc::new));
+            live.plan_present = true;
+            // The answer stays for the next visit; a copy on the device is not a delivery question.
+            if local.is_none()
+                && let (Some((cache, ticket)), Some(plan)) = (&proof_store, live.plan.as_deref())
+            {
+                let version = live
+                    .fresh
+                    .as_ref()
+                    .map(crate::proof_mark::version_of)
+                    .unwrap_or_default();
+                crate::proof_mark::write(cache, ticket, &inner.item.id, bitrate, plan, version);
+            }
+            inner.publish(&mut live, false);
+        }));
         if all {
             let inner = Arc::clone(self);
             self.host.spawner.spawn(Box::pin(async move {
                 let own = inner.item.clone();
                 let watchers_on = inner.live().options.watchers_shown;
+                let seen = crate::offered::version(&offering);
                 let (similar, extras, collections, watchers) = join4(
                     client.similar(&own.id, i64::try_from(SIMILAR_LIMIT).unwrap_or(12)),
                     client.extras(&own.id),
-                    async { client.collection_rails(&own).await },
+                    async { client.collection_rails(&offering, &own).await },
                     // Plex keeps no list of who watched a title.
                     async {
                         match &jelly {
@@ -1031,20 +1287,33 @@ impl<T: HttpTransport + 'static> Inner<T> {
                     },
                 )
                 .await;
-                let mut live = inner.live();
-                if live.switch != switch {
-                    return;
+                {
+                    let mut live = inner.live();
+                    if live.switch != switch {
+                        return;
+                    }
+                    live.collections = collections;
+                    live.watchers = watchers;
+                    live.similar_failed = similar.is_err() && live.similar.is_empty();
+                    if let Ok(raw) = similar {
+                        live.similar = without_double(&similar_cleaned(&raw, &own, SIMILAR_LIMIT));
+                    }
+                    // Extras are not a section with a statement: if missing, the row is missing.
+                    live.extras = extras.unwrap_or_default();
+                    live.bottom_ready = true;
+                    inner.publish(&mut live, false);
                 }
-                live.collections = collections;
-                live.watchers = watchers;
-                live.similar_failed = similar.is_err() && live.similar.is_empty();
-                if let Ok(raw) = similar {
-                    live.similar = without_double(&similar_cleaned(&raw, &own, SIMILAR_LIMIT));
+                // After the page has drawn: the collections are asked again when the stored ones are over a minute old.
+                client.refresh_offering(&offering).await;
+                // The refresh brought other collections than the page drew from: the open page takes its row from them.
+                if crate::offered::version(&offering) != seen {
+                    let fresh = client.collection_rails(&offering, &own).await;
+                    let mut live = inner.live();
+                    if live.switch == switch && live.collections != fresh {
+                        live.collections = fresh;
+                        inner.publish(&mut live, false);
+                    }
                 }
-                // Extras are not a section with a statement: if missing, the row is missing.
-                live.extras = extras.unwrap_or_default();
-                live.bottom_ready = true;
-                inner.publish(&mut live, false);
             }));
         }
     }
@@ -1092,9 +1361,22 @@ impl<T: HttpTransport + 'static> Inner<T> {
         let id = self.item.id.clone();
         self.publish(&mut live, false);
         drop(live);
+        // Watched (or not) changes the resume point: what the page remembered for a start is out of date from now on.
+        let who = if watchlist {
+            None
+        } else {
+            client.who(&crate::prefetch::scope(&self.host))
+        };
+        if let Some(who) = &who {
+            crate::prefetch::forget(who, &id);
+        }
         let inner = Arc::clone(self);
         self.host.spawner.spawn(Box::pin(async move {
             let done = client.set_flag(&id, on, watchlist).await;
+            if let Some(who) = &who {
+                // Again once the server has the new state: a start in between must not have put the old one back.
+                crate::prefetch::forget(who, &id);
+            }
             let mut live = inner.live();
             if live.switch != switch {
                 return;
@@ -1234,6 +1516,10 @@ impl<T: HttpTransport + 'static> Inner<T> {
         let inner = Arc::clone(self);
         self.host.spawner.spawn(Box::pin(async move {
             let done = client.set_flag(&inner.item.id, false, false).await;
+            if let Some(who) = client.who(&crate::prefetch::scope(&inner.host)) {
+                // The resume point is gone: a start must not take the title the page remembered with it.
+                crate::prefetch::forget(&who, &inner.item.id);
+            }
             {
                 let mut live = inner.live();
                 if live.switch != switch {
@@ -1291,6 +1577,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
             live.cached = None;
             live.fresh = None;
             live.versions_failed = false;
+            live.queued = None;
             live.title_failure = None;
             live.toggle_error = None;
             live.similar.clear();
@@ -1300,6 +1587,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
             live.title_answered = false;
             live.plan = None;
             live.plan_present = false;
+            live.mark = None;
             live.watchers.clear();
             live.collections.clear();
             live.message = None;
@@ -1454,71 +1742,50 @@ pub async fn replan_for_subtitle<T: HttpTransport>(
     (again.method == DeliveryMethod::Transcode).then_some(again)
 }
 
-/// The same rows on Plex: the collections of the movie and series libraries with their
-/// members (`PlexClient.collectionDirectory`), at most two that hold the title.
-async fn plex_collection_rails<T: HttpTransport + 'static>(
-    client: &Plex<T>,
-    title: &Item,
-) -> Vec<(Item, Vec<Item>)> {
-    let Some(art) = LibraryGenre::art_to_type(title.type_.as_deref()) else {
-        return Vec::new();
-    };
-    let Ok(directory) = MediaServer::collection_directory(client, &[]).await else {
-        return Vec::new();
-    };
-    let mut found = Vec::new();
-    for collection in directory.collections_with(title).into_iter().take(2) {
-        let Ok(list) = client.collection_items(collection.id()).await else {
-            continue;
-        };
-        let in_section: Vec<Item> = list
-            .into_iter()
-            .filter(|m| LibraryGenre::art_to_type(m.type_.as_deref()) == Some(art))
-            .collect();
-        let other: Vec<Item> = without_double(&in_section)
-            .into_iter()
-            .filter(|i| i.id != title.id)
-            .collect();
-        if !other.is_empty() {
-            found.push((collection.item.clone(), other));
-        }
-    }
-    found
+/// The titles of a collection's row: the members of the section the title is in, without doubles and without the title.
+fn rail_titles(members: &[Item], art: &str, title: &Item) -> Vec<Item> {
+    let in_section: Vec<Item> = members
+        .iter()
+        .filter(|m| LibraryGenre::art_to_type(m.type_.as_deref()) == Some(art))
+        .cloned()
+        .collect();
+    without_double(&in_section)
+        .into_iter()
+        .filter(|i| i.id != title.id)
+        .collect()
 }
 
-/// "Part of the collection": at most two rows of the other titles of the collections this
-/// title is in (`AppModel.collectionRails`). Any failure leaves the row out.
-async fn collection_rails<T: HttpTransport>(
-    client: &JellyfinClient<T>,
-    title: &Item,
-) -> Vec<(Item, Vec<Item>)> {
-    let Some(art) = LibraryGenre::art_to_type(title.type_.as_deref()) else {
-        return Vec::new();
-    };
-    let Ok(views) = client.user_views(true).await else {
-        return Vec::new();
-    };
-    let Ok(directory) = collection_directory(client, &views).await else {
-        return Vec::new();
-    };
-    let mut found = Vec::new();
-    for collection in directory.collections_with(title).into_iter().take(2) {
-        let Ok(list) = client.collection_members(collection.id()).await else {
-            continue;
-        };
-        let in_section: Vec<Item> = list
-            .into_iter()
-            .filter(|m| LibraryGenre::art_to_type(m.type_.as_deref()) == Some(art))
-            .collect();
-        let other: Vec<Item> = without_double(&in_section)
-            .into_iter()
-            .filter(|i| i.id != title.id)
-            .collect();
-        if !other.is_empty() {
-            found.push((collection.item.clone(), other));
-        }
+/// What an account offers (the collections, the views they hide in), asked of a Jellyfin or Emby server
+/// (`AppModel.offeringLoad`: hidden collections count as none).
+async fn jelly_directory<T: HttpTransport + 'static>(
+    client: &Client<T>,
+) -> Option<CollectionDirectory> {
+    let (visible, hidden) = join(client.user_views(false), client.user_views(true)).await;
+    let visible = visible.ok()?;
+    let with_hidden = hidden.unwrap_or_else(|_| visible.clone());
+    if CollectionDirectory::hidden(&visible, &with_hidden) {
+        return Some(CollectionDirectory::default());
     }
-    found
+    collection_directory(client, &with_hidden).await.ok()
+}
+
+/// The collections of an account for a host screen that composes its own section menu (the desktop's library page):
+/// the directory the core keeps per account ([`crate::offered`], shared with the home page and the detail pages) when
+/// it is current, otherwise asked once and stored for them all. A library change reported for the account makes it old.
+/// `None` when the server cannot be asked and nothing current is kept.
+pub async fn account_directory<T: HttpTransport + 'static>(
+    client: &JellyfinClient<crate::host::Shared<T>>,
+    host: &Host,
+    account: &AccountRef,
+) -> Option<CollectionDirectory> {
+    let who = crate::offered::Whose::new(&account.key(), host);
+    if let Some(kept) = crate::offered::current(&who) {
+        return Some(kept);
+    }
+    let began = crate::offered::stamp(&who);
+    let found = jelly_directory(client).await?;
+    crate::offered::remember(&who, began, &found);
+    Some(found)
 }
 
 /// The server the page talks to: the same questions, asked of Jellyfin/Emby or of Plex.
@@ -1577,19 +1844,81 @@ impl<T: HttpTransport + 'static> Server<T> {
         }
     }
 
-    /// Where the viewer is in a series (`stateInSeries`).
-    pub(crate) async fn state_in_series(&self, id: &str) -> Option<Item> {
+    /// Where the viewer is in a series (`stateInSeries`); a failed request is an error (nothing started is `Ok(None)`).
+    pub(crate) async fn state_in_series_checked(
+        &self,
+        id: &str,
+    ) -> Result<Option<Item>, ErrorKind> {
         match self {
-            Self::Jelly(c) => swiftly_library::client_ext::state_in_series(&**c, id).await,
-            Self::Plex(c) => MediaServer::state_in_series(&**c, id).await,
+            Self::Jelly(c) => swiftly_library::client_ext::state_in_series_checked(&**c, id).await,
+            Self::Plex(c) => MediaServer::state_in_series_checked(&**c, id).await,
         }
     }
 
-    pub(crate) async fn collection_rails(&self, title: &Item) -> Vec<(Item, Vec<Item>)> {
-        match self {
-            Self::Jelly(c) => collection_rails(&**c, title).await,
-            Self::Plex(c) => plex_collection_rails(&**c, title).await,
+    /// The fetch of what the account offers, for [`crate::offered`] (nothing is asked until it runs).
+    pub(crate) fn directory_fetch(
+        &self,
+    ) -> impl FnOnce() -> Pin<Box<dyn Future<Output = Option<CollectionDirectory>> + Send>> + use<T>
+    {
+        let server = self.clone();
+        move || {
+            Box::pin(async move {
+                match &server {
+                    Self::Jelly(c) => jelly_directory(&**c).await,
+                    Self::Plex(c) => MediaServer::collection_directory(&**c, &[]).await.ok(),
+                }
+            })
         }
+    }
+
+    /// Asks again for the collections when the stored ones are older than a minute, for after a page has drawn.
+    pub(crate) async fn refresh_offering(&self, who: &crate::offered::Whose) {
+        crate::offered::refresh(who, self.directory_fetch()).await;
+    }
+
+    /// The titles of a collection (a short while kept: a row of a title in a collection is asked once, not per visit).
+    async fn collection_titles(
+        &self,
+        who: &crate::offered::Whose,
+        collection: &str,
+    ) -> Option<Arc<Vec<Item>>> {
+        if let Some(kept) = crate::offered::members(who, collection) {
+            return Some(kept);
+        }
+        let began = crate::offered::stamp(who);
+        let list = match self {
+            Self::Jelly(c) => c.collection_members(collection).await.ok()?,
+            Self::Plex(c) => c.collection_items(collection).await.ok()?,
+        };
+        Some(crate::offered::remember_members(
+            who, began, collection, list,
+        ))
+    }
+
+    /// "Part of the collection": at most two rows of the other titles of the collections this title is in
+    /// (`AppModel.collectionRails`). The collections come from the account's memory; any failure leaves the row out.
+    pub(crate) async fn collection_rails(
+        &self,
+        who: &crate::offered::Whose,
+        title: &Item,
+    ) -> Vec<(Item, Vec<Item>)> {
+        let Some(art) = LibraryGenre::art_to_type(title.type_.as_deref()) else {
+            return Vec::new();
+        };
+        let Some(directory) = crate::offered::directory(who, self.directory_fetch()).await else {
+            return Vec::new();
+        };
+        let holding = directory.collections_with(title);
+        let rows = join_all(holding.iter().take(2).map(|collection| {
+            let who = &who;
+            async move {
+                let list = self.collection_titles(who, collection.id()).await?;
+                let other = rail_titles(&list, art, title);
+                (!other.is_empty()).then(|| (collection.item.clone(), other))
+            }
+        }))
+        .await;
+        rows.into_iter().flatten().collect()
     }
 
     pub(crate) fn tile(&self, item: &Item, words: &Words) -> Tile {
@@ -1692,6 +2021,25 @@ pub(crate) fn clients<T: HttpTransport + 'static>(
     }
 }
 
+/// The address of the head picture the page of a tapped tile will ask for, known before that page exists: from the
+/// tile's own marks and the stored copy of the title (the same seed the page opens from, the same size and quality
+/// as the page's own request). A host starts the download on finger-down with it, so the picture is on its way
+/// while the page is still opening and the server resizes it in that time. `None` when the seed names no head
+/// picture yet (the page then asks after the title answered) and for Plex.
+pub fn head_picture_ahead<T: HttpTransport + 'static>(
+    transport: &Arc<T>,
+    host: &Host,
+    account: &AccountRef,
+    item: Item,
+) -> Option<String> {
+    let (client, _) = clients(transport, host, Some(account)).ok()?;
+    let client = client?;
+    let scope = crate::cache::ViewCache::scope(account);
+    let item = crate::seed::from_store(item, host.cache.as_ref(), Some(&scope));
+    let addresses = addresses(&*client)?;
+    header_image_waiting(&item, None, &addresses, false).map(|image| image.address)
+}
+
 /// A head or logo picture of a Plex title.
 fn plex_image(
     plex: &Plex<impl HttpTransport + 'static>,
@@ -1711,4 +2059,66 @@ fn plex_image(
             wanted_width: u32::try_from(width).unwrap_or(0),
             wanted_height: u32::try_from(height).unwrap_or(0),
         })
+}
+
+#[cfg(test)]
+mod default_version_tests {
+    use super::*;
+
+    fn source(id: Option<&str>, direct: bool) -> MediaSource {
+        MediaSource {
+            id: id.map(Into::into),
+            supports_direct_play: Some(direct),
+            ..Default::default()
+        }
+    }
+
+    fn id_of(sources: &[MediaSource]) -> Option<String> {
+        default_version(sources).and_then(|s| s.id.clone())
+    }
+
+    #[test]
+    fn on_a_tie_the_top_version_of_the_servers_order_is_the_default() {
+        let all = [
+            source(Some("a"), true),
+            source(Some("b"), true),
+            source(Some("c"), true),
+        ];
+        assert_eq!(id_of(&all).as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn the_version_that_takes_the_least_work_wins_like_in_the_plan() {
+        // The same rule the playback plan uses without a named version (`best_source`): the first one needs a transcode.
+        let all = [
+            source(Some("a"), false),
+            source(Some("b"), true),
+            source(Some("c"), true),
+        ];
+        assert_eq!(id_of(&all).as_deref(), Some("b"));
+        assert_eq!(id_of(&[]), None);
+    }
+
+    #[test]
+    fn a_source_without_an_id_is_never_the_default_nor_an_option() {
+        let all = [
+            source(None, true),
+            source(Some("b"), false),
+            source(Some("c"), false),
+        ];
+        assert_eq!(id_of(&all).as_deref(), Some("b"));
+        let one_usable = [source(None, true), source(Some("b"), true)];
+        let words = Words::new(swiftly_l10n::Locale::parse("de"));
+        assert!(
+            VersionOption::list(&one_usable, &words, "de", None).is_empty(),
+            "one usable version is no choice"
+        );
+        let list = VersionOption::list(&all, &words, "de", None);
+        assert_eq!(
+            list.iter()
+                .map(|o| (o.id.as_str(), o.is_default))
+                .collect::<Vec<_>>(),
+            [("b", true), ("c", false)]
+        );
+    }
 }

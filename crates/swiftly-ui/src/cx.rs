@@ -347,6 +347,16 @@ pub struct VideoFrame {
     pub rgba: Vec<u8>,
 }
 
+/// A frame that already lives on the GPU (a shared buffer of the engine's ring), on its way to the host. The host
+/// that made the ring's type knows what is inside; the UI crate only carries it.
+pub struct SharedFrame(pub Box<dyn std::any::Any>);
+
+impl std::fmt::Debug for SharedFrame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SharedFrame")
+    }
+}
+
 /// The hand-over between the player screen and a host that draws the video as its bottom layer (the wgpu window of
 /// the desktop app). With `gpu` unset the screen copies frames into the image page instead (the CPU path), so every
 /// host without a GPU layer keeps working. Frames are handed over by swapping buffers, never copied.
@@ -356,6 +366,8 @@ pub struct VideoHandoff {
     pub gpu: Option<GpuVideo>,
     /// The newest frame the host has not drawn yet.
     pub pending: Option<VideoFrame>,
+    /// The newest frame of the GPU path (no pixels on the CPU) the host has not drawn yet; it replaces `pending`.
+    pub shared: Option<SharedFrame>,
     /// The host's empty buffer for the next frame (swapped with the engine's).
     pub spare: Vec<u8>,
     /// A frame of the current play has been handed over, so the host's layer holds a picture.
@@ -370,6 +382,7 @@ impl VideoHandoff {
     /// A new play begins: forget the old picture.
     pub fn begin(&mut self) {
         self.pending = None;
+        self.shared = None;
         self.shown = false;
         self.reset = true;
     }

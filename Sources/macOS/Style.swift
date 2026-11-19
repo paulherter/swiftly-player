@@ -12,6 +12,9 @@ import JellyfinKit
 /// not the reading distance. All aspect ratios carry over too: poster 2:3,
 /// landscape tile 16:9. Only the absolute values grow.
 extension Theme {
+    /// The sheet curve the shared Seerr request sheet animates with (the one `Motion.sheet` defines).
+    static var sheetMotion: Animation { Motion.sheet }
+
     /// Same hairline as on iPhone, so the shared components in `Sources/Shared`
     /// find it here too.
 

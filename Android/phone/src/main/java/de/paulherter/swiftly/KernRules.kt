@@ -59,6 +59,8 @@ object KernRules {
     fun labels(): String = legacyLabels(language)
     fun savedGenres(): String = legacySavedGenres(language)
     fun collectionCountText(art: String, count: Long): String = legacyCollectionCountText(art, count, language)
+    /** The order a library page starts on until the viewer chose another one: the core's rule. */
+    fun defaultPageSorting(): String = legacyDefaultPageSorting()
 
     // Search
     fun searchTermFits(term: String): Boolean = legacySearchTermFits(term)
@@ -135,6 +137,8 @@ object KernRules {
     fun bitrateLevels(): String = legacyBitrateLevels(language)
     fun span(): String = legacySpan()
     fun languages(from: String): String = legacyLanguages(from, language)
+    /** The audio picker: like the file, "Original", then every language (the core's list, as on the other hosts). */
+    fun audioLanguages(): String = legacyAudioLanguages(language)
     fun bufferLevels(): String = legacyBufferLevels(language)
 
     // Pending reports

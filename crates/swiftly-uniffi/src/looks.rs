@@ -626,7 +626,7 @@ pub struct SubtitleOption {
     pub value: String,
 }
 
-fn subtitle_of(l: &SubtitleLookInfo) -> SubtitleLook {
+pub(crate) fn subtitle_of(l: &SubtitleLookInfo) -> SubtitleLook {
     SubtitleLook {
         background: l.background,
         colour: match l.colour {
@@ -654,7 +654,7 @@ fn subtitle_of(l: &SubtitleLookInfo) -> SubtitleLook {
     }
 }
 
-fn subtitle_info(l: &SubtitleLook) -> SubtitleLookInfo {
+pub(crate) fn subtitle_info(l: &SubtitleLook) -> SubtitleLookInfo {
     SubtitleLookInfo {
         background: l.background,
         colour: match l.colour {

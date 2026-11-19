@@ -12,11 +12,19 @@
 
 use swiftly_playback::engine::{EngineEvent, PlaybackEngine, Rect};
 
+pub mod pump;
 pub mod translate;
 pub mod wire;
 
 #[cfg(feature = "mpv")]
 pub mod mpv;
+#[cfg(all(feature = "mpv", target_os = "linux"))]
+pub mod mpv_gl;
+#[cfg(all(feature = "mpv", windows))]
+#[path = "mpv_gl_win.rs"]
+pub mod mpv_gl;
+#[cfg(feature = "mpv")]
+pub mod win_ring;
 
 /// How the picture reaches the screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +60,57 @@ pub struct DisplayHints {
     pub size: Option<(u32, u32)>,
 }
 
+/// One buffer of the GPU path: a DMA-buf the engine draws a frame into and the host samples from (no CPU copy). The
+/// picture is `R8G8B8A8` in memory (fourcc `AB24`), top row first.
+#[cfg(unix)]
+#[derive(Debug)]
+pub struct DmabufImage {
+    /// The buffer. The host duplicates it for every import.
+    pub fd: std::os::fd::OwnedFd,
+    /// DRM fourcc of the pixels.
+    pub fourcc: u32,
+    /// DRM format modifier of the layout.
+    pub modifier: u64,
+    /// Bytes per row.
+    pub stride: u32,
+    /// Offset of the first row in bytes.
+    pub offset: u32,
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+}
+
+/// The newest finished frame of the GPU path: which of the ring's buffers holds it.
+#[cfg(any(unix, windows))]
+#[derive(Debug, Clone)]
+pub struct SharedFrame {
+    /// Changes when the ring is made again (a new size); the host imports the images again then.
+    pub generation: u64,
+    /// The ring's buffers (the same list for every frame of one generation).
+    #[cfg(unix)]
+    pub images: std::sync::Arc<[DmabufImage]>,
+    /// The ring's picture size (on Windows the host made the images itself and looks them up by `generation`).
+    #[cfg(windows)]
+    pub size: (u32, u32),
+    /// The buffer that holds the newest frame.
+    pub slot: usize,
+}
+
+/// Result of [`VideoSurface::acquire_shared`].
+#[cfg(any(unix, windows))]
+#[derive(Debug, Clone)]
+pub enum SharedStatus {
+    /// This engine draws into CPU buffers ([`VideoSurface::acquire_frame`]).
+    Unsupported,
+    /// Nothing to show yet.
+    NotReady,
+    /// The last frame is still current.
+    Unchanged,
+    /// A new frame is in the buffer named by the value.
+    New(SharedFrame),
+}
+
 /// Counters of one playback, for the gate measurements and the technical badge.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct VideoStats {
@@ -67,6 +126,17 @@ pub struct VideoStats {
     pub decoded_fps: f64,
     /// Name of the hardware decoder in use (`none` = software).
     pub hwdec: String,
+    /// Which way the picture reaches the host: `gpu-dmabuf` (drawn on the GPU into shared buffers) or `cpu-sw` (libmpv
+    /// software renderer into RGBA buffers). Empty when the engine does not say.
+    pub path: String,
+    /// Median time to draw one frame in ms (on the render thread).
+    pub render_p50_ms: f64,
+    /// 99th percentile of the draw time in ms.
+    pub render_p99_ms: f64,
+    /// Frames drawn but replaced before the host took them (the host was slower than the video).
+    pub frames_superseded: u64,
+    /// Size of the frames drawn.
+    pub render_size: (u32, u32),
 }
 
 /// One audio output device.
@@ -140,6 +210,12 @@ pub trait VideoSurface: Send + Sync {
     fn acquire_frame(&self, max_width: u32, max_height: u32, out: &mut FrameBuffer) -> FrameStatus;
     /// Display hints of the picture that plays.
     fn display_hints(&self) -> DisplayHints;
+    /// The GPU path: the newest frame as a shared GPU buffer, scaled to fit `max_width x max_height`. Never waits for a
+    /// frame. Engines that draw into CPU buffers answer [`SharedStatus::Unsupported`].
+    #[cfg(any(unix, windows))]
+    fn acquire_shared(&self, _max_width: u32, _max_height: u32) -> SharedStatus {
+        SharedStatus::Unsupported
+    }
 }
 
 /// A [`PlaybackEngine`] that also owns a [`VideoSurface`] and reports through pulled events.

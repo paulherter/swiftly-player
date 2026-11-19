@@ -35,6 +35,8 @@ struct ProfileView: View {
     /// Connect Seerr, as a page of its own above everything: three fields and an
     /// on-screen keyboard need room that a row does not have.
     @State private var seerrOpen = false
+    /// The page behind the one "Verwaltung" / "Meine Anfragen" row (the core's entry).
+    @State private var managementRoute: ManagementHubRoute?
     @State private var communityTarget: CommunityTarget?
     /// Open-source licenses: full page, building blocks on the left, text on the right.
     @State private var licensesOpen = false
@@ -58,6 +60,10 @@ struct ProfileView: View {
     /// `.proceed` so they have the same binding.
     private enum RightTarget { case top, proceed }
 
+    /// The Seerr sections of the Startseite list: the same keys the core and the Start page read.
+    @AppStorage(SeerrArrival.hintKey) private var arrivalOn = true
+    @AppStorage(SeerrArrival.requestsKey) private var requestsOn = false
+
     /// All genres the server knows, for "Add genre".
     @State private var allGenres: [String] = []
     /// **"None open" was a lie when the server had not answered.** A settings row has
@@ -79,6 +85,8 @@ struct ProfileView: View {
     /// moved, the live order of the move mode.
     private var visibleRows: [String] {
         let ids = model.rowOrder.filter { id in
+            // The core lists the Seerr sections only while Seerr is connected; each has its own switch.
+            if id == HomeRowOrder.seerrArrival || id == HomeRowOrder.seerrRequests { return true }
             guard let rail = StartRail(rawValue: id) else { return true }
             return rail.fits(disconnected: model.newAccessDisconnected)
         }
@@ -112,6 +120,24 @@ struct ProfileView: View {
                     model.startLibraries.removeAll { $0.id == library }
                 }
                 .disabled(mover.movingRow != nil)
+            } else if id == HomeRowOrder.seerrArrival || id == HomeRowOrder.seerrRequests {
+                let isArrival = id == HomeRowOrder.seerrArrival
+                let name = String(localized: isArrival ? "Anfrage ist da" : "Meine Anfragen")
+                let on = isArrival ? arrivalOn : requestsOn
+                Button {
+                    if isArrival { arrivalOn.toggle() } else { requestsOn.toggle() }
+                } label: {
+                    HStack(spacing: 24) {
+                        Text(name)
+                        Spacer(minLength: 40)
+                        ToggleSwitch(an: on)
+                    }
+                }
+                .buttonStyle(SettingsRowsStyle())
+                .disabled(mover.movingRow != nil)
+                .accessibilityRepresentation {
+                    Toggle(isOn: .constant(on)) { Text(name) }
+                }
             } else if let rail = StartRail(rawValue: id) {
                 Button {
                     if model.startOut.contains(rail) { model.startOut.remove(rail) }
@@ -345,6 +371,9 @@ struct ProfileView: View {
         .fullScreenCover(item: $serverRoute) { route in
             TVAddServerFlow(model: model, route: route) { serverRoute = nil }
         }
+        .fullScreenCover(item: $managementRoute) { route in
+            TVManagementHub(model: model, route: route) { managementRoute = nil }
+        }
         .fullScreenCover(isPresented: $seerrOpen) {
             SeerrConnectView(model: model, seerr: model.seerr) { seerrOpen = false }
         }
@@ -576,6 +605,10 @@ struct ProfileView: View {
                     seerrOpen = true
                 }
                 .focused($right, equals: .top)
+                if model.seerr.connected {
+                    SeparatorLine()
+                    TVManagementEntryRow(model: model) { managementRoute = $0 }
+                }
             }
 
         case .community:
@@ -1161,8 +1194,8 @@ private struct AccountsStrip: View {
     }
 }
 
-/// Focus as a white ring and some enlargement: the same language as the tiles,
-/// just round because a profile picture is an image.
+/// Focus as the tiles give it (lift, growth, the picture brightening; no ring), round or square
+/// (``View/pictureFocus(_:shape:dim:grow:)``).
 private struct AccountStripStyle: ButtonStyle {
     let size: CGFloat
     var square = false
@@ -1178,23 +1211,15 @@ private struct AccountStripStyle: ButtonStyle {
         @Environment(\.isFocused) private var focus
 
         var body: some View {
-            configuration.label
-                .overlay {
-                    Group {
-                        if square {
-                            RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
-                                .strokeBorder(Color.white, lineWidth: 4)
-                        } else {
-                            Circle().strokeBorder(Color.white, lineWidth: 4)
-                        }
-                    }
-                    .opacity(focus ? 1 : 0)
+            Group {
+                if square {
+                    configuration.label.pictureFocus(focus, shape: RoundedRectangle(cornerRadius: Theme.corner, style: .continuous),
+                                                     dim: TVSpec.pictureDimIdle)
+                } else {
+                    configuration.label.pictureFocus(focus, shape: Circle(), dim: TVSpec.pictureDimIdle)
                 }
-                .frame(width: size, height: size)
-                // No shadow, see `PlayerScreen`. The magnification says it. One value for the
-                // same 60 pt circle here and at `ProfileStyle`: the small level.
-                .scaleEffect(focus ? Theme.focusMagnifierSmall : 1)
-                .animation(Theme.focusAnimation, value: focus)
+            }
+            .frame(width: size, height: size)
         }
     }
 }

@@ -243,6 +243,10 @@ private struct MacSupportPresentation: ViewModifier {
 
     private func ask(sheet: Bool) {
         guard model.phase == .ready else { return }
+        #if DEBUG
+        // Proof hook: `-SwiftlyNoSupportAsk` keeps the ask off the window capture of a running-app proof.
+        if ProcessInfo.processInfo.arguments.contains("-SwiftlyNoSupportAsk") { return }
+        #endif
         // One big ask per session: after the gift or What's New the sheet waits.
         let gift = GiftFlow.shared
         SupportModel.shared.evaluate(

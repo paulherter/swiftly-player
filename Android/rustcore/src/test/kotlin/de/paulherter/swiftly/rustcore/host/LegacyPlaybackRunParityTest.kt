@@ -100,7 +100,7 @@ class LegacyPlaybackRunParityTest {
             tick(p, "t01-loading", 12.0, 0.0, image = false, audio = false)
             tick(p, "t02-first", 12.0, 0.5)
             tick(p, "t03-start", 12.0, 1.0)
-            same("pl-run-select", p.tracksSelect("[]", "[]", -1, "", "", false, "{}", "{}"))
+            same("pl-run-select", p.tracksSelect("[]", "[]", -1, "", "", false, "{}", "{}", ""))
             tick(p, "t04-intro", 12.0, 2.5)
             tick(p, "t05-auto", 12.0, 2.9, auto = true)
             tick(p, "t06-auto-again", 12.0, 3.0, auto = true)

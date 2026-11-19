@@ -103,13 +103,14 @@ fn plex_toggles_scrobble_and_rate() {
 
 // ---- a Plex account from the AccountRef: library paging and the detail page ----
 
+use swiftly_cache::{CacheConfig, EntityCache};
 use swiftly_jellyfin::ServerKind;
 use swiftly_library::library_filter::Sorting;
 use swiftly_library::{LibraryFilter, ShelfSource as Source};
 use swiftly_model::Item;
 use swiftly_vm::{
-    AccountRef, DetailIntent, DetailVm, HomeIntent, HomeVm, LibraryStatus, PlayAction, RailKind,
-    Status, plex_client_for,
+    AccountRef, DetailIntent, DetailVm, HomeIntent, HomeVm, Host, LibraryStatus, PlayAction,
+    RailKind, Status, ViewCache, plex_client_for,
 };
 
 const SECTIONS: &str = include_str!("../../swiftly-plex/tests/fixtures/sections.json");
@@ -253,10 +254,7 @@ fn a_plex_detail_page_has_the_plan_and_the_proof_row() {
     // Plex keeps no list of who watched a title.
     assert!(vm.bottom().watchers.is_empty());
     assert!(vm.hero().image.is_some());
-    assert!(matches!(
-        vm.play(None),
-        PlayAction::Start { .. } | PlayAction::Choose { .. }
-    ));
+    assert!(matches!(vm.play(None), PlayAction::Start { .. }));
 
     vm.send(DetailIntent::SetWatched { on: true });
     wait_for("scrobble", || net.count("/:/scrobble") == 1);
@@ -372,9 +370,9 @@ fn a_plex_series_page_has_seasons_episodes_and_the_next_episode() {
     wait_for("scrobble", || net.count("/:/scrobble") == 1);
 }
 
-#[test]
-fn a_plex_detail_page_has_collection_rails_and_cast_photos() {
-    let net = Script::new(|r| {
+/// A Plex server with one section, one collection (two titles) and the movie of `entry()`.
+fn collections_server() -> Arc<Script> {
+    Script::new(|r| {
         let p = r.url.path();
         let metas = |list: serde_json::Value| {
             Some(serde_json::json!({"MediaContainer": {"Metadata": list}}).to_string())
@@ -395,7 +393,12 @@ fn a_plex_detail_page_has_collection_rails_and_cast_photos() {
                 {"ratingKey": "2", "type": "movie", "title": "Teil zwei"}]));
         }
         Some(r#"{"MediaContainer":{"size":0}}"#.into())
-    });
+    })
+}
+
+#[test]
+fn a_plex_detail_page_has_collection_rails_and_cast_photos() {
+    let net = collections_server();
     let vm = DetailVm::new(net.clone(), host(), entry(), Some(plex_account())).unwrap();
     vm.send(DetailIntent::Load);
     wait_for("bottom", || vm.bottom().ready);
@@ -416,5 +419,39 @@ fn a_plex_detail_page_has_collection_rails_and_cast_photos() {
     assert_eq!(
         ann.image.as_ref().map(|i| i.address.as_str()),
         Some("https://metadata-static.plex.tv/a.jpg")
+    );
+}
+
+/// The memory of what a Plex account offers belongs to the account like every other thing kept for it: signing out
+/// (`drop_account`) forgets it, so the next page asks the server again.
+#[test]
+fn signing_out_of_a_plex_account_makes_the_next_page_ask_for_the_collections_again() {
+    let net = collections_server();
+    let cache = ViewCache::new(EntityCache::in_memory(CacheConfig::default()).unwrap());
+    let app = Host {
+        cache: Some(cache.clone()),
+        ..host()
+    };
+    let account = AccountRef {
+        base_url: "https://plex-sign-out.example.test".into(),
+        ..plex_account()
+    };
+    let asked = || net.count("/library/sections/1/collections");
+    let first = DetailVm::new(net.clone(), app.clone(), entry(), Some(account.clone())).unwrap();
+    first.send(DetailIntent::Load);
+    wait_for("the first page", || first.bottom().ready);
+    assert_eq!(first.bottom().collections.len(), 1);
+    drop(first);
+    let before = asked();
+    assert!(before > 0);
+
+    cache.drop_account(&account);
+
+    let second = DetailVm::new(net.clone(), app, entry(), Some(account)).unwrap();
+    second.send(DetailIntent::Load);
+    wait_for("the second page", || second.bottom().ready);
+    assert!(
+        asked() > before,
+        "the page after the sign-out drew from what the signed-out account had offered"
     );
 }

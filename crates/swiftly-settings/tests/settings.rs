@@ -23,7 +23,8 @@ fn defaults_are_the_swift_defaults() {
     assert!(s.get(&keys::BILDRATE_ANPASSEN));
     assert!(s.get(&keys::STARTMESSUNG));
     assert_eq!(s.get(&keys::UT_AUSSEHEN), None);
-    assert!(!s.get(&keys::UT_AUTO));
+    // Automatic subtitles are on until the settings turn them off (the track rule's default).
+    assert!(s.get(&keys::UT_AUTO));
     assert_eq!(s.get(&keys::TON_SPRACHE), "");
     assert_eq!(s.get(&keys::NAECHSTE_AUTO), None);
     assert_eq!(s.get(&keys::PUFFERSTUFE), "normal");
@@ -64,7 +65,7 @@ fn set_get_reset_and_unset_option() {
 fn wrong_type_in_the_store_falls_back_to_the_default() {
     let s = mem();
     s.store().set("utAuto", Value::Str("ja".into())).unwrap();
-    assert!(!s.get(&keys::UT_AUTO));
+    assert!(s.get(&keys::UT_AUTO));
     s.store().set("vorSek", Value::Double(45.0)).unwrap();
     assert_eq!(s.get(&keys::VOR_SEK), 45);
     s.store().set("vorSek", Value::Double(45.5)).unwrap();
@@ -109,6 +110,18 @@ fn per_server_keys_are_built_like_swift() {
     );
     assert_eq!(
         s.get_for_server_only(&keys::START_BIBLIOTHEKEN, "https://b"),
+        None
+    );
+    // The Seerr address is set up once per server: another server does not see it.
+    s.set_for_server(
+        &keys::SEERR_SERVER,
+        srv,
+        Some(b"{\"address\":\"https://s\"}".to_vec()),
+    )
+    .unwrap();
+    assert!(s.get_for_server_only(&keys::SEERR_SERVER, srv).is_some());
+    assert_eq!(
+        s.get_for_server_only(&keys::SEERR_SERVER, "https://b"),
         None
     );
 }
@@ -160,9 +173,9 @@ fn subtitle_auto_migration_runs_once() {
     // The user turns it off again: the migration does not run a second time.
     s.set(&keys::UT_AUTO, false).unwrap();
     assert!(!s.migrate_subtitle_auto().unwrap());
-    // Without a language nothing is switched on.
+    // Without a language the switch stays at its default (on).
     let t = mem();
-    assert!(!t.migrate_subtitle_auto().unwrap());
+    assert!(t.migrate_subtitle_auto().unwrap());
     assert!(t.get(&keys::UT_AUTO_NACHGEZOGEN));
 }
 
@@ -210,7 +223,7 @@ fn registry_is_consistent_with_the_sync_table() {
     );
     assert_eq!(
         keys::ALL.iter().filter(|k| k.scope.is_per_server()).count(),
-        4 // + startReihenfolge (new in Rust)
+        5 // + startReihenfolge and seerrServer (new in Rust)
     );
 }
 
@@ -234,6 +247,10 @@ fn every_key_name_is_documented_in_the_apple_notes() {
         "support.key",
         "support.keyChecked",
         "startReihenfolge",
+        "seerrArrivalHint",
+        "seerrRequestsRail",
+        "seerrArrivalDismissed",
+        "seerrServer",
     ];
     for k in keys::ALL {
         let known = a.contains(k.name) || b.contains(k.name) || source_only.contains(&k.name);

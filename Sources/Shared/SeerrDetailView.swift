@@ -1,45 +1,28 @@
 import JellyfinKit
 import SwiftUI
+import SwiftlyCore
 
 /// The page of a title the own server does not have yet.
 ///
-/// **The same page as usual, just a different action.** Swapped are the big button
-/// (*Continue* becomes *Request*) and the tabs: there are no episodes to show, but
-/// cast and suggestions.
+/// **The same page as usual, just a different action.** Hero, status row, one big button, description, cast
+/// and similar titles are the series page's building blocks line by line (the spacing, the hero that
+/// measures itself in the "blatt" space, the weak gradient). What deviates: the status stands in the proof
+/// row, the big button asks instead of playing, and a series lists its seasons with their state.
 ///
-/// **The structure is the series page's, line by line.** That is not convenience
-/// but the lesson of three rounds. Rebuilding the page misses the spacing: the
-/// header sat lower, the image stuck while scrolling, and a gradient showed at the
-/// top that never existed there. Each of these three deviations was a component
-/// that already existed and went unused: `Heldbild` measures itself in the "blatt"
-/// space, `DetailHeader` brings its own, much weaker gradient, and
-/// `.ignoresSafeArea(edges: .top)` is why the image reaches the top at all.
-///
-/// What deviates here does so on purpose and has a comment.
+/// Everything that is a decision (state words, the button, the quota, which seasons can be ticked) comes
+/// from the core's `SeerrTitleScreen` through ``SeerrTitleFlow``; this view draws it.
 struct SeerrDetailView: View {
     let model: AppModel
-    let hit: SeerrHit
+    let hit: JellyfinKit.SeerrHit
 
     @Environment(\.dismiss) private var back
     @Environment(\.wide) private var wide
 
-    /// How far scrolled; the header fades in after that. As there.
-    /// How tall the season list is in total, measured so the sheet does not get taller
-    /// than its content.
-    @State private var listsHeight: CGFloat = 0
     @State private var offset: CGFloat = 0
+    @State private var flow: SeerrTitleFlow?
+    @State private var adminBusy: Int64?
 
-    /// The page's state machine (state, words, button, season sheet, second tap) lives in the core.
-    @State private var flow: SeerrCore.Flow?
-
-    private var page: SeerrCore.Page? { flow?.page }
-    /// The server knows better than the search hit from before; the core keeps the newer one.
-    private var state: SeerrState { page.map { SeerrCore.state($0.hit.state) } ?? hit.state }
-
-    init(model: AppModel, hit: SeerrHit) {
-        self.model = model
-        self.hit = hit
-    }
+    private var info: SwiftlyCore.SeerrTitleInfo? { flow?.info }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -51,78 +34,77 @@ struct SeerrDetailView: View {
 
                     VStack(alignment: .leading, spacing: 14) {
                         proofRow
-                        primaryButton
+                        primaryBlock
                         description
                     }
                     .padding(.horizontal, Theme.margin(wide: wide))
                     .padding(.top, 14)
 
-                    // **Two rows, no tabs.** Exactly as on the movie page: a row of cast, below it a
-                    // row of similar titles. As tabs with a grid this was a wall of twenty heads.
-                    // Horizontally a row shows five and hints at the rest; whoever wants more
-                    // scrolls.
+                    seasons
+                    episodes
                     cast
                     similarRail
-                    if flow == nil || page?.disturbed == true {
-                        // This holds Seerr's address, not the own server's: the own one is running, or you would not be on this page.
+                    if flow == nil || info?.load == .offline || info?.load == .failed {
                         DisturbHint(model: model, retry: { Task { await load() } },
-                                     address: model.seerr.address)
+                                    address: model.seerr.address)
                     }
                 }
                 .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
-            // The space in which `Heldbild` measures its stretch. Without it the image stayed put while scrolling instead of moving along.
             .coordinateSpace(.named("blatt"))
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
                 let clamped = min(max(new, 0), Theme.heroHeightValue - 110)
                 if clamped != offset { offset = clamped }
             }
-            // Without this the safe area's black strip shows above the image.
             .ignoresSafeArea(edges: .top)
 
-            // **Our own sheet, not the system's.** A `.sheet` brings its own language
-            // (rounded corners at the top, grabber, navigation bar) and stood next to "More"
-            // and the playlists like from another app.
-            if let error = page?.error {
-                HintStrip(text: error) { flow?.dismissError() }
-                    .zIndex(21)
-            }
+            DetailHeader(title: title, offset: offset) { back() }
 
-            DetailHeader(title: hit.title, offset: offset) { back() }
+            if let flow {
+                RequestSheet(flow: flow).zIndex(20)
+            }
         }
-        // Which seasons: a sheet from below, attached to the side and not in the stack, since a sheet is a modifier.
-        .sheet(opened: Binding(get: { page?.sheetOpen ?? false },
-                               set: { if !$0 { flow?.closeSheet() } })) { seasonSheet }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
         .background(SwipeBack())
         #endif
-        // The core opens the page and, for a series, the season list; nothing is preselected.
         .task { await load() }
     }
 
     private func load() async {
-        guard let client = model.seerr.coreClient else { return }
-        let made = flow ?? SeerrCore.Flow(model: client)
+        guard model.seerr.connected else { return }
+        let made = flow ?? SeerrTitleFlow(hub: model.seerr.hub, art: hit.art, tmdb: Int64(hit.id))
         flow = made
-        await made.open(SeerrCore.coreHit(hit))
+        await made.start()
+        #if DEBUG
+        // Proof hook (Werkzeuge/sheet-ride-run.sh): `-SwiftlyLiveOpenSheet <season|0>` opens the request sheet once the page rests.
+        let args = ProcessInfo.processInfo.arguments
+        if let at = args.firstIndex(of: "-SwiftlyLiveOpenSheet"), at + 1 < args.count {
+            try? await Task.sleep(for: .seconds(3))
+            let season = Int64(args[at + 1]) ?? 0
+            made.open(season: season > 0 ? season : nil)
+        }
+        #endif
     }
 
     // MARK: Parts
 
-    /// Word for word as `SeriesDetailView.hero`, only with TMDB's landscape image instead of the own server's.
+    private var title: String {
+        guard let name = info?.title, !name.isEmpty else { return hit.title }
+        return name
+    }
+
     private var hero: some View {
-        HeroImage(url: hit.backdrop())
+        HeroImage(url: info?.backdrop.flatMap { URL(string: $0) } ?? hit.backdrop())
             .overlay(alignment: .bottom) { HeroRunOut() }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(verbatim: hit.title)
+                    Text(verbatim: title)
                         .font(Theme.title)
                         .tracking(Theme.lockTitle)
                         .foregroundStyle(Theme.font)
                     Text(verbatim: secondaryLine)
-                        // Year, runtime, genre are one statement: 12, as under every other hero image. Before: 13 Regular, a step that does not exist.
                         .font(Theme.small)
                         .foregroundStyle(Theme.fontQuiet)
                         .lineLimit(1)
@@ -132,98 +114,149 @@ struct SeerrDetailView: View {
             }
     }
 
-    /// Year, seasons or runtime, genres: the same order as there; the core words it.
     private var secondaryLine: String {
-        page?.secondaryLine ?? (hit.isSeries ? String(localized: "Serie") : String(localized: "Film"))
+        if let line = info?.secondaryLine, !line.isEmpty { return line }
+        return hit.isSeries ? String(localized: "Serie") : String(localized: "Film")
     }
 
-    /// **Really the same row as there.** It stood here a second time, rebuilt with the
-    /// same numbers (symbol 11 heavy, word 13 medium, spacing 6 and 14). Now the page
-    /// only passes in symbol, word and color; the measures live in one place.
-    ///
-    /// **Zero is not a rating.** For an unrated title TMDB delivers a zero, which would
-    /// become "★ 0.0", a false statement. So it drops out here and not only there.
+    /// The state in the app's proof row (the same row as "Direct Play" there), then the stars.
     private var proofRow: some View {
-        ProofRow(rating: page?.rating.flatMap { $0 > 0 ? $0 : nil },
-                   own: (symbol: state.symbol, word: state.word, color: state.color))
+        ProofRow(rating: info?.rating.flatMap { $0 > 0 ? $0 : nil },
+                 own: info?.badge.map { (symbol: $0.symbol, word: $0.line, color: $0.kind.tint) })
+            .animation(Theme.reveal, value: info?.badge)
     }
 
-    /// **A status is not a button.**
-    ///
-    /// What waits or loads cannot be requested again; a statement stands there instead
-    /// of a gray button.
-    ///
-    /// The surrounding stack is that of `SeriesDetailView.primaryButton`: the same
-    /// `VStack(spacing: 9)`, so the row below sits at the same height as "25 minutes
-    /// left" there.
+    /// **A status is not a button.** What waits or loads says so instead of offering a second request; what is
+    /// locked (limit reached) stays a muted button with the reason right under it.
     @ViewBuilder
-    private var primaryButton: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            if let page, page.canRequest {
-                Button { Task { await flow?.press() } } label: {
+    private var primaryBlock: some View {
+        if let info, info.primary.kind != .hidden {
+            VStack(alignment: .leading, spacing: 9) {
+                Button { flow?.open(season: nil) } label: {
                     HStack(spacing: 8) {
-                        // No ring: the text says "Wird angefragt…".
-                        Image(icon: page.buttonChecked ? "checkmark" : "plus", size: 15)
-                            .font(.app(size: 15, weight: .semibold))
-                            .opacity(page.running ? 0.5 : 1)
-                        Text(page.buttonText)
+                        if info.primary.kind == .request {
+                            Image(icon: "plus", size: 15).font(.app(size: 15, weight: .semibold))
+                        } else if info.primary.kind == .requested {
+                            Image(icon: "checkmark", size: 15).font(.app(size: 15, weight: .semibold))
+                        }
+                        Text(verbatim: info.primary.text)
                     }
                 }
-                // **The same button as "Continue", no ifs and buts.** What distinguishes it is the word on it.
-                // Height, corner and font size live in the style and not here.
                 .buttonStyle(PrimaryButtonStyle(stretches: true))
-                .disabled(page.running)
-                // The change of label should be visible, otherwise nobody reads that something changed.
-                .animation(Theme.leap, value: page.buttonChecked)
-            } else {
-                inquiry(page?.note ?? state.hint)
+                .disabled(info.primary.kind != .request || !info.primary.enabled)
+                .accessibilityIdentifier("seerr-primary")
+                if info.primary.kind == .request || info.primary.kind == .locked {
+                    QuotaLine(text: flow?.quota, warning: info.primary.kind == .locked)
+                }
             }
+            .animation(Theme.leap, value: info.primary.kind)
         }
     }
 
     @ViewBuilder
     private var description: some View {
-        if let text = page?.description {
+        if let text = info?.overview, !text.isEmpty {
             CollapsibleText(text: text)
         }
     }
 
-    /// Word for word as `ItemDetailView.cast`, only with TMDB's heads instead of
-    /// the own server's, including the limit at twelve.
-    ///
-    /// No arrow beside it: a page with the full cast does not exist here, and an arrow
-    /// would promise one.
+    // MARK: Seasons
+
+    /// The seasons with their state: a line of words, and a thin progress bar while one is on its way.
     @ViewBuilder
-    private var cast: some View {
-        let folks = page?.cast ?? []
-        if !folks.isEmpty {
-            Segment(title: "Besetzung") {
-                HStack(alignment: .top, spacing: 14) {
-                    ForEach(Array(folks.prefix(12).enumerated()), id: \.offset) { _, c in
-                        let person = SeerrCore.person(c)
-                        CastTile(image: person.image(), name: person.name,
-                                         role: person.role)
-                    }
+    private var seasons: some View {
+        let rows = info?.seasons ?? []
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Staffeln")
+                    .font(Theme.section).tracking(Theme.lockSection)
+                    .foregroundStyle(Theme.font)
+                    .padding(.horizontal, Theme.margin(wide: wide))
+                    .padding(.bottom, 8)
+                    .accessibilityAddTraits(.isHeader)
+                ForEach(Array(rows.enumerated()), id: \.element.number) { index, row in
+                    if index > 0 { SheetLine() }
+                    seasonStatus(row)
                 }
-                .padding(.horizontal, Theme.margin(wide: wide))
             }
+            .padding(.top, 28)
         }
     }
 
-    /// The same row as there, with `SeerrTile` instead of `PosterTile`, because the
-    /// suggestions are not on the server either and belong pale.
-    ///
-    /// The fixed measure lives here and not in the tile: in the search grid it gets its
-    /// width from the column, in a row it has none.
+    private func seasonStatus(_ row: SwiftlyCore.SeerrSeasonRowInfo) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Button {
+                guard row.selectable else { return }
+                flow?.open(season: row.number)
+            } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text(verbatim: row.title).font(.app(size: 15, weight: .medium)).foregroundStyle(Theme.font)
+                        if let episodes = row.episodes {
+                            Text(verbatim: "· \(episodes)").font(Theme.small).foregroundStyle(Theme.fontVeryQuiet)
+                        }
+                    }
+                    HStack(spacing: 5) {
+                        Image(icon: row.badge.symbol, size: 11).font(.app(size: 11))
+                        Text(verbatim: row.badge.line.isEmpty ? row.badge.word : row.badge.line).font(Theme.small)
+                    }
+                    .foregroundStyle(row.badge.kind.tint)
+                    if let share = row.badge.progress {
+                        ProgressBar(share: Double(share), round: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(Theme.PressRow())
+            .accessibilityElement(children: .combine)
+
+            if let request = SeasonAdmin.waitingRequest(row, model: model) {
+                HStack(spacing: 8) {
+                    ValuePill(symbol: "xmark", text: String(localized: "Ablehnen")) { decide(request, approve: false) }
+                    ValuePill(symbol: "checkmark", text: String(localized: "Freigeben")) { decide(request, approve: true) }
+                }
+                .opacity(adminBusy == request ? 0.5 : 1)
+                .disabled(adminBusy == request)
+            }
+        }
+        .padding(.horizontal, Theme.margin(wide: wide))
+        .padding(.vertical, 12)
+    }
+
+    private func decide(_ request: Int64, approve: Bool) {
+        adminBusy = request
+        Task {
+            await SeasonAdmin.decide(request, approve: approve, model: model, flow: flow)
+            adminBusy = nil
+        }
+    }
+
+    // MARK: Episodes
+
+    /// **The episodes of a title the server does not have, like a library page lists them** (`SeerrEpisodes`, the
+    /// same view the Mac and the TV draw; the season rule is the core's).
     @ViewBuilder
-    private var similarRail: some View {
-        let other = (page?.similar ?? []).map { SeerrCore.hit($0.hit) }
-        if !other.isEmpty {
-            Segment(title: "Ähnliche Titel") {
-                HStack(alignment: .top, spacing: Theme.tileSpacing) {
-                    ForEach(other) { t in
-                        NavigationLink(value: t) {
-                            SeerrTile(hit: t).frame(width: Theme.tileWidth)
+    private var episodes: some View {
+        if let flow, flow.episodeSeasonRow != nil {
+            SeerrEpisodes(flow: flow, margin: Theme.margin(wide: wide))
+                .padding(.top, 28)
+        }
+    }
+
+    // MARK: Cast and similar
+
+    /// Word for word as `ItemDetailView.cast`, only with TMDB's heads, limit twelve. A tap opens the person page with
+    /// the TMDB id (`PersonRoute(seerrCast:)`), like a library cast tile.
+    @ViewBuilder
+    private var cast: some View {
+        let folks = info?.cast ?? []
+        if !folks.isEmpty {
+            Segment(title: "Besetzung") {
+                HStack(alignment: .top, spacing: 14) {
+                    ForEach(Array(folks.prefix(12).enumerated()), id: \.offset) { _, person in
+                        NavigationLink(value: PersonRoute(seerrCast: person, origin: info?.title)) {
+                            CastTile(image: person.image.flatMap { URL(string: $0) }, name: person.name, role: person.role)
                         }
                         .buttonStyle(Theme.PressButton())
                     }
@@ -233,103 +266,21 @@ struct SeerrDetailView: View {
         }
     }
 
-    // MARK: Status in words
-
-    // Symbol, word, color and hint live in `SeerrMark.swift`, the same table the tile reads. It used to exist here a second time, with other symbols and other colors.
-
-    private func inquiry(_ text: String) -> some View {
-        Text(verbatim: text)
-            // **Growing with the text, not fixed**. Applies to the
-            // statement, the season rows and the button in the sheet; their heights are
-            // therefore minimum heights. Fixed stay the page title above the hero image and
-            // its subline: the bar there carries an image.
-            .growing(15)
-            .foregroundStyle(Theme.fontQuiet)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 13).padding(.horizontal, 14)
-            // Surface measure, not field measure: the box is a surface, not an input field. It was 10 because that was the number nearby.
-            .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
-    }
-
-    // MARK: Seasons
-
-    /// The seasons to tick.
-    ///
-    /// **What is already there cannot be ticked** and says beside it that it is there.
-    /// A checkbox you may press that does nothing is worse than none. The rows come from the core.
     @ViewBuilder
-    private var seasonList: some View {
-        ForEach(page?.seasons ?? [], id: \.number) { st in
-            Button {
-                guard st.requestable else { return }
-                flow?.toggleSeason(Int(st.number))
-            } label: {
-                HStack(spacing: 10) {
-                    Text(verbatim: st.title)
-                        .growing(15)
-                        .foregroundStyle(st.requestable ? Theme.font : Theme.fontVeryQuiet)
-                    if let episodes = st.episodes {
-                        Text(verbatim: "· \(episodes)")
-                            .growing(12).foregroundStyle(Theme.fontVeryQuiet)
-                    }
-                    Spacer(minLength: 8)
-                    if st.requestable {
-                        Image(icon: st.selected ? "checkmark.square.fill" : "square", size: 17)
-                            .font(.app(size: 17))
-                            .foregroundStyle(st.selected ? Theme.accent : Theme.fontVeryQuiet)
-                    } else if let note = st.note {
-                        Text(verbatim: note)
-                            .growing(12).foregroundStyle(Theme.fontVeryQuiet)
+    private var similarRail: some View {
+        let other = info?.similar ?? []
+        if !other.isEmpty {
+            Segment(title: "Ähnliche Titel") {
+                HStack(alignment: .top, spacing: Theme.tileSpacing) {
+                    ForEach(other) { card in
+                        NavigationLink(value: card.route) {
+                            SeerrTile(card: card, width: Theme.tileWidth)
+                        }
+                        .buttonStyle(Theme.PressButton())
                     }
                 }
-                .padding(.horizontal, Theme.edgeSpacing)
-                .frame(minHeight: 50)
-                .contentShape(Rectangle())
+                .padding(.horizontal, Theme.margin(wide: wide))
             }
-            .buttonStyle(Theme.PressRow())
-            // The cross in the box is the accent, and the accent is color: `.isSelected` conveys the state.
-            .accessibilityAddTraits(st.selected ? .isSelected : [])
         }
-    }
-
-    /// What is in the sheet. Body, motion and grabber come from ``Blattmodifikator``.
-    @ViewBuilder
-    private var seasonSheet: some View {
-        SheetCategory(text: Text("Welche Staffeln?"))
-
-        ScrollView {
-            VStack(spacing: 0) { seasonList }
-                // Measured, not assumed.
-                .onGeometryChange(for: CGFloat.self) { $0.size.height }
-                    action: { listsHeight = $0 }
-        }
-        // **As tall as the seasons, at most 320.**
-        //
-        // There used to be `.frame(maxHeight: 320)`, and that is not enough: a
-        // `ScrollView` is vertically greedy and takes the 320 even when three seasons need
-        // only 150. What remained was a hollow of a good two centimeters under the last
-        // row, doing nothing. Feedback: "there are about 2 cm free, as if something were
-        // there that is not."
-        //
-        // The same calculation as in `SelectionSheet`, where it is already explained.
-        .frame(height: min(listsHeight, 320))
-        .scrollIndicators(.hidden)
-
-        // Full width, because the button below is too.
-        SheetLine()
-
-        let enabled = page?.sheetButtonEnabled ?? false
-        Button {
-            Task { await flow?.confirmSeasons() }
-        } label: {
-            Text(verbatim: page?.sheetButton ?? "")
-                .growing(15, .semibold)
-                .foregroundStyle(enabled ? Theme.accent : Theme.fontVeryQuiet)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 54)
-        }
-        .buttonStyle(Theme.PressRow())
-        .disabled(!enabled)
     }
 }

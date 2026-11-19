@@ -1,5 +1,0 @@
-module CRlottie [system] {
-    header "include/bridge.h"
-    link "rlottie"
-    export *
-}

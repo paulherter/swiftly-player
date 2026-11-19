@@ -502,6 +502,7 @@ fn requests_plex() {
                         ids: strings(c, "ids"),
                         person_ids: strings(c, "persons"),
                         genres: strings(c, "genres"),
+                        years: Vec::new(),
                         slim: false,
                     };
                     drop(client.items_page(&q).await);

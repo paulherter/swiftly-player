@@ -10,7 +10,9 @@
 //! are NFC-normalised before comparing; `Character.count` and `isLetter` work on grapheme
 //! clusters.
 
-use std::collections::HashSet;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
 use crate::text::{characters, is_letter, lowercased, nfc};
 
@@ -224,6 +226,43 @@ pub fn detected(text: &str) -> Option<&'static str> {
     if text.is_empty() {
         return None;
     }
+    // Track labels ask this for every word of every track on every frame the player builds; the answer only
+    // depends on the text, so it is remembered (a stalled UI thread on titles with 45 subtitle tracks, 17.11.).
+    thread_local! {
+        static SEEN: RefCell<HashMap<String, Option<&'static str>>> = RefCell::new(HashMap::new());
+    }
+    if let Some(hit) = SEEN.with(|seen| seen.borrow().get(text).copied()) {
+        return hit;
+    }
+    let found = detect(text);
+    SEEN.with(|seen| {
+        let mut seen = seen.borrow_mut();
+        if seen.len() >= 4096 {
+            seen.clear();
+        }
+        seen.insert(text.to_owned(), found);
+    });
+    found
+}
+
+/// The stored spellings, canonically composed once, with their length in characters.
+static FORMS: LazyLock<Vec<Vec<(String, usize)>>> = LazyLock::new(|| {
+    ALL.iter()
+        .map(|entry| {
+            entry
+                .shape
+                .iter()
+                .map(|form| {
+                    let form = nfc(form);
+                    let count = characters(&form).len();
+                    (form, count)
+                })
+                .collect()
+        })
+        .collect()
+});
+
+fn detect(text: &str) -> Option<&'static str> {
     let small = nfc(&lowercased(text));
     // `split(whereSeparator: { !$0.isLetter })` omits empty subsequences.
     let mut words: HashSet<String> = HashSet::new();
@@ -239,13 +278,13 @@ pub fn detected(text: &str) -> Option<&'static str> {
         words.insert(current);
     }
     ALL.iter()
-        .find(|entry| {
-            entry.shape.iter().any(|form| {
-                let form = nfc(form);
-                words.contains(&form) || (characters(&form).len() > 3 && small.contains(&form))
+        .zip(FORMS.iter())
+        .find(|(_, forms)| {
+            forms.iter().any(|(form, count)| {
+                words.contains(form) || (*count > 3 && small.contains(form.as_str()))
             })
         })
-        .map(|entry| entry.name)
+        .map(|(entry, _)| entry.name)
 }
 
 /// Does the track name say that only the foreign-language parts are subtitled? Only for

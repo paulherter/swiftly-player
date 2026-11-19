@@ -21,6 +21,10 @@ libloading = { version = "0.8", optional = true }
 workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 
 [[example]]
+name = "chain_probe"
+required-features = ["mpv"]
+
+[[example]]
 name = "mpv_probe"
 required-features = ["mpv"]
 

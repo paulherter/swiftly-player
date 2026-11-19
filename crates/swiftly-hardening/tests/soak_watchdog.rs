@@ -142,6 +142,7 @@ fn start() -> PlayerStart {
                 is_forced: false,
                 is_external: false,
                 is_hearing_impaired: false,
+                is_original: false,
             },
             PlayerStream {
                 index: 1,
@@ -154,6 +155,7 @@ fn start() -> PlayerStart {
                 is_forced: false,
                 is_external: false,
                 is_hearing_impaired: false,
+                is_original: false,
             },
             PlayerStream {
                 index: 2,
@@ -166,6 +168,7 @@ fn start() -> PlayerStart {
                 is_forced: false,
                 is_external: false,
                 is_hearing_impaired: false,
+                is_original: false,
             },
         ],
         runtime: 7200.0,

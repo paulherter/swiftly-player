@@ -38,15 +38,19 @@ enum Region: String, Hashable, CaseIterable {
         }
     }
 
-    /// Filled Phosphor asset, the same as the iPhone tab bar.
-    var filledAsset: String? {
+    /// Tab icon set A, the same assets as the iPhone tab bar (`design/icons/mapping.json`, `tab-*`):
+    /// outline when idle, filled when selected. `nil` keeps `symbol` (search, watchlist).
+    func tabAsset(selected: Bool) -> String? {
+        let base: String
         switch self {
-        case .start:      "icon.house.fill"
-        case .movies:     "icon.film-strip.fill"
-        case .seriesList: "icon.cards-three.fill"
-        case .downloads:  "icon.arrow-circle-down.fill"
-        case .search, .watchlist: nil
+        case .start:      base = "icon.tab-home"
+        case .movies:     base = "icon.tab-movies"
+        case .seriesList: base = "icon.tab-series"
+        case .downloads:  base = "icon.tab-downloads"
+        case .search:     base = "icon.tab-search"
+        case .watchlist:  return nil
         }
+        return selected ? base + ".fill" : base
     }
 
     var label: LocalizedStringKey {
@@ -177,6 +181,13 @@ struct MainView: View {
                 .padding(.bottom, Theme.edgeSpacing)
             }
             .animation(Theme.reveal, value: gemeinsam.lastLeave)
+            // The Seerr sheets ("Problem melden", "Vom Server löschen") of the tile menus: one pair for the window.
+            .background { SeerrTitleMenuSheets(menu: SeerrTitleMenu.tiles, model: model, deleted: {}) }
+            .onChange(of: SeerrTitleMenu.tiles.message) { _, text in
+                guard let text else { return }
+                TileMessage.shared.text = text
+                SeerrTitleMenu.tiles.message = nil
+            }
             // **The content also stays in its column for clicks.**
             //
             // `clipped()` was used first. That clips only the **image**: the root was cut cleanly
@@ -240,7 +251,10 @@ struct MainView: View {
         .modifier(LiveBadgeTap(tapped: takeover.tapped) { takeover.tapped = false; badgePressed() })
         #endif
         #if DEBUG
-        .task { LiveRun.start(model, open: { controls.wish = $0 }, close: { controls.close() }) }
+        .task {
+            LiveRun.showRegion = { name in section = Region.allCases.first { String(describing: $0) == name } ?? .start }
+            LiveRun.start(model, open: { controls.wish = $0 }, close: { controls.close() })
+        }
         #endif
         // **The card grows out of the badge** (as on iPhone): instead of fading in mid-window
         // it comes from the sidebar row that was clicked and shrinks back there on close. The
@@ -263,6 +277,7 @@ struct MainView: View {
         .task { gemeinsam.start(model) }
         #if DEBUG
         .task { await play(script) }
+        .task { await openForProof() }
         #endif
         .onDisappear { gemeinsam.finish() }
         // **The group starts the player, not the page.** Whoever creates it, whoever joins,
@@ -358,10 +373,6 @@ struct MainView: View {
         // `Theme.einblenden` instead of a custom curve: same duration, and with reduced motion
         // the fade becomes a short switch.
         .animation(Theme.reveal, value: controls.wish?.id)
-        // A title with several versions asks which one before it starts.
-        .versionChoice($controls.versionChoice) { open, version in
-            controls.launch(open, picking: version)
-        }
         .focusedSceneValue(\.playerOpen, controls.wish != nil)
         .focusedSceneValue(\.downloadsAn, model.downloadsAn)
         .focusedSceneValue(\.watchlistShown, model.watchlistShown)
@@ -382,7 +393,7 @@ struct MainView: View {
         switch command {
         case .forward: goForward()
         case .switchProfile: toProfile()
-        case .playTracks: break
+        case .playTracks, .pickVersion: break   // the player / the page in front listen themselves
         }
     }
 
@@ -569,6 +580,7 @@ struct MainView: View {
                         Theme.reason
                         page(target)
                     }
+                    .environment(\.pageOnTop, uppermost)
                     // Off to the right until it is its turn; pages beneath move along a little.
                     .offset(x: shown ? (uppermost ? 0 : withGait) : width)
                     .overlay {
@@ -669,6 +681,9 @@ struct MainView: View {
             DownloadSeriesOverviewPage(model: model, seriesIdentifier: id, title: title) { close(target) }
         case .seerr:            SeerrSettingsView(model: model, seerr: model.seerr) { close(target) }
         case let .seerrTitle(t): SeerrDetailView(model: model, hit: t) { close(target) }
+        case let .management(route): MacManagementPage(model: model, route: route) { close(target) }
+        case let .issue(id): MacIssuePage(model: model, id: id) { close(target) }
+        case .serverLogs: MacServerLogsPage(model: model) { close(target) }
         // No longer reachable: a library is a root. The case stays so a restored old stack
         // does not break.
         case .library: Color.clear.onAppear { close(target) }
@@ -694,8 +709,8 @@ struct MainView: View {
         case .accountAdd: AccountAddView(model: model) { close(target) }
         case let .serverAdd(route):
             MacAddServerFlow(model: model, route: route) { close(target) }
-        case let .person(person, origin):
-            PersonView(model: model, person: person, origin: origin) { close(target) }
+        case let .person(person, origin, seerr):
+            PersonView(model: model, person: person, origin: origin, seerr: seerr) { close(target) }
         case let .genre(name):
             GenreView(model: model, name: name) { close(target) }
         }
@@ -792,6 +807,112 @@ struct MainView: View {
             if let item = await first(seriesShelf) { navigator.openIt(.title(item), in: .seriesList) }
         default: break
         }
+    }
+    #endif
+
+    #if DEBUG
+    /// `-SwiftlyOpenProfile` opens the Profile page, `-SwiftlyOpenManagement` the management page behind its one row (the entry
+    /// comes from the core, as for the row; `-SwiftlyOpenManagementTab requests|issues|server` picks the tab), so a window capture can show them without
+    /// clicking. Used by the running-app proofs; nothing of it ships in Release.
+    private func openForProof() async {
+        let arguments = ProcessInfo.processInfo.arguments
+        let hub = arguments.firstIndex(of: "-SwiftlyOpenManagement")
+        let presentation = arguments.contains("-SwiftlyOpenPresentation")
+        // `-SwiftlyOpenPage filme|serien|film|serie|...`: the same page names as the snapshot script (`play`).
+        if let i = arguments.firstIndex(of: "-SwiftlyOpenPage"), arguments.indices.contains(i + 1) {
+            await play(arguments[i + 1])
+            await proofShot(arguments)
+            return
+        }
+        // `-SwiftlyOpenSeerrTitle tv:3001`: a Seerr title page (art:tmdb id), the way a search hit opens it.
+        if let i = arguments.firstIndex(of: "-SwiftlyOpenSeerrTitle"), arguments.indices.contains(i + 1) {
+            let parts = arguments[i + 1].split(separator: ":")
+            if parts.count == 2, let id = Int(parts[1]) {
+                try? await Task.sleep(for: .seconds(2))
+                navigator.openIt(.seerrTitle(SeerrHit(id: id, art: String(parts[0]), title: "", year: nil,
+                                                      posterPath: nil, backdropPath: nil, state: .opened)), in: section)
+            }
+            await proofShot(arguments)
+            return
+        }
+        // Only `-SwiftlyProofShot`: the Start page as it is.
+        guard hub != nil || presentation || arguments.contains("-SwiftlyOpenProfile") else {
+            await proofShot(arguments)
+            return
+        }
+        FileHandle.standardError.write(Data("[proof] opening\n".utf8))
+        try? await Task.sleep(for: .seconds(2))
+        if presentation {
+            // `-SwiftlyOpenPresentation`: Settings > Darstellung (the Startseite list with the Seerr rows).
+            navigator.openIt(.presentation, in: section)
+            await proofShot(arguments)
+            return
+        }
+        toProfile()
+        defer { Task { await proofShot(arguments) } }
+        guard hub != nil else { return }
+        let flow = ManagementEntryFlow()
+        for _ in 0..<30 {
+            await flow.load(model)
+            if flow.entry != nil { break }
+            try? await Task.sleep(for: .seconds(1))
+        }
+        guard let entry = flow.entry else { return }
+        let route = ManagementHubRoute(entry)
+        navigator.openIt(.management(route), in: section)
+    }
+
+    /// `-SwiftlyProofShot <png path>`: the window draws itself into that file a few seconds after the page opened
+    /// (`screencapture -l` needs the Screen Recording right, which a scripted run does not have).
+    private func proofShot(_ arguments: [String]) async {
+        guard let i = arguments.firstIndex(of: "-SwiftlyProofShot"), arguments.indices.contains(i + 1) else { return }
+        // `-SwiftlyProofShotDelay <seconds>` (default 5) picks the moment, e.g. while Seerr is still answering.
+        let delay = arguments.firstIndex(of: "-SwiftlyProofShotDelay").flatMap { arguments.indices.contains($0 + 1) ? Double(arguments[$0 + 1]) : nil } ?? 5
+        try? await Task.sleep(for: .seconds(delay))
+        // `-SwiftlyProofPull <points>`: first pull the page's scroll view down past its top by that much (the rubber band),
+        // so the capture shows what is drawn above the content.
+        if let k = arguments.firstIndex(of: "-SwiftlyProofPull"), arguments.indices.contains(k + 1), let pull = Double(arguments[k + 1]),
+           let root = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil })?.contentView {
+            var best: NSScrollView?
+            func walk(_ view: NSView) {
+                if let sv = view as? NSScrollView, sv.documentView != nil,
+                   sv.bounds.width * sv.bounds.height > (best.map { $0.bounds.width * $0.bounds.height } ?? 0) { best = sv }
+                view.subviews.forEach(walk)
+            }
+            walk(root)
+            if let sv = best {
+                let top = -sv.contentInsets.top
+                sv.contentView.scroll(to: NSPoint(x: 0, y: top - pull))
+                sv.reflectScrolledClipView(sv.contentView)
+                FileHandle.standardError.write(Data("[proof] pulled \(pull) past the top (inset \(sv.contentInsets.top), origin \(sv.contentView.bounds.origin.y))\n".utf8))
+                try? await Task.sleep(for: .milliseconds(700))
+            } else {
+                FileHandle.standardError.write(Data("[proof] no scroll view found\n".utf8))
+            }
+        }
+        FileHandle.standardError.write(Data("[proof] shooting, windows \(NSApp.windows.map { "\($0.isVisible)/\($0.contentView != nil)" })\n".utf8))
+        guard let content = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil })?.contentView,
+              let store = content.bitmapImageRepForCachingDisplay(in: content.bounds) else { return }
+        content.cacheDisplay(in: content.bounds, to: store)
+        var png = store.representation(using: .png, properties: [:])
+        // A window sheet is a window of its own: draw it on top, where it hangs (top centre of its parent).
+        if let window = content.window, let sheet = window.attachedSheet, let sheetView = sheet.contentView,
+           let sheetStore = sheetView.bitmapImageRepForCachingDisplay(in: sheetView.bounds) {
+            sheetView.cacheDisplay(in: sheetView.bounds, to: sheetStore)
+            let canvas = NSImage(size: content.bounds.size)
+            canvas.lockFocus()
+            store.draw(in: content.bounds)
+            let x = (content.bounds.width - sheetView.bounds.width) / 2
+            let y = content.bounds.height - sheetView.bounds.height
+            sheetStore.draw(in: NSRect(x: x, y: y, width: sheetView.bounds.width, height: sheetView.bounds.height))
+            canvas.unlockFocus()
+            if let tiff = canvas.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) {
+                png = rep.representation(using: .png, properties: [:])
+            }
+        }
+        try? png?.write(to: URL(fileURLWithPath: arguments[i + 1]))
+        // `exit`, not `terminate`: a terminate request can be held up, and `open -W` then waits for ever.
+        exit(0)
     }
     #endif
 
@@ -915,7 +1036,7 @@ struct Sidebar: View {
 
             VStack(spacing: 2) {
                 ForEach(Region.topGroup, id: \.self) { fall in
-                    SidebarRow(symbol: fall.symbol, filled: fall.filledAsset,
+                    SidebarRow(symbol: fall.symbol, filled: fall.tabAsset(selected: section == fall && !inAccount),
                                        label: fall.label,
                                        active: section == fall && !inAccount,
                                        shortcut: shortcut(fall)) {
@@ -934,7 +1055,7 @@ struct Sidebar: View {
 
                 VStack(spacing: 2) {
                     ForEach(mine, id: \.self) { fall in
-                        SidebarRow(symbol: fall.symbol, filled: fall.filledAsset,
+                        SidebarRow(symbol: fall.symbol, filled: fall.tabAsset(selected: section == fall && !inAccount),
                                            label: fall.label,
                                            active: section == fall && !inAccount) {
                             sectionSelect(fall)

@@ -1,0 +1,6 @@
+# The project's rustfmt style, pinned: the defaults the CI formats with (`cargo fmt --all -- --check`).
+# A config file at the repo root also stops rustfmt from walking up into a parent folder's rustfmt.toml
+# (a wider setting in a shared work folder reformatted files to another width).
+edition = "2024"
+max_width = 100
+use_small_heuristics = "Default"

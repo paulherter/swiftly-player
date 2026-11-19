@@ -25,6 +25,7 @@ serde_json = "1"
 swiftly-downloads = { path = "../swiftly-downloads" }
 swiftly-seerr = { path = "../swiftly-seerr" }
 swiftly-sync = { path = "../swiftly-sync" }
+swiftly-support = { path = "../swiftly-support" }
 futures-util = { version = "0.3", default-features = false, features = ["alloc", "std"] }
 workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 

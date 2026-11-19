@@ -12,8 +12,25 @@ import JellyfinKit
 /// without a position, asked for the title, for a version that has chapters of its own, for one the server does not
 /// know and for the title written in another case; trickplay for one source, for two and for a broken server.
 @Suite(.serialized) struct PlayExtrasParityTests {
-    /// What the "server" answers: status and body for a path and its `Fields`.
+    /// What the "server" answers: status and body for a path and its `Fields`. Several fields in one request
+    /// (`Chapters,Trickplay`, the core's single request for a title) get one item with all that is known for them,
+    /// like a real server; the request fails only when no field is known.
     static func answer(path: String, fields: String?) -> (Int, String) {
+        let parts = (fields ?? "").split(separator: ",").map(String.init)
+        guard parts.count > 1 else { return answerOne(path: path, fields: fields) }
+        let answers = parts.map { answerOne(path: path, fields: $0) }
+        let found = answers.filter { $0.0 == 200 }
+        guard !found.isEmpty else { return answers[0] }
+        var merged: [String: Any] = [:]
+        for (_, body) in found {
+            let object = (try? JSONSerialization.jsonObject(with: Data(body.utf8))) as? [String: Any] ?? [:]
+            merged.merge(object) { current, _ in current }
+        }
+        let data = (try? JSONSerialization.data(withJSONObject: merged)) ?? Data("{}".utf8)
+        return (200, String(decoding: data, as: UTF8.self))
+    }
+
+    static func answerOne(path: String, fields: String?) -> (Int, String) {
         func ticks(_ s: Double) -> Int64 { Int64(s * 10_000_000) }
         switch (path, fields) {
         case ("/MediaSegments/ep1", _):
@@ -34,7 +51,7 @@ import JellyfinKit
         case ("/MediaSegments/none404", _): return (404, "{}")
         case ("/Items/ep1", "Chapters"), ("/Items/EP1", "Chapters"):
             return (200, """
-                {"Id":"ep1","Chapters":[
+                {"Id":"ep1","MediaSources":[{"Id":"ep1"},{"Id":"v2"}],"Chapters":[
                  {"Name":"Ghost"},
                  {"Name":"Opening","StartPositionTicks":0},
                  {"Name":"  Fight  ","StartPositionTicks":\(ticks(300))},
@@ -156,7 +173,11 @@ import JellyfinKit
             let (core, account) = newCore(http)
             let new = await PlayExtras.chapters(core: core, account: account, itemID: id, source: source, locale: "de")
             #expect(old == new, "\(id)/\(source ?? "-"): old \(old) core \(new)")
-            #expect(OldServer.requests == http.requests.withLock { $0 }, "\(id)/\(source ?? "-") requests")
+            // One request for the title (chapters and trickplay together); a version's own chapters only where the
+            // title lists that version.
+            var asked = ["/Items/\(id)?Fields=Chapters,Trickplay&userId=u1"]
+            if source == "v2" { asked.append("/Items/v2?Fields=Chapters&userId=u1") }
+            #expect(asked == http.requests.withLock { $0 }, "\(id)/\(source ?? "-") requests")
         }
     }
 
@@ -172,7 +193,9 @@ import JellyfinKit
             let (core, account) = newCore(http)
             let new = await PlayExtras.trickplay(core: core, account: account, itemID: id, source: source, locale: "de")
             #expect(old == new, "\(id)/\(source ?? "-"): old \(String(describing: old)) core \(String(describing: new))")
-            #expect(OldServer.requests == http.requests.withLock { $0 }, "\(id)/\(source ?? "-") requests")
+            // The core asks for the title once, with the chapters in the same request.
+            #expect(["/Items/\(id)?Fields=Chapters,Trickplay&userId=u1"] == http.requests.withLock { $0 },
+                    "\(id)/\(source ?? "-") requests")
         }
     }
 }

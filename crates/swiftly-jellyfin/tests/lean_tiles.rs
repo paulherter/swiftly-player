@@ -30,27 +30,26 @@ fn url(c: &JellyfinClient<MockTransport>) -> String {
 }
 
 #[test]
-fn lean_rows_drop_description_and_extra_pictures() {
+fn lean_rows_keep_what_a_detail_page_seeds_from_and_drop_the_rest() {
     let c = client(true);
     block_on(c.resume_items(20)).expect("ok");
     assert_eq!(
         url(&c),
-        "https://tv.example.de/UserItems/Resume?userId=u1&Limit=20&Fields=PrimaryImageAspectRatio,ProviderIds&MediaTypes=Video&ImageTypeLimit=1&EnableTotalRecordCount=false"
+        "https://tv.example.de/UserItems/Resume?userId=u1&Limit=20&Fields=Overview,Genres,PrimaryImageAspectRatio,ProviderIds,ChildCount&MediaTypes=Video&ImageTypeLimit=1&EnableTotalRecordCount=false"
     );
     block_on(c.next_up(20)).expect("ok");
     assert_eq!(
         url(&c),
-        "https://tv.example.de/Shows/NextUp?userId=u1&Limit=20&Fields=PrimaryImageAspectRatio,ProviderIds&EnableImageTypes=Primary&ImageTypeLimit=1&EnableTotalRecordCount=false"
+        "https://tv.example.de/Shows/NextUp?userId=u1&Limit=20&Fields=Overview,Genres,PrimaryImageAspectRatio,ProviderIds,ChildCount&EnableImageTypes=Primary,Backdrop,Logo&ImageTypeLimit=1&EnableTotalRecordCount=false"
     );
     block_on(c.newly_joined(None, 20, false, "Movie,Episode")).expect("ok");
-    assert!(url(&c).contains("Fields=PrimaryImageAspectRatio,ProviderIds&EnableImageTypes=Primary&ImageTypeLimit=1&EnableTotalRecordCount=false"));
+    assert!(url(&c).contains("Fields=Overview,Genres,PrimaryImageAspectRatio,ProviderIds,ChildCount&EnableImageTypes=Primary,Backdrop,Logo&ImageTypeLimit=1&EnableTotalRecordCount=false"));
     block_on(c.items(&ItemsQuery::default())).expect("ok");
     let u = url(&c);
-    assert!(
-        u.contains("Fields=PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,ChildCount")
-    );
-    assert!(u.ends_with("&EnableImageTypes=Primary&ImageTypeLimit=1"));
-    assert!(!u.contains("Overview"));
+    assert!(u.contains(
+        "Fields=Overview,Genres,PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,ChildCount"
+    ));
+    assert!(u.ends_with("&EnableImageTypes=Primary,Backdrop,Logo&ImageTypeLimit=1"));
 }
 
 #[test]

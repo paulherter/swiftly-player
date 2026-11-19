@@ -219,6 +219,13 @@ final class AccountsHost {
 
     // MARK: Switch, remove
 
+    /// Is the saved account `key` an administrator of its server (`Policy.IsAdministrator`)? `nil` when the server did not
+    /// answer, so the caller asks again later instead of remembering a "no".
+    func isAdministrator(key: String) async -> Bool? {
+        guard let m = try? fresh(), let info = try? await m.accountDefaults(key: key), info.answered else { return nil }
+        return info.isAdministrator
+    }
+
     /// Makes the saved account `key` the one in use.
     func switchTo(key: String) {
         guard let m = try? fresh() else { return }

@@ -20,6 +20,7 @@ use crate::home::HomePageSource;
 use crate::library_filter::{Sorting, SortingExt};
 use crate::library_genre::{LibraryGenre, LibraryShare};
 use crate::list_rules::ListRules;
+use crate::narrowing::{LanguageIndex, ListFilter};
 use crate::playlist_directory::{PlaylistDirectory, VideoPlaylist};
 use crate::shelf::{ShelfSource, TitleFilter};
 
@@ -492,6 +493,95 @@ pub async fn title_filter<T: HttpTransport>(
         libraries.push((id.clone(), part?));
     }
     Ok(TitleFilter::new(&libraries))
+}
+
+/// The libraries a source reads from: the chosen ones, the one parent, or everything (`None`).
+fn parents_of(source: &ShelfSource) -> Vec<Option<String>> {
+    if source.parent.is_none() && !source.only_out.is_empty() {
+        source.only_out.iter().cloned().map(Some).collect()
+    } else {
+        vec![source.parent.clone()]
+    }
+}
+
+/// [`title_filter`] with the narrowing applied: only titles in the year span and with the
+/// language (`languages` is the index of this source; a language without an index keeps nothing).
+/// Works for one library and for "all" too, so a language the server cannot filter by is sifted
+/// the same way as several libraries are.
+pub async fn title_filter_narrowed<T: HttpTransport>(
+    client: &JellyfinClient<T>,
+    source: &ShelfSource,
+    filter: &ListFilter,
+    languages: Option<&LanguageIndex>,
+) -> Result<TitleFilter, ErrorKind> {
+    let types: Vec<String> = source.types().iter().map(|t| (*t).to_string()).collect();
+    let filters = filter.jellyfin_filter();
+    let watched = filter.is_watched();
+    let parents = parents_of(source);
+    let parts = join_all(
+        parents
+            .iter()
+            .map(|p| client.title_ids_in(p.as_deref(), &types, &filters, watched)),
+    )
+    .await;
+    let mut libraries = Vec::new();
+    for (parent, part) in parents.iter().zip(parts) {
+        let mut items = part?;
+        items.retain(|i| filter.narrowing.keeps(i, languages));
+        libraries.push((parent.clone().unwrap_or_default(), items));
+    }
+    Ok(TitleFilter::new(&libraries))
+}
+
+/// The production years there are in the source's libraries, newest first (the sheet's year rows).
+pub async fn year_options<T: HttpTransport>(
+    client: &JellyfinClient<T>,
+    source: &ShelfSource,
+) -> Result<Vec<i32>, ErrorKind> {
+    let types: Vec<String> = source.types().iter().map(|t| (*t).to_string()).collect();
+    let mut years = Vec::new();
+    for parent in parents_of(source) {
+        years.extend(client.years_in(parent.as_deref(), &types).await?);
+    }
+    years.sort_unstable_by(|a, b| b.cmp(a));
+    years.dedup();
+    Ok(years)
+}
+
+/// Titles per request of the audio scan.
+const SCAN_PAGE: usize = 500;
+/// At most this many requests per library (a cap, so an enormous library cannot run for ever).
+const SCAN_PAGES: usize = 60;
+
+/// Which titles of the source's libraries have which audio language. Jellyfin cannot filter by
+/// it, so the tracks of every film (and episode, for its series) are read once; the caller keeps
+/// the index for the list.
+pub async fn language_index<T: HttpTransport>(
+    client: &JellyfinClient<T>,
+    source: &ShelfSource,
+) -> Result<LanguageIndex, ErrorKind> {
+    // A series has no tracks of its own: its episodes say.
+    let kinds: Vec<String> = source
+        .types()
+        .iter()
+        .map(|t| if *t == "Series" { "Episode" } else { *t }.to_string())
+        .collect();
+    let mut index = LanguageIndex::default();
+    for parent in parents_of(source) {
+        let mut start = 0usize;
+        for _ in 0..SCAN_PAGES {
+            let page = client
+                .media_scan(parent.as_deref(), &kinds, start, SCAN_PAGE)
+                .await?;
+            let got = page.items.len();
+            index.add(&page.items);
+            start += got;
+            if got == 0 || i64::try_from(start).unwrap_or(i64::MAX) >= page.total_record_count {
+                break;
+            }
+        }
+    }
+    Ok(index)
 }
 
 /// The episode one is at in this series; the first episode if finished (`stateInSeries`,

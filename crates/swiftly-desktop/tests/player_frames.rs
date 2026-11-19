@@ -130,13 +130,19 @@ fn scenes(f: &Form) {
     let img = shot_for(&mut s, &mut now, 500.0);
     check(&format!("player_{}_menu", f.name), &img);
     s.send_intent(PlayerIntent::Layer(None), now);
-    // The episodes layer, the Technikschild on the picture, the handover menu and the small-window hint.
-    s.send_intent(PlayerIntent::Layer(Some(PlayerLayer::Episodes)), now);
+    // The Folgen box (opened by the capsule's Folgen key), the Technikschild on the picture, the handover menu and the
+    // small-window hint.
+    s.send_intent(PlayerIntent::ToggleControls, now);
+    let _ = shot_for(&mut s, &mut now, 500.0);
+    let [fx, fy, fw, fh] = s.frame_of("folgen").expect("the capsule's Folgen key");
+    let (cx, cy) = (fx + fw / 2.0, fy + fh / 2.0);
+    s.touch_down(cx, cy, now);
+    s.touch_up(cx, cy, now + 16.0);
+    now += 16.0;
     let img = shot_for(&mut s, &mut now, 500.0);
     check(&format!("player_{}_episodes", f.name), &img);
     s.send_intent(PlayerIntent::Layer(None), now);
     s.set_tech(true);
-    s.send_intent(PlayerIntent::ToggleControls, now);
     let img = shot_for(&mut s, &mut now, 500.0);
     check(&format!("player_{}_tech", f.name), &img);
     s.set_tech(false);
@@ -312,8 +318,13 @@ fn tv_focus_plan_and_remote_rules() {
         s.engine_calls()
     );
     key(&mut s, NavKey::Enter, &mut now);
-    // Up leaves the bar for the buttons.
+    // Up leaves the bar for the capsule: its first half is Folgen; Right moves on to Untertitel.
     key(&mut s, NavKey::Arrow(Dir::Up), &mut now);
+    assert_eq!(
+        s.focused(),
+        Some(swiftly_ui::components::focus_id("folgen"))
+    );
+    key(&mut s, NavKey::Arrow(Dir::Right), &mut now);
     assert_eq!(
         s.focused(),
         Some(swiftly_ui::components::focus_id("tracks"))

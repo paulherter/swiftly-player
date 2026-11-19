@@ -449,6 +449,13 @@ pub fn discover() -> std::sync::mpsc::Receiver<Vec<FoundServer>> {
 
 /// Opens `url` in the browser. Only web addresses go out.
 pub fn open_url(url: &str) -> bool {
+    open_url_with(url, None)
+}
+
+/// [`open_url`] with the window system's activation token of the click that asked (`XDG_ACTIVATION_TOKEN`, and
+/// `DESKTOP_STARTUP_ID` for X11): without it Wayland compositors let an already running browser load the page but
+/// do not bring its window to the front, so the click seems to do nothing.
+pub fn open_url_with(url: &str, token: Option<&str>) -> bool {
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return false;
     }
@@ -469,11 +476,25 @@ pub fn open_url(url: &str) -> bool {
         c.arg(url);
         c
     };
-    cmd.stdin(std::process::Stdio::null())
+    if let Some(t) = token {
+        cmd.env("XDG_ACTIVATION_TOKEN", t)
+            .env("DESKTOP_STARTUP_ID", t);
+    }
+    match cmd
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
-        .is_ok()
+    {
+        Ok(mut child) => {
+            // The opener exits at once; collect it so it does not stay a zombie of the app.
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            true
+        }
+        Err(_) => false,
+    }
 }
 
 /// The text on the system clipboard (`pbpaste`, PowerShell `Get-Clipboard`, `wl-paste` or `xclip`).

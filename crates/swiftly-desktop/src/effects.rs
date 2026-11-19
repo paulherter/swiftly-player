@@ -86,6 +86,47 @@ pub fn perform(effect: &Effect) {
 mod tests {
     use super::*;
 
+    /// Every screen reaches the browser through `Effect::OpenUrl`, which the window runs with its activation token
+    /// (`browser_open`). A direct `signin_flows::open_url` call in a screen would start the browser without it, and on
+    /// Wayland the page then loads behind the app's window: the click seems to do nothing.
+    #[test]
+    fn screens_open_addresses_only_through_the_effect() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut offenders = Vec::new();
+        let mut stack = vec![dir];
+        while let Some(d) = stack.pop() {
+            for e in std::fs::read_dir(&d).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                    continue;
+                }
+                let name = p.file_name().unwrap().to_string_lossy().into_owned();
+                if !name.ends_with(".rs")
+                    || ["effects.rs", "signin_flows.rs", "app.rs"].contains(&name.as_str())
+                {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&p).unwrap();
+                if text.lines().any(|l| {
+                    let l = l.trim_start();
+                    !l.starts_with("//") && l.contains("signin_flows::open_url")
+                }) {
+                    offenders.push(name);
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "direct browser calls in {offenders:?}"
+        );
+    }
+
+    #[test]
+    fn the_support_address_is_one_constant() {
+        assert_eq!(crate::support_card::SUPPORTER_PAGE, SUPPORT_URL);
+    }
+
     #[test]
     fn report_address_carries_version_and_system() {
         let u = error_report_url("1.0 (1)", "Windows");

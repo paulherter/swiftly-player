@@ -1,0 +1,72 @@
+# Findings that `oracle/known.json` pins. `known_findings.rs` checks that every pinned id is listed here.
+# One line per id: id | domain | status. Add a line here when a new difference is pinned.
+
+- F-oracle-02 | domain `alphabet_index` | status swift-bug
+- F-oracle-A02 | domain `model_decode` | status open, cosmetic
+- F-oracle-A03 | domain `model_decode` | status swift-bug
+- F-oracle-A04 | domain `model_decode` | status open, cosmetic
+- F-oracle-A05 | domain `model_decode` | status open, cosmetic
+- F-oracle-A06 | domain `model_decode` (`stream`) | status open, cosmetic
+- F-oracle-A07 | domain `model_decode` (`stream`) | status swift-bug
+- F-oracle-B02 | domain `track_rule` | status swift-bug
+- F-oracle-C02 | domain `plural_category` | status swift-bug
+- F-oracle-C03 | domain `timestamp` | status swift-bug
+- F-oracle-C06 | domain `time_assumption` | status swift-bug
+- F-oracle-D01-ia-a | domain `image_address` | status pinned
+- F-oracle-D01-ia-b | domain `image_address` | status pinned
+- F-oracle-D01-ia-c | domain `image_address` | status pinned
+- F-oracle-D01-ia-d | domain `image_address` | status pinned
+- F-oracle-D01-ia-e | domain `image_address` | status pinned
+- F-oracle-D01-ia-f | domain `image_address` | status pinned
+- F-oracle-D02-sk-a | domain `image_store_key` | status pinned
+- F-oracle-D02-sk-b | domain `image_store_key` | status pinned
+- F-oracle-D02-sk-c | domain `image_store_key` | status pinned
+- F-oracle-D02-sk-d | domain `image_store_key` | status pinned
+- F-oracle-D02-sk-e | domain `image_store_key` | status pinned
+- F-oracle-D02-sk-f | domain `image_store_key` | status pinned
+- F-oracle-D02-sk-g | domain `image_store_key` | status pinned
+- F-oracle-D02-sk-h | domain `image_store_key` | 
+- F-oracle-D05-is-a | domain `image_selection` (op `portrait`) | status pinned
+- F-oracle-D05-is-b | domain `image_selection` (op `portrait`) | status pinned
+- F-oracle-E01 | domains `server_url` (754 cases), `server_discovery` (115) | status pinned
+- F-oracle-E01a | domain `server_url` | status pinned
+- F-oracle-E01b | domain `server_url` | status pinned
+- F-oracle-E02-as-a | domain `address_secret` | status pinned
+- F-oracle-E02-as-b | domain `address_secret` | status pinned
+- F-oracle-E02-as-c | domain `address_secret` | status pinned
+- F-oracle-E02-as-d | domain `address_secret` | status pinned
+- F-oracle-E02-as-e | domain `address_secret` | status pinned
+- F-oracle-E02-as-f | domain `address_secret` | status pinned
+- F-oracle-E02-as-g | domain `address_secret` | status pinned
+- F-oracle-E02-as-h | domain `address_secret` | status pinned
+- F-oracle-E02-sr-a | domain `server_relative` | status pinned
+- F-oracle-E02-sr-b | domain `server_relative` | status pinned
+- F-oracle-E02-sr-c | domain `server_relative` | status pinned
+- F-oracle-E02-sr-d | domain `server_relative` | status pinned
+- F-oracle-E02-sr-e | domain `server_relative` | status pinned
+- F-oracle-E02-su-b | domain `server_url` | status pinned
+- F-oracle-E02-su-c | domain `server_url` | status pinned
+- F-oracle-E02-su-e | domain `server_url` | status pinned
+- F-oracle-E02-su-f | domain `server_url` | status pinned
+- F-oracle-E02-su-g | domain `server_url` | status pinned
+- F-oracle-E02-su-h | domain `server_url` | status pinned
+- F-oracle-E02-su-i | domain `server_url` | status pinned
+- F-oracle-E02-su-j | domain `server_url` | status pinned
+- F-oracle-E02-su-k | domain `server_url` | status pinned
+- F-oracle-E05-oh-a | domain `own_headers_table` | status pinned
+- F-oracle-E05-oh-b | domain `own_headers_table` | status pinned
+- F-oracle-F06 | domain `start_libraries` read, cases 16 and 31 | status open, cosmetic
+- F-oracle-G01 | domain `play_time` (cases 22..26) | status open, swift-bug, cosmetic
+- F-oracle-G02 | domain `trailer_choice` (web cases 1, 2, 3, 5, 17, 26, 27, 54) | status open, cosmetic
+- F-oracle-G03 | domain `trailer_choice` (web cases 13, 21, 24, 51) | status open, cosmetic
+- F-oracle-H06 | domain `settings_sync` (3743 cases, both Rust copies: `swiftly-settings::sync` and `swiftly-sync::settings`) | status fixed in `swiftly-sync/src/settings.rs`
+- F-oracle-L01 | domain `syncplay_time` (`SyncPlay.timeText`, 1516 cases, 120 pinned) | status open, swift-bug, cosmetic
+- F-oracle-L01b | domain `syncplay_time` (`SyncPlay.timeText`, 1516 cases, 120 pinned) | status open, swift-bug, cosmetic
+- F-oracle-L02 | domains `syncplay_read` (4834 cases, 97 pinned) | status open, cosmetic, pinned.
+- F-oracle-L03 | domain `syncplay_read` (cases 16, 17, 18) | status open, pinned
+- F-oracle-Q02 | domain `login_error` | status pinned
+- F-oracle-Q03 | domain `login_http` | status pinned
+- F-oracle-Q05 | domain `login_accounts` | status pinned
+- F-oracle-V50 | domain `requests_plex` | status pinned
+- F-oracle-V51 | domain `requests_plex` | status pinned
+- F-oracle-V52 | domain `requests_plex` | status pinned

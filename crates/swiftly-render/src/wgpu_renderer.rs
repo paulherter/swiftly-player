@@ -57,6 +57,22 @@ pub struct GpuContext {
     adapter: wgpu::Adapter,
 }
 
+/// Whether the Windows GPU video way is asked for (`SWIFTLY_VIDEO_PATH=gpu-wgl`).
+pub fn gpu_video_requested() -> bool {
+    std::env::var("SWIFTLY_VIDEO_PATH").is_ok_and(|v| v == "gpu-wgl")
+}
+
+/// Whether the graphics API is tried as Vulkan alone first (falling back to all). Only on Windows with the GPU video
+/// way asked for, since that way shares images through Vulkan's Win32 memory export; everything else keeps the full
+/// set of backends and the system's own pick.
+pub fn vulkan_first() -> bool {
+    vulkan_first_for(cfg!(windows), gpu_video_requested())
+}
+
+fn vulkan_first_for(windows: bool, video_requested: bool) -> bool {
+    windows && video_requested
+}
+
 impl GpuContext {
     /// A context without a window, on the best adapter of Vulkan, DX12, Metal or GL. Blocks.
     pub fn headless() -> Result<GpuContext, RenderError> {
@@ -69,13 +85,23 @@ impl GpuContext {
             std::sync::OnceLock::new();
         CONTEXT
             .get_or_init(|| {
-                let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
-                desc.backends = wgpu::Backends::VULKAN
+                let make = |backends: wgpu::Backends| {
+                    let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
+                    desc.backends = backends;
+                    let instance = Box::leak(Box::new(wgpu::Instance::new(desc)));
+                    pollster::block_on(GpuContext::from_instance(instance, None))
+                };
+                // Vulkan first only when the Windows video GPU way is asked for (it shares images through Vulkan), the
+                // others as the way out; every other case keeps the full set, as before.
+                let all = wgpu::Backends::VULKAN
                     | wgpu::Backends::DX12
                     | wgpu::Backends::METAL
                     | wgpu::Backends::GL;
-                let instance = Box::leak(Box::new(wgpu::Instance::new(desc)));
-                pollster::block_on(GpuContext::from_instance(instance, None))
+                if vulkan_first() {
+                    make(wgpu::Backends::VULKAN).or_else(|_| make(all))
+                } else {
+                    make(all)
+                }
             })
             .clone()
     }
@@ -103,10 +129,15 @@ impl GpuContext {
         // Downlevel limits keep GL ES 3 working; only the texture size is raised to what the adapter offers.
         let mut limits = wgpu::Limits::downlevel_defaults();
         limits.max_texture_dimension_2d = adapter.limits().max_texture_dimension_2d;
+        // Sharing frames with the video engine as DMA-bufs (Vulkan on Linux): asked for when the driver has it.
+        let features = adapter.features()
+            & (wgpu::Features::VULKAN_EXTERNAL_MEMORY_DMA_BUF
+                | wgpu::Features::VULKAN_EXTERNAL_MEMORY_WIN32);
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("swiftly-render"),
                 required_limits: limits,
+                required_features: features,
                 ..Default::default()
             })
             .await
@@ -369,9 +400,29 @@ impl WgpuRenderer {
         layer.upload(ctx, w, h, rgba);
     }
 
+    /// Shows `texture` as the bottom video layer without copying it (a frame that already lives on the GPU, for
+    /// example imported from a DMA-buf). The texture must be `Rgba8Unorm` with `TEXTURE_BINDING`.
+    pub fn show_video_texture(
+        &mut self,
+        texture: &wgpu::Texture,
+        fit: crate::video_layer::VideoFit,
+    ) {
+        let (ctx, format) = (&self.ctx, self.format);
+        let layer = self
+            .video
+            .get_or_insert_with(|| crate::video_layer::VideoLayer::new(ctx, format));
+        layer.fit = fit;
+        layer.set_external(ctx, texture);
+    }
+
     /// Removes the video layer.
     pub fn clear_video(&mut self) {
         self.video = None;
+    }
+
+    /// The device this renderer draws with.
+    pub fn device(&self) -> &wgpu::Device {
+        self.ctx.device()
     }
 
     /// The target format this renderer was made for.
@@ -621,8 +672,16 @@ impl WgpuRenderer {
     ) {
         let size = (texture.width(), texture.height());
         let can_upload = texture.usage().contains(wgpu::TextureUsages::COPY_DST);
-        if Self::has_blur(list) && can_upload && list.pixel_size() == size {
-            let mut img = SoftwareRenderer::render(list, clear, src);
+        // A film that lives only on the GPU cannot be blurred by the software path: that list is drawn by the GPU
+        // (the glass shows its tint only) so the film stays visible.
+        let video_on_gpu_only = self.video.as_ref().is_some_and(|v| v.is_external());
+        if Self::has_blur(list) && can_upload && list.pixel_size() == size && !video_on_gpu_only {
+            // Behind a video the ground is black, and the frame is part of what the glass blurs.
+            let (clear, base) = match &self.video {
+                Some(v) => (Color::new(0.0, 0.0, 0.0, 1.0), v.software_base(size)),
+                None => (clear, None),
+            };
+            let mut img = SoftwareRenderer::render_over_video(list, clear, src, base);
             if self.format == wgpu::TextureFormat::Bgra8Unorm {
                 for i in (0..img.pixels.len()).step_by(4) {
                     img.pixels.swap(i, i + 2);
@@ -772,5 +831,19 @@ impl WgpuRenderer {
         self.draw_to_texture(list, &frame.texture, clear, src);
         self.ctx.queue().present(frame);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod backend_tests {
+    use super::vulkan_first_for;
+
+    #[test]
+    fn vulkan_first_only_for_the_windows_gpu_video_way() {
+        assert!(vulkan_first_for(true, true));
+        // The default on Windows keeps every backend, as before the GPU video way existed.
+        assert!(!vulkan_first_for(true, false));
+        assert!(!vulkan_first_for(false, true));
+        assert!(!vulkan_first_for(false, false));
     }
 }

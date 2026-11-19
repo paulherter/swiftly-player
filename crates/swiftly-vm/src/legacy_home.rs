@@ -18,6 +18,7 @@ use swiftly_rules::display_rules::{TileMark, tile_mark};
 use crate::account::AccountRef;
 use crate::home::{Source, build_source};
 use crate::host::Host;
+use crate::parts::{ImageKind, ImageRef};
 use crate::tile::Words;
 use crate::title_text::{TitleText, resume_from};
 
@@ -83,6 +84,9 @@ pub struct LegacyTile {
 /// `RailsResponse`.
 #[derive(Debug, Serialize, PartialEq)]
 pub struct LegacyRail {
+    /// The row id in the combined Home order (`StartOrder`): the fixed row's raw value or `library:<id>`; empty for a genre row.
+    #[serde(rename = "kennung")]
+    pub id: String,
     #[serde(rename = "titelSchluessel", skip_serializing_if = "Option::is_none")]
     pub title_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -192,12 +196,40 @@ fn backdrop(item: &Item, addresses: &ImageAddress) -> Option<String> {
         .map(|u| u.to_string())
 }
 
+/// The picture each tile shows is the head picture of the page it opens, in frame 1 (`crate::seed`): one per tile, the
+/// kind the rail draws (a landscape rail the backdrop, the others the poster).
+fn note_pictures(items: &[Item], tiles: &[LegacyTile], landscape: bool) {
+    for (item, tile) in items.iter().zip(tiles) {
+        let image = if landscape {
+            tile.landscape.clone().map(|address| ImageRef {
+                address,
+                kind: ImageKind::Backdrop,
+                wanted_width: 600,
+                wanted_height: 338,
+            })
+        } else {
+            tile.poster.clone().map(|address| ImageRef {
+                address,
+                kind: ImageKind::Poster,
+                wanted_width: 320,
+                wanted_height: 480,
+            })
+        };
+        let Some(image) = image else { continue };
+        crate::seed::note_tile_image(&item.id, &image);
+        if let (Some(series), ImageKind::Poster) = (&item.series_id, image.kind) {
+            crate::seed::note_tile_image(series, &image);
+        }
+    }
+}
+
 async fn home_with(
     client: &impl HomePageSource,
     addresses: &ImageAddress,
     args: &LegacyHomeArgs,
     host: &Host,
-) -> LegacyHome {
+) -> (LegacyHome, Vec<Item>) {
+    let mut shown: Vec<Item> = Vec::new();
     let words = Words::new(host.locale.clone());
     let text = TitleText::new(host.locale.clone());
     let choice = StartLibraries::read(Some(&args.libraries));
@@ -230,14 +262,18 @@ async fn home_with(
             continue;
         };
         let jump = rail.library_jump();
+        let tiles: Vec<LegacyTile> = items
+            .iter()
+            .map(|i| legacy_tile(i, new, mark, addresses, &words, &text))
+            .collect();
+        note_pictures(items, &tiles, landscape);
+        shown.extend(items.iter().cloned());
         rails.push(LegacyRail {
+            id: rail.raw_value().to_owned(),
             title_key: Some(rail.rails_title().to_owned()),
             name: None,
             landscape,
-            tiles: items
-                .iter()
-                .map(|i| legacy_tile(i, new, mark, addresses, &words, &text))
-                .collect(),
+            tiles,
             library: None,
             collection: false,
             jump_art: jump.map(|j| j.art.to_owned()),
@@ -249,14 +285,20 @@ async fn home_with(
             continue;
         };
         rails.push(LegacyRail {
+            id: format!("library:{}", w.id),
             title_key: None,
             name: Some(w.name.clone()),
             landscape: false,
-            tiles: r
-                .items
-                .iter()
-                .map(|i| legacy_tile(i, false, true, addresses, &words, &text))
-                .collect(),
+            tiles: {
+                let tiles: Vec<LegacyTile> = r
+                    .items
+                    .iter()
+                    .map(|i| legacy_tile(i, false, true, addresses, &words, &text))
+                    .collect();
+                note_pictures(&r.items, &tiles, false);
+                shown.extend(r.items.iter().cloned());
+                tiles
+            },
             library: Some(w.id.clone()),
             collection: w.collection,
             jump_art: None,
@@ -265,24 +307,33 @@ async fn home_with(
     }
     for g in &state.genre_rails {
         rails.push(LegacyRail {
+            id: String::new(),
             title_key: None,
             name: Some(g.name.clone()),
             landscape: false,
-            tiles: g
-                .items
-                .iter()
-                .map(|i| legacy_tile(i, false, true, addresses, &words, &text))
-                .collect(),
+            tiles: {
+                let tiles: Vec<LegacyTile> = g
+                    .items
+                    .iter()
+                    .map(|i| legacy_tile(i, false, true, addresses, &words, &text))
+                    .collect();
+                note_pictures(&g.items, &tiles, false);
+                shown.extend(g.items.iter().cloned());
+                tiles
+            },
             library: None,
             collection: false,
             jump_art: None,
             jump_sorting: None,
         });
     }
-    LegacyHome {
-        rails,
-        disrupted: state.disrupted,
-    }
+    (
+        LegacyHome {
+            rails,
+            disrupted: state.disrupted,
+        },
+        shown,
+    )
 }
 
 /// `Kern.home` for one account, as the JSON string the Compose code parses.
@@ -293,7 +344,7 @@ pub async fn legacy_home_json<T: HttpTransport + 'static>(
     args: &LegacyHomeArgs,
 ) -> Result<String, ErrorKind> {
     let source = build_source(transport, host, account)?;
-    let home = match &source {
+    let (home, shown) = match &source {
         Source::Jellyfin(c) => {
             let a = source.addresses().ok_or(ErrorKind::NotAuthenticated)?;
             home_with(&**c, &a, args, host).await
@@ -303,5 +354,16 @@ pub async fn legacy_home_json<T: HttpTransport + 'static>(
             home_with(&**c, &a, args, host).await
         }
     };
+    // What the rows said of their titles seeds the page a tile opens (text, chips, picture marks), and the series the rows
+    // show are asked ahead (seasons, state, first episodes), as the Home view model does. Not what a page without a
+    // server shows.
+    if !home.disrupted
+        && let Some(cache) = host.cache.as_ref()
+    {
+        let ticket = cache.ticket(&crate::cache::ViewCache::scope(account));
+        cache.note_tiles(&ticket, &shown);
+        crate::series::warm(transport, host, account, &shown);
+        crate::proof_mark::warm(transport, host, account, &shown);
+    }
     serde_json::to_string(&home).map_err(|e| ErrorKind::Decoding(e.to_string()))
 }

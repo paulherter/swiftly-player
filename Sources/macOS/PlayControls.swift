@@ -21,10 +21,6 @@ final class PlayControls {
     /// True while a start is fetching the plan.
     private(set) var prepares = false
 
-    /// **A title with several versions, waiting for the pick** ("Fassung wählen", shown by
-    /// the main view). Set instead of starting the server's default version.
-    var versionChoice: VersionChoice?
-
     private let model: AppModel
 
     init(model: AppModel) { self.model = model }
@@ -32,10 +28,8 @@ final class PlayControls {
     /// Starts where the server says: begun items at their position, otherwise from the
     /// start. Exactly the iPhone rule.
     ///
-    /// `sourceID`: the version the user picked when a title has several. Without it a title
-    /// with several versions asks which one first (``MediaVersions/start(_:downloaded:)``);
-    /// the full title is fetched when the entry has no `MediaSources`, and a failed load is
-    /// reported instead of starting the default.
+    /// `sourceID`: the version the user picked from the right-click list. Without it the server's
+    /// default version starts at once, never a question first.
     func launch(_ item: Item, since: Double? = nil, sourceID: String? = nil) {
         // A second click while the plan is still in flight starts nothing that would
         // overwrite `wish`.
@@ -43,13 +37,8 @@ final class PlayControls {
         prepares = true
         Task {
             defer { prepares = false }
-            _ = await start(item, since: since, sourceID: sourceID, still: false, asking: sourceID == nil)
+            _ = await start(item, since: since, sourceID: sourceID, still: false)
         }
-    }
-
-    /// The pick from the dialog: starts exactly this version.
-    func launch(_ choice: VersionChoice, picking version: MediaSource) {
-        launch(choice.item, since: choice.since, sourceID: version.id)
     }
 
     /// Tries the trailers in the order ``TrailerChoice`` gives and opens the first one the
@@ -75,29 +64,7 @@ final class PlayControls {
     }
 
     /// Fetches the plan and opens the player. False when the server gave no plan.
-    private func start(_ item: Item, since: Double?, sourceID: String?, still: Bool,
-                       asking: Bool = false) async -> Bool {
-        var item = item
-        if asking {
-            let downloaded = model.downloads.file(for: item.id) != nil
-            var sources = item.mediaSources
-            if sources == nil, !downloaded {
-                // The list entry has no `MediaSources`: "not loaded" must never pass for
-                // "one version".
-                guard let full = await model.item(id: item.id) else {
-                    let text = String(localized: "Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal.")
-                    error = text
-                    TileMessage.shared.text = text
-                    return false
-                }
-                item = full
-                sources = full.mediaSources ?? []
-            }
-            if case .choose(let versions) = MediaVersions.start(sources, downloaded: downloaded) {
-                versionChoice = VersionChoice(item: item, versions: versions, since: since)
-                return false
-            }
-        }
+    private func start(_ item: Item, since: Double?, sourceID: String?, still: Bool) async -> Bool {
         // **Fetch the position fresh when none is given.** The tile's value can be stale:
         // resumed on the phone, clicked on the Mac before home reloaded, and the film
         // started at the old spot. iOS and tvOS already fetch it this way; here it runs

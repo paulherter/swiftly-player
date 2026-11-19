@@ -6,7 +6,9 @@
 //! built-in table answers: ISO 639-1/639-2 names in the app languages (de, en, ru), taken from the same CLDR
 //! data the Apple system uses (`Tools/LanguageData/generate.swift`). Other interface languages get English.
 
-use std::sync::{Arc, PoisonError, RwLock};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use swiftly_l10n::{Locale, Translator};
 use swiftly_playback::track_label::LabelText;
@@ -24,9 +26,35 @@ pub trait NameSource: Send + Sync {
 
 static HOST: RwLock<Option<Arc<dyn NameSource>>> = RwLock::new(None);
 
+/// What the host answered, kept: a name depends only on the code and the interface language, and a track panel
+/// is rebuilt after every clock event, so asking the host (a system call per name, on the main thread) each time
+/// made a long film a long loop of identical questions. Cleared when the host's names change; bounded, since the
+/// codes come from the server.
+#[derive(Default)]
+struct Answers {
+    names: HashMap<(String, String), Option<String>>,
+    knows: HashMap<String, bool>,
+}
+
+const ANSWERS_LIMIT: usize = 512;
+
+static ANSWERS: Mutex<Option<Answers>> = Mutex::new(None);
+/// How many times the host was really asked (a test reads it).
+static HOST_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+/// How many questions reached the host's [`NameSource`] since the process started.
+pub fn host_calls() -> usize {
+    HOST_CALLS.load(Ordering::Relaxed)
+}
+
+fn answers() -> std::sync::MutexGuard<'static, Option<Answers>> {
+    ANSWERS.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 /// Installs (or, with `None`, removes) the host's language names for the whole process.
 pub fn set_name_source(source: Option<Arc<dyn NameSource>>) {
     *HOST.write().unwrap_or_else(PoisonError::into_inner) = source;
+    *answers() = None;
 }
 
 fn host() -> Option<Arc<dyn NameSource>> {
@@ -64,17 +92,44 @@ pub fn table_knows(code: &str) -> bool {
 
 /// The name of a language code in the interface language: the host first, then the table.
 pub fn language_name(code: &str, language: &str) -> Option<String> {
-    host()
-        .and_then(|h| h.name(code, language))
-        .or_else(|| table_name(code, language))
+    let Some(h) = host() else {
+        return table_name(code, language);
+    };
+    let key = (code.to_owned(), language.to_owned());
+    if let Some(known) = answers().as_ref().and_then(|a| a.names.get(&key).cloned()) {
+        return known;
+    }
+    // The host is asked without the lock: it may call back into the core.
+    HOST_CALLS.fetch_add(1, Ordering::Relaxed);
+    let name = h
+        .name(code, language)
+        .or_else(|| table_name(code, language));
+    let mut guard = answers();
+    let a = guard.get_or_insert_with(Answers::default);
+    if a.names.len() >= ANSWERS_LIMIT {
+        a.names.clear();
+    }
+    a.names.insert(key, name.clone());
+    name
 }
 
 /// Whether the (English) system knows the code.
 pub fn knows_code(code: &str) -> bool {
-    match host() {
-        Some(h) => h.knows(code) || table_knows(code),
-        None => table_knows(code),
+    let Some(h) = host() else {
+        return table_knows(code);
+    };
+    if let Some(known) = answers().as_ref().and_then(|a| a.knows.get(code).copied()) {
+        return known;
     }
+    HOST_CALLS.fetch_add(1, Ordering::Relaxed);
+    let known = h.knows(code) || table_knows(code);
+    let mut guard = answers();
+    let a = guard.get_or_insert_with(Answers::default);
+    if a.knows.len() >= ANSWERS_LIMIT {
+        a.knows.clear();
+    }
+    a.knows.insert(code.to_owned(), known);
+    known
 }
 
 /// The interface-language text the track label rules need (`LabelText`): language names as above, the

@@ -92,6 +92,16 @@ impl TitleText {
         Some(self.with("Noch %lld Min.", &[Arg::Int(minutes)]))
     }
 
+    /// The line under the Play button: the remaining time of a started title, else its runtime ("1 Std. 52 Min."),
+    /// so the reserved slot is never empty. Nothing only while the runtime is not known yet.
+    pub(crate) fn resume_slot(&self, item: &Item) -> Option<String> {
+        self.remaining(item).or_else(|| {
+            item.runtime_seconds()
+                .filter(|s| *s > 0.0)
+                .map(|s| self.runtime(s))
+        })
+    }
+
     /// The label of the main button of a series page (`Item.seriesButton`).
     pub(crate) fn series_button(&self, episode: Option<&Item>, loads: bool) -> String {
         let Some(episode) = episode else {
@@ -168,6 +178,52 @@ pub(crate) fn header_image(
             wanted_height: 675,
         }
     })
+}
+
+/// [`header_image`] for a page whose own title answer may still be on its way: until it arrived, only a picture the seed
+/// names as a head picture (a backdrop or a thumbnail) counts. A seed built from a tile names none, and the poster
+/// fallback would stand in the head's landscape frame as if it were the title's picture (a portrait poster cropped to
+/// the middle) until the real backdrop replaced it; the page keeps the tile picture or the BlurHash in the final frame
+/// instead (`tile_images`, `image_blur_hash`) and the fallback applies once the title has answered.
+pub(crate) fn header_image_waiting(
+    item: &Item,
+    episode: Option<&Item>,
+    addresses: &ImageAddress,
+    answered: bool,
+) -> Option<ImageRef> {
+    if !answered && ImageSelection::header(item, addresses, HEADER_WIDTH).is_none() {
+        return None;
+    }
+    header_image(item, episode, addresses)
+}
+
+/// The BlurHash of the head picture the title would show: its backdrop, else its thumbnail, else its poster. `None`
+/// while the answer carries no hashes (a list answer that did not ask for the picture types).
+pub(crate) fn header_blur_hash(item: &Item) -> Option<String> {
+    let hashes = item.image_blur_hashes.as_ref()?;
+    let backdrop = item
+        .backdrop_image_tags
+        .as_ref()
+        .and_then(|tags| tags.first())
+        .and_then(|tag| hashes.get("Backdrop")?.get(tag));
+    let of_type = |kind: &str| {
+        let tag = item.image_tags.as_ref()?.get(kind)?;
+        hashes.get(kind)?.get(tag)
+    };
+    backdrop
+        .or_else(|| of_type("Thumb"))
+        .or_else(|| of_type("Primary"))
+        .cloned()
+}
+
+/// The BlurHash of an item's own primary picture (an episode's still).
+pub(crate) fn still_blur_hash(item: &Item) -> Option<String> {
+    let tag = item.image_tags.as_ref()?.get("Primary")?;
+    item.image_blur_hashes
+        .as_ref()?
+        .get("Primary")?
+        .get(tag)
+        .cloned()
 }
 
 /// The logo for the title mark.
@@ -290,5 +346,41 @@ mod player_head_tests {
             player_head(Locale::parse("de"), &film),
             ("Film".into(), "1999 · 1 Std. 30 Min. · Drama, Krimi".into())
         );
+    }
+}
+
+#[cfg(test)]
+mod header_waiting_tests {
+    use super::*;
+    use swiftly_jellyfin::ServerKind;
+
+    fn addresses() -> ImageAddress {
+        ImageAddress::new(
+            "https://example.test".parse().expect("url"),
+            Some("t".into()),
+            ServerKind::Jellyfin,
+        )
+    }
+
+    /// A seed built from a tile names no head picture: the poster fallback must not stand in the landscape head
+    /// before the title answered (a portrait poster cropped to its middle, then replaced: "huge, distorted, first open").
+    #[test]
+    fn a_poster_only_seed_has_no_head_picture_until_the_title_answered() {
+        let seed: Item = serde_json::from_str(
+            r#"{"Id":"s1","Name":"Show","Type":"Series","ImageTags":{"Primary":"p"}}"#,
+        )
+        .expect("item");
+        let a = addresses();
+        assert!(header_image_waiting(&seed, None, &a, false).is_none());
+        assert!(header_image_waiting(&seed, None, &a, true).is_some());
+    }
+
+    #[test]
+    fn a_seed_that_names_a_backdrop_shows_it_at_once() {
+        let seed: Item = serde_json::from_str(
+            r#"{"Id":"s1","Name":"Show","Type":"Series","BackdropImageTags":["b"],"ImageTags":{"Primary":"p"}}"#,
+        )
+        .expect("item");
+        assert!(header_image_waiting(&seed, None, &addresses(), false).is_some());
     }
 }

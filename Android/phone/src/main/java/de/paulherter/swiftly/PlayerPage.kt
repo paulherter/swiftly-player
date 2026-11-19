@@ -1,7 +1,13 @@
 package de.paulherter.swiftly
 
+import de.paulherter.swiftly.rustcore.host.CoreWords
 import de.paulherter.swiftly.rustcore.legacyEpisodeCardWidth
 import de.paulherter.swiftly.rustcore.legacyEpisodeCard
+import de.paulherter.swiftly.shared.Texts
+import de.paulherter.swiftly.rustcore.SubtitleSearchIntent
+import de.paulherter.swiftly.rustcore.SubtitleSearchPhase
+import de.paulherter.swiftly.rustcore.SubtitleSearchVm
+import de.paulherter.swiftly.rustcore.subtitleSearchOffered
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
@@ -194,6 +200,8 @@ data class PlayPlan(val url: String, val lossless: Boolean, val method: String, 
 /** Manual track choice per series or movie; same keys as `TrackMemory` in the package. */
 private const val AUDIO_JE_TITLE = "tonJeTitel"
 private const val UT_JE_TITLE = "utJeTitel"
+/** The subtitle offset per title (title id to milliseconds), kept like the track choices. */
+private const val UT_OFFSET_JE_TITLE = "utVersatzJeTitel"
 
 internal fun playPlanRead(json: String) = JSONObject(json).let { o ->
     PlayPlan(o.getString("url"), o.optBoolean("lossless"), o.optString("methode"), o.optString("titel"),
@@ -336,14 +344,14 @@ class PlayItem(
     var position by mutableDoubleStateOf(0.0); private set
     var duration by mutableDoubleStateOf(0.0); private set
     var imageFree by mutableStateOf(false); private set
-    var offeringArt by mutableStateOf("keiner"); private set
+    var offeringArt by mutableStateOf(CoreWords.Angebot.NOBODY); private set
     var offeringPost by mutableStateOf<Double?>(null); private set
     var offerText by mutableStateOf(""); private set
     /**
      * **The overlay without controls** (`OfferingLayer` in the package, stage 3): `nothing`, `button` or
      * `card`. With `card` the countdown runs, `countdown` from 0 to 1.
      */
-    var overlay by mutableStateOf("nichts"); private set
+    var overlay by mutableStateOf(CoreWords.Einblendung.NOTHING); private set
     var countdown by mutableDoubleStateOf(0.0); private set
     var countdownRest by mutableIntStateOf(0); private set
     var countdownLength by mutableDoubleStateOf(7.0); private set
@@ -410,6 +418,23 @@ class PlayItem(
     /** Milliseconds, always a multiple of the step. */
     var subtitleDelay by mutableIntStateOf(0); private set
     var audioDelay by mutableIntStateOf(0); private set
+
+    /**
+     * **The speed and subtitle-offset rows, built by the core** (`LegacyPlayback.menu`, the same builder as `PlayerVm.menu`
+     * on the other platforms): the speeds, the step buttons, the texts. Nothing is listed or formatted here.
+     */
+    fun menu(): de.paulherter.swiftly.rustcore.PlayerMenu = app.rk.menu(tempo, subtitleDelay.toLong())
+
+    /** One step button of the subtitle offset: the core adds, clamps and rounds. Remembered for this title. */
+    fun subtitleOffsetStep(stepMs: Int) = subtitleOffsetSet(app.rk.menuOffsetStep(subtitleDelay.toLong(), stepMs).toInt())
+
+    fun subtitleOffsetSet(milliseconds: Int) {
+        delaySet(false, milliseconds)
+        plan?.itemId?.let { id ->
+            app.store.remember(UT_OFFSET_JE_TITLE,
+                app.rk.menuOffsetRemember(app.store.rememberValue(UT_OFFSET_JE_TITLE) ?: "{}", id, milliseconds.toLong()))
+        }
+    }
 
     /** - (-1) or + (+1) in the audio or subtitle row. While held, the core counts the repeats (`Haltezaehler`). */
     fun delayPush(audio: Boolean, bearing: Int) {
@@ -680,7 +705,11 @@ class PlayItem(
                                                                     new.itemId, new.seriesIdentifier.orEmpty()).toInt()
             subtitleDelay = keep(subtitleDelay)
             audioDelay = keep(audioDelay)
+            // The speed is not remembered: another title starts at 1x (the engine hears it once).
+            if (alt.itemId != new.itemId && tempo != 1f) { tempo = 1f; player.rateSet(1f) }
         }
+        // An offset the viewer set for this title wins over the one carried over from the same series.
+        app.rk.menuOffsetRemembered(app.store.rememberValue(UT_OFFSET_JE_TITLE) ?: "{}", new.itemId)?.let { subtitleDelay = it.toInt() }
         plan = new
         // What the core chose, for the live matrix and the Technik view's source (no address: it carries the token).
         AppLog.writeOut("[Plan] ${new.itemId} ${new.method} dv=${new.dolbyVision} hls=${new.url.contains(".m3u8")} from=${since ?: 0.0}")
@@ -833,7 +862,7 @@ class PlayItem(
         if (switches || cardsSwitch != null) return
         jerk(Jerk.Lightweight)
         app.rk.offeringPressed()
-        overlay = "nichts"
+        overlay = CoreWords.Einblendung.NOTHING
         run.launch { nextEpisode(fromCard = true) }
     }
 
@@ -842,20 +871,20 @@ class PlayItem(
      * to the next episode via the stage-1 change. `false` if nothing is offered.
      */
     fun offeringRun(): Boolean {
-        if (offeringArt == "keiner" || offerText.isEmpty()) return false
+        if (offeringArt == CoreWords.Angebot.NOBODY || offerText.isEmpty()) return false
         app.rk.offeringPressed()
-        overlay = "nichts"
+        overlay = CoreWords.Einblendung.NOTHING
         val to = offeringPost
         // "Next episode": a light tick to confirm the press (haptics).
-        if (offeringArt == "ueberspringen" && to != null) vault(to) else { jerk(Jerk.Lightweight); run.launch { nextEpisode() } }
+        if (offeringArt == CoreWords.Angebot.SKIP && to != null) vault(to) else { jerk(Jerk.Lightweight); run.launch { nextEpisode() } }
         return true
     }
 
     /** Back or a direction key: closes only the overlay; a countdown is cancelled. `true` if something was open. */
     fun offeringClose(): Boolean {
-        if (overlay == "nichts") return false
+        if (overlay == CoreWords.Einblendung.NOTHING) return false
         val toward = app.rk.offeringClose()
-        overlay = "nichts"
+        overlay = CoreWords.Einblendung.NOTHING
         return toward
     }
 
@@ -888,7 +917,7 @@ class PlayItem(
             app.toStop(answer.fieldText("nachmeldung"))
             app.logWrite()
             when (answer.optString("ergebnis")) {
-                "gewechselt" -> {
+                CoreWords.Ergebnis.SWITCHED -> {
                     val new = answer.fieldText("spielplan")
                     if (new != null && !ended[0]) {
                         val newPlan = playPlanRead(new)
@@ -901,7 +930,7 @@ class PlayItem(
                         launch(newPlan, spot)
                     }
                 }
-                "gescheitert" -> hint = errorString(context, Exception(answer.fieldText("fehler")
+                CoreWords.Ergebnis.FAILED -> hint = errorString(context, Exception(answer.fieldText("fehler")
                     ?: translated("Nächste Folge konnte nicht geladen werden.")))
             }
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
@@ -933,8 +962,8 @@ class PlayItem(
             AppLog.writeOut("[Karte] Start → ${episode.id}")
         }
         val swapOff = if (zooms) SystemClock.elapsedRealtime() + (cardsMetrics.swap * 1000).toLong() else 0L
-        offeringArt = "keiner"
-        overlay = "nichts"
+        offeringArt = CoreWords.Angebot.NOBODY
+        overlay = CoreWords.Einblendung.NOTHING
         val spot = (if (playerFree) player.time / 1000.0 else position).coerceAtLeast(0.0)
         app.doneWatch(spot, duration)
         try {
@@ -942,7 +971,7 @@ class PlayItem(
             app.toStop(answer.fieldText("nachmeldung"))
             app.logWrite()
             when (answer.optString("ergebnis")) {
-                "gewechselt" -> {
+                CoreWords.Ergebnis.SWITCHED -> {
                     val new = answer.fieldText("spielplan")
                     // Swap only once the card covers the picture, otherwise black shows around it.
                     val rest = swapOff - SystemClock.elapsedRealtime()
@@ -959,9 +988,9 @@ class PlayItem(
                         hint = errorString(context, Exception(translated(failure)))
                     }
                 }
-                "gescheitert" -> hint = errorString(context, Exception(answer.fieldText("fehler") ?: translated(failure)))
+                CoreWords.Ergebnis.FAILED -> hint = errorString(context, Exception(answer.fieldText("fehler") ?: translated(failure)))
             }
-            if (answer.optString("ergebnis") != "gewechselt") cardsSwitch?.let { cardsSwitch = it.copy(failed = true) }
+            if (answer.optString("ergebnis") != CoreWords.Ergebnis.SWITCHED) cardsSwitch?.let { cardsSwitch = it.copy(failed = true) }
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
             hint = errorString(context, e)
             cardsSwitch?.let { cardsSwitch = it.copy(failed = true) }
@@ -1042,15 +1071,15 @@ class PlayItem(
         }
         val codec = app.rk.firstFrameVideoCodec()
         val rat = KernRules.firstFrameRat(codec.isNotEmpty(), smallWindow, shown.toInt().toLong(), firstFrameRun, firstFrameLevel.toLong())
-        if (rat == "nichts" || rat == "warten") return false
+        if (rat == CoreWords.FirstFrameRat.NOTHING || rat == CoreWords.FirstFrameRat.WAIT) return false
         AppLog.writeOut("[Bild] kein erstes Bild nach ${firstFrameRun.toInt()} s Laufzeit bei ${spot.toInt()} s · Server $codec" +
             " · dekodiert ${values.decodedVideo}, gezeigt $shown, verloren ${values.lostPictures} · Ton gespielt ${values.playedAbuffers}" +
             " · Dekoder ${if (softwareDecoder) "Software" else "frei"} → $rat")
         if (plan?.dolbyVision != null && plan?.dolbyVision != 5 && !dvFirstFrameFailed) dvFirstFrameFailed = true
         firstFrameLevel = KernRules.firstFrameNext(rat, firstFrameLevel.toLong()).toInt()
         firstFrameHint = KernRules.firstFrameHint(firstFrameLevel.toLong()).ifEmpty { null }
-        if (rat == "aufgeben") return false
-        if (rat == "softwareDekoder") softwareDecoder = true
+        if (rat == CoreWords.FirstFrameRat.GIVE_UP) return false
+        if (rat == CoreWords.FirstFrameRat.SOFTWARE_DECODER) softwareDecoder = true
         val p = plan ?: return false
         AppLog.writeOut("[Netz] kein erstes Bild${if (softwareDecoder) ", jetzt mit Software-Dekoder" else ""} → Strom neu aufbauen bei ${spot.toInt()} s")
         // Like `newConnect`, but at the position where the clock currently is and without a lockout: the
@@ -1213,9 +1242,9 @@ class PlayItem(
         if (t == streamLastTime || t <= 0) {
             val since = streamStandsSince ?: now.also { streamStandsSince = it }
             val r = rat(now - since, now)
-            if (r != lastRat && r != "nochNicht") AppLog.writeOut("[Netz] Bild steht seit ${(now - since) / 1000} s → $r")
+            if (r != lastRat && r != CoreWords.StreamWatchRat.NOT_YET) AppLog.writeOut("[Netz] Bild steht seit ${(now - since) / 1000} s → $r")
             lastRat = r
-            if (r == "neuVerbinden") newConnect("Bild steht seit ${(now - since) / 1000} s")
+            if (r == CoreWords.StreamWatchRat.NEW_CONNECT) newConnect("Bild steht seit ${(now - since) / 1000} s")
             return
         }
         // The clock runs again: a rebuild succeeded.
@@ -1233,7 +1262,7 @@ class PlayItem(
         if (KernRules.streamWatchImagesState(lastImages, images)) { if (imagesStateSince == null) imagesStateSince = now } else imagesStateSince = null
         lastImages = images
         imagesStateSince?.let { since ->
-            if (rat(now - since, now) == "neuVerbinden") {
+            if (rat(now - since, now) == CoreWords.StreamWatchRat.NEW_CONNECT) {
                 imagesStateSince = null
                 newConnect("kein neues Bild seit ${(now - since) / 1000} s, Uhr laeuft weiter")
                 return
@@ -1316,14 +1345,14 @@ class PlayItem(
             offeringAdopt(answer)
         }
         // The card's countdown restarts after a seek (seeking to the end must not advance immediately).
-        if (overlay == "karte") fillNew++
+        if (overlay == CoreWords.Einblendung.CARD) fillNew++
     }
 
     private fun offeringAdopt(answer: JSONObject) {
-        offeringArt = answer.optString("angebot", "keiner")
+        offeringArt = answer.optString("angebot", CoreWords.Angebot.NOBODY)
         offeringPost = if (answer.isNull("nach")) null else answer.getDouble("nach")
         offerText = answer.optString("angebotstext")
-        overlay = answer.optString("einblendung", "nichts")
+        overlay = answer.optString("einblendung", CoreWords.Einblendung.NOTHING)
         countdown = answer.optDouble("countdown", 0.0)
         countdownRest = answer.optInt("countdownRest", 0)
         countdownLength = answer.optDouble("countdownLaenge", 7.0)
@@ -1441,10 +1470,14 @@ class PlayItem(
         val e = app.settings
         val answer = JSONObject(app.rk.tracksSelect(
             tracksJson(true), tracksJson(false), player.audioTrack.toLong(), e.audioLanguage, e.subtitleLanguage,
-            e.subtitleAutomatic, app.store.rememberValue(AUDIO_JE_TITLE) ?: "{}", app.store.rememberValue(UT_JE_TITLE) ?: "{}"))
+            e.subtitleAutomatic, app.store.rememberValue(AUDIO_JE_TITLE) ?: "{}", app.store.rememberValue(UT_JE_TITLE) ?: "{}",
+            // The language of the device (not of the app): the start rule takes it after the settings.
+            Locale.getDefault().toLanguageTag()))
         if (answer.has("ton") && !answer.isNull("ton")) player.audioTrack = answer.getInt("ton")
         // Actively turn off: the file often brings its own preselection.
         player.spuTrack = answer.optInt("untertitel", -1)
+        // The subtitle search's order was part of that choice (`order_subtitle`): once used, it is taken back.
+        searchedTitle?.let { id -> app.rk.orderSubtitle(id, null); searchedTitle = null }
         tracksSelected = true
         app.logWrite()
         if (BuildConfig.DEBUG) debugTracks()
@@ -1481,6 +1514,34 @@ class PlayItem(
     fun subtitleFromHand(id: Int) {
         player.spuTrack = id
         app.store.remember(UT_JE_TITLE, app.rk.subtitleFromHand(tracksJson(false), id.toLong(), app.store.rememberValue(UT_JE_TITLE) ?: "{}"))
+    }
+
+    /** The title whose reload carries the subtitle search's order (taken back once `languagesApply` has used it). */
+    private var searchedTitle: String? = null
+
+    /** The server can search subtitles for this title (Jellyfin, Emby; not Plex, not a downloaded file). */
+    fun canSearchSubtitles(): Boolean {
+        val account = app.rk.account() ?: return false
+        return plan?.itemId?.isNotEmpty() == true && plan?.url?.startsWith("file") != true &&
+            runCatching { subtitleSearchOffered(account) }.getOrDefault(false)
+    }
+
+    /** The core's search of the running title, asked in the language of the settings. */
+    fun subtitleSearchVm(): SubtitleSearchVm? {
+        val account = app.rk.account() ?: return null
+        val id = plan?.itemId?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching { app.rk.core().subtitleSearchVm(account, Texts.language, id, app.settings.subtitleLanguage) }.getOrNull()
+    }
+
+    /**
+     * The server has the new track (`index` = its stream index, from the core's search part): order it, then reload the
+     * title at the position (the quality path). The core's track rule maps the index to the player's track (`tracksSelect`),
+     * so nothing here matches names.
+     */
+    fun subtitleAdded(index: Long?) {
+        val id = plan?.itemId?.takeIf { it.isNotEmpty() }
+        if (index != null && id != null) { app.rk.orderSubtitle(id, index); searchedTitle = id }
+        run.launch { qualitySwitch() }
     }
 
     /** Audio "Deutsch · AAC · 5.1", subtitles with format, "Erzwungen", "Hörgeschädigt", "Datei", instead of libVLC's "Track 1 - [English]". */
@@ -1657,7 +1718,7 @@ class PlayItem(
             if (imageFree && position > 0) app.playPoint = PlayRequest(plan?.itemId ?: wish.id, position, if ((plan?.itemId ?: wish.id) == wish.id) wish.sourceID else "")
             sessionReport()
             // If the card was up, it zooms into the picture on expiry (`toNextEpisode(fromCard: cardBefore)`).
-            val cardBefore = overlay == "karte"
+            val cardBefore = overlay == CoreWords.Einblendung.CARD
             if (answer.has("angebot")) offeringAdopt(answer)
             // "Skip intro and outro automatically": the offer shows first (button fill / card countdown); the core
             // reports the press only when that has run out, and closing the offer cancels it.
@@ -1766,6 +1827,12 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
 
     BackHandler(enabled = openLayer != null) { layerClose() }
     BackHandler(enabled = openLayer == null) { mediaWork.finish(close) }
+    // The core's menus (box under the bar's buttons, and the season button of the Folgen panel).
+    val menuSession = remember { PlayerMenuSession() }
+    var seasonList by remember { mutableStateOf<List<Season>>(emptyList()) }
+    var seasonShown by remember { mutableStateOf<String?>(null) }
+    var seasonChosen by remember { mutableStateOf<String?>(null) }
+    BackHandler(enabled = menuSession.kind != null) { menuSession.close() }
 
     // Open, then the tick.
     LaunchedEffect(wish) { mediaWork.openAndTick(wish, close) }
@@ -1790,8 +1857,8 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
             ?.isTouchExplorationEnabled == true
     }
     LaunchedEffect(mediaWork.sleepFired) { if (mediaWork.sleepFired > 0) visible = true }
-    LaunchedEffect(visible, mediaWork.running, mediaWork.atPush, sheetOpen, touched, openLayer) {
-        if (!assistive && visible && mediaWork.running && !mediaWork.atPush && !sheetOpen && openLayer == null) { delay(4000); visible = false }
+    LaunchedEffect(visible, mediaWork.running, mediaWork.atPush, sheetOpen, touched, openLayer, menuSession.kind) {
+        if (!assistive && visible && mediaWork.running && !mediaWork.atPush && !sheetOpen && openLayer == null && menuSession.kind == null) { delay(4000); visible = false }
     }
     LaunchedEffect(mediaWork.hint) { if (mediaWork.hint != null) { delay(5000); mediaWork.hint = null } }
     LaunchedEffect(leap) { if (leap != null) { delay(700); leap = null } }
@@ -1827,11 +1894,11 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
     // the first six seconds of the section, afterwards only with the controls; the "next episode" card
     // with controls closed. While they are open it waits (gone, countdown pauses) and the normal button
     // shows there.
-    val offeringPresent = mediaWork.offeringArt != "keiner" && mediaWork.offerText.isNotEmpty() && mediaWork.imageFree && openLayer == null
+    val offeringPresent = mediaWork.offeringArt != CoreWords.Angebot.NOBODY && mediaWork.offerText.isNotEmpty() && mediaWork.imageFree && openLayer == null
         && !sheetOpen && !smallWindow && !mediaWork.switches && !mediaWork.atPush
-        && (mediaWork.overlay != "nichts" || (controlsPresent && mediaWork.offeringArt == "naechste"))
-    val cardPresent = mediaWork.cardsSwitch != null || (offeringPresent && mediaWork.overlay == "karte")
-    val buttonPresent = offeringPresent && mediaWork.overlay != "karte" && mediaWork.cardsSwitch == null
+        && (mediaWork.overlay != CoreWords.Einblendung.NOTHING || (controlsPresent && mediaWork.offeringArt == CoreWords.Angebot.NEXT))
+    val cardPresent = mediaWork.cardsSwitch != null || (offeringPresent && mediaWork.overlay == CoreWords.Einblendung.CARD)
+    val buttonPresent = offeringPresent && mediaWork.overlay != CoreWords.Einblendung.CARD && mediaWork.cardsSwitch == null
     val cardScrim by animateFloatAsState(if (cardPresent && mediaWork.cardsSwitch == null) 1f else 0f,
         fadeCurve(cardPresent, false), label = "kartenschleier")
     LaunchedEffect(cardPresent) {
@@ -2045,8 +2112,9 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
                         }
                     }
                     Spacer(Modifier.width(12.dp))
-                    IconRail(hasEpisodes, iconsPresent, Modifier.graphicsLayer { alpha = if (mediaWork.atPush) 0f else 1f },
-                                unfoldLayer, handOver, { target -> run.launch { mediaWork.handOver(target, close) } }) { mediaWork.finish(close) }
+                    BarCapsule(hasEpisodes || mediaWork.chapterCount > 0, openLayer == "folgen", handOver.isNotEmpty(), menuSession, iconsPresent,
+                               folgen = { menuSession.close(); unfoldLayer("folgen") }, close = { mediaWork.finish(close) },
+                               modifier = Modifier.graphicsLayer { alpha = if (mediaWork.atPush) 0f else 1f })
                 }
                 mediaWork.hint?.let {
                     Text(it, style = Theme.small.copy(textAlign = TextAlign.Center), color = Theme.fontQuiet,
@@ -2066,7 +2134,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
         // right just above the bar, with the same dimensions as the footer. Gone while seeking or with a
         // layer open. Cancel with Back (iOS: two-finger swipe); no X of its own, as on iOS.
         // Back cancels the overlay: the card or the skip button without controls.
-        BackHandler(enabled = mediaWork.overlay != "nichts" && offeringPresent && !controlsPresent && mediaWork.cardsSwitch == null) { mediaWork.offeringClose() }
+        BackHandler(enabled = mediaWork.overlay != CoreWords.Einblendung.NOTHING && offeringPresent && !controlsPresent && mediaWork.cardsSwitch == null) { mediaWork.offeringClose() }
         Box(Modifier.fillMaxSize().padding(start = margin.page, end = margin.page, bottom = footBottom + PlayerMetric.bar + PlayerMetric.overBar)
                 .padding(horizontal = PlayerMetric.page),
             contentAlignment = Alignment.BottomEnd) {
@@ -2115,16 +2183,28 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
         AnimatedContent(targetState = if (smallWindow) null else openLayer, modifier = Modifier.fillMaxSize().zIndex(5f),
             transitionSpec = { fadeIn(layersCurve) togetherWith fadeOut(layersCurve) }, label = "ebene") { layer ->
             when (layer) {
-                "spuren" -> TracksLayer(mediaWork, margin, portrait, layerClose)
-                "einstellungen" -> SettingsLayer(app, mediaWork, margin, portrait, layerClose) { mediaWork.finish(close) }
+                "suche" -> SubtitleSearchLayer(mediaWork, margin, layerClose)
                 "folgen" -> {
                     val p = mediaWork.plan
-                    if (p != null && p.seriesIdentifier != null) EpisodesLayer(app, p.seriesIdentifier, p.itemId, p.seasonIdentifier, title, margin,
-                        close = layerClose,
-                        start = { id -> layerClose(); if (id != p.itemId) run.launch { mediaWork.episodeSelect(id) } })
+                    val chapterList = remember(mediaWork.chapterCount) { chapterListRead(app.rk.chapterList(mediaWork.position)) }
+                    if (p != null && (hasEpisodes || chapterList.rows.isNotEmpty())) EpisodesLayer(app, p.seriesIdentifier.takeIf { hasEpisodes }, p.itemId, p.seasonIdentifier, title, margin,
+                        close = layerClose, session = menuSession, chosen = seasonChosen,
+                        onSeasons = { list, shown -> seasonList = list; seasonShown = shown },
+                        start = { id -> layerClose(); if (id != p.itemId) run.launch { mediaWork.episodeSelect(id) } },
+                        chapters = chapterList, preview = { mediaWork.trickplayImage(it) }, jump = { at -> layerClose(); mediaWork.vault(at) },
+                        // The season name in the device language comes from the core (the server names its seasons in its own language).
+                        seasonLabel = { playerMenus(app, mediaWork, menuSession, handOver, seasonList, seasonShown).episodes.seasonButton?.value?.text() })
                 }
                 else -> Box(Modifier.fillMaxSize())
             }
+        }
+
+        // **The menus**: the core builds every level; the box hangs from the button that opened it.
+        if (!smallWindow) PlayerMenuLayer(menuSession, { playerMenus(app, mediaWork, menuSession, handOver, seasonList, seasonShown) },
+            canReport = false, canLock = false,
+            press = { a -> playerMenuPress(app, mediaWork, menuSession, run, close, handOver, { seasonChosen = it }, { unfoldLayer("suche") }, a) })
+        LaunchedEffect(menuSession.isOpen, menuSession.kind) {
+            if (menuSession.isOpen && menuSession.kind != null) { menuSession.audioSelected = mediaWork.player.audioTrack; menuSession.subtitleSelected = mediaWork.player.spuTrack }
         }
 
         // **The standing title** (mirrors `stateTitle`). With the episode layer it lies above and stays,
@@ -2137,7 +2217,7 @@ fun PlayerPage(app: SwiftlyApplication, wish: PlayRequest, smallWindow: Boolean,
             Text(title, style = titleStyle, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis,
                  modifier = Modifier.weight(1f))
             // Room for the icon row so the title gets the same width as in the header.
-            Spacer(Modifier.width(12.dp + iconRailsWidth(hasEpisodes, handOver.isNotEmpty())))
+            Spacer(Modifier.width(12.dp + iconRailsWidth(hasEpisodes || mediaWork.chapterCount > 0, handOver.isNotEmpty())))
         }
     }
 }
@@ -2244,47 +2324,8 @@ private fun IconButton(symbol: Glyph, description: String, active: Boolean = tru
     }
 }
 
-/**
- * **"Übergeben an …"** (`handOverMenu` in the iOS `PlayerScreen`): the TVs in reach, see `PlayOn.kt`.
- * Only offered outside a group, which watches here and would be left without a word.
- */
-@Composable
-private fun HandOverButton(targets: List<PlayOutputChoice>, active: Boolean, choose: (PlayOutputChoice) -> Unit) {
-    var opened by remember { mutableStateOf(false) }
-    val label = translated("Übergeben an …")
-    Box {
-        IconButton(Glyph.Tv, label, active) { opened = true }
-        androidx.compose.material3.DropdownMenu(opened, onDismissRequest = { opened = false }, containerColor = Theme.raised,
-                     shape = RoundedCornerShape(Theme.cornerCard)) {
-            Text(label, style = Theme.small, color = Theme.fontVeryQuiet, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-            targets.forEach { c ->
-                androidx.compose.material3.DropdownMenuItem(
-                    text = { Text(c.name, style = Theme.listTitle, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    leadingIcon = { Symbol(Glyph.Tv, 17.dp, color = Theme.font) },
-                    onClick = { opened = false; choose(c) })
-            }
-        }
-    }
-}
-
-/** The buttons at the top right, spacing 2 like `iconRail` on the iPhone. */
-@Composable
-private fun IconRail(hasEpisodes: Boolean, active: Boolean, modifier: Modifier, open: (String) -> Unit,
-                     handOver: List<PlayOutputChoice> = emptyList(), handOverTo: (PlayOutputChoice) -> Unit = {},
-                     close: () -> Unit) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        IconButton(Glyph.Subtitle, translated("Audio & Untertitel"), active) { open("spuren") }
-        if (hasEpisodes) IconButton(Glyph.Pile, translated("Folgen"), active) { open("folgen") }
-        IconButton(Glyph.SliderControl, translated("Einstellungen"), active) { open("einstellungen") }
-        if (handOver.isNotEmpty()) HandOverButton(handOver, active, handOverTo)
-        IconButton(Glyph.Cross, translated("Player schließen"), active) { close() }
-    }
-}
-
-private fun iconRailsWidth(hasEpisodes: Boolean, handOver: Boolean = false): Dp {
-    val count = (if (hasEpisodes) 4 else 3) + (if (handOver) 1 else 0)
-    return PlayerMetric.button * count + 2.dp * (count - 1)
-}
+private fun iconRailsWidth(hasEpisodes: Boolean, handOver: Boolean = false): Dp =
+    44.dp * ((if (hasEpisodes) 3 else 2) + (if (handOver) 1 else 0)) + 8.dp + 40.dp
 
 /**
  * Centered in the picture, mirrors `centerControls`: edge 46 (narrow 40) for the seek buttons, 78 (60)
@@ -2552,220 +2593,20 @@ private fun LayersHeader(close: () -> Unit, left: @Composable () -> Unit = {}) {
 }
 
 /**
- * Columns side by side, **centered**, below the X row (`top + button + 6`). Each column at most 210,
- * spacing 40 (portrait 16); if the width is not enough, all get equally narrower.
- */
-@Composable
-private fun ColumnsRail(margin: Rand, portrait: Boolean, count: Int, content: @Composable (Dp) -> Unit) {
-    BoxWithConstraints(Modifier.fillMaxSize().padding(start = margin.page, end = margin.page, top = margin.top, bottom = margin.bottom)
-            .padding(horizontal = PlayerMetric.page).padding(top = PlayerMetric.top + PlayerMetric.button + 6.dp)) {
-        val spacing = if (portrait) 16.dp else 40.dp
-        val width = minOf(210.dp, (maxWidth - spacing * (count - 1)) / count)
-        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally)) { content(width) }
-    }
-}
-
-/** A column with a fixed heading; only the rows below scroll, each column on its own. */
-@Composable
-private fun SelectionColumn(title: String, width: Dp, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.width(width).fillMaxHeight()) {
-        Text(title, style = titleStyle, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis,
-             modifier = Modifier.padding(horizontal = 10.dp).padding(bottom = 8.dp).semantics { heading() })
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 12.dp),
-               verticalArrangement = Arrangement.spacedBy(2.dp), content = content)
-    }
-}
-
-/** Check mark and name: selected white and semibold, otherwise 62 % white (mirrors `LayersRow`). */
-@Composable
-private fun LayersRow(text: String, selected: Boolean, perform: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(Theme.cornerField)).pressRow(perform)
-            .semantics { this.selected = selected }.padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(Modifier.width(18.dp), contentAlignment = Alignment.CenterStart) {
-            Symbol(Glyph.Checkmark, 14.dp, Modifier.alpha(if (selected) 1f else 0f), color = Theme.font, strength = Strength.Semibold)
-        }
-        // **Selected means white, no weight change**: the check mark on the left already says it, and in a
-        // column with `maxLines(1)` semibold truncated even more than regular.
-        Text(text, style = Theme.body,
-             color = if (selected) Theme.font else Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-/**
- * **Delay: last row of the audio and subtitle columns** (mirrors `Verzoegerungszeile` in
- * `Sources/iOS/PlayerLayers.swift`, rationale there). - and + shift by 50 ms; held they repeat and
- * speed up (`Haltezaehler` in the package). The reset arrow sets zero and keeps its place so
- * - value + does not jump sideways on reset. For TalkBack one element with earlier/later/reset.
- */
-@Composable
-private fun DelayRow(milliseconds: Int, shove: (Int) -> Unit, reset: () -> Unit) {
-    val a = remember(milliseconds) { delayDisplay(milliseconds) }
-    val title = translated("Verzögerung")
-    Column(Modifier.fillMaxWidth().padding(top = 10.dp).clearAndSetSemantics {
-            contentDescription = title
-            stateDescription = a.text
-            customActions = listOf(
-                androidx.compose.ui.semantics.CustomAccessibilityAction(translated("Früher")) { shove(-1); true },
-                androidx.compose.ui.semantics.CustomAccessibilityAction(translated("Später")) { shove(1); true },
-                androidx.compose.ui.semantics.CustomAccessibilityAction(translated("Zurücksetzen")) { reset(); true })
-        }, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(title, style = Theme.small, color = Theme.fontVeryQuiet, modifier = Modifier.padding(horizontal = 10.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            DelayKey(Glyph.Minus, a.atStart) { shove(-1) }
-            Text(a.text, style = Theme.body.copy(fontFeatureSettings = "tnum"), textAlign = TextAlign.Center, maxLines = 1,
-                 color = if (a.isNull) Theme.fontQuiet else Theme.font, modifier = Modifier.weight(1f))
-            DelayKey(Glyph.Plus, a.atEnd) { shove(1) }
-            val coverage by animateFloatAsState(if (a.isNull) 0f else 1f, label = "zuruecksetzen")
-            Box(Modifier.size(PlayerMetric.button).iconPress(!a.isNull, translated("Zurücksetzen"), reset).alpha(coverage),
-                contentAlignment = Alignment.Center) {
-                Symbol(Glyph.Ruecksetzen, 16.dp, color = Theme.font, strength = Strength.Medium)
-            }
-        }
-    }
-}
-
-/**
- * - or + of the delay row: one press immediately, **held it repeats** (like `buttonRepeatBehavior` on
- * iOS), after 400 ms every 100 ms. The interval is below the `railsGap` of the hold counter, so
- * the core counts the series and speeds up. At the limit dimmed and without effect.
- */
-@Composable
-private fun DelayKey(symbolText: Glyph, locked: Boolean, perform: () -> Unit) {
-    val current by rememberUpdatedState(perform)
-    val lockedNow by rememberUpdatedState(locked)
-    val source = remember { MutableInteractionSource() }
-    val pressed by source.collectIsPressedAsState()
-    val coverage by animateFloatAsState(if (pressed) 0.35f else 1f,
-        if (pressed) snap() else tween(200, easing = EaseOut), label = "druck")
-    Box(Modifier.size(PlayerMetric.button).graphicsLayer { alpha = coverage }.pointerInput(Unit) {
-            detectTapGestures(onPress = { place ->
-                if (lockedNow) return@detectTapGestures
-                val press = androidx.compose.foundation.interaction.PressInteraction.Press(place)
-                source.emit(press)
-                current()
-                val hold = kotlinx.coroutines.coroutineScope {
-                    val redo = launch {
-                        delay(400)
-                        while (!lockedNow) { current(); delay(100) }
-                    }
-                    tryAwaitRelease().also { redo.cancel() }
-                }
-                source.emit(if (hold) androidx.compose.foundation.interaction.PressInteraction.Release(press)
-                            else androidx.compose.foundation.interaction.PressInteraction.Cancel(press))
-            })
-        }, contentAlignment = Alignment.Center) {
-        Symbol(symbolText, 17.dp, color = if (locked) Theme.fontVeryQuiet else Theme.font, strength = Strength.Semibold)
-    }
-}
-
-/** Audio & subtitles: two columns, each scrolls on its own. */
-@Composable
-private fun TracksLayer(mediaWork: PlayItem, margin: Rand, portrait: Boolean, close: () -> Unit) {
-    var audioSelection by remember { mutableIntStateOf(mediaWork.player.audioTrack) }
-    var utSelection by remember { mutableIntStateOf(mediaWork.player.spuTrack) }
-    val audio = remember { mediaWork.trackList(audio = true) }
-    val ut = remember { mediaWork.trackList(audio = false) }
-    Box(Modifier.fillMaxSize()) {
-        LayersReason()
-        ColumnsRail(margin, portrait, 2) { width ->
-            SelectionColumn(translated("Audio"), width) {
-                audio.forEach { (id, name) -> LayersRow(name, id == audioSelection) { audioSelection = id; mediaWork.audioFromHand(id) } }
-                DelayRow(mediaWork.audioDelay, { mediaWork.delayPush(true, it) }) { mediaWork.delaySet(true, 0) }
-            }
-            SelectionColumn(translated("Untertitel"), width) {
-                LayersRow(translated("Aus"), utSelection == -1) { utSelection = -1; mediaWork.subtitleFromHand(-1) }
-                ut.forEach { (id, name) -> LayersRow(name, id == utSelection) { utSelection = id; mediaWork.subtitleFromHand(id) } }
-                DelayRow(mediaWork.subtitleDelay, { mediaWork.delayPush(false, it) }) { mediaWork.delaySet(false, 0) }
-            }
-        }
-        Box(Modifier.padding(start = margin.page, end = margin.page, top = margin.top)) { LayersHeader(close) }
-    }
-}
-
-/** Picture / sleep timer / tech overlay / quality: as on iOS, without speed. */
-@Composable
-private fun SettingsLayer(app: SwiftlyApplication, mediaWork: PlayItem, margin: Rand, portrait: Boolean, close: () -> Unit,
-                               groupLeave: () -> Unit) {
-    val e = app.settings
-    // Only for playback from the server, and only if the account may transcode. **Not in a group**
-    // (iOS `qualitySelection`): reloading reports stop and start past it, and you would keep playing alone.
-    val qualityShow = e.convertAllowed && mediaWork.plan?.url?.startsWith("file") != true && !mediaWork.inGroup
-    val group = if (mediaWork.inGroup) app.gemeinsam.value.group else null
-    val run = rememberCoroutineScope()
-    Box(Modifier.fillMaxSize()) {
-        LayersReason()
-        ColumnsRail(margin, portrait, 3 + (if (qualityShow) 1 else 0) + (if (group != null) 1 else 0)) { width ->
-            // **Together first**: who is in, and below it the output. The names do nothing.
-            if (group != null) SelectionColumn(translated("Gemeinsam · %@", group.name), width) {
-                group.participant.forEach { name ->
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp).semantics(mergeDescendants = true) {},
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(Modifier.width(18.dp), contentAlignment = Alignment.CenterStart) {
-                            Symbol(Glyph.PersonFilled, 14.dp, color = Theme.font)
-                        }
-                        Text(name, style = Theme.listTitle, color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(Theme.cornerField)).pressRow(groupLeave)
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.width(18.dp), contentAlignment = Alignment.CenterStart) {
-                        Symbol(Glyph.SignOut, 14.dp, color = Theme.accent, strength = Strength.Semibold)
-                    }
-                    Text(translated("Gruppe verlassen"), style = Theme.listTitle, color = Theme.accent, maxLines = 1)
-                }
-            }
-            SelectionColumn(translated("Bild"), width) {
-                LayersRow(translated("Original"), !mediaWork.fillFrame) { mediaWork.imageFillingSet(false) }
-                LayersRow(translated("Füllen"), mediaWork.fillFrame) { mediaWork.imageFillingSet(true) }
-            }
-            SelectionColumn(translated("Schlafzeit"), width) {
-                LayersRow(translated("Aus"), mediaWork.sleepTime == 0) { mediaWork.sleepTimeSet(0) }
-                listOf(15, 30, 45, 60, 90).forEach { m ->
-                    LayersRow(translated("%lld Min.", m), mediaWork.sleepTime == m) { mediaWork.sleepTimeSet(m) }
-                }
-            }
-            SelectionColumn(translated("Technikschild"), width) {
-                LayersRow(translated("Aus"), !app.settings.techBadge) { app.settings.techBadge = false }
-                LayersRow(translated("An"), app.settings.techBadge) { app.settings.techBadge = true }
-            }
-            // **Quality: Direct Play or an upper limit.** A limit means the server may transcode, so Direct Play
-            // is off. Works like the setting in the app and reloads the movie at the same position.
-            if (qualityShow) {
-                val bitrates = remember { selectionRead(KernRules.bitrateLevels()) }
-                // `-1`: Direct Play. Otherwise a bitrate limit; `0` means unlimited.
-                fun select(megabit: Int) {
-                    val before = e.alwaysDirectPlay to e.bitratesLimit
-                    if (megabit < 0) e.alwaysDirectPlay = true
-                    else { e.alwaysDirectPlay = false; e.bitratesLimit = megabit }
-                    if (before == (e.alwaysDirectPlay to e.bitratesLimit)) return
-                    app.qualityReport()
-                    close()
-                    run.launch { mediaWork.qualitySwitch() }
-                }
-                SelectionColumn(translated("Qualität"), width) {
-                    LayersRow(translated("Direct Play"), e.alwaysDirectPlay) { select(-1) }
-                    bitrates.forEach { b ->
-                        val value = b.value.toIntOrNull() ?: 0
-                        LayersRow(b.text, !e.alwaysDirectPlay && e.bitratesLimit == value) { select(value) }
-                    }
-                }
-            }
-        }
-        Box(Modifier.padding(start = margin.page, end = margin.page, top = margin.top)) { LayersHeader(close) }
-    }
-}
-
-/**
  * The series' episodes, the same rows as on the series page (`EpisodesRow`, `SeasonHeader`). The title
  * sits exactly where it sat in the player (`stateTitle`, does not fade); the season picker takes
  * the place of the meta line. List preloaded (`episodesPreload`): on open it is already there, with the
  * current episode in the middle; only a season change fades in again.
  */
 @Composable
-private fun EpisodesLayer(app: SwiftlyApplication, seriesIdentifier: String, runningId: String, seasonIdentifier: String?, title: String, margin: Rand,
-                        close: () -> Unit, start: (String) -> Unit) {
+private fun EpisodesLayer(app: SwiftlyApplication, seriesId: String?, runningId: String, seasonIdentifier: String?, title: String, margin: Rand,
+                        close: () -> Unit, session: PlayerMenuSession, chosen: String?, onSeasons: (List<Season>, String?) -> Unit,
+                        start: (String) -> Unit, chapters: ChapterList = ChapterList.none, preview: (Double) -> android.graphics.Bitmap? = { null },
+                        jump: (Double) -> Unit = {}, seasonLabel: () -> String? = { null }) {
+    // Series: Folgen (+ Kapitel when the file has chapters); film: Kapitel only (the core's `PanelTab` rule).
+    val seriesIdentifier = seriesId.orEmpty()
+    val hasEpisodes = seriesId != null
+    var tab by remember { mutableStateOf(if (hasEpisodes) FolgenTab.Episodes else FolgenTab.Chapters) }
     // Mirrors `passendeStaffel(toward:)`: the current episode's season, not the one last chosen on the series page.
     fun matching(list: List<Season>, remembered: String?) =
         list.firstOrNull { it.id == seasonIdentifier }?.id ?: list.firstOrNull { it.id == remembered }?.id ?: list.firstOrNull()?.id
@@ -2791,6 +2632,7 @@ private fun EpisodesLayer(app: SwiftlyApplication, seriesIdentifier: String, run
     }
 
     LaunchedEffect(seriesIdentifier) {
+        if (!hasEpisodes) return@LaunchedEffect
         try {
             val s = seriesRead(withContext(Dispatchers.IO) { app.rk.series(seriesIdentifier).await() })
             app.seriesCache[seriesIdentifier] = s
@@ -2802,6 +2644,21 @@ private fun EpisodesLayer(app: SwiftlyApplication, seriesIdentifier: String, run
             if (selected == g) { episodes = f; app.episodesCache[g] = f }
         } catch (e: CancellationException) { throw e } catch (_: Exception) {}
     }
+
+    LaunchedEffect(seasons, selected) { onSeasons(seasons, selected) }
+    fun chooseSeason(new: String) {
+        if (new == selected) return
+        selected = new
+        seasonSwitched = true
+        app.episodesCache[new]?.let { episodes = it }
+        run.launch {
+            try {
+                val f = episodesRead(withContext(Dispatchers.IO) { app.rk.episodes(seriesIdentifier, new).await() })
+                if (selected == new) { episodes = f; app.episodesCache[new] = f }
+            } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+        }
+    }
+    LaunchedEffect(chosen) { chosen?.let { chooseSeason(it) } }
 
     // **The current episode in view, centered** (mirrors `scrollTo(item.id, anchor: .center)`).
     LaunchedEffect(episodes) {
@@ -2829,18 +2686,14 @@ private fun EpisodesLayer(app: SwiftlyApplication, seriesIdentifier: String, run
                     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         // Placeholder: the title itself is in the player (`stateTitle`) and does not fade.
                         Text(title, style = titleStyle, maxLines = 1, modifier = Modifier.alpha(0f).clearAndSetSemantics {})
-                        if (seasons.isNotEmpty()) SeasonHeader(seasons, selected, seasonListOpen, { seasonListOpen = it }, compact = true) { new ->
-                            if (new != selected) {
-                                selected = new
-                                seasonSwitched = true
-                                app.episodesCache[new]?.let { episodes = it }
-                                run.launch {
-                                    try {
-                                        val f = episodesRead(withContext(Dispatchers.IO) { app.rk.episodes(seriesIdentifier, new).await() })
-                                        if (selected == new) { episodes = f; app.episodesCache[new] = f }
-                                    } catch (e: CancellationException) { throw e } catch (_: Exception) {}
-                                }
+                        // "Staffel N ⌄": the core's season menu hangs from this button (`PlayerMenuLevel.Seasons`).
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (hasEpisodes && seasons.isNotEmpty()) {
+                                if (tab == FolgenTab.Episodes) SeasonButton(seasonLabel() ?: seasons.firstOrNull { it.id == selected }?.name ?: seasons.first().name, session) {
+                                    session.open(MenuKind.Seasons)
+                                } else FolgenTabWord(translated("Folgen"), false) { tab = FolgenTab.Episodes }
                             }
+                            if (chapters.rows.isNotEmpty()) FolgenTabWord(translated("Kapitel"), tab == FolgenTab.Chapters || !hasEpisodes) { tab = FolgenTab.Chapters }
                         }
                     }
                 }
@@ -2848,7 +2701,8 @@ private fun EpisodesLayer(app: SwiftlyApplication, seriesIdentifier: String, run
             // The same strip as on Apple TV: landscape tiles side by side, the running episode larger and
             // centred (iOS `EpisodeStripTile`). A tap on the empty ground only closes the season list; the layer
             // closes via the X, like every other player layer.
-            Box(Modifier.weight(1f).fillMaxWidth().padding(top = 24.dp).pointerInput(Unit) { detectTapGestures { if (seasonListOpen) seasonListOpen = false } }
+            if (tab == FolgenTab.Chapters) ChapterStripRow(chapters, preview, margin.bottom, jump, Modifier.weight(1f).fillMaxWidth().padding(top = 24.dp))
+            else Box(Modifier.weight(1f).fillMaxWidth().padding(top = 24.dp).pointerInput(Unit) { detectTapGestures { if (seasonListOpen) seasonListOpen = false } }
                     .graphicsLayer { alpha = reveal.value }, contentAlignment = Alignment.Center) {
                 LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
                         contentPadding = PaddingValues(bottom = margin.bottom)) {
@@ -2997,7 +2851,7 @@ fun TechBadge(fixed: List<TechRow>, live: JSONObject?, position: () -> Double, d
     fixed.forEachIndexed { i, z ->
         if (i == hintPre) hintRow()
         when {
-            z.header -> kern { Text(z.text, style = headerFont, color = if (z.art == "gut") Theme.accent else Theme.warning) }
+            z.header -> kern { Text(z.text, style = headerFont, color = if (z.art == CoreWords.InfoArt.GOOD) Theme.accent else Theme.warning) }
             z.name == null -> kern { Text(z.text, style = font, color = Theme.warning, maxLines = if (measure) Int.MAX_VALUE else 2,
                                           overflow = TextOverflow.Ellipsis) }
             else -> kern { detail(z.name, z.text) }
@@ -3070,3 +2924,52 @@ private fun TruncatedList(spacing: Dp, share: Float?, kern: List<Boolean>, conte
     }
 }
 
+
+/** "Untertitel suchen …" (a row of the core's Ton & Untertitel menu): the core's subtitle search as a layer. */
+@Composable
+private fun SubtitleSearchLayer(mediaWork: PlayItem, margin: Rand, close: () -> Unit) {
+    val vm = remember { mediaWork.subtitleSearchVm() }
+    if (vm == null) LaunchedEffect(Unit) { close() }
+    else SubtitleSearchPanel(vm, margin, back = close) { index -> mediaWork.subtitleAdded(index); close() }
+}
+
+/** The core's `SubtitleSearchPart` drawn as it is: language chips, then the rows of the phase (`SubtitleSearchPanel` on iOS). */
+@Composable
+private fun SubtitleSearchPanel(vm: SubtitleSearchVm, margin: Rand, back: () -> Unit, added: (Long?) -> Unit) {
+    val part = rememberSubtitleSearch(vm, added)
+    Box(Modifier.fillMaxSize()) {
+        LayersReason()
+        Column(Modifier.fillMaxSize().padding(start = margin.page, end = margin.page, top = margin.top, bottom = margin.bottom)
+                .padding(horizontal = PlayerMetric.page).padding(top = PlayerMetric.top + PlayerMetric.button + 6.dp)) {
+            Text(part.title, style = titleStyle, color = Theme.font, maxLines = 1,
+                 modifier = Modifier.padding(horizontal = 10.dp).padding(bottom = 8.dp).semantics { heading() })
+            Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                part.languages.forEach { l ->
+                    Text(l.label, style = Theme.body, color = if (l.selected) Theme.font else Theme.fontQuiet, maxLines = 1,
+                         modifier = Modifier.clip(RoundedCornerShape(50))
+                             .background(if (l.selected) androidx.compose.ui.graphics.Color.White.copy(alpha = 0.18f) else androidx.compose.ui.graphics.Color.Transparent)
+                             .pressRow { vm.send(SubtitleSearchIntent.Search(l.value)) }
+                             .padding(horizontal = 12.dp, vertical = 6.dp).semantics { this.selected = l.selected })
+                }
+            }
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                when (part.phase) {
+                    SubtitleSearchPhase.IDLE, SubtitleSearchPhase.LOADING ->
+                        Text("…", style = Theme.body, color = Theme.fontQuiet, modifier = Modifier.padding(horizontal = 10.dp, vertical = 16.dp))
+                    SubtitleSearchPhase.RESULTS, SubtitleSearchPhase.DOWNLOADING -> part.rows.forEach { r ->
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(Theme.cornerField))
+                                .pressRow { if (part.phase != SubtitleSearchPhase.DOWNLOADING) vm.send(SubtitleSearchIntent.Download(r.id)) }
+                                .padding(horizontal = 10.dp, vertical = 8.dp)) {
+                            Text(r.title, style = Theme.body, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(r.sourceLine, style = Theme.small, color = Theme.fontQuiet, maxLines = 1)
+                            if (r.metaLine.isNotEmpty()) Text(r.metaLine, style = Theme.small, color = Theme.fontVeryQuiet, maxLines = 1)
+                        }
+                    }
+                    else -> Text(part.message.orEmpty(), style = Theme.body, color = Theme.fontQuiet,
+                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 16.dp))
+                }
+            }
+        }
+        Box(Modifier.padding(start = margin.page, end = margin.page, top = margin.top)) { LayersHeader(back) }
+    }
+}

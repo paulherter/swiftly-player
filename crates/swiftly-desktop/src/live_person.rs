@@ -127,6 +127,11 @@ pub async fn load<T: HttpTransport>(
 pub fn start(core: &crate::live::Core, account: &AccountRef, id: &str) -> Option<Pending<Loaded>> {
     let client = core.client_for(account).ok()?;
     let (tx, rx) = Pending::channel();
+    if id.is_empty() {
+        // A person of a Seerr title has no library entry: nothing to ask the server, the page is complete at once.
+        let _ = tx.send(Loaded::default());
+        return Some(rx);
+    }
     let (id, locale) = (id.to_owned(), core.host().locale);
     core.spawn(async move {
         let _ = tx.send(load(&client, &id, &locale).await);

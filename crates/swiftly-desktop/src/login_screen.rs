@@ -1721,6 +1721,14 @@ impl LoginScreen {
         self.tick(now);
     }
 
+    /// This screen has no drag.
+    fn panned(&mut self, _: &swiftly_ui::Action, _: swiftly_ui::Phase, _: (f32, f32)) {}
+
+    /// This screen asks for no frames of its own.
+    fn extra_frame(&self) -> bool {
+        false
+    }
+
     fn go_back(&mut self) -> bool {
         match self.p.step {
             Step::Quick => {

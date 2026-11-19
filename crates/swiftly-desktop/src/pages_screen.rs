@@ -10,6 +10,8 @@ use crate::detail_screen::{
 };
 use crate::home_data::Scenario;
 use std::rc::Rc;
+
+pub(crate) mod seerr_views;
 use swiftly_design::tokens::colour;
 use swiftly_l10n::Locale;
 use swiftly_layout::{Align, Alignment, Axis, Point, Rect};
@@ -44,6 +46,12 @@ pub enum Kind {
     SeerrSearch,
     /// A Seerr title with its request flow.
     SeerrDetail,
+    /// A Seerr title of the core's screens: page, season status rows and the request sheet.
+    SeerrTitle,
+    /// "Meine Anfragen": the account's requests with their state.
+    Requests,
+    /// "Verwaltung": the administrator's queue and the problems with their thread.
+    SeerrAdmin,
 }
 
 /// The pictures and tiles of a live person page (the demo page draws placeholders from the ids instead).
@@ -72,6 +80,8 @@ pub struct PersonTap {
     pub image: Option<swiftly_vm::ImageRef>,
     /// The title the tap came from (shown above the role).
     pub origin: Option<String>,
+    /// The TMDB person id of a cast tile on a Seerr title page: the person then has no library entry (`id` is empty).
+    pub tmdb: Option<i64>,
 }
 
 /// The running load of a live person page.
@@ -149,6 +159,11 @@ enum Body {
     },
     Discover(DiscoverPart),
     Seerr(Box<SeerrPart>),
+    /// The Seerr title page, and the season chip picked for its episode list.
+    Title(Box<swiftly_vm::SeerrTitleInfo>, Option<i64>),
+    /// "Meine Anfragen" and the management page's tab row over it (empty for a single section).
+    Requests(Box<swiftly_vm::SeerrRequestsInfo>, Vec<seerr_views::HubTab>),
+    Admin(Box<seerr_views::AdminBody>),
 }
 
 #[derive(Clone, PartialEq)]
@@ -432,6 +447,7 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
             crate::detail_screen::faded_backdrop(
                 k,
                 art.banner.as_ref(),
+                &crate::detail_screen::Stand::default(),
                 first,
                 w,
                 bw,
@@ -998,6 +1014,12 @@ fn request_label(p: &SeerrPart) -> String {
     }
 }
 
+/// The hero of a Seerr page: its text column (top 150, title 42, details 20, overview 66, buttons 48 = 326 and the title's
+/// gap) must fit inside, or the buttons stick out below the frame and a tap on their lower half is lost (a frame clips hits).
+pub(crate) const HERO_HEIGHT: f32 = 400.0;
+/// The buttons end at y = 380 (measured in the live run); a smaller frame brings the clipped hits back.
+const _: () = assert!(HERO_HEIGHT >= 380.0);
+
 fn seerr_page(k: &Kit, p: &SeerrPart, address: &str) -> Node {
     let (w, edge) = (k.env.size.w, k.lk.edge);
     let c = state_colour(p.state);
@@ -1086,7 +1108,7 @@ fn seerr_page(k: &Kit, p: &SeerrPart, address: &str) -> Node {
     )
     .padding(ins(150.0, edge, 0.0, 0.0));
     let hero = fill_frame(text, Alignment::TOP_LEADING)
-        .frame(Some(w), Some(350.0), Alignment::TOP_LEADING)
+        .frame(Some(w), Some(HERO_HEIGHT), Alignment::TOP_LEADING)
         .background(
             backdrop(
                 k,
@@ -1172,6 +1194,7 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
         art,
         icons,
     };
+    let mut sheet: Option<Node> = None;
     let (content, title) = match &d.body {
         Body::Person(p, a) => (person_page(&k, p, a), p.name.clone()),
         Body::Playlist(p) => (playlist_page(&k, p), p.title.clone()),
@@ -1196,6 +1219,27 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
         ),
         Body::Discover(p) => (discover_page(&k, p), "Über Seerr anfragen".to_owned()),
         Body::Seerr(p) => (seerr_page(&k, p, &d.address), p.hit.title.clone()),
+        Body::Title(i, episode_season) => {
+            let (n, sheet_node) = seerr_views::title_page(
+                &k,
+                i,
+                &d.address,
+                *episode_season,
+                sx.overview_open,
+                sx.sheet_list,
+            );
+            sheet = sheet_node;
+            (n, i.title.clone())
+        }
+        Body::Requests(i, tabs) => (
+            seerr_views::requests_page(&k, i, tabs),
+            "Meine Anfragen".to_owned(),
+        ),
+        Body::Admin(b) => {
+            let (n, sheet_node) = seerr_views::admin_page(&k, b);
+            sheet = sheet_node;
+            (n, "Verwaltung".to_owned())
+        }
     };
     let scroll = Node::scroll(
         Axis::Vertical,
@@ -1223,6 +1267,9 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
         && p.hit.is_series()
     {
         page = page.overlay(season_overlay(&k, p), Alignment::TOP_LEADING);
+    }
+    if let Some(sheet) = sheet {
+        page = page.overlay(sheet, Alignment::TOP_LEADING);
     }
     if let Some(menu) = sx.menu.overlay(cx, env) {
         page = page.overlay(menu, Alignment::TOP_LEADING);
@@ -1316,10 +1363,16 @@ pub struct PageScreen {
     flow: Option<crate::seerr_flow::Flow>,
     /// The Seerr title that was tapped, once.
     seerr_tapped: Option<SeerrHit>,
+    /// The cast tile of a Seerr title page that was tapped.
+    person_tapped: Option<PersonTap>,
+    /// The core's Seerr screens behind a title page or "Meine Anfragen".
+    side: Option<seerr_views::Side>,
     /// The person's Seerr filmography was handed to the model.
     films_applied: bool,
     /// The list changes already reloaded for.
     seen_changes: u64,
+    /// The push over the page below has settled once (a Seerr title takes its answer only after that).
+    settled_once: bool,
     locale: Locale,
 }
 
@@ -1403,6 +1456,8 @@ impl PageScreen {
                 "Nordlicht-Reihe".clone_into(&mut grid.0);
                 grid.1 = tiles;
             }
+            // The core's Seerr pages are made by `seerr_live` / `requests_live`; they start empty.
+            Kind::SeerrTitle | Kind::Requests | Kind::SeerrAdmin => {}
             Kind::SeerrSearch | Kind::SeerrDetail => {
                 let mut vm = SeerrVm::new(locale);
                 let hits: Vec<SeerrHit> = [
@@ -1476,8 +1531,11 @@ impl PageScreen {
             tapped: None,
             flow: None,
             seerr_tapped: None,
+            person_tapped: None,
+            side: None,
             films_applied: false,
             seen_changes: crate::desk::list_changes(),
+            settled_once: false,
             locale: Locale::parse("de"),
         };
         s.refresh();
@@ -1492,17 +1550,25 @@ impl PageScreen {
         s.locale = locale.clone();
         s.flow = crate::seerr_flow::Live::stored(&w.core)
             .map(|b| crate::seerr_flow::Flow::new(b, locale.clone()));
-        s.person = Some(PersonVm::new(
-            locale.clone(),
-            Person {
-                id: tap.id.clone(),
-                name: tap.name.clone(),
-                role: tap.role.clone(),
-                type_: Some("Actor".into()),
-                primary_image_tag: None,
-            },
-            tap.origin.clone(),
-        ));
+        let person = Person {
+            id: tap.id.clone(),
+            name: tap.name.clone(),
+            role: tap.role.clone(),
+            type_: Some("Actor".into()),
+            primary_image_tag: None,
+        };
+        s.person = Some(match tap.tmdb {
+            Some(tmdb) => PersonVm::for_seerr(
+                locale.clone(),
+                person,
+                swiftly_vm::SeerrPersonRef {
+                    tmdb,
+                    image: tap.image.as_ref().map(|i| i.address.clone()),
+                },
+                tap.origin.clone(),
+            ),
+            None => PersonVm::new(locale.clone(), person, tap.origin.clone()),
+        });
         s.art = PersonArt {
             portrait: tap.image.clone(),
             ..PersonArt::default()
@@ -1777,7 +1843,11 @@ impl PageScreen {
         let Some(vm) = self.person.as_mut() else {
             return;
         };
-        vm.loaded(got.detail, got.page);
+        if vm.in_library() {
+            vm.loaded(got.detail, got.page);
+        } else {
+            vm.loaded_without_library();
+        }
         // Seerr's filmography comes next when Seerr is connected (the rail waits for it); else the page may say
         // "nothing else".
         match (self.flow.as_mut(), vm.tmdb_id()) {
@@ -1834,22 +1904,13 @@ impl PageScreen {
         self.seerr_tapped.take()
     }
 
-    /// The Seerr title page over the live Seerr session (the Mac's `SeerrDetailView`): the page asks `detail` as it
-    /// opens. `None` when Seerr is not connected.
-    pub fn seerr_live(
-        env: Env,
-        cx: Cx,
-        w: &crate::live::Wiring,
-        hit: SeerrHit,
-    ) -> Option<PageScreen> {
-        let backend = crate::seerr_flow::Live::stored(&w.core)?;
-        let flow = crate::seerr_flow::Flow::new(backend, w.core.host().locale);
-        let mut s = PageScreen::seerr_over(env, cx, flow, hit);
-        s.locale = w.core.host().locale;
-        Some(s)
+    /// The cast tile of a Seerr title page that was tapped, once: the person page opens over the title.
+    pub fn take_person(&mut self) -> Option<PersonTap> {
+        self.person_tapped.take()
     }
 
     /// The Seerr title page over `flow`, which is asked for the detail of `hit` at once.
+    #[cfg(test)]
     pub(crate) fn seerr_over(
         env: Env,
         cx: Cx,
@@ -1937,6 +1998,14 @@ impl PageScreen {
                     .map(|v| v.discover().clone())
                     .unwrap_or_else(|| unreachable!("seerr page without model")),
             ),
+            Kind::SeerrTitle | Kind::Requests | Kind::SeerrAdmin => Body::Grid {
+                name: String::new(),
+                tiles: Vec::new(),
+                loading: true,
+                failed: false,
+                pills: None,
+                empty: None,
+            },
             Kind::SeerrDetail => seerr.and_then(|v| v.page().cloned()).map_or_else(
                 || {
                     Body::Discover(
@@ -1955,20 +2024,40 @@ impl PageScreen {
         self.poll_flow();
         self.poll_grid();
         self.poll_shelf();
+        // `InTravel` (the library page's hold, `detail_screen.rs`): a Seerr title's answer lands only when the push has
+        // settled, so the page is not rebuilt in the middle of the slide. `seen` stays behind, which keeps the page busy
+        // until the answer is drawn.
+        if self.host.depth() > 1 && self.host.covers() {
+            self.settled_once = true;
+        }
+        let in_travel = matches!(self.kind, Kind::SeerrTitle | Kind::SeerrDetail)
+            && self.host.depth() > 1
+            && !self.host.covers()
+            && !self.settled_once;
+        if in_travel {
+            return;
+        }
+        let side_body = self.side_body();
+        let seen = self.side.as_ref().map(|s| s.desk.changed());
+        if let (Some(side), Some(c)) = (self.side.as_mut(), seen) {
+            side.seen = c;
+        }
         let d = Data {
-            body: Self::body(
-                self.kind,
-                &self.person,
-                &self.playlist,
-                self.flow
-                    .as_ref()
-                    .map(crate::seerr_flow::Flow::vm)
-                    .or(self.seerr.as_ref()),
-                &self.grid,
-                &self.art,
-                self.grid_live.is_some(),
-                self.shelf_view(),
-            ),
+            body: side_body.unwrap_or_else(|| {
+                Self::body(
+                    self.kind,
+                    &self.person,
+                    &self.playlist,
+                    self.flow
+                        .as_ref()
+                        .map(crate::seerr_flow::Flow::vm)
+                        .or(self.seerr.as_ref()),
+                    &self.grid,
+                    &self.art,
+                    self.grid_live.is_some(),
+                    self.shelf_view(),
+                )
+            }),
             address: self
                 .flow
                 .as_ref()
@@ -1993,7 +2082,9 @@ impl PageScreen {
             Kind::Genre => "Genre",
             Kind::Collection => "Sammlung",
             Kind::SeerrSearch => "Anfragen",
-            Kind::SeerrDetail => "Anfrage",
+            Kind::SeerrDetail | Kind::SeerrTitle => "Anfrage",
+            Kind::Requests => "Meine Anfragen",
+            Kind::SeerrAdmin => "Verwaltung",
         }
     }
 
@@ -2039,6 +2130,12 @@ impl PageScreen {
             .as_ref()
             .and_then(|f| f.vm().page())
             .is_some_and(|p| p.sheet_open);
+        if let Some(t) = self.side.as_ref().and_then(|s| s.title.as_ref())
+            && t.info().sheet.phase != swiftly_vm::SheetPhase::Closed
+        {
+            let _ = t.close_sheet();
+            return true;
+        }
         if self.host.sx.menu.is_open() || sheet {
             let _ = self.nav_key(swiftly_ui::NavKey::Escape, true, now);
             return true;
@@ -2105,6 +2202,7 @@ impl PageScreen {
                     });
                     self.log.push(format!("play {}", first.id));
                 }
+            } else if self.side_tap(&a) {
             } else if is("seasons-close") {
                 // A click beside the floating season list closes it (the Mac's catcher layer).
                 if let Some(f) = self.flow.as_mut() {
@@ -2373,13 +2471,15 @@ impl PageScreen {
         self.drain(now);
         (
             r.0,
-            r.1 || self.loading() || self.flow.as_ref().is_some_and(|f| f.busy()),
+            r.1 || self.loading()
+                || self.flow.as_ref().is_some_and(|f| f.busy())
+                || self.side_busy(),
         )
     }
 
     /// An animation needs another frame.
     pub fn wants_frame(&self) -> bool {
-        self.host.wants_frame() || self.flow.as_ref().is_some_and(|f| f.busy())
+        self.host.wants_frame() || self.flow.as_ref().is_some_and(|f| f.busy()) || self.side_busy()
     }
 
     /// A new window size or scale.

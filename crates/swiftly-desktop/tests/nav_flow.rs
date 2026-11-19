@@ -352,6 +352,33 @@ fn leaving_downloads_only_fades_the_new_page_in() {
     assert!(!s.fade_in_only());
 }
 
+/// Downloads fades in as quickly as any other page (0.22 s). The fade curve carries a 0.12 s delay for the old page's
+/// time to leave; Downloads has no old page, and keeping the delay made its fade start late and last 0.34 s.
+#[test]
+fn the_downloads_page_fades_in_without_a_delay() {
+    let (mut s, mut now) = app();
+    assert!(tap_label(&mut s, &mut now, "Downloads"));
+    // The tap's frames: the fade started when the page opened (within the next two frames).
+    let t0 = now;
+    while !s.downloads_fade_running() && now < t0 + 200.0 {
+        now += STEP;
+        let _ = s.frame(now);
+    }
+    assert!(
+        s.downloads_fade_running(),
+        "the fade runs when the page opens"
+    );
+    let started = now;
+    run_for(&mut s, &mut now, 150.0);
+    assert!(s.downloads_fade_running(), "still fading 150 ms in");
+    run_for(&mut s, &mut now, 150.0);
+    assert!(
+        !s.downloads_fade_running(),
+        "done {} ms after it started (0.22 s curve)",
+        now - started
+    );
+}
+
 /// The darkest content-area pixel of every frame while an area change runs: the Mac cross fades over the window ground
 /// (16), so the content area never goes darker than the ground, also between the old page leaving and the new one coming.
 fn darkest_content_pixel_during(s: &mut Suite, now: &mut f64, ms: f64) -> u8 {

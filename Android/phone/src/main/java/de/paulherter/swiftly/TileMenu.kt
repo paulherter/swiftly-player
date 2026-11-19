@@ -254,7 +254,7 @@ internal fun tileMenuAct(app: SwiftlyApplication, w: TileMenuRequest, was: Strin
                 if (w.type == "Series") {
                     val state = runCatching { JSONObject(withContext(Dispatchers.IO) { app.rk.series(w.id).await() }).optJSONObject("stand") }.getOrNull()
                     if (state == null) { app.message.value = translated("Danach kommt nichts mehr."); return@launch }
-                    playAsking(app, state.getString("id"), if (state.isNull("ab")) null else state.getDouble("ab"))
+                    playDefault(app, state.getString("id"), if (state.isNull("ab")) null else state.getDouble("ab"))
                 } else {
                     if (!continueWatchingAsking(app, w.id)) open(Destination(w.id, w.name, w.type))
                 }
@@ -265,8 +265,13 @@ internal fun tileMenuAct(app: SwiftlyApplication, w: TileMenuRequest, was: Strin
                 if (reason.isNotEmpty()) app.message.value = errorString(app, Exception(reason)) else { app.watchStateChanged.intValue++; afterwards?.invoke() }
             }
             "entfernen" -> {
+                // Gone from the row at once; the core's answer decides. A refusal puts the tile back and shows the core's hint.
+                app.continueHidden.value += w.id
                 val reason = withContext(Dispatchers.IO) { app.rk.fromContinueWatchingTake(w.id).await() }
-                if (reason.isNotEmpty()) app.message.value = errorString(app, Exception(reason)) else { app.watchStateChanged.intValue++; afterwards?.invoke() }
+                if (reason.isNotEmpty()) {
+                    app.continueHidden.value -= w.id
+                    app.message.value = errorString(app, Exception(reason))
+                } else { app.watchStateChanged.intValue++; afterwards?.invoke() }
             }
             "laden" -> app.downloadsCreate(listOf(w.id), w.name)
             "gemeinsam" -> sharedCreateOpen(app, w.id, w.name)

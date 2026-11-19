@@ -190,3 +190,66 @@ fn capabilities_use_the_servers_spelling() {
     assert_eq!(cmds.len(), 11);
     assert_eq!(b["SupportsMediaControl"], true);
 }
+
+#[test]
+fn force_keep_alive_asks_for_half_of_its_limit() {
+    let ask = |t: &str| RemoteControl::force_keep_alive_interval(t);
+    assert_eq!(
+        ask(r#"{"MessageType":"ForceKeepAlive","Data":60}"#),
+        Some(30.0)
+    );
+    assert_eq!(
+        ask(r#"{"MessageType":"ForceKeepAlive","Data":20}"#),
+        Some(10.0)
+    );
+    // Never faster than the floor, never slower than the default, a missing or odd limit gives the default.
+    assert_eq!(
+        ask(r#"{"MessageType":"ForceKeepAlive","Data":2}"#),
+        Some(5.0)
+    );
+    assert_eq!(
+        ask(r#"{"MessageType":"ForceKeepAlive","Data":600}"#),
+        Some(30.0)
+    );
+    assert_eq!(ask(r#"{"MessageType":"ForceKeepAlive"}"#), Some(30.0));
+    assert_eq!(
+        ask(r#"{"MessageType":"ForceKeepAlive","Data":"x"}"#),
+        Some(30.0)
+    );
+    assert_eq!(ask(r#"{"MessageType":"KeepAlive"}"#), None);
+    assert_eq!(ask("not json"), None);
+}
+
+#[test]
+fn a_quiet_link_gets_a_ping_and_dies_only_without_an_answer() {
+    use std::time::{Duration, Instant};
+    use swiftly_sync::{LinkPulse, PulseStep};
+    let t0 = Instant::now();
+    let at = |ms: u64| t0 + Duration::from_millis(ms);
+    let mut p = LinkPulse::with_limits(Duration::from_millis(100), Duration::from_millis(50), t0);
+    // Quiet for less than the limit is normal.
+    assert_eq!(p.step(at(99)), PulseStep::Wait);
+    // Silence past the limit: one Ping, not one per slice.
+    assert_eq!(p.step(at(100)), PulseStep::SendPing);
+    assert_eq!(p.step(at(120)), PulseStep::Wait);
+    // Any frame is the answer; the clock starts over.
+    p.heard(at(130));
+    assert_eq!(p.step(at(200)), PulseStep::Wait);
+    assert_eq!(p.step(at(230)), PulseStep::SendPing);
+    // No answer within the window: dead (a half-open connection).
+    assert_eq!(p.step(at(279)), PulseStep::Wait);
+    assert_eq!(p.step(at(280)), PulseStep::Dead);
+}
+
+#[test]
+fn a_chatty_link_is_never_pinged() {
+    use std::time::{Duration, Instant};
+    use swiftly_sync::{LinkPulse, PulseStep};
+    let t0 = Instant::now();
+    let mut p = LinkPulse::with_limits(Duration::from_millis(100), Duration::from_millis(50), t0);
+    for ms in (0..2000).step_by(40) {
+        let now = t0 + Duration::from_millis(ms);
+        p.heard(now);
+        assert_eq!(p.step(now), PulseStep::Wait);
+    }
+}

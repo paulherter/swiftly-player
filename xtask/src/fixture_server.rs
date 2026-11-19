@@ -1,4 +1,4 @@
-//! `cargo xtask fixture-server [--port N] [--big] [--real-shapes] [--slow-downloads] [--mode ...]`: a small Jellyfin-shaped HTTP server for the real-app runs. Auth (password
+//! `cargo xtask fixture-server [--port N] [--big] [--real-shapes] [--admin] [--slow-downloads] [--mode ...]`: a small Jellyfin-shaped HTTP server for the real-app runs. Auth (password
 //! and Quick Connect), views, items, resume and next up, detail with a media source, seasons and episodes, generated
 //! pictures, a playable test clip (16-bit WAV tone served with ranges) and the playback reports. Everything is
 //! deterministic and read-only; user `demo`, password `demo` (or empty). Not a Jellyfin replacement: only what the
@@ -12,7 +12,7 @@
 //!
 //! | What | Id(s) |
 //! |---|---|
-//! | Library "Filme" (movies): 5 films `ra0..ra4` + the virtual movie | `rl-movies-a` |
+//! | Library "Filme" (movies): 5 films `ra0..ra4` + the virtual movie; `ra1` "Sommerregen" has three versions, `ra3` "Stilles Wasser" one, the others two | `rl-movies-a` |
 //! | Library "Filme 4K" (movies): the same 5 films as `rb0..rb4`, `ProviderIds.Tmdb` = `1000 + n` | `rl-movies-b` |
 //! | Library "Heimvideos" (`homevideos`): 3 clips typed `Movie`, no Tmdb id | `rl-home`, clips `hv0..hv2` |
 //! | Library "Serien" (`tvshows`) | `rl-shows` |
@@ -30,7 +30,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
-const NAMES: [&str; 6] = [
+pub(crate) const NAMES: [&str; 6] = [
     "Nordlicht",
     "Sommerregen",
     "Die Brücke",
@@ -39,27 +39,109 @@ const NAMES: [&str; 6] = [
     "Nachtzug",
 ];
 
+/// The runtime the fixture's films report, in ticks. The default is the 12 s clip they really serve; with
+/// `SWIFTLY_FIXTURE_LONG_MOVIES` set they report two hours, so the resume position of the even films (300 s)
+/// counts as "stopped part way" ("Fortsetzen ab ...") instead of "nearly at the end".
+fn movie_runtime_ticks() -> i64 {
+    if std::env::var_os("SWIFTLY_FIXTURE_LONG_MOVIES").is_some() {
+        72_000_000_000
+    } else {
+        120_000_000
+    }
+}
+
+/// Rich mode (`SWIFTLY_FIXTURE_RICH` set): titles carry BlurHashes for their pictures, the series has text, genres, a
+/// backdrop and a second season, so a page-opening proof sees what a real library sends. Without it nothing changes.
+fn rich() -> bool {
+    std::env::var_os("SWIFTLY_FIXTURE_RICH").is_some()
+}
+const HASH_BACKDROP: &str = "LEHV6nWB2yk8pyo0adR*.7kCMdnj";
+const HASH_POSTER: &str = "L6PZfSi_.AyE_3t7t7R**0o#DgR4";
+
+fn blur_hashes(primary_tag: &str, backdrop_tag: Option<&str>) -> String {
+    let backdrop = backdrop_tag.map_or(String::new(), |t| {
+        format!(r#","Backdrop":{{"{t}":"{HASH_BACKDROP}"}}"#)
+    });
+    format!(r#""ImageBlurHashes":{{"Primary":{{"{primary_tag}":"{HASH_POSTER}"}}{backdrop}}}"#)
+}
+
 pub(crate) fn movie(i: usize) -> String {
+    let plain = movie_plain(i);
+    if !rich() {
+        return plain;
+    }
+    let old = format!(r#""BackdropImageTags":["b{i}"]"#);
+    let new = format!(
+        "{old},{}",
+        blur_hashes(&format!("p{i}"), Some(&format!("b{i}")))
+    );
+    plain.replacen(&old, &new, 1)
+}
+
+fn movie_plain(i: usize) -> String {
     let resume = if i.is_multiple_of(2) {
         r#""PlaybackPositionTicks":3000000000,"PlayedPercentage":25.0,"Played":false"#
     } else {
         r#""Played":false"#
     };
     format!(
-        r#"{{"Id":"m{i}","Name":"{}","Type":"Movie","ProductionYear":{},"RunTimeTicks":120000000,"Overview":"Ein ruhiger Testfilm vom Fixture-Server.","Genres":["Drama"],"CommunityRating":7.5,"OfficialRating":"FSK 12","People":[{{"Id":"p1","Name":"Anna Test","Type":"Actor","Role":"Hauptrolle","PrimaryImageTag":"pp1"}},{{"Id":"p2","Name":"Ben Regie","Type":"Director"}}],"RemoteTrailers":[{{"Url":"https://www.youtube.com/watch?v=fixture{i}"}}],"ImageTags":{{"Primary":"p{i}"}},"BackdropImageTags":["b{i}"],"MediaSources":[{{"Id":"src{i}","Name":"Test","Container":"mp4","Size":{clip},"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"DisplayTitle":"Ton","IsDefault":true}}]}},{{"Id":"src{i}b","Name":"Test klein","Container":"mkv","Size":900000,"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":[{{"Type":"Video","Codec":"hevc","Index":0,"Width":1280,"Height":720}},{{"Type":"Audio","Codec":"ac3","Channels":6,"Index":1,"Language":"deu","DisplayTitle":"Deutsch 5.1"}},{{"Type":"Subtitle","Codec":"srt","Index":2,"Language":"eng"}}]}}],"UserData":{{{resume}}}}}"#,
+        r#"{{"Id":"m{i}","Name":"{}","Type":"Movie","ProductionYear":{},"RunTimeTicks":{rt},"Overview":"Ein ruhiger Testfilm vom Fixture-Server.","Genres":["Drama"],"CommunityRating":7.5,"OfficialRating":"FSK 12","People":[{{"Id":"p1","Name":"Anna Test","Type":"Actor","Role":"Hauptrolle","PrimaryImageTag":"pp1"}},{{"Id":"p2","Name":"Ben Regie","Type":"Director"}}],"RemoteTrailers":[{{"Url":"https://www.youtube.com/watch?v=fixture{i}"}}],"ImageTags":{{"Primary":"p{i}"}},"BackdropImageTags":["b{i}"],"MediaSources":[{{"Id":"src{i}","Name":"Test","Container":"mp4","Size":{clip},"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":{rt},"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"DisplayTitle":"Ton","IsDefault":true}}]}},{{"Id":"src{i}b","Name":"Test klein","Container":"mkv","Size":900000,"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":{rt},"MediaStreams":[{{"Type":"Video","Codec":"hevc","Index":0,"Width":1280,"Height":720}},{{"Type":"Audio","Codec":"ac3","Channels":6,"Index":1,"Language":"deu","DisplayTitle":"Deutsch 5.1"}},{{"Type":"Subtitle","Codec":"srt","Index":2,"Language":"eng"}}]}}],"UserData":{{{resume}}}}}"#,
         NAMES[i % NAMES.len()],
         2015 + i,
-        clip = CLIP.len()
+        clip = CLIP.len(),
+        rt = movie_runtime_ticks()
     )
 }
 
 pub(crate) fn series() -> String {
+    if rich() {
+        return format!(
+            r#"{{"Id":"s1","Name":"Hafenlichter","Type":"Series","ProductionYear":2020,"ChildCount":2,"Overview":"Eine ruhige Serie vom Fixture-Server mit zwei Staffeln, damit die Detailseite ihre Hoehe zeigt.","Genres":["Drama","Krimi"],"ImageTags":{{"Primary":"ps1"}},"BackdropImageTags":["bs1"],{},"UserData":{{"UnplayedItemCount":2,"Played":false}}}}"#,
+            blur_hashes("ps1", Some("bs1"))
+        );
+    }
     r#"{"Id":"s1","Name":"Hafenlichter","Type":"Series","ProductionYear":2020,"ChildCount":1,"ImageTags":{"Primary":"ps1"},"UserData":{"UnplayedItemCount":2,"Played":false}}"#.into()
 }
 
+fn seasons() -> Vec<String> {
+    let mut out: Vec<String> = vec![
+        r#"{"Id":"se1","Name":"Staffel 1","Type":"Season","IndexNumber":1,"SeriesId":"s1"}"#.into(),
+    ];
+    if rich() {
+        out.push(
+            r#"{"Id":"se2","Name":"Staffel 2","Type":"Season","IndexNumber":2,"SeriesId":"s1"}"#
+                .into(),
+        );
+    }
+    out
+}
+
+/// Which episodes `Shows/s1/Episodes` returns: one season (plain mode) keeps three; rich mode splits them over two seasons.
+fn episode_numbers(rich: bool, season: Option<&str>) -> &'static [usize] {
+    match (rich, season) {
+        (false, _) => &[1, 2, 3],
+        (true, Some("se1")) => &[1, 2],
+        (true, Some("se2")) => &[3, 4],
+        (true, Some(_)) => &[],
+        (true, None) => &[1, 2, 3, 4],
+    }
+}
+
 fn episode(n: usize) -> String {
+    let plain = episode_plain(n);
+    if !rich() {
+        return plain;
+    }
+    let old = format!(r#""ImageTags":{{"Primary":"pe{n}"}}"#);
+    let new = format!("{old},{}", blur_hashes(&format!("pe{n}"), None));
+    plain.replacen(&old, &new, 1)
+}
+
+fn episode_plain(n: usize) -> String {
+    // Episodes 3 and above belong to season 2, which only exists in rich mode.
+    let season = if rich() && n >= 3 { 2 } else { 1 };
     format!(
-        r#"{{"Id":"e{n}","Name":"Folge {n}","Type":"Episode","SeriesId":"s1","SeriesName":"Hafenlichter","SeasonId":"se1","ParentIndexNumber":1,"IndexNumber":{n},"RunTimeTicks":120000000,"ImageTags":{{"Primary":"pe{n}"}},"MediaSources":[{{"Id":"srce{n}","Name":"Test","Container":"wav","SupportsDirectPlay":true,"MediaStreams":[]}}],"UserData":{{"Played":false}}}}"#
+        r#"{{"Id":"e{n}","Name":"Folge {n}","Type":"Episode","SeriesId":"s1","SeriesName":"Hafenlichter","SeasonId":"se{season}","ParentIndexNumber":{season},"IndexNumber":{n},"RunTimeTicks":120000000,"ImageTags":{{"Primary":"pe{n}"}},"MediaSources":[{{"Id":"srce{n}","Name":"Test","Container":"wav","SupportsDirectPlay":true,"MediaStreams":[]}}],"UserData":{{"Played":false}}}}"#
     )
 }
 
@@ -87,9 +169,36 @@ const EXTRAS_SOURCES: [&str; 2] = ["srcg1", "srcg1b"];
 const TRICK: (u32, u32, u32, u32) = (320, 176, 3, 2);
 
 /// MediaStreams of one version: video, audio 1 (English) and audio 2 (German, Index 2), an external SRT (Index 3) and an external VTT (Index 4).
-fn extras_streams(source: &str, codec: &str, width: u32, height: u32) -> String {
+fn extras_streams_base(source: &str, codec: &str, width: u32, height: u32) -> String {
     format!(
         r#"[{{"Type":"Video","Codec":"{codec}","Index":0,"Width":{width},"Height":{height}}},{{"Type":"Audio","Codec":"aac","Channels":2,"Index":1,"Language":"eng","DisplayTitle":"English","IsDefault":true}},{{"Type":"Audio","Codec":"ac3","Channels":6,"Index":2,"Language":"deu","DisplayTitle":"Deutsch 5.1"}},{{"Type":"Subtitle","Codec":"srt","Index":3,"Language":"eng","DisplayTitle":"English (SRT)","IsExternal":true,"IsTextSubtitleStream":true,"SupportsExternalStream":true,"DeliveryMethod":"External","DeliveryUrl":"/Videos/{EXTRAS_ID}/{source}/Subtitles/3/0/Stream.srt"}},{{"Type":"Subtitle","Codec":"webvtt","Index":4,"Language":"deu","DisplayTitle":"Deutsch (VTT)","IsExternal":true,"IsTextSubtitleStream":true,"SupportsExternalStream":true,"DeliveryMethod":"External","DeliveryUrl":"/Videos/{EXTRAS_ID}/{source}/Subtitles/4/0/Stream.vtt"}}]"#
+    )
+}
+
+/// Set once a subtitle of the provider search was downloaded: the title then lists a third subtitle (Index 5).
+static SUBTITLE_ADDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// `extras_streams_base`, plus the downloaded German subtitle (Index 5) after `POST .../RemoteSearch/Subtitles/{id}`.
+fn extras_streams(source: &str, codec: &str, width: u32, height: u32) -> String {
+    let mut streams = extras_streams_base(source, codec, width, height);
+    if SUBTITLE_ADDED.load(std::sync::atomic::Ordering::SeqCst) {
+        streams.pop();
+        streams.push_str(&format!(
+            r#",{{"Type":"Subtitle","Codec":"srt","Index":5,"Language":"deu","DisplayTitle":"Deutsch (Suche)","IsExternal":true,"IsTextSubtitleStream":true,"SupportsExternalStream":true,"DeliveryMethod":"External","DeliveryUrl":"/Videos/{EXTRAS_ID}/{source}/Subtitles/5/0/Stream.srt"}}]"#
+        ));
+    }
+    streams
+}
+
+/// What a subtitle provider answers for `GET Items/{id}/RemoteSearch/Subtitles/{language}`: three hits.
+fn remote_subtitle_hits(language: &str) -> String {
+    let name = if language.starts_with("de") || language == "ger" {
+        "Deutsch"
+    } else {
+        language
+    };
+    format!(
+        r#"[{{"Id":"fx_1","Name":"Player-Extras.2024.WEB.{name}.srt","ProviderName":"Open Subtitles","Format":"srt","ThreeLetterISOLanguageName":"{language}","CommunityRating":8.4,"DownloadCount":1204,"IsHashMatch":false,"HearingImpaired":false}},{{"Id":"fx_2","Name":"Player-Extras.2024.BluRay.{name}.HI.srt","ProviderName":"Open Subtitles","Format":"srt","ThreeLetterISOLanguageName":"{language}","CommunityRating":7.1,"DownloadCount":310,"HearingImpaired":true}},{{"Id":"fx_3","Name":"Player-Extras.2024.{name}.ass","ProviderName":"Podnapisi","Format":"ass","ThreeLetterISOLanguageName":"{language}","IsHashMatch":false}}]"#
     )
 }
 
@@ -125,6 +234,25 @@ fn extras_movie() -> String {
     )
 }
 
+/// The byte range of the `[...]` array behind `"MediaSources":` in an item's JSON.
+fn sources_span(json: &str) -> Option<std::ops::Range<usize>> {
+    let from = json.find(r#""MediaSources":["#)? + r#""MediaSources":"#.len();
+    let mut depth = 0usize;
+    for (i, c) in json[from..].char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(from..from + i + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// The `PlaybackInfo` answer of item `id`: the item's own versions (the ids its listing names, as a real server keeps
 /// them), else the one version `src-<id>` that the other fixtures name.
 fn playback_info(id: &str) -> String {
@@ -132,23 +260,9 @@ fn playback_info(id: &str) -> String {
         let n = id.strip_prefix('m')?.parse::<usize>().ok()?;
         (n < NAMES.len()).then(|| movie(n))
     });
-    let own = item.as_deref().and_then(|j| {
-        let from = j.find(r#""MediaSources":["#)? + r#""MediaSources":"#.len();
-        let mut depth = 0usize;
-        for (i, c) in j[from..].char_indices() {
-            match c {
-                '[' => depth += 1,
-                ']' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return Some(j[from..=from + i].to_owned());
-                    }
-                }
-                _ => {}
-            }
-        }
-        None
-    });
+    let own = item
+        .as_deref()
+        .and_then(|j| sources_span(j).map(|span| j[span].to_owned()));
     let sources = own.unwrap_or_else(|| {
         format!(r#"[{{"Id":"src-{id}","Container":"mp4","SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":[{{"Type":"Video","Codec":"h264","Index":0,"Width":320,"Height":180}},{{"Type":"Audio","Codec":"aac","Channels":1,"Index":1,"IsDefault":true}}]}}]"#)
     });
@@ -168,7 +282,9 @@ fn extras_segments() -> String {
 }
 
 fn extras_subtitle(path: &str) -> Reply {
-    if path.ends_with(".vtt") {
+    if path.contains("/Subtitles/5/") {
+        Reply(200, "application/x-subrip", b"1\n00:00:01,000 --> 00:00:03,000\nHallo aus der Untertitelsuche\n\n2\n00:00:04,000 --> 00:00:06,000\nZweite Zeile\n".to_vec())
+    } else if path.ends_with(".vtt") {
         Reply(200, "text/vtt", b"WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nHallo vom Fixture\n\n00:00:04.000 --> 00:00:06.000\nZweite Zeile\n".to_vec())
     } else {
         Reply(200, "application/x-subrip", b"1\n00:00:01,000 --> 00:00:03,000\nHello from the fixture\n\n2\n00:00:04,000 --> 00:00:06,000\nSecond line\n".to_vec())
@@ -363,7 +479,7 @@ fn auth_result_with(name: &str, real: bool) -> String {
     )
 }
 
-fn png(seed: u32, w: u32, h: u32) -> Vec<u8> {
+pub(crate) fn png(seed: u32, w: u32, h: u32) -> Vec<u8> {
     let mut data = Vec::with_capacity((w * h * 3) as usize);
     for y in 0..h {
         for x in 0..w {
@@ -501,7 +617,7 @@ fn encode_rgb(w: u32, h: u32, data: &[u8]) -> Vec<u8> {
 }
 
 /// Server id; `SWIFTLY_FIXTURE_ID` lets a second fixture on another port be a different server (account switching).
-fn server_id() -> String {
+pub(crate) fn server_id() -> String {
     std::env::var("SWIFTLY_FIXTURE_ID").unwrap_or_else(|_| "fx".into())
 }
 
@@ -521,6 +637,32 @@ static SEEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 /// The synced settings: the body of `/DisplayPreferences/swiftly` (what the apps' settings sync reads and writes), kept in memory.
 /// `None` until a client writes it; then the same body comes back, like on a real server.
 static DISPLAY_PREFS: std::sync::Mutex<Option<Vec<u8>>> = std::sync::Mutex::new(None);
+
+/// `POST /Sessions/Playing*` with the arrival time (ms since the epoch) and the body's `PositionTicks`/`IsPaused`, read
+/// back with `GET /fixture/reportlog` (the proof of the progress schedule of a real-app run).
+static REPORT_LOG: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+fn record_timed(path: &str, body: &str) {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis());
+    let field = |k: &str| -> String {
+        body.split_once(&format!("\"{k}\":"))
+            .map(|(_, r)| {
+                r.chars()
+                    .take_while(|c| c.is_ascii_alphanumeric())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    if let Ok(mut r) = REPORT_LOG.lock() {
+        r.push(format!(
+            "{{\"ms\":{ms},\"path\":\"{path}\",\"ticks\":\"{}\",\"paused\":\"{}\"}}",
+            field("PositionTicks"),
+            field("IsPaused")
+        ));
+    }
+}
 
 fn record(path: &str) {
     if let Ok(mut r) = REPORTS.lock() {
@@ -544,6 +686,10 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
     }
     // The opt-in big catalogue (`--big`): answers first, only when switched on.
     if let Some(reply) = crate::fixture_big::answer(method, path, query) {
+        return reply;
+    }
+    // The opt-in administrator side (`--admin`): the server page's reads and the two users (`fixture_admin.rs`).
+    if let Some(reply) = crate::fixture_admin::answer(method, path, query, body) {
         return reply;
     }
     // The opt-in real shapes (`--real-shapes`): after the big catalogue, before everything plain.
@@ -580,8 +726,8 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
         return Reply(200, "video/mp4", CLIP.to_vec());
     }
     if crate::fixture_seerr::handles(path) {
-        return match crate::fixture_seerr::answer(method, path) {
-            Some(b) => json(b),
+        return match crate::fixture_seerr::answer(method, path, query, body) {
+            Some(r) => r,
             None => Reply(404, "text/plain", b"unknown in the seerr fixture".to_vec()),
         };
     }
@@ -599,7 +745,11 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
                 }
                 Reply(204, "text/plain", Vec::new())
             } else {
-                let stored = DISPLAY_PREFS.lock().ok().and_then(|s| s.clone());
+                // `SWIFTLY_FIXTURE_DISPLAY_PREFS` seeds the document another device would already have written (a run
+                // where the phone's Seerr session waits on the server).
+                let stored = DISPLAY_PREFS.lock().ok().and_then(|s| s.clone()).or_else(|| {
+                    std::env::var("SWIFTLY_FIXTURE_DISPLAY_PREFS").ok().map(String::into_bytes)
+                });
                 Reply(200, "application/json", stored.unwrap_or_else(|| br#"{"Id":"swiftly","CustomPrefs":{}}"#.to_vec()))
             }
         }
@@ -623,8 +773,13 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
         ])),
         (_, p) if p.ends_with("/UserItems/Resume") || p.ends_with("/Items/Resume") => json(list(&[movie(0), movie(2)])),
         (_, "/Shows/NextUp") => json(list(&[episode(2)])),
-        (_, p) if p.ends_with("/Shows/s1/Seasons") || p == "/Shows/s1/Seasons" => json(list(&[r#"{"Id":"se1","Name":"Staffel 1","Type":"Season","IndexNumber":1,"SeriesId":"s1"}"#.into()])),
-        (_, p) if p.ends_with("/Episodes") => json(list(&[episode(1), episode(2), episode(3)])),
+        (_, p) if p.ends_with("/Shows/s1/Seasons") || p == "/Shows/s1/Seasons" => json(list(&seasons())),
+        // Rich mode has two seasons: season 1 holds episodes 1/2, season 2 holds 3/4 (like bm-ep3/bm-ep4), so a season
+        // switch changes the list. Without rich mode (one season) every request keeps its three episodes.
+        (_, p) if p.ends_with("/Episodes") => {
+            let season = param("seasonId").or_else(|| param("SeasonId"));
+            json(list(&episode_numbers(rich(), season.as_deref()).iter().map(|n| episode(*n)).collect::<Vec<_>>()))
+        }
         (_, p) if p.ends_with("/Items/Latest") => json(format!("[{}]", all_items().join(","))),
         // Real shapes: pictures resized like Jellyfin does (see `jellyfin_picture`), with fine detail, so a soft or
         // stretched cover shows.
@@ -639,11 +794,22 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
         // Player extras (`g1` only; every other id keeps its old answer below).
         (_, "/MediaSegments/g1") => json(extras_segments()),
         // The first bench episode (10 s) has an outro from 6 s to the end, so the next-episode card opens (desktop check).
+        // A long intro (2 s to 30 s) for the skip button's countdown and its X (`desktop-live/l-skip.txt`).
+        (_, "/MediaSegments/bm-l-testsrc") => json(r#"{"Items":[{"Type":"Intro","StartTicks":20000000,"EndTicks":300000000}],"TotalRecordCount":1}"#.into()),
+        // `SWIFTLY_FIXTURE_NO_MARKERS=1`: the first bench episode carries no marker at all (the card of an episode no outro
+        // reaches the end of: a long first episode made by `Werkzeuge/pruefstand-medien.py` variants, resumed near its end).
+        (_, "/MediaSegments/bm-ep1") if std::env::var_os("SWIFTLY_FIXTURE_NO_MARKERS").is_some() => json(r#"{"Items":[],"TotalRecordCount":0}"#.into()),
         (_, "/MediaSegments/bm-ep1") => json(r#"{"Items":[{"Type":"Outro","StartTicks":60000000,"EndTicks":100000000}],"TotalRecordCount":1}"#.into()),
         (_, "/Videos/g1/Trickplay/320/tiles.m3u8") => extras_trickplay_playlist(),
         (_, "/Videos/g1/Trickplay/320/0.jpg") => Reply(200, "image/jpeg", extras_trickplay_sheet()),
         (_, p) if p.starts_with("/Videos/g1/Trickplay/") => Reply(404, "text/plain", b"no such sheet".to_vec()),
         (_, p) if p.starts_with("/Videos/g1/") && p.contains("/Subtitles/") && (p.ends_with("/Stream.srt") || p.ends_with("/Stream.vtt")) => extras_subtitle(p),
+        ("POST", p) if p.contains("/RemoteSearch/Subtitles/") => {
+            SUBTITLE_ADDED.store(true, std::sync::atomic::Ordering::SeqCst);
+            Reply(204, "text/plain", Vec::new())
+        }
+        ("GET", p) if p.contains("/RemoteSearch/Subtitles/") => json(remote_subtitle_hits(p.rsplit('/').next().unwrap_or("deu"))),
+        ("GET", "/Plugins") => json(r#"[{"Name":"Open Subtitles","Status":"Active"}]"#.into()),
         (_, "/Items/g1/PlaybackInfo") => json(extras_playback_info()),
         (_, p) if p.ends_with("/Items") && param("ids").is_some_and(|ids| ids == EXTRAS_ID) => json(list(&[extras_movie()])),
         // Without that mode the devices that hold a socket are the user's sessions, and a play order reaches the target's socket.
@@ -659,11 +825,22 @@ pub(crate) fn route(method: &str, target: &str, body: &str) -> Reply {
         }
         (_, "/MediaSegments") => Reply(404, "text/plain", Vec::new()),
         (_, p) if p.starts_with("/MediaSegments/") => json(r#"{"Items":[{"Type":"Intro","StartTicks":20000000,"EndTicks":50000000}],"TotalRecordCount":1}"#.into()),
+        (_, "/fixture/reportlog") => json(format!("[{}]", REPORT_LOG.lock().map(|r| r.join(",")).unwrap_or_default())),
         (_, "/fixture/reports") => json(format!("[{}]", REPORTS.lock().map(|r| r.iter().map(|l| format!("\"{l}\"")).collect::<Vec<_>>().join(",")).unwrap_or_default())),
         (_, p) if p.ends_with("/PlaybackInfo") => json(playback_info(p.split('/').rev().nth(1).unwrap_or("m0"))),
+        // The tile menu's "remove from Continue Watching" (`point_back_set`): recorded, answered, or refused in `refuse-userdata`.
+        ("POST", p) if p.starts_with("/UserItems/") && p.ends_with("/UserData") => {
+            record(p);
+            if crate::fixture_modes::global().0.refuse_user_data {
+                Reply(500, "text/plain", b"refused".to_vec())
+            } else {
+                Reply(204, "text/plain", Vec::new())
+            }
+        }
         ("POST", p) if p.starts_with("/Sessions/Playing") || p.contains("/PlayedItems") || p.contains("/FavoriteItems") => {
             if p.starts_with("/Sessions/Playing") {
                 record(p);
+                record_timed(p, body);
             }
             Reply(204, "text/plain", Vec::new())
         }
@@ -788,15 +965,47 @@ fn real_movie(id: &str, base: usize, name: &str, tmdb: Option<usize>) -> String 
         )
 }
 
+/// **How many versions a library film has** (the plain fixture film has two, "Test" and "Test klein"): the film with
+/// base 1 ("Sommerregen") has three (a third "Test gross"), the film with base 3 ("Stilles Wasser") has one, so a run
+/// can press Play on a title with a choice and on one without. The other films keep two.
+fn real_versions(base: usize, json: String) -> String {
+    let Some(span) = sources_span(&json) else {
+        return json;
+    };
+    let mut sources = json[span.clone()].to_owned();
+    match base {
+        1 => {
+            sources.pop();
+            sources.push_str(
+                r#",{"Id":"src1c","Name":"Test gross","Container":"mkv","Size":2000000,"SupportsDirectPlay":true,"SupportsDirectStream":true,"RunTimeTicks":120000000,"MediaStreams":[{"Type":"Video","Codec":"h264","Index":0,"Width":1920,"Height":1080},{"Type":"Audio","Codec":"aac","Channels":2,"Index":1,"Language":"deu","DisplayTitle":"Deutsch","IsDefault":true}]}]"#,
+            );
+        }
+        3 => {
+            if let Some(second) = sources.find(r#",{"Id":"src3b""#) {
+                sources.truncate(second);
+                sources.push(']');
+            }
+        }
+        _ => return json,
+    }
+    format!("{}{sources}{}", &json[..span.start], &json[span.end..])
+}
+
 /// The five shared films of one movie library: `ra0..ra4` (library A) or `rb0..rb4` (library B), the same Tmdb ids.
 fn real_library_movies(prefix: &str) -> Vec<String> {
     (0..5)
+        .filter(|i| {
+            !crate::fixture_seerr::library_hidden((REAL_TMDB_BASE + i) as i64, prefix == "rb")
+        })
         .map(|i| {
-            real_movie(
-                &format!("{prefix}{i}"),
+            real_versions(
                 i,
-                NAMES[i],
-                Some(REAL_TMDB_BASE + i),
+                real_movie(
+                    &format!("{prefix}{i}"),
+                    i,
+                    NAMES[i],
+                    Some(REAL_TMDB_BASE + i),
+                ),
             )
         })
         .collect()
@@ -808,7 +1017,9 @@ fn real_boxsets() -> Vec<String> {
         format!(
             r#"{{"Id":"{REAL_BOX_PICTURE}","Name":"Nordlicht-Reihe","Type":"BoxSet","ImageTags":{{"Primary":"prc1"}}}}"#
         ),
-        format!(r#"{{"Id":"{REAL_BOX_TWO}","Name":"Zwei Filme","Type":"BoxSet"}}"#),
+        format!(
+            r#"{{"Id":"{REAL_BOX_TWO}","Name":"Zwei Filme","Type":"BoxSet","ProviderIds":{{"Tmdb":"55"}}}}"#
+        ),
         format!(r#"{{"Id":"{REAL_BOX_FOUR}","Name":"Hafen-Abende","Type":"BoxSet"}}"#),
     ]
 }
@@ -846,6 +1057,12 @@ fn real_home() -> Vec<String> {
         .enumerate()
         .map(|(i, name)| real_movie(&format!("hv{i}"), i, name, None))
         .collect()
+}
+
+/// False once Seerr deleted the series' files and Jellyfin re-read its library (`SWIFTLY_FIXTURE_SEERR_DELETE_JELLYFIN=1`);
+/// then the series, its season and its episodes are gone from every listing and lookup.
+fn real_series_listed() -> bool {
+    !crate::fixture_seerr::library_hidden(7777, false)
 }
 
 fn real_series() -> String {
@@ -894,6 +1111,9 @@ fn real_episode(n: usize) -> String {
 
 /// Newest first, as `Items/Latest` and `SortBy=DateCreated` (descending) answer.
 fn real_episodes_newest_first() -> Vec<String> {
+    if !real_series_listed() {
+        return Vec::new();
+    }
     (1..=4).rev().map(real_episode).collect()
 }
 
@@ -928,16 +1148,21 @@ fn real_find(id: &str) -> Option<String> {
             .and_then(|n| n.parse::<usize>().ok())
             .filter(|n| *n < max)
     };
-    if let Some(i) = numbered("ra", 5) {
-        return real_library_movies("ra").into_iter().nth(i);
+    let own_id = format!(r#""Id":"{id}""#);
+    if numbered("ra", 5).is_some() {
+        return real_library_movies("ra")
+            .into_iter()
+            .find(|m| m.contains(&own_id));
     }
-    if let Some(i) = numbered("rb", 5) {
-        return real_library_movies("rb").into_iter().nth(i);
+    if numbered("rb", 5).is_some() {
+        return real_library_movies("rb")
+            .into_iter()
+            .find(|m| m.contains(&own_id));
     }
     if let Some(i) = numbered("hv", 3) {
         return real_home().into_iter().nth(i);
     }
-    if let Some(n) = numbered("re", 5).filter(|n| *n >= 1) {
+    if let Some(n) = numbered("re", 5).filter(|n| *n >= 1 && real_series_listed()) {
         return Some(real_episode(n));
     }
     match id {
@@ -946,8 +1171,8 @@ fn real_find(id: &str) -> Option<String> {
             .into_iter()
             .find(|b| b.contains(&format!(r#""Id":"{id}""#))),
         REAL_VIRTUAL => Some(real_virtual()),
-        REAL_SERIES => Some(real_series()),
-        REAL_SEASON => Some(real_season()),
+        REAL_SERIES => real_series_listed().then(real_series),
+        REAL_SEASON => real_series_listed().then(real_season),
         _ => real_person(id).or_else(|| {
             real_views()
                 .into_iter()
@@ -981,16 +1206,18 @@ fn real_children(parent: &str, recursive: bool) -> Option<Vec<String>> {
         }
         REAL_LIB_B => real_library_movies("rb"),
         REAL_LIB_HOME => real_home(),
+        REAL_LIB_SHOWS if !real_series_listed() => Vec::new(),
         REAL_LIB_SHOWS => vec![real_series()],
         REAL_BOX_PICTURE | REAL_BOX_TWO | REAL_BOX_FOUR => return real_box_members(parent),
+        REAL_SERIES | REAL_SEASON if !real_series_listed() => return None,
         REAL_SERIES => vec![real_season()],
         REAL_SEASON => (1..=4).map(real_episode).collect(),
         _ => return None,
     };
-    if recursive && parent == REAL_LIB_SHOWS {
+    if recursive && parent == REAL_LIB_SHOWS && real_series_listed() {
         items.push(real_season());
         items.extend((1..=4).map(real_episode));
-    } else if recursive && parent == REAL_SERIES {
+    } else if recursive && parent == REAL_SERIES && real_series_listed() {
         items.extend((1..=4).map(real_episode));
     }
     Some(items)
@@ -1063,9 +1290,16 @@ fn real_answer_on(method: &str, path: &str, query: &str) -> Option<Reply> {
             Some(Reply(200, "image/png", real_avatar(size)))
         }
         [.., "UserViews"] | [.., "Views"] => Some(real_json_list(&real_views())),
-        ["Shows", id, "Seasons"] if *id == REAL_SERIES => Some(real_json_list(&[real_season()])),
+        ["Shows", id, "Seasons"] if *id == REAL_SERIES => {
+            Some(real_json_list(&if real_series_listed() {
+                vec![real_season()]
+            } else {
+                Vec::new()
+            }))
+        }
         ["Shows", id, "Episodes"] if *id == REAL_SERIES => {
             let all = match param("SeasonId") {
+                _ if !real_series_listed() => Vec::new(),
                 Some(s) if s != REAL_SEASON => Vec::new(),
                 _ => (1..=4).map(real_episode).collect(),
             };
@@ -1078,6 +1312,15 @@ fn real_answer_on(method: &str, path: &str, query: &str) -> Option<Reply> {
         ])),
         [.., "Items"] if types.as_deref() == Some("BoxSet") => {
             Some(real_json_list(&real_boxsets()))
+        }
+        // The people the library knows, with their TMDB ids (the Seerr search opens a person hit only
+        // when the library has that person).
+        [.., "Items"] if types.as_deref() == Some("Person") => {
+            let people: Vec<String> = REAL_PERSONS
+                .iter()
+                .filter_map(|p| real_person(p.0))
+                .collect();
+            Some(real_json_list(&people))
         }
         [.., "Items"] if types.as_deref() == Some("Playlist") => {
             Some(real_json_list(&[real_playlist()]))
@@ -1134,14 +1377,20 @@ fn real_answer_on(method: &str, path: &str, query: &str) -> Option<Reply> {
                 items.extend(real_home());
                 return Some(real_json_list(&of_types(items, types.as_deref())));
             }
+            // A word nothing in the library carries (the Seerr search cases use it for "nothing found").
+            if param("searchTerm").is_some_and(|t| t.eq_ignore_ascii_case("zzzz")) {
+                return Some(real_json_list(&[]));
+            }
             // The whole catalogue: both libraries' films (so a film shows twice), the home videos, the
             // missing movie, the series; seasons and episodes only when asked for by type.
             let mut items = real_library_movies("ra");
             items.push(real_virtual());
             items.extend(real_library_movies("rb"));
             items.extend(real_home());
-            items.push(real_series());
-            if types.is_some() {
+            if real_series_listed() {
+                items.push(real_series());
+            }
+            if types.is_some() && real_series_listed() {
                 items.push(real_season());
                 items.extend((1..=4).map(real_episode));
             }
@@ -1218,6 +1467,7 @@ fn serve(mut stream: TcpStream) {
             return;
         }
         let body_text = String::from_utf8_lossy(&body);
+        crate::fixture_admin::note_caller(&authorization);
         crate::fixture_sessions::seen(&authorization);
         crate::fixture_sessions::observe(
             &method,
@@ -1242,7 +1492,11 @@ fn serve(mut stream: TcpStream) {
             .get_or_init(std::time::Instant::now)
             .elapsed()
             .as_millis();
-        eprintln!("fixture-server: {method} {target} -> {status} +{at}ms");
+        // Wall-clock milliseconds too, so a log can be laid next to a client's own timestamps.
+        let wall = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis());
+        eprintln!("fixture-server: {method} {target} -> {status} +{at}ms t={wall}");
         let (status, slice, extra) = match range {
             // `bytes=a-b` cuts to b (inclusive); `bytes=a-` runs to the end as before.
             Some(from) if status == 200 && from < data.len() => {
@@ -1255,11 +1509,19 @@ fn serve(mut stream: TcpStream) {
                     format!("Content-Range: bytes {from}-{last}/{}\r\n", data.len()),
                 )
             }
-            _ if method == "POST" && target == "/api/v1/auth/jellyfin" => (
-                status,
-                data,
-                "Set-Cookie: connect.sid=fixture; Path=/; HttpOnly\r\n".to_owned(),
-            ),
+            _ if method == "POST"
+                && status == 200
+                && matches!(
+                    target.as_str(),
+                    "/api/v1/auth/jellyfin" | "/api/v1/auth/local" | "/api/v1/auth/plex"
+                ) =>
+            {
+                (
+                    status,
+                    data,
+                    "Set-Cookie: connect.sid=fixture; Path=/; HttpOnly\r\n".to_owned(),
+                )
+            }
             _ => (status, data, String::new()),
         };
         // `SWIFTLY_FIXTURE_ONE_REQUEST=1`: one request per connection, like a Plex origin on HTTP/1.1.
@@ -1303,7 +1565,7 @@ const SLOW_CHUNK: usize = 16 * 1024;
 /// Flags (env in brackets): `--big` [SWIFTLY_FIXTURE_BIG] (300 movies, 40 series, genres, four accounts), `--port N`, `--mode a,b` [SWIFTLY_FIXTURE_MODE], `--latency-ms N` [SWIFTLY_FIXTURE_LATENCY_MS],
 /// `--flaky-every N` [SWIFTLY_FIXTURE_FLAKY_EVERY], `--expire-after N` [SWIFTLY_FIXTURE_EXPIRE_AFTER].
 pub fn run(args: &[String]) -> Result<(), String> {
-    const USAGE: &str = "usage: cargo xtask fixture-server [--port N] [--real-shapes] [--mode empty|long|huge|i18n|sessions|slow|offline-flaky|auth-expire[,..]] [--latency-ms N] [--flaky-every N] [--expire-after N]";
+    const USAGE: &str = "usage: cargo xtask fixture-server [--port N] [--real-shapes] [--admin] [--mode empty|long|huge|i18n|sessions|slow|offline-flaky|auth-expire[,..]] [--latency-ms N] [--flaky-every N] [--expire-after N]";
     let env_num = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<u64>().ok());
     let (mut port, mut modes) = (
         0_u16,
@@ -1324,6 +1586,10 @@ pub fn run(args: &[String]) -> Result<(), String> {
             enable_real();
             continue;
         }
+        if flag == "--admin" {
+            crate::fixture_admin::enable();
+            continue;
+        }
         if flag == "--slow-downloads" {
             SLOW_DOWNLOADS.store(true, std::sync::atomic::Ordering::Relaxed);
             continue;
@@ -1333,7 +1599,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         match flag.as_str() {
             "--port" => port = value.parse::<u16>().map_err(|e| e.to_string())?,
             "--mode" => modes = value.clone(),
-            "--latency-ms" => latency = Some(num()?),
+            "--latency-ms" | "--latency" => latency = Some(num()?),
             "--flaky-every" => flaky = Some(num()?),
             "--expire-after" => expire = Some(num()?),
             _ => return Err(USAGE.into()),
@@ -1365,7 +1631,7 @@ mod tests {
                 .map(str::to_owned)
                 .collect::<Vec<_>>()
         };
-        let all = ["ra0", "ra1", "ra4", "rb2", "hv1", "m0", "m3"];
+        let all = ["ra0", "ra1", "ra3", "ra4", "rb1", "rb2", "hv1", "m0", "m3"];
         for id in all {
             let item =
                 super::real_find(id).unwrap_or_else(|| super::movie(id[1..].parse().unwrap()));
@@ -1376,6 +1642,26 @@ mod tests {
                 "{id}: PlaybackInfo must offer the listed versions"
             );
         }
+        // The versions a press on Play can choose between: three, one, and the usual two.
+        let count = |id: &str| ids(&super::playback_info(id)).len();
+        assert_eq!(
+            [
+                count("ra1"),
+                count("rb1"),
+                count("ra3"),
+                count("rb3"),
+                count("ra0"),
+                count("ra2"),
+                count("ra4"),
+                count("hv1")
+            ],
+            [3, 3, 1, 1, 2, 2, 2, 2]
+        );
+        assert_eq!(
+            ids(&super::playback_info("ra1")),
+            ["src1", "src1b", "src1c"],
+            "the server's order: the first one is the default"
+        );
         // Items without versions in their listing keep the one `src-<id>` version.
         assert!(super::playback_info("bg-m1").contains(r#""Id":"src-bg-m1""#));
     }
@@ -1619,6 +1905,26 @@ mod tests {
     }
 
     #[test]
+    fn the_subtitle_search_offers_three_hits_and_a_download_adds_the_track() {
+        let reply = route("GET", "/Items/g1/RemoteSearch/Subtitles/deu", "");
+        let hits = text(&reply);
+        assert_eq!(hits.matches(r#""Id":"fx_"#).count(), 3, "{hits}");
+        let before = get("/Users/u1/Items/g1");
+        assert!(!text(&before).contains(r#""Index":5"#));
+        let done = route("POST", "/Items/g1/RemoteSearch/Subtitles/fx_1", "");
+        assert_eq!(done.0, 204);
+        let reply = get("/Users/u1/Items/g1");
+        let item = text(&reply);
+        assert!(
+            item.contains(r#""Index":5,"Language":"deu","DisplayTitle":"Deutsch (Suche)""#),
+            "{item}"
+        );
+        assert_eq!(get("/Videos/g1/srcg1/Subtitles/5/0/Stream.srt").0, 200);
+        let plugins = route("GET", "/Plugins", "");
+        assert!(text(&plugins).contains("Open Subtitles"));
+    }
+
+    #[test]
     fn extras_segments_have_intro_and_outro_only_for_g1() {
         let r = get("/MediaSegments/g1");
         assert_eq!(r.0, 200);
@@ -1844,6 +2150,14 @@ mod tests {
         assert!(!next.contains("Hafenlichter"), "{next}");
         let library = real_get("/Users/u1/Items?ParentId=rl-shows");
         assert!(library.contains(r#""Name":"Küstenwache""#), "{library}");
+    }
+
+    #[test]
+    fn rich_seasons_have_their_own_episodes() {
+        assert_eq!(episode_numbers(true, Some("se1")), [1, 2]);
+        assert_eq!(episode_numbers(true, Some("se2")), [3, 4]);
+        assert_eq!(episode_numbers(false, Some("se1")), [1, 2, 3]);
+        assert_eq!(episode_numbers(false, None), [1, 2, 3]);
     }
 
     #[test]

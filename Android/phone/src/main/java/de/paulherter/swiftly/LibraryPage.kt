@@ -54,6 +54,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
+import de.paulherter.swiftly.rustcore.FilterPick
+import de.paulherter.swiftly.rustcore.FilterSheetPart
 import de.paulherter.swiftly.shared.Theme
 import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.translated
@@ -93,6 +95,25 @@ object Choices {
     fun text(list: List<Choice>, value: String) = list.firstOrNull { it.value == value }?.text ?: value
 }
 
+/**
+ * The core's filter sheet (`FilterSheetPart.lines`) flattened for the two sheet widgets of Android (the phone sheet and
+ * the TV panel): one row per line, value `c<index>`; a heading goes above the line that has one; the "loading" line
+ * (years and languages not fetched yet) has no pick and does nothing. What a row means lives in the core.
+ */
+class FilterRows(part: FilterSheetPart) {
+    val title: String = part.title
+    val entries: List<Choice> = part.lines.mapIndexed { i, l -> Choice("c$i", l.label) }
+    val headings: Map<String, String> = part.lines.withIndex().mapNotNull { (i, l) -> l.heading?.let { "c$i" to it } }.toMap()
+    val ticked: Set<String> = part.lines.withIndex().filter { it.value.selected }.map { "c${it.index}" }.toSet()
+    private val picks: Map<String, FilterPick> = part.lines.withIndex().mapNotNull { (i, l) -> l.pick?.let { "c$i" to it } }.toMap()
+    val inactive: Set<String> = part.lines.withIndex().filter { it.value.pick == null }.map { "c${it.index}" }.toSet()
+    /** Years or languages are still being fetched. */
+    val loading: Boolean get() = inactive.isNotEmpty()
+    fun pick(value: String): FilterPick? = picks[value]
+    fun request(select: (String) -> Unit) = SheetRequest(title, entries, null, categories = headings, ticked = ticked,
+                                                       inactive = inactive, select = select)
+}
+
 /** An entry in the title menu: `SectionSelection` with its label; `name` only for libraries. */
 data class OfferingEntry(val value: String, val name: String?, val category: Boolean)
 
@@ -121,7 +142,7 @@ class LibraryState(val art: String, private val store: Store) {
     var collectionList by mutableStateOf<List<CollectionTile>>(emptyList()); private set
     /** The video playlists with entries in this scope (`PlaylistDirectory`); in memory like the collections. */
     var playlistList by mutableStateOf<List<CollectionTile>>(emptyList()); private set
-    var sorting by mutableStateOf(store.rememberValue("sortierung.$art") ?: "name"); private set
+    var sorting by mutableStateOf(store.rememberValue("sortierung.$art") ?: KernRules.defaultPageSorting()); private set
     /** The index strip of the list (`LibraryModel.alphabet`); empty while there is none. */
     var letters by mutableStateOf<List<LetterEntry>>(emptyList()); private set
     var filter by mutableStateOf(store.rememberValue("filter.$art") ?: "alle"); private set
@@ -145,8 +166,41 @@ class LibraryState(val art: String, private val store: Store) {
         else -> total
     }
 
+    /** The core's filter sheet for this list, as last read (the TV panel draws it; the phone builds its sheet from the same call). */
+    var sheetRows by mutableStateOf<FilterRows?>(null); private set
+
     fun sortingSet(value: String) { sorting = value; store.remember("sortierung.$art", value) }
     fun filterSet(value: String) { filter = value; store.remember("filter.$art", value) }
+
+    /** Reads the sheet for the current list and filter value; `null` while the core cannot answer. */
+    suspend fun sheetRead(kern: RustKern, offered: List<String>): FilterRows? = try {
+        FilterRows(withContext(Dispatchers.IO) { kern.filterSheet(art, choice, filter, offered).await() }).also {
+            sheetRows = it
+            if (BuildConfig.DEBUG) AppLog.writeOut("[Filter] sheet rows: " + it.entries.joinToString("; ") { e ->
+                (it.headings[e.value]?.let { h -> "[$h] " } ?: "") + e.text + (if (e.value in it.ticked) " (x)" else "") })
+        }
+    } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+
+    /**
+     * The sheet opens (`LoadFilterOptions`): show the rows as they are, and when the years and languages are still unknown
+     * fetch them once and show the rows again (`show` is called a second time).
+     */
+    suspend fun sheetOpened(kern: RustKern, offered: List<String>, show: (FilterRows) -> Unit) {
+        val rows = sheetRead(kern, offered) ?: return
+        show(rows)
+        if (!rows.loading) return
+        try { withContext(Dispatchers.IO) { kern.filterLoad(art, choice).await() } }
+        catch (e: CancellationException) { throw e } catch (_: Exception) {}
+        sheetRead(kern, offered)?.let(show)
+    }
+
+    /** A row was tapped: the core says what the filter value becomes (`filter_pick`). */
+    fun sheetPick(kern: RustKern, rows: FilterRows, value: String) {
+        rows.pick(value)?.let { filterSet(kern.filterPick(filter, it)) }
+    }
+
+    /** What the pill shows: status, years and language in the core's words. */
+    fun pill(kern: RustKern): String = kern.filterPill(filter)
     fun select(value: String) { choice = value; store.remember("bibliothek-$art", value) }
 
     /** `LibraryView.label`: "Alle" reads "Alle Filme" in the menu, libraries as the server names them. */
@@ -233,6 +287,11 @@ class LibraryState(val art: String, private val store: Store) {
             } else new.distinctBy { it.id }
             loadedFor = of
             total = figure
+            // Debug builds only: what the page holds for this filter value, for the live proof against the fixture's rule.
+            if (BuildConfig.DEBUG) {
+                val years = items.mapNotNull { it.subline?.take(4)?.toIntOrNull() }
+                AppLog.writeOut("[Filter] value=$filter pill=\"${kern.filterPill(filter)}\" total=$figure loaded=${items.size} years=${years.minOrNull()}-${years.maxOrNull()}")
+            }
         } catch (e: CancellationException) {
             // A cancellation is not a failure: its successor is already loading.
             throw e
@@ -289,7 +348,7 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
     LaunchedEffect(state.sorting, state.filter) { state.load(app.rk) }
     // Mirrors `LibraryFilter.kept(in:)`: a filter the page no longer offers (the watchlist, switched off)
     // must not keep narrowing the list with no pill left to undo it.
-    LaunchedEffect(filterSelection) { if (state.filter !in filterSelection) state.filterSet("alle") }
+    LaunchedEffect(filterSelection) { if (app.rk.filterStatus(state.filter) !in filterSelection) state.filterSet("alle") }
     WatchStateChange(app) { state.load(app.rk) }
     val grid = rememberLazyGridState()
     val density = LocalDensity.current
@@ -382,7 +441,7 @@ fun LibraryPage(app: SwiftlyApplication, art: String, title: String, filterSelec
             EmptyState(if (all) Glyph.Store else Glyph.Filter,
                 translated(if (all) "Hier ist noch nichts" else "Nichts gefunden"),
                 if (all) translated("Sobald in dieser Bibliothek etwas liegt, taucht es hier auf.")
-                else translated("Unter „%@“ liegt gerade nichts. Nimm einen anderen Filter.", Choices.text(Choices.filter, state.filter)),
+                else translated("Unter „%@“ liegt gerade nichts. Nimm einen anderen Filter.", state.pill(app.rk)),
                 quietButton = if (all) translated("Aktualisieren") to { section.launch { state.load(app.rk) } }
                                else translated("Filter zurücksetzen") to { state.filterSet("alle") })
         }
@@ -438,9 +497,16 @@ private fun LibraryHeader(app: SwiftlyApplication, state: LibraryState, title: S
                 Spacer(Modifier.weight(1f))
                 CountMark(state.shown)
             } else {
-                ValuePill(Glyph.Filter, Choices.text(Choices.filter, state.filter)) {
-                    app.sheet.value = SheetRequest(translated("Filtern"), Choices.filter.filter { it.value in filterSelection }, state.filter) {
-                        state.filterSet(it)
+                ValuePill(Glyph.Filter, state.pill(app.rk)) {
+                    section.launch {
+                        var shown: SheetRequest? = null
+                        state.sheetOpened(app.rk, filterSelection) { rows ->
+                            // The second call (years and languages arrived) only replaces the sheet it showed before.
+                            if (shown == null || app.sheet.value === shown) {
+                                shown = rows.request { state.sheetPick(app.rk, rows, it) }
+                                app.sheet.value = shown
+                            }
+                        }
                     }
                 }
                 ValuePill(Glyph.Sort, Choices.text(Choices.sortings, state.sorting)) {

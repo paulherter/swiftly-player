@@ -169,13 +169,13 @@ struct ItemDetailView: View {
 
     /// The page's data owner, the core's `DetailVm` (`DetailCore`); `nil` when there is no account.
     @State private var page: DetailCore?
-    /// A title with several versions waiting for the pick ("Fassung wählen").
-    @State private var versionChoice: VersionPick?
     @State private var loadSheet = false
     @State private var play: PlayRequest?
     /// Blocks a second tap while a plan is being fetched on press.
     @State private var prepares = false
     @State private var moreOpen = false
+    /// What Seerr adds to the More list (report a problem, delete from the server) and its two sheets.
+    @State private var seerrMenu = SeerrTitleMenu()
     @State private var message: String?
 
     @MainActor init(model: AppModel, item: Item) {
@@ -236,16 +236,21 @@ struct ItemDetailView: View {
                     .padding(.horizontal, Theme.margin(wide: wide))
                     .padding(.top, 4)
 
-                    // **Everything below arrives at once.** Cast, extras, collection and
+                    // **Everything below arrives at once, and in place.** Cast, extras, collection and
                     // similar used to arrive individually, pushed into the page and shoved
                     // the rest ahead of them. Now the core answers them together (`bottom.ready`)
-                    // and the page fades them in at once: no placeholders and no empty-state
-                    // hint while still loading.
-                    if bottom?.ready == true {
-                        VStack(alignment: .leading, spacing: 0) {
-                            // Quiet and first: who has seen it belongs to the title itself.
-                            WatchersRow(model: model, list: (bottom?.watchers ?? []).map(Watcher.init(core:)))
-                            cast
+                    // and the page puts them in at once, below everything that is already
+                    // standing: no fade, no placeholders and no empty-state hint while still
+                    // loading. Nothing inside a detail page animates in; only the page itself
+                    // slides in.
+                    // **The two rows in the first screen keep their place from frame 1.** The cast comes from the seed
+                    // (stored copy) or stands as a placeholder of its final height; "seen by" follows it as a placeholder
+                    // while the viewers have not answered, so its arrival or absence moves nothing that is shown. The rest
+                    // below arrives together.
+                    VStack(alignment: .leading, spacing: 0) {
+                        castSection
+                        watchersSection
+                        if bottom?.ready == true {
                             extrasRail
                             // Above "Similar titles": the collection is the closer relation. Only
                             // for titles that are in one.
@@ -255,11 +260,8 @@ struct ItemDetailView: View {
                             // later.
                             fileExcerpt
                         }
-                        .transition(.opacity)
                     }
                 }
-                // The core assigns `bottom` with no transaction, so the fade needs its own driver.
-                .animation(Theme.reveal, value: bottom?.ready == true)
                 // **Never wider than the screen.** If a child gets wider, it becomes the
                 // whole page, and a page wider than its scroll area can be dragged
                 // sideways.
@@ -300,6 +302,7 @@ struct ItemDetailView: View {
             ActionSheet(opened: $moreOpen, title: hero?.title ?? current.name,
                            actions: moreActions)
                 .zIndex(20)
+            SeerrTitleMenuSheets(menu: seerrMenu, model: model) { back() }
             if let entries = asEntry {
                 LoadSheet(opened: $loadSheet, model: model, entries: [entries],
                           title: current.name,
@@ -319,6 +322,14 @@ struct ItemDetailView: View {
             DetailHeaderReader(title: hero?.title ?? current.name, distance: distance, mood: headerImage) { back() }
         }
 
+        // **Nothing inside the page animates in** (the page's own slide is the navigation's): images, the logo
+        // and the colour mood read this and appear in place instead of fading in.
+        .arrivesStill()
+        .onChange(of: seerrMenu.message) { _, text in
+            guard let text else { return }
+            message = text
+            seerrMenu.message = nil
+        }
         #if os(iOS)
         .background(SwipeBack())
         .toolbar(.hidden, for: .navigationBar)
@@ -327,9 +338,6 @@ struct ItemDetailView: View {
                          plan: wish.plan, startAt: wish.startAt)
         }
         #endif
-        .versionPick($versionChoice) { choice, version in
-            launch(page?.pressPlay(pick: version.id), since: choice.since, picked: version.id)
-        }
         .catchUp(at: model.pagesRefresh) { page?.model.refresh() }
         // The core loads the title with its plan, then cast, extras, similar and collections, and keeps the page
         // current. Cancelled (page covered) is not a failure; the task restarts on return.
@@ -351,7 +359,7 @@ struct ItemDetailView: View {
 
     /// Same height as on the series page; before it was 260 versus 300.
     private var heroBlock: some View {
-        HeroImage(url: headerImage)
+        HeroImage(url: headerImage, blur: hero?.imageBlurHash, stand: hero?.tileImages.compactMap { URL(string: $0.address) } ?? [])
             .overlay(alignment: .bottom) { HeroRunOut(image: headerImage) }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -363,7 +371,9 @@ struct ItemDetailView: View {
                         .tracking(Theme.lockTitle)
                         .foregroundStyle(Theme.font)
                     #endif
-                    Text(hero?.secondaryLine ?? "")
+                    // A blank keeps the line's height until the title arrives, so the name above it does not
+                    // jump up by one line when year, runtime and genre are filled in.
+                    Text(verbatim: (hero?.secondaryLine).flatMap { $0.isEmpty ? nil : $0 } ?? " ")
                         // Year, runtime, genre are one piece of info: 12. Before it was 14,
                         // which appears in no step of the scale.
                         .font(Theme.small)
@@ -375,27 +385,28 @@ struct ItemDetailView: View {
             }
     }
 
-    /// **First with the plan, then as a whole.** Stars and age rating are
-    /// there immediately, the Direct Play mark only with the playback plan,
-    /// and it then pushed in on the left and moved the other two right. Now
-    /// the line holds its place but stays invisible until the plan is there
-    /// (`proof.visible`), then fades in at once. If no plan comes, it fades
-    /// in anyway, just without the mark.
+    /// **All chips at once, in place.** Stars and age rating come with the title, the Direct Play mark
+    /// only with the playback plan, and a chip that arrives alone pushed the others sideways (it used
+    /// to slide in from the left). The core says when the row is final (`proof.phase`): until then the
+    /// row stands as skeleton chips of the real size, then the real chips replace them in the same
+    /// frame. No fade, no animation of any kind: a title with fewer chips just loses the last skeletons.
+    /// A placeholder without a file (`visible` stays false) shows no chip at all.
     private var proofRow: some View {
         let proof = actions?.proof
-        return ProofRow(directPlayFlag: proof?.directPlay ?? false, hint: proof?.hint,
-                        ratingText: proof?.rating, sharing: proof?.ageRating)
-            // **Fixed height, even when empty.** The line only comes with the plan,
-            // and from the list often without rating and age rating. Empty, it had no
-            // height; the button below sat higher and dropped as soon as it filled.
-            // As tall as one badge, always. `height`, not `minHeight`: the rework to
-            // growing type turned it into a minimum and thereby invalidated the
-            // reasoning above. With larger system type the line would have grown
-            // beyond 26 and the button would have jumped exactly as described. The
-            // line holds only badges, and badges stay fixed.
+        let settled = proof?.phase == .settled
+        // The title chips stand from frame 1 (the core fills them from the seed); only the playback mark waits.
+        let titleChips = !settled || proof?.visible == true
+        return ProofRow(waiting: !settled,
+                        directPlayFlag: settled && proof?.visible == true && (proof?.directPlay ?? false),
+                        hint: settled && proof?.visible == true ? proof?.hint : nil,
+                        ratingText: titleChips ? proof?.rating : nil,
+                        sharing: titleChips ? proof?.ageRating : nil)
+            // **Fixed height, even when empty.** The row holds only badges, and badges stay fixed;
+            // `height`, not `minHeight`, so larger system type cannot grow the line and push the button
+            // down when it fills.
             .frame(height: 26, alignment: .leading)
-            .opacity(proof?.visible == true ? 1 : 0)
-            .animation(Theme.reveal, value: proof?.visible)
+            // Whatever animation an ancestor carries never reaches the chips.
+            .transaction { $0.animation = nil }
     }
 
     /// **One button, not two.**
@@ -414,33 +425,25 @@ struct ItemDetailView: View {
         // 51:10" and left open how much is left. The same question, the same answer.
         let button = actions?.play
         return VStack(alignment: .leading, spacing: 8) {
-            Button {
+            PlayMenu(versions: page?.versions() ?? []) {
                 launch(page?.pressPlay(), since: nil, picked: nil)
+            } pick: { version in
+                launch(page?.pressPlay(pick: version.id), since: nil, picked: version.id)
             } label: {
                 Label { Text(verbatim: button?.label ?? "") } icon: { Image(icon: "play.fill") }
             }
             .buttonStyle(PrimaryButtonStyle(stretches: true))
-            // Long press: the title's tile menu, as on its tile.
-            .tileMenu(current, model: model)
-            // **A title with several versions asks which one on press.** 4K next to
-            // 1080p, theatrical next to extended cut; the server lists them as
-            // sources of one item. One version, or a copy on the device, starts at once.
+            // **A tap starts the default version at once, with several versions too.** 4K next to
+            // 1080p, theatrical next to extended cut; the server lists them as sources of one
+            // item. A long press lists them (and only them) to start another one; without a
+            // choice (one version, a copy on the device) a long press does nothing.
             //
-            // **Gray until the versions are known** (the core enables the button, and
-            // enables it again when the fresh load failed so that a press tries once
-            // more), and while a plan is on its way on press.
-            .disabled(prepares || button?.enabled != true)
+            // **White from the first frame, label from the tile's seed.** A press before the versions are
+            // known is held by the core (`PlayReady.waiting(queued:)`) and comes back as a `.play` effect
+            // (`drain`) when they are there, once; only a plan that is on its way after a press disables it.
+            .disabled(prepares)
 
-            if let rest = button?.remaining {
-                // Remaining time is one piece of info: 12.
-                Text(rest).growing(12).monospacedDigit().foregroundStyle(Theme.fontQuiet)
-            }
-            // Wide, progress sits on the poster in the header; here it would be the
-            // same thing a second time, and across the whole page.
-            if let share = button?.progress, share > 0 {
-                ProgressBar(share: Double(share))
-                    .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
-            }
+            ResumeSlot(remaining: button?.remaining, progress: button?.progress)
         }
     }
 
@@ -511,6 +514,9 @@ struct ItemDetailView: View {
                     .growing(12)
                 }
             }
+        } else if bottom?.ready != true && page?.trouble == nil {
+            // The title has not answered: the text's three lines keep their place.
+            DescriptionSlot()
         }
     }
 
@@ -532,6 +538,24 @@ struct ItemDetailView: View {
                 }
             }
             .padding(.horizontal, Theme.margin(wide: wide))
+        }
+    }
+
+    @ViewBuilder
+    private var castSection: some View {
+        if bottom?.cast.isEmpty == false {
+            cast
+        } else if bottom?.castPending == true {
+            CastSlot()
+        }
+    }
+
+    @ViewBuilder
+    private var watchersSection: some View {
+        if bottom?.ready != true && bottom?.watchersPending == true {
+            WatchersSlot()
+        } else {
+            WatchersRow(model: model, list: (bottom?.watchers ?? []).map(Watcher.init(core:)))
         }
     }
 
@@ -679,10 +703,8 @@ struct ItemDetailView: View {
         let missing = { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") }
         switch action {
         case .wait:
+            // The core holds this press and sends it back as an effect once the versions are known.
             return
-        case .choose(_, let at, let versions):
-            versionChoice = VersionPick(
-                heading: page.model.actions.play.versionTitle, options: versions, since: since ?? at)
         case .resolve(_, let at):
             // The fresh title never came: fetch it once more and decide again; say so if that fails too.
             guard !prepares else { return }
@@ -721,7 +743,7 @@ struct ItemDetailView: View {
                     page.model.menu(entry.kind)
                 }
             }
-        }
+        } + seerrMenu.actions(model: model, item: current)
     }
 
     private static func symbol(of kind: MenuKind) -> String {

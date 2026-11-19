@@ -63,13 +63,17 @@ final class RustView: UIView {
         link?.isPaused = true
         idleTimer?.invalidate()
         idleTimer = nil
-        engine?.suspend()
-        if handle != nil { _ = swiftly_rust_set_active(handle, 0) }
+        // What the player really is after the suspension goes along: its own "paused" report reaches the core only after
+        // the return (no frames in the background), and the server must not hear "playing" from a paused app.
+        let paused = engine?.suspend() ?? true
+        if handle != nil { _ = swiftly_rust_set_active(handle, 0, paused ? 1 : 0) }
     }
 
     @objc private func willForeground() {
         background = false
-        if handle != nil { apply(swiftly_rust_set_active(handle, 1)) }
+        // What `enteredBackground` paused plays again (a Notification Center pulled down arrives as a background and a return).
+        engine?.resumeAfterSuspend()
+        if handle != nil { apply(swiftly_rust_set_active(handle, 1, 0)) }
         wake()
     }
 

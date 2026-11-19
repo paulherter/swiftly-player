@@ -110,6 +110,7 @@ dependencies {
     "playImplementation"(libs.billing)
     // Only for the JVM tests (`StreamNextLeaderTest`).
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     // Only for the device tests (`CertificatesTest`), on the emulator.
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

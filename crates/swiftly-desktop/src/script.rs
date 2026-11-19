@@ -5,7 +5,10 @@
 //! wait MS                  pause the script
 //! until player MS          wait until the player screen is open (at most MS, then the script stops)
 //! move FX FY               pointer to a fraction of the window (0.5 0.5 = centre)
-//! move-label TEXT          pointer to the centre of the control whose accessible name contains TEXT
+//! move-label TEXT          pointer to the centre of the control whose accessible name contains TEXT (`#KEY`: the control
+//!                          with that stable test key, e.g. `#btn-decline-confirm`, when several controls share a word)
+//! anchor TEXT             remember the centre of the control named TEXT (window points); it stays while rows move
+//! move-from DX DY         pointer to the anchor plus DX DY window points (drag a row by its own frame, not a guessed fraction)
 //! type TEXT               commit TEXT into the focused field, as an input method does
 //! key enter|tab|escape|right|left|up|down   one shell key: into the focused field when one has the keyboard, else to the focus engine (escape is Back)
 //! down | up | click        primary button at the pointer (`click` = down, 60 ms, up)
@@ -37,6 +40,10 @@ pub enum Step {
     Move(f64, f64),
     /// Pointer to the centre of a control by its accessible name.
     MoveLabel(String),
+    /// Remember the centre of a control (window points) as the anchor of later `move-from` steps.
+    Anchor(String),
+    /// Pointer to the anchor plus an offset in window points (a drag measured in rows from the row's own frame).
+    MoveFrom(f64, f64),
     /// Primary button down.
     Down,
     /// A right click at the pointer (opens context menus).
@@ -69,8 +76,6 @@ pub enum Step {
     Labels(String),
     /// Show a message in the strip at the bottom of the content (the shell's toast).
     Toast(String),
-    /// Open the shell's version dialog over two sample versions.
-    AskVersions,
     /// Leave.
     Quit,
 }
@@ -128,6 +133,11 @@ pub fn parse(text: &str) -> Result<Vec<Step>, String> {
                 Step::Move(num(x)?, num(y)?)
             }
             "move-label" if !rest.is_empty() => Step::MoveLabel(rest.to_owned()),
+            "anchor" if !rest.is_empty() => Step::Anchor(rest.to_owned()),
+            "move-from" => {
+                let (x, y) = rest.split_once(' ').ok_or_else(bad)?;
+                Step::MoveFrom(num(x)?, num(y)?)
+            }
             "type" if !rest.is_empty() => Step::Type(rest.to_owned()),
             "key" if is_key_name(rest.trim()) => Step::Key(rest.trim().to_owned()),
             "rclick" => Step::RightClick,
@@ -156,7 +166,6 @@ pub fn parse(text: &str) -> Result<Vec<Step>, String> {
             "mark" if !rest.is_empty() => Step::Mark(rest.to_owned()),
             "labels" => Step::Labels(rest.to_owned()),
             "toast" if !rest.is_empty() => Step::Toast(rest.to_owned()),
-            "ask-versions" => Step::AskVersions,
             "quit" => Step::Quit,
             _ => return Err(bad()),
         });
@@ -266,7 +275,7 @@ impl Script {
 static ZERO: OnceLock<Instant> = OnceLock::new();
 
 /// Whether `SWIFTLY_TRACE` asks for timestamped trace lines (read once).
-fn tracing() -> bool {
+pub fn tracing() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("SWIFTLY_TRACE").is_some_and(|v| v != "0"))
 }
@@ -289,6 +298,26 @@ pub fn trace_flag(name: &str, value: bool) {
         static SEEN: std::cell::RefCell<std::collections::HashMap<String, bool>> = std::cell::RefCell::new(std::collections::HashMap::new());
     }
     let changed = SEEN.with(|m| m.borrow_mut().insert(name.to_owned(), value) != Some(value));
+    if changed {
+        trace(&format!("{name}={value}"));
+    }
+}
+
+/// Like [`trace`], but only when the text `value` changed since the last call under `name`: what the footer's time
+/// readout says, so a live run lists every text the screen showed with its timestamp.
+pub fn trace_text(name: &str, value: &str) {
+    if !tracing() {
+        return;
+    }
+    thread_local! {
+        static SEEN: std::cell::RefCell<std::collections::HashMap<String, String>> = std::cell::RefCell::new(std::collections::HashMap::new());
+    }
+    let changed = SEEN.with(|m| {
+        m.borrow_mut()
+            .insert(name.to_owned(), value.to_owned())
+            .as_deref()
+            != Some(value)
+    });
     if changed {
         trace(&format!("{name}={value}"));
     }

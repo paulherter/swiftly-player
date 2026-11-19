@@ -37,7 +37,7 @@ struct LoadSheet: View {
     var audioStreams: [MediaStream] = []
 
     @State private var choice: DownloadQuality = .original
-    /// `nil` until someone picks: then the audio language from the settings applies.
+    /// `nil` until someone picks: then the core's start rule applies (settings language, then the device's).
     @State private var audioChosen: DownloadAudioChoice?
 
     private var management: DownloadManager { model.downloads }
@@ -55,8 +55,7 @@ struct LoadSheet: View {
     }
     private var audioOptions: [DownloadAudioOption] { DownloadAudio.trackOptions(streams: audioStreams) }
     private var audio: DownloadAudioChoice {
-        audioChosen ?? DownloadAudio.preselected(options: audioOptions, streams: audioStreams,
-                                                 preferredLanguage: model.audioLanguage)
+        audioChosen ?? LoadSelectionState.filmAudioStart(streams: audioStreams, audioLanguage: model.audioLanguage)
     }
     private var bytes: Int64 { version.reduce(0) { $0 + $1.bytes } }
     /// Built by the server: the size is an estimate.

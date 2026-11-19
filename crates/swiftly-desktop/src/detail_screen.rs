@@ -196,6 +196,50 @@ impl Art {
         }
     }
 
+    /// The head picture of a title page: with a hub the tile's picture (or the BlurHash) stands in until the sharp one is
+    /// there; without one, demo art.
+    pub(crate) fn hero_for(
+        &self,
+        image: Option<&swiftly_vm::ImageRef>,
+        stand: &Stand,
+        id: &str,
+        w: f32,
+        h: f32,
+    ) -> Node {
+        if self.blank.get() {
+            return Node::rect(Color::CLEAR, 0.0).frame(Some(w), Some(h), Alignment::CENTER);
+        }
+        let hub = self.hub.borrow().clone();
+        match hub {
+            Some(hub) if image.is_some() || !stand.pictures.is_empty() || stand.blur.is_some() => {
+                hub.hero_node(image, &stand.pictures, stand.blur.as_deref(), w, h)
+            }
+            _ => self.node(true, id, w, h, 0.0),
+        }
+    }
+
+    /// [`Art::node_for`] with the BlurHash of the picture under it while it loads (a still of an episode row).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn node_blur(
+        &self,
+        image: Option<&swiftly_vm::ImageRef>,
+        blur: Option<&str>,
+        landscape: bool,
+        id: &str,
+        w: f32,
+        h: f32,
+        radius: f32,
+    ) -> Node {
+        if self.blank.get() {
+            return self.node_for(image, landscape, id, w, h, radius);
+        }
+        let hub = self.hub.borrow().clone();
+        match (hub, image) {
+            (Some(hub), Some(_)) => hub.node_blur(image, blur, w, h, radius),
+            _ => self.node_for(image, landscape, id, w, h, radius),
+        }
+    }
+
     /// Mood-colour hues: of the real picture when a hub is attached (empty until it is loaded), else of the demo art.
     pub(crate) fn tones_for(&self, image: Option<&swiftly_vm::ImageRef>, id: &str) -> Vec<f64> {
         if self.blank.get() {
@@ -404,6 +448,8 @@ pub(crate) struct UiState {
     pub glow: (crate::look_glow::Glow, u16),
     /// The overview is expanded.
     pub overview_open: bool,
+    /// The request sheet's season list goes on above / below (its edges fade only there).
+    pub sheet_list: (bool, bool),
     /// A sheet (more menu, version picker, season list) is open: 0 none, 1 more, 2 versions, 3 seasons.
     pub sheet: u8,
     /// Tab in front on the series page.
@@ -579,6 +625,12 @@ impl<D: Clone + PartialEq + 'static> Pushed<D> {
             Some((key, offset > 4.0, offset < max - 4.0))
         });
         RAIL_HOVER.with(|h| *h.borrow_mut() = self.sx.rail_hover.clone());
+        self.sx.sheet_list = self
+            .ui
+            .scroll_of("sheet-list")
+            .map_or((false, false), |(offset, max, _)| {
+                (offset > 1.0, offset < max - 1.0)
+            });
         let off = self.page_offset() as f32;
         // Touch: 30 pt to full strength; Mac `DetailHeader`: opacity = clamp((offset - 74) / 42).
         let t = if self.ui.env().idiom == swiftly_ui::Idiom::Desktop {
@@ -755,14 +807,26 @@ impl<D: Clone + PartialEq + 'static> Pushed<D> {
 /// Direct Play flag, hint, rating text, age rating.
 pub(crate) type Proof = (bool, Option<String>, Option<String>, Option<String>);
 
+/// What stands for the head picture until the sharp one is there: the pictures the page's tiles showed (landscape
+/// first) and the BlurHash of the head picture, as the core's seed gives them.
+#[derive(Clone, PartialEq, Default)]
+pub(crate) struct Stand {
+    pub pictures: Vec<swiftly_vm::ImageRef>,
+    pub blur: Option<String>,
+}
+
 /// What the head of a title page shows; filled from `DetailVm` or `SeriesVm` parts.
 #[derive(Clone, PartialEq, Default)]
 pub(crate) struct Head {
     pub id: String,
     pub image: Option<swiftly_vm::ImageRef>,
+    pub stand: Stand,
     pub title: String,
     pub secondary: String,
     pub overview: Option<String>,
+    /// The title has not answered yet and no description is known: three quiet lines hold the description's place, so
+    /// the text arriving later moves nothing under it.
+    pub overview_wait: bool,
     pub directors: Vec<String>,
     pub label: String,
     pub enabled: bool,
@@ -773,8 +837,13 @@ pub(crate) struct Head {
     pub fav_caption: String,
     pub download: Option<DownloadState>,
     pub proof: Option<Proof>,
+    /// The chips of the seed (stars, age rating) stand, the playback chip is still to come: a skeleton holds its place.
+    pub proof_pending: bool,
     pub message: Option<String>,
     pub trailer: bool,
+    /// The core lists two or more versions to play: only then Play takes the long press (the version menu). With one
+    /// version (or none known yet) a press of any length is a tap.
+    pub versions: bool,
 }
 
 /// "12", "12+" and "FSK 12" all read "ab 12"; names of other systems ("PG-13") stay (`DetailView.ageText`).
@@ -828,7 +897,7 @@ pub(crate) fn focus_tint(mut n: Node, rest: Color, focused: Color) -> Node {
 }
 
 /// A chip of the proof row. Mac `chip`: 26 high, 9 side, symbol 12 and text 12 semibold 5 apart, corner 8.
-fn mark(
+pub(crate) fn mark(
     k: &Kit,
     icon: Option<(&str, Color)>,
     s: &str,
@@ -874,7 +943,10 @@ pub(crate) fn proof_row(k: &Kit, h: &Head) -> Node {
         } else {
             (colour::FONT_QUIET, 600)
         };
-        if *direct {
+        if h.proof_pending {
+            // The playback chip of the plan is not there yet: a skeleton of its size, replaced in place.
+            kids.push(Node::rect(plain, 13.0).frame(Some(97.3), Some(26.0), Alignment::CENTER));
+        } else if *direct {
             kids.push(mark(
                 k,
                 Some(("check", color(colour::MARK_ACCENT))),
@@ -913,6 +985,31 @@ pub(crate) fn proof_row(k: &Kit, h: &Head) -> Node {
         }
     }
     Node::hstack(Align::Center, Some(8.0), kids).frame(None, Some(26.0), Alignment::LEADING)
+}
+
+/// The action of a right click on Play: the version menu at the pointer.
+pub(crate) const PLAY_MENU: &str = "play-menu";
+/// The action of a long press on Play: the version menu under the button (the finger covers the pointer spot).
+pub(crate) const PLAY_HOLD: &str = "play-hold";
+/// The least width of the version menu (the rows grow with their label).
+pub(crate) const VERSION_MENU_WIDTH: f32 = 280.0;
+
+/// The action of one row of the version menu.
+pub(crate) fn version_action(id: &str) -> Action {
+    Action::from(format!("ver:{id}").as_str())
+}
+
+/// The rows of the Play button's version menu: only the versions in the core's order, the default one checked. No cover,
+/// no watched state, no play row (design rule 13). The caller opens nothing for fewer than two versions.
+pub(crate) fn version_entries(versions: &[swiftly_vm::VersionOption]) -> Vec<PopEntry> {
+    versions
+        .iter()
+        .map(|v| {
+            PopEntry::Item(
+                MenuItem::new(version_action(&v.id), v.label.clone()).checked(v.is_default),
+            )
+        })
+        .collect()
 }
 
 /// The primary button: white surface, label left, play triangle right (`PrimaryButtonStyle`); tv uses the focus pill.
@@ -961,6 +1058,8 @@ pub(crate) fn play_button(k: &Kit, h: &Head, action: &str) -> Node {
             .background(surface, Alignment::CENTER)
             .key("play")
             .on_tap(Action::from(action));
+        // Long-press select: the versions (design rule 13), on every form, only when there is a choice.
+        let n = with_versions_hold(n, h);
         return n.focusable(focus_id("play"), Some(FocusLook::tile(16.0)));
     }
     if lk.form == Form::Desktop {
@@ -977,7 +1076,10 @@ pub(crate) fn play_button(k: &Kit, h: &Head, action: &str) -> Node {
             .background(Node::rect(color(bg), 10.0), Alignment::CENTER)
             .key("play")
             .on_tap(Action::from(action))
-            .on_secondary(Action::from("play-menu"));
+            // Right click lists only the versions; with one version nothing opens.
+            .on_secondary(Action::from(PLAY_MENU));
+        // A long press (touch) lists them too, but only when there is a choice: else a slow click must still play.
+        let n = with_versions_hold(n, h);
         return if on {
             n.hover_surface(rgba(colour::REASON, 0.12), 10.0)
                 .press_style(PressStyle::Button)
@@ -998,42 +1100,67 @@ pub(crate) fn play_button(k: &Kit, h: &Head, action: &str) -> Node {
             Alignment::CENTER,
         ),
     };
-    row.background(Node::rect(color(bg), 10.0), Alignment::CENTER)
+    let n = row
+        .background(Node::rect(color(bg), 10.0), Alignment::CENTER)
         .key("play")
-        .on_tap(Action::from(action))
+        .on_tap(Action::from(action));
+    with_versions_hold(n, h)
 }
 
-/// Remaining time and the 4 pt progress bar under the button.
+/// The Play button takes the long press (the version menu) only when the core lists two or more versions. A long
+/// press fires on hold and suppresses the tap, so with one version it would swallow a slow click.
+pub(crate) fn with_versions_hold(n: Node, h: &Head) -> Node {
+    if h.versions {
+        n.on_long_press(Action::from(PLAY_HOLD))
+    } else {
+        n
+    }
+}
+
+/// Height of the remaining-time line's slot (12 pt text).
+const RESUME_TEXT_SLOT: f32 = 16.0;
+
+/// Remaining time (or the runtime) and the 4 pt progress bar under the button. Both slots are always there, empty or
+/// filled, so a title's first answer (runtime, resume point) moves nothing under them.
 pub(crate) fn resume_info(k: &Kit, h: &Head, width: Option<f32>) -> Vec<Node> {
     let mut v = Vec::new();
-    if let Some(rest) = &h.remaining {
-        let c = if k.lk.form == Form::Desktop {
-            colour::FONT_VERY_QUIET
-        } else {
-            colour::FONT_QUIET
-        };
-        v.push(txt(k.cx, rest, weight(k.lk.small, 12.0, 400), c, Some(1)));
-    }
-    if let Some(p) = h.progress.filter(|p| *p > 0.0) {
-        let p = p.clamp(0.0, 1.0);
-        let w = width.unwrap_or(k.env.size.w - 2.0 * k.lk.edge);
-        let bar = Node::zstack(
-            Alignment::LEADING,
-            vec![
-                Node::rect(Color::new(1.0, 1.0, 1.0, 0.18), 2.0).frame(
-                    Some(w),
-                    Some(4.0),
-                    Alignment::CENTER,
-                ),
-                Node::rect(color(colour::MARK_ACCENT), 2.0).frame(
-                    Some(w * p),
-                    Some(4.0),
-                    Alignment::CENTER,
-                ),
-            ],
-        );
-        v.push(bar);
-    }
+    v.push(match &h.remaining {
+        Some(rest) => {
+            let c = if k.lk.form == Form::Desktop {
+                colour::FONT_VERY_QUIET
+            } else {
+                colour::FONT_QUIET
+            };
+            txt(k.cx, rest, weight(k.lk.small, 12.0, 400), c, Some(1)).frame(
+                None,
+                Some(RESUME_TEXT_SLOT),
+                Alignment::LEADING,
+            )
+        }
+        None => Node::fixed(1.0, RESUME_TEXT_SLOT),
+    });
+    let w = width.unwrap_or(k.env.size.w - 2.0 * k.lk.edge);
+    v.push(match h.progress.filter(|p| *p > 0.0) {
+        Some(p) => {
+            let p = p.clamp(0.0, 1.0);
+            Node::zstack(
+                Alignment::LEADING,
+                vec![
+                    Node::rect(Color::new(1.0, 1.0, 1.0, 0.18), 2.0).frame(
+                        Some(w),
+                        Some(4.0),
+                        Alignment::CENTER,
+                    ),
+                    Node::rect(color(colour::MARK_ACCENT), 2.0).frame(
+                        Some(w * p),
+                        Some(4.0),
+                        Alignment::CENTER,
+                    ),
+                ],
+            )
+        }
+        None => Node::fixed(w, 4.0),
+    });
     v
 }
 
@@ -1130,8 +1257,11 @@ pub(crate) fn action_rail(k: &Kit, h: &Head) -> Node {
             h.favorite,
         ));
     }
-    // Mac and tv keep the download in the More list; only touch has the "Laden" field.
-    let state = h.download.filter(|_| k.lk.form == Form::Touch);
+    // Touch and desktop have the "Laden" field next to Merkliste (desktop: the More list has it as well, but nobody looks
+    // there for it); tv keeps it in the More list only.
+    let state = h
+        .download
+        .filter(|_| matches!(k.lk.form, Form::Touch | Form::Desktop));
     if let Some(state) = state {
         let (icon, active) = match state {
             DownloadState::Ready => ("arrow-circle-down.fill", true),
@@ -1186,9 +1316,44 @@ pub(crate) fn action_rail(k: &Kit, h: &Head) -> Node {
 }
 
 /// The overview, collapsed to three lines until tapped, and the "Regie" line.
+/// Three quiet lines of the final size while the title has not answered (`DescriptionSlot`): the description arrives in
+/// place, nothing under it moves.
+fn description_slot(k: &Kit, mac: bool) -> Node {
+    let (pitch, bar) = if mac {
+        (14.0 * 1.21 + 4.5, 11.0)
+    } else {
+        let h = k.cx.text.borrow_mut().layout(
+            "Ag",
+            &TextStyle::from(k.lk.body),
+            None,
+            None,
+            swiftly_text::Align::Start,
+        );
+        (h.height(), 11.0)
+    };
+    let width = match k.lk.form {
+        Form::Touch => k.env.size.w - 2.0 * k.lk.edge,
+        Form::Desktop => 620.0,
+        Form::Tv => 900.0,
+    };
+    let line = |w: f32| {
+        Node::rect(Color::new(1.0, 1.0, 1.0, 0.07), 4.0)
+            .frame(Some(w), Some(bar), Alignment::CENTER)
+            .frame(Some(w), Some(pitch), Alignment::LEADING)
+    };
+    Node::vstack(
+        Align::Start,
+        Some(0.0),
+        vec![line(width), line(width), line(width * 0.6)],
+    )
+    .frame(Some(width), Some(pitch * 3.0), Alignment::TOP_LEADING)
+}
+
 pub(crate) fn description(k: &Kit, h: &Head, open: bool) -> Option<Node> {
-    let text = h.overview.as_ref()?;
     let mac = k.lk.form == Form::Desktop;
+    let Some(text) = h.overview.as_ref() else {
+        return h.overview_wait.then(|| description_slot(k, mac));
+    };
     let lines = if open || mac { None } else { Some(3) };
     let width = match k.lk.form {
         Form::Touch => k.env.size.w - 2.0 * k.lk.edge,
@@ -1450,6 +1615,7 @@ fn desktop_backdrop(k: &Kit, h: &Head, w: f32) -> Node {
     faded_backdrop(
         k,
         h.image.as_ref(),
+        &h.stand,
         &h.id,
         w,
         bw,
@@ -1467,6 +1633,7 @@ fn desktop_backdrop(k: &Kit, h: &Head, w: f32) -> Node {
 pub(crate) fn faded_backdrop(
     k: &Kit,
     image: Option<&swiftly_vm::ImageRef>,
+    stand: &Stand,
     id: &str,
     w: f32,
     bw: f32,
@@ -1474,7 +1641,7 @@ pub(crate) fn faded_backdrop(
     sample: &dyn Fn(f32, f32) -> Color,
     key: String,
 ) -> Node {
-    let img = k.art.node_for(image, true, id, bw, height, 0.0);
+    let img = k.art.hero_for(image, stand, id, bw, height);
     let cover = match backdrop_cover(k.cx, key, sample, w, bw, height) {
         Some(id) => Node::ramp_image(id, bw, height),
         None => strip_cover(sample, w, bw, height),
@@ -1720,12 +1887,10 @@ pub(crate) fn hero_buttons(k: &Kit, h: &Head, open: bool) -> Vec<Node> {
         .padding(ins(if tvf { 32.0 } else { 20.0 }, 0.0, 0.0, 0.0)),
     ];
     let info = resume_info(k, h, primary_w.or(Some(420.0)));
-    if !info.is_empty() {
-        v.push(
-            Node::vstack(Align::Start, Some(6.0), info.into_iter().rev().collect())
-                .padding(ins(16.0, 0.0, 0.0, 0.0)),
-        );
-    }
+    v.push(
+        Node::vstack(Align::Start, Some(6.0), info.into_iter().rev().collect())
+            .padding(ins(16.0, 0.0, 0.0, 0.0)),
+    );
     if !tvf && let Some(m) = &h.message {
         // `HintStrip`: a capsule 34 high on `raised` with a 1 px `margin` border; the screen withdraws it after 3 s.
         let strip = txt(k.cx, m, weight(k.lk.body, 15.0, 400), colour::FONT, Some(1))
@@ -2304,6 +2469,19 @@ pub(crate) fn watchers_rail(k: &Kit, ws: &[swiftly_vm::WatcherTile]) -> Node {
 
 /// Everything below the head of a movie page, in the Swift order: watchers, cast, extras, collections, similar, file.
 pub(crate) fn bottom(k: &Kit, b: &BottomPart, pad_top: f32) -> Node {
+    let mut kids = bottom_head(k, b);
+    kids.extend(bottom_rest(k, b));
+    bottom_stack(k, kids, pad_top)
+}
+
+/// The rows under the head, stacked as the page spaces its sections.
+pub(crate) fn bottom_stack(k: &Kit, kids: Vec<Node>, pad_top: f32) -> Node {
+    Node::vstack(Align::Start, Some(k.lk.sections), kids).padding(ins(pad_top, 0.0, 0.0, 0.0))
+}
+
+/// The rows the page can show before the fresh title has answered: who watched it and the cast. What the seed knows
+/// stands in; a row that is still to come keeps its final height as a placeholder, so the real row replaces it in place.
+pub(crate) fn bottom_head(k: &Kit, b: &BottomPart) -> Vec<Node> {
     let mut kids = Vec::new();
     if !b.watchers.is_empty() && k.lk.form != Form::Touch {
         kids.push(watchers_rail(k, &b.watchers));
@@ -2338,9 +2516,20 @@ pub(crate) fn bottom(k: &Kit, b: &BottomPart, pad_top: f32) -> Node {
             .collect();
         kids.push(segment(k, "watchers", "Gesehen von", items, 12.0, 80.0));
     }
+    if b.watchers.is_empty() && b.watchers_pending && k.lk.form == Form::Desktop {
+        kids.push(watchers_slot(k));
+    }
     if !b.cast.is_empty() {
         kids.push(cast_rail(k, &b.cast));
+    } else if b.cast_pending && k.lk.form == Form::Desktop {
+        kids.push(cast_slot(k));
     }
+    kids
+}
+
+/// The rails that need the fresh answers (extras, collections, similar titles, the file): they arrive after the page.
+pub(crate) fn bottom_rest(k: &Kit, b: &BottomPart) -> Vec<Node> {
+    let mut kids = Vec::new();
     if !b.extras.is_empty() {
         // `TitleRail(play: true)` shows the extras as posters like the other rails (`DetailView.swift:169`).
         kids.push(tile_rail(
@@ -2374,31 +2563,49 @@ pub(crate) fn bottom(k: &Kit, b: &BottomPart, pad_top: f32) -> Node {
     if let Some(f) = file_excerpt(k, b) {
         kids.push(f);
     }
-    Node::vstack(Align::Start, Some(k.lk.sections), kids).padding(ins(pad_top, 0.0, 0.0, 0.0))
+    kids
 }
 
-/// A sheet over the page: scrim and a list of rows (the More panel, the version picker, the season list).
+/// The cast row before the title has answered: the heading and circles of the final size (the row is 135 high).
+fn cast_slot(k: &Kit) -> Node {
+    let kids = (0..8)
+        .map(|_| {
+            Node::rect(color(colour::AREA), 42.0)
+                .frame(Some(84.0), Some(84.0), Alignment::CENTER)
+                .frame(Some(84.0), None, Alignment::TOP_LEADING)
+        })
+        .collect();
+    segment(
+        k,
+        "cast",
+        "Besetzung",
+        kids,
+        22.0,
+        84.0 + 7.0 + 15.0 * 2.0 + 14.0,
+    )
+}
+
+/// The "Gesehen von" row before the viewers have answered: the heading and discs of the final size.
+fn watchers_slot(k: &Kit) -> Node {
+    let kids = (0..3)
+        .map(|_| {
+            Node::rect(color(colour::AREA), 30.0).frame(Some(60.0), Some(60.0), Alignment::CENTER)
+        })
+        .collect();
+    segment(k, "watchers", "Gesehen von", kids, 22.0, 60.0)
+}
+
+/// A sheet over the page: scrim and a list of rows (the More panel, the season list).
 pub(crate) fn sheet(k: &Kit, title: &str, rows: &[(String, bool)], prefix: &str) -> Node {
-    sheet_with(k, title, rows, prefix, false)
+    sheet_with(k, title, rows, prefix)
 }
 
-/// The version choice ("Fassung wählen", the Mac's `confirmationDialog`): the rows of `sheet`, wider, with the closing
-/// "Abbrechen" row at the end.
-pub(crate) fn version_sheet(k: &Kit, title: &str, rows: &[(String, bool)]) -> Node {
-    sheet_with(k, title, rows, "version", true)
-}
-
-/// The key of the closing row of the version choice; it taps `close-sheet`.
-pub(crate) const VERSION_CANCEL_KEY: &str = "version-cancel";
-
-fn sheet_with(k: &Kit, title: &str, rows: &[(String, bool)], prefix: &str, cancel: bool) -> Node {
+fn sheet_with(k: &Kit, title: &str, rows: &[(String, bool)], prefix: &str) -> Node {
     let lk = &k.lk;
     let w = if lk.form == Form::Touch {
         k.env.size.w
     } else if lk.form == Form::Tv {
         760.0
-    } else if cancel {
-        440.0
     } else {
         360.0
     };
@@ -2412,7 +2619,7 @@ fn sheet_with(k: &Kit, title: &str, rows: &[(String, bool)], prefix: &str, cance
         )
         .padding(ins(0.0, 4.0, 8.0, 4.0)),
     ];
-    // A row grows with its text (a long version label wraps instead of ending in "..."), never below the row height.
+    // A row grows with its text (a long label wraps instead of ending in "..."), never below the row height.
     let row_node = |text: &str, key: &str, c: swiftly_design::Colour| {
         let mut r = wide(
             txt(k.cx, text, weight(lk.body, lk.body.size, 600), c, None)
@@ -2425,11 +2632,7 @@ fn sheet_with(k: &Kit, title: &str, rows: &[(String, bool)], prefix: &str, cance
             Alignment::LEADING,
         )
         .key(key)
-        .on_tap(Action::from(if key == VERSION_CANCEL_KEY {
-            "close-sheet"
-        } else {
-            key
-        }));
+        .on_tap(Action::from(key));
         if lk.form == Form::Desktop {
             r = r.hover_surface(
                 Color::new(1.0, 1.0, 1.0, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
@@ -2448,13 +2651,6 @@ fn sheet_with(k: &Kit, title: &str, rows: &[(String, bool)], prefix: &str, cance
             colour::FONT
         };
         kids.push(row_node(s, &format!("{prefix}:{i}"), c));
-    }
-    if cancel {
-        kids.push(row_node(
-            "Abbrechen",
-            VERSION_CANCEL_KEY,
-            colour::MARK_ACCENT,
-        ));
     }
     if lk.form == Form::Touch {
         // `SheetModifier`: the grab handle, 36 x 5, white 18 %.
@@ -2660,9 +2856,6 @@ struct Data {
     actions: Arc<ActionsPart>,
     bottom: Arc<BottomPart>,
     menu: Vec<String>,
-    versions: Vec<String>,
-    /// The heading of the version choice (the core's word).
-    version_title: String,
     /// Title and rows of the tile menu on a rail, the device names and the download sheet (sheets 3, 4 and 5).
     tile_title: String,
     tile_rows: Vec<String>,
@@ -2684,28 +2877,42 @@ fn head_of(h: &HeroPart, a: &ActionsPart, trailer: bool) -> Head {
     Head {
         id: h.id.clone(),
         image: h.image.clone(),
+        stand: Stand {
+            pictures: h.tile_images.clone(),
+            blur: h.image_blur_hash.clone(),
+        },
         title: h.title.clone(),
         secondary: h.secondary_line.clone(),
         overview: h.overview.clone(),
+        overview_wait: false,
         directors: h.directors.clone(),
         label: a.play.label.clone(),
-        enabled: a.play.enabled,
+        enabled: a.play.ready.is_ready(),
         remaining: a.play.remaining.clone(),
         progress: a.play.progress,
         watched: a.watched,
         favorite: a.favorite,
         fav_caption: a.favorite_caption.clone(),
         download: a.download.as_ref().map(|d| d.state),
-        proof: a.proof.visible.then(|| {
-            (
+        proof: if a.proof.visible
+            || matches!(a.proof.phase, swiftly_vm::ProofPhase::Waiting)
+            || a.proof.rating.is_some()
+            || a.proof.age_rating.is_some()
+        {
+            Some((
                 a.proof.direct_play,
                 a.proof.hint.clone(),
                 a.proof.rating.clone(),
                 a.proof.age_rating.as_deref().map(age_text),
-            )
-        }),
+            ))
+        } else {
+            None
+        },
+        // Like the Mac (`proof.phase != .settled`): the playback chip's slot is held from frame 1, whatever else is known.
+        proof_pending: !a.proof.visible && matches!(a.proof.phase, swiftly_vm::ProofPhase::Waiting),
         message: a.message.clone(),
         trailer,
+        versions: false,
     }
 }
 
@@ -2759,12 +2966,19 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
         Form::Desktop => {
             let top = hero(&k, h, hero_buttons(&k, h, sx.overview_open));
             let mut kids = vec![top];
+            // The cast and viewers rows stand in frame 1 (the seed's rows, or placeholders of their final height) and the
+            // real rows replace them in place; only the rails that arrive after the page fade in.
+            let mut rows = bottom_head(&k, &d.bottom);
             if d.bottom.ready && !d.hold_bottom {
-                kids.push(
-                    bottom(&k, &d.bottom, 36.0)
-                        .padding(ins(0.0, 0.0, 0.0, 0.0))
-                        .opacity(d.bottom_alpha, swiftly_ui::Motion::Instant),
+                let alpha = d.bottom_alpha;
+                rows.extend(
+                    bottom_rest(&k, &d.bottom)
+                        .into_iter()
+                        .map(|n| n.opacity(alpha, swiftly_ui::Motion::Instant)),
                 );
+            }
+            if !rows.is_empty() {
+                kids.push(bottom_stack(&k, rows, 36.0));
             }
             let stack = wide(
                 Node::vstack(Align::Start, Some(0.0), kids),
@@ -2833,22 +3047,13 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
             Alignment::TOP,
         );
     }
-    if lk.form == Form::Desktop
-        && let Some(menu) = sx.menu.overlay(cx, env)
-    {
+    if let Some(menu) = sx.menu.overlay(cx, env) {
         page = page.overlay(menu, Alignment::TOP_LEADING);
     }
     match sx.sheet {
         1 => {
             let rows: Vec<(String, bool)> = d.menu.iter().map(|s| (s.clone(), false)).collect();
             page = page.overlay(sheet(&k, &h.title, &rows, "menu"), Alignment::CENTER);
-        }
-        2 => {
-            let rows: Vec<(String, bool)> = d.versions.iter().map(|s| (s.clone(), false)).collect();
-            page = page.overlay(
-                version_sheet(&k, &d.version_title, &rows),
-                Alignment::CENTER,
-            );
         }
         3 => {
             let rows: Vec<(String, bool)> =
@@ -2892,16 +3097,6 @@ const RESOLVE_WAIT_MS: f64 = 8000.0;
 const FAILED_VERSIONS: &str =
     "Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal.";
 
-/// The heading of the version choice, the core's own word (`film.model.actions.play.versionTitle`).
-fn actions_version_title(vm: &DetailVm<AppTransport>) -> String {
-    let t = vm.actions().play.version_title.clone();
-    if t.is_empty() {
-        "Fassung wählen".into()
-    } else {
-        t
-    }
-}
-
 /// The Detail screen: a UI over a `DetailVm`, pushed from a poster of a list.
 pub struct DetailScreen {
     host: Pushed<Data>,
@@ -2917,6 +3112,7 @@ pub struct DetailScreen {
     art: Rc<Art>,
     vm: DetailVm<AppTransport>,
     menu: Vec<MenuEntry>,
+    /// The versions the open version menu lists (a pick is looked up here).
     versions: Vec<swiftly_vm::VersionOption>,
     log: Vec<String>,
     tile_id: Option<String>,
@@ -2929,8 +3125,6 @@ pub struct DetailScreen {
     person_req: Option<crate::pages_screen::PersonTap>,
     /// The similar or collection tile that was tapped (the Mac's `navigator.openIt(.title)`), once.
     tile_req: Option<Tile>,
-    /// Title and start second of the open version sheet.
-    choose: Option<(String, f64)>,
     /// When the message strip appeared (ms); it withdraws itself after 3 s (`HintStrip`).
     message_since: Option<f64>,
     /// Trailer links the core wants opened in the browser (`DetailEffect::OpenWeb`), taken by the app.
@@ -2981,10 +3175,14 @@ impl DetailScreen {
             Some((id, name)) => title_data::detail_vm_for(scenario, id, name),
             None => title_data::detail_vm(scenario),
         };
+        Self::from_vm(env, cx, vm, bare)
+    }
+
+    fn from_vm(env: Env, cx: Cx, vm: DetailVm<AppTransport>, bare: bool) -> DetailScreen {
         let art = Rc::new(Art::new(&cx));
         let icons = Icons::new(&cx, env.scale);
         let art2 = Rc::clone(&art);
-        let data = Self::data(&vm, &[]);
+        let data = Self::data(&vm);
         let art3 = Rc::clone(&art);
         let host = Pushed::new(env, cx, data, art, bare, move |d, sx, env, cx| {
             page(d, sx, env, cx, &art2, &icons)
@@ -3009,7 +3207,6 @@ impl DetailScreen {
             download_req: None,
             person_req: None,
             tile_req: None,
-            choose: None,
             message_since: None,
             web_req: Vec::new(),
             resolving: None,
@@ -3022,19 +3219,18 @@ impl DetailScreen {
         s
     }
 
-    fn data(vm: &DetailVm<AppTransport>, versions: &[swiftly_vm::VersionOption]) -> Data {
+    fn data(vm: &DetailVm<AppTransport>) -> Data {
         let (hero, actions, bottom) = (vm.hero(), vm.actions(), vm.bottom());
-        let head = head_of(&hero, &actions, true);
-        let loading = !bottom.ready && !actions.play.enabled;
+        let mut head = head_of(&hero, &actions, true);
+        head.versions = vm.versions().len() >= 2;
+        head.overview_wait = hero.overview.is_none() && hero.failure.is_none() && !bottom.ready;
+        let loading = !bottom.ready && !actions.play.ready.is_ready();
         Data {
             menu: vm.more_menu().into_iter().map(|e| e.text).collect(),
             tile_title: String::new(),
             tile_rows: Vec::new(),
             devices: Vec::new(),
             load: crate::load_panel::LoadSpec::demo(""),
-            // `MediaSource.versionLabel` of the core: the name (or "Fassung"), then the technical line.
-            versions: versions.iter().map(|v| v.label.clone()).collect(),
-            version_title: actions_version_title(vm),
             failed: bottom.ready && !actions.proof.visible,
             hero,
             actions,
@@ -3050,7 +3246,7 @@ impl DetailScreen {
 
     fn refresh(&mut self) {
         self.menu = self.vm.more_menu();
-        let mut d = Self::data(&self.vm, &self.versions);
+        let mut d = Self::data(&self.vm);
         let tile = self.tile_id.as_ref().and_then(|id| self.rail_tile(id));
         let mcx = crate::tile_menu::context_for(tile.as_ref());
         let form = Form::of(self.host.ui().env().idiom);
@@ -3159,17 +3355,53 @@ impl DetailScreen {
         self.host.pop(now)
     }
 
-    /// The server answered a start with several versions (Plex): opens the version sheet for the title.
-    pub fn offer_versions(
+    /// Opens the version menu of the Play button: only the versions the core lists, the default one checked. Nothing
+    /// opens for a title with one version, a copy on the device or versions not known yet (the core's list is empty).
+    /// `keyboard` highlights the first row at once. True when a menu opened.
+    pub fn open_versions(&mut self, anchor: Anchor, keyboard: bool) -> bool {
+        let versions = self.vm.versions();
+        self.show_versions(versions, anchor, keyboard)
+    }
+
+    /// The version menu from the Play button's own rect: a long press, the Menu key, Shift+F10 and Ctrl+Enter.
+    pub fn open_versions_at_play(&mut self, keyboard: bool) -> bool {
+        let rect = self
+            .host
+            .ui()
+            .frame_of("play")
+            .map_or(swiftly_layout::Rect::new(0.0, 0.0, 280.0, 56.0), |f| {
+                swiftly_layout::Rect::new(f[0], f[1], f[2], f[3])
+            });
+        self.open_versions(Anchor::Button(rect), keyboard)
+    }
+
+    /// Whether Play has a version choice to offer now (the keyboard command is enabled by it).
+    pub fn versions_offered(&self) -> bool {
+        !self.vm.versions().is_empty()
+    }
+
+    fn show_versions(
         &mut self,
-        item_id: String,
-        since: f64,
         versions: Vec<swiftly_vm::VersionOption>,
-    ) {
-        self.choose = Some((item_id, since));
+        anchor: Anchor,
+        keyboard: bool,
+    ) -> bool {
+        if versions.len() < 2 || self.host.sx.menu.is_open() || self.host.sx.sheet != 0 {
+            return false;
+        }
+        self.host.sx.menu.open(
+            version_entries(&versions),
+            anchor,
+            VERSION_MENU_WIDTH,
+            keyboard,
+        );
+        if keyboard {
+            // Opened by the keyboard, Enter starts the default version: the highlight starts on the checked row.
+            self.host.sx.menu.highlight_checked();
+        }
         self.versions = versions;
-        self.log.push("play choose".into());
-        self.host.sx.sheet = 2;
+        self.log.push("versions open".into());
+        true
     }
 
     /// What the core tells the host to do (the Mac's `DetailView.drain`): play, open a trailer page, open the add
@@ -3242,22 +3474,9 @@ impl DetailScreen {
             return;
         }
         match action {
-            // The versions are not known yet (the entry came without them and the fresh title is on its way): the press
-            // waits for them, with the same time limit as the second fetch, instead of vanishing.
-            PlayAction::Wait => {
-                if self.resolving.is_none() {
-                    // NaN: no position of its own, the page's resume point applies once the versions are there.
-                    self.resolving = Some((since.unwrap_or(f64::NAN), now));
-                    self.vm.send(DetailIntent::Refresh);
-                }
-            }
-            PlayAction::Choose {
-                item_id,
-                since: at,
-                versions,
-            } => {
-                self.offer_versions(item_id, since.unwrap_or(at), versions);
-            }
+            // The versions are not known yet: the core holds the press and sends it back as an effect (a `Play` action)
+            // when they are there, so the page keeps nothing of its own.
+            PlayAction::Wait => {}
             PlayAction::Resolve { since: at, .. } => {
                 // The fresh title never came: fetch it once more and decide again.
                 if self.resolving.is_none() {
@@ -3336,9 +3555,23 @@ impl DetailScreen {
                 self.host.sx.menu.close();
             } else if desktop && is("more") {
                 self.open_more_menu();
-            } else if desktop && is("play-menu") {
+            } else if is(PLAY_MENU) {
+                // Right click on Play: the versions at the pointer (nothing with one version).
                 let p = self.host.pointer;
-                self.open_more_menu_at(Anchor::Pointer(swiftly_layout::Point::new(p.0, p.1)));
+                self.open_versions(Anchor::Pointer(swiftly_layout::Point::new(p.0, p.1)), false);
+            } else if is(PLAY_HOLD) {
+                self.open_versions_at_play(false);
+            } else if let Some(id) = self
+                .versions
+                .iter()
+                .find(|v| is(&format!("ver:{}", v.id)))
+                .map(|v| v.id.clone())
+            {
+                // A row of the version menu: the Mac's `pickVersion`, the core's `play(pick)`.
+                self.host.sx.menu.close();
+                let action = self.vm.play(Some(&id));
+                self.log.push(format!("start version {id}"));
+                self.launch(action, None, now);
             } else if desktop && let Some(id) = pressed.clone() {
                 // Right click on a rail tile: the menu at the pointer, same entries as the sheet.
                 self.tile_id = Some(id);
@@ -3397,6 +3630,7 @@ impl DetailScreen {
                     role: c.role,
                     image: c.image,
                     origin: Some(self.vm.hero().title.clone()),
+                    tmdb: None,
                 });
             } else if is("favorite") {
                 self.vm.send(DetailIntent::SetWatchlist {
@@ -3446,20 +3680,6 @@ impl DetailScreen {
                     if is(&format!("menu:{i}")) {
                         self.host.sx.sheet = 0;
                         self.vm.send(DetailIntent::Menu(self.menu[i].kind.clone()));
-                    }
-                }
-                for i in 0..self.versions.len() {
-                    if is(&format!("version:{i}")) {
-                        self.host.sx.sheet = 0;
-                        self.play_req = self.choose.clone().map(|(item_id, since)| {
-                            crate::live_play::PlayRequest {
-                                item_id,
-                                since,
-                                source_id: Some(self.versions[i].id.clone()),
-                            }
-                        });
-                        self.log
-                            .push(format!("start version {}", self.versions[i].id));
                     }
                 }
                 self.log.push(format!("tap {}", a.0));
@@ -3522,6 +3742,9 @@ impl DetailScreen {
             }
             self.host.sx.sheet = 0;
             match e {
+                Entry::Load if crate::live::current().is_some() => {
+                    crate::desk::request_download(&id);
+                }
                 Entry::Load => {
                     self.load = crate::load_panel::LoadSpec::demo(
                         tile.as_ref().map_or("", |t| t.title.as_str()),
@@ -3780,7 +4003,7 @@ impl DetailScreen {
         self.open_sheet(5);
     }
 
-    /// The sheet in front: 0 none, 1 More, 2 versions, 3 tile menu, 4 devices, 5 download.
+    /// The sheet in front: 0 none, 1 More, 3 tile menu, 4 devices, 5 download (2 was the version sheet, now the menu).
     pub fn sheet_kind(&self) -> u8 {
         self.host.sx.sheet
     }
@@ -3872,54 +4095,191 @@ mod round2_tests {
         assert!(!s.is_open(), "the second Esc leaves the page");
     }
 
-    /// The version choice is the Mac's "Fassung wählen": a centred card, a wrapping row per version, "Abbrechen" at the
-    /// end, and Esc or "Abbrechen" closes it without starting anything.
-    #[test]
-    fn the_version_choice_is_a_centred_card_with_wrapping_rows_and_a_cancel_row() {
-        let mut s = demo();
-        s.open(0.0);
-        let long = "Director's Cut with a very long name of the file \u{b7} 2160p \u{b7} HEVC \u{b7} Dolby Vision \u{b7} 17,2 GB";
-        s.offer_versions(
-            "m0".into(),
-            0.0,
-            vec![
-                swiftly_vm::VersionOption {
-                    id: "a".into(),
-                    name: "A".into(),
-                    label: long.into(),
-                },
-                swiftly_vm::VersionOption {
-                    id: "b".into(),
-                    name: "B".into(),
-                    label: "1080p".into(),
-                },
-            ],
-        );
-        let mut now = 0.0;
+    fn three_versions() -> Vec<swiftly_vm::VersionOption> {
+        let v = |id: &str, label: &str, is_default: bool| swiftly_vm::VersionOption {
+            id: id.into(),
+            name: label.into(),
+            label: label.into(),
+            is_default,
+        };
+        vec![
+            v(
+                "a",
+                "Kinofassung \u{b7} 2160p \u{b7} HEVC \u{b7} 18,6 GB",
+                false,
+            ),
+            v(
+                "b",
+                "Extended \u{b7} 1080p \u{b7} H.264 \u{b7} 9,2 GB",
+                true,
+            ),
+            v(
+                "c",
+                "Director's Cut \u{b7} 720p \u{b7} H.264 \u{b7} 4,1 GB",
+                false,
+            ),
+        ]
+    }
+
+    fn settle(s: &mut DetailScreen, mut now: f64) -> f64 {
         for _ in 0..30 {
             now += 16.0;
             let _ = s.frame(now);
         }
-        let cancel = s.frame_of(VERSION_CANCEL_KEY).expect("an Abbrechen row");
-        let long_row = s.frame_of("version:0").expect("first row");
-        let short_row = s.frame_of("version:1").expect("second row");
-        assert!(long_row[3] > short_row[3] + 8.0, "the long label wraps");
-        assert!(cancel[1] > short_row[1], "Abbrechen comes last");
-        let centre = long_row[0] + long_row[2] / 2.0;
-        assert!(
-            (centre - 640.0).abs() < 4.0,
-            "centred over the window: {centre}"
-        );
-        // A tap on "Abbrechen" closes the sheet and starts nothing.
-        let (x, y) = (cancel[0] + cancel[2] / 2.0, cancel[1] + cancel[3] / 2.0);
+        now
+    }
+
+    /// The version menu lists only the versions (no play row, no cover, no cancel row), the default one checked, and
+    /// a row starts that version through the core's `play(pick)`.
+    #[test]
+    fn the_version_menu_lists_only_the_versions_and_a_pick_starts_that_one() {
+        let entries = version_entries(&three_versions());
+        assert_eq!(entries.len(), 3, "one row per version, nothing else");
+        let checked: Vec<bool> = entries
+            .iter()
+            .map(|e| match e {
+                PopEntry::Item(i) => i.checked,
+                PopEntry::Separator => false,
+            })
+            .collect();
+        assert_eq!(checked, [false, true, false], "only the default is marked");
+        let mut s = demo();
+        s.open(0.0);
+        let now = settle(&mut s, 0.0);
+        let play = s.frame_of("play").expect("the Play button");
+        assert!(s.show_versions(
+            three_versions(),
+            Anchor::Button(swiftly_layout::Rect::new(
+                play[0], play[1], play[2], play[3]
+            )),
+            false
+        ));
+        assert!(s.menu_open());
+        let now = settle(&mut s, now);
+        // Choosing the third row (the action of its row) starts that version of the title.
+        s.host.injected.push(version_action("c"));
+        s.drain(now);
+        assert!(!s.menu_open(), "a pick closes the menu");
+        let req = s.play_req.take().expect("the pick starts the title");
+        assert_eq!(req.source_id.as_deref(), Some("c"));
+    }
+
+    /// Proof picture: the open version menu (three versions, the middle one the default) under the Play button, drawn
+    /// headless by the software renderer from the same draw list the window presents. Written only when
+    /// `SWIFTLY_PROOF_DIR` names a folder.
+    #[test]
+    fn proof_picture_of_the_open_version_menu() {
+        let Some(dir) = std::env::var_os("SWIFTLY_PROOF_DIR") else {
+            return;
+        };
+        let env = Env::new(Size::new(1280.0, 800.0), 1.5, swiftly_ui::Idiom::Desktop);
+        let mut s = DetailScreen::new(env, Cx::deterministic(), Scenario::Ready);
+        s.open(0.0);
+        let mut now = settle(&mut s, 0.0);
+        assert!(s.open_versions_at_play(false));
+        now = settle(&mut s, now);
+        let list = s.frame(now).0;
+        let img = s.render_software(&list);
+        img.write_png(&std::path::Path::new(&dir).join("desktop-versions-menu.png"))
+            .expect("png");
+    }
+
+    /// A title with one version has no choice to offer: a press held for 700 ms is still a tap and plays (a long press
+    /// on Play would swallow it and open nothing).
+    #[test]
+    fn a_press_held_on_play_still_plays_a_title_with_one_version() {
+        let env = Env::new(Size::new(1280.0, 800.0), 1.0, swiftly_ui::Idiom::Desktop);
+        let vm = title_data::detail_vm_one_version(Scenario::Ready);
+        let mut s = DetailScreen::from_vm(env, Cx::deterministic(), vm, false);
+        let _ = s.frame(0.0);
+        s.open(0.0);
+        let mut now = settle(&mut s, 0.0);
+        assert!(!s.versions_offered(), "one version: nothing to choose");
+        let play = s.frame_of("play").expect("the Play button");
+        let (x, y) = (play[0] + play[2] / 2.0, play[1] + play[3] / 2.0);
         s.touch_down(x, y, now);
-        s.touch_up(x, y, now + 30.0);
-        for _ in 0..10 {
-            now += 16.0;
-            let _ = s.frame(now);
-        }
-        assert_eq!(s.sheet_kind(), 0, "closed");
-        assert!(s.play_req.is_none(), "nothing started");
+        now += 700.0;
+        let _ = s.frame(now);
+        s.touch_up(x, y, now + 16.0);
+        assert!(!s.menu_open(), "there is no version menu to open");
+        assert!(
+            s.play_req.is_some(),
+            "the held press played the title: {:?}",
+            s.log()
+        );
+    }
+
+    /// Opened by the keyboard (Ctrl+Enter, the Menu key, Shift+F10), the highlight starts on the checked default
+    /// version, so Enter starts the default and the arrows move from there.
+    #[test]
+    fn a_keyboard_opened_version_menu_starts_on_the_default_and_enter_starts_it() {
+        let mut s = demo();
+        s.open(0.0);
+        let now = settle(&mut s, 0.0);
+        let play = s.frame_of("play").expect("the Play button");
+        let at = Anchor::Button(swiftly_layout::Rect::new(
+            play[0], play[1], play[2], play[3],
+        ));
+        assert!(s.show_versions(three_versions(), at, true));
+        assert_eq!(
+            s.host.sx.menu.highlighted(),
+            Some(1),
+            "the checked row, not the first"
+        );
+        let now = settle(&mut s, now);
+        let _ = s.nav_key(swiftly_ui::NavKey::Enter, true, now);
+        assert!(!s.menu_open(), "Enter closes the menu");
+        let req = s.play_req.take().expect("Enter starts the default version");
+        assert_eq!(req.source_id.as_deref(), Some("b"));
+    }
+
+    /// One version, or none known: nothing opens.
+    #[test]
+    fn with_fewer_than_two_versions_nothing_opens() {
+        let mut s = demo();
+        s.open(0.0);
+        let _ = settle(&mut s, 0.0);
+        let at = Anchor::Pointer(swiftly_layout::Point::new(10.0, 10.0));
+        let one = vec![three_versions().remove(0)];
+        assert!(!s.show_versions(one, at, false));
+        assert!(!s.show_versions(Vec::new(), at, true));
+        assert!(!s.menu_open());
+    }
+
+    /// Right click, a long press and the keyboard path on the real Play button open the core's versions (the demo title
+    /// lists several); a long press is no tap, so Play does not start.
+    #[test]
+    fn right_click_long_press_and_the_keyboard_open_the_versions_of_the_core() {
+        let mut s = demo();
+        s.open(0.0);
+        let mut now = settle(&mut s, 0.0);
+        assert!(
+            s.versions_offered(),
+            "the demo title lists several versions"
+        );
+        let play = s.frame_of("play").expect("the Play button");
+        let (x, y) = (play[0] + play[2] / 2.0, play[1] + play[3] / 2.0);
+        assert!(
+            s.secondary_click(x, y, now),
+            "the button takes a right click"
+        );
+        assert!(s.menu_open(), "right click opens the versions");
+        s.close_menu();
+        now = settle(&mut s, now);
+        s.touch_down(x, y, now);
+        now += 700.0;
+        let _ = s.frame(now);
+        assert!(s.menu_open(), "a long press opens the versions");
+        s.touch_up(x, y, now + 16.0);
+        assert!(
+            s.play_req.is_none(),
+            "a long press is not a tap: Play did not start"
+        );
+        s.close_menu();
+        assert!(
+            s.open_versions_at_play(true),
+            "the keyboard path opens them too"
+        );
     }
 
     #[test]
@@ -3941,23 +4301,13 @@ mod round2_tests {
     }
 
     #[test]
-    fn a_press_while_the_versions_are_unknown_waits_and_then_says_it_failed() {
+    fn a_press_while_the_versions_are_unknown_is_held_by_the_core_not_by_the_page() {
         let mut s = demo();
         s.launch(PlayAction::Wait, None, 0.0);
         assert!(
-            s.resolving.is_some(),
-            "a press on a gray Play must not vanish: it waits for the versions"
+            s.resolving.is_none() && s.play_req.is_none(),
+            "the core holds the press; a second hold here would start the title twice"
         );
-        assert!(s.play_req.is_none() && s.choose.is_none());
-        // The demo title is complete, so the wait ends with the core's decision; the position stays the page's own.
-        s.pump_resolve(100.0);
-        assert!(s.resolving.is_none(), "decided");
-        assert!(s.notice.is_none(), "nothing failed");
-        match (&s.play_req, &s.choose) {
-            (Some(req), _) => assert!(!req.since.is_nan(), "{req:?}"),
-            (None, Some(_)) => {}
-            _ => panic!("the press neither started the title nor asked for a version"),
-        }
     }
 
     #[test]

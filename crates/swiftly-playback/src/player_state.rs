@@ -339,7 +339,12 @@ impl PlayerState {
         self.video_size
     }
 
-    /// Playback speed.
+    /// The picture fills the frame.
+    pub fn fill_on(&self) -> bool {
+        self.fill_on
+    }
+
+    /// The playback speed.
     pub fn tempo(&self) -> f32 {
         self.tempo
     }
@@ -745,6 +750,12 @@ impl PlayerState {
             Intent::Pip(_) => {}
         }
         out
+    }
+
+    /// Takes back an [`Intent::Stop`] that only began a switch which then failed: the title that was over stays
+    /// over on its last frame, and its next replay or seek loads it again (`load` does nothing while stopped).
+    pub fn reopen(&mut self) {
+        self.stopped = false;
     }
 
     /// Selects a subtitle by server index; `false` if this source has no such track, in which

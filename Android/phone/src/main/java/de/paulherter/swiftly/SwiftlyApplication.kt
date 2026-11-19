@@ -71,6 +71,9 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
 
     /** The open selection sheet. It sits above the bar, so the app holds it, not the page. */
     val sheet = androidx.compose.runtime.mutableStateOf<SheetRequest?>(null)
+    /** Debug builds only (`testOpen` launch extra, proof runs): a page to open cold once the account is there, and whether its request sheet opens by itself (`testSheet`). */
+    val debugOpen = androidx.compose.runtime.mutableStateOf<Destination?>(null)
+    var debugSheet = false
 
     /** What is currently playing. The player sits above all pages, below the sheet. */
     val play = androidx.compose.runtime.mutableStateOf<PlayRequest?>(null)
@@ -83,6 +86,12 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     val playbackEnded = androidx.compose.runtime.mutableIntStateOf(0)
     /** Counts watch-state changes made from a tile menu (`AppModel.watchStateChanged`); pages refresh. */
     val watchStateChanged = androidx.compose.runtime.mutableIntStateOf(0)
+    /**
+     * Titles removed from "Continue watching" that the row hides at once, before the server has answered
+     * (`HomeIntent::RemoveFromContinue` on the core's home: the row drops the tile, a refusal puts it back
+     * with a hint). A refusal takes the id out again; a load that no longer lists it does too.
+     */
+    val continueHidden = androidx.compose.runtime.mutableStateOf<Set<String>>(emptySet())
     /** A short message above everything, as reported by a tile menu (`TileRequest.meldung`). */
     val message = androidx.compose.runtime.mutableStateOf<String?>(null)
 
@@ -173,8 +182,8 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
 
     /** Is Seerr connected? If not, nothing of it is visible anywhere. */
     val seerrConnected = androidx.compose.runtime.mutableStateOf(false)
-    /** Results whose detail page is open; the page needs status, year and image up front. */
-    val seerrHit = mutableMapOf<String, SeerrTile>()
+    /** The shared core's Seerr screens over the stored connection (call from a background thread). */
+    val seerr by lazy { SeerrScreens(this) }
 
     /** One access per Jellyfin server, so Seerr survives a switch to another server. */
     private fun seerrKey(): String = "seerr|" + seerrServer()
@@ -191,23 +200,19 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     fun seerrAdopt(access: String) {
         val old = store.vaultRead(seerrKey())
         if (old == access || (old == null && access.isEmpty())) return
-        val address = { a: String? -> a?.let { runCatching { org.json.JSONObject(it).optString("adresse") }.getOrNull() } }
-        // Another address: the old one's cookies must not stay behind.
-        if (old != null && address(old) != address(access.ifEmpty { null })) rk.seerrDisconnect()
         if (access.isEmpty()) {
-            store.vaultWrite(seerrKey(), null); rk.seerrDisconnect(); seerrConnected.value = false
+            store.vaultWrite(seerrKey(), null); seerrConnected.value = false
         } else {
-            store.vaultWrite(seerrKey(), access); rk.seerrSet(access); seerrConnected.value = true
+            store.vaultWrite(seerrKey(), access); seerrConnected.value = true
         }
     }
 
     fun seerrLoad() {
         val access = store.vaultRead(seerrKey())
-        if (access != null) rk.seerrSet(access) else rk.seerrDisconnect()
         seerrConnected.value = access != null
     }
     fun seerrRemember(access: String) { store.vaultWrite(seerrKey(), access); seerrConnected.value = true; seerrChanged?.invoke() }
-    fun seerrDisconnect() { store.vaultWrite(seerrKey(), null); rk.seerrDisconnect(); seerrConnected.value = false; seerrChanged?.invoke() }
+    fun seerrDisconnect() { store.vaultWrite(seerrKey(), null); seerrConnected.value = false; seerrChanged?.invoke() }
     fun seerrAddress(): String? = store.vaultRead(seerrKey())?.let {
         runCatching { org.json.JSONObject(it).optString("adresse") }.getOrNull()
     }

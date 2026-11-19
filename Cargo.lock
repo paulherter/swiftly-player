@@ -4531,6 +4531,7 @@ version = "1.1.0"
 dependencies = [
  "accesskit",
  "accesskit_winit",
+ "ash",
  "embed-resource",
  "futures-executor",
  "futures-util",
@@ -4938,6 +4939,7 @@ dependencies = [
  "swiftly-model",
  "swiftly-net",
  "swiftly-playback",
+ "swiftly-player-surface",
  "swiftly-plex",
  "swiftly-rules",
  "swiftly-seerr",
@@ -4975,6 +4977,7 @@ dependencies = [
  "swiftly-rules",
  "swiftly-seerr",
  "swiftly-settings",
+ "swiftly-support",
  "swiftly-sync",
  "tokio",
  "workspace-hack",
@@ -4985,6 +4988,8 @@ name = "swiftly-wslink"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "swiftly-hardening",
+ "swiftly-sync",
  "swiftly-uniffi",
  "tokio",
  "tungstenite",

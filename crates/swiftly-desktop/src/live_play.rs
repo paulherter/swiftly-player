@@ -54,39 +54,18 @@ pub struct PlayRequest {
     pub source_id: Option<String>,
 }
 
-/// A title with several versions and no pick: the host asks, then starts again with the chosen `source_id`.
-#[derive(Debug, Clone)]
-pub struct VersionAsk {
-    /// The title.
-    pub item_id: String,
-    /// The start meant for the pick.
-    pub since: f64,
-    /// The versions to choose from.
-    pub versions: Vec<swiftly_vm::VersionOption>,
-}
-
-/// What a start comes to: a title ready for the engine, or a question about its versions.
+/// What a start comes to: a title ready for the engine. A press without a pick starts the default version at once; the
+/// other versions are the Play button's menu (`DetailVm::versions`), never a question after the press.
 pub enum Prepared {
     /// Everything fetched, the engine can start.
     Ready(Box<Ready>),
-    /// Several versions (Plex): ask first.
-    Choose(VersionAsk),
 }
 
 impl Prepared {
-    /// The ready title, `None` while a version is asked for.
+    /// The ready title.
     pub fn ready(&self) -> Option<&Ready> {
         match self {
             Prepared::Ready(r) => Some(r),
-            Prepared::Choose(_) => None,
-        }
-    }
-
-    /// The question about the versions, `None` for a ready title.
-    pub fn ask(&self) -> Option<&VersionAsk> {
-        match self {
-            Prepared::Choose(a) => Some(a),
-            Prepared::Ready(_) => None,
         }
     }
 }
@@ -160,7 +139,16 @@ impl swiftly_library::KeyValue for SettingsKv {
     }
 }
 
-fn text(store: &swiftly_settings::JsonFileStore, key: &str) -> String {
+/// "Untertitel automatisch" (`utAuto`): what the settings hold, else the one default of the track rule (on).
+pub(crate) fn automatic_subtitles(store: &swiftly_settings::JsonFileStore) -> bool {
+    match store.get("utAuto") {
+        Some(Value::Bool(on)) => on,
+        _ => track_rule::AUTOMATIC_SUBTITLES_DEFAULT,
+    }
+}
+
+/// A text setting, empty when it is missing.
+pub(crate) fn text(store: &swiftly_settings::JsonFileStore, key: &str) -> String {
     match store.get(key) {
         Some(Value::Str(s)) => s,
         _ => String::new(),
@@ -181,6 +169,16 @@ impl Ready {
     /// The server the reports go to.
     pub fn server(&self) -> &Server {
         &self.server
+    }
+
+    /// What the technical overlay says about the file (delivery, tracks, container); the diagnosis tools read it.
+    pub fn tech(&self) -> Option<&crate::player_host::TechFacts> {
+        self.extra.tech.as_ref()
+    }
+
+    /// Whether the plan asks the engine for software decoding.
+    pub fn software_decode(&self) -> bool {
+        self.spec.request.software_decode
     }
 
     /// The preview offer of the title (Plex: the BIF behind the part).
@@ -333,12 +331,12 @@ async fn prepare(
         )),
     )
     .await
-    .map_err(|e| format!("{e:?}"))?
+    .map_err(|e| crate::live::say(&e))?
     .ok_or("Der Server nennt keine Datei zu diesem Titel.")?;
     let item = client
         .item(&req.item_id)
         .await
-        .map_err(|e| format!("{e:?}"))?;
+        .map_err(|e| crate::live::say(&e))?;
     let sections = sections(&client, &req.item_id).await;
     let streams = plan
         .source
@@ -352,7 +350,7 @@ async fn prepare(
     let source = plan.source.as_ref();
     let subs = memory.load(track_rule::SUBTITLE_KEY);
     let auds = memory.load(track_rule::AUDIO_KEY);
-    let truthy = |k: &str| matches!(store.get(k), Some(Value::Bool(true)));
+    let device = crate::device_language::device_language();
     let picked = track_rule::start_indices(
         &streams,
         &track_rule::StartInput {
@@ -360,9 +358,11 @@ async fn prepare(
             remembered_subtitle: track_rule::read_choice(&subs, &track_title),
             server_audio: source.and_then(|s| s.default_audio_stream_index),
             server_subtitle: source.and_then(|s| s.default_subtitle_stream_index),
-            automatic: truthy("utAuto"),
+            automatic: automatic_subtitles(&store),
             audio_language: &text(&store, "tonSprache"),
             subtitle_language: &text(&store, "utSprache"),
+            device_language: device.as_deref(),
+            original: track_rule::OriginalStep::On(item.original_language.as_deref()),
         },
     );
     let audio = picked
@@ -495,7 +495,6 @@ async fn prepare_plex(
 ) -> Result<Prepared, String> {
     use swiftly_vm::{NextSource, StartAnswer, StartRequest, StartSettings};
     let memory = Arc::new(SettingsMemory(Arc::clone(&store)));
-    let truthy = |k: &str| matches!(store.get(k), Some(Value::Bool(true)));
     let key = account.key();
     let request = StartRequest {
         item_id: req.item_id.clone(),
@@ -504,15 +503,16 @@ async fn prepare_plex(
         flavour: flavour(),
         hardware_av1: false,
         no_dolby_vision_decoder: false,
-        // No pick yet: a title with several versions comes back as `Choose` (the detail page asks before it gets here).
-        ask_versions: req.source_id.is_none(),
+        // No pick: the plan takes the default version; the other versions are the Play button's menu.
+        ask_versions: false,
         downloaded: None,
         ordered: None,
         account_key: Some(key.clone()),
         settings: StartSettings {
             audio_language: text(&store, "tonSprache"),
             subtitle_language: text(&store, "utSprache"),
-            automatic_subtitles: truthy("utAuto"),
+            automatic_subtitles: automatic_subtitles(&store),
+            device_language: crate::device_language::device_language(),
             max_bitrate: extras.max_bitrate,
             buffer_level: BufferLevel::Normal,
             frame_rate_match: false,
@@ -526,25 +526,15 @@ async fn prepare_plex(
     let answer =
         swiftly_vm::play_start(Arc::clone(&net), &host, &account, &request, Some(&*memory))
             .await
-            .map_err(|e| format!("{e:?}"))?;
+            .map_err(|e| crate::live::say(&e))?;
     let ready = match answer {
         StartAnswer::Ready(r) => r,
         StartAnswer::NoSource => return Err("Der Server nennt keine Datei zu diesem Titel.".into()),
-        StartAnswer::Choose {
-            item,
-            versions,
-            since,
-        } => {
-            return Ok(Prepared::Choose(VersionAsk {
-                item_id: item.id,
-                since,
-                versions,
-            }));
-        }
-        StartAnswer::VersionsFailed => {
+        // Never asked for (`ask_versions` is off), but the answer type has it.
+        StartAnswer::Choose { .. } | StartAnswer::VersionsFailed => {
             return Err("Die Fassungen des Titels lassen sich nicht laden.".into());
         }
-        StartAnswer::Failed(e) => return Err(format!("{e:?}")),
+        StartAnswer::Failed(e) => return Err(crate::live::say(&e)),
     };
     let mut r = *ready;
     // A subtitle picked while a transcode runs: the same plan again, asking for the track (Plex burns it in).
@@ -607,7 +597,7 @@ async fn prepare_plex(
         downloaded: false,
     };
     let server =
-        match swiftly_vm::make_client(&net, &host, &account).map_err(|e| format!("{e:?}"))? {
+        match swiftly_vm::make_client(&net, &host, &account).map_err(|e| crate::live::say(&e))? {
             s @ Server::Plex(_) => s,
             Server::Jellyfin(_) => return Err("Kein Plex-Konto.".into()),
         };
@@ -679,7 +669,7 @@ impl Core {
                 });
             }
             Err(e) => {
-                let _ = tx.send(Err(format!("{e:?}")));
+                let _ = tx.send(Err(crate::live::say(&e)));
             }
         }
         rx
@@ -948,9 +938,7 @@ impl Core {
         now: f64,
         p: Prepared,
     ) -> Result<PlayerScreen, String> {
-        let Prepared::Ready(p) = p else {
-            return Err("Die Fassung muss erst gewählt werden.".into());
-        };
+        let Prepared::Ready(p) = p;
         let p = *p;
         let (engine, feed) = match FACTORY.get() {
             Some(f) => f()?,
@@ -1074,6 +1062,7 @@ pub struct CorePlanner {
     host: swiftly_vm::Host,
     settings: Arc<swiftly_settings::JsonFileStore>,
     account: swiftly_vm::AccountRef,
+    sleeper: Arc<dyn swiftly_vm::Sleeper>,
     warm: Mutex<Option<Warm>>,
 }
 
@@ -1120,15 +1109,15 @@ impl CorePlanner {
                 ),
                 subtitle: ask.subtitle,
             };
-            let mut req = PlayRequest {
+            let req = PlayRequest {
                 item_id: ask.id.clone(),
                 since: ask.since,
                 source_id: ask.source_id.clone(),
             };
             let answer = async {
-                let server =
-                    swiftly_vm::make_client(&net, &host, &account).map_err(|e| format!("{e:?}"))?;
-                let mut prepared = match &server {
+                let server = swiftly_vm::make_client(&net, &host, &account)
+                    .map_err(|e| crate::live::say(&e))?;
+                let prepared = match &server {
                     Server::Jellyfin(c) => {
                         prepare(
                             Arc::clone(c),
@@ -1151,22 +1140,8 @@ impl CorePlanner {
                         .await?
                     }
                 };
-                // Several versions and none kept (a next episode): the first one plays, like the title page's fallback.
-                if let Some(first) = prepared.ask().and_then(|a| a.versions.first()) {
-                    req.source_id = Some(first.id.clone());
-                    prepared = prepare_plex(
-                        Arc::clone(&net),
-                        host.clone(),
-                        account.clone(),
-                        req,
-                        Arc::clone(&settings),
-                        extras,
-                    )
-                    .await?;
-                }
                 match prepared {
                     Prepared::Ready(r) => Ok(r.into_switched(&handle, &net)),
-                    Prepared::Choose(_) => Err("Die Fassung muss erst gewählt werden.".to_owned()),
                 }
             }
             .await;
@@ -1177,6 +1152,27 @@ impl CorePlanner {
 }
 
 impl Planner for CorePlanner {
+    fn offers_subtitle_search(&self) -> bool {
+        swiftly_vm::subtitle_search_offered(&self.account)
+    }
+
+    fn subtitle_search(
+        &self,
+        item_id: &str,
+    ) -> Option<Arc<dyn crate::player_host::SubtitleSearch>> {
+        let language = text(&self.settings, "utSprache");
+        let vm = swiftly_vm::SubtitleSearchVm::new(
+            Arc::clone(&self.net),
+            self.host.clone(),
+            Arc::clone(&self.sleeper),
+            &self.account,
+            item_id,
+            &language,
+        )
+        .ok()?;
+        Some(Arc::new(vm))
+    }
+
     fn plan(&self, ask: PlanAsk) -> Pending<Result<Switched, String>> {
         let warm = self
             .warm
@@ -1310,6 +1306,7 @@ impl Core {
             host: self.host(),
             settings: Arc::clone(&self.settings),
             account: account.clone(),
+            sleeper: self.sleeper(),
             warm: Mutex::new(None),
         })
     }
@@ -1337,6 +1334,15 @@ fn flavour() -> swiftly_playback::device_profile::Flavour {
         .get()
         .copied()
         .unwrap_or(swiftly_playback::device_profile::Flavour::Mpv)
+}
+
+/// The host's wake-up for video: libmpv's render threads call it when a frame is ready or events wait.
+static VIDEO_WAKER: std::sync::OnceLock<Arc<dyn Fn() + Send + Sync>> = std::sync::OnceLock::new();
+
+/// Registers the host's wake-up (the window's event loop). With it the player screen redraws when the picture or the
+/// clock changes instead of at every vsync, so a still or slow picture costs next to no CPU.
+pub fn set_video_waker(f: Arc<dyn Fn() + Send + Sync>) {
+    let _ = VIDEO_WAKER.set(f);
 }
 
 /// Registers the platform engine; `open_player` prefers it over libmpv.
@@ -1453,6 +1459,37 @@ impl LiveEngine for MpvFeed {
         use swiftly_player_surface::VideoSurface;
         self.0.display_hints().size
     }
+    fn wake_driven(&self) -> bool {
+        self.0.wakes_host()
+    }
+    fn stats_line(&self) -> Option<String> {
+        use swiftly_player_surface::SurfaceEngine;
+        let st = self.0.stats();
+        Some(format!(
+            "path {} hwdec {} rendered {} replaced {} decoder-drops {} output-drops {} draw p50 {:.2} ms p99 {:.2} ms at {}x{} decoded {:.1} fps",
+            st.path,
+            st.hwdec,
+            st.frames_rendered,
+            st.frames_superseded,
+            st.decoder_drops,
+            st.output_drops,
+            st.render_p50_ms,
+            st.render_p99_ms,
+            st.render_size.0,
+            st.render_size.1,
+            st.decoded_fps,
+        ))
+    }
+    #[cfg(unix)]
+    fn shared_frame(&self, max_w: u32, max_h: u32) -> crate::player_screen::SharedPoll {
+        use crate::player_screen::SharedPoll;
+        use swiftly_player_surface::{SharedStatus, VideoSurface};
+        match self.0.acquire_shared(max_w, max_h) {
+            SharedStatus::Unsupported => SharedPoll::Unsupported,
+            SharedStatus::NotReady | SharedStatus::Unchanged => SharedPoll::Nothing,
+            SharedStatus::New(frame) => SharedPoll::Frame(Box::new(frame)),
+        }
+    }
     fn frame_swap(&self, max_w: u32, max_h: u32, out: &mut swiftly_ui::VideoFrame) -> bool {
         use swiftly_player_surface::{FrameStatus, VideoSurface};
         let mut buf = self.1.lock().unwrap_or_else(PoisonError::into_inner);
@@ -1472,7 +1509,11 @@ impl LiveEngine for MpvFeed {
 #[cfg(feature = "mpv")]
 fn engine() -> Result<Engines, String> {
     use swiftly_player_surface::mpv::MpvEngine;
-    let mpv = Arc::new(MpvEngine::new()?);
+    // The GPU way (shared buffers the renderer samples) when the window's renderer can import them.
+    let mpv = Arc::new(MpvEngine::new_with(crate::frame_surface::dmabuf_wanted())?);
+    if let Some(w) = VIDEO_WAKER.get() {
+        mpv.set_waker(Arc::clone(w));
+    }
     Ok((
         Arc::clone(&mpv) as Arc<dyn PlaybackEngine>,
         Arc::new(MpvFeed::new(mpv)),
@@ -1677,6 +1718,15 @@ impl LiveEngine for IdsFeed {
     fn frame_swap(&self, max_w: u32, max_h: u32, out: &mut swiftly_ui::VideoFrame) -> bool {
         self.0.frame_swap(max_w, max_h, out)
     }
+    fn shared_frame(&self, max_w: u32, max_h: u32) -> crate::player_screen::SharedPoll {
+        self.0.shared_frame(max_w, max_h)
+    }
+    fn wake_driven(&self) -> bool {
+        self.0.wake_driven()
+    }
+    fn stats_line(&self) -> Option<String> {
+        self.0.stats_line()
+    }
 }
 
 /// The request behind a play action; `None` while the action only waits or asks.
@@ -1692,7 +1742,7 @@ pub fn request_of(a: &swiftly_vm::PlayAction) -> Option<PlayRequest> {
             since: *since,
             source_id: source_id.clone(),
         }),
-        A::Resolve { item_id, since } | A::Choose { item_id, since, .. } => Some(PlayRequest {
+        A::Resolve { item_id, since } => Some(PlayRequest {
             item_id: item_id.clone(),
             since: *since,
             source_id: None,

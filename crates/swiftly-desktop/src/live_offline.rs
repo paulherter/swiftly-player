@@ -102,7 +102,7 @@ pub fn prepare_offline(core: &Core, account: &AccountRef, id: &str) -> Result<Pr
         _ => String::new(),
     };
     // Whatever the account's kind: the reports of the stop go to that server (Jellyfin `ClientReporter`, Plex timeline).
-    let server = core.server_for(account).map_err(|e| format!("{e:?}"))?;
+    let server = core.server_for(account).map_err(|e| crate::live::say(&e))?;
     Ok(Prepared::offline(
         core,
         spec,

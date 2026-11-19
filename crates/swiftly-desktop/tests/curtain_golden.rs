@@ -61,3 +61,90 @@ fn the_start_curtain_plays_the_lottie_frames() {
         "nothing moves between frames 26 and 40"
     );
 }
+
+/// With `START_ANIM_DUMP=<dir>`: writes frames 0, 20, 40, 60 and 79 of the curtain at device scale 1.5 and 2 as PNGs
+/// (`<mode>_s<scale>_f<frame>.png`), once for a window that has its scale from the start (`native`) and once for a
+/// window that gets its scale after the curtain was built (`late`, a Wayland compositor announces it after the first
+/// frame). Nothing happens without the variable.
+#[test]
+fn the_start_curtain_frames_can_be_dumped_at_device_scales() {
+    let Some(dir) = std::env::var_os("START_ANIM_DUMP").map(PathBuf::from) else {
+        return;
+    };
+    std::fs::create_dir_all(&dir).unwrap();
+    for scale in [1.5_f32, 2.0] {
+        let px = ((1280.0 * scale) as u32, (800.0 * scale) as u32);
+        for mode in ["native", "late"] {
+            let first = if mode == "late" { 1.0 } else { scale };
+            let first_px = ((1280.0 * first) as u32, (800.0 * first) as u32);
+            let mut s = Shell::new_suite(
+                first_px,
+                first,
+                Cx::deterministic().with_image_page(4096),
+                Idiom::Desktop,
+            );
+            s.suite_mut().unwrap().enable_curtain();
+            let _ = s.frame(0.0);
+            if mode == "late" {
+                s.resize(px, scale);
+            }
+            for f in [0.0, 20.0, 40.0, 60.0, 79.0] {
+                let img = frame_at(&mut s, f);
+                img.write_png(&dir.join(format!("{mode}_s{scale}_f{}.png", f as u32)))
+                    .unwrap();
+            }
+        }
+    }
+}
+
+/// Soft edges: the share of partly covered pixels among the covered ones of the play mark at frame 20 (it is drawn at
+/// 780 % of its 100 % size there). A crisp antialiased edge leaves a few percent; the stretched picture of the old
+/// player left 27 % at scale 1.5 and 42 % when the scale arrived after the curtain was built.
+fn soft_share(img: &RgbaImage) -> f64 {
+    let bg = img.pixel(5, 5);
+    let dist = |p: [u8; 4]| -> i32 {
+        (0..3)
+            .map(|c| (i32::from(p[c]) - i32::from(bg[c])).abs())
+            .sum()
+    };
+    let (mut max, mut all) = (0, Vec::new());
+    for y in 0..img.height {
+        for x in 0..img.width {
+            let d = dist(img.pixel(x, y));
+            max = max.max(d);
+            all.push(d);
+        }
+    }
+    let part = all
+        .iter()
+        .filter(|&&d| d * 10 > max && d * 10 < max * 9)
+        .count();
+    let full = all.iter().filter(|&&d| d * 10 >= max * 9).count();
+    part as f64 / full.max(1) as f64
+}
+
+#[test]
+fn the_start_curtain_mark_stays_crisp_when_it_swells_at_any_scale() {
+    for scale in [1.5_f32, 2.0] {
+        for late in [false, true] {
+            let first = if late { 1.0 } else { scale };
+            let mut s = Shell::new_suite(
+                ((1280.0 * first) as u32, (800.0 * first) as u32),
+                first,
+                Cx::deterministic().with_image_page(4096),
+                Idiom::Desktop,
+            );
+            s.suite_mut().unwrap().enable_curtain();
+            let _ = s.frame(0.0);
+            if late {
+                s.resize(((1280.0 * scale) as u32, (800.0 * scale) as u32), scale);
+            }
+            let share = soft_share(&frame_at(&mut s, 20.0));
+            assert!(
+                share < 0.06,
+                "scale {scale}, scale announced late {late}: {:.1} % of the mark's pixels are soft",
+                share * 100.0
+            );
+        }
+    }
+}

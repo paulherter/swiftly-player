@@ -67,7 +67,10 @@ fn begun(tile: Option<&Tile>) -> bool {
 }
 
 /// The entries in Swift order for `form`: touch and tv share the list (tv has no "Laden"), the Mac adds "Von vorn",
-/// "Merken", "Zur Serie" and "Info" and has no "Laden" (its confirmation hangs at the page's download button).
+/// "Merken", "Zur Serie" and "Info". The Mac has no "Laden" here (its confirmation hangs at the page's download
+/// button); Windows and Linux have no such button on a tile, so their menu carries "Laden" like the touch one: for a
+/// film or an episode (not a series), when the download button is offered at all, and not for a title that is on the
+/// device already or queued.
 pub fn entries(form: Form, cx: &Cx, tile: Option<&Tile>) -> Vec<Entry> {
     if !carries(tile) {
         return Vec::new();
@@ -95,7 +98,13 @@ pub fn entries(form: Form, cx: &Cx, tile: Option<&Tile>) -> Vec<Entry> {
     if series || watched || begun {
         v.push(Entry::Unwatched);
     }
-    if form == Form::Touch && !series && !player && cx.host.download_button && !cx.host.on_device {
+    if form != Form::Tv
+        && !series
+        && !player
+        && cx.host.download_button
+        && !cx.host.on_device
+        && !tile.is_some_and(|t| crate::live::current().is_some_and(|w| w.on_device(&t.id)))
+    {
         v.push(Entry::Load);
     }
     if !series && !player && !cx.host.play_on.is_empty() {
@@ -181,13 +190,30 @@ pub fn label(e: &Entry, cx: &Cx, tile: Option<&Tile>) -> &'static str {
 
 /// The sheet rows of the menu.
 pub fn rows(form: Form, cx: &Cx, tile: Option<&Tile>) -> Vec<SheetRow> {
-    entries(form, cx, tile)
+    rows_of(&entries(form, cx, tile), cx, tile)
+}
+
+/// The sheet rows of a list of entries that was computed once (a sheet that is open carries out the very entries it
+/// shows).
+pub fn rows_of(entries: &[Entry], cx: &Cx, tile: Option<&Tile>) -> Vec<SheetRow> {
+    entries
         .iter()
         .map(|e| SheetRow {
             label: label(e, cx, tile).into(),
             selected: false,
         })
         .collect()
+}
+
+/// What a Home request "Remember:<id>:<on|off>" asks for as the menu context's `favourite`: `off` is what the row
+/// "Nicht mehr merken" sends (the title is on the watchlist), `on` what "Merken" sends. A request without the flag falls
+/// back to the tile as it is now.
+pub fn favourite_of_request(flag: Option<&str>, tile: &Tile) -> bool {
+    match flag {
+        Some("off") => true,
+        Some("on") => false,
+        _ => tile.badges.contains(&Badge::Favorite),
+    }
 }
 
 /// The rows of the "Abspielen auf …" submenu: the device names.
@@ -237,10 +263,13 @@ pub(crate) fn live_host(w: &crate::live::Wiring, continue_watching: bool) -> Men
     let (play_on, together) = w
         .together()
         .map_or((Vec::new(), false), |h| (h.play_targets(), h.may_create()));
+    // The right is asked once; until the answer is here an unknown right counts as allowed (`DownloadPermission`).
+    w.ask_download_right();
     MenuContext {
         play_on,
         together,
         continue_watching,
+        download_button: w.download_button(),
         ..MenuContext::default()
     }
 }
@@ -273,6 +302,11 @@ pub enum Outcome {
     Nothing,
 }
 
+/// Drops the view models of the writes that have finished (the list holds the ones in flight, nothing else).
+pub fn prune(keep: &mut Vec<swiftly_vm::DetailVm<crate::net::AppTransport>>) {
+    keep.retain(swiftly_vm::DetailVm::busy);
+}
+
 /// Carries out one entry for `tile`. The writes are the core's: a `DetailVm` over the tile sends the same
 /// `SetWatched` / `SetWatchlist` the Mac's `model.setWatched` / `setWatchlist` run; the view model is kept in `keep`
 /// until the write has gone out.
@@ -293,6 +327,8 @@ pub fn run(
         let Some(w) = crate::live::current() else {
             return Outcome::Nothing;
         };
+        // The writes that have been answered no longer need their view model: only the ones in flight stay.
+        prune(keep);
         if let Ok(vm) = swiftly_vm::DetailVm::new(
             std::sync::Arc::clone(&w.core.net),
             w.core.host(),
@@ -460,5 +496,169 @@ mod round2_tests {
                 assert!(i.icon.is_some(), "{} has no symbol", i.label);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod download_entry_tests {
+    use super::*;
+
+    fn tile(kind: &str) -> Tile {
+        Tile {
+            id: "t1".into(),
+            title: "Titel".into(),
+            subtitle: None,
+            progress: None,
+            image: None,
+            badges: Vec::new(),
+            remaining: None,
+            facts: swiftly_vm::TileFacts {
+                kind: Some(kind.into()),
+                ..swiftly_vm::TileFacts::default()
+            },
+        }
+    }
+
+    fn has_load(form: Form, cx: &Cx, kind: &str) -> bool {
+        entries(form, cx, Some(&tile(kind))).contains(&Entry::Load)
+    }
+
+    #[test]
+    fn the_right_click_menu_offers_laden_for_films_and_episodes_that_can_be_downloaded() {
+        let cx = demo_cx(false);
+        assert!(has_load(Form::Desktop, &cx, "Movie"));
+        assert!(has_load(Form::Desktop, &cx, "Episode"));
+        // A series has no single file; the tv menu never had the entry.
+        assert!(!has_load(Form::Desktop, &cx, "Series"));
+        assert!(!has_load(Form::Tv, &cx, "Movie"));
+        // No download button (switch off or the account may not download), a copy on the device or queued, the player.
+        let mut off = demo_cx(false);
+        off.host.download_button = false;
+        assert!(!has_load(Form::Desktop, &off, "Movie"));
+        let mut on_device = demo_cx(false);
+        on_device.host.on_device = true;
+        assert!(!has_load(Form::Desktop, &on_device, "Movie"));
+        let mut player = demo_cx(false);
+        player.host.in_player = true;
+        assert!(!has_load(Form::Desktop, &player, "Movie"));
+    }
+
+    #[test]
+    fn a_picked_laden_reaches_the_suite_once_in_order() {
+        let _ = crate::desk::take_download_requests();
+        crate::desk::request_download("a");
+        crate::desk::request_download("b");
+        assert_eq!(crate::desk::take_download_requests(), ["a", "b"]);
+        assert!(crate::desk::take_download_requests().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod writers_tests {
+    use super::*;
+    use swiftly_vm::{DetailIntent, DetailVm};
+
+    fn writer(server: swiftly_net::MockTransport) -> DetailVm<crate::net::AppTransport> {
+        let item = serde_json::from_value(serde_json::json!({
+            "Id": "m1", "Name": "Nordlicht", "Type": "Movie"
+        }))
+        .unwrap();
+        DetailVm::new(
+            std::sync::Arc::new(crate::net::AppTransport::Mock(server)),
+            crate::home_data::scripted_host(),
+            item,
+            Some(crate::home_data::account()),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn the_writers_list_shrinks_once_the_requests_have_finished() {
+        let mut keep = Vec::new();
+        for _ in 0..5 {
+            let vm = writer(swiftly_net::MockTransport::new());
+            vm.send(DetailIntent::SetWatched { on: true });
+            keep.push(vm);
+        }
+        assert_eq!(keep.len(), 5);
+        let began = std::time::Instant::now();
+        while keep.iter().any(DetailVm::busy) && began.elapsed().as_secs() < 10 {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        prune(&mut keep);
+        assert!(keep.is_empty(), "the answered writes are dropped");
+    }
+
+    #[test]
+    fn a_write_still_in_flight_is_kept() {
+        // The server never answers in time for this check: the request is held by a transport that blocks.
+        struct Stuck(std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>);
+        impl crate::net::HostHttp for Stuck {
+            fn send(
+                &self,
+                _request: swiftly_net::HttpRequest,
+            ) -> Result<swiftly_net::HttpResponse, swiftly_net::ErrorKind> {
+                let (open, bell) = &*self.0;
+                let mut open = open.lock().unwrap();
+                while !*open {
+                    open = bell.wait(open).unwrap();
+                }
+                Ok(swiftly_net::HttpResponse::new(200, "{}"))
+            }
+        }
+        let gate = std::sync::Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .build()
+            .unwrap();
+        let transport = crate::net::AppTransport::Host(
+            std::sync::Arc::new(Stuck(std::sync::Arc::clone(&gate))),
+            runtime.handle().clone(),
+        );
+        let item = serde_json::from_value(serde_json::json!({
+            "Id": "m1", "Name": "Nordlicht", "Type": "Movie"
+        }))
+        .unwrap();
+        let vm = DetailVm::new(
+            std::sync::Arc::new(transport),
+            crate::home_data::scripted_host(),
+            item,
+            Some(crate::home_data::account()),
+        )
+        .unwrap();
+        vm.send(DetailIntent::SetWatched { on: true });
+        let mut keep = vec![vm];
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        prune(&mut keep);
+        assert_eq!(keep.len(), 1, "a request in flight keeps its view model");
+        *gate.0.lock().unwrap() = true;
+        gate.1.notify_all();
+        let began = std::time::Instant::now();
+        while keep.iter().any(DetailVm::busy) && began.elapsed().as_secs() < 10 {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        prune(&mut keep);
+        assert!(keep.is_empty());
+        runtime.shutdown_background();
+    }
+
+    #[test]
+    fn the_remember_flag_is_what_the_row_said() {
+        let mut tile = Tile {
+            id: "m1".into(),
+            title: "Nordlicht".into(),
+            subtitle: None,
+            progress: None,
+            image: None,
+            badges: vec![Badge::Favorite],
+            remaining: None,
+            facts: swiftly_vm::TileFacts::default(),
+        };
+        // The row said "Merken" while the title was not on the list; the title was put on it meanwhile: still "on".
+        assert!(!favourite_of_request(Some("on"), &tile));
+        assert!(favourite_of_request(Some("off"), &tile));
+        assert!(favourite_of_request(None, &tile));
+        tile.badges.clear();
+        assert!(!favourite_of_request(None, &tile));
     }
 }

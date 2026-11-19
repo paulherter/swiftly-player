@@ -99,6 +99,7 @@ import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.TransformOrigin
@@ -648,6 +649,10 @@ class SheetRequest(val title: String, val entries: List<Choice>, val selected: S
                   val accentCheck: Boolean = false,
                   /** Drawn behind the content over the whole card (`SheetModifier.light`, `LookGlowLayer`). */
                   val backdrop: (@Composable BoxScope.() -> Unit)? = null,
+                  /** Several rows ticked at once (the filter sheet: status, years and language); `selected` is then ignored. */
+                  val ticked: Set<String>? = null,
+                  /** Rows that show but do nothing (the filter sheet's "loading" line). */
+                  val inactive: Set<String> = emptySet(),
                   val select: (String) -> Unit)
 
 /**
@@ -798,15 +803,17 @@ private fun SelectionRows(w: SheetRequest, close: () -> Unit) {
                      modifier = Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing)
                          .padding(top = Theme.tileSpacing, bottom = 4.dp).semantics { heading() })
             }
-            val an = e.value == w.selected
-            Row(Modifier.fillMaxWidth().heightIn(min = Theme.rowHeight).pressRow { close(); w.select(e.value) }
+            val an = if (w.ticked != null) e.value in w.ticked else e.value == w.selected
+            val idle = e.value in w.inactive
+            Row(Modifier.fillMaxWidth().heightIn(min = Theme.rowHeight)
+                    .then(if (idle) Modifier else Modifier.pressRow { close(); w.select(e.value) })
                     .padding(horizontal = Theme.edgeSpacing),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Box(Modifier.width(18.dp), contentAlignment = Alignment.Center) {
                     if (an) Symbol(Glyph.Checkmark, 17.dp, color = if (w.accentCheck) Theme.accent else Theme.font, strength = Strength.Semibold)
                 }
                 Text(e.text, style = Theme.categoryLarge.copy(fontWeight = if (an) FontWeight.SemiBold else FontWeight.Normal, letterSpacing = 0.sp),
-                     color = if (an) Theme.font else Theme.fontQuiet, modifier = Modifier.weight(1f))
+                     color = if (an) Theme.font else if (idle) Theme.fontVeryQuiet else Theme.fontQuiet, modifier = Modifier.weight(1f))
             }
         }
     }
@@ -838,13 +845,35 @@ private fun Actions(w: SheetRequest, close: () -> Unit) {
 }
 
 /**
+ * Mirrors `View.sheetListFade()` on Apple: **a sheet's list fades at the edge where more rows run on** (24 dp of travel,
+ * 36 dp deep, in steps of a tenth). A list cut at a hard line looked like it ended there; the fade shows only where
+ * something is hidden, so a list that fits keeps clean edges. Put it after the height limit and before `verticalScroll`.
+ */
+fun Modifier.sheetListFade(state: androidx.compose.foundation.ScrollState): Modifier = this
+    .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val travel = 24.dp.toPx()
+        val depth = minOf(36.dp.toPx(), size.height / 2)
+        fun step(v: Float) = (kotlin.math.round(v.coerceIn(0f, travel) / travel * 10f)) / 10f
+        val top = step(state.value.toFloat())
+        val bottom = step((state.maxValue - state.value).toFloat())
+        if (top > 0f) drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = top), Color.Transparent), startY = 0f, endY = depth),
+            size = androidx.compose.ui.geometry.Size(size.width, depth), blendMode = androidx.compose.ui.graphics.BlendMode.DstOut)
+        if (bottom > 0f) drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = bottom)), startY = size.height - depth, endY = size.height),
+            topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - depth), size = androidx.compose.ui.geometry.Size(size.width, depth),
+            blendMode = androidx.compose.ui.graphics.BlendMode.DstOut)
+    }
+
+/**
  * Mirrors `seasonSheet` in `SeerrDetailView.swift`: checkbox on the right, rows 15 on at least
  * 50 without lines, at most 320 high; below, a full-width line and the confirm button, 15
  * semibold on at least 54, in accent once something is chosen.
  */
 @Composable
 private fun SeasonSelection(w: SheetRequest, amount: Set<String>, setDown: (Set<String>) -> Unit, close: () -> Unit) {
-    Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+    val list = rememberScrollState()
+    Column(Modifier.heightIn(max = 320.dp).sheetListFade(list).verticalScroll(list)) {
         w.entries.forEach { e ->
             val reason = w.locked[e.value]
             val an = e.value in amount

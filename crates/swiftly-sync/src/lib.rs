@@ -16,8 +16,8 @@ pub mod time;
 
 pub use api::{CallResult, Clock, ServerCtx, SyncPlayCall, SyncPlayClient};
 pub use remote::{
-    KEEP_ALIVE, KEEP_ALIVE_INTERVAL, LinkError, PlayOrder, RemoteCommand, RemoteControl,
-    RemoteLink, RemoteOutput,
+    KEEP_ALIVE, KEEP_ALIVE_FLOOR, KEEP_ALIVE_INTERVAL, LinkError, LinkPulse, PING_AFTER,
+    PONG_WITHIN, PlayOrder, PulseStep, RemoteCommand, RemoteControl, RemoteLink, RemoteOutput,
 };
 pub use session::{
     Effect, PlayerAction, PlayerView, SyncPlayError, SyncPlaySession, SyncPlayStatus,

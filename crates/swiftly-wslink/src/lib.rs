@@ -8,8 +8,9 @@ use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use swiftly_sync::{LinkPulse, PulseStep};
 use swiftly_uniffi::{SocketFailure, WebSocketLink};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tungstenite::stream::MaybeTlsStream;
@@ -23,10 +24,33 @@ struct Live {
 }
 
 /// The link. Create one per account and hand it to `Core::remote_channel`.
-#[derive(Default)]
 pub struct TungsteniteLink {
     live: Mutex<Option<Live>>,
     incoming: tokio::sync::Mutex<Option<UnboundedReceiver<Incoming>>>,
+    /// Silence before a Ping, and the wait for its answer.
+    limits: (Duration, Duration),
+}
+
+impl Default for TungsteniteLink {
+    fn default() -> Self {
+        Self::with_limits(
+            Duration::from_secs_f64(swiftly_sync::PING_AFTER),
+            Duration::from_secs_f64(swiftly_sync::PONG_WITHIN),
+        )
+    }
+}
+
+impl TungsteniteLink {
+    /// A link with other sign-of-life limits (tests): `ping_after` of silence sends a Ping, `pong_within` later
+    /// without any frame the link counts as dead.
+    #[must_use]
+    pub fn with_limits(ping_after: Duration, pong_within: Duration) -> Self {
+        Self {
+            live: Mutex::new(None),
+            incoming: tokio::sync::Mutex::new(None),
+            limits: (ping_after, pong_within),
+        }
+    }
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -44,6 +68,10 @@ fn failure(e: &Error) -> SocketFailure {
     }
 }
 
+/// A write that cannot finish within this long ends the link: on a vanished peer the buffer fills and a blocking
+/// write would hang for good.
+const WRITE_LIMIT: Duration = Duration::from_secs(10);
+
 fn set_timeout(socket: &WebSocket<MaybeTlsStream<TcpStream>>, t: Option<Duration>) {
     let tcp = match socket.get_ref() {
         MaybeTlsStream::Plain(s) => Some(s),
@@ -52,6 +80,7 @@ fn set_timeout(socket: &WebSocket<MaybeTlsStream<TcpStream>>, t: Option<Duration
     };
     if let Some(tcp) = tcp {
         let _ = tcp.set_read_timeout(t);
+        let _ = tcp.set_write_timeout(Some(WRITE_LIMIT));
     }
 }
 
@@ -60,6 +89,7 @@ fn work(
     out: &mpsc::Receiver<String>,
     incoming: &UnboundedSender<Incoming>,
     stop: &AtomicBool,
+    mut pulse: LinkPulse,
 ) {
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -75,6 +105,7 @@ fn work(
         }
         match socket.read() {
             Ok(Message::Text(t)) => {
+                pulse.heard(Instant::now());
                 if incoming.send(Ok(Some(t.as_str().to_owned()))).is_err() {
                     return;
                 }
@@ -85,7 +116,10 @@ fn work(
                 }));
                 return;
             }
+            // The answer to our Ping (or the server's own Ping): proof of life, nothing to tell the channel.
+            Ok(Message::Pong(_) | Message::Ping(_)) => pulse.heard(Instant::now()),
             Ok(_) => {
+                pulse.heard(Instant::now());
                 if incoming.send(Ok(None)).is_err() {
                     return;
                 }
@@ -93,6 +127,22 @@ fn work(
             Err(Error::Io(e)) if matches!(e.kind(), IoKind::WouldBlock | IoKind::TimedOut) => {}
             Err(e) => {
                 let _ = incoming.send(Err(failure(&e)));
+                return;
+            }
+        }
+        match pulse.step(Instant::now()) {
+            PulseStep::Wait => {}
+            PulseStep::SendPing => {
+                if let Err(e) = socket.send(Message::Ping(Vec::new().into())) {
+                    let _ = incoming.send(Err(failure(&e)));
+                    return;
+                }
+            }
+            PulseStep::Dead => {
+                // A vanished peer (sleep, Wi-Fi switch) sends no close: only the missing answer shows it.
+                let _ = incoming.send(Err(SocketFailure::Other {
+                    message: "no answer to ping".into(),
+                }));
                 return;
             }
         }
@@ -115,7 +165,8 @@ impl WebSocketLink for TungsteniteLink {
         let (tx, rx) = unbounded_channel();
         let stop = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
-        std::thread::spawn(move || work(socket, &out_rx, &tx, &flag));
+        let pulse = LinkPulse::with_limits(self.limits.0, self.limits.1, Instant::now());
+        std::thread::spawn(move || work(socket, &out_rx, &tx, &flag, pulse));
         *lock(&self.live) = Some(Live { out, stop });
         *self.incoming.lock().await = Some(rx);
         Ok(())
@@ -200,6 +251,57 @@ mod tests {
         // The same object opens again (reconnect).
         link.connect(url).await.unwrap();
         assert_eq!(link.receive().await.unwrap(), Some("hello".into()));
+        link.close();
+    }
+
+    /// A server that completes the handshake and then never reads or answers again, like a peer that vanished
+    /// after the machine slept or the Wi-Fi changed: the TCP connection stays open, nothing comes back.
+    fn half_open() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let mut keep = Vec::new();
+            while let Ok((stream, _)) = listener.accept() {
+                if let Ok(ws) = tungstenite::accept(stream) {
+                    keep.push(ws); // held open, never read: no Pong, no close
+                }
+            }
+        });
+        format!("ws://127.0.0.1:{port}/socket?ApiKey=k&deviceId=d")
+    }
+
+    #[tokio::test]
+    async fn a_peer_that_stops_answering_ends_the_link_with_a_failed_receive() {
+        let link =
+            TungsteniteLink::with_limits(Duration::from_millis(200), Duration::from_millis(300));
+        link.connect(half_open()).await.unwrap();
+        let began = Instant::now();
+        let ended = tokio::time::timeout(Duration::from_secs(5), link.receive())
+            .await
+            .expect("a dead link must end the receive, not hang");
+        assert!(
+            matches!(&ended, Err(SocketFailure::Other { message }) if message.contains("ping")),
+            "{ended:?}"
+        );
+        let waited = began.elapsed();
+        assert!(
+            waited >= Duration::from_millis(450) && waited < Duration::from_secs(2),
+            "ended after {waited:?}: one ping window, not instantly and not never"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_quiet_but_answering_server_keeps_the_link_up() {
+        // The echo server reads (so it answers pings by itself); the link stays silent far longer than the limits.
+        let link =
+            TungsteniteLink::with_limits(Duration::from_millis(150), Duration::from_millis(250));
+        link.connect(fixture()).await.unwrap();
+        assert_eq!(link.receive().await.unwrap(), Some("hello".into()));
+        assert_eq!(link.receive().await.unwrap(), None);
+        let quiet = tokio::time::timeout(Duration::from_millis(1500), link.receive()).await;
+        assert!(quiet.is_err(), "still up and quiet, got {quiet:?}");
+        link.send("again".into()).await.unwrap();
+        assert_eq!(link.receive().await.unwrap(), Some("echo:again".into()));
         link.close();
     }
 

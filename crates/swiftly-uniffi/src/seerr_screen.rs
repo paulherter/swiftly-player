@@ -88,6 +88,8 @@ fn season_info(s: &SeerrSeasonRow) -> SeerrSeasonInfo {
 /// One cast member.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SeerrCastInfo {
+    /// TMDB person id.
+    pub person: i64,
     /// Name.
     pub name: String,
     /// Role.
@@ -98,6 +100,7 @@ pub struct SeerrCastInfo {
 
 fn cast_info(c: &SeerrCast) -> SeerrCastInfo {
     SeerrCastInfo {
+        person: c.person,
         name: c.name.clone(),
         role: c.role.clone(),
         image: c.image.clone(),

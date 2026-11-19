@@ -58,8 +58,9 @@ keys! {
     STARTMESSUNG: bool = true, "startmessung", Device, "Sources/Shared/VLCPlayer.swift:157";
     /// Subtitle look as JSON data (`SubtitleLook`); unset = built-in look. Synced.
     UT_AUSSEHEN: Option<Vec<u8>> = (), "utAussehen", Synced, "Sources/Shared/AppModel.swift:693";
-    /// Automatic subtitles. Synced.
-    UT_AUTO: bool = false, "utAuto", Synced, "Sources/Shared/AppModel.swift:683";
+    /// Automatic subtitles: a subtitle in the wanted language when the audio is not in it. On by default; the track rule
+    /// (`AUTOMATIC_SUBTITLES_DEFAULT` in `swiftly-playback`) holds the same value for hosts that read the raw store. Synced.
+    UT_AUTO: bool = true, "utAuto", Synced, "Sources/Shared/AppModel.swift:683";
     /// One-time migration flag for `utAuto` (`AppModel.swift:685-688`).
     UT_AUTO_NACHGEZOGEN: bool = false, "utAutoNachgezogen", Device, "Sources/Shared/AppModel.swift:685";
     /// Audio language, empty = as the file. Synced.
@@ -91,6 +92,14 @@ keys! {
     GESEHEN_VON_SERVER: Vec<String> = &[], "gesehenVonServer", Device, "Sources/Shared/AppModel.swift:679";
     /// New arrivals as two separate rows. Synced.
     NEU_GETRENNT: bool = true, "neuGetrennt", Synced, "Sources/Shared/AppModel.swift:699";
+    /// Seerr: show the "is here" banner on Home when a request has arrived in the library (and look for arrivals at all). Synced.
+    SEERR_ARRIVAL_HINT: bool = true, "seerrArrivalHint", Synced, "Sources/Shared/SeerrSettingsView.swift:1 (new in Rust, no Swift key)";
+    /// Seerr: the "Meine Anfragen" rail as a Start page section. Off until switched on. Synced.
+    SEERR_REQUESTS_RAIL: bool = false, "seerrRequestsRail", Synced, "Sources/Shared/AppearanceView.swift:1 (new in Rust, no Swift key)";
+    /// Seerr: ids of the arrival banners the user closed (request ids as text, newest last). Not synced.
+    SEERR_ARRIVAL_DISMISSED: Vec<String> = &[], "seerrArrivalDismissed", Device, "Sources/Shared/SeerrSettingsView.swift:1 (new in Rust, no Swift key)";
+    /// Seerr: the stack of arrival banners was left open. Not synced.
+    SEERR_ARRIVAL_EXPANDED: bool = false, "seerrArrivalExpanded", Device, "Sources/Shared/SeerrBridge+Library.swift:56";
     /// Home rails, `StartRail` raw values. Synced.
     START_REIHEN: Vec<String> = &[], "startReihen", Synced, "Sources/Shared/AppModel.swift:705";
     /// Hidden home rails. Synced.
@@ -101,6 +110,9 @@ keys! {
     GENRE_CHIPS: bool = false, "genreChips", Synced, "Sources/Shared/AppModel.swift:714";
     /// Chosen home libraries (JSON data, `StartLibraries`); per server and synced per server (`AppModel.swift:243,716`).
     START_BIBLIOTHEKEN: Option<Vec<u8>> = (), "startBibliotheken", SyncedPerServer, "Sources/Shared/AppModel.swift:716";
+    /// Seerr: where it is (address and gateway headers, JSON `SeerrServerConfig`). Set up once by the admin of a server and stored with
+    /// that server (`seerrServer|<server>`); every profile of the server only signs in. No session in it. Synced.
+    SEERR_SERVER: Option<Vec<u8>> = (), "seerrServer", SyncedPerServer, "Sources/Shared/SeerrSettingsView.swift:1 (new in Rust, no Swift key)";
     /// One order for the fixed home rows, the library rows (`library:<id>`) and collection rows, per server, on this device (not part of the cross-app sync). New.
     START_REIHENFOLGE: Vec<String> = &[], "startReihenfolge", DevicePerServer, "Sources/Shared/AppModel.swift:716 (new in Rust, no Swift key)";
     /// Search history, one term per line. The per-account form is `search_history_key`.
@@ -119,6 +131,13 @@ keys! {
     NUR_UEBER_WLAN: bool = true, "nurUeberWLAN", Device, "Sources/Shared/AppModel.swift:723";
     /// Download the next episode automatically.
     NAECHSTE_FOLGE_LADEN: bool = false, "naechsteFolgeLaden", Device, "Sources/Shared/DownloadManager.swift:265";
+
+    // ---- Lists and deleting ----
+    /// Hide series without episodes in libraries, home rows and search. On unless switched off. Read by the core
+    /// (`swiftly_model::switches`), set from the settings view model.
+    LEERE_SERIEN_AUSBLENDEN: bool = true, "leereSerienAusblenden", Device, "Sources/Shared/SettingsView.swift:50 (new in Rust, no Swift key)";
+    /// Lock "Vom Server löschen" (children, guests, shared devices). Read by the core (`swiftly_model::switches`).
+    LOESCHEN_SPERREN: bool = false, "loeschenSperren", Device, "Sources/Shared/SettingsView.swift:50 (new in Rust, no Swift key)";
 
     // ---- Sync, account, misc ----
     /// Keep settings equal across devices. On by default.

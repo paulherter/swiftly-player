@@ -62,18 +62,20 @@ import kotlinx.coroutines.withContext
 
 /** Mirrors `Region` in `Sources/Shared/Style.swift`: Downloads only when enabled. */
 enum class Region(val title: String, val symbol: Glyph) {
-    Start("Start", Glyph.House),
-    Movies("Filme", Glyph.Film),
-    Series("Serien", Glyph.CardsThree),
-    Downloads("Downloads", Glyph.LoadCircle),
-    Search("Suche", Glyph.Magnifier),
+    Start("Start", Glyph.TabHome),
+    Movies("Filme", Glyph.TabMovies),
+    Series("Serien", Glyph.TabSeries),
+    Downloads("Downloads", Glyph.TabDownloads),
+    Search("Suche", Glyph.TabSearch),
 }
 
 /**
  * A place in a section's stack, like `NavigationLink(value: Item)` on iOS. Only a person carries
  * `role` and `origin`: "Woody in Toy Story" shows before anything is loaded.
  */
-data class Destination(val id: String, val name: String, val type: String, val role: String? = null, val origin: String? = null)
+data class Destination(val id: String, val name: String, val type: String, val role: String? = null, val origin: String? = null,
+                       /** Set for a person of a Seerr cast tile: the TMDB id; the person has no library entry (`id` is `tmdb:N`). */
+                       val tmdb: Int? = null, /** The TMDB portrait of such a person. */ val image: String? = null)
 
 /**
  * Mirrors `MainView` in `Sources/Shared/MainView.swift`: one stack per section.
@@ -148,6 +150,8 @@ fun MainScreen(app: SwiftlyApplication) {
             push.animateTo(0f, Motion.page())
         }
     }
+    // Debug builds only (`testOpen`): a page opened cold, once.
+    LaunchedEffect(app.debugOpen.value) { app.debugOpen.value?.let { app.debugOpen.value = null; open(it) } }
     // "Support Swiftly": the thanks sheet leads to the icon picker through this; the ask and the
     // thanks appear when due (`SupportPromptWatcher`).
     androidx.compose.runtime.SideEffect { app.support.openPage = open }
@@ -360,6 +364,8 @@ private fun Subpage(app: SwiftlyApplication, target: Destination, open: (Destina
         "Lizenz" -> LicenseScreen(target, back, app)
         "Lizenzangebot" -> LicenseOfferingPage(back)
         "Seerrtitel" -> SeerrDetailPage(app, target, open, back)
+        "SeerrAnfragen" -> SeerrRequestsPage(app, open, back)
+        "Verwaltung" -> ManagementHubPage(app, open, back)
         "Genrewahl" -> GenreSelectionPage(app, back)
         "Bibliothekswahl" -> LibrarySelectionPage(app, back)
         "Downloadserie" -> DownloadSeriesPage(app, target, back)
@@ -369,7 +375,7 @@ private fun Subpage(app: SwiftlyApplication, target: Destination, open: (Destina
 
 /**
  * Mirrors `NavBar` + `SectionButton` in `Style.swift`: 54 high, opaque in `reason`, hairline
- * on top, 8 space above the icons, 3 between icon and label, filled icons 24, label 10 medium.
+ * on top, 8 space above the icons, 3 between icon and label, icons 24 (outline idle, filled selected), label 10 medium.
  */
 @Composable
 private fun Bar(active: Region, downloads: Boolean, runningCount: Int, select: (Region) -> Unit) {
@@ -401,8 +407,9 @@ private fun Bar(active: Region, downloads: Boolean, runningCount: Int, select: (
                         // icon has 2 dp padding all round in its 24 grid, so in a 20 box the glyph kept barely 17.
                         // That is the "looks smaller" effect at pixel level. Cause: different symbol set, not a
                         // different size.
-                        // Icon 24 (was 20), filled except Search which stays outline.
-                        Symbol(b.symbol, 24.dp, color = color, filled = b != Region.Search)
+                        // Icon 24. Tab icons A (`Sources/Shared/Style.swift` `tabAsset`): outline at rest, the drawn
+                        // filled variant when selected.
+                        Symbol(b.symbol, 24.dp, color = color, filled = an)
                         if (b == Region.Downloads && runningCount > 0) {
                             // The count of running ones, not finished ones; offset outwards, otherwise it covers the icon.
                             Text(runningCount.toString(), style = Theme.badge.copy(letterSpacing = 0.sp), color = Theme.reason,

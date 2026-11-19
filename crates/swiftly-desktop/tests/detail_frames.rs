@@ -160,7 +160,7 @@ fn tv() {
 #[test]
 fn parts_reach_the_view() {
     let mut d = DetailScreen::new(env(&DESKTOP), Cx::deterministic(), Scenario::Ready);
-    assert!(d.vm().actions().play.enabled);
+    assert!(d.vm().actions().play.ready.is_ready());
     assert_eq!(d.vm().actions().play.label, "Fortsetzen ab 32 Min.");
     assert!(d.vm().bottom().ready && !d.vm().bottom().cast.is_empty());
     let mut s = SeriesScreen::new(env(&DESKTOP), Cx::deterministic(), Scenario::Ready);

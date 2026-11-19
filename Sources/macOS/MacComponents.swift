@@ -16,7 +16,7 @@ import SwiftUI
 /// limit, here it is the window height.
 struct SidebarRow: View {
     let symbol: String
-    /// Filled asset name (`icon.house.fill` ...); `nil` keeps `symbol`.
+    /// Tab icon asset for the current state (outline idle, `.fill` selected); `nil` keeps `symbol`.
     var filled: String? = nil
     var label: LocalizedStringKey = ""
     /// For rows whose text comes from the server. A library name is not a catalog
@@ -35,7 +35,7 @@ struct SidebarRow: View {
         Button(action: pick) {
             HStack(spacing: 10) {
                 Group {
-                    // Filled Phosphor asset where the iPhone tab bar uses one (shared catalog).
+                    // Tab icons A from the shared catalog, as on the iPhone tab bar.
                     if let filled { Image(filled) } else { Image(icon: symbol, size: 18) }
                 }
                     .font(.app(size: 18))
@@ -453,6 +453,24 @@ private struct TileWrapper<ContentBody: View>: View {
     }
 }
 
+/// The progress bar at the bottom edge of a tile (also what the shared `Picture` draws).
+///
+/// **The track is light** (white 30 %) and the bar carries the accent. A dark track reads as "something is missing
+/// here", a light one as "this is the whole length, and this is how far you are". No GeometryReader: the bar is
+/// scaled from its leading edge, so a long grid costs no layout passes. 4 high, the same as on the phone.
+struct TileProgress: View {
+    let share: Double
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Rectangle().fill(Color.white.opacity(0.3))
+            Rectangle().fill(Theme.accent)
+                .scaleEffect(x: min(max(share, 0), 1), y: 1, anchor: .leading)
+        }
+        .frame(height: 4)
+    }
+}
+
 /// The image area of a tile including progress.
 ///
 /// The progress bar lies **inside** the mask, not as an overlay, or its square ends
@@ -475,18 +493,7 @@ struct ImageArea: View {
             // at 1600 pt on the long edge.
             NetworkImage(url: image, symbolText: symbolText, displayEdge: max(width, height))
             if let progress, progress > 0, barShow {
-                // No GeometryReader: the width is fixed (`width`), and one per tile costs layout
-                // passes in long grids.
-                ZStack(alignment: .leading) {
-                    // **The track is light** (white 30 %) and the bar carries the accent. A dark
-                    // track reads as "something is missing here", a light one as "this is the whole
-                    // length, and this is how far you are".
-                    Rectangle().fill(Color.white.opacity(0.3))
-                    Rectangle().fill(Theme.accent)
-                        .frame(width: width * min(max(progress, 0), 1))
-                }
-                // 4, not 3: the same size as on the phone.
-                .frame(height: 4)
+                TileProgress(share: progress)
             }
         }
         .frame(width: width, height: height)
@@ -1425,6 +1432,12 @@ struct SelectionButton<Record: Identifiable>: View {
     let isSelected: (Record) -> Bool
     let select: (Record) -> Void
     var panelWidth: CGFloat = 190
+    /// A heading before an entry (the core's filter sheet groups: years, language), see ``SelectionPanel``.
+    var category: (Record) -> LocalizedStringKey? = { _ in nil }
+    /// Told when the panel opens (`true`) or closes (`false`), so a page can load what the panel offers.
+    var onOpened: ((Bool) -> Void)?
+    /// Counts up to open the panel from outside (the live run's scripted open); 0 never opens it.
+    var openRequest = 0
 
     /// Which one am I among the choice buttons; see `SelectionSupervision`.
     @State private var identifier = UUID()
@@ -1464,11 +1477,13 @@ struct SelectionButton<Record: Identifiable>: View {
         }
         // Leaving the page with a panel open must not make the next page swallow its first click.
         .onDisappear { if opened { supervision.opened = nil } }
+        .onChange(of: opened) { _, now in onOpened?(now) }
+        .onChange(of: openRequest) { _, _ in withAnimation(Theme.leap) { supervision.opened = identifier } }
     }
 
     private var panel: some View {
         SelectionPanel(entries: entries, label: label,
-                  isSelected: isSelected, width: panelWidth) { entryRecord in
+                  isSelected: isSelected, width: panelWidth, category: category) { entryRecord in
             select(entryRecord)
             withAnimation(Theme.leap) { supervision.opened = nil }
         }

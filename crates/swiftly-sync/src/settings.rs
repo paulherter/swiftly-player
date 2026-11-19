@@ -161,7 +161,7 @@ impl SettingsSync {
     pub const SEERR_CHANGED_KEY: &'static str = "swiftly.seerrChanged";
 
     /// The synced keys (same list and order as Swift).
-    pub const ENTRIES: [Entry; 19] = [
+    pub const ENTRIES: [Entry; 22] = [
         e!("tonSprache", Text, false),
         e!("utSprache", Text, false),
         e!("utAuto", Bool, false),
@@ -176,11 +176,14 @@ impl SettingsSync {
         e!("merklisteAn", Bool, false),
         e!("alphabetAn", Bool, false),
         e!("neuGetrennt", Bool, false),
+        e!("seerrArrivalHint", Bool, false),
+        e!("seerrRequestsRail", Bool, false),
         e!("startReihen", List, false),
         e!("startAus", List, false),
         e!("genreChips", Bool, false),
         e!("startGenres", List, false),
         e!("startBibliotheken", Json, true),
+        e!("seerrServer", Json, true),
     ];
 
     /// The entry for a device key, ignoring the `|server` suffix.

@@ -9,12 +9,14 @@ publish.workspace = true
 
 [dependencies]
 swiftly-uniffi = { path = "../swiftly-uniffi" }
+swiftly-sync = { path = "../swiftly-sync" }
 async-trait = "0.1"
 tungstenite = { version = "0.30", default-features = false, features = ["handshake", "rustls-tls-native-roots"] }
 tokio = { version = "1", default-features = false, features = ["sync", "rt"] }
 workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 
 [dev-dependencies]
+swiftly-hardening = { path = "../swiftly-hardening" }
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "time"] }
 
 [lints]

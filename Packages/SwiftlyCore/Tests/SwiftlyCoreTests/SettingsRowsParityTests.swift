@@ -136,6 +136,8 @@ struct SettingsRowsParityTests {
         expect(m, section: "Server und Dienste", [
             Old(key: "eigeneHeader", title: "Eigene Header", under: "Für einen Dienst vor dem Server", value: "2"),
             Old(key: "seerr", title: "Seerr", under: "Anfragen, was noch nicht da ist", value: "Verbunden"),
+            // Added after the old screens: the core's switch that hides "Vom Server löschen" everywhere.
+            Old(key: "loeschenSperren", title: "Löschen vom Server sperren", under: "Blendet „Vom Server löschen“ aus"),
         ])
         expect(m, section: "Synchronisierung", [
             Old(key: "einstellungenSync", title: "Auf allen Geräten gleich", under: "Liegt auf deinem Server"),
@@ -155,12 +157,14 @@ struct SettingsRowsParityTests {
             Old(key: "merklisteAn", title: "Merkliste", under: "Auf Film- und Serienseiten"),
             Old(key: "alphabetAn", title: "Alphabet in Listen"),
             Old(key: "titelAlsLogo", title: "Titel als Logo", under: "Wenn dein Server eins hat"),
+            // Added after the old screens: a core switch read by every platform's lists.
+            Old(key: "leereSerienAusblenden", title: "Leere Serien ausblenden", under: "Serien ohne Folgen bleiben weg"),
         ])
         var facts = settingsFacts()
         facts.watchersPlugin = true
         let withPlugin = try model(facts)
         let keys = withPlugin.sections.sections.first { $0.titleKey == "Filme und Serien" }?.rows.map(\.key)
-        #expect(keys == ["fortschritt", "merklisteAn", "gesehenVonAn", "alphabetAn", "titelAlsLogo"])
+        #expect(keys == ["fortschritt", "merklisteAn", "gesehenVonAn", "alphabetAn", "titelAlsLogo", "leereSerienAusblenden"])
         let gesehen = withPlugin.sections.sections.flatMap(\.rows).first { $0.key == "gesehenVonAn" }
         #expect(gesehen?.title == "Gesehen von")
         #expect(gesehen?.under == "Zeigt auf Titelseiten, wer einen Titel gesehen hat")
@@ -169,12 +173,13 @@ struct SettingsRowsParityTests {
         #expect(start?.first?.under == "Als eigene Reihen")
     }
 
-    /// Old screen: choosing a subtitle language switches "automatic" on.
+    /// Old screen: choosing a subtitle language switches "automatic" on (it starts on; this is a user who turned it off).
     @Test @MainActor func subtitleLanguageSwitchesAutomaticOn() throws {
         let suite = "swiftly.parity.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         let store = UserDefaultsSettingsStore(defaults: defaults)
         let m = SettingsModel(vm: makeCore().settingsVmNative(store: store, locale: "de", facts: settingsFacts()))
+        try m.setSwitch("utAuto", false)
         try m.setChoice("utSprache", "Deutsch")
         store.flush()
         #expect(defaults.string(forKey: "utSprache") == "Deutsch")

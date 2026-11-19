@@ -17,6 +17,9 @@ struct PresentationView: View {
     @State private var genreSelection = false
     @State private var librarySelection = false
     private let feed = SettingsRowsFeed.shared
+    /// The Seerr sections of the Startseite list: the same keys the core and the Start page read.
+    @AppStorage(SeerrArrival.hintKey) private var arrivalOn = true
+    @AppStorage(SeerrArrival.requestsKey) private var requestsOn = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -30,11 +33,11 @@ struct PresentationView: View {
             Group {
                 if wide {
                     HStack(alignment: .top, spacing: 0) {
-                        list { rails; general; looks }
+                        list { rails; lists; general; looks }
                         list { libraryRails; genres }
                     }
                 } else {
-                    list { rails; libraryRails; genres; general; looks }
+                    list { rails; libraryRails; genres; lists; general; looks }
                 }
             }
             .fadingUnderSubpageHeader(title: String(localized: "Darstellung")) { back() }
@@ -157,6 +160,19 @@ struct PresentationView: View {
         return rail.fits(disconnected: model.newAccessDisconnected)
     }
 
+    /// "Leere Serien ausblenden": the core row, the same rule for every list (library, Home, search).
+    @ViewBuilder private var lists: some View {
+        if let row = feed.row("leereSerienAusblenden") {
+            KitSection {
+                ChoiceRow(symbol: "rectangle.stack.badge.minus", title: row.titleText, under: row.underText,
+                          an: feed.binding("leereSerienAusblenden"))
+                    .row()
+            } header: {
+                Category(text: "Filme und Serien")
+            }
+        }
+    }
+
     private var rails: some View {
         KitSection {
             // Fixed rows and chosen libraries/collections in ONE list; the drag follows the finger
@@ -175,6 +191,14 @@ struct PresentationView: View {
                     .plainRow()
                     .row(handle: true)
                     .deleteDisabled(false)
+                } else if id == HomeRowOrder.seerrArrival {
+                    ChoiceRow(symbol: "arrow.down.circle", title: Text("Anfrage ist da"), an: $arrivalOn)
+                        .row(handle: true)
+                        .deleteDisabled(true)
+                } else if id == HomeRowOrder.seerrRequests {
+                    ChoiceRow(symbol: "tray.and.arrow.down", title: Text("Meine Anfragen"), an: $requestsOn)
+                        .row(handle: true)
+                        .deleteDisabled(true)
                 } else if let rail = StartRail(rawValue: id) {
                     ChoiceRow(symbol: rail.symbol, title: Text(rail.name),
                               an: Binding(get: { !model.startOut.contains(rail) },

@@ -8,19 +8,40 @@ use swiftly_net::Url;
 use crate::downloads_vm::{decimal_separator, size_text};
 use crate::title_text::TitleText;
 
-/// The line under the title: Direct Play mark or hint, rating, age rating. Hidden until the
-/// plan has been answered (`planPresent`), but it keeps its place.
+/// Whether the chips of the proof row are final.
+///
+/// The row holds up to three chips (stars, age rating, and last Direct Play or a hint). Stars and age rating come with
+/// the title the page was opened with (tile, stored copy), so the host draws them as real chips from frame 1 whenever
+/// `rating` / `age_rating` are filled. Only the playback mark needs the plan: it stands last, so it moves nothing when it
+/// settles. The row has two states and nothing in between: `Waiting` (the host draws the title chips it has and a
+/// skeleton for the playback mark, of its final size) and `Settled` (the host draws the real mark in the same frame,
+/// with no animation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProofPhase {
+    /// The title or the plan has not answered yet: the playback mark is not known.
+    Waiting,
+    /// Everything that decides the chips is known; the row may hold no chip at all.
+    Settled,
+}
+
+/// The line under the title: Direct Play mark or hint, rating, age rating. While `phase` is `Waiting` the row
+/// stands as skeleton chips; it always keeps its place.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProofPart {
-    /// The plan has been answered (with or without a result); the view fades the row in.
+    /// Whether the chips are final. Hosts draw skeletons while `Waiting` and swap them in place, without a
+    /// transition, when it turns `Settled`.
+    pub phase: ProofPhase,
+    /// The plan has been answered (with or without a result), and the title is not a placeholder without a file.
+    /// Kept for hosts that still fade the row in; it never turns true before `phase` is `Settled`.
     pub visible: bool,
     /// The plan loses nothing: show the "Direct Play" mark.
     pub direct_play: bool,
     /// The delivery method when it is not lossless ("Transcode").
     pub hint: Option<String>,
-    /// Community rating as "7,5".
+    /// Community rating as "7,5". **Also filled while `Waiting`**, from the title in hand (tile, stored copy or fresh
+    /// title): the host draws the chip at once, in its final place. Empty for a placeholder without a file.
     pub rating: Option<String>,
-    /// Age rating; a plain number reads "ab 12".
+    /// Age rating; a plain number reads "ab 12". Filled while `Waiting` like `rating`.
     pub age_rating: Option<String>,
 }
 

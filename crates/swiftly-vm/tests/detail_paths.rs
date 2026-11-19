@@ -14,7 +14,7 @@ use swiftly_cache::{CacheConfig, EntityCache};
 use swiftly_model::Item;
 use swiftly_vm::{
     AccountRef, DetailEffect, DetailIntent, DetailOptions, DetailVm, Host, MenuKind, PlayAction,
-    ViewCache,
+    ProofPhase, ViewCache,
 };
 
 fn entry_json(extra: serde_json::Value) -> Item {
@@ -272,7 +272,7 @@ fn menu_picks_play_toggle_or_pass_on_to_the_host() {
     let net = server(up());
     let vm = signed_in(&net);
     vm.send(DetailIntent::Load);
-    wait_for("title", || vm.actions().play.enabled);
+    wait_for("title", || vm.actions().play.ready.is_ready());
     // Play and "from start" queue the very action the buttons would give.
     vm.send(DetailIntent::Menu(MenuKind::Play));
     vm.send(DetailIntent::Menu(MenuKind::PlayFromStart));
@@ -341,26 +341,23 @@ fn play_from_start_keeps_every_kind_of_action_but_drops_the_resume_point() {
         "UserData": {"PlaybackPositionTicks": 18_000_000_000_i64}}),
     );
     let vm = vm_for(&net, item, host(), Some(account("TOKEN-A")));
-    // The list entry already knows two versions and the position: "ask" with the resume point.
-    match vm.play(None) {
-        PlayAction::Choose {
-            since, versions, ..
-        } => {
-            assert!((since - 1800.0).abs() < 1e-9);
-            assert_eq!(versions.len(), 2);
+    // The list entry already knows two versions and the position: the press starts the default with the resume point.
+    assert_eq!(
+        vm.play(None),
+        PlayAction::Start {
+            item_id: "f1".into(),
+            since: 1800.0,
+            source_id: None
         }
-        other => panic!("{other:?}"),
-    }
-    match vm.play_from_start(None) {
-        PlayAction::Choose {
-            since,
-            versions,
-            item_id,
-        } => {
-            assert_eq!((since, versions.len(), item_id.as_str()), (0.0, 2, "f1"));
+    );
+    assert_eq!(
+        vm.play_from_start(None),
+        PlayAction::Start {
+            item_id: "f1".into(),
+            since: 0.0,
+            source_id: None
         }
-        other => panic!("{other:?}"),
-    }
+    );
     // A chosen version starts at 0 and keeps the choice.
     match vm.play_from_start(Some("b")) {
         PlayAction::Start {
@@ -447,7 +444,9 @@ fn switching_the_account_starts_over_with_the_new_token() {
     let net = server(up());
     let vm = signed_in(&net);
     vm.send(DetailIntent::Load);
-    wait_for("page", || vm.bottom().ready && vm.actions().play.enabled);
+    wait_for("page", || {
+        vm.bottom().ready && vm.actions().play.ready.is_ready()
+    });
     assert!(
         headers_of(&net, "/Items/f1")
             .iter()
@@ -463,11 +462,11 @@ fn switching_the_account_starts_over_with_the_new_token() {
     // Gone at once: the toggles are the list entry's, the bottom is not ready, the play button is gray.
     assert!(!vm.actions().favorite);
     assert!(!vm.bottom().ready);
-    assert!(!vm.actions().play.enabled);
+    assert!(!vm.actions().play.ready.is_ready());
     assert_eq!(vm.play(None), PlayAction::Wait);
     net.gate.open();
     wait_for("second load", || {
-        vm.bottom().ready && vm.actions().play.enabled
+        vm.bottom().ready && vm.actions().play.ready.is_ready()
     });
     assert!(
         headers_of(&net, "/Items/f1")
@@ -489,7 +488,7 @@ fn switching_to_signed_out_ignores_late_answers_of_the_old_account() {
     assert!(!vm.bottom().ready);
     assert!(vm.bottom().similar.is_empty());
     assert!(vm.plan().is_none());
-    assert!(!vm.actions().play.enabled);
+    assert!(!vm.actions().play.ready.is_ready());
     assert_eq!(vm.hero().overview, None);
 }
 
@@ -532,14 +531,18 @@ fn a_second_visit_paints_the_stored_title_while_the_server_is_gone() {
         },
         Some(account("TOKEN-A")),
     );
-    assert_eq!(second.hero().overview, None, "nothing before the load");
+    assert_eq!(
+        second.hero().overview.as_deref(),
+        Some("Text"),
+        "the stored copy stands in frame 1, before any load"
+    );
     second.send(DetailIntent::Load);
     wait_for("stored copy", || {
         second.hero().overview.as_deref() == Some("Text")
     });
     // The stored copy has no versions: Play is not offered from it alone... but a failed fresh load
     // lets a press resolve the title.
-    wait_for("failure", || second.actions().play.enabled);
+    wait_for("failure", || second.actions().play.ready.is_ready());
     assert!(matches!(second.play(None), PlayAction::Resolve { .. }));
 
     // Another account never sees the copy.
@@ -557,13 +560,249 @@ fn a_second_visit_paints_the_stored_title_while_the_server_is_gone() {
     assert_eq!(third.hero().overview, None);
 }
 
+/// Second visit: the tile in hand knows the resume point, the stored copy of the first visit was written before the
+/// viewer got that far. The label, the remaining time and the bar come from the tile and never flip in between
+/// ("Fortsetzen ab 20 Min." -> "Abspielen" -> "Fortsetzen ...").
+#[test]
+fn a_second_visit_keeps_the_resume_label_the_tile_carries_while_the_stored_copy_paints() {
+    let (host_a, cache) = cached_host();
+    // The film as the server answers it: `position` is the viewer's resume point in ticks (none: not started).
+    let film = |position: Option<i64>| {
+        let mut user = serde_json::json!({"Played": false, "IsFavorite": false});
+        if let Some(p) = position {
+            user["PlaybackPositionTicks"] = serde_json::json!(p);
+        }
+        let answer =
+            serde_json::json!({"Id": "f1", "Name": "Film", "Type": "Movie", "ProductionYear": 2019,
+            "Overview": "Text", "Genres": ["Drama"], "RunTimeTicks": 72_000_000_000_i64,
+            "MediaSources": [{"Id": "s0", "Name": "V0"}], "UserData": user})
+            .to_string();
+        Script::new(move |r| {
+            let p = r.url.path();
+            if p.ends_with("/Items/f1") {
+                return Some(answer.clone());
+            }
+            if p.ends_with("/Items/f1/PlaybackInfo") {
+                return Some(
+                    serde_json::json!({"PlaySessionId": "ps", "MediaSources": [{"Id": "s0",
+                    "Container": "mkv", "SupportsDirectPlay": true, "MediaStreams": []}]})
+                    .to_string(),
+                );
+            }
+            Some("{}".into())
+        })
+    };
+    // First visit: the stored copy is written before the viewer got anywhere.
+    let net = film(None);
+    let first = vm_for(&net, entry(), host_a, Some(account("TOKEN-A")));
+    first.send(DetailIntent::Load);
+    wait_for("first visit", || {
+        first.hero().overview.as_deref() == Some("Text") && first.bottom().ready
+    });
+    assert_eq!(
+        first.actions().play.label,
+        "Abspielen",
+        "the stored copy has no resume point"
+    );
+
+    // Second visit: the viewer has watched 20 minutes meanwhile; the server and the tile know it.
+    let second_net = film(Some(12_000_000_000));
+    // The fresh answer is held back, so the stored copy is on screen alone.
+    second_net.gate.close();
+    let tile = entry_json(serde_json::json!({"RunTimeTicks": 72_000_000_000_i64,
+        "UserData": {"Played": false, "IsFavorite": false, "PlaybackPositionTicks": 12_000_000_000_i64}}));
+    let second = vm_for(
+        &second_net,
+        tile,
+        Host {
+            cache: Some(cache),
+            ..host()
+        },
+        Some(account("TOKEN-A")),
+    );
+    let before = second.actions().play.clone();
+    assert_eq!(before.label, "Fortsetzen ab 20 Min.");
+    assert!(
+        before.remaining.is_some(),
+        "the tile knows the runtime and the position"
+    );
+
+    second.send(DetailIntent::Load);
+    wait_for("stored copy", || {
+        second.hero().overview.as_deref() == Some("Text")
+    });
+    let after = second.actions().play.clone();
+    assert_eq!(after, before, "the stored copy must not change the button");
+
+    second_net.gate.open();
+    wait_for("fresh title", || second.actions().play.ready.is_ready());
+    assert_eq!(second.actions().play.label, "Fortsetzen ab 20 Min.");
+    assert_eq!(second.actions().play.remaining, before.remaining);
+}
+
+/// The skeleton chips describe the real slots: while the row waits, the part already names the stars and the age
+/// rating the title in hand has (and only those), and the settled row keeps exactly them, so a chip that stays never
+/// moves. Films without stars, without an age rating and with both.
+#[test]
+fn the_chips_that_can_exist_are_known_while_the_row_waits() {
+    for (stars, age) in [
+        (Some(7.5), Some("FSK 12")),
+        (None, Some("FSK 12")),
+        (Some(7.5), None),
+        (None, None),
+    ] {
+        let mut extra = serde_json::json!({});
+        if let Some(s) = stars {
+            extra["CommunityRating"] = serde_json::json!(s);
+        }
+        if let Some(a) = age {
+            extra["OfficialRating"] = serde_json::json!(a);
+        }
+        let tile = entry_json(extra.clone());
+        // The fresh answer carries the same facts as the tile.
+        let mut fresh = serde_json::json!({"Id": "f1", "Name": "Film", "Type": "Movie", "ProductionYear": 2019,
+            "Overview": "Text", "MediaSources": [{"Id": "s0", "Name": "V0"}],
+            "UserData": {"Played": false, "IsFavorite": false}});
+        for (k, v) in extra.as_object().cloned().unwrap_or_default() {
+            fresh[k] = v;
+        }
+        let answer = fresh.to_string();
+        let net = Script::new(move |r| {
+            let p = r.url.path();
+            if p.ends_with("/Items/f1") {
+                return Some(answer.clone());
+            }
+            if p.ends_with("/Items/f1/PlaybackInfo") {
+                return Some(
+                    serde_json::json!({"PlaySessionId": "ps", "MediaSources": [{"Id": "s0",
+                    "Container": "mkv", "SupportsDirectPlay": true, "MediaStreams": []}]})
+                    .to_string(),
+                );
+            }
+            Some("{}".into())
+        });
+        net.gate.close();
+        let vm = vm_for(&net, tile, host(), Some(account("TOKEN-A")));
+        vm.send(DetailIntent::Load);
+        let waiting = vm.actions().proof.clone();
+        assert_eq!(waiting.phase, ProofPhase::Waiting);
+        assert_eq!(
+            waiting.rating.is_some(),
+            stars.is_some(),
+            "stars slot while waiting, {stars:?}/{age:?}"
+        );
+        assert_eq!(
+            waiting.age_rating.is_some(),
+            age.is_some(),
+            "age slot while waiting, {stars:?}/{age:?}"
+        );
+        net.gate.open();
+        wait_for("settled", || {
+            vm.actions().proof.phase == ProofPhase::Settled
+        });
+        let settled = vm.actions().proof.clone();
+        assert_eq!(
+            (waiting.rating, waiting.age_rating),
+            (settled.rating, settled.age_rating)
+        );
+    }
+}
+
+/// The label of a second visit's first frame, with the stored copy of a first visit (written before the viewer got
+/// anywhere) painting and the fresh answer held back. `stand_in` is what the host opens the page with.
+fn second_visit_first_label(stand_in: impl FnOnce() -> Item) -> String {
+    let (host_a, cache) = cached_host();
+    let film = |position: Option<i64>| {
+        let mut user = serde_json::json!({"Played": false, "IsFavorite": false});
+        if let Some(p) = position {
+            user["PlaybackPositionTicks"] = serde_json::json!(p);
+        }
+        let answer =
+            serde_json::json!({"Id": "f1", "Name": "Film", "Type": "Movie", "ProductionYear": 2019,
+            "Overview": "Text", "Genres": ["Drama"], "RunTimeTicks": 72_000_000_000_i64,
+            "MediaSources": [{"Id": "s0", "Name": "V0"}], "UserData": user})
+            .to_string();
+        Script::new(move |r| {
+            if r.url.path().ends_with("/Items/f1") {
+                return Some(answer.clone());
+            }
+            Some("{}".into())
+        })
+    };
+    let net = film(None);
+    let first = vm_for(&net, entry(), host_a, Some(account("TOKEN-A")));
+    first.send(DetailIntent::Load);
+    wait_for("first visit", || {
+        first.hero().overview.as_deref() == Some("Text") && first.bottom().ready
+    });
+    let second_net = film(Some(12_000_000_000));
+    second_net.gate.close();
+    let second = vm_for(
+        &second_net,
+        stand_in(),
+        Host {
+            cache: Some(cache),
+            ..host()
+        },
+        Some(account("TOKEN-A")),
+    );
+    second.send(DetailIntent::Load);
+    wait_for("stored copy", || {
+        second.hero().overview.as_deref() == Some("Text")
+    });
+    let label = second.actions().play.label.clone();
+    second_net.gate.open();
+    label
+}
+
+/// Every host opens a page from the tile it was opened with (`swiftly_vm::tile_item` / `page_seed`). A stand-in made of
+/// the id and the name alone (what the desktop used) has no user data, so the stored copy of an earlier visit, older
+/// than the tile, wins and words the button "Abspielen" although the viewer is 20 minutes in.
+#[test]
+fn a_page_seeded_from_the_tile_words_play_from_the_tiles_resume_point_not_from_the_older_stored_copy()
+ {
+    use swiftly_vm::{Tile, TileFacts};
+    let tile = Tile {
+        id: "f1".into(),
+        title: "Film".into(),
+        subtitle: None,
+        progress: Some(1.0 / 6.0),
+        image: None,
+        badges: Vec::new(),
+        remaining: None,
+        facts: TileFacts {
+            kind: Some("Movie".into()),
+            name: "Film".into(),
+            year: Some(2019),
+            series_id: None,
+            season_id: None,
+            season_number: None,
+            episode_number: None,
+            child_count: None,
+            position_ticks: Some(12_000_000_000),
+            run_time_ticks: Some(72_000_000_000),
+        },
+    };
+    assert_eq!(
+        second_visit_first_label(|| swiftly_vm::tile_item(&tile)),
+        "Fortsetzen ab 20 Min."
+    );
+    // The cause, pinned: without the tile's user data the older copy decides.
+    let bare = || {
+        serde_json::from_str::<Item>(r#"{"Id":"f1","Name":"Film","Type":"Movie"}"#).expect("item")
+    };
+    assert_eq!(second_visit_first_label(bare), "Abspielen");
+}
+
 #[test]
 fn a_cache_event_of_the_account_refreshes_once_per_burst_and_other_accounts_do_nothing() {
     let (host_a, cache) = cached_host();
     let net = server(up());
     let vm = vm_for(&net, entry(), host_a, Some(account("TOKEN-A")));
     vm.send(DetailIntent::Load);
-    wait_for("page", || vm.bottom().ready && vm.actions().play.enabled);
+    wait_for("page", || {
+        vm.bottom().ready && vm.actions().play.ready.is_ready()
+    });
     let scope = ViewCache::scope(&account("TOKEN-A"));
     let before = path_count(&net, "/Items/f1");
 

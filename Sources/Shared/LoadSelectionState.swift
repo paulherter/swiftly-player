@@ -71,19 +71,40 @@ final class LoadSelectionState {
 
     /// **Each season once, and the cache counts.** The core plans the batches (three at a time);
     /// `fetch` asks the server for one season (`nil` = failed, `[]` = empty).
-    func load(seasons: [Item], preloaded: [String: [Item]], audioLanguage: String, selectQuality: Bool,
-              free: Int64, isPresent: (String) -> Bool, learned: (String, [Item]) -> Void,
-              fetch: @escaping @Sendable (String) async -> [Item]?) async {
+    /// **The sheet opens complete.** Called while the page shows (long before the sheet opens), so the
+    /// season rows stand in the card's first frame. They used to be set by `load` in the sheet's
+    /// `.task`, which runs after the slide-up began: the card started with no season rows and grew under
+    /// its own motion while the rows popped in.
+    func prime(seasons: [Item], preloaded: [String: [Item]], audioLanguage: String, selectQuality: Bool,
+               free: Int64, isPresent: (String) -> Bool) {
+        _ = makeCore(seasons: seasons, preloaded: preloaded, audioLanguage: audioLanguage,
+                     selectQuality: selectQuality, free: free, isPresent: isPresent)
+        refresh()
+    }
+
+    private func makeCore(seasons: [Item], preloaded: [String: [Item]], audioLanguage: String, selectQuality: Bool,
+                          free: Int64, isPresent: (String) -> Bool) -> LoadSelectionModel? {
         self.seasons = seasons
         self.free = free
         episodes = preloaded
         guard let made = try? LoadSelectionModel(
             seasonIds: seasons.map(\.id),
             preloaded: preloaded.compactMap { id, list in Self.json(list).map { LoadSeasonEpisodes(seasonId: id, episodesJson: $0) } },
-            locale: AppCore.language, audioLanguage: audioLanguage, selectQuality: selectQuality)
-        else { return }
+            locale: AppCore.language, audioLanguage: audioLanguage, selectQuality: selectQuality,
+            // The language of the device, not of the app: the sound a download starts on follows the start rule.
+            deviceLanguage: StartTracks.deviceLanguage ?? "")
+        else { return nil }
         core = made
         made.setPresent(ids: allEpisodes.map(\.id).filter(isPresent))
+        return made
+    }
+
+    func load(seasons: [Item], preloaded: [String: [Item]], audioLanguage: String, selectQuality: Bool,
+              free: Int64, isPresent: (String) -> Bool, learned: (String, [Item]) -> Void,
+              fetch: @escaping @Sendable (String) async -> [Item]?) async {
+        guard let made = makeCore(seasons: seasons, preloaded: preloaded, audioLanguage: audioLanguage,
+                                  selectQuality: selectQuality, free: free, isPresent: isPresent)
+        else { return }
         let batches = made.beginLoad()
         refresh()
         for batch in batches {
@@ -137,6 +158,20 @@ final class LoadSelectionState {
         case .allThere: String(localized: "alles da")
         case .count(let n): episodesNumber(Int(n))
         }
+    }
+
+    // MARK: The film's audio
+
+    /// **The sound the download sheet of one film starts on, decided by the core** (`downloadAudioStart`): the track the
+    /// start rule would play (the audio language of the settings, then the language of the device), else all tracks. The
+    /// season sheet reads the same rule through `LoadSelectionModel`, so film and season start on the same sound.
+    /// `DownloadAudio.preselected` (settings only) stays in JellyfinKit as the old app's reference for the oracle.
+    static func filmAudioStart(
+        streams: [MediaStream], audioLanguage: String, deviceLanguage: String? = StartTracks.deviceLanguage
+    ) -> DownloadAudioChoice {
+        choice(downloadAudioStart(
+            streams: StartTracks.rows(streams), audioLanguage: audioLanguage, locale: AppCore.language,
+            deviceLanguage: deviceLanguage ?? ""))
     }
 
     // MARK: Conversions

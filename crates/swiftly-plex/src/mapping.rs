@@ -268,6 +268,12 @@ impl PlexMapper {
             } else {
                 None
             },
+            // Episodes under a show (Plex `leafCount`): the core hides a show that has none.
+            recursive_item_count: if m.type_ == "show" {
+                m.leaf_count
+            } else {
+                None
+            },
             backdrop_image_tags: m.art.clone().map(|a| vec![a]),
             series_primary_image_tag: if is_episode {
                 m.grandparent_thumb.clone()

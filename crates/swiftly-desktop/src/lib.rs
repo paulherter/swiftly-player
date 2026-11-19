@@ -10,12 +10,17 @@ pub mod app;
 pub mod art;
 pub mod autoplay;
 pub mod browse;
+pub mod browser_open;
 pub mod cli;
 pub mod crash;
 pub mod deep_link;
 pub mod demo;
 pub mod desk;
 pub mod detail_screen;
+pub mod device_language;
+#[cfg(all(feature = "mpv", any(target_os = "linux", windows)))]
+#[cfg_attr(windows, path = "win_gpu_video.rs")]
+pub mod dmabuf_import;
 pub mod downloads_screen;
 pub mod dump;
 pub mod effects;
@@ -47,6 +52,7 @@ pub mod login_mac;
 pub mod login_screen;
 pub mod look_glow;
 pub mod lottie;
+pub mod management_hub;
 pub mod media_keys;
 pub mod nav_machine;
 pub mod net;
@@ -56,13 +62,19 @@ pub mod pages_screen;
 pub mod player_card;
 pub mod player_glyphs;
 pub mod player_host;
+pub(crate) mod player_menu_box;
 pub mod player_screen;
 pub mod quit_guard;
+#[cfg(feature = "window")]
+pub mod resize_latency;
 pub mod script;
 pub mod search_screen;
+pub mod seerr_desk;
 pub mod seerr_flow;
 pub mod seerr_link;
 pub mod series_screen;
+pub mod server_admin_link;
+pub mod server_admin_pages;
 pub mod server_check;
 pub mod settings_pages;
 pub mod settings_run;
@@ -70,6 +82,7 @@ pub mod settings_screen;
 pub mod shell;
 pub mod signin_flows;
 pub mod single_instance;
+pub mod skip_fill;
 pub mod stats;
 pub mod store;
 pub mod subtitle_style;
@@ -97,6 +110,7 @@ pub mod wheel;
 pub mod win_backdrop;
 #[cfg(feature = "window")]
 pub mod win_dark;
+#[cfg(feature = "window")]
 pub mod win_shell;
 #[cfg(feature = "window")]
 pub mod window_extras;

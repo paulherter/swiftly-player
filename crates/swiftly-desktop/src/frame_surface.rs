@@ -159,6 +159,21 @@ pub fn app_cx() -> Cx {
 /// limit) and moves the newest frame into the renderer's bottom layer.
 pub struct GpuVideoHost {
     max_side: u32,
+    /// Imports of the engine's shared buffers (the GPU way).
+    #[cfg(all(feature = "mpv", any(target_os = "linux", windows)))]
+    importer: RefCell<crate::dmabuf_import::Importer>,
+}
+
+/// Whether a new engine should draw into shared GPU buffers: the window's renderer can import them.
+pub fn dmabuf_wanted() -> bool {
+    #[cfg(all(feature = "mpv", any(target_os = "linux", windows)))]
+    {
+        crate::dmabuf_import::wanted()
+    }
+    #[cfg(not(all(feature = "mpv", any(target_os = "linux", windows))))]
+    {
+        false
+    }
 }
 
 impl GpuVideoHost {
@@ -172,6 +187,8 @@ impl GpuVideoHost {
         }
         Some(GpuVideoHost {
             max_side: max_texture_side,
+            #[cfg(all(feature = "mpv", any(target_os = "linux", windows)))]
+            importer: RefCell::new(crate::dmabuf_import::Importer::default()),
         })
     }
 
@@ -193,8 +210,19 @@ impl GpuVideoHost {
         let mut v = video.borrow_mut();
         if std::mem::take(&mut v.reset) || !v.alive {
             renderer.clear_video();
+            #[cfg(all(feature = "mpv", any(target_os = "linux", windows)))]
+            self.importer.borrow_mut().clear();
         }
         if v.alive {
+            #[cfg(all(feature = "mpv", any(target_os = "linux", windows)))]
+            if let Some(shared) = v.shared.take()
+                && let Ok(frame) = shared.0.downcast::<swiftly_player_surface::SharedFrame>()
+            {
+                let mut importer = self.importer.borrow_mut();
+                if let Some(texture) = importer.texture(renderer.device(), &frame) {
+                    renderer.show_video_texture(texture, swiftly_render::VideoFit::Fit);
+                }
+            }
             if let Some(frame) = v.pending.take() {
                 renderer.upload_video(frame.w, frame.h, &frame.rgba, swiftly_render::VideoFit::Fit);
                 v.spare = frame.rgba;

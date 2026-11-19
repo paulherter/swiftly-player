@@ -62,7 +62,16 @@ final class HomeModel {
     /// empty where the old loading serves the session (`AppModel.coreServes`); see `loadRust`.
     #if canImport(SwiftlyCore)
     private var rustFeed: RustHomeFeed?
+    /// The one watcher of the core model's hints. Its Task ends with the page model (`NoticeWatch.deinit`) and when
+    /// the core model is replaced.
+    @ObservationIgnored private var noticeWatch: NoticeWatch?
+    /// Weak: a replaced core model may go away, and a new one at the same address must still get its watcher.
+    @ObservationIgnored private weak var watchedHome: SwiftlyCore.HomeModel?
     #endif
+    /// Set by the page: runs a change of the rows with the page's own motion (the rollback of a refused removal).
+    @ObservationIgnored var rowMotion: ((() -> Void) -> Void)?
+    /// Set by the page: shows a hint the core raised (a refused removal).
+    @ObservationIgnored var onNotice: ((String) -> Void)?
     private var rustLooks: [String: [String: RustTileLook]] = [:]
 
     /// **How many runs are in flight.** Only for
@@ -253,6 +262,7 @@ final class HomeModel {
         #endif
     }
 
+
     // MARK: - Ablage
 
     /// Whether this state has come from the server yet - until then the libraries
@@ -357,6 +367,51 @@ extension HomeModel {
     /// (`on` is the switch, so looks left over from an earlier run never reach real titles).
     func rustTileLooks(rail: String, on: Bool) -> [String: RustTileLook]? { on ? rustLooks[rail] : nil }
 
+    /// **"Aus Weiterschauen entfernen".** The core owns the row: it takes the title out and publishes in the same call, the
+    /// request and a rollback with its hint are the core's too (`HomeIntent::RemoveFromContinue`). This only reads the row
+    /// back into the arrays the view draws, so the call belongs inside the page's change motion. `false` when the core does
+    /// not serve this page (the caller then asks the server itself).
+    @discardableResult
+    func removeFromContinue(_ id: String) -> Bool {
+        guard let home = rustFeed?.currentModel else { return false }
+        home.removeFromContinue(id)
+        adoptRust(home, forAccount)
+        return true
+    }
+
+    /// **The whole "Aus Weiterschauen entfernen" step, once for iPhone, iPad, Mac and Apple TV.** The row loses the title at
+    /// once (the caller wraps this in the page's change motion), the request and a refused removal's rollback with its hint
+    /// belong to the core, and the series page's cached main button forgets the position that was just dropped. Only when the
+    /// core does not serve this page does the old request run (`AppModel.fromContinueWatchingTake`); the page then catches up
+    /// through `watchStateChanged`. No platform edits a list itself.
+    func takeOutOfContinue(_ item: Item, model: AppModel) {
+        guard removeFromContinue(item.id) else {
+            Task { _ = await model.fromContinueWatchingTake(item) }
+            return
+        }
+        SeriesCache.shared.forget(item.seriesId ?? item.id)
+        AppLog.writeOut("[Weiterschauen] \(item.seriesName ?? item.name): aus der Reihe genommen (Kern), Anfrage läuft im Hintergrund")
+    }
+
+    /// One watcher per core model: a refused removal comes back as a hint (`SwiftlyCore.HomeModel.watchNotices`) with the
+    /// rails read again, which the page shows with its change motion. The Task holds neither this page model nor the
+    /// core model while it waits to start, and it is cancelled when the core model is replaced and when this page
+    /// model goes away (`NoticeWatch`), so no watcher outlives the page.
+    private func watchNotices(of home: SwiftlyCore.HomeModel) {
+        guard watchedHome !== home else { return }
+        noticeWatch?.cancel()
+        watchedHome = home
+        noticeWatch = NoticeWatch(Task { [weak self, weak home] in
+            guard let home else { return }
+            await home.watchNotices { [weak self, weak home] text in
+                guard let self, let home else { return }
+                let apply = { self.adoptRust(home, self.forAccount) }
+                if let motion = self.rowMotion { motion(apply) } else { apply() }
+                self.onNotice?(text)
+            }
+        })
+    }
+
     /// The wide picture for the head of the TV's home page, from the core: the landscape chain at
     /// `width`, else the page-head chain. `nil` when the core has none (the page then searches on).
     func rustHeroURL(for id: String, width: Int) -> URL? {
@@ -377,9 +432,9 @@ extension HomeModel {
         let myOwn = run
         func applies() -> Bool { myOwn == run && itAccount == model.accountSwitch }
         if itAccount != forAccount, loaded || !allEmpty { wipe() }
-        // The tabs for Movies and Series need the libraries; `load` is what fetches them.
-        if model.views.isEmpty { await model.loadViews() }
-        guard applies() else { return }
+        // The tabs for Movies and Series need the libraries. They are asked beside the core's own load, not before it:
+        // waiting for them first put one more round trip in front of every row on a cold start.
+        let viewsLoad: Task<Void, Never>? = model.views.isEmpty ? Task { await model.loadViews() } : nil
         let feed = rustFeed ?? RustHomeFeed()
         rustFeed = feed
         let prefs = HomePrefs(
@@ -390,6 +445,7 @@ extension HomeModel {
             loaded = true
             return
         }
+        watchNotices(of: home)
         // The library and collection rows and their place among the fixed rows come from the core.
         home.setStartLibraries(model.startLibraries.map {
             HomeLibraryChoice(id: $0.id, name: $0.name, collection: $0.collection)
@@ -398,6 +454,7 @@ extension HomeModel {
         await home.loadSettled {
             if applies() { adoptRust(home, itAccount) }
         }
+        await viewsLoad?.value
         guard applies(), !Task.isCancelled else { return }
         adoptRust(home, itAccount)
         if home.status.status == .ready {
@@ -510,5 +567,16 @@ extension HomeModel {
         self.recent = recent
         loaded = true
     }
+}
+#endif
+
+#if canImport(SwiftlyCore)
+/// The Task that listens for the core's hints. Cancels it when the last reference goes: the page model's own `deinit`
+/// cannot reach its main-actor state, and a listener that outlives the page would keep the core model alive.
+private final class NoticeWatch: Sendable {
+    private let task: Task<Void, Never>
+    init(_ task: Task<Void, Never>) { self.task = task }
+    func cancel() { task.cancel() }
+    deinit { task.cancel() }
 }
 #endif

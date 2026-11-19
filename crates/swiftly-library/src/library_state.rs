@@ -10,6 +10,7 @@ use swiftly_model::Item;
 
 use crate::library_filter::{LibraryFilter, Sorting, SortingExt};
 use crate::list_rules::ListRules;
+use crate::narrowing::{ListFilter, Narrowing};
 use crate::shelf::{ShelfSource, TitleFilter};
 use crate::store::KeyValue;
 
@@ -35,8 +36,8 @@ pub enum LibraryCommand {
         run: u64,
         /// The order to ask for.
         sorting: Sorting,
-        /// The filter to ask for.
-        filter: LibraryFilter,
+        /// The filter (status and narrowing) to ask for.
+        filter: ListFilter,
         /// Offset.
         since: usize,
         /// How many.
@@ -46,8 +47,8 @@ pub enum LibraryCommand {
     FetchTitleFilter {
         /// The run this belongs to.
         run: u64,
-        /// The filter to ask for.
-        filter: LibraryFilter,
+        /// The filter (status and narrowing) to ask for.
+        filter: ListFilter,
     },
 }
 
@@ -109,6 +110,8 @@ pub struct LibraryState {
     pub sorting: Sorting,
     /// The filter. Use [`LibraryState::set_filter`] so it is remembered.
     pub filter: LibraryFilter,
+    /// Years and language the list is narrowed to. Use [`LibraryState::set_narrowing`].
+    pub narrowing: Narrowing,
     remember_name: Option<String>,
     loads_post: bool,
     for_account: u64,
@@ -130,8 +133,13 @@ fn len64(n: usize) -> i64 {
 }
 
 impl LibraryState {
+    /// The order of a library page nobody has chosen an order for yet: "Recently added".
+    /// A list without a remember name (collections, genre shelves) keeps "By name".
+    pub const DEFAULT_PAGE_SORTING: Sorting = Sorting::Latest;
+
     /// `init(rememberName:)` (:55-61): reads the remembered order and filter; without a name
-    /// nothing is remembered.
+    /// nothing is remembered. A remembered place (a library page) starts on
+    /// [`Self::DEFAULT_PAGE_SORTING`] until the viewer picked another order.
     pub fn new(remember_name: Option<&str>, store: &dyn KeyValue) -> Self {
         let mut s = Self {
             items: Vec::new(),
@@ -140,8 +148,13 @@ impl LibraryState {
             running: false,
             disrupted: false,
             load_more_failed: false,
-            sorting: Sorting::Name,
+            sorting: if remember_name.is_some() {
+                Self::DEFAULT_PAGE_SORTING
+            } else {
+                Sorting::Name
+            },
             filter: LibraryFilter::All,
+            narrowing: Narrowing::default(),
             remember_name: remember_name.map(String::from),
             loads_post: false,
             for_account: 0,
@@ -167,6 +180,7 @@ impl LibraryState {
             {
                 s.filter = v;
             }
+            s.narrowing = Narrowing::read(name, store);
         }
         s
     }
@@ -183,11 +197,29 @@ impl LibraryState {
         self.secure(store);
     }
 
+    /// Sets the years and language and remembers them per place.
+    pub fn set_narrowing(&mut self, narrowing: Narrowing, store: &dyn KeyValue) {
+        self.narrowing = narrowing;
+        self.secure(store);
+    }
+
     fn secure(&self, store: &dyn KeyValue) {
         if let Some(name) = &self.remember_name {
             Self::remember(self.sorting, name, store);
             store.set(&format!("filter.{name}"), self.filter.raw_value());
+            self.narrowing.write(name, store);
         }
+    }
+
+    /// The status filter and the narrowing as one value, what a fetch is asked for.
+    pub fn list_filter(&self) -> ListFilter {
+        ListFilter::new(self.filter, self.narrowing.clone())
+    }
+
+    /// Whether the pages are sifted on this side: several libraries, or a language the server
+    /// cannot filter by.
+    pub fn sifts(&self, source: &ShelfSource) -> bool {
+        source.is_filtering() || self.narrowing.language.is_some()
     }
 
     /// Stores the order of a place without a page in memory (`remember(_:for:)`, :77-79).
@@ -197,7 +229,12 @@ impl LibraryState {
 
     /// If either changes, reload (`identifier`, :82).
     pub fn identifier(&self) -> String {
-        format!("{}|{}", self.sorting.raw_value(), self.filter.raw_value())
+        format!(
+            "{}|{}{}",
+            self.sorting.raw_value(),
+            self.filter.raw_value(),
+            self.narrowing.id()
+        )
     }
 
     /// Do the contents still belong to the signed-in account? (`outdated`, :35).
@@ -243,7 +280,7 @@ impl LibraryState {
         LibraryCommand::FetchPage {
             run,
             sorting: self.sorting,
-            filter: self.filter,
+            filter: self.list_filter(),
             since,
             count,
         }
@@ -279,12 +316,12 @@ impl LibraryState {
             self.running = false;
             return LoadStart { run, command: None };
         };
-        if source.is_filtering() {
+        if self.sifts(source) {
             return LoadStart {
                 run,
                 command: Some(LibraryCommand::FetchTitleFilter {
                     run,
-                    filter: self.filter,
+                    filter: self.list_filter(),
                 }),
             };
         }
@@ -397,7 +434,7 @@ impl LibraryState {
         let before = self.loaded_for.clone();
         self.load_more_failed = false;
         self.more = Some(before.clone());
-        if source.is_filtering()
+        if self.sifts(source)
             && let Some(filter) = self.filter_ref.clone()
         {
             let run = self.run;
@@ -776,10 +813,86 @@ mod tests {
     }
 
     #[test]
+    fn narrowing_is_remembered_and_reaches_the_fetch() {
+        use crate::narrowing::YearSpan;
+        let kv = MemoryKeyValue::new();
+        let mut s = LibraryState::new(Some("movies"), &kv);
+        assert!(s.narrowing.is_none());
+        let narrowing = Narrowing {
+            years: Some(YearSpan::decade(2015)),
+            language: None,
+        };
+        s.set_narrowing(narrowing.clone(), &kv);
+        assert_eq!(kv.get("jahre.movies").as_deref(), Some("2010-2019"));
+        let again = LibraryState::new(Some("movies"), &kv);
+        assert_eq!(again.narrowing, narrowing);
+        assert_eq!(
+            LibraryState::new(Some("series"), &kv).narrowing,
+            Narrowing::default()
+        );
+        // The status filter stays as it was and combines with the years.
+        s.set_filter(LibraryFilter::Begun, &kv);
+        match s.begin_load(0, false, Some(&lib())).command {
+            Some(LibraryCommand::FetchPage { filter, .. }) => {
+                assert_eq!(filter.status, LibraryFilter::Begun);
+                assert_eq!(filter.years().len(), 10);
+                assert_eq!(filter.raw_value(), "angefangen|j2010-2019");
+            }
+            other => panic!("not a page fetch: {other:?}"),
+        }
+        // Another span is another list: the identifier differs, so the grid is replaced, not refreshed.
+        let before = s.identifier();
+        s.set_narrowing(Narrowing::default(), &kv);
+        assert_ne!(s.identifier(), before);
+        assert_eq!(s.identifier(), "neueste|angefangen");
+    }
+
+    #[test]
+    fn a_language_sifts_even_one_library() {
+        let kv = MemoryKeyValue::new();
+        let mut s = LibraryState::new(None, &kv);
+        s.set_narrowing(
+            Narrowing {
+                years: None,
+                language: Some("deu".into()),
+            },
+            &kv,
+        );
+        let start = s.begin_load(0, false, Some(&lib()));
+        match start.command {
+            Some(LibraryCommand::FetchTitleFilter { filter, .. }) => {
+                assert_eq!(filter.narrowing.language.as_deref(), Some("deu"));
+            }
+            other => panic!("a language is asked as a title filter first: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_library_page_starts_on_recently_added_and_keeps_a_chosen_order() {
+        let kv = MemoryKeyValue::new();
+        assert_eq!(
+            LibraryState::new(Some("movies"), &kv).sorting,
+            Sorting::Latest
+        );
+        // No remember name (collection, genre shelf): by name, as before.
+        assert_eq!(LibraryState::new(None, &kv).sorting, Sorting::Name);
+        // A viewer who chose "By name" keeps it.
+        LibraryState::remember(Sorting::Name, "movies", &kv);
+        assert_eq!(
+            LibraryState::new(Some("movies"), &kv).sorting,
+            Sorting::Name
+        );
+        assert_eq!(
+            LibraryState::new(Some("tvshows"), &kv).sorting,
+            Sorting::Latest
+        );
+    }
+
+    #[test]
     fn order_and_filter_are_remembered_per_place() {
         let kv = MemoryKeyValue::new();
         let mut s = LibraryState::new(Some("movies"), &kv);
-        assert_eq!((s.sorting, s.filter), (Sorting::Name, LibraryFilter::All));
+        assert_eq!((s.sorting, s.filter), (Sorting::Latest, LibraryFilter::All));
         s.set_sorting(Sorting::Rating, &kv);
         s.set_filter(LibraryFilter::Begun, &kv);
         assert_eq!(kv.get("sortierung.movies").as_deref(), Some("bewertung"));
@@ -791,7 +904,7 @@ mod tests {
         );
         assert_eq!(again.identifier(), "bewertung|angefangen");
         let other = LibraryState::new(Some("series"), &kv);
-        assert_eq!(other.sorting, Sorting::Name);
+        assert_eq!(other.sorting, Sorting::Latest);
         let mut nameless = LibraryState::new(None, &kv);
         nameless.set_sorting(Sorting::Latest, &kv);
         assert_eq!(kv.get("sortierung.movies").as_deref(), Some("bewertung"));

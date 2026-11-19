@@ -1,5 +1,8 @@
 import JellyfinKit
 import SwiftUI
+import struct SwiftlyCore.PlayerChapterRow
+import struct SwiftlyCore.PlayerPreview
+import enum SwiftlyCore.PlayerMenuPanelTab
 
 /// Player dimensions on the TV, in one place so the title of the episode layer
 /// sits exactly where it sat on the picture. Rounded to the TV type steps; the
@@ -64,16 +67,16 @@ enum PlayerMetric {
     }
 }
 
-/// The three layers over the picture.
+/// The layers over the picture.
 enum PlayerLayer: Equatable {
-    case tracks, episodes, settings
+    case episodes, chapters
 }
 
 /// Shoot path for screenshots without a working stream. DEBUG only; in release every flag is `false`.
 ///
 ///     -zeige player -ohneBild [-ebene]
 ///
-/// `-ohneBild` shows the control layer as if playing (see `PlayerScreen`); `-ebene` opens the audio and subtitle layer with focus on the subtitle "Deutsch".
+/// `-ohneBild` shows the control layer as if playing (see `PlayerScreen`); `-ebene` opens the Ton & Untertitel menu.
 enum PlayerShoot {
     #if DEBUG
     static let withoutImage = ProcessInfo.processInfo.arguments.contains("-ohneBild")
@@ -89,76 +92,6 @@ enum PlayerShoot {
     /// Share of the "Nächste Folge" underline.
     static let countdown: Double = 0.7
 
-    /// Mock tracks for the layer when no player exists. `id` doubles as the focus id.
-    struct Track: Identifiable {
-        let id: String
-        let text: String
-    }
-    static let audio = [Track(id: "a1", text: "Deutsch · AC3 5.1"), Track(id: "a2", text: "English · E-AC3 5.1"),
-                        Track(id: "a3", text: "Audiodeskription")]
-    static let subtitles = [Track(id: "s1", text: "Deutsch"), Track(id: "s2", text: "Deutsch (erzwungen)"),
-                            Track(id: "s3", text: "English · SDH")]
-    static let subtitleDelay = Delay(milliseconds: 500)
-}
-
-/// Glyph box of the icon buttons. The same view draws the real button and the decorative copy over a layer.
-struct IconGlyph: View {
-    let symbol: String
-    /// Lit like focus: white surface, dark glyph, magnified, lifted.
-    let lit: Bool
-
-    var body: some View {
-        Image(icon: symbol, size: PlayerMetric.symbol)
-            .font(.app(size: PlayerMetric.symbol, weight: .medium))
-            .foregroundStyle(lit ? Theme.reason : Theme.font)
-            .frame(width: PlayerMetric.button, height: PlayerMetric.button)
-            .background {
-                RoundedRectangle(cornerRadius: Theme.corner, style: .continuous)
-                    .fill(lit ? Color.white : .clear)
-                    .lift(lit)
-            }
-            .scaleEffect(lit ? Theme.focusMagnifierSmall : 1)
-            .animation(Theme.focusAnimation, value: lit)
-    }
-}
-
-/// One of the icon buttons at top right. At rest only the glyph, focused the
-/// white fill of `ThemedButtonStyle`. `active` lights it like focus while its layer is open.
-struct IconButton: View {
-    let symbol: String
-    let label: LocalizedStringKey
-    var active = false
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Color.clear
-        }
-        .buttonStyle(IconButtonStyle(symbol: symbol, active: active))
-        .accessibilityLabel(Text(label))
-    }
-}
-
-/// No fill at rest: the glyph floats over the picture. Focus = white rounded square, x1.1, lifted (design `iconBtn`).
-private struct IconButtonStyle: ButtonStyle {
-    let symbol: String
-    var active = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        ContentBody(configuration: configuration, symbol: symbol, active: active)
-    }
-
-    private struct ContentBody: View {
-        let configuration: ButtonStyleConfiguration
-        let symbol: String
-        let active: Bool
-        @Environment(\.isFocused) private var focus
-
-        var body: some View {
-            IconGlyph(symbol: symbol, lit: focus || active)
-                .scaleEffect(configuration.isPressed ? 0.97 : 1)
-        }
-    }
 }
 
 /// Base of every layer: dark blur plus rgba(16,16,16,.6), as in the design.
@@ -181,21 +114,25 @@ private struct LayersReason: View {
 private struct SelectionColumn<ContentBody: View>: View {
     @Environment(\.columnsWidth) private var width
     let title: LocalizedStringKey
+    /// Off inside the episodes panel, where the "Kapitel" tab already names the list.
+    var showsTitle = true
     @ViewBuilder let content: ContentBody
     /// Room around the rows so a magnified, lifted focus row is not clipped by the scroll view.
     private let bleed: CGFloat = 40
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                // 36 / 700 / -0.6 at the heading step of the layers (design `.t-group` at 36).
-                .font(.app(size: PlayerMetric.heading, weight: .bold))
-                .tracking(-0.6)
-                .foregroundStyle(Theme.font)
-                .lineLimit(1)
-                .frame(height: PlayerMetric.heading * 1.15)
-                .padding(.bottom, PlayerMetric.headingGap)
-                .accessibilityAddTraits(.isHeader)
+            if showsTitle {
+                Text(title)
+                    // 36 / 700 / -0.6 at the heading step of the layers (design `.t-group` at 36).
+                    .font(.app(size: PlayerMetric.heading, weight: .bold))
+                    .tracking(-0.6)
+                    .foregroundStyle(Theme.font)
+                    .lineLimit(1)
+                    .frame(height: PlayerMetric.heading * 1.15)
+                    .padding(.bottom, PlayerMetric.headingGap)
+                    .accessibilityAddTraits(.isHeader)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) { content }
                     .padding(.horizontal, bleed)
@@ -234,124 +171,6 @@ private struct LayersRowStyle: ButtonStyle {
     }
 }
 
-/// Check mark and name. Selected is white and semibold, otherwise #CCC medium; focus is a white row with dark semibold text.
-private struct LayersRow: View {
-    let text: String
-    let selected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            RowsText(text: text, selected: selected)
-        }
-        .buttonStyle(LayersRowStyle())
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    /// Separate view so it can read the button's focus.
-    private struct RowsText: View {
-        let text: String
-        let selected: Bool
-        @Environment(\.isFocused) private var focus
-
-        var body: some View {
-            HStack(spacing: 20) {
-                Image(icon: "checkmark", size: 30)
-                    .font(.app(size: 30, weight: .semibold))
-                    .opacity(selected ? 1 : 0)
-                    .frame(width: 32)
-                    // The check mark is only an image; VoiceOver reads the selection from the button (`.isSelected`).
-                    .accessibilityHidden(true)
-                // Track names come from the file; use them verbatim.
-                Marquee(text: text, running: focus)
-            }
-            .font(.app(size: 30, weight: selected || focus ? .semibold : .medium))
-            .foregroundStyle(focus ? Theme.reason : (selected ? Theme.font : Theme.fontQuiet))
-            .padding(.horizontal, PlayerMetric.inset)
-            .frame(height: PlayerMetric.rowHeight)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-}
-
-/// **A name that does not fit runs through once while focused**, like the system's
-/// focused labels: a pause to start reading, the text slides to its end, holds, then
-/// jumps back and starts over. Unfocused or fitting, it is a plain truncated line.
-private struct Marquee: View {
-    let text: String
-    let running: Bool
-    @State private var box: CGFloat = 0
-    @State private var full: CGFloat = 0
-    @State private var shift: CGFloat = 0
-
-    private var overflow: CGFloat { max(0, full - box) }
-
-    var body: some View {
-        Text(verbatim: text)
-            .lineLimit(1)
-            .fixedSize()
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { full = $0 }
-            .hidden()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .leading) {
-                if running && overflow > 0 && !Theme.motionReduced {
-                    Text(verbatim: text)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .offset(x: -shift)
-                } else {
-                    Text(verbatim: text)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-            .clipped()
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { box = $0 }
-            .task(id: running && overflow > 0) { await run() }
-    }
-
-    private func run() async {
-        shift = 0
-        guard running, overflow > 0, !Theme.motionReduced else { return }
-        while !Task.isCancelled {
-            try? await Task.sleep(for: .seconds(1.2))
-            let travel = overflow
-            // A steady reading pace, whatever the length.
-            let time = Double(travel / 110)
-            withAnimation(.linear(duration: time)) { shift = travel }
-            try? await Task.sleep(for: .seconds(time + 1.5))
-            guard !Task.isCancelled else { break }
-            shift = 0
-        }
-        shift = 0
-    }
-}
-
-/// A name in the "together" column: information, not a button.
-private struct ParticipantRow: View {
-    let name: String
-
-    var body: some View {
-        HStack(spacing: 22) {
-            Image(icon: "person.fill")
-                .font(.app(size: 26))
-                .foregroundStyle(Theme.fontVeryQuiet)
-                .frame(width: 42)
-            // A server user name, verbatim.
-            Text(verbatim: name)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 0)
-        }
-        .font(Theme.body)
-        .foregroundStyle(Theme.fontQuiet)
-        .padding(.horizontal, PlayerMetric.inset)
-        .frame(height: PlayerMetric.rowHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-    }
-}
-
 private struct ColumnsWidthKey: EnvironmentKey {
     static let defaultValue: CGFloat = PlayerMetric.column
 }
@@ -365,280 +184,77 @@ private extension EnvironmentValues {
 /// Columns side by side from the left margin (80 pt) at 212 pt from the top. They end at the bottom edge; overflow scrolls inside its column.
 private struct ColumnsRail<ContentBody: View>: View {
     var count = 2
+    /// A column wider than the design's 500 pt, for rows with a picture (the chapter list).
+    var width: CGFloat?
+    var top = PlayerMetric.columnsTop
     @ViewBuilder let content: ContentBody
 
     var body: some View {
         HStack(alignment: .top, spacing: PlayerMetric.columnGap(count: count)) { content }
-            .environment(\.columnsWidth, PlayerMetric.columnsWidth(count: count))
+            .environment(\.columnsWidth, width ?? PlayerMetric.columnsWidth(count: count))
             .padding(.leading, Theme.edgePage)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.top, PlayerMetric.columnsTop)
+            .padding(.top, top)
     }
 }
 
-/// Delay: last row of the audio and subtitle columns. Counterpart of `Verzoegerungszeile` on iOS (rationale there).
-/// On TV it has three focus targets (-, +, reset) instead of one row catching
-/// left/right, because left/right switch the column here. Holding repeats,
-/// faster via `Delay.Haltezaehler`.
-/// Design shows one decimal ("0,0 s", "+0,5 s"); the step logic stays 50 ms.
-private func delayLabel(_ delay: Delay) -> String {
-    let tenths = (Double(delay.milliseconds) / 100).rounded(.toNearestOrAwayFromZero)
-    let sign = tenths > 0 ? "+" : (tenths < 0 ? "\u{2212}" : "")
-    return "\(sign)\(String(format: "%.1f", abs(tenths) / 10).replacingOccurrences(of: ".", with: ",")) s"
-}
+// MARK: - Chapters
 
-struct DelayRow: View {
-    let value: Delay
-    /// Focus id of the row, `"v" + column`; the keys append `-`, `+` and `0`.
-    let identifier: String
-    let focus: FocusState<String?>.Binding
-    let setDown: (Delay) -> Void
-    @State private var hold = Delay.HoldCounter()
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Verzögerung")
-                .font(Theme.small)
-                .foregroundStyle(Theme.fontVeryQuiet)
-                .padding(.horizontal, PlayerMetric.inset)
-            // Four items, equal gaps (design: space-between): minus, value, plus, reset. The hidden reset keeps its place.
-            HStack(spacing: 0) {
-                keyButton("minus", "-", locked: value.atStart) {
-                    setDown(value.shifted(-1, steps: hold.press()))
-                }
-                .accessibilityLabel(Text("Früher"))
-                Spacer(minLength: 0)
-                Text(verbatim: delayLabel(value))
-                    .font(Font.app(size: 26, weight: .medium).monospacedDigit())
-                    .foregroundStyle(value.isNull ? Theme.fontQuiet : Theme.font)
-                    .lineLimit(1)
-                    .accessibilityHidden(true)
-                Spacer(minLength: 0)
-                keyButton("plus", "+", locked: value.atEnd) {
-                    setDown(value.shifted(1, steps: hold.press()))
-                }
-                .accessibilityLabel(Text("Später"))
-                Spacer(minLength: 0)
-                // The reset button disappears afterwards; focus goes to + instead of jumping elsewhere.
-                keyButton("arrow.counterclockwise", "0", locked: false, redo: false) {
-                    setDown(.null)
-                    focus.wrappedValue = identifier + "+"
-                }
-                .accessibilityLabel(Text("Zurücksetzen"))
-                .opacity(value.isNull ? 0 : 1)
-                .disabled(value.isNull)
-            }
-            .accessibilityValue(Text(verbatim: delayLabel(value)))
-        }
-    }
-
-    private func keyButton(_ symbol: String, _ suffix: String, locked: Bool, redo: Bool = true,
-                       action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Color.clear
-        }
-        .buttonStyle(IconButtonStyle(symbol: symbol))
-        .opacity(locked ? 0.4 : 1)
-        .buttonRepeatBehavior(redo ? .enabled : .disabled)
-        // At the limit the key stays focusable; if focus vanished mid-hold it would jump to another column.
-        .focused(focus, equals: identifier + suffix)
-    }
-}
-
-// MARK: - Audio & subtitles
-
-struct TracksLayer: View {
+/// **The chapter list**, as on iPhone: the core's rows (name or "Kapitel n", start, preview tile, the running one marked)
+/// through the shared row (`ChapterRowContent`); a press sends the jump (`coreJump`) and closes the layer. Focus starts on
+/// the running chapter, and moving it scrolls the column.
+struct ChaptersLayer: View {
     let area: VLCPlayerView?
+    /// The trickplay image for a start and the core's tile; `nil` without trickplay.
+    let preview: (Double, PlayerPreview?) -> CGImage?
+    let close: () -> Void
+    /// Inside the episodes panel (the "Kapitel" tab): no scrim of its own, no heading, the list starts right under the tabs.
+    var embedded = false
 
-    /// The own selection, independent of VLC: VLC applies the choice one tick later,
-    /// so the check marks would lag a click behind.
-    @State private var audioSelection: String?
-    @State private var subtitleSelection: String??
-    @FocusState private var focus: String?
-    @State private var audioLag: Delay?
-    @State private var subtitleLag: Delay?
-
-    /// Without a player the shoot path (`-ohneBild`) shows mock tracks; otherwise this is always `false`.
-    private var mock: Bool { area == nil && PlayerShoot.withoutImage }
+    @FocusState private var focus: UInt32?
 
     var body: some View {
+        let part = area?.coreChapters
         ZStack(alignment: .top) {
-            LayersReason()
-            ColumnsRail {
-                SelectionColumn(title: "Audio") {
-                    if mock {
-                        ForEach(PlayerShoot.audio) { track in
-                            LayersRow(text: track.text, selected: audioNow == track.id) {
-                                audioSelection = track.id
-                            }
-                            .focused($focus, equals: "t" + track.id)
-                        }
-                    } else {
-                        ForEach(area?.audioTracks ?? [], id: \.trackId) { track in
-                            LayersRow(text: area?.audioLabel(track) ?? track.prettyName, selected: audioNow == track.trackId) {
-                                audioSelection = track.trackId
-                                area?.selectAudioTrack(track)
-                            }
-                            .focused($focus, equals: "t" + track.trackId)
-                        }
-                    }
-                    DelayRow(value: audioLag ?? area?.audioDelay ?? .null,
-                                       identifier: "vt", focus: $focus) { new in
-                        audioLag = new
-                        area?.audioDelay = new
-                    }
-                    .padding(.top, PlayerMetric.delayTop)
-                }
-                SelectionColumn(title: "Untertitel") {
-                    LayersRow(text: String(localized: "Aus"), selected: subtitleNow == nil) {
-                        subtitleSelection = .some(nil)
-                        area?.selectSubtitle(nil)
-                    }
-                    .focused($focus, equals: "u")
-                    if mock {
-                        ForEach(PlayerShoot.subtitles) { track in
-                            LayersRow(text: track.text, selected: subtitleNow == track.id) {
-                                subtitleSelection = .some(track.id)
-                            }
-                            .focused($focus, equals: "u" + track.id)
-                        }
-                    } else {
-                        let names = area?.subtitleNames() ?? [:]
-                        ForEach(area?.subtitleTracks ?? [], id: \.trackId) { track in
-                            LayersRow(text: names[track.trackId] ?? track.trackName,
-                                        selected: subtitleNow == track.trackId) {
-                                subtitleSelection = .some(track.trackId)
-                                area?.selectSubtitle(track)
-                            }
-                            .focused($focus, equals: "u" + track.trackId)
-                        }
-                    }
-                    DelayRow(value: subtitleLag ?? area?.subtitleDelay ?? (mock ? PlayerShoot.subtitleDelay : .null),
-                                       identifier: "vu", focus: $focus) { new in
-                        subtitleLag = new
-                        area?.subtitleDelay = new
-                    }
-                    .padding(.top, PlayerMetric.delayTop)
-                }
-            }
-        }
-        .focusSection()
-        // Starts on the selected audio track; the shoot path `-ebene` starts on the subtitle "Deutsch".
-        .task { await LayersFocus.put { focus = focus ?? startTarget } }
-    }
-
-    private var startTarget: String {
-        if PlayerShoot.layer { return "us1" }
-        if let audio = audioNow { return "t" + audio }
-        return "u" + (subtitleNow ?? "")
-    }
-
-    /// By `trackId`, not name: two tracks called "Deutsch" would both show the check mark.
-    private var subtitleNow: String? {
-        if let subtitleSelection { return subtitleSelection }
-        return mock ? nil : area?.selectedSubtitle?.trackId
-    }
-
-    private var audioNow: String? {
-        audioSelection ?? (mock ? "a1" : area?.selectedAudioTrack?.trackId)
-    }
-}
-
-// MARK: - Settings
-
-struct SettingLayer: View {
-    let area: VLCPlayerView?
-    @Binding var sleepMinutes: Int?
-    /// Only when playing from the server; a downloaded file has no choice.
-    let quality: QualitySelection?
-    /// Only in a group: who is in it, and the way out.
-    var gemeinsam: SharedModel? = nil
-    var groupLeave: () -> Void = {}
-
-    @AppStorage("technikschild") private var techBadge = false
-    @AppStorage("bildfuellend") private var fillFrame = false
-    @FocusState private var focus: String?
-
-    var body: some View {
-        ZStack(alignment: .top) {
-            LayersReason()
-            ColumnsRail(count: 3 + (gemeinsam?.group != nil ? 1 : 0) + (quality != nil ? 1 : 0)) {
-                // Together comes first (design A, as on iPhone): who is in, then the exit. The names do nothing and are not focus targets, so focus skips them to "leave group".
-                if let gemeinsam, let group = gemeinsam.group {
-                    SelectionColumn(title: "Gemeinsam · \(group.name)") {
-                        ForEach(Array(gemeinsam.participants.enumerated()), id: \.offset) { pair in
-                            ParticipantRow(name: pair.element)
-                        }
-                        Button(action: groupLeave) {
-                            HStack(spacing: 22) {
-                                Image(icon: "rectangle.portrait.and.arrow.right")
-                                    .font(.app(size: 28, weight: .semibold))
-                                    .frame(width: 42)
-                                Text("Gruppe verlassen")
-                                Spacer(minLength: 0)
-                            }
-                            .font(Theme.listTitle)
-                            .foregroundStyle(Theme.accent)
-                            .padding(.horizontal, PlayerMetric.inset)
-                            .frame(height: PlayerMetric.rowHeight)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+            if !embedded { LayersReason() }
+            ColumnsRail(count: 1, width: 900, top: embedded ? 0 : PlayerMetric.columnsTop) {
+                SelectionColumn(title: LocalizedStringKey(part?.title ?? "Kapitel"), showsTitle: !embedded) {
+                    ForEach(part?.rows ?? [], id: \.index) { row in
+                        Button {
+                            area?.coreJump(toChapter: Int(row.index))
+                            close()
+                        } label: {
+                            ChapterRowText(row: row, numberTitle: part?.numberTitle ?? "Kapitel %lld",
+                                           image: preview(row.start, row.preview))
                         }
                         .buttonStyle(LayersRowStyle())
-                    }
-                }
-                // Two picture formats as on iPhone: the whole picture and fill. There is no stretched picture.
-                SelectionColumn(title: "Bild") {
-                    LayersRow(text: String(localized: "Original"), selected: !fillFrame) {
-                        fillFrame = false
-                        area?.fillFrame(false)
-                    }
-                    .focused($focus, equals: "b0")
-                    LayersRow(text: String(localized: "Füllen"), selected: fillFrame) {
-                        fillFrame = true
-                        area?.fillFrame(true)
-                    }
-                    .focused($focus, equals: "b1")
-                }
-                SelectionColumn(title: "Schlafzeit") {
-                    LayersRow(text: String(localized: "Aus"), selected: sleepMinutes == nil) {
-                        sleepMinutes = nil
-                    }
-                    ForEach(SleepTimes.values, id: \.self) { minutes in
-                        LayersRow(text: String(localized: "\(minutes) Min."),
-                                    selected: sleepMinutes == minutes) {
-                            sleepMinutes = minutes
-                        }
-                    }
-                }
-                SelectionColumn(title: "Technikschild") {
-                    LayersRow(text: String(localized: "Aus"), selected: !techBadge) {
-                        techBadge = false
-                    }
-                    LayersRow(text: String(localized: "An"), selected: techBadge) {
-                        techBadge = true
-                    }
-                }
-                // Quality: Direct Play or a cap. A cap lets the server transcode, so Direct Play is off. Works like the app setting and reloads the film at the same position.
-                if let quality {
-                    SelectionColumn(title: "Qualität") {
-                        LayersRow(text: String(localized: "Direct Play"),
-                                    selected: quality.directPlay) {
-                            quality.select(nil)
-                        }
-                        ForEach(Bitrate.levels) { rung in
-                            LayersRow(text: Bitrate.text(rung.value),
-                                        selected: !quality.directPlay && quality.limit == rung.value) {
-                                quality.select(rung.value)
-                            }
-                        }
+                        .accessibilityAddTraits(row.current ? .isSelected : [])
+                        .focused($focus, equals: row.index)
                     }
                 }
             }
         }
         .focusSection()
-        .task { await LayersFocus.put { focus = focus ?? (fillFrame ? "b1" : "b0") } }
+        .task { await LayersFocus.put { focus = focus ?? area?.coreChapters?.rows.first(where: \.current)?.index ?? 0 } }
+    }
+
+    /// Separate view so it can read the button's focus: dark text on the focused white row, as on every layer row.
+    private struct ChapterRowText: View {
+        let row: PlayerChapterRow
+        let numberTitle: String
+        let image: CGImage?
+        @Environment(\.isFocused) private var focus
+
+        var body: some View {
+            ChapterRowContent(row: row, numberTitle: numberTitle, image: image, look: .tv)
+                .foregroundStyle(focus ? Theme.reason : (row.current ? Theme.font : Theme.fontQuiet))
+                .padding(.horizontal, PlayerMetric.inset)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
+
+// MARK: - Quality
 
 /// Quality choice in the player: Direct Play or a cap in Mbit/s. `select(nil)` means Direct Play.
 struct QualitySelection {
@@ -667,13 +283,14 @@ enum LayersFocus {
 /// cannot compare, so the whole layer with the episode strip was recomputed.
 /// With the tile menu, tvOS rebuilt the open context menu every tick, entries
 /// flickered between focused and not, and the Back button no longer reached the
-/// player. Same cause as the season picker (`panelActions`), one level up.
+/// player. Same cause as the season picker, one level up.
 /// Equality compares what the layer shows: the running episode and the title
 /// line. `start` reads its state when called, so an older closure does the same.
 extension EpisodesLayer: @MainActor Equatable {
     static func == (left: EpisodesLayer, right: EpisodesLayer) -> Bool {
         left.item.id == right.item.id && left.title == right.title
-            && left.model === right.model
+            && left.model === right.model && left.seasonText == right.seasonText && left.frozen == right.frozen
+            && left.hasChapters == right.hasChapters && left.chosenSeason == right.chosenSeason
     }
 }
 
@@ -685,36 +302,60 @@ struct EpisodesLayer: View {
     /// The running episode.
     let item: Item
     let title: String
+    /// The seasons and the open one, shared with the player's menus: a choice from the core's season box lands in `chosen`.
+    let picker: SeasonPicker
+    /// The core's season button text ("Staffel 2"); `nil` until the core has it.
+    let seasonText: String?
+    /// The season box is open (the player draws it): the strip rests and focus returns to the pill afterwards.
+    let frozen: Bool
+    let openSeasons: () -> Void
+    /// The series has chapters: the panel gets a "Kapitel" tab next to the season button (the core's `menus.episodes.tabs`).
+    let hasChapters: Bool
+    /// A choice from the core's season box, passed by value from the screen so the layer's equality sees it (the layer is
+    /// `.equatable()`; reading the observable picker inside it did not switch the season). Consumed through `picker.chosen = nil`.
+    let chosenSeason: String?
+    /// The Kapitel tab's list (the player's surface, its trickplay tiles, the close of the panel).
+    let area: VLCPlayerView?
+    let chapterPreview: (Double, PlayerPreview?) -> CGImage?
+    let close: () -> Void
     let start: (Item) -> Void
 
-    @State private var seasons: [Item] = []
-    @State private var selectedSeason: Item?
+    private var seasons: [Item] { get { picker.seasons } nonmutating set { picker.seasons = newValue } }
+    private var selectedSeason: Item? { get { picker.selected } nonmutating set { picker.selected = newValue } }
     @State private var episodes: [Item] = []
     /// The server was silent and there is nothing to show.
     @State private var disrupted = false
-    @State private var seasonSelectionOpen = false
-    /// The entries of the open season picker, built once. Each `TitleAction`
-    /// carries a new id; computed in `body` the list was rebuilt every player tick
-    /// (0.5 s), rows were replaced, focus jumped between list and pill, and the
-    /// pill flickered while the picker was open.
-    @State private var panelActions: [TitleAction] = []
     @FocusState private var atEpisode: String?
     @FocusState private var atSeasonPill: Bool
+    @FocusState private var atChapterTab: Bool
+    @State private var tab: PlayerMenuPanelTab = .episodes
 
     /// The row is already there on open. What the cache has (the player preloads it
     /// via `preload`) is in the state before the first frame; otherwise the tiles
     /// would pop in after fade-in and focus would not find the running episode.
-    init(model: AppModel, item: Item, title: String, start: @escaping (Item) -> Void) {
+    init(model: AppModel, item: Item, title: String, picker: SeasonPicker, seasonText: String?, frozen: Bool,
+         openSeasons: @escaping () -> Void, hasChapters: Bool, chosenSeason: String?, area: VLCPlayerView?,
+         chapterPreview: @escaping (Double, PlayerPreview?) -> CGImage?, close: @escaping () -> Void,
+         startTab: PlayerMenuPanelTab = .episodes, start: @escaping (Item) -> Void) {
+        _tab = State(initialValue: startTab)
         self.model = model
         self.item = item
         self.title = title
+        self.picker = picker
+        self.seasonText = seasonText
+        self.frozen = frozen
+        self.openSeasons = openSeasons
+        self.hasChapters = hasChapters
+        self.chosenSeason = chosenSeason
+        self.area = area
+        self.chapterPreview = chapterPreview
+        self.close = close
         self.start = start
         guard let series = item.seriesId,
               let remembered = SeriesCache.shared.state(series, with: model),
               !remembered.seasons.isEmpty else { return }
         let season = SeasonSelectionRule.choose(from: remembered.seasons, state: item)
-        _seasons = State(initialValue: remembered.seasons)
-        _selectedSeason = State(initialValue: season)
+        picker.adopt(seasons: remembered.seasons, rule: season)
         _episodes = State(initialValue: season.flatMap { remembered.episodes[$0.id] } ?? [])
     }
 
@@ -742,11 +383,19 @@ struct EpisodesLayer: View {
                         .frame(height: PlayerMetric.titleLine)
                         .hidden()
                         .accessibilityHidden(true)
-                    if !seasons.isEmpty {
-                        SeasonPill(name: selectedSeason?.name ?? String(localized: "Staffel"),
-                                     opened: $seasonSelectionOpen)
-                            .focused($atSeasonPill)
-                            .panelTrigger("staffel")
+                    // Design: "Staffel N ⌄" and, for a series with chapters, the "Kapitel" tab beside it. The season button opens
+                    // the core's season box under it; from the Kapitel tab it first comes back to the episodes.
+                    HStack(spacing: 16) {
+                        if !seasons.isEmpty {
+                            SeasonPill(name: seasonText ?? selectedSeason?.name ?? String(localized: "Staffel"),
+                                       opened: Binding(get: { frozen }, set: { if $0 { seasonPressed() } }))
+                                .focused($atSeasonPill)
+                        }
+                        if hasChapters {
+                            Button { show(.chapters) } label: { Text("Kapitel") }
+                                .buttonStyle(ChipStyle(an: tab == .chapters))
+                                .focused($atChapterTab)
+                        }
                     }
                 }
                 .padding(.horizontal, Theme.edgePage)
@@ -754,11 +403,15 @@ struct EpisodesLayer: View {
 
                 // Old and new row overlap on a season change and cross-fade, as on the series page.
                 ZStack(alignment: .topLeading) {
-                    if episodes.isEmpty, disrupted {
+                    if tab == .chapters {
+                        ChaptersLayer(area: area, preview: chapterPreview, close: close, embedded: true)
+                            .transition(.opacity)
+                    }
+                    if tab == .episodes, episodes.isEmpty, disrupted {
                         DisturbState(model: model, retry: { Task { await load() } })
                             .frame(maxWidth: .infinity)
                     }
-                    if !episodes.isEmpty {
+                    if tab == .episodes, !episodes.isEmpty {
                         EpisodesStrip(model: model, episodes: episodes,
                                        nextWith: episodes.contains { $0.id == item.id } ? item.id : nil,
                                        atEpisode: $atEpisode, inPlayer: true,
@@ -775,25 +428,17 @@ struct EpisodesLayer: View {
 
                 Spacer(minLength: 0)
             }
-            // While the season picker is open the rest is not a focus target (see `SeriesView`).
-            .disabled(seasonSelectionOpen)
-            .panel(under: seasonSelectionOpen && !panelActions.isEmpty ? "staffel" : nil) {
-                ActionPanel(actions: panelActions, opened: $seasonSelectionOpen,
-                            start: seasons.firstIndex { $0.id == selectedSeason?.id } ?? 0)
-                    .transition(.opacity)
-            }
-            .animation(Theme.motion(.easeInOut(duration: 0.18)), value: seasonSelectionOpen)
+            // While the season box is open the rest is not a focus target.
+            .disabled(frozen)
         }
         .focusSection()
         // Focus starts on the running episode.
         .defaultFocus($atEpisode, item.id, priority: .userInitiated)
-        .onChange(of: seasonSelectionOpen) { _, opened in
-            if opened {
-                panelActions = seasonActions
-            } else {
-                panelActions = []
-                atSeasonPill = true
-            }
+        .onChange(of: frozen) { _, opened in if !opened { atSeasonPill = true } }
+        // A choice from the core's season box.
+        .onChange(of: chosenSeason) { _, id in
+            guard picker.takeChoice(id) != nil else { return }
+            Task { await episodesLoad(seasonSwitched: true) }
         }
         .task {
             await LayersFocus.put { if atEpisode == nil, !atSeasonPill { atEpisode = startEpisode } }
@@ -801,21 +446,18 @@ struct EpisodesLayer: View {
         }
     }
 
+    private func seasonPressed() {
+        if tab == .chapters { show(.episodes) } else { openSeasons() }
+    }
+
+    private func show(_ new: PlayerMenuPanelTab) {
+        guard tab != new else { return }
+        withAnimation(Theme.motion(.easeOut(duration: 0.25))) { tab = new }
+    }
+
     /// The running episode, else the first of the row.
     private var startEpisode: String? {
         episodes.contains { $0.id == item.id } ? item.id : episodes.first?.id
-    }
-
-    /// Seasons as an action panel, not a `Menu`, as everywhere in the app.
-    private var seasonActions: [TitleAction] {
-        seasons.map { season in
-            TitleAction(symbol: selectedSeason?.id == season.id
-                                  ? "checkmark.circle.fill" : "circle",
-                          text: "\(season.name)") {
-                selectedSeason = season
-                Task { await episodesLoad(seasonSwitched: true) }
-            }
-        }
     }
 
     /// First what the cache has (already set in `init`), then fresh from the server.
@@ -835,7 +477,7 @@ struct EpisodesLayer: View {
         let emptyOpened = episodes.isEmpty
         await episodesLoad()
         // If the row only arrives now, focus still belongs to the running episode.
-        if emptyOpened, atEpisode == nil, !atSeasonPill, !seasonSelectionOpen {
+        if emptyOpened, atEpisode == nil, !atSeasonPill, !frozen {
             await LayersFocus.put { atEpisode = startEpisode }
         }
     }
@@ -851,7 +493,11 @@ struct EpisodesLayer: View {
         }
         disrupted = false
         // Whoever picked another season in the meantime gets its episodes.
-        guard season == selectedSeason?.id else { return }
+        guard season == selectedSeason?.id else {
+            AppLog.writeOut("[Staffel] episodes of \(season ?? "-") dropped, open is \(selectedSeason?.id ?? "-")")
+            return
+        }
+        AppLog.writeOut("[Staffel] episodes of \(season ?? "-") loaded: \(loaded.count)")
         if seasonSwitched {
             withAnimation(Theme.motion(.easeOut(duration: 0.25))) { episodes = loaded }
         } else {

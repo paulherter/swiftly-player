@@ -245,8 +245,14 @@ enum PagesTarget: Hashable, Identifiable {
     case seerr
     /// A title the own server does not have, coming from search.
     case seerrTitle(SeerrHit)
+    /// Profile > "Verwaltung" / "Meine Anfragen": the one page behind the one row (sections from the core).
+    case management(ManagementHubRoute)
+    /// One reported problem (the "Meldungen" section of the management page), by its Seerr id.
+    case issue(Int64)
+    /// The server's log files (the "Server" section of the management page).
+    case serverLogs
     /// A person from the cast: what exists of them.
-    case person(Person, origin: String?)
+    case person(Person, origin: String?, seerr: SeerrPersonRef? = nil)
     /// All titles of a genre, from the home page chips.
     case genre(String)
     case profile
@@ -282,7 +288,10 @@ enum PagesTarget: Hashable, Identifiable {
         case .watchlist:        "merkliste"
         case .seerr:            "seerr"
         case let .seerrTitle(t): "seerr-\(t.art)-\(t.id)"
-        case let .person(p, _): "person-\(p.id)"
+        case .management:       "verwaltung"
+        case let .issue(id):    "meldung-\(id)"
+        case .serverLogs:       "serverprotokolle"
+        case let .person(p, _, seerr): "person-\(seerr.map { "tmdb\($0.tmdb)" } ?? p.id)"
         case let .genre(name): "gattung-\(name)"
         case .profile:           "profil"
         case .settings:    "einstellungen"
@@ -308,7 +317,7 @@ enum PagesTarget: Hashable, Identifiable {
     /// a click on a section removes it again.
     var inAccountBranch: Bool {
         switch self {
-        case .profile, .settings, .playback, .subtitleLook, .seerr, .presentation,
+        case .profile, .settings, .playback, .subtitleLook, .seerr, .management, .issue, .serverLogs, .presentation,
              .licenses, .license, .licenseOffering, .genreSelection, .librarySelection, .quickConnect, .accountAdd, .serverAdd: true
         // **The person page belongs to the section, not the account.** It is reached from a
         // title and the user wants to continue from there to the next one, so it lies in

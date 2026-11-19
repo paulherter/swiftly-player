@@ -242,10 +242,16 @@ pub unsafe extern "C" fn swiftly_rust_init_live(
 }
 
 /// The app went to the background (0) or came back (1): drawing stops and resumes; the picture is redrawn on return.
+/// `paused` (only read when leaving) is the state of the shell's player right after it suspended it: the position the
+/// server hears says so, although the engine's own "paused" report cannot reach the core before the return.
 #[unsafe(no_mangle)]
-pub extern "C" fn swiftly_rust_set_active(h: *mut Handle, active: i32) -> i32 {
+pub extern "C" fn swiftly_rust_set_active(h: *mut Handle, active: i32, paused: i32) -> i32 {
     with(h, 0, |s| {
         s.active = active != 0;
+        // Going to the background: the server hears the position now, not at a beat that a frozen app never reaches.
+        if active == 0 {
+            s.host.app_backgrounded(paused != 0);
+        }
         s.host.frame_flags(true)
     })
 }

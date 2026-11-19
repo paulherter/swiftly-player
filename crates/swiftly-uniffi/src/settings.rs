@@ -403,8 +403,8 @@ impl SettingsVm {
         locale: &str,
         facts: SettingsFacts,
     ) -> Arc<Self> {
-        // The one-time `utAuto` migration (AppModel.swift:683); done at most once per install.
-        crate::rules::migrate_on(Backing::Native(Arc::clone(&store)));
+        // What the start does (`apply_stored_settings`), repeated here for a host that never called it; idempotent.
+        crate::rules::apply_stored_on(Backing::Native(Arc::clone(&store)));
         Self::with_backing(Backing::Native(store), locale, facts)
     }
 

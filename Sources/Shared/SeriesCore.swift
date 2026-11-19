@@ -31,6 +31,7 @@ final class SeriesCore {
         else { return nil }
         self.model = model
         self.listItem = item
+        send(options: app)
     }
 
     // MARK: Items
@@ -101,7 +102,8 @@ extension RustEpisodeLook {
             title: "\(row.number.map { "\($0). " } ?? "")\(row.title)",
             secondaryLine: row.remaining ?? row.runtime ?? "",
             image: row.image.flatMap { URL(string: $0.address) },
-            progress: row.progress.map { Double($0) }, watched: row.watched)
+            progress: row.progress.map { Double($0) }, watched: row.watched,
+            blur: row.imageBlurHash)
     }
 }
 #endif

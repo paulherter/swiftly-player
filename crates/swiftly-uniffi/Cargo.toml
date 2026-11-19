@@ -44,6 +44,8 @@ workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "time", "sync", "net", "io-util", "test-util"] }
 futures-executor = "0.3"
+# The contract test collects the wire command names of the native engine shells.
+swiftly-player-surface = { path = "../swiftly-player-surface" }
 # The runtime test talks to a local server with the reqwest transport; the library itself does not.
 swiftly-net = { path = "../swiftly-net", features = ["reqwest"] }
 

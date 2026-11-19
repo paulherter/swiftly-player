@@ -544,11 +544,13 @@ impl<T: HttpTransport> PlexClient<T> {
     }
 
     pub(crate) fn items_of(&self, listing: &PlexListing) -> Vec<Item> {
-        listing
-            .metadata
-            .iter()
-            .map(|m| self.mapper.item(m))
-            .collect()
+        swiftly_model::switches::without_hollow_series(
+            listing
+                .metadata
+                .iter()
+                .map(|m| self.mapper.item(m))
+                .collect(),
+        )
     }
 
     // MARK: Server
@@ -720,16 +722,18 @@ impl<T: HttpTransport> PlexClient<T> {
             )
             .await?;
         let mut seen = std::collections::HashSet::new();
-        Ok(answer
-            .hubs
-            .iter()
-            .flat_map(|h| h.items.iter())
-            .filter(|m| {
-                ["movie", "show", "episode"].contains(&m.type_.as_str())
-                    && seen.insert(m.rating_key.clone())
-            })
-            .map(|m| self.mapper.item(m))
-            .collect())
+        Ok(swiftly_model::switches::without_hollow_series(
+            answer
+                .hubs
+                .iter()
+                .flat_map(|h| h.items.iter())
+                .filter(|m| {
+                    ["movie", "show", "episode"].contains(&m.type_.as_str())
+                        && seen.insert(m.rating_key.clone())
+                })
+                .map(|m| self.mapper.item(m))
+                .collect(),
+        ))
     }
 
     // MARK: Details

@@ -215,6 +215,10 @@ struct EpisodesStrip: View {
     let model: AppModel
     let episodes: [Item]
     let start: (Item) -> Void
+    /// The stills' BlurHashes by episode id, from the core's rows: each slot shows its hash in final size until the
+    /// sharp still replaces it in place; the stills fill in index order (`ArrivalOrder`).
+    var blurs: [String: String] = [:]
+    @State private var order = ArrivalOrder(limit: 4)
     /// Reports which episode is under focus and receives the initial focus.
     @FocusState.Binding var atEpisode: String?
     /// **Long press: the tile menu, as on every other episode**
@@ -251,10 +255,12 @@ struct EpisodesStrip: View {
     init(model: AppModel, episodes: [Item], nextWith: String?,
          atEpisode: FocusState<String?>.Binding,
          inPlayer: Bool = false,
+         blurs: [String: String] = [:],
          afterwards: (() async -> Void)? = nil,
          start: @escaping (Item) -> Void) {
         self.model = model
         self.episodes = episodes
+        self.blurs = blurs
         self.inPlayer = inPlayer
         self.afterwards = afterwards
         self.start = start
@@ -269,7 +275,7 @@ struct EpisodesStrip: View {
         strip(state: $ahead,
                  // The last episode may sit at the front; see `runOut`.
                  runOut: Theme.screenWidth - Theme.edgePage - Theme.landscapeWidth) {
-            ForEach(episodes) { episode in
+            ForEach(Array(episodes.enumerated()), id: \.element.id) { index, episode in
                 Button { start(episode) } label: {
                     // `landscapeImageURL` builds the address from `seriesId ?? id`; for an episode
                     // `seriesId` is set, so every episode would get the same series backdrop.
@@ -284,7 +290,9 @@ struct EpisodesStrip: View {
                                  progress: episode.isWatched ? nil : episode.watchedShare,
                                  mark: episode.isWatched ? .watched : nil,
                                  watched: episode.isWatched,
-                                 symbolText: episode.tileCharacter)
+                                 symbolText: episode.tileCharacter,
+                                 blur: blurs[episode.id],
+                                 slot: ArrivalSlot(order: order, index: index))
                 }
                 .buttonStyle(TileStyle())
                 .focused($atEpisode, equals: episode.id)
@@ -314,6 +322,8 @@ struct EpisodesStrip: View {
         // falls in its first moment and is unanimated (`.transaction` above), so
         // nothing visibly slides.
         .task(id: nextWith) { await approach() }
+        // A slow still must not hold the others back for long: after a second every slot shows what it has.
+        .task { try? await Task.sleep(for: .seconds(1)); order.releaseAll() }
         .onChange(of: atEpisode) { _, now in
             if now != nil { alreadyShown = true }
         }
@@ -343,8 +353,24 @@ struct EpisodesStrip: View {
 extension EpisodesStrip: @MainActor Equatable {
     static func == (left: EpisodesStrip, right: EpisodesStrip) -> Bool {
         left.episodes == right.episodes && left.inPlayer == right.inPlayer
-            && left.nextWith == right.nextWith
+            && left.nextWith == right.nextWith && left.blurs == right.blurs
             && left.model === right.model
+    }
+}
+
+/// **The episode strip before the episodes are known**: the same `strip` and the same `TileContent`, so slots, labels and
+/// scroll area have exactly the size and place of the real strip and nothing moves when the episodes arrive.
+struct EpisodesStripPlaceholder: View {
+    var count = 4
+
+    var body: some View {
+        strip(runOut: Theme.screenWidth - Theme.edgePage - Theme.landscapeWidth) {
+            ForEach(0 ..< count, id: \.self) { _ in
+                TileContent(image: nil, title: " ", subline: " ", landscape: true)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Lädt")
     }
 }
 

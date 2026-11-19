@@ -3,6 +3,9 @@ import JellyfinKit
 #if canImport(UIKit)
 import UIKit
 #endif
+#if canImport(SwiftlyAether)
+import SwiftlyAether
+#endif
 
 // **Its own file so the TV target gets it too.**
 //
@@ -30,7 +33,17 @@ enum Version {
     /// literally in `Sources/Shared/SettingsView.swift` and again in
     /// `Sources/macOS/SettingsView.swift`. At the next VLCKit change one of
     /// them would have survived.
-    static let mediaPlayer = "VLCKit 4.0.0-a23"
+    ///
+    /// **The engine that really plays**, from the engine itself (`AetherEngine.version`), so a log
+    /// header and the settings footer never name an engine the app no longer ships (they said
+    /// "VLCKit 4.0.0-a23" long after VLCKit was gone from the Apple apps).
+    static var mediaPlayer: String {
+        #if canImport(SwiftlyAether)
+        "AetherEngine \(AetherEngine.version)"
+        #else
+        "AetherEngine"
+        #endif
+    }
 
     /// Who the app is. **On the profile page**, where someone checks which
     /// version they have.

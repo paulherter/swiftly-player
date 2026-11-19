@@ -180,24 +180,20 @@ fn plex_versions_previews_card_picture_download_and_offline() {
             .expect("prepared")
     };
 
-    // Versions: without a pick the two files of the movie come back as a question; with a pick the title is ready.
+    // Versions: without a pick the title is ready at once (the default version plays, no question comes back); with a
+    // pick the title is ready on that version.
     let asked = prepare(PlayRequest {
         item_id: "1".into(),
         since: 0.0,
         source_id: None,
     });
-    let ask = asked.ask().expect("a version question");
-    assert_eq!(ask.item_id, "1");
-    assert_eq!(
-        ask.versions
-            .iter()
-            .map(|v| v.id.as_str())
-            .collect::<Vec<_>>(),
-        ["1", "2"]
+    assert!(
+        asked.ready().is_some(),
+        "a press without a pick starts the default version"
     );
     let second = prepare(PlayRequest {
         item_id: "1".into(),
-        since: ask.since,
+        since: 0.0,
         source_id: Some("2".into()),
     });
     let ready = second.ready().expect("ready");

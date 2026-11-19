@@ -8,10 +8,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
 use swiftly_l10n::{Arg, Locale, Translator};
-use swiftly_playback::first_frame::{self, Level, Rat};
+use swiftly_playback::first_frame::{self, Level};
 use swiftly_playback::offering_layer::Advance;
-use swiftly_playback::stream_watch::{self, Advice};
+use swiftly_playback::stream_watch;
 use swiftly_rules::delay::{Delay, HoldCounter};
+use swiftly_vm::core_words::{first_frame_rat, stream_watch_rat};
 
 fn loc(locale: &str) -> Locale {
     Locale::parse(locale)
@@ -122,32 +123,20 @@ pub fn legacy_first_frame_rat(
     runtime: f64,
     until_from: i64,
 ) -> String {
-    match first_frame::rat(
+    first_frame_rat::of(first_frame::rat(
         has_video_track,
         excluded,
         shown.max(0) as u64,
         runtime,
         level(until_from),
-    ) {
-        Rat::Nothing => "nichts",
-        Rat::Wait => "warten",
-        Rat::OutputNew => "ausgabeNeu",
-        Rat::SoftwareDecoder => "softwareDekoder",
-        Rat::GiveUp => "aufgeben",
-    }
+    ))
     .to_owned()
 }
 
 /// `Kern.firstFrameNext`: the stage after an advice.
 #[uniffi::export]
 pub fn legacy_first_frame_next(rat: String, until_from: i64) -> i64 {
-    let r = match rat.as_str() {
-        "ausgabeNeu" => Rat::OutputNew,
-        "softwareDekoder" => Rat::SoftwareDecoder,
-        "aufgeben" => Rat::GiveUp,
-        _ => Rat::Nothing,
-    };
-    first_frame::next(r, level(until_from)) as i64
+    first_frame::next(first_frame_rat::parse(&rat), level(until_from)) as i64
 }
 
 /// `Kern.firstFrameGrowth`: elapsed film time between two looks; `before` below 0 means no previous value.
@@ -182,18 +171,13 @@ pub fn legacy_stream_watch_rat(
     last_jump_ago: f64,
     buffer_grew_ago: f64,
 ) -> String {
-    match stream_watch::advice(
+    stream_watch_rat::of(stream_watch::advice(
         standstill_since,
         (network_change_ago >= 0.0).then_some(network_change_ago),
         jump_open,
         last_jump_ago,
         buffer_grew_ago,
-    ) {
-        Advice::NotYet => "nochNicht",
-        Advice::JumpRunning => "sprungLaeuft",
-        Advice::BufferGrows => "pufferWaechst",
-        Advice::NewConnect => "neuVerbinden",
-    }
+    ))
     .to_owned()
 }
 

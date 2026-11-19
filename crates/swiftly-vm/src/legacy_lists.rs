@@ -5,7 +5,7 @@
 use serde_json::{Value, json};
 use swiftly_l10n::{Arg, Locale, Translator};
 use swiftly_rules::buffer_level::BufferLevel;
-use swiftly_rules::playback_selection::{BITRATE_LEVELS, SPAN_LEVELS, language_selection_all};
+use swiftly_rules::playback_selection::{BITRATE_LEVELS, SPAN_LEVELS, audio_language_selection};
 
 /// `Kern.bitrateLevels`: `[{"wert","text"}]`, 0 is "Unlimited".
 pub fn bitrate_levels(locale: Locale) -> String {
@@ -34,12 +34,25 @@ pub fn span() -> String {
 /// `Kern.languages`: with an empty label "Like the file", otherwise that label as the first entry.
 pub fn languages(from: &str, locale: Locale) -> String {
     let label = if from.is_empty() {
-        Translator::new(locale).t("Wie die Datei")
+        Translator::new(locale.clone()).t("Wie die Datei")
     } else {
         from.to_owned()
     };
     Value::Array(
-        language_selection_all(&label)
+        crate::language_list::subtitle_selection(&label, &locale)
+            .into_iter()
+            .map(|l| json!({"wert": l.value, "text": l.name}))
+            .collect(),
+    )
+    .to_string()
+}
+
+/// The audio language picker of the Android settings: "Like the file", "Original", then every language
+/// (the same entries as the settings page of the other hosts, from `audio_language_selection`).
+pub fn audio_languages(locale: Locale) -> String {
+    let t = Translator::new(locale);
+    Value::Array(
+        audio_language_selection(&t.t("Wie die Datei"), &t.t("Originalsprache"))
             .into_iter()
             .map(|l| json!({"wert": l.value, "text": l.name}))
             .collect(),

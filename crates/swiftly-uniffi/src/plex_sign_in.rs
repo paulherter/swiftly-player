@@ -665,7 +665,7 @@ impl PlexSignIn {
     }
 }
 
-mod legacy;
+pub(crate) mod legacy;
 
 #[cfg(test)]
 mod tests {

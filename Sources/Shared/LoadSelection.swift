@@ -49,12 +49,18 @@ struct LoadSelection: View {
             .allowsHitTesting(false)
             .sheet(opened: $opened) { content }
             .task(id: opened) { if opened { await loadAll() } }
+            // sheet-complete-ok: the rows stand before the sheet opens (`prime`, see `LoadSelectionState.prime`);
+            // the task above only fills in episode counts and sizes in place.
+            .onAppear(perform: prime)
+            .onChange(of: seasons.map(\.id)) { if !opened { prime() } }
             .onChange(of: model.downloads.free) { _, new in sheet.spaceChanged(new) }
     }
 
     /// Combined height of the two cards, measured so the sheet does not get taller
     /// than its content.
     @State private var contentHeight: CGFloat = 0
+    /// A season was expanded or collapsed by hand: the next height change runs in the sheet's curve.
+    @State private var expandPending = false
 
     private var content: some View {
         VStack(spacing: 0) {
@@ -100,10 +106,14 @@ struct LoadSelection: View {
     /// only after expanding, and the value arrived without animation. So the sheet
     /// jumped tall and the rows slid in afterwards ("bang up, bang down"). Now the
     /// height runs in the same curve as the sheet itself (`sheetMotion`, a fade
-    /// with Reduce Motion). Only the first measurement applies hard, otherwise the
-    /// sheet would grow from zero on opening.
+    /// with Reduce Motion). **Only an expand by hand animates.** A height that changes
+    /// because the seasons arrived (`loadAll` after opening) applies hard: animated, it
+    /// re-laid the content out in the same spring while the card was still sliding up, and
+    /// the footer then lagged behind the card's edge (the request sheet's quality and
+    /// folder rows did exactly that, measured with Werkzeuge/sheet-ride-check.py).
     private func heightSet(_ new: CGFloat) {
-        guard contentHeight > 0, opened else { contentHeight = new; return }
+        guard contentHeight > 0, opened, expandPending else { contentHeight = new; return }
+        expandPending = false
         withAnimation(Theme.sheetMotion) { contentHeight = new }
     }
 
@@ -132,6 +142,8 @@ struct LoadSelection: View {
                         .foregroundStyle(Theme.font)
                     Spacer(minLength: 12)
                     ToggleSwitch(an: $sheet.onlyUnwatched)
+                        // Same cause as the request sheet: the switch takes every height it is offered.
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Text("Entscheidet, was ein Haken auswählt.")
                     .growing(12)
@@ -156,6 +168,7 @@ struct LoadSelection: View {
                       expanded: openSeason == season.id) {
                     withAnimation(Theme.toggle) { sheet.toggleSeason(season.id) }
                 } expand: {
+                    expandPending = true
                     withAnimation(Theme.sheetMotion) {
                         openSeason = openSeason == season.id ? nil : season.id
                     }
@@ -425,6 +438,13 @@ struct LoadSelection: View {
     ///
     /// **`nil` means failed, `[]` means empty.** Failed requests are not remembered,
     /// otherwise the empty list would later stand as fact.
+    private func prime() {
+        let model = model
+        sheet.prime(seasons: seasons, preloaded: preloaded, audioLanguage: model.audioLanguage,
+                    selectQuality: model.downloadQualitySelectable, free: model.downloads.free,
+                    isPresent: { model.downloads.entries(for: $0) != nil })
+    }
+
     private func loadAll() async {
         model.downloads.spaceRefresh()
         let model = model

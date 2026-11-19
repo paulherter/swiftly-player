@@ -25,7 +25,7 @@ use swiftly_support::licenses::LicenseData;
 use swiftly_support::subtitle::{Colour as SubColour, Outline, Position, Size, SubtitleLook};
 use swiftly_ui::components::color;
 use swiftly_ui::icons::Icons;
-use swiftly_ui::{Action, Cx, Env, Node, Ui};
+use swiftly_ui::{Action, Cx, Env, Motion, Node, Ui};
 use swiftly_vm::{
     Capabilities, Confirm, Platform, RowControl, SectionsPart, SettingsContext, SettingsIntent,
     SettingsStatusPart, SettingsVm,
@@ -86,6 +86,10 @@ enum Page {
     SubtitleLook,
     /// "Seerr" (`SeerrSettingsView`), below Allgemein.
     Seerr,
+    /// "Serververwaltung": the core's `ServerAdminVm`, below the Profile.
+    ServerAdmin,
+    /// The server's log files, below the server page.
+    ServerLogs,
     /// "Open-Source-Lizenzen", below the hub.
     Licences,
     /// One component of the licence list (index into the data).
@@ -104,6 +108,7 @@ impl Page {
         match self {
             Page::SubtitleLook => Page::Playback,
             Page::Seerr => Page::Settings,
+            Page::ServerLogs => Page::ServerAdmin,
             Page::Licence(_) | Page::Offering => Page::Licences,
             Page::LibrarySelection | Page::GenreSelection => Page::Presentation,
             _ => Page::Profile,
@@ -145,10 +150,15 @@ struct Parts {
     quick_connect: bool,
     sub: SubView,
     seerr: SeerrView,
+    /// The server management pages and the Profile row.
+    admin: crate::server_admin_pages::AdminView,
     own: HeaderView,
     update: UpdateState,
     /// The Home rows and the chosen genres.
     home: swiftly_vm::home_rows::HomeView,
+    /// The drag reorder of the Home rows and the order the rows keep while a row is held or settling.
+    reorder: swiftly_ui::reorder::Reorder,
+    order_ids: Vec<String>,
     /// What the server offers on "Bibliothek hinzufügen" / "Genre hinzufügen".
     libs_pick: settings_pages::PickView,
     genres_pick: settings_pages::PickView,
@@ -411,7 +421,7 @@ fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             cx,
             f,
             "",
-            18.0,
+            forms::GROUP_GAP,
             vec![
                 r(
                     "go:accounts",
@@ -433,7 +443,7 @@ fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             cx,
             f,
             "",
-            18.0,
+            forms::GROUP_GAP,
             vec![
                 r(
                     "go:playback",
@@ -475,6 +485,13 @@ fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
         )
         .padding(ins(28.0, 0.0, 0.0, 0.0)),
     ];
+    if let Some(entry) = &p.admin.entry {
+        let at = out.len() - 1;
+        out.insert(
+            at,
+            crate::server_admin_pages::profile_group(cx, &ctx.icons, f, entry),
+        );
+    }
     // Swift (ProfileView.swift:125): the last row of the account group, no second line, no chevron; it asks first.
     if p.live
         && let Some(account_group) = out.get_mut(1)
@@ -494,7 +511,7 @@ fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             cx,
             f,
             "",
-            18.0,
+            forms::GROUP_GAP,
             vec![
                 r(
                     "go:accounts",
@@ -523,6 +540,10 @@ fn pages_view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx, f: &Fm) -> Option<Node> 
     Some(match p.page {
         Page::SubtitleLook => settings_pages::subtitle_page(cx, icons, env, f, &p.sub),
         Page::Seerr => settings_pages::seerr_page(cx, icons, env, f, &p.seerr),
+        Page::ServerAdmin => {
+            crate::server_admin_pages::admin_page(cx, icons, env, f, &ctx.hub, &p.admin)
+        }
+        Page::ServerLogs => crate::server_admin_pages::logs_page(cx, icons, env, f, &p.admin),
         // The inventory is missing in this build: say so, with where to find it (`LicensesView.Missing`).
         Page::Licences | Page::Licence(_) | Page::Offering if ctx.licences.is_none() => {
             settings_pages::licences_missing_page(cx, icons, env, f)
@@ -857,18 +878,37 @@ fn move_keys(prefix: &str, i: usize, n: usize) -> [(String, bool); 2] {
     ]
 }
 
-/// The group "Startseite" (`AppearanceView.rails`): every row in the stored order, then "Bibliothek hinzufügen".
+/// Row height 44 and one hairline: the distance of two rows of the Home list.
+const HOME_PITCH: f32 = 45.0;
+
+/// The group "Startseite" (`AppearanceView.rails`): every row in the stored order, then "Bibliothek hinzufügen". The rows
+/// stand in one reorder list (`swiftly_ui::reorder`): press and drag a row, the others make room, let go to drop it.
 fn home_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
     use swiftly_vm::home_rows::HomeRowKind;
-    let n = p.home.rows.len();
-    let mut rows: Vec<Node> = Vec::new();
-    for (i, r) in p.home.rows.iter().enumerate() {
-        if i > 0 {
-            rows.push(forms::separator_line_at(52.0));
+    // While a row is held or settling the rows keep the order they were picked up in; the stored order comes after.
+    let mut shown: Vec<&swiftly_vm::home_rows::HomeRowEntry> = p.home.rows.iter().collect();
+    if p.reorder.is_active() {
+        let held: Vec<_> = p
+            .order_ids
+            .iter()
+            .filter_map(|id| p.home.rows.iter().find(|r| &r.id == id))
+            .collect();
+        if held.len() == shown.len() {
+            shown = held;
         }
+    }
+    let n = shown.len();
+    // The rows stand in a column (their real frames take the pointer); the row that is held or settling is drawn a second
+    // time on top, at its slot plus the drag offset, while the one in the column is hidden.
+    let mut column: Vec<Node> = Vec::new();
+    let mut ghost: Option<Node> = None;
+    for (i, r) in shown.iter().enumerate() {
         let (symbol, title, switch, remove) = match &r.kind {
             HomeRowKind::Fixed { rail, on } => {
                 (rail_symbol(*rail), rail.lists_name(), Some(*on), None)
+            }
+            HomeRowKind::Seerr { section, on } => {
+                ("arrow-down", section.lists_name(), Some(*on), None)
             }
             HomeRowKind::Library {
                 name, collection, ..
@@ -879,32 +919,114 @@ fn home_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                 Some(format!("home.x.{i}")),
             ),
         };
-        rows.push(forms::home_row(
+        let place = p.reorder.placement(i, HOME_PITCH, n);
+        macro_rules! spec {
+            ($key:expr, $drag:expr) => {
+                forms::HomeRowSpec {
+                    key: $key,
+                    symbol,
+                    title,
+                    switch,
+                    remove: remove.clone(),
+                    moves: Some(move_keys("home", i, n)),
+                    drag: $drag,
+                }
+            };
+        }
+        let row = forms::home_row(
             cx,
             &ctx.icons,
             f,
-            &forms::HomeRowSpec {
-                key: &format!("home.sw.{i}"),
-                symbol,
-                title,
-                switch,
-                remove,
-                moves: Some(move_keys("home", i, n)),
-            },
-        ));
+            &spec!(
+                &format!("home.sw.{i}"),
+                Some(Action::from(format!("home.drag.{i}").as_str()))
+            ),
+        );
+        if i > 0 {
+            column.push(forms::separator_line_at(52.0));
+        }
+        if place.on_top {
+            let copy = forms::home_row(cx, &ctx.icons, f, &spec!("home.ghost", None));
+            ghost = Some(
+                crate::browse::wide(
+                    Node::zstack(
+                        Alignment::TOP_LEADING,
+                        vec![
+                            // A surface and a soft shadow behind the lifted row, fading in with the lift.
+                            Node::rect(swiftly_ui::components::color(colour::GROUPS_AREA), 10.0)
+                                .paint(swiftly_ui::Paint::Shadow {
+                                    style: swiftly_render::ShadowStyle {
+                                        color: swiftly_render::Color::new(0.0, 0.0, 0.0, 0.45),
+                                        dx: 0.0,
+                                        dy: 6.0,
+                                        blur: 16.0,
+                                        spread: 0.0,
+                                    },
+                                    radius: 10.0,
+                                })
+                                .opacity(
+                                    if place.lifted { 1.0 } else { 0.0 },
+                                    swiftly_ui::reorder::spring(),
+                                )
+                                .frame(None, Some(44.0), Alignment::CENTER),
+                            copy,
+                        ],
+                    ),
+                    Alignment::TOP_LEADING,
+                )
+                .frame(None, Some(44.0), Alignment::TOP_LEADING)
+                .scaled(
+                    if place.lifted {
+                        swiftly_ui::reorder::LIFT_SCALE
+                    } else {
+                        1.0
+                    },
+                    swiftly_ui::reorder::spring(),
+                )
+                .offset(0.0, place.dy, place.motion())
+                .padding(ins(i as f32 * HOME_PITCH, 0.0, 0.0, 0.0))
+                .key("home.ghost.slot"),
+            );
+            column.push(
+                row.frame(None, Some(44.0), Alignment::TOP_LEADING)
+                    .opacity(0.0, Motion::Instant)
+                    .key(format!("home.slot:{}", r.id).as_str()),
+            );
+        } else {
+            column.push(
+                row.frame(None, Some(44.0), Alignment::TOP_LEADING)
+                    .offset(0.0, place.dy, place.motion())
+                    .opacity(1.0, Motion::Instant)
+                    .key(format!("home.slot:{}", r.id).as_str()),
+            );
+        }
     }
-    rows.push(forms::separator_line_at(52.0));
-    rows.push(forms::row_kb(
-        cx,
-        &ctx.icons,
-        f,
-        "home.add",
-        "plus",
-        "Bibliothek hinzufügen",
+    let height = (n as f32 * HOME_PITCH - 1.0).max(0.0);
+    let mut layers = vec![crate::browse::wide(
+        Node::vstack(Align::Start, Some(0.0), column),
+        Alignment::TOP_LEADING,
+    )];
+    layers.extend(ghost);
+    let list = Node::zstack(Alignment::TOP_LEADING, layers).frame(
         None,
-        Trail::Chevron,
-        true,
-    ));
+        Some(height),
+        Alignment::TOP_LEADING,
+    );
+    let rows = vec![
+        list.key("home.list"),
+        forms::separator_line_at(52.0),
+        forms::row_kb(
+            cx,
+            &ctx.icons,
+            f,
+            "home.add",
+            "plus",
+            "Bibliothek hinzufügen",
+            None,
+            Trail::Chevron,
+            true,
+        ),
+    ];
     forms::setting_group_at(cx, f, "Startseite", 28.0, rows, 52.0)
 }
 
@@ -960,6 +1082,7 @@ fn genres_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                 switch: None,
                 remove: Some(format!("genre.x.{i}")),
                 moves: Some(move_keys("genre", i, n)),
+                drag: None,
             },
         ));
     }
@@ -993,7 +1116,7 @@ fn version_line(cx: &Cx, s: &str, top: f32) -> Node {
 /// `AccountCard`, the support card and the navigation group (`ProfileView.swift:587-775`, `:102-124`).
 /// A group without a title, `top` below the one above (the title's gap is only there with a title).
 fn gapped(cx: &Cx, f: &Fm, top: f32, rows: Vec<Node>) -> Node {
-    forms::setting_group(cx, f, "", 0.0, rows).padding(ins(top, 0.0, 0.0, 0.0))
+    forms::setting_group(cx, f, "", top, rows)
 }
 
 fn profile_left(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
@@ -1094,7 +1217,7 @@ fn profile_left(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
         gapped(
             cx,
             f,
-            16.0,
+            forms::GROUP_GAP,
             vec![r(
                 "go:support",
                 "heart",
@@ -1106,7 +1229,7 @@ fn profile_left(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
         gapped(
             cx,
             f,
-            18.0,
+            forms::GROUP_GAP,
             vec![
                 r(
                     "go:playback",
@@ -1132,6 +1255,14 @@ fn profile_left(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             ],
         ),
     ]
+    .into_iter()
+    .chain(
+        p.admin
+            .entry
+            .as_ref()
+            .map(|entry| crate::server_admin_pages::profile_group(cx, &ctx.icons, f, entry)),
+    )
+    .collect()
 }
 
 /// The account group and the links group (`ProfileView.swift:136-181`).
@@ -1161,7 +1292,7 @@ fn profile_right(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
         gapped(
             cx,
             f,
-            18.0,
+            forms::GROUP_GAP,
             vec![
                 // No "Swiftly bewerten" here: the rating link is an App Store review page and Linux and Windows have no
                 // store (tvOS shows it as a code for the phone; the desktop has nothing to open).
@@ -1314,22 +1445,8 @@ fn desktop_view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>, f: &Fm) -> Node {
             vec![],
         ),
         _ => {
-            let mut left = desk_groups(cx, f, p, ctx, &["Offline"]);
-            let heart = forms::row_kb(
-                cx,
-                &ctx.icons,
-                f,
-                "go:support",
-                "heart.fill",
-                "Swiftly unterstützen",
-                Some("Mit einem Kaffee Danke sagen"),
-                Trail::None,
-                true,
-            )
-            // `MacSupportSettingsGroup`: the row has no chevron and sits in 16 pt of padding of its own.
-            .padding(ins(16.0, 16.0, 16.0, 16.0));
-            // `MacSupportSettingsGroup().padding(.top, 6)` under the group's own 20 pt title gap.
-            left.push(forms::setting_group(cx, f, "Swiftly", 26.0, vec![heart]));
+            // The support entry is on the Profile page; Allgemein has no second copy of it.
+            let left = desk_groups(cx, f, p, ctx, &["Offline"]);
             let right = desk_groups(cx, f, p, ctx, &["Server und Dienste", "Synchronisierung"]);
             (
                 "Allgemein",
@@ -1347,6 +1464,39 @@ fn desktop_view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>, f: &Fm) -> Node {
     forms::settings_page(
         cx, &ctx.icons, env, f, title, gap, cols, columns, footer, overlay,
     )
+}
+
+/// The server management source with its reading state: it stops reading when the screen is dropped.
+struct AdminRun {
+    link: Box<dyn crate::server_admin_link::AdminLink>,
+    running: bool,
+}
+
+impl AdminRun {
+    fn new(link: Box<dyn crate::server_admin_link::AdminLink>) -> AdminRun {
+        AdminRun {
+            link,
+            running: false,
+        }
+    }
+    fn set_running(&mut self, on: bool) {
+        if on != self.running {
+            self.running = on;
+            if on {
+                self.link.start();
+            } else {
+                self.link.stop();
+            }
+        }
+    }
+}
+
+impl Drop for AdminRun {
+    fn drop(&mut self) {
+        if self.running {
+            self.link.stop();
+        }
+    }
 }
 
 /// Rows of a header editor and the rows last saved.
@@ -1450,6 +1600,14 @@ pub struct SettingsScreen {
     undo: Option<(SubtitleLook, f64)>,
     now: f64,
     link: Box<dyn SeerrLink>,
+    /// The server management source and whether it reads (stops when the screen goes).
+    admin: AdminRun,
+    /// The Seerr screens behind the Profile rows "Meine Anfragen" and "Verwaltung" (none without a session).
+    seerr_desk: Option<crate::seerr_desk::Desk>,
+    /// The count of Seerr answers the rows were last drawn from.
+    seerr_seen: u64,
+    /// The Seerr page a Profile row asked for, once (the suite opens it).
+    seerr_route: Option<crate::seerr_desk::SeerrRoute>,
     conn: SeerrConn,
     fields: [String; 3],
     seerr_headers: Editor,
@@ -1472,6 +1630,10 @@ pub struct SettingsScreen {
     /// The server's libraries and genres for the two "hinzufügen" pages.
     choices: Box<dyn HomeChoices>,
     seen_offers: (Offer<StartLibrary>, Offer<String>),
+    /// The drag reorder of the Home rows.
+    reorder: swiftly_ui::reorder::Reorder,
+    /// The ids of the Home rows in the order they stood when a row was picked up.
+    order_ids: Vec<String>,
 }
 
 impl SettingsScreen {
@@ -1526,7 +1688,10 @@ impl SettingsScreen {
         let context = SettingsContext {
             platform: platform_of(env),
             capabilities: crate::live_accounts::capabilities_of(kind),
-            server: entry.as_ref().map(|e| e.suffix.clone()).unwrap_or_default(),
+            server: entry
+                .as_ref()
+                .map(|e| e.server_part().to_owned())
+                .unwrap_or_default(),
             subtitle_look_summary: "Standard".into(),
             ..SettingsContext::default()
         };
@@ -1619,6 +1784,59 @@ impl SettingsScreen {
             .send(SettingsIntent::Context(Box::new(self.context.clone())));
     }
 
+    /// Connects the server management pages (the live app's `LiveAdmin`).
+    #[must_use]
+    pub fn with_admin(
+        mut self,
+        link: Box<dyn crate::server_admin_link::AdminLink>,
+    ) -> SettingsScreen {
+        self.admin = AdminRun::new(link);
+        self
+    }
+
+    /// Connects the Seerr rows of the Profile: the core's hub reads the rights and counts at once, the rows follow it.
+    #[must_use]
+    pub fn with_seerr_desk(mut self, desk: crate::seerr_desk::Desk) -> SettingsScreen {
+        let hub = std::sync::Arc::clone(desk.hub());
+        desk.run(async move {
+            let _ = hub.refresh().await;
+        });
+        self.seerr_desk = Some(desk);
+        self
+    }
+
+    /// The same, for a session that may not be stored.
+    #[must_use]
+    pub fn with_seerr_desk_opt(self, desk: Option<crate::seerr_desk::Desk>) -> SettingsScreen {
+        match desk {
+            Some(d) => self.with_seerr_desk(d),
+            None => self,
+        }
+    }
+
+    /// Opens the section of the management page: the server page here, a Seerr section as the page the shell pushes.
+    fn open_management(&mut self, dest: crate::management_hub::Dest) {
+        use crate::management_hub::Dest;
+        use crate::seerr_desk::SeerrRoute;
+        match dest {
+            Dest::Server => self.page = Page::ServerAdmin,
+            Dest::Requests => self.seerr_route = Some(SeerrRoute::Requests),
+            Dest::Queue => self.seerr_route = Some(SeerrRoute::Admin),
+            Dest::Reports => self.seerr_route = Some(SeerrRoute::Issues),
+        }
+    }
+
+    /// The server section of the management page was chosen on a Seerr section's tab row: the page shows it already
+    /// while the Seerr page slides away.
+    pub fn show_server_page(&mut self) {
+        self.page = Page::ServerAdmin;
+    }
+
+    /// The Seerr page a Profile row asked for, once.
+    pub fn take_seerr_route(&mut self) -> Option<crate::seerr_desk::SeerrRoute> {
+        self.seerr_route.take()
+    }
+
     /// Replaces the scripted Seerr of the demo with the real one.
     #[must_use]
     pub fn with_seerr(mut self, link: Box<dyn SeerrLink>) -> SettingsScreen {
@@ -1701,6 +1919,15 @@ impl SettingsScreen {
                 undo: false,
                 adjustable: true,
             },
+            admin: crate::server_admin_pages::AdminView {
+                part: crate::server_admin_link::AdminLink::part(&crate::server_admin_link::NoAdmin),
+                logs: crate::server_admin_link::AdminLink::logs_part(
+                    &crate::server_admin_link::NoAdmin,
+                ),
+                images: None,
+                entry: None,
+                tabs: Vec::new(),
+            },
             seerr: SeerrView {
                 conn: SeerrConn::default(),
                 fields: Default::default(),
@@ -1711,6 +1938,8 @@ impl SettingsScreen {
             own: HeaderView::default(),
             update: UpdateState::Idle,
             home: vm.home(),
+            reorder: swiftly_ui::reorder::Reorder::Idle,
+            order_ids: Vec::new(),
             libs_pick: libs_pick_view(&Offer::Idle, &[]),
             genres_pick: genres_pick_view(&Offer::Idle, &[]),
             header: 0,
@@ -1762,6 +1991,10 @@ impl SettingsScreen {
             undo: None,
             now: 0.0,
             link: Box::new(ScriptedSeerr::default()),
+            admin: AdminRun::new(Box::new(crate::server_admin_link::NoAdmin)),
+            seerr_desk: None,
+            seerr_seen: 0,
+            seerr_route: None,
             conn: SeerrConn::default(),
             fields: Default::default(),
             seerr_headers: Editor::default(),
@@ -1780,6 +2013,8 @@ impl SettingsScreen {
             downloads: None,
             choices: Box::new(ScriptedChoices::new(Vec::new(), Vec::new())),
             seen_offers: (Offer::Idle, Offer::Idle),
+            reorder: swiftly_ui::reorder::Reorder::Idle,
+            order_ids: Vec::new(),
         };
         s.sync();
         s
@@ -2024,8 +2259,15 @@ impl SettingsScreen {
         self.own.saved = rows;
     }
 
+    /// The one Profile entry, from the server link and the Seerr hub's answer (`swiftly_vm::profile_entry`).
+    fn entry(&self) -> Option<swiftly_vm::ProfileEntry> {
+        let info = self.seerr_desk.as_ref().map(|d| d.hub().info());
+        self.admin.link.entry(info.as_ref())
+    }
+
     fn sync(&mut self) {
         self.run_effects();
+        let entry = self.entry();
         self.bind_editor();
         let edit = self
             .focus
@@ -2068,9 +2310,21 @@ impl SettingsScreen {
                     .seerr_headers
                     .view(hf(self.focus, false), edit.as_ref()),
             },
+            admin: crate::server_admin_pages::AdminView {
+                part: self.admin.link.part(),
+                logs: self.admin.link.logs_part(),
+                images: self.admin.link.images(),
+                entry: entry.clone(),
+                tabs: entry
+                    .as_ref()
+                    .map(|e| crate::management_hub::tabs(e, crate::management_hub::Dest::Server))
+                    .unwrap_or_default(),
+            },
             own: self.own.view(hf(self.focus, true), edit.as_ref()),
             update: self.seen_update.clone(),
             home: self.vm.home(),
+            reorder: self.reorder,
+            order_ids: self.order_ids.clone(),
             libs_pick: libs_pick_view(&self.choices.libraries(), &self.vm.home().rows),
             genres_pick: genres_pick_view(&self.choices.genres(), &self.vm.home().genres),
             header: forms::bar_for(
@@ -2086,6 +2340,21 @@ impl SettingsScreen {
             let _ = self.vm.send(SettingsIntent::CancelConfirm);
             true
         } else if self.choice.take().is_some() {
+            true
+        } else if self.page == Page::ServerAdmin
+            && !matches!(self.admin.link.part().state, swiftly_vm::ServerAdminState::Ready { ref page } if matches!(page.ask, swiftly_vm::ServerAdminAsk::Nothing))
+        {
+            self.admin.link.send(swiftly_vm::ServerAdminIntent::Cancel);
+            true
+        } else if self.page == Page::ServerLogs
+            && matches!(
+                self.admin.link.logs_part().state,
+                swiftly_vm::ServerLogsState::Text { .. }
+            )
+        {
+            self.admin
+                .link
+                .send_logs(swiftly_vm::ServerLogsIntent::Back);
             true
         } else if self.page != Page::Profile {
             self.page = self.page.parent();
@@ -2107,6 +2376,12 @@ impl SettingsScreen {
                 if let HomeRowKind::Fixed { rail, on } = &r.kind {
                     let _ = self.vm.send(SettingsIntent::SetSwitch {
                         key: format!("startRow.{}", rail.raw_value()),
+                        on: !on,
+                    });
+                }
+                if let HomeRowKind::Seerr { section, on } = &r.kind {
+                    let _ = self.vm.send(SettingsIntent::SetSwitch {
+                        key: section.switch_key().to_owned(),
                         on: !on,
                     });
                 }
@@ -2211,6 +2486,77 @@ impl SettingsScreen {
         genres_pick_view(&self.choices.genres(), &self.vm.home().genres)
     }
 
+    /// The taps of the server pages: each one is an intent of the core's page object.
+    fn tapped_admin(&mut self, a: &Action) {
+        use swiftly_vm::{
+            ServerAdminAsk, ServerAdminIntent as I, ServerAdminState, ServerLogsIntent as L,
+            ServerLogsState,
+        };
+        let is = |k: &str| *a == Action::from(k);
+        let link = &self.admin.link;
+        let part = link.part();
+        if is("admin:scan") {
+            link.send(I::Scan);
+        } else if is("admin:restart") {
+            link.send(I::AskRestart);
+        } else if is("admin:retry") {
+            link.send(I::Retry);
+        } else if is("admin:ask.cancel") {
+            link.send(I::Cancel);
+        } else if is("admin:ask.ok") {
+            let message = match &part.state {
+                ServerAdminState::Ready { page } => match &page.ask {
+                    ServerAdminAsk::StopStream { message, .. } => Some(message.clone()),
+                    _ => None,
+                },
+                _ => None,
+            };
+            link.send(I::Confirm { message });
+        } else if is("admin:logs") {
+            self.page = Page::ServerLogs;
+            link.send_logs(L::Load);
+        } else if is("admin:logs-retry") {
+            link.send_logs(L::Load);
+        } else if let ServerAdminState::Ready { page } = &part.state {
+            if let Some(t) = page
+                .tasks
+                .iter()
+                .find(|t| is(&format!("admin:stop-task:{}", t.id)))
+            {
+                link.send(I::AskStopTask { id: t.id.clone() });
+            } else if let Some(s) = page
+                .streams
+                .iter()
+                .find(|s| is(&format!("admin:stop-stream:{}", s.session_id)))
+            {
+                link.send(I::AskStopStream {
+                    session_id: s.session_id.clone(),
+                });
+            }
+        }
+        if let ServerLogsState::Files { rows } = &link.logs_part().state
+            && let Some(r) = rows
+                .iter()
+                .enumerate()
+                .find(|(i, _)| is(&format!("admin:log:{i}")))
+                .map(|(_, r)| r)
+        {
+            link.send_logs(L::Open {
+                name: r.name.clone(),
+            });
+        }
+    }
+
+    /// Reads the server page while it is on screen, and once ahead from the Profile (so it opens complete).
+    fn refresh_admin(&mut self) {
+        use swiftly_vm::ServerAdminState;
+        let on_page = matches!(self.page, Page::ServerAdmin | Page::ServerLogs);
+        let offered = self.admin.link.administrator() == Some(true);
+        let settled = !matches!(self.admin.link.part().state, ServerAdminState::Loading);
+        self.admin
+            .set_running(!self.closed && (on_page || (offered && !settled)));
+    }
+
     fn tapped_pages(&mut self, a: &Action) {
         let is = |s: &str| *a == Action::from(s);
         let is_dyn: &dyn Fn(&str) -> bool = &is;
@@ -2305,6 +2651,38 @@ impl SettingsScreen {
         }
     }
 
+    /// A drag of a Home row (`swiftly_ui::reorder`): the held row follows the pointer, the drop writes the order through
+    /// the core's `HomeEdit::Drop`.
+    fn panned(&mut self, a: &Action, phase: swiftly_ui::Phase, translation: (f32, f32)) {
+        use swiftly_vm::HomeEdit;
+        let home = self.vm.home();
+        let Some(row) =
+            (0..home.rows.len()).find(|i| *a == Action::from(format!("home.drag.{i}").as_str()))
+        else {
+            return;
+        };
+        if !self.reorder.is_active() {
+            self.order_ids = home.rows.iter().map(|r| r.id.clone()).collect();
+        }
+        let n = self.order_ids.len();
+        if let Some((from, to)) =
+            self.reorder
+                .pan(row, phase, translation.1, HOME_PITCH, n, self.now)
+            && let (Some(source), Some(onto)) = (self.order_ids.get(from), self.order_ids.get(to))
+        {
+            let _ = self.vm.send(SettingsIntent::Home(HomeEdit::Drop {
+                source: source.clone(),
+                onto: onto.clone(),
+            }));
+        }
+        self.sync();
+    }
+
+    /// A frame is wanted while a dropped row settles (the new order is shown when it has).
+    fn extra_frame(&self) -> bool {
+        matches!(self.reorder, swiftly_ui::reorder::Reorder::Settling { .. })
+    }
+
     fn tapped(&mut self, a: &Action) {
         let is = |s: &str| *a == Action::from(s);
         self.focus = None;
@@ -2323,6 +2701,17 @@ impl SettingsScreen {
                     self.seen_update = self.update.state();
                     self.sync();
                 }
+            }
+        } else if is("go:management") {
+            if let Some(entry) = self.entry() {
+                self.open_management(crate::management_hub::first(&entry));
+            }
+        } else if let Some(n) = (0..4).find(|n| is(&format!("hub:tab:{n}"))) {
+            if let Some(entry) = self.entry()
+                && let Some((dest, _, _)) =
+                    crate::management_hub::tabs(&entry, crate::management_hub::Dest::Server).get(n)
+            {
+                self.open_management(*dest);
             }
         } else if is("go:playback") {
             self.page = Page::Playback;
@@ -2371,6 +2760,7 @@ impl SettingsScreen {
             self.choice = None;
             self.dest = Some(Dest::SignOut);
         }
+        self.tapped_admin(a);
         self.tapped_pages(a);
         self.tapped_home(a);
         let sections = self.vm.sections();
@@ -2441,10 +2831,21 @@ impl SettingsScreen {
 
     fn clock(&mut self, now: f64) {
         self.now = now;
+        if self.reorder.tick(now) {
+            self.order_ids.clear();
+            self.sync();
+        }
         if self.undo.is_some_and(|(_, until)| now >= until) {
             self.undo = None;
         }
         self.refresh_conn();
+        self.refresh_admin();
+        if let Some(d) = &self.seerr_desk
+            && d.changed() != self.seerr_seen
+        {
+            self.seerr_seen = d.changed();
+            self.sync();
+        }
         let offers = (self.choices.libraries(), self.choices.genres());
         if offers != self.seen_offers {
             self.seen_offers = offers;
@@ -2511,6 +2912,260 @@ mod tests {
     fn tap(s: &mut SettingsScreen, key: &str) {
         s.tapped(&Action::from(key));
         let _ = s.frame(100.0);
+    }
+
+    /// A scripted server page: records what the screen sends and answers like the core (an administrator's page, the
+    /// restart question after `AskRestart`).
+    struct FakeAdmin {
+        sent: Arc<std::sync::Mutex<Vec<String>>>,
+        admin: bool,
+        /// A manager's Seerr connection too: the entry then has "Anfragen", "Meldungen" and "Server".
+        seerr: bool,
+        ask: std::sync::Mutex<bool>,
+    }
+    impl crate::server_admin_link::AdminLink for FakeAdmin {
+        fn administrator(&self) -> Option<bool> {
+            Some(self.admin)
+        }
+        fn entry(
+            &self,
+            seerr: Option<&swiftly_vm::SeerrHubInfo>,
+        ) -> Option<swiftly_vm::ProfileEntry> {
+            if self.seerr {
+                use swiftly_vm::{HubSection, HubSectionKind as K, ProfileEntry, ProfileEntryKind};
+                let section = |kind, title: &str, count| HubSection {
+                    kind,
+                    title: title.to_owned(),
+                    count,
+                    manage: true,
+                };
+                return Some(ProfileEntry {
+                    kind: ProfileEntryKind::Admin,
+                    title: "Verwaltung".to_owned(),
+                    under: Some("3 Anfragen".to_owned()),
+                    count: 3,
+                    sections: vec![
+                        section(K::Requests, "Anfragen", 3),
+                        section(K::Issues, "Meldungen", 0),
+                        section(K::Server, "Server", 0),
+                    ],
+                });
+            }
+            swiftly_vm::profile_entry(
+                &swiftly_l10n::Locale::parse("de"),
+                swiftly_jellyfin::ServerKind::Jellyfin,
+                self.admin,
+                seerr,
+            )
+        }
+        fn start(&self) {
+            self.sent.lock().unwrap().push("Start".into());
+        }
+        fn stop(&self) {
+            self.sent.lock().unwrap().push("Stop".into());
+        }
+        fn part(&self) -> Arc<swiftly_vm::ServerAdminPart> {
+            use swiftly_vm::*;
+            let ask = if *self.ask.lock().unwrap() {
+                ServerAdminAsk::Restart {
+                    title: "Server neu starten?".into(),
+                    note: "Wer gerade schaut, wird unterbrochen.".into(),
+                    action: "Neu starten".into(),
+                }
+            } else {
+                ServerAdminAsk::Nothing
+            };
+            Arc::new(ServerAdminPart {
+                version: 1,
+                title: "Fixture".into(),
+                state: ServerAdminState::Ready {
+                    page: ServerAdminPage {
+                        server_title: "Server".into(),
+                        name: "Fixture".into(),
+                        version: "(10.11.2)".into(),
+                        counts: vec![ServerNumber {
+                            label: "Filme".into(),
+                            value: 1204,
+                            text: "1.204".into(),
+                        }],
+                        resolutions: vec![],
+                        tasks_title: "Aufgaben".into(),
+                        tasks: vec![],
+                        streams_title: "Wiedergaben".into(),
+                        streams_empty: "Gerade spielt niemand etwas ab.".into(),
+                        streams: vec![],
+                        load_title: "Auslastung".into(),
+                        load: None,
+                        disks: vec![],
+                        actions_title: "Verwaltung".into(),
+                        actions: vec![
+                            ServerAction {
+                                kind: ServerActionKind::ScanLibraries,
+                                title: "Mediathek scannen".into(),
+                                under: None,
+                                accent: false,
+                            },
+                            ServerAction {
+                                kind: ServerActionKind::Restart,
+                                title: "Server neu starten".into(),
+                                under: None,
+                                accent: false,
+                            },
+                        ],
+                        notice: None,
+                        ask,
+                    },
+                },
+            })
+        }
+        fn send(&self, intent: swiftly_vm::ServerAdminIntent) {
+            use swiftly_vm::ServerAdminIntent as I;
+            if matches!(intent, I::AskRestart) {
+                *self.ask.lock().unwrap() = true;
+            }
+            if matches!(intent, I::Cancel | I::Confirm { .. }) {
+                *self.ask.lock().unwrap() = false;
+            }
+            self.sent.lock().unwrap().push(format!("{intent:?}"));
+        }
+        fn logs_part(&self) -> Arc<swiftly_vm::ServerLogsPart> {
+            crate::server_admin_link::AdminLink::logs_part(&crate::server_admin_link::NoAdmin)
+        }
+        fn send_logs(&self, _intent: swiftly_vm::ServerLogsIntent) {}
+        fn images(&self) -> Option<swiftly_images::ImageAddress> {
+            None
+        }
+    }
+
+    fn admin_screen(admin: bool) -> (SettingsScreen, Arc<std::sync::Mutex<Vec<String>>>) {
+        admin_screen_with(admin, false)
+    }
+
+    fn admin_screen_with(
+        admin: bool,
+        seerr: bool,
+    ) -> (SettingsScreen, Arc<std::sync::Mutex<Vec<String>>>) {
+        let sent = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut s = SettingsScreen::new(desktop(), Cx::deterministic(), false).with_admin(
+            Box::new(FakeAdmin {
+                sent: Arc::clone(&sent),
+                admin,
+                seerr,
+                ask: std::sync::Mutex::new(false),
+            }),
+        );
+        let _ = s.frame(0.0);
+        (s, sent)
+    }
+
+    /// The vertical gap between the bottom of row `a` and the top of row `b` (rows at the edge of two groups).
+    fn gap_between(s: &SettingsScreen, a: &str, b: &str) -> f32 {
+        let (fa, fb) = (s.frame_of(a).unwrap(), s.frame_of(b).unwrap());
+        fb[1] - (fa[1] + fa[3])
+    }
+
+    #[test]
+    fn every_group_of_the_profile_sits_the_same_gap_below_the_one_above() {
+        let (s, _) = admin_screen(true);
+        let top = gap_between(&s, "go:support", "go:playback");
+        let low = gap_between(&s, "go:settings", "go:management");
+        assert!(top > 0.0, "there is a gap under the support card");
+        assert!(
+            (top - low).abs() < 0.01,
+            "support to Wiedergabe {top}, Allgemein to Serververwaltung {low}"
+        );
+    }
+
+    #[test]
+    fn the_profile_has_one_management_row_that_opens_the_first_section_with_a_tab_row() {
+        let has = |s: &SettingsScreen, l: &str| s.a11y_nodes().iter().any(|n| n.label.contains(l));
+        let (mut s, _) = admin_screen_with(true, true);
+        assert!(s.frame_of("go:management").is_some(), "the one row");
+        assert!(
+            s.frame_of("go:seerr-requests").is_none() && s.frame_of("go:seerr-admin").is_none(),
+            "no separate Seerr rows"
+        );
+        // The first section is the queue: a Seerr page, pushed by the shell.
+        tap(&mut s, "go:management");
+        assert_eq!(
+            s.take_seerr_route(),
+            Some(crate::seerr_desk::SeerrRoute::Admin)
+        );
+        // The server tab of the same page: the server page with the tab row, Anfragen | Meldungen | Server.
+        s.show_server_page();
+        let _ = s.frame(200.0);
+        assert_eq!(s.page, Page::ServerAdmin);
+        assert!(has(&s, "Anfragen 3") && has(&s, "Meldungen") && has(&s, "Server"));
+        tap(&mut s, "hub:tab:1");
+        assert_eq!(
+            s.take_seerr_route(),
+            Some(crate::seerr_desk::SeerrRoute::Issues)
+        );
+        // An administrator without Seerr has one section: no tab row.
+        let (mut s, _) = admin_screen(true);
+        tap(&mut s, "go:management");
+        assert_eq!(s.page, Page::ServerAdmin);
+        assert!(s.frame_of("hub:tab:0").is_none());
+    }
+
+    #[test]
+    fn allgemein_has_no_second_support_row_and_the_profile_has_the_one() {
+        let (mut s, _) = admin_screen(false);
+        assert!(s.frame_of("go:support").is_some(), "the profile has it");
+        s.open_page("general");
+        let _ = s.frame(10.0);
+        assert!(s.frame_of("go:support").is_none(), "Allgemein has none");
+        assert!(
+            !s.a11y_nodes()
+                .iter()
+                .any(|n| n.label.contains("Swiftly unterstützen")),
+            "no copy of the row on Allgemein"
+        );
+    }
+
+    #[test]
+    fn a_page_next_to_the_window_arrows_draws_no_back_chevron_of_its_own() {
+        let has_back = |env: Env| {
+            let mut s = SettingsScreen::new(env, Cx::deterministic(), false);
+            let _ = s.frame(0.0);
+            s.a11y_nodes().iter().any(|n| n.label == "Zurück")
+        };
+        let mut with_arrows = desktop();
+        with_arrows.window_nav = true;
+        assert!(
+            !has_back(with_arrows),
+            "the window's arrows stay put while the page slides: the page has no copy"
+        );
+        assert!(has_back(desktop()), "the first start has no window arrows");
+    }
+
+    #[test]
+    fn server_row_only_for_an_administrator_and_the_page_asks_before_a_restart() {
+        let has = |s: &SettingsScreen, l: &str| s.a11y_nodes().iter().any(|n| n.label.contains(l));
+        let (guest, _) = admin_screen(false);
+        assert!(!has(&guest, "Verwaltung"), "a guest sees no row");
+        let (mut s, sent) = admin_screen(true);
+        assert!(has(&s, "Verwaltung"), "an administrator sees the row");
+        tap(&mut s, "go:management");
+        assert_eq!(s.page, Page::ServerAdmin);
+        assert!(has(&s, "Mediathek scannen") && has(&s, "Server neu starten"));
+        // The page reads while it is shown, and the restart waits for the answer.
+        tap(&mut s, "admin:restart");
+        assert!(has(&s, "Neu starten"), "the question is on screen");
+        tap(&mut s, "admin:ask.cancel");
+        assert!(!has(&s, "Wer gerade schaut"), "Cancel closes it");
+        tap(&mut s, "admin:scan");
+        let log = sent.lock().unwrap().clone();
+        assert!(log.contains(&"Start".to_owned()), "{log:?}");
+        assert!(log.iter().any(|l| l == "Scan"), "{log:?}");
+        assert!(
+            !log.iter().any(|l| l.starts_with("Confirm")),
+            "nothing was confirmed: {log:?}"
+        );
+        // Back leaves the page and stops reading.
+        s.back(0.0);
+        let _ = s.frame(200.0);
+        assert!(sent.lock().unwrap().contains(&"Stop".to_owned()));
     }
 
     #[test]

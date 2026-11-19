@@ -68,11 +68,14 @@ fn people() -> String {
     all.join(",")
 }
 
-fn film_for(sources: bool, id: &str, name: &str) -> String {
-    let media = if sources {
-        r#","MediaSources":[{"Id":"s4k","Name":"4K","Container":"mkv","Size":8400000000,"SupportsDirectPlay":true,"SupportsDirectStream":true,"MediaStreams":[{"Type":"Video","Codec":"hevc","Width":3840,"Height":2160,"BitRate":24000000,"RealFrameRate":24.0,"VideoRange":"HDR","Index":0},{"Type":"Audio","Codec":"eac3","Channels":6,"Language":"deu","Index":1,"DisplayTitle":"Deutsch - EAC3 - 5.1"},{"Type":"Audio","Codec":"aac","Channels":2,"Language":"eng","Index":2,"DisplayTitle":"English - AAC - Stereo"},{"Type":"Subtitle","Codec":"subrip","Language":"deu","Index":3}]},{"Id":"s1080","Name":"1080p","Container":"mp4","Size":3100000000,"SupportsDirectPlay":true,"MediaStreams":[]}]"#
-    } else {
-        ""
+/// The scripted film: `versions` media sources (0 = the list entry without any, 1 = a single file, 2 = two versions).
+fn film_for(versions: usize, id: &str, name: &str) -> String {
+    let first = r#"{"Id":"s4k","Name":"4K","Container":"mkv","Size":8400000000,"SupportsDirectPlay":true,"SupportsDirectStream":true,"MediaStreams":[{"Type":"Video","Codec":"hevc","Width":3840,"Height":2160,"BitRate":24000000,"RealFrameRate":24.0,"VideoRange":"HDR","Index":0},{"Type":"Audio","Codec":"eac3","Channels":6,"Language":"deu","Index":1,"DisplayTitle":"Deutsch - EAC3 - 5.1"},{"Type":"Audio","Codec":"aac","Channels":2,"Language":"eng","Index":2,"DisplayTitle":"English - AAC - Stereo"},{"Type":"Subtitle","Codec":"subrip","Language":"deu","Index":3}]}"#;
+    let second = r#"{"Id":"s1080","Name":"1080p","Container":"mp4","Size":3100000000,"SupportsDirectPlay":true,"MediaStreams":[]}"#;
+    let media = match versions {
+        0 => String::new(),
+        1 => format!(r#","MediaSources":[{first}]"#),
+        _ => format!(r#","MediaSources":[{first},{second}]"#),
     };
     format!(
         r#"{{"Id":"{id}","Name":"{name}","Type":"Movie","ProductionYear":2021,"RunTimeTicks":54000000000,"Genres":["Drama","Krimi"],"Overview":"{OVERVIEW}","CommunityRating":7.5,"OfficialRating":"12","ImageTags":{{"Primary":"p"}},"BackdropImageTags":["b"],"People":[{}],"UserData":{{"PlaybackPositionTicks":19200000000,"PlayedPercentage":35.5,"Played":false,"IsFavorite":false}}{media}}}"#,
@@ -106,7 +109,7 @@ fn list(items: &[String]) -> String {
     )
 }
 
-fn detail_transport(s: Scenario, id: &str, name: &str) -> MockTransport {
+fn detail_transport(s: Scenario, id: &str, name: &str, versions: usize) -> MockTransport {
     let own = format!("/Items/{id}");
     if s == Scenario::Offline {
         return [
@@ -133,7 +136,7 @@ fn detail_transport(s: Scenario, id: &str, name: &str) -> MockTransport {
     };
     let plan = r#"{"PlaySessionId":"x","MediaSources":[{"Id":"s4k","Name":"4K","Container":"mkv","SupportsDirectPlay":true,"SupportsDirectStream":true,"MediaStreams":[{"Type":"Video","Codec":"hevc","Index":0}]}]}"#;
     MockTransport::new()
-        .route(&own, 200, &film_for(true, id, name))
+        .route(&own, 200, &film_for(versions, id, name))
         .route("/Similar", 200, &list(&similar))
         .route("/SpecialFeatures", 200, "[{\"Id\":\"x1\",\"Name\":\"Making of\",\"Type\":\"Video\",\"RunTimeTicks\":9000000000},{\"Id\":\"x2\",\"Name\":\"Geschnittene Szenen\",\"Type\":\"Video\",\"RunTimeTicks\":6000000000}]")
         .route("PlaybackInfo", 200, plan)
@@ -147,7 +150,7 @@ pub fn detail_entry() -> Item {
 
 /// The list entry of the tapped tile: the scripted title under its id and name.
 pub fn detail_entry_for(id: &str, name: &str) -> Item {
-    serde_json::from_str(&film_for(false, id, name)).unwrap_or_else(|e| panic!("entry: {e}"))
+    serde_json::from_str(&film_for(0, id, name)).unwrap_or_else(|e| panic!("entry: {e}"))
 }
 
 /// What the Mac tells the film page (`DetailCore.send(options:)`): the settings, the account's right, what a browser
@@ -193,6 +196,24 @@ pub fn detail_vm(s: Scenario) -> DetailVm<crate::net::AppTransport> {
 /// # Panics
 /// As `detail_vm`.
 pub fn detail_vm_for(s: Scenario, id: &str, name: &str) -> DetailVm<crate::net::AppTransport> {
+    detail_vm_with(s, id, name, 2)
+}
+
+/// A `DetailVm` whose title has a single file (nothing for Play to offer as a choice), for tests.
+///
+/// # Panics
+/// As `detail_vm`.
+#[cfg(test)]
+pub fn detail_vm_one_version(s: Scenario) -> DetailVm<crate::net::AppTransport> {
+    detail_vm_with(s, "m1", "Nordlicht", 1)
+}
+
+fn detail_vm_with(
+    s: Scenario,
+    id: &str,
+    name: &str,
+    versions: usize,
+) -> DetailVm<crate::net::AppTransport> {
     if let Some(w) = crate::live::current() {
         let vm = DetailVm::new(
             Arc::clone(&w.core.net),
@@ -208,7 +229,7 @@ pub fn detail_vm_for(s: Scenario, id: &str, name: &str) -> DetailVm<crate::net::
     }
     let vm = DetailVm::new(
         Arc::new(crate::net::AppTransport::Mock(detail_transport(
-            s, id, name,
+            s, id, name, versions,
         ))),
         host(),
         detail_entry_for(id, name),

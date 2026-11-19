@@ -31,6 +31,13 @@ struct DetailHeader<Buttons: View>: View {
     var focusable = true
     /// Pulls the first rail up; the series page's rail starts 40 above the movie page's.
     var heroTrim: CGFloat = 0
+    /// The head picture's BlurHash and the tile pictures of the title, from the core: frame 1 shows one of them
+    /// in the backdrop's final size until the sharp picture is there.
+    var blur: String? = nil
+    var stand: [URL] = []
+    /// The playback mark is not final yet: a skeleton of its size stands in its place and the real mark replaces it in
+    /// the same frame (`proof.phase` of the core).
+    var proofWaiting = false
     @ViewBuilder var buttons: () -> Buttons
 
     @ViewBuilder
@@ -41,7 +48,8 @@ struct DetailHeader<Buttons: View>: View {
     private var shell: some View {
         ZStack(alignment: .topLeading) {
             Backdrop(url: model.landscapeImageURL(for: item, width: 1600)
-                         ?? model.headerImageURL(for: item))
+                         ?? model.headerImageURL(for: item),
+                     blur: blur, stand: stand)
                 .frame(maxWidth: .infinity, alignment: .trailing)
 
             // **Same header shadow as the home page.**
@@ -79,25 +87,21 @@ struct DetailHeader<Buttons: View>: View {
             // **Same component as on the home page.** The header is identical there and
             // here; only the button row is added. See `HeaderInfo`.
             HeaderInfo(item: item, logoModel: model) {
-                // **The proof fades in, the rest of the header does not.** It hangs on
-                // `plan`, which comes from the server; in the otherwise still header it
-                // would appear in the middle. It belongs to what is new: the home page has no
-                // plan fetched yet.
+                // **The mark stands in its place from frame 1.** It hangs on `plan`, which comes from the server; until
+                // then a skeleton of its size holds the place, and the real mark replaces it in the same frame: no fade,
+                // no slide, nothing next to it moves (it is the last in the line).
                 if let plan {
                     ProofMarks(directPlayFlag: plan.isLossless,
                                 hint: plan.isLossless ? nil : plan.method.rawValue,
                                 proofLast: true)
-                        .transition(.opacity)
+                } else if proofWaiting {
+                    ProofMarks(directPlayFlag: true, proofLast: true)
+                        .hidden()
+                        .background(RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
+                            .fill(Theme.fontVeryQuiet.opacity(0.15)))
                 }
             }
-            // **The fade hangs on the plan, not on the caller's transaction.**
-            // `.transition` alone fades only if the plan arrives in an animated
-            // transaction. The movie page sets it inside its `withAnimation`; the series
-            // page sets it after the shared fade-in without animation, so the Direct Play
-            // mark jumped in there. Pinned here, the fade applies to every page that
-            // carries the header, however it sets its plan. The mark is last in the line,
-            // so nothing shifts.
-            .animation(Theme.motion(.timingCurve(0.23, 1, 0.32, 1, duration: 0.22)), value: plan != nil)
+            .transaction { $0.animation = nil }
 
             // The button row may grow wider than the text's 1000. The cap therefore sits
             // on the text, not on the whole block; once it sat outside and every label
@@ -224,8 +228,6 @@ struct DetailView: View {
     @State private var lastFocus: FocusTarget = .primaryButton
 
     @State private var prepares = false
-    /// A title with several versions waiting for the pick; `nil` while no dialog is open.
-    @State private var versionChoice: VersionPick?
     @State private var moreOpen = false
 
     @MainActor init(model: AppModel, item: Item) {
@@ -255,7 +257,7 @@ struct DetailView: View {
 
                 // **Everything below the header arrives at once**, as on the iPhone: the core
                 // answers cast, extras, similar, collections and watchers together
-                // (`bottom.ready`) and the page fades them in together.
+                // (`bottom.ready`) and the page shows them in place, together.
                 if bottom?.ready == true {
                     VStack(alignment: .leading, spacing: 0) {
                         WatchersStrip(model: model, item: item,
@@ -291,12 +293,13 @@ struct DetailView: View {
                             }
                         }
                     }
-                    .transition(.opacity)
                 }
             }
             .padding(.bottom, Theme.completionPadding)
         }
         .scrollIndicators(.hidden)
+        // Nothing inside the page animates in: pictures and rows appear in place.
+        .arrivesStill()
         // **The side margin is granted once, not twice.** tvOS keeps 80 pt free left and right by
         // itself, and the page adds `Theme.edgePage` (also 80). On each page individually, not on the
         // frame: the `NavigationStack` resets the safe area for its content.
@@ -321,10 +324,6 @@ struct DetailView: View {
         }
         // **While a panel is open, the rest is not a focus target.**
         .disabled(moreOpen)
-        // The remote's select opens the choice; the dialog takes the focus and gives it back on close.
-        .versionPick($versionChoice) { choice, version in
-            launch(page?.pressPlay(pick: version.id), since: choice.since, picked: version.id)
-        }
         // Under the More button, at its edge; see `PanelAnchor`.
         .panel(under: moreOpen ? "mehr" : nil) {
             ActionPanel(actions: moreActions, opened: $moreOpen)
@@ -360,19 +359,26 @@ struct DetailView: View {
     /// Backdrop, text and button row.
     /// **One labeled button, the rest are symbols.** "Fortsetzen" or "Abspielen" carries the text,
     /// next to square symbols: back to start, watchlist, more. Each names itself for VoiceOver.
-    /// **Long press on the main button: the title's tile menu**, the same as on its tile.
+    /// **Long press on the main button (select held): the versions, nothing else**, the default checked; without
+    /// several versions it does nothing. A press starts the default at once.
     private var header: some View {
         let watchlist = actions?.favorite ?? false
-        return DetailHeader(model: model, item: current, plan: page?.plan(app: model)) {
+        let hero = page?.model.hero
+        return DetailHeader(model: model, item: current, plan: page?.plan(app: model),
+                            blur: hero?.imageBlurHash,
+                            stand: hero?.tileImages.compactMap { URL(string: $0.address) } ?? [],
+                            proofWaiting: actions?.proof.phase != .settled) {
             HStack(spacing: 24) {
                 if current.resumeFrom != nil {
                     Button { launch(page?.pressPlay(), since: nil, picked: nil) } label: {
                         Label("Fortsetzen", icon: "play.fill")
                     }
                     .buttonStyle(ThemedButtonStyle())
-                    .disabled(prepares || actions?.play.enabled != true)
+                    .disabled(prepares)
                     .focused($atPrimaryButton)
-                    .tileMenu(current, model: model)
+                    .versionMenu(page?.versions() ?? []) { version in
+                        launch(page?.pressPlay(pick: version.id), since: nil, picked: version.id)
+                    }
 
                     // Explicit in the layout: otherwise someone who has started could only get
                     // back to the beginning through the panel.
@@ -381,15 +387,17 @@ struct DetailView: View {
                     }
                     .buttonStyle(ThemedButtonStyle(onlySymbol: true))
                     .accessibilityLabel(Text("Von vorn"))
-                    .disabled(prepares || actions?.play.enabled != true)
+                    .disabled(prepares)
                 } else {
                     Button { launch(page?.pressPlay(), since: nil, picked: nil) } label: {
                         Label("Abspielen", icon: "play.fill")
                     }
                     .buttonStyle(ThemedButtonStyle())
-                    .disabled(prepares || actions?.play.enabled != true)
+                    .disabled(prepares)
                     .focused($atPrimaryButton)
-                    .tileMenu(current, model: model)
+                    .versionMenu(page?.versions() ?? []) { version in
+                        launch(page?.pressPlay(pick: version.id), since: nil, picked: version.id)
+                    }
                 }
 
                 // Switched off in Appearance, the bookmark is gone; the favourite itself stays on the server.
@@ -500,9 +508,6 @@ struct DetailView: View {
         switch action {
         case .wait:
             return
-        case .choose(_, let at, let versions):
-            versionChoice = VersionPick(
-                heading: page.model.actions.play.versionTitle, options: versions, since: since ?? at)
         case .resolve(_, let at):
             // The fresh title never came: fetch it once more and decide again; say so if that fails too.
             guard !prepares else { return }

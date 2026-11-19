@@ -120,6 +120,9 @@ pub struct AccountDefaultsInfo {
     pub convert_allowed: bool,
     /// A smaller quality may be offered when downloading.
     pub download_quality_selectable: bool,
+    /// `Policy.IsAdministrator`: the account may open the server page (false when the server says nothing, and
+    /// for Plex).
+    pub is_administrator: bool,
 }
 
 /// The host hears the seconds left once per second.
@@ -245,10 +248,11 @@ impl AccountsModel {
                 all.set(rest, kind);
                 save_bundles(&self.secrets, all);
                 if let Some(cache) = &self.host.cache {
-                    let cache = cache.entity_cache();
-                    cache.drop_scope(&swiftly_cache::Scope(key.to_owned()));
+                    cache
+                        .entity_cache()
+                        .drop_scope(&swiftly_cache::Scope(key.to_owned()));
                     if let Some(own) = own {
-                        cache.drop_scope(&swiftly_vm::ViewCache::scope(&own));
+                        cache.drop_account(&own);
                     }
                 }
             }
@@ -457,6 +461,7 @@ impl AccountsModel {
                 .to_owned(),
             convert_allowed: gift.and_then(|g| g.convert_allowed).unwrap_or(true),
             download_quality_selectable: gift.is_none_or(|g| g.download_quality_selectable()),
+            is_administrator: gift.and_then(|g| g.is_administrator).unwrap_or(false),
         })
     }
 
@@ -1103,6 +1108,7 @@ mod tests {
                 convert_allowed: false,
                 // Video conversion is off, so there is no smaller quality to pick (the rule).
                 download_quality_selectable: false,
+                is_administrator: false,
             }
         );
         let seen = http.seen();
@@ -1120,6 +1126,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn account_defaults_carry_the_administrator_flag() {
+        let body = r#"{"Policy":{"IsAdministrator":true}}"#;
+        let http = Recording::new(move |_| ok(body));
+        let m = model_over(Arc::new(Secrets::default()), http);
+        let (paul, _) = signed_in_pair(&m).await;
+        assert!(m.account_defaults(paul).await.unwrap().is_administrator);
+    }
+
+    #[tokio::test]
     async fn account_defaults_without_an_answer_hold_the_assumed_values() {
         let http = Recording::new(|_| down());
         let m = model_over(Arc::new(Secrets::default()), http);
@@ -1133,6 +1148,7 @@ mod tests {
                 download_permission: "unbekannt".into(),
                 convert_allowed: true,
                 download_quality_selectable: true,
+                is_administrator: false,
             }
         );
         assert!(

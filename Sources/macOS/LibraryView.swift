@@ -55,6 +55,8 @@ struct LibraryView: View {
     /// `@Observable`, only the views that read the value redraw: the bar and the
     /// filter row.
     @State private var headerState = HeaderState()
+    /// The live run's scripted open of the filter panel (DEBUG; stays 0 otherwise).
+    @State private var liveOpen = 0
     @State private var position = ScrollPosition()
     /// Once per page build: the remembered position is only applied on entry.
     @State private var returned = false
@@ -122,11 +124,17 @@ struct LibraryView: View {
                 // its height on every switch; on iPhone `ShelfControls` keeps its height for the
                 // same reason.
                 HStack(spacing: 8) {
-                    SelectionButton(value: shelf.filter.label,
-                              entries: offeredFilter,
+                    // The rows (status, years, language) and the pill text are the core's, as on every platform.
+                    SelectionButton(value: shelf.pillText,
+                              entries: shelf.sheetRows(offered: offeredFilter),
                               label: { $0.label },
-                              isSelected: { $0 == shelf.filter },
-                              select: { shelf.filter = $0 })
+                              isSelected: { $0.selected },
+                              select: { shelf.choose($0) },
+                              category: { row in row.heading.map { LocalizedStringKey($0) } },
+                              onOpened: { now in
+                                  if now { shelf.sheetOpened(offered: offeredFilter) } else { shelf.sheetClosed() }
+                              },
+                              openRequest: liveOpen)
                     SelectionButton(symbol: "arrow.up.arrow.down",
                               value: shelf.sorting.label,
                               entries: Sorting.allCases,
@@ -345,6 +353,12 @@ struct LibraryView: View {
         // not waiting.
         .animation(Theme.reveal, value: shelf.items.isEmpty)
         .task(id: shelf.identifier) { await loadAlone() }
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: LiveRun.libraryCommand)) { note in
+            guard let command = note.object as? LiveRun.LibraryCommand, command.art == art else { return }
+            liveCommand(command)
+        }
+        #endif
         // The shelf belongs to an account too. `.task(id:)` is keyed on sorting and
         // filter, which do not change on an account switch, and the shelf lives in
         // `MainView`, so it survives the bar switch. Without this line the previous
@@ -428,6 +442,35 @@ struct LibraryView: View {
 
     /// `load()` as the only run: the previous one is cancelled, and if this one is
     /// cancelled (`.task(id:)`), the cancellation propagates.
+    #if DEBUG
+    /// The `filter` live scenario (`LiveRun.scenarioFilter`) works this page like a user: open the panel, click a row, read the list.
+    private func liveCommand(_ command: LiveRun.LibraryCommand) {
+        func matches(_ row: LibraryModel.SheetRow) -> Bool {
+            switch row.pick {
+            case .years(let years)?: return command.value == "years:" + (years.map { "\($0.from)-\($0.to)" } ?? "none")
+            case .language(let language)?: return command.value == "language:" + (language ?? "none")
+            case .status(let value)?: return command.value == "status:" + LibraryFilter(rust: value).rawValue
+            case nil: return false
+            }
+        }
+        switch command.action {
+        case "open": liveOpen += 1; command.report = [:]
+        case "close": SelectionSupervision.shared.opened = nil; command.report = [:]
+        case "rows":
+            let rows = shelf.sheetRows(offered: offeredFilter)
+            command.report = ["rows": rows.map { "\($0.heading ?? "")|\($0.label)|\($0.selected ? "x" : "")" },
+                              "loading": rows.contains { $0.label == "\u{2026}" }]
+        case "pick":
+            let row = shelf.sheetRows(offered: offeredFilter).first(where: matches)
+            if let row { shelf.choose(row); SelectionSupervision.shared.opened = nil }
+            command.report = ["found": row != nil]
+        default:
+            command.report = ["loads": shelf.loads, "identifier": shelf.identifier, "total": shelf.total, "pill": shelf.pillText,
+                              "ids": shelf.items.map(\.id), "years": shelf.items.map { $0.productionYear ?? 0 }]
+        }
+    }
+    #endif
+
     private func loadAlone() async {
         loadTask?.cancel()
         let task = Task { await load() }

@@ -47,6 +47,17 @@ echo "Geraet: ${NAME:-iPhone} ($UDID)"
 # CONFIG=Release for anything about speed: the unoptimised Debug build is far too slow for the
 # Aether engine (Dolby Vision rewrite, TrueHD decode).
 CONFIG="${CONFIG:-Release}"
+
+# A core framework older than the crates fails the build with missing UniFFI symbols
+# (Generated.swift is newer than the binary): rebuild the device slice first.
+FRAMEWORK=Packages/SwiftlyCore/SwiftlyCoreFFI.xcframework/Info.plist
+if [ ! -f "$FRAMEWORK" ] || [ -n "$(find crates -newer "$FRAMEWORK" -name '*.rs' -print -quit)" ]; then
+  echo "Kern veraltet, baue ihn neu ..."
+  SWIFTLY_SLICES="${SWIFTLY_SLICES:-ios}" Werkzeuge/rust-kern.sh --rebuild
+fi
+# A project.yml newer than the generated project misses new files ("cannot find … in scope").
+[ project.yml -nt Swiftly.xcodeproj/project.pbxproj ] && xcodegen generate
+
 xcodebuild -project Swiftly.xcodeproj -scheme Swiftly-iOS -configuration "$CONFIG" \
   -destination "id=$UDID" -derivedDataPath "$DD" \
   DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic \

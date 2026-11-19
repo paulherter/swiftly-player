@@ -25,6 +25,8 @@ struct PersonView: View {
     @Environment(\.wide) private var wide
     @State private var core: PersonController?
     @State private var offset: CGFloat = 0
+    /// What the person did that the own server does not have, from Seerr (empty without Seerr).
+    @State private var seerrCards: [SeerrCard] = []
     /// The banner stays on the first picture.
     private let bannerPoint = 0
 
@@ -84,6 +86,7 @@ struct PersonView: View {
         .background(SwipeBack())
         #endif
         .task(id: person.id) { await load() }
+        .task(id: "\(person.id)|\(model.seerr.connected)") { await loadSeerrCards() }
         // **The images no longer change on their own.**
         //
         // A loop ran here: the next banner every six seconds with a 1.2 second
@@ -109,7 +112,7 @@ struct PersonView: View {
         .overlay(alignment: .bottomLeading) {
             HStack(alignment: .bottom, spacing: 14) {
                 // Round because it is a picture of a person, like the cast tiles.
-                Picture(url: model.personImage(person, maxHeight: 300),
+                Picture(url: route.seerr?.portrait ?? model.personImage(person, maxHeight: 300),
                      width: headerSize, height: headerSize, corner: headerSize / 2)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: person.name)
@@ -218,12 +221,12 @@ struct PersonView: View {
                 }
                 .transition(.opacity)
             }
-            if !requestable.isEmpty {
-                Segment(title: "Kann angefragt werden") {
+            if !seerrCards.isEmpty {
+                Segment(title: "Nicht auf deinem Server") {
                     LazyHStack(alignment: .top, spacing: Theme.tileSpacing) {
-                        ForEach(requestable) { t in
-                            NavigationLink(value: t) {
-                                SeerrTile(hit: t, width: Theme.tileWidth)
+                        ForEach(seerrCards) { card in
+                            NavigationLink(value: card.route) {
+                                SeerrTile(card: card, width: Theme.tileWidth)
                             }
                             .buttonStyle(Theme.PressButton())
                         }
@@ -249,8 +252,17 @@ struct PersonView: View {
 
     // MARK: Laden
 
+    /// The person's TMDB id comes from the own server's entry; Seerr then lists what is not on the server.
+    private func loadSeerrCards() async {
+        guard model.seerr.connected else { seerrCards = []; return }
+        let known = (try? await model.client?.item(id: person.id))?.providerIds?["Tmdb"].flatMap(Int64.init)
+        guard let tmdb = route.seerr?.tmdb ?? known else { return }
+        let cards = await model.seerr.personCards(tmdb: tmdb)
+        withAnimation(Theme.reveal) { seerrCards = cards }
+    }
+
     private func load() async {
-        if core == nil { core = try? AppCore.shared.person(session: model.session, person: person, origin: route.origin) }
+        if core == nil { core = try? AppCore.shared.person(session: model.session, person: person, origin: route.origin, seerr: route.seerr) }
         await core?.run(app: model)
     }
 }

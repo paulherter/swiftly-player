@@ -45,6 +45,22 @@ impl LegacyPlayback {
 
 #[uniffi::export]
 impl LegacyPlayback {
+    /// The speed and subtitle-offset rows of the player menu: the same rows as `PlayerVm.menu` (one core builder).
+    pub fn menu(&self, tempo: f32, offset_ms: i64) -> crate::player::PlayerMenu {
+        self.inner.menu(tempo, offset_ms).into()
+    }
+    /// The offset after one step button.
+    pub fn menu_offset_step(&self, offset_ms: i64, step_ms: i32) -> i64 {
+        self.inner.menu_offset_step(offset_ms, step_ms)
+    }
+    /// The offset remembered for a title (the item id), from the host's stored dictionary.
+    pub fn menu_offset_remembered(&self, memory: String, title: String) -> Option<i64> {
+        self.inner.menu_offset_remembered(&memory, &title)
+    }
+    /// The stored dictionary after the title's offset changed (zero removes the entry).
+    pub fn menu_offset_remember(&self, memory: String, title: String, offset_ms: i64) -> String {
+        self.inner.menu_offset_remember(&memory, &title, offset_ms)
+    }
     /// `Kern.playbackSelection`.
     pub fn playback_selection(&self, always_direct_play: bool, megabit: i64) {
         self.inner.playback_selection(always_direct_play, megabit);
@@ -64,6 +80,10 @@ impl LegacyPlayback {
     /// Tracks sent with the title from another client.
     pub fn set_ordered(&self, item_id: String, audio: Option<i64>, subtitle: Option<i64>) {
         self.inner.set_ordered(&item_id, audio, subtitle);
+    }
+    /// The subtitle to switch on at the next load of this title, by the server's stream index (`None` takes it back).
+    pub fn order_subtitle(&self, item_id: String, subtitle: Option<i64>) {
+        self.inner.order_subtitle(&item_id, subtitle);
     }
     /// `Kern.playbackOpen`.
     #[uniffi::method(async_runtime = "tokio")]
@@ -90,6 +110,7 @@ impl LegacyPlayback {
         automatic: bool,
         audio_memory: String,
         subtitle_memory: String,
+        device_language: String,
     ) -> String {
         self.inner.tracks_select(
             &audio,
@@ -100,6 +121,7 @@ impl LegacyPlayback {
             automatic,
             &audio_memory,
             &subtitle_memory,
+            &device_language,
         )
     }
     /// `Kern.openSubtitle`.
@@ -129,6 +151,10 @@ impl LegacyPlayback {
     /// `Kern.chapterName`.
     pub fn chapter_name(&self, at: f64) -> String {
         self.inner.chapter_name(at)
+    }
+    /// `Kern.chapterList`.
+    pub fn chapter_list(&self, at: f64) -> String {
+        self.inner.chapter_list(at)
     }
     /// `Kern.chapterPiece`.
     pub fn chapter_piece(&self, share: f64, duration: f64, width: f64, min_width: f64) -> i64 {

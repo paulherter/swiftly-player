@@ -247,6 +247,72 @@ struct Parts {
     rails_out: bool,
     /// The support card at the end of the rails: the hours watched (`None`: no card; `MacSupportCard`).
     support: Option<i64>,
+    /// The core's Seerr block above the rails: "<Titel> ist da", "Wartet auf dich", "Angefragt" (`None`: nothing to draw;
+    /// `Pending`: the reserve of the last start's room, invisible).
+    seerr: Option<swiftly_vm::SeerrHomeInfo>,
+    /// Where the Seerr sections stand among the rails (the user's Home order, from the core).
+    seerr_places: Vec<(swiftly_library::SeerrSection, usize)>,
+}
+
+/// What a tap on the Seerr block above the rails means, decided from the core's block of the moment.
+#[derive(Debug, Clone, PartialEq)]
+enum SeerrTap {
+    /// The click or select on a closed stack: the core opens it.
+    Expand,
+    /// "Weniger anzeigen": the core closes it.
+    Collapse,
+    /// The X on a card: hide this request's arrival for good.
+    Dismiss(i64),
+    /// "Abspielen" on a film that arrived: play this library item.
+    Play(String),
+    /// "Abspielen" on a series that arrived, or a click on a card: that library item's page.
+    Open(String),
+    /// "Wartet auf dich".
+    Attention,
+    /// A tile of the "Angefragt" rail: that title's Seerr page.
+    Title(swiftly_seerr::models::SeerrHit),
+}
+
+impl SeerrTap {
+    /// `is(key)` tells whether the tapped control has that key.
+    fn of(info: &swiftly_vm::SeerrHomeInfo, is: &dyn Fn(&str) -> bool) -> Option<SeerrTap> {
+        // The reserve of a block that has not answered is blank and untouchable.
+        if info.state != swiftly_vm::SeerrHomeState::Shown {
+            return None;
+        }
+        if info.arrivals.len() > 1 {
+            if is("arrival-expand") && !info.arrivals_expanded {
+                return Some(SeerrTap::Expand);
+            }
+            if is("arrival-collapse") && info.arrivals_expanded {
+                return Some(SeerrTap::Collapse);
+            }
+        }
+        for a in &info.arrivals {
+            let id = a.request_id;
+            if is(&format!("arrival-dismiss:{id}")) {
+                return Some(SeerrTap::Dismiss(id));
+            }
+            if is(&format!("arrival-play:{id}")) {
+                return Some(if a.art == "tv" {
+                    SeerrTap::Open(a.library_id.clone())
+                } else {
+                    SeerrTap::Play(a.library_id.clone())
+                });
+            }
+            if is(&format!("arrival-open:{id}")) {
+                return Some(SeerrTap::Open(a.library_id.clone()));
+            }
+        }
+        if info.attention.is_some() && is("attention") {
+            return Some(SeerrTap::Attention);
+        }
+        info.rail
+            .iter()
+            .enumerate()
+            .find(|(i, _)| is(&format!("home-seerr:{i}")))
+            .map(|(_, t)| SeerrTap::Title(crate::pages_screen::seerr_views::hit_of(t)))
+    }
 }
 
 /// What a tap on the support card asks of the suite.
@@ -337,12 +403,24 @@ fn support_card(cx: &Cx, hours: i64) -> Node {
     .padding(ins(0.0, desktop::EDGE_SPACING, 0.0, 0.0))
 }
 
+/// The tile menu sheet. The entries are computed once, when the sheet opens: the rows on show and the entry a tap
+/// carries out are this one list, so they cannot differ (also not for a tile beyond the row's prepared window).
+#[derive(Clone, Debug, PartialEq)]
+struct MenuSheet {
+    id: String,
+    /// The tile that was clicked sits in the Continue Watching row.
+    cw: bool,
+    tile: Option<Tile>,
+    cx: crate::tile_menu::Cx,
+    entries: Vec<crate::tile_menu::Entry>,
+}
+
 /// The sheet over the Home page.
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Default)]
 enum Sheet {
     #[default]
     None,
-    Menu(String),
+    Menu(Box<MenuSheet>),
     Devices(String),
     Load(String),
 }
@@ -389,6 +467,8 @@ impl Parts {
 struct Ctx {
     hub: HubSlot,
     art: Rc<Art>,
+    /// The pictures of the Seerr block (TMDB posters through the same hub).
+    seerr_art: crate::detail_screen::Art,
     icons: Icons,
     vm: HomeVm<AppTransport>,
 }
@@ -513,23 +593,11 @@ fn tile_node(
     if form != Form::Desktop
         && let Some(share) = tile.progress.filter(|p| *p > 0.0)
     {
-        let share = share.clamp(0.0, 1.0);
-        let bar = Node::zstack(
+        // The same bar as the desktop: a strip of the rounded picture, never a square-cornered rectangle.
+        image = image.overlay(
+            progress_bar(size.w, m.corner, share),
             Alignment::BOTTOM_LEADING,
-            vec![
-                Node::rect(Color::new(1.0, 1.0, 1.0, 0.30), 0.0).frame(
-                    Some(size.w),
-                    Some(BAR_HEIGHT),
-                    Alignment::CENTER,
-                ),
-                Node::rect(color(colour::MARK_ACCENT), 0.0).frame(
-                    Some(size.w * share),
-                    Some(BAR_HEIGHT),
-                    Alignment::CENTER,
-                ),
-            ],
         );
-        image = image.overlay(bar, Alignment::BOTTOM_LEADING);
     }
     if form == Form::Desktop {
         // The picture with its progress bar scales to 1.04 (easeOut 0.12, `hover()` curve), the text does not move: the bar
@@ -542,6 +610,9 @@ fn tile_node(
             .focusable(focus_id(key), None)
             .focus_ring(color(colour::MARK_ACCENT), m.corner);
     }
+    // The menu action says which row was clicked: the Continue Watching row has the entry that removes a title from it,
+    // the same title in another row has not.
+    let menu = if continue_rail { "cmenu" } else { "menu" };
     let line = if continue_rail {
         tile.remaining.as_ref().or(tile.subtitle.as_ref())
     } else {
@@ -586,14 +657,14 @@ fn tile_node(
     )
     .key(key)
     .on_tap(tap)
-    .on_long_press(Action::from(format!("menu:{}", tile.id).as_str()));
+    .on_long_press(Action::from(format!("{menu}:{}", tile.id).as_str()));
     if form == Form::Tv {
         n = n.focusable(focus_id(key), Some(FocusLook::tile(m.corner)));
     }
     if form == Form::Desktop {
         // Right click opens the menu (the touch long press stays); the focus ring sits on the picture above.
         n = n
-            .on_secondary(Action::from(format!("menu:{}", tile.id).as_str()))
+            .on_secondary(Action::from(format!("{menu}:{}", tile.id).as_str()))
             .on_hover_rest(Action::from(format!("rest:{}", tile.id).as_str()));
     }
     n
@@ -1371,13 +1442,19 @@ pub(crate) fn header(cx: &Cx, env: &Env, p: &Bar, title: &str) -> Node {
     )
 }
 
-/// The icon of a tab and whether it has a filled asset (`Region.filledAsset`).
-fn tab_icon(i: usize) -> (&'static str, bool) {
-    match i {
-        0 => ("house.fill", false),
-        1 => ("film-strip.fill", false),
-        2 => ("cards-three.fill", false),
-        _ => ("magnifying-glass", true),
+/// The icon of a tab and whether it is drawn with a stroke weight: tab icons A (design/icons/mapping.json), outline
+/// while idle and the filled variant while selected.
+fn tab_icon(i: usize, selected: bool) -> (&'static str, bool) {
+    let (outline, filled) = match i {
+        0 => ("tab-home", "tab-home.fill"),
+        1 => ("tab-movies", "tab-movies.fill"),
+        2 => ("tab-series", "tab-series.fill"),
+        _ => ("tab-search", "tab-search.fill"),
+    };
+    if selected {
+        (filled, false)
+    } else {
+        (outline, true)
     }
 }
 
@@ -1391,7 +1468,7 @@ pub(crate) fn tab_bar(cx: &Cx, env: &Env, p: &Bar, icons: &Icons) -> Node {
             } else {
                 colour::FONT_VERY_QUIET
             };
-            let (asset, outlined) = tab_icon(i);
+            let (asset, outlined) = tab_icon(i, i == p.tab);
             let column = Node::vstack(
                 Align::Center,
                 Some(3.0),
@@ -1568,7 +1645,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
     let tips = ["Start", "Filme", "Serien", "Suche"];
     let top: Vec<Node> = (0..TABS.len())
         .map(|i| {
-            let (asset, outlined) = tab_icon(i);
+            let (asset, outlined) = tab_icon(i, i == p.tab && !p.downloads && !p.settings);
             row(
                 i == p.tab && !p.downloads && !p.settings,
                 TABS[i],
@@ -1600,20 +1677,28 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
         mine.push(row(
             p.tab == 4 && !p.downloads && !p.settings,
             "Merkliste",
-            "bookmark-simple.fill",
-            false,
+            if p.tab == 4 && !p.downloads && !p.settings {
+                "bookmark-simple.fill"
+            } else {
+                "bookmark-simple"
+            },
+            !(p.tab == 4 && !p.downloads && !p.settings),
             None,
             "go:watchlist",
             "Merkliste",
         ));
     }
     if p.mine.1 {
-        // The Mac's filled asset (`Region.filledAsset`).
+        // Tab icon A: outline idle, filled while selected.
         mine.push(row(
             p.downloads,
             "Downloads",
-            "arrow-circle-down.fill",
-            false,
+            if p.downloads {
+                "tab-downloads.fill"
+            } else {
+                "tab-downloads"
+            },
+            !p.downloads,
             None,
             "go:downloads",
             "Downloads",
@@ -2210,6 +2295,45 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
             )
         })
         .collect();
+    // The core's Seerr sections stand in the Home row order like any other row (Settings > Darstellung > Startseite):
+    // "Anfrage ist da" (a stack when several arrivals) and "Meine Anfragen". Each is drawn at the index the core names
+    // (`HomeVm::seerr_places`); one with nothing to say is not a node at all.
+    if let Some(info) = &p.seerr {
+        let kit = crate::detail_screen::Kit {
+            cx,
+            env,
+            lk: crate::detail_screen::look(env),
+            art: &ctx.seerr_art,
+            icons: &ctx.icons,
+        };
+        let page_w = env.size.w
+            - if form == Form::Desktop {
+                desktop::SIDEBAR_WIDTH
+            } else {
+                0.0
+            };
+        let mut put = 0;
+        for (section, at) in &p.seerr_places {
+            let part = match section {
+                swiftly_library::SeerrSection::Arrival => {
+                    crate::pages_screen::seerr_views::HomePart::Arrival
+                }
+                swiftly_library::SeerrSection::Requests => {
+                    crate::pages_screen::seerr_views::HomePart::Requests
+                }
+            };
+            if let Some(block) = crate::pages_screen::seerr_views::home_block(
+                &kit,
+                info,
+                page_w,
+                part,
+                form == Form::Tv,
+            ) {
+                rails.insert((*at + put).min(rails.len()), block);
+                put += 1;
+            }
+        }
+    }
     // At the very end, after the last row; never above the content.
     if let (Some(hours), Form::Desktop) = (p.support, form) {
         rails.push(support_card(cx, hours).reveal_as("home.support"));
@@ -2319,7 +2443,6 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
         Form::Tv => fill_frame(body, Alignment::TOP_LEADING)
             .overlay(header_bar(cx, &p.bar(), "P"), Alignment::TOP),
     };
-    let tiles = || p.rails.rails.iter().flat_map(|r| r.tiles.iter());
     let m = crate::browse::metrics(env);
     let mcx = |id: &str| {
         let cw =
@@ -2330,19 +2453,15 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
     };
     let overlay = match &p.sheet {
         Sheet::None => None,
-        Sheet::Menu(id) => {
-            let tile = tiles().find(|t| &t.id == id);
-            let c = mcx(id);
-            Some(crate::browse::sheet(
-                cx,
-                &ctx.icons,
-                &m,
-                tile.map_or("", |t| t.title.as_str()),
-                &crate::tile_menu::rows(form, &c, tile),
-                "pick.m.",
-                false,
-            ))
-        }
+        Sheet::Menu(menu) => Some(crate::browse::sheet(
+            cx,
+            &ctx.icons,
+            &m,
+            menu.tile.as_ref().map_or("", |t| t.title.as_str()),
+            &crate::tile_menu::rows_of(&menu.entries, &menu.cx, menu.tile.as_ref()),
+            "pick.m.",
+            false,
+        )),
         Sheet::Devices(id) => Some(crate::browse::sheet(
             cx,
             &ctx.icons,
@@ -2374,6 +2493,14 @@ fn a_genre(a: &Action, chips: &[String]) -> Option<String> {
         .cloned()
 }
 
+/// The longest frames keep coming for a removal's answer (ms): the transport gives up after 20 s for the whole call
+/// (15 s without data), so the answer or its error lands before. Only a core that never answers runs into this.
+const ANSWER_WAIT_MS: f64 = 30_000.0;
+
+/// How long frames keep coming after the answer landed (ms): the page's refresh that follows a "yes" starts a moment
+/// later and shows what the server now says.
+const ANSWER_SETTLE_MS: f64 = 1_000.0;
+
 /// The Home screen: a UI over a `HomeVm`.
 pub struct HomeScreen {
     ui: Ui<Parts>,
@@ -2392,6 +2519,8 @@ pub struct HomeScreen {
     load: crate::load_panel::LoadSpec,
     requests: Vec<String>,
     menu: crate::desk::TileMenu,
+    /// The open tile menu is the one of a Continue Watching tile.
+    menu_cw: bool,
     /// The rail the pointer is over (desktop paging arrows).
     hovered_rail: Option<String>,
     /// The genre chips shown above the rails.
@@ -2409,6 +2538,24 @@ pub struct HomeScreen {
     /// The support card shown (hours watched) and the taps on its buttons, oldest first.
     support: Option<i64>,
     support_taps: Vec<SupportTap>,
+    /// The newest hint of the core that was shown (`NoticePart::seq`), so one hint shows once.
+    notice_seen: u64,
+    /// The core answers a removal off the UI thread and raises a hint when the server refuses it, which nothing else
+    /// would draw, and the loop sleeps between inputs: frames keep coming from the first frame that saw a removal
+    /// waiting for its answer (this time, ms) until the answer landed and a frame showed it.
+    answer_since: Option<f64>,
+    /// Frames keep coming until then (ms): a moment after the answer landed.
+    answer_due: f64,
+    /// The core's Seerr screens behind the block above the rails; none without a Seerr session.
+    desk: Option<crate::seerr_desk::Desk>,
+    /// The count of Seerr answers the last drawn parts held.
+    seerr_seen: u64,
+    /// When the page started to wait for the first Seerr answer of a profile that remembers nothing (ms, `self.now`).
+    seerr_wait_from: Option<f64>,
+    /// The Seerr title that was tapped on the "Angefragt" rail, once.
+    seerr_tapped: Option<swiftly_seerr::models::SeerrHit>,
+    /// "Wartet auf dich" was tapped, once (the suite opens the administrator page).
+    admin_tapped: bool,
 }
 
 impl HomeScreen {
@@ -2419,15 +2566,22 @@ impl HomeScreen {
 
     /// A home screen for `env` over a scripted server in `scenario`.
     pub fn new(env: Env, cx: Cx, scenario: Scenario) -> HomeScreen {
-        let vm = home_data::home_vm(scenario);
+        Self::over(env, cx, home_data::home_vm(scenario))
+    }
+
+    /// A home screen for `env` over a view model that is already built (tests hand in one over a server of their own).
+    pub fn over(env: Env, cx: Cx, vm: HomeVm<AppTransport>) -> HomeScreen {
         let art = Rc::new(Art {
             posters: art::posters(&cx),
             landscapes: art::heroes(&cx),
         });
         let hub: HubSlot = Rc::new(RefCell::new(None));
+        let mut seerr_art = crate::detail_screen::Art::new(&cx);
+        seerr_art.hub = Rc::clone(&hub);
         let ctx = Ctx {
             hub: Rc::clone(&hub),
             art,
+            seerr_art,
             icons: Icons::new(&cx, env.scale),
             vm: vm.clone(),
         };
@@ -2454,6 +2608,8 @@ impl HomeScreen {
             stagger: 0,
             rails_out: false,
             support: None,
+            seerr: None,
+            seerr_places: Vec::new(),
         };
         let ui = Ui::new(
             move |p: &Parts, env: &Env, cx: &Cx| view(p, env, cx, &ctx),
@@ -2477,6 +2633,7 @@ impl HomeScreen {
             load: crate::load_panel::LoadSpec::demo(""),
             requests: Vec::new(),
             menu: crate::desk::TileMenu::default(),
+            menu_cw: false,
             hovered_rail: None,
             chips: Vec::new(),
             stagger: 0,
@@ -2486,6 +2643,14 @@ impl HomeScreen {
             jumped: None,
             support: None,
             support_taps: Vec::new(),
+            notice_seen: 0,
+            answer_since: None,
+            answer_due: 0.0,
+            desk: None,
+            seerr_seen: 0,
+            seerr_wait_from: None,
+            seerr_tapped: None,
+            admin_tapped: false,
         };
         s.sync();
         s
@@ -2526,8 +2691,49 @@ impl HomeScreen {
         self.tab = tab;
     }
 
+    /// A hint the core raised by itself (a removal the server refused) shows once in the strip at the bottom of the
+    /// content, like the other screens' hints, and is dismissed in the core.
+    fn show_notice(&mut self) {
+        let notice = self.vm.notice();
+        if let Some(text) = &notice.message
+            && notice.seq != self.notice_seen
+        {
+            self.notice_seen = notice.seq;
+            crate::desk::post_hint(text.clone());
+            self.vm.send(HomeIntent::DismissNotice);
+        }
+    }
+
+    /// A hint of the core that no frame has shown yet.
+    fn notice_waiting(&self) -> bool {
+        let notice = self.vm.notice();
+        notice.message.is_some() && notice.seq != self.notice_seen
+    }
+
+    /// The core still owes the answer of a removal (and has not owed it for longer than any transport waits).
+    fn answer_awaited(&self) -> bool {
+        self.vm.removal_pending()
+            && self
+                .answer_since
+                .is_none_or(|since| self.now < since + ANSWER_WAIT_MS)
+    }
+
+    /// Called at the end of a frame: notes when the wait for a removal's answer began and when it ended.
+    fn note_answer(&mut self) {
+        let pending = self.vm.removal_pending();
+        match (pending, self.answer_since) {
+            (true, None) => self.answer_since = Some(self.now),
+            (false, Some(_)) => {
+                self.answer_since = None;
+                self.answer_due = self.now + ANSWER_SETTLE_MS;
+            }
+            _ => {}
+        }
+    }
+
     fn sync(&mut self) {
         self.hub.frame(self.now);
+        self.show_notice();
         let rails = self.vm.rails();
         // A rail that is on screen gets its tile data in full (the Swift `onAppear` of a row).
         for r in &rails.rails {
@@ -2551,6 +2757,45 @@ impl HomeScreen {
             || status.status == Status::Loading && !self.vm.rails().rails.is_empty())
         .then(|| ((self.now / (1000.0 / SPOKES as f64)) as u64 % SPOKES as u64) as u8);
         let rail_hover = self.rail_hover_state();
+        if let Some(d) = &self.desk {
+            d.follow_switches();
+            self.seerr_seen = d.changed();
+        }
+        let mut seerr = self.desk.as_ref().map(|d| d.lists().home());
+        // The page is complete when it shows (the core's gate): a profile that remembers nothing waits for the first
+        // Seerr answer up to the core's budget, with the loading placeholders; after it the page shows with the
+        // reserve of the first guess.
+        let mut holding = false;
+        if let (Some(info), Some(d)) = (&seerr, &self.desk)
+            && info.holds_page
+        {
+            let from = *self.seerr_wait_from.get_or_insert(self.now);
+            if self.now - from >= swiftly_vm::HOME_BUDGET_SECONDS * 1000.0 {
+                seerr = Some(d.lists().home_budget_over());
+            } else {
+                holding = true;
+            }
+        } else {
+            self.seerr_wait_from = None;
+        }
+        let seerr = seerr.filter(|i| i.state != swiftly_vm::SeerrHomeState::Hidden);
+        let rails_have_genre = rails.rails.iter().any(|r| r.is_genre());
+        let (status, rails) = if holding {
+            (
+                Arc::new(StatusPart {
+                    status: Status::Loading,
+                    preview: false,
+                    refreshing: false,
+                    version: status.version,
+                }),
+                Arc::new(RailsPart {
+                    version: rails.version,
+                    rails: Vec::new(),
+                }),
+            )
+        } else {
+            (status, rails)
+        };
         self.ui.set_parts(Parts {
             downloads: crate::desk::downloads_front(),
             settings: crate::desk::settings_front(),
@@ -2559,7 +2804,7 @@ impl HomeScreen {
             mine: crate::desk::mine(),
             glow: crate::look_glow::bar_state(offset as f64),
             status,
-            rails: self.vm.rails(),
+            rails,
             tab: self.tab,
             header,
             pulled,
@@ -2570,7 +2815,7 @@ impl HomeScreen {
             pictures: self.hub.stamp(),
             menu: self.menu.clone(),
             rail_hover,
-            chips: if self.vm.rails().rails.iter().any(|r| r.is_genre()) {
+            chips: if rails_have_genre {
                 Vec::new()
             } else {
                 self.chips.clone()
@@ -2578,7 +2823,82 @@ impl HomeScreen {
             stagger: self.stagger,
             rails_out: self.rails_out,
             support: self.support,
+            seerr_places: if seerr.is_some() {
+                self.vm.seerr_places(match Form::of(self.ui.env().idiom) {
+                    Form::Tv => swiftly_library::HomeForm::Tv,
+                    Form::Desktop => swiftly_library::HomeForm::Desktop,
+                    Form::Touch => swiftly_library::HomeForm::Handheld,
+                })
+            } else {
+                Vec::new()
+            },
+            seerr,
         });
+    }
+
+    /// Connects the Seerr block (the iPhone's `SeerrHomeFlow`): it reads at once and again whenever Start comes back.
+    pub fn set_seerr(&mut self, desk: crate::seerr_desk::Desk) {
+        desk.load_home();
+        self.desk = Some(desk);
+        self.sync();
+    }
+
+    /// Whether the Seerr block is connected.
+    pub fn has_seerr(&self) -> bool {
+        self.desk.is_some()
+    }
+
+    /// Seerr was disconnected: the block goes.
+    pub fn clear_seerr(&mut self) {
+        if self.desk.take().is_some() {
+            self.sync();
+        }
+    }
+
+    /// Reads the Seerr block again (Start came to the front, pull to refresh, a list change).
+    pub fn reload_seerr(&self) {
+        if let Some(d) = &self.desk {
+            d.load_home();
+        }
+    }
+
+    /// The Seerr title that was tapped on the "Angefragt" rail, once (the suite opens its page).
+    pub fn take_seerr(&mut self) -> Option<swiftly_seerr::models::SeerrHit> {
+        self.seerr_tapped.take()
+    }
+
+    /// "Wartet auf dich" was tapped, once (the suite opens "Verwaltung").
+    pub fn take_admin_open(&mut self) -> bool {
+        std::mem::take(&mut self.admin_tapped)
+    }
+
+    /// A tap on the Seerr block; `true` when it was one of its controls.
+    fn seerr_tap(&mut self, a: &Action) -> bool {
+        let Some(d) = self.desk.clone() else {
+            return false;
+        };
+        let Some(tap) = SeerrTap::of(&d.lists().home(), &|k| *a == Action::from(k)) else {
+            return false;
+        };
+        match tap {
+            SeerrTap::Dismiss(id) => {
+                d.dismiss_arrival(id);
+                self.sync();
+            }
+            SeerrTap::Expand => {
+                d.set_arrivals_expanded(true);
+                self.sync();
+            }
+            SeerrTap::Collapse => {
+                d.set_arrivals_expanded(false);
+                self.sync();
+            }
+            SeerrTap::Play(item) => self.resumed.push(item),
+            SeerrTap::Open(item) => self.opened.push(item),
+            SeerrTap::Attention => self.admin_tapped = true,
+            SeerrTap::Title(hit) => self.seerr_tapped = Some(hit),
+        }
+        true
     }
 
     /// Shows or hides the support card (`SupportModel.cardVisible`): the hours watched when it is due.
@@ -2624,62 +2944,129 @@ impl HomeScreen {
     fn reload(&mut self) {
         self.refreshes += 1;
         self.vm.send(HomeIntent::Load);
+        self.reload_seerr();
     }
 
-    fn tile_of(&self, id: &str) -> Option<Tile> {
-        self.vm
-            .rails()
+    /// The tile of a title in any row, also one beyond the row's prepared window (the row draws those from the view
+    /// model, so a menu on them must find them there too).
+    pub fn tile_of(&self, id: &str) -> Option<Tile> {
+        let rails = self.vm.rails();
+        rails
             .rails
             .iter()
             .flat_map(|r| r.tiles.iter())
             .find(|t| t.id == id)
             .cloned()
+            .or_else(|| {
+                rails.rails.iter().find_map(|r| {
+                    let at = r.ids.iter().position(|x| x == id)?;
+                    self.vm.tiles(&r.id, at, 1).into_iter().next()
+                })
+            })
+    }
+
+    /// The tile a menu action names: `menu:<id>` on a tile of any row, `cmenu:<id>` on one of the Continue Watching
+    /// row, and whether it sits in that row. Tiles beyond the row's prepared window count too.
+    fn tile_of_action(&self, a: &Action) -> Option<(Tile, bool)> {
+        let rails = self.vm.rails();
+        for r in &rails.rails {
+            let cw = r.kind == RailKind::ContinueWatching;
+            let key = |id: &str| {
+                Action::from(format!("{}:{id}", if cw { "cmenu" } else { "menu" }).as_str())
+            };
+            if let Some(t) = r.tiles.iter().find(|t| *a == key(&t.id)) {
+                return Some((t.clone(), cw));
+            }
+            if let Some(at) = r.ids.iter().position(|id| *a == key(id))
+                && let Some(t) = self.vm.tiles(&r.id, at, 1).into_iter().next()
+            {
+                return Some((t, cw));
+            }
+        }
+        None
+    }
+
+    /// Opens the touch sheet of title `id`: its entries are computed here, once (see [`MenuSheet`]).
+    fn open_sheet(&mut self, id: &str, cw: bool) {
+        let tile = self.tile_of(id);
+        let favourite = tile
+            .as_ref()
+            .is_some_and(|t| t.badges.contains(&swiftly_vm::Badge::Favorite));
+        let cx = crate::tile_menu::rail_cx(cw, favourite);
+        let form = Form::of(self.ui.env().idiom);
+        let entries = crate::tile_menu::entries(form, &cx, tile.as_ref());
+        self.sheet = Sheet::Menu(Box::new(MenuSheet {
+            id: id.to_owned(),
+            cw,
+            tile,
+            cx,
+            entries,
+        }));
+    }
+
+    /// Carries out one entry of a tile menu (the touch sheet or the right-click popover) for title `id`.
+    fn run_entry(
+        &mut self,
+        e: crate::tile_menu::Entry,
+        id: &str,
+        cw: bool,
+        tile: Option<&Tile>,
+        favourite: bool,
+    ) {
+        use crate::tile_menu::Entry;
+        match e {
+            Entry::Play if cw => self.resumed.push(id.to_owned()),
+            Entry::Play | Entry::FromStart | Entry::Info | Entry::Overview | Entry::ToSeries => {
+                self.opened.push(id.to_owned())
+            }
+            // Signed in: the suite reads the live title and opens the add sheet; the demo shows its panel.
+            Entry::Load if crate::live::current().is_some() => {
+                crate::desk::request_download(id);
+            }
+            Entry::Load => {
+                self.load =
+                    crate::load_panel::LoadSpec::demo(tile.map_or("", |t| t.title.as_str()));
+                self.sheet = Sheet::Load(id.to_owned());
+            }
+            Entry::PlayOn => self.sheet = Sheet::Devices(id.to_owned()),
+            // The host carries these out (`TileRequest`, played back in the app). "Remember" says which way it was
+            // labelled, so the write is what the row promised.
+            Entry::Remember => {
+                let flag = if favourite { "off" } else { "on" };
+                self.requests.push(format!("Remember:{id}:{flag}"));
+            }
+            Entry::Watched | Entry::Unwatched | Entry::Together => {
+                self.requests.push(format!("{e:?}:{id}"));
+            }
+            // The core takes the title out of the row at once and tells the server in the background.
+            Entry::Remove => {
+                self.vm.send(HomeIntent::RemoveFromContinue {
+                    item_id: id.to_owned(),
+                });
+            }
+        }
     }
 
     /// The press on a row of the open tile menu, devices list or download sheet.
     fn sheet_tap(&mut self, is: &dyn Fn(&str) -> bool) {
-        use crate::tile_menu::Entry;
-        let form = Form::of(self.ui.env().idiom);
         match self.sheet.clone() {
             Sheet::None => {}
-            Sheet::Menu(id) => {
+            Sheet::Menu(menu) => {
                 if is("sheet.close") {
                     self.sheet = Sheet::None;
                 }
-                let tile = self.tile_of(&id);
-                let cw = self.vm.rails().rails.iter().any(|r| {
-                    r.kind == RailKind::ContinueWatching && r.tiles.iter().any(|t| t.id == id)
-                });
-                let c = crate::tile_menu::rail_cx(cw, false);
-                for (i, e) in crate::tile_menu::entries(form, &c, tile.as_ref())
-                    .into_iter()
-                    .enumerate()
-                {
+                for (i, e) in menu.entries.iter().enumerate() {
                     if !is(&format!("pick.m.{i}")) {
                         continue;
                     }
                     self.sheet = Sheet::None;
-                    match e {
-                        Entry::Play if cw => self.resumed.push(id.clone()),
-                        Entry::Play
-                        | Entry::FromStart
-                        | Entry::Info
-                        | Entry::Overview
-                        | Entry::ToSeries => self.opened.push(id.clone()),
-                        Entry::Load => {
-                            self.load = crate::load_panel::LoadSpec::demo(
-                                tile.as_ref().map_or("", |t| t.title.as_str()),
-                            );
-                            self.sheet = Sheet::Load(id.clone());
-                        }
-                        Entry::PlayOn => self.sheet = Sheet::Devices(id.clone()),
-                        // The host carries these out (`TileRequest`, played back in the app).
-                        Entry::Watched
-                        | Entry::Unwatched
-                        | Entry::Remember
-                        | Entry::Together
-                        | Entry::Remove => self.requests.push(format!("{e:?}:{id}")),
-                    }
+                    self.run_entry(
+                        e.clone(),
+                        &menu.id,
+                        menu.cw,
+                        menu.tile.as_ref(),
+                        menu.cx.favourite,
+                    );
                 }
             }
             Sheet::Devices(id) => {
@@ -2815,9 +3202,11 @@ impl HomeScreen {
 
     fn picked(&mut self, pick: crate::desk::Pick) {
         if let crate::desk::Pick::Row(id, i) = pick {
-            // The same handler as the sheet rows: the menu is the sheet's list in another frame.
-            self.sheet = Sheet::Menu(id);
-            self.sheet_tap(&|s| s == format!("pick.m.{i}"));
+            // The entry the popover showed on that row (its list was computed when it opened), not a new list.
+            if let Some(e) = self.menu.entry(i).cloned() {
+                let tile = self.tile_of(&id);
+                self.run_entry(e, &id, self.menu_cw, tile.as_ref(), self.menu.favourite());
+            }
         }
     }
 
@@ -2825,27 +3214,17 @@ impl HomeScreen {
         for ev in self.ui.take_events() {
             match &ev {
                 UiEvent::Secondary { action, x, y } => {
-                    let tile = self
-                        .vm
-                        .rails()
-                        .rails
-                        .iter()
-                        .flat_map(|r| r.tiles.iter())
-                        .find(|t| *action == Action::from(format!("menu:{}", t.id).as_str()))
-                        .cloned();
-                    if let Some(t) = tile {
-                        let cw = self.vm.rails().rails.iter().any(|r| {
-                            r.kind == RailKind::ContinueWatching
-                                && r.tiles.iter().any(|x| x.id == t.id)
-                        });
-                        if crate::tile_menu::carries(Some(&t)) {
-                            self.menu.open(
-                                &t,
-                                &crate::tile_menu::rail_cx(cw, false),
-                                swiftly_layout::Point::new(*x, *y),
-                                false,
-                            );
-                        }
+                    if let Some((t, cw)) = self.tile_of_action(action)
+                        && crate::tile_menu::carries(Some(&t))
+                    {
+                        self.menu_cw = cw;
+                        let favourite = t.badges.contains(&swiftly_vm::Badge::Favorite);
+                        self.menu.open(
+                            &t,
+                            &crate::tile_menu::rail_cx(cw, favourite),
+                            swiftly_layout::Point::new(*x, *y),
+                            false,
+                        );
                     }
                     continue;
                 }
@@ -2868,6 +3247,7 @@ impl HomeScreen {
                     }
                     continue;
                 }
+                UiEvent::Tap(a) if self.seerr_tap(a) => continue,
                 UiEvent::Tap(a) if self.menu.is_open() => {
                     if let Some(pick) = self.menu.tap(a) {
                         self.picked(pick);
@@ -2954,16 +3334,11 @@ impl HomeScreen {
                 self.rested.push(t.id.clone());
             }
             if let UiEvent::LongPress(a) = &ev
-                && let Some(t) = self
-                    .vm
-                    .rails()
-                    .rails
-                    .iter()
-                    .flat_map(|r| r.tiles.iter())
-                    .find(|t| *a == Action::from(format!("menu:{}", t.id).as_str()))
-                && crate::tile_menu::carries(Some(t))
+                && let Some((t, cw)) = self.tile_of_action(a)
+                && crate::tile_menu::carries(Some(&t))
             {
-                self.sheet = Sheet::Menu(t.id.clone());
+                self.menu_cw = cw;
+                self.open_sheet(&t.id, cw);
             }
             if let UiEvent::Tap(action) = ev {
                 crate::forms::note_tap(&action);
@@ -3003,7 +3378,11 @@ impl HomeScreen {
 
     /// Opens the menu of a tile (tests, long press on the host).
     pub fn show_menu(&mut self, id: &str) {
-        self.sheet = Sheet::Menu(id.to_owned());
+        let cw =
+            self.vm.rails().rails.iter().any(|r| {
+                r.kind == RailKind::ContinueWatching && r.tiles.iter().any(|t| t.id == id)
+            });
+        self.open_sheet(id, cw);
     }
 
     /// The menu entries the host has to carry out (`"Watched:<id>"` ...), oldest first.
@@ -3092,13 +3471,24 @@ impl HomeScreen {
         let mut list = self.ui.frame(now);
         self.hub.finish(&mut list);
         self.drain();
+        self.note_answer();
         let wants = self.wants_frame();
         (list, wants)
     }
 
-    /// An animation, a glide, a held touch or the spinner needs another frame.
+    /// An animation, a glide, a held touch or the spinner needs another frame, and so does the answer of a removal
+    /// that is still on its way (or has landed but no frame showed it yet).
     pub fn wants_frame(&self) -> bool {
-        self.ui.needs_frame() || self.vm.status().refreshing || self.hub.busy()
+        self.ui.needs_frame()
+            || self.vm.status().refreshing
+            || self.hub.busy()
+            || self.answer_awaited()
+            || self.notice_waiting()
+            || self.now < self.answer_due
+            || self
+                .desk
+                .as_ref()
+                .is_some_and(|d| d.busy() || d.changed() != self.seerr_seen)
     }
 
     /// The owner the picture hub knows this screen by (see `ImageHub::set_hidden`).
@@ -3229,6 +3619,103 @@ mod backdrop_tests {
             old_worst > 0.45 && worst < old_worst / 2.0,
             "{old_worst} vs {worst}"
         );
+    }
+}
+
+#[cfg(test)]
+mod progress_bar_tests {
+    use super::*;
+
+    const RED: Color = Color::rgb(1.0, 0.0, 0.0);
+
+    fn render(
+        w: f32,
+        h: f32,
+        corner: f32,
+        share: Option<f32>,
+        scale: f32,
+    ) -> swiftly_render::RgbaImage {
+        let env = Env::new(Size::new(w, h), scale, Idiom::Desktop);
+        let mut ui = Ui::new(
+            move |_: &(), _: &Env, _: &Cx| {
+                let tile = Node::rect(RED, corner).frame(Some(w), Some(h), Alignment::CENTER);
+                let tile = match share {
+                    Some(s) => tile.overlay(progress_bar(w, corner, s), Alignment::BOTTOM_LEADING),
+                    None => tile,
+                };
+                fill_frame(tile, Alignment::TOP_LEADING)
+            },
+            (),
+            env,
+            Cx::deterministic(),
+        );
+        let list = ui.frame(0.0);
+        ui.render(&list, Color::BLACK)
+    }
+
+    /// The bar is a strip of the rounded picture: wherever the picture alone is clear (outside its rounded corner), the picture
+    /// with the bar must be clear too, and inside the bar must show.
+    #[test]
+    fn the_bar_never_pokes_past_the_rounded_corners_of_its_tile() {
+        for scale in [1.0_f32, 1.5, 2.0] {
+            for corner in [10.0_f32, 12.0, 14.0] {
+                for share in [0.3_f32, 0.5, 1.0] {
+                    let (w, h) = (160.0, 90.0);
+                    let bare = render(w, h, corner, None, scale);
+                    let with = render(w, h, corner, Some(share), scale);
+                    let (pw, ph) = ((w * scale) as usize, (h * scale) as usize);
+                    let mut bar_pixels = 0;
+                    for y in (ph - (BAR_HEIGHT * scale) as usize - 1)..ph {
+                        for x in 0..pw {
+                            let (b, t) = (bare.pixel(x, y), with.pixel(x, y));
+                            if b[0] < 8 && b[3] > 0 {
+                                // Outside the tile (the clear colour): the bar must not draw here.
+                                assert_eq!(
+                                    t, b,
+                                    "bar pixel outside the corner at ({x},{y}), scale {scale}, corner {corner}, share {share}"
+                                );
+                            } else if t != b {
+                                bar_pixels += 1;
+                            }
+                        }
+                    }
+                    assert!(bar_pixels > 0, "the bar draws inside the tile");
+                }
+            }
+        }
+        // A bar that is not clipped by the corners would colour the very corner pixel of the tile.
+        let with = render(160.0, 90.0, 12.0, Some(1.0), 1.0);
+        assert_eq!(
+            with.pixel(0, 89),
+            [0, 0, 0, 255],
+            "the lower left corner stays clear"
+        );
+        assert_eq!(
+            with.pixel(159, 89),
+            [0, 0, 0, 255],
+            "the lower right corner stays clear"
+        );
+        assert_ne!(
+            with.pixel(80, 89),
+            render(160.0, 90.0, 12.0, None, 1.0).pixel(80, 89)
+        );
+    }
+
+    /// Every tile draws its bar through [`progress_bar`]: a hand-made rectangle (the track colour `1,1,1,0.30`) in a
+    /// tile or episode builder has square corners and pokes out of the rounded picture (the cause of the repeated report).
+    #[test]
+    fn no_tile_builder_draws_its_own_square_bar() {
+        let track = concat!("Color::new(1.0, 1.0, 1.0, ", "0.30)");
+        for (name, src) in [
+            ("browse.rs", include_str!("browse.rs")),
+            ("series_screen.rs", include_str!("series_screen.rs")),
+            ("detail_screen.rs", include_str!("detail_screen.rs")),
+            ("player_screen.rs", include_str!("player_screen.rs")),
+        ] {
+            assert!(!src.contains(track), "{name} draws its own progress bar");
+        }
+        let own = include_str!("home.rs").matches(track).count();
+        assert_eq!(own, 1, "home.rs draws the track only inside progress_bar");
     }
 }
 
@@ -3372,5 +3859,554 @@ mod sidebar_tooltip_tests {
             s.visible_tooltip(now + 2000.0).is_none(),
             "the tooltip stays away after the click"
         );
+    }
+}
+
+#[cfg(test)]
+mod notice_tests {
+    use super::*;
+    use crate::net::HostHttp;
+    use swiftly_net::{ErrorKind, HttpRequest, HttpResponse, HttpTransport};
+
+    /// A scripted server that holds the answer of the removal back until the test lets it go.
+    struct Gate {
+        server: swiftly_net::MockTransport,
+        open: std::sync::Mutex<bool>,
+        bell: std::sync::Condvar,
+    }
+
+    impl Gate {
+        fn release(&self) {
+            *self.open.lock().unwrap() = true;
+            self.bell.notify_all();
+        }
+    }
+
+    impl HostHttp for Gate {
+        fn send(&self, request: HttpRequest) -> Result<HttpResponse, ErrorKind> {
+            if request.url.path().ends_with("UserData") {
+                let mut open = self.open.lock().unwrap();
+                while !*open {
+                    open = self.bell.wait(open).unwrap();
+                }
+            }
+            futures_executor::block_on(self.server.send(request))
+        }
+    }
+
+    fn tile_ids(s: &HomeScreen) -> Vec<String> {
+        s.vm()
+            .rails()
+            .rails
+            .iter()
+            .filter(|r| r.kind == RailKind::ContinueWatching)
+            .flat_map(|r| r.tiles.iter().map(|t| t.id.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn a_refused_removal_shows_the_core_hint_once_and_dismisses_it() {
+        // The server refuses the write that takes the title out of Continue Watching.
+        let server = home_data::transport(Scenario::Ready)
+            .route_error("UserData", ErrorKind::Network { code: -1009 });
+        let env = Env::new(Size::new(1280.0, 800.0), 1.0, Idiom::Desktop);
+        let mut s = HomeScreen::over(env, Cx::deterministic(), home_data::home_vm_over(server));
+        let before = tile_ids(&s);
+        let id = before.first().cloned().expect("a continue-watching row");
+        let _ = crate::desk::take_hints();
+        s.vm().send(HomeIntent::RemoveFromContinue {
+            item_id: id.clone(),
+        });
+        let mut shown = Vec::new();
+        let began = std::time::Instant::now();
+        while shown.is_empty() && began.elapsed() < std::time::Duration::from_secs(10) {
+            let _ = s.frame(0.0);
+            shown.extend(crate::desk::take_hints());
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(shown.len(), 1, "one hint: {shown:?}");
+        assert!(shown[0].contains("Entfernen"), "{shown:?}");
+        // Dismissed in the core, and not shown a second time by the frames that follow.
+        for _ in 0..50 {
+            let _ = s.frame(0.0);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(s.vm().notice().message.is_none(), "dismissed in the core");
+        assert!(crate::desk::take_hints().is_empty(), "shown once");
+        assert_eq!(tile_ids(&s), before, "the title is back in its row");
+    }
+
+    /// Lets the held answer go and stops the runtime when a test ends (also when it fails): a request that is still
+    /// held would keep the runtime from shutting down.
+    struct Held {
+        gate: Arc<Gate>,
+        runtime: Option<tokio::runtime::Runtime>,
+    }
+
+    impl Drop for Held {
+        fn drop(&mut self) {
+            self.gate.release();
+            if let Some(runtime) = self.runtime.take() {
+                runtime.shutdown_background();
+            }
+        }
+    }
+
+    /// A screen over a server whose answer to the removal waits for `Gate::release`.
+    fn held_back(refuse: bool) -> (HomeScreen, Arc<Gate>, Held) {
+        let mut server = home_data::transport(Scenario::Ready);
+        if refuse {
+            server = server.route_error("UserData", ErrorKind::Network { code: -1009 });
+        }
+        let gate = Arc::new(Gate {
+            server,
+            open: std::sync::Mutex::new(false),
+            bell: std::sync::Condvar::new(),
+        });
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .build()
+            .expect("runtime");
+        let transport = AppTransport::Host(
+            Arc::clone(&gate) as Arc<dyn HostHttp>,
+            runtime.handle().clone(),
+        );
+        let env = Env::new(Size::new(1280.0, 800.0), 1.0, Idiom::Desktop);
+        let s = HomeScreen::over(
+            env,
+            Cx::deterministic(),
+            home_data::home_vm_through(transport),
+        );
+        let held = Held {
+            gate: Arc::clone(&gate),
+            runtime: Some(runtime),
+        };
+        (s, gate, held)
+    }
+
+    /// The loop of the app: a frame whenever one is wanted, nothing while the window sleeps. Returns the time of the
+    /// last frame drawn.
+    fn run_while_wanted(s: &mut HomeScreen, mut now: f64) -> f64 {
+        let mut frames = 0;
+        while s.wants_frame() && frames < 5_000 {
+            now += 16.0;
+            let _ = s.frame(now);
+            frames += 1;
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert!(frames < 5_000, "the screen never went back to sleep");
+        now
+    }
+
+    #[test]
+    fn frames_keep_coming_for_an_answer_that_arrives_after_the_old_fifteen_seconds() {
+        let (mut s, gate, _held) = held_back(true);
+        let before = tile_ids(&s);
+        let id = before.first().cloned().expect("a continue-watching row");
+        let _ = crate::desk::take_hints();
+        let _ = s.frame(0.0);
+        s.vm().send(HomeIntent::RemoveFromContinue { item_id: id });
+        let _ = s.frame(16.0);
+        assert!(s.wants_frame(), "the answer is on its way");
+        // 25 s later (the transport allows 20) the answer is still outstanding: the loop must not have gone to sleep.
+        let _ = s.frame(25_000.0);
+        assert!(s.wants_frame(), "still waiting after 25 s");
+        assert!(crate::desk::take_hints().is_empty());
+        // The refusal lands: the frames that are still wanted show the hint, then the screen sleeps again.
+        gate.release();
+        let began = std::time::Instant::now();
+        while s.wants_frame() && began.elapsed() < std::time::Duration::from_secs(10) {
+            let _ = s.frame(25_016.0);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            if s.vm().notice().message.is_none() && !s.vm().removal_pending() {
+                break;
+            }
+        }
+        let shown = crate::desk::take_hints();
+        assert_eq!(shown.len(), 1, "one hint: {shown:?}");
+        assert_eq!(tile_ids(&s), before, "the title is back in its row");
+        let _ = run_while_wanted(&mut s, 25_016.0);
+        assert!(!s.wants_frame(), "idle again");
+    }
+
+    #[test]
+    fn a_refusal_that_lands_while_no_frame_runs_still_gets_its_frame() {
+        let (mut s, gate, _held) = held_back(true);
+        let id = tile_ids(&s).first().cloned().expect("a row");
+        let _ = crate::desk::take_hints();
+        let _ = s.frame(0.0);
+        s.vm().send(HomeIntent::RemoveFromContinue { item_id: id });
+        let _ = s.frame(16.0);
+        gate.release();
+        // The answer lands between two frames: the screen says so before the next input has to.
+        let began = std::time::Instant::now();
+        while s.vm().removal_pending() && began.elapsed() < std::time::Duration::from_secs(10) {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(s.wants_frame(), "a hint waits to be drawn");
+        let _ = run_while_wanted(&mut s, 16.0);
+        assert_eq!(crate::desk::take_hints().len(), 1);
+    }
+
+    #[test]
+    fn an_accepted_removal_lets_the_screen_sleep_once_the_answer_is_in() {
+        let (mut s, gate, _held) = held_back(false);
+        let id = tile_ids(&s).first().cloned().expect("a row");
+        let _ = crate::desk::take_hints();
+        let _ = s.frame(0.0);
+        s.vm().send(HomeIntent::RemoveFromContinue { item_id: id });
+        let _ = s.frame(16.0);
+        assert!(s.wants_frame());
+        gate.release();
+        let _ = run_while_wanted(&mut s, 16.0);
+        assert!(!s.wants_frame());
+        assert!(crate::desk::take_hints().is_empty());
+    }
+
+    #[test]
+    fn a_removal_the_server_accepts_shows_no_hint() {
+        let env = Env::new(Size::new(1280.0, 800.0), 1.0, Idiom::Desktop);
+        let mut s = HomeScreen::new(env, Cx::deterministic(), Scenario::Ready);
+        let id = tile_ids(&s).first().cloned().expect("a row");
+        let _ = crate::desk::take_hints();
+        s.vm().send(HomeIntent::RemoveFromContinue { item_id: id });
+        for _ in 0..100 {
+            let _ = s.frame(0.0);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(crate::desk::take_hints().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod menu_sheet_tests {
+    use super::*;
+    use swiftly_layout::Size;
+    use swiftly_net::MockTransport;
+
+    /// Thirty films in the new-additions rows (only the first twelve of a row are prepared); `m20` is begun and on the
+    /// watchlist, `m5` is plain.
+    fn server() -> MockTransport {
+        let film = |i: usize| {
+            let user = if i == 20 {
+                r#""UserData":{"PlaybackPositionTicks":6000000000,"PlayedPercentage":40.0,"Played":false,"IsFavorite":true}"#
+            } else {
+                r#""UserData":{"Played":false}"#
+            };
+            format!(
+                r#"{{"Id":"m{i}","Name":"Film {i}","Type":"Movie","ProductionYear":2020,"RunTimeTicks":54000000000,"ImageTags":{{"Primary":"p-m{i}"}},{user}}}"#
+            )
+        };
+        let items: Vec<String> = (0..30).map(film).collect();
+        let list = format!(r#"{{"Items":[{}],"TotalRecordCount":30}}"#, items.join(","));
+        let empty = r#"{"Items":[],"TotalRecordCount":0}"#;
+        let views = r#"{"Items":[{"Id":"lib-movies","Name":"Filme","Type":"CollectionFolder","CollectionType":"movies"}],"TotalRecordCount":1}"#;
+        MockTransport::new()
+            .route("UserViews", 200, views)
+            .route("UserItems/Resume", 200, empty)
+            .route("Shows/NextUp", 200, empty)
+            .route("/Items", 200, &list)
+    }
+
+    fn screen() -> (HomeScreen, f64) {
+        let env = Env::new(Size::new(1280.0, 1100.0), 1.0, Idiom::Desktop);
+        let mut s = HomeScreen::over(env, Cx::deterministic(), home_data::home_vm_over(server()));
+        // The rows go back to their first window of twelve tiles, as after an account switch (the core drops the
+        // windows; the screen has asked for these rows before and does not ask again).
+        s.vm().send(HomeIntent::AccountSwitched {
+            account: Some(home_data::account()),
+        });
+        let began = std::time::Instant::now();
+        while !s
+            .vm()
+            .rails()
+            .rails
+            .iter()
+            .any(|r| r.tiles.len() < r.ids.len())
+            && began.elapsed() < std::time::Duration::from_secs(10)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        for r in s.vm().rails().rails.iter() {
+            s.asked.insert(r.id.clone());
+        }
+        let mut now = 0.0;
+        for _ in 0..40 {
+            now += 16.0;
+            let _ = s.frame(now);
+        }
+        (s, now)
+    }
+
+    /// The title and the labels of the rows on show, in order: the sheet is one node for the screen reader, its label
+    /// the title followed by the rows ("Film 20, Fortsetzen, Von vorn, ...").
+    fn shown(s: &HomeScreen) -> (String, Vec<String>) {
+        let mut flat = Vec::new();
+        let nodes = s.ui.a11y_nodes();
+        for n in &nodes {
+            flat.extend(n.walk());
+        }
+        let mut rows = 0;
+        while s.frame_of(&format!("pick.m.{rows}")).is_some() {
+            rows += 1;
+        }
+        let sheet = flat
+            .iter()
+            .filter(|n| n.label.split(", ").count() == rows + 1)
+            .min_by_key(|n| n.label.len())
+            .unwrap_or_else(|| {
+                panic!(
+                    "no sheet of {rows} rows: {:#?}",
+                    flat.iter().map(|n| &n.label).collect::<Vec<_>>()
+                )
+            });
+        let mut parts = sheet.label.split(", ").map(str::to_owned);
+        let title = parts.next().unwrap_or_default();
+        (title, parts.collect())
+    }
+
+    fn tap_row(s: &mut HomeScreen, now: &mut f64, i: usize) {
+        let f = s.frame_of(&format!("pick.m.{i}")).expect("a row");
+        let (x, y) = (f[0] + f[2] / 2.0, f[1] + f[3] / 2.0);
+        s.touch_down(x, y, *now);
+        s.touch_up(x, y, *now + 40.0);
+        *now += 80.0;
+        let _ = s.frame(*now);
+    }
+
+    /// Opens the sheet of `id`, taps every row in turn and checks that the action the row names is the one that ran.
+    /// Returns the labels of the rows.
+    fn every_row_does_what_it_says(s: &mut HomeScreen, now: &mut f64, id: &str) -> Vec<String> {
+        s.show_menu(id);
+        *now += 16.0;
+        let _ = s.frame(*now);
+        let (_, labels) = shown(s);
+        assert!(!labels.is_empty(), "the sheet of {id} has rows");
+        for (i, label) in labels.iter().enumerate() {
+            s.show_menu(id);
+            *now += 16.0;
+            let _ = s.frame(*now);
+            let opened = s.opened().len();
+            let _ = s.take_requests();
+            tap_row(s, now, i);
+            let requests = s.take_requests();
+            let want = match label.as_str() {
+                "Merken" => Some(format!("Remember:{id}:on")),
+                "Nicht mehr merken" => Some(format!("Remember:{id}:off")),
+                "Als gesehen markieren" => Some(format!("Watched:{id}")),
+                "Als ungesehen markieren" => Some(format!("Unwatched:{id}")),
+                "Gemeinsam schauen" => Some(format!("Together:{id}")),
+                _ => None,
+            };
+            match want {
+                Some(w) => assert_eq!(requests, [w], "the row {i} \"{label}\" of {labels:?}"),
+                None => assert!(
+                    requests.is_empty(),
+                    "the row {i} \"{label}\" of {labels:?} asked for {requests:?}"
+                ),
+            }
+            let opens = matches!(
+                label.as_str(),
+                "Abspielen" | "Fortsetzen" | "Von vorn" | "Info" | "Zur Übersicht"
+            );
+            assert_eq!(
+                s.opened().len() > opened,
+                opens,
+                "the row {i} \"{label}\" of {labels:?} opens a page: {opens}"
+            );
+        }
+        labels
+    }
+
+    #[test]
+    fn a_tile_beyond_the_prepared_window_shows_and_runs_the_same_rows() {
+        let (mut s, mut now) = screen();
+        let rail = s
+            .vm()
+            .rails()
+            .rails
+            .iter()
+            .find(|r| r.ids.iter().any(|x| x == "m20"))
+            .cloned()
+            .expect("a row with the film");
+        assert!(
+            rail.tiles.len() <= 20 && !rail.tiles.iter().any(|t| t.id == "m20"),
+            "m20 is beyond the prepared window ({} tiles; rows {:?})",
+            rail.tiles.len(),
+            s.vm()
+                .rails()
+                .rails
+                .iter()
+                .map(|r| (r.id.clone(), r.count, r.ids.len(), r.tiles.len()))
+                .collect::<Vec<_>>()
+        );
+        s.show_menu("m20");
+        let _ = s.frame(now + 16.0);
+        let (title, _) = shown(&s);
+        assert_eq!(title, "Film 20", "the sheet is titled with the film");
+        let labels = every_row_does_what_it_says(&mut s, &mut now, "m20");
+        // A begun film on the watchlist: "Von vorn" and "Als ungesehen markieren" are on offer.
+        assert!(labels.iter().any(|l| l == "Von vorn"), "{labels:?}");
+        assert!(
+            labels.iter().any(|l| l == "Als ungesehen markieren"),
+            "{labels:?}"
+        );
+    }
+
+    #[test]
+    fn the_remember_row_says_what_it_writes() {
+        let (mut s, mut now) = screen();
+        // On the watchlist: "Nicht mehr merken" takes the title off (it must not say "Merken" and then remove it).
+        let on_list = every_row_does_what_it_says(&mut s, &mut now, "m20");
+        assert!(
+            on_list.iter().any(|l| l == "Nicht mehr merken"),
+            "{on_list:?}"
+        );
+        assert!(!on_list.iter().any(|l| l == "Merken"), "{on_list:?}");
+        // Not on it: "Merken" puts it on.
+        let off_list = every_row_does_what_it_says(&mut s, &mut now, "m5");
+        assert!(off_list.iter().any(|l| l == "Merken"), "{off_list:?}");
+    }
+}
+
+#[cfg(test)]
+mod seerr_block_tests {
+    use super::*;
+    use swiftly_vm::{SeerrArrival, SeerrAttention, SeerrHomeInfo, SeerrTileCard};
+
+    fn tile(tmdb: i64, art: &str) -> SeerrTileCard {
+        SeerrTileCard {
+            announcement: String::new(),
+            art: art.into(),
+            tmdb,
+            title: format!("Titel {tmdb}"),
+            year: Some(2024),
+            poster: None,
+            badge: None,
+            media_id: None,
+            on_server: false,
+        }
+    }
+
+    fn info(art: &str) -> SeerrHomeInfo {
+        let film = SeerrArrival {
+            request_id: 18,
+            art: art.into(),
+            tmdb: 1001,
+            title: "Film".into(),
+            poster: None,
+            library_id: "lib-1".into(),
+            line: "Film ist da".into(),
+        };
+        SeerrHomeInfo {
+            version: 1,
+            state: swiftly_vm::SeerrHomeState::Shown,
+            shape: swiftly_vm::SeerrHomeShape {
+                arrival: true,
+                stacked: false,
+                deep: false,
+                attention: true,
+                rail: true,
+            },
+            memory: "alr".into(),
+            holds_page: false,
+            show: true,
+            arrival: Some(film.clone()),
+            arrivals: vec![film],
+            arrivals_expanded: false,
+            attention: Some(SeerrAttention {
+                title: "Wartet auf dich".into(),
+                detail: "3 Anfragen".into(),
+                count: 3,
+            }),
+            rail_title: "Angefragt".into(),
+            rail: vec![tile(7, "movie"), tile(8, "tv")],
+        }
+    }
+
+    #[test]
+    fn the_reserve_of_a_pending_block_takes_no_tap() {
+        let reserve = SeerrHomeInfo::pending("alr");
+        assert!(
+            reserve.arrival.is_some(),
+            "blank parts of the remembered shape"
+        );
+        assert_eq!(SeerrTap::of(&reserve, &|_| true), None);
+    }
+
+    #[test]
+    fn the_banner_plays_a_film_and_opens_a_series_page() {
+        assert_eq!(
+            SeerrTap::of(&info("movie"), &|k| k == "arrival-play:18"),
+            Some(SeerrTap::Play("lib-1".into()))
+        );
+        assert_eq!(
+            SeerrTap::of(&info("tv"), &|k| k == "arrival-play:18"),
+            Some(SeerrTap::Open("lib-1".into()))
+        );
+        assert_eq!(
+            SeerrTap::of(&info("movie"), &|k| k == "arrival-dismiss:18"),
+            Some(SeerrTap::Dismiss(18))
+        );
+        assert_eq!(
+            SeerrTap::of(&info("movie"), &|k| k == "arrival-open:18"),
+            Some(SeerrTap::Open("lib-1".into())),
+            "a click on the card opens the title"
+        );
+    }
+
+    /// Three arrivals: the stack opens and closes with the core's state, every card has its own controls.
+    #[test]
+    fn a_stack_opens_closes_and_every_card_has_its_own_x() {
+        let mut i = info("movie");
+        let more = |id: i64| SeerrArrival {
+            request_id: id,
+            library_id: format!("lib-{id}"),
+            ..i.arrivals[0].clone()
+        };
+        i.arrivals = vec![more(18), more(17), more(16)];
+        assert_eq!(
+            SeerrTap::of(&i, &|k| k == "arrival-expand"),
+            Some(SeerrTap::Expand)
+        );
+        assert_eq!(SeerrTap::of(&i, &|k| k == "arrival-collapse"), None);
+        assert_eq!(
+            SeerrTap::of(&i, &|k| k == "arrival-dismiss:16"),
+            Some(SeerrTap::Dismiss(16))
+        );
+        i.arrivals_expanded = true;
+        assert_eq!(SeerrTap::of(&i, &|k| k == "arrival-expand"), None);
+        assert_eq!(
+            SeerrTap::of(&i, &|k| k == "arrival-collapse"),
+            Some(SeerrTap::Collapse)
+        );
+        assert_eq!(
+            SeerrTap::of(&i, &|k| k == "arrival-open:17"),
+            Some(SeerrTap::Open("lib-17".into()))
+        );
+    }
+
+    #[test]
+    fn a_rail_tile_opens_its_seerr_title_and_other_keys_are_not_ours() {
+        let Some(SeerrTap::Title(hit)) = SeerrTap::of(&info("movie"), &|k| k == "home-seerr:1")
+        else {
+            panic!("tile 1 is a title tap");
+        };
+        assert_eq!((hit.id, hit.art.as_str()), (8, "tv"));
+        assert_eq!(SeerrTap::of(&info("movie"), &|k| k == "home-seerr:2"), None);
+        assert_eq!(SeerrTap::of(&info("movie"), &|k| k == "tile:abc"), None);
+        assert_eq!(
+            SeerrTap::of(&info("movie"), &|k| k == "attention"),
+            Some(SeerrTap::Attention)
+        );
+    }
+
+    #[test]
+    fn without_a_banner_its_buttons_do_nothing() {
+        let mut i = info("movie");
+        i.arrival = None;
+        i.arrivals.clear();
+        assert_eq!(SeerrTap::of(&i, &|k| k == "arrival-play:18"), None);
+        assert_eq!(SeerrTap::of(&i, &|k| k == "arrival-dismiss:18"), None);
     }
 }

@@ -55,6 +55,9 @@ final class AppCore {
             store: store,
             // The user's own gateway headers go to the own server, like every other request of the app.
             http: URLSessionHttpClient(prepare: { $0.ownHeadersSet() }, observe: Self.observer))
+        // What the core takes from the saved settings (the core's own switches: empty series, delete lock) counts from the
+        // first list on: the settings page is not needed for a saved value to apply after a relaunch.
+        applyStoredSettings(store: UserDefaultsSettingsStore())
         // Track and file lines name languages in the device's language, as `TrackLabel.language` always did.
         // The server's device list shows the app's own version, as the Swift clients always sent it.
         raw.setClientVersion(version: VersionNumber.outBundle)
@@ -95,6 +98,22 @@ final class AppCore {
             vm: try raw.libraryVm(account: try required(session), locale: Self.language, spec: spec))
     }
 
+    /// The subtitle search of a title; `nil` where the server has none (Plex, signed out).
+    func subtitleSearch(session: Session?, itemID: String, language: String) -> SwiftlyCore.SubtitleSearchVm? {
+        guard let account = account(session), subtitleSearchOffered(account: account) else { return nil }
+        return try? raw.subtitleSearchVm(account: account, locale: Self.language, itemId: itemID, subtitleLanguage: language)
+    }
+
+    /// The server management page of the signed-in Jellyfin administrator (the core refuses other servers).
+    func serverAdmin(session: Session?) throws -> SwiftlyCore.ServerAdminModel {
+        SwiftlyCore.ServerAdminModel(vm: try raw.serverAdminVm(account: try required(session), locale: Self.language))
+    }
+
+    /// The log files of that server.
+    func serverLogs(session: Session?) throws -> SwiftlyCore.ServerLogsModel {
+        SwiftlyCore.ServerLogsModel(vm: try raw.serverLogsVm(account: try required(session), locale: Self.language))
+    }
+
     func search(session: Session?) throws -> SwiftlyCore.SearchModel {
         SwiftlyCore.SearchModel(vm: try raw.searchVm(account: try required(session), locale: Self.language))
     }
@@ -111,10 +130,26 @@ final class AppCore {
             vm: try raw.seriesVm(account: try required(session), locale: Self.language, tile: tile, spec: spec))
     }
 
+    /// Asks the series behind a pressed tile ahead (the page that opens a moment later has seasons and episodes in frame 1).
+    func warmSeries(session: Session?, id: String) {
+        guard let account = account(session), !id.isEmpty else { return }
+        raw.warmSeries(account: account, locale: Self.language, seriesId: id)
+    }
+
+    /// The head picture address the page of this title will ask for (nil while nothing names one yet).
+    func headPictureAhead(session: Session?, item: Item) -> URL? {
+        guard let account = account(session) else { return nil }
+        return raw.headPictureAhead(account: account, locale: Self.language, tile: SwiftlyCore.Tile(standIn: item))
+            .flatMap { URL(string: $0) }
+    }
+
     /// The person page of a cast entry; `origin` is the title the tap came from.
-    func person(session: Session?, person: Person, origin: String?) throws -> SwiftlyCore.PersonController {
+    func person(session: Session?, person: Person, origin: String?, seerr: SeerrPersonRef? = nil) throws
+        -> SwiftlyCore.PersonController
+    {
         let info = SwiftlyCore.PersonInfo(
-            id: person.id, name: person.name, role: person.role, kind: person.type, imageTag: person.primaryImageTag)
+            id: person.id, name: person.name, role: person.role, kind: person.type, imageTag: person.primaryImageTag,
+            tmdb: seerr?.tmdb, imageUrl: seerr?.portrait?.absoluteString)
         return SwiftlyCore.PersonController(
             model: try raw.personModel(
                 account: try required(session), locale: Self.language, person: info, origin: origin))
@@ -188,20 +223,35 @@ final class AppPlatform: SwiftlyCore.Platform, SwiftlyCore.LanguageNames {
     func cacheDir() -> String? { folders.cacheDir() }
 
     func deviceName() -> String { name }
-    func log(line: String) { logger.info("\(line, privacy: .public)") }
+    func log(line: String) {
+        logger.info("\(line, privacy: .public)")
+        // Seerr timings also go to swiftly.log, which `fetch-log.sh` reads from the device.
+        if line.hasPrefix("[Seerr]") { AppLog.writeOut(line) }
+    }
 
     // MARK: Language names (`LanguageNames`)
 
     /// **The system's name of a language in the interface language**, what `TrackLabel.language` always asked
     /// (`Locale.localizedString(forLanguageCode:)`): an English app says "German", a German one "Deutsch".
     func languageName(code: String, language: String) -> String? {
-        Locale(identifier: language).localizedString(forLanguageCode: code)
+        #if DEBUG
+        Self.asked.withLock { $0 += 1 }
+        #endif
+        return Locale(identifier: language).localizedString(forLanguageCode: code)
     }
 
     /// Whether the system knows the code at all (the English probe of `TrackLabel.code(of:)`).
     func knowsLanguage(code: String) -> Bool {
-        Locale(identifier: "en").localizedString(forLanguageCode: code) != nil
+        #if DEBUG
+        Self.asked.withLock { $0 += 1 }
+        #endif
+        return Locale(identifier: "en").localizedString(forLanguageCode: code) != nil
     }
+
+    #if DEBUG
+    /// How often the core asked for a language name (the soak run of the live matrix reads it).
+    static let asked = OSAllocatedUnfairLock(initialState: 0)
+    #endif
 }
 
 #if os(iOS) && (DEBUG || SWIFTLY_SHADOW)

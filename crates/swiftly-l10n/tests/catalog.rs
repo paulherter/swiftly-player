@@ -21,9 +21,9 @@ fn tr(tag: &str) -> Translator {
 fn key_counts_match_the_sources() {
     let cat = Catalog::builtin();
     // Hard numbers, so a silently shrinking catalogue is caught even without the sources.
-    assert_eq!(cat.entries().len(), 1082);
+    assert_eq!(cat.entries().len(), 1341);
     for lang in ["de", "en", "ru"] {
-        assert_eq!(cat.key_count(lang), 1082, "{lang}");
+        assert_eq!(cat.key_count(lang), 1341, "{lang}");
     }
     assert_eq!(cat.languages(), vec!["de", "en", "ru"]);
     assert_eq!(cat.info_plist().len(), 3);
@@ -42,11 +42,11 @@ fn key_counts_match_the_sources() {
         .iter()
         .filter(|e| e.origin == Origin::Package)
         .count();
-    assert_eq!((app_only, both, package_only), (943, 66, 73));
+    assert_eq!((app_only, both, package_only), (1202, 68, 71));
 
     let Some(parsed) = sources() else { return };
     for lang in ["de", "en", "ru"] {
-        assert_eq!(source::count(&parsed.app, lang), 1009, "xcstrings {lang}");
+        assert_eq!(source::count(&parsed.app, lang), 1270, "xcstrings {lang}");
         assert_eq!(source::count(&parsed.info, lang), 3, "InfoPlist {lang}");
         let union = parsed
             .merged
@@ -77,7 +77,7 @@ fn key_counts_match_the_sources() {
     assert!(fresh.contains(&SourceStat {
         source: "Localizable.xcstrings",
         lang: "ru",
-        keys: 1009
+        keys: 1270
     }));
 }
 

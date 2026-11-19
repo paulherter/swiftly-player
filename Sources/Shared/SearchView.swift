@@ -1,5 +1,8 @@
 import JellyfinKit
 import SwiftUI
+#if canImport(SwiftlyCore)
+import SwiftlyCore
+#endif
 
 /// Full-text search across movies, series and episodes.
 struct SearchView: View {
@@ -10,6 +13,12 @@ struct SearchView: View {
     /// Swipe right when the keyboard is already closed: back to where you were.
     var back: (() -> Void)? = nil
 
+    init(model: AppModel, active: Bool = true, back: (() -> Void)? = nil) {
+        self.model = model
+        self.active = active
+        self.back = back
+        _seerr = State(initialValue: SeerrSearchFlow(model: model))
+    }
 
     @State private var term = ""
     @State private var hit: [Item] = []
@@ -22,11 +31,12 @@ struct SearchView: View {
     /// instead of the Wi-Fi.
     @State private var disrupted = false
     @State private var task: Task<Void, Never>?
-    /// What Seerr knows and the own server does not have.
-    ///
-    /// **Own state, own task.** The two fetches run side by side; if Seerr returns
-    /// nothing or late, what the own server has still shows immediately.
-    @State private var seerrHit: [SeerrHit] = []
+    /// What Seerr knows and the own server does not have: rails, the merged block, offline. Own object,
+    /// own task: if Seerr answers late or not at all, what the own server has still shows at once.
+    @State private var seerr: SeerrSearchFlow
+    @State private var seerrTask: Task<Void, Never>?
+    /// The Seerr answer for the typed word is on its way.
+    @State private var seerrPending = false
     @FocusState private var inField: Bool
 
     /// **The page is in search state - header gone, field on top, exit on the right.**
@@ -38,6 +48,11 @@ struct SearchView: View {
     /// the exit on the right, and nothing else.
     @State private var searchMode = false
     @State private var accountSwitch = false
+    /// How far the results are scrolled (0...30), for the header's fade.
+    @State private var scrolled: CGFloat = 0
+    /// Height of the header content (title row + field) in its resting state, measured while the page is
+    /// not in search state. In search state without a word it keeps this height, see `header`.
+    @State private var restHeight: CGFloat = 0
 
     /// **What was searched last - the last eight, newest first.**
     ///
@@ -72,62 +87,35 @@ struct SearchView: View {
         historySet(SearchHistory.remember(word, in: lastRaw))
     }
 
-    var body: some View {
-        ZStack {
-            Theme.reason.ignoresSafeArea()
+    // MARK: Header
 
-            GeometryReader { frameRect in
-            // **The animation sits on the whole column, not the field.**
-            //
-            // On the field alone only the field moved: the results area below brings an
-            // opaque background via `areaContent()`, and its frame jumped up without
-            // transition when the header went away. What showed was a black edge that
-            // jerks up at once and a field wandering out from behind it. Both belong to
-            // the same motion - it is a rearrangement of the column, not the journey of
-            // one component.
+    /// **Title and field hang in `BlurHeader`, like the other root pages.**
+    ///
+    /// They used to sit in a column above the results with 16 pt of empty space under the field, so
+    /// scrolling up cut the results off at a hard edge about a centimetre below the field and
+    /// the strip in between stayed black. Now the header is a safe-area inset of the scroll area: the
+    /// results run underneath and the same gradient (`HeaderHistory`) fades in with the scroll
+    /// distance as on Start, Movies and Series.
+    private var header: some View {
+        BlurHeader(offset: scrolled) {
             VStack(spacing: 0) {
-                // **A header on the search page after all.**
-                //
-                // There was none, and the reasoning was the search field: the page's only
-                // control, wanting to go edge to edge; an icon next to it would turn a field
-                // into a row with an appendage.
-                //
-                // The flaw is assuming the icon must sit **next to** the field. It now sits
-                // above, in the same row as the page title - like Downloads and Library.
-                //
-                // **And in `BlurHeader`, not in its own row.** With its own spacing it
-                // sat eight points lower than on the three other root pages; you see exactly
-                // that when switching tabs. The component brings size, tracking and both
-                // spacings - the same rule as everywhere: one role, one component.
-                //
-                // **The title exists wide and narrow, the header targets only narrow.** It
-                // first existed only narrow - which made search on iPad what it had been on
-                // iPhone before: the only root page without a title while Movies and Series
-                // carry one. The header targets live wide in the sidebar, where they would
-                // be a duplicate.
                 if !searchMode {
-                    BlurHeader {
-                        // Centered so title and profile mark sit on one line - like every other root page.
-                        HStack(alignment: .center, spacing: 0) {
-                            Text("Suche").font(Theme.titleLarge).tracking(Theme.lockTitle)
-                            Spacer(minLength: 0)
-                            if !wide {
-                                HeaderTargets(name: model.session?.userName ?? "?",
+                    // Centered so title and profile mark sit on one line - like every other root page.
+                    HStack(alignment: .center, spacing: 0) {
+                        Text("Suche").font(Theme.titleLarge).tracking(Theme.lockTitle)
+                        Spacer(minLength: 0)
+                        if !wide {
+                            HeaderTargets(name: model.session?.userName ?? "?",
                                           image: model.userImageURL())
-                            }
                         }
-                        .foregroundStyle(Theme.font)
                     }
-                    // **Only fade out, do not slide away.**
-                    //
-                    // With `.move(edge: .top)` the header slid up out of the picture together with
-                    // its `HeaderHistory` - and the gradient is at 0.98 at the top. What you saw was
-                    // a black surface that popped briefly with the field wandering through behind
-                    // it. The field moves up anyway once the header needs no space; the motion
-                    // arises from layout and need not be driven additionally.
+                    .foregroundStyle(Theme.font)
+                    .padding(.bottom, 12)
+                    // **Only fade out, do not slide away.** With `.move(edge: .top)` the header slid up
+                    // out of the picture together with its `HeaderHistory`; the field moves up anyway
+                    // once the title needs no space, so the motion arises from layout.
                     .transition(.opacity)
                 }
-
                 HStack(spacing: 12) {
                     SearchField(text: $term, atTap: $inField,
                              submit: { remember(term) })
@@ -174,20 +162,72 @@ struct SearchView: View {
 
                     if wide { Spacer(minLength: 0) }
                 }
+                .padding(.top, wide ? (searchMode ? 0 : Theme.headerTop + (windowButtons ? WindowButtons.height : 0))
+                                    : (searchMode ? 8 : 4))
+                // `BlurHeader` brings 12 under its content; the field keeps its 16 to the results.
+                .padding(.bottom, 4)
+            }
+            // **The header keeps its height while the page changes into search state.**
+            //
+            // The header is the scroll view's safe-area inset. When the title row went away the inset
+            // shrank by the title row (194 -> 142 pt measured) and the scroll view moved the content up
+            // by the same amount, wherever it was scrolled. Now the field moves up inside an unchanged
+            // header, so the inset stays and the content stands still. Once a word is typed the results
+            // replace the content anyway, and the header closes up to the field.
+            .onGeometryChange(for: CGFloat?.self) { searchMode ? nil : $0.size.height } action: {
+                if let height = $0 { restHeight = height }
+            }
+            .frame(minHeight: searchMode && term.isEmpty ? restHeight : 0, alignment: .top)
+        }
+        // **Only the header animates on `searchMode`** - never the scroll view that it insets (see `body`).
+        .animation(Theme.sheetMotion, value: searchMode)
+    }
 
-                .padding(.horizontal, Theme.margin(wide: wide))
-                // Narrow, `BlurHeader` above carries the top spacing; when it is gone
-                // because of typing, the field takes it over.
-                .padding(.top, wide ? Theme.headerTop
-                                       + (windowButtons ? WindowButtons.height : 0)
-                                     : (searchMode ? 8 + (windowButtons ? WindowButtons.height : 0) : 4))
-                .padding(.bottom, 16)
+    var body: some View {
+        ZStack {
+            Theme.reason.ignoresSafeArea()
 
+            GeometryReader { frameRect in
+            // **The animation sits on the header, not on the column around the scroll view.**
+            //
+            // It sat on this whole column, and then the scroll view's safe-area inset (the
+            // header's height) was animated too: when the title row went away the top
+            // `contentInsets` dived from 194 to ~1 and sprang back to 142 in the last frame, while
+            // the offset moved the other way (measured per frame). The inset layer of the scroll
+            // view followed that curve, which matches the grey layer reported on the page: a layer
+            // that runs down and vanishes at the end. Without an animation there the inset does not
+            // dive; title, field and exit button still move because the animation hangs on the
+            // header itself, and the header keeps its height so the inset does not change at all
+            // (see `header`).
+            VStack(spacing: 0) {
+                // **A header on the search page after all.**
+                //
+                // There was none, and the reasoning was the search field: the page's only
+                // control, wanting to go edge to edge; an icon next to it would turn a field
+                // into a row with an appendage.
+                //
+                // The flaw is assuming the icon must sit **next to** the field. It now sits
+                // above, in the same row as the page title - like Downloads and Library.
+                //
+                // **And in `BlurHeader`, not in its own row.** With its own spacing it
+                // sat eight points lower than on the three other root pages; you see exactly
+                // that when switching tabs. The component brings size, tracking and both
+                // spacings - the same rule as everywhere: one role, one component.
+                //
+                // **The title exists wide and narrow, the header targets only narrow.** It
+                // first existed only narrow - which made search on iPad what it had been on
+                // iPhone before: the only root page without a title while Movies and Series
+                // carry one. The header targets live wide in the sidebar, where they would
+                // be a duplicate.
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if term.isEmpty {
-                            if last.isEmpty { emptyHint } else { recent }
-                        } else if hunts, hit.isEmpty, seerrHit.isEmpty {
+                            // **Rails only when Seerr works.** Without it the page is what it always was.
+                            if seerr.ready, seerr.rails?.load == .content {
+                                SeerrDiscoverView(model: model, flow: seerr)
+                                if !last.isEmpty { recent }
+                            } else if last.isEmpty { emptyHint } else { recent }
+                        } else if hunts || (seerrPending && seerr.found == nil && seerr.ready), hit.isEmpty, !seerrShows {
                             // **No spinner.** While nothing is there yet, the grid stays in its shape;
                             // if results are already there, they stay instead of yielding to a spinner.
                             GridPlaceholder(
@@ -198,42 +238,34 @@ struct SearchView: View {
                                 .padding(.horizontal, Theme.margin(wide: wide))
                                 .padding(.top, 12)
                                 .transition(.opacity)
-                        } else if disrupted, hit.isEmpty, seerrHit.isEmpty {
+                        } else if disrupted, hit.isEmpty, !seerrShows {
                             // The same text as in the library, including the server address - one cause,
                             // one diagnosis.
                             EmptyState.serverDived(model, trouble: model.rustScreens.searchTrouble, retry: { searching(term) })
                                 .padding(.top, 24)
-                        } else if hit.isEmpty, seerrHit.isEmpty {
-                            // **Both empty, not only the library.** This used `hit.isEmpty`, and that
-                            // branch won as soon as the own server had nothing - the Seerr block below
-                            // was never reached. Exactly the case the whole integration is built for:
-                            // "Blade Runner" is not here, and *therefore* you want to request it.
-
-                            // **An empty state, not a grey line.** It used to be a sentence in 15 regular
-                            // in the middle of nothing - the same situation as an empty watchlist, just
-                            // in a second build. There is one, and it carries glyph, heading and text in
-                            // one measure.
+                        } else if hit.isEmpty, !seerrShows {
+                            // **Both empty, not only the library.** The own server has nothing, and Seerr has
+                            // nothing either (or is not connected): the one empty state says so.
                             //
-                            // The heading stays factual, the joke is in the second sentence - as the
-                            // brand rules say under "Emoji".
-                            //
-                            // **And no button.** "Search via Seerr" would be a dummy: Seerr runs along
-                            // with every word, so both have been checked already. The exit is the list
-                            // below - that is why it stays instead of vanishing with the first letter.
+                            // **No button.** "Search via Seerr" would be a dummy: Seerr runs along with every
+                            // word, so both have been checked already. The exit is the list below.
                             EmptyState(symbol: "magnifyingglass",
                                         headerLine: "Nichts gefunden zu \u{201E}\(term)\u{201C}",
-                                        text: "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe.")
+                                        text: nothingText)
                                 .padding(.top, 24)
+                            if seerrOffline { offlineBox.padding(.top, 8) }
                             if !last.isEmpty { recent }
                         } else {
                             // Grouped by kind, like Plex: in the list you read title and kind at a glance.
                             let usableNow = frameRect.size.width - 2 * Theme.margin(wide: wide)
+                            let own = ownHeading
+                            let outside = seerrTiles
                             // **No heading without Seerr.** Someone who connected nothing should not
                             // read "On your server" and wonder where the other block is. The heading
                             // only counts when something really stands below - otherwise it announces
                             // an empty block.
-                            if !seerrHit.isEmpty, !hit.isEmpty {
-                                blockTitle("Auf deinem Server", hit.count)
+                            if own > 0, !outside.isEmpty || seerrOffline {
+                                blockTitle("Auf deinem Server", own)
                             }
                             group("Serien", hit.filter { $0.type == "Series" },
                                    usableNow: usableNow)
@@ -244,11 +276,16 @@ struct SearchView: View {
                             group("Weiteres", hit.filter {
                                 !["Series", "Movie", "Episode"].contains($0.type ?? "")
                             }, usableNow: usableNow)
-                            if !seerrHit.isEmpty {
-                                // "Can be requested" did not say where. The counter block is called "On
-                                // your server" - so this one should say which way the other is.
-                                blockTitle("Über Seerr anfragen", seerrHit.count).padding(.top, 8)
-                                seerrGrid(usableNow: usableNow)
+                            people(usableNow: usableNow)
+                            group(seerrGroupTitle(.collections), ownCollections, usableNow: usableNow)
+                            if !outside.isEmpty {
+                                blockTitle(verbatim: seerr.found?.blockTitle ?? "", outside.count)
+                                    .padding(.top, 8)
+                                seerrGrid(outside, usableNow: usableNow)
+                            } else if seerrOffline {
+                                blockTitle(verbatim: String(localized: "Noch nicht auf deinem Server"), 0)
+                                    .padding(.top, 8)
+                                offlineBox
                             }
                         }
                     }
@@ -266,8 +303,15 @@ struct SearchView: View {
                 .lookGlow()
                 .areaContent()
                 .accountSwitchFade(model: model, ready: true, change: $accountSwitch)
+                .onScrollGeometryChange(for: CGFloat.self) {
+                    $0.contentOffset.y + $0.contentInsets.top
+                } action: { _, new in
+                    let clamped = min(max(new, 0), 30)
+                    if clamped != scrolled { scrolled = clamped }
+                }
+                // The header is a safe-area inset, not an overlay (the reasoning is in `MainView`).
+                .safeAreaInset(edge: .top, spacing: 0) { header }
             }
-            .animation(Theme.sheetMotion, value: searchMode)
             }
             // Above the content, below everything else the page lays on - see `sectionBar()`.
             .sectionBar()
@@ -309,14 +353,20 @@ struct SearchView: View {
         .onChange(of: model.accountSwitch) { _, _ in
             task?.cancel()
             term = ""
+            seerrTask?.cancel()
             hit = []
-            seerrHit = []
+            seerr.reset()
+            seerrPending = false
             disrupted = false
             hunts = false
             searchMode = false
             historyLoad()
         }
         .onAppear { historyLoad() }
+        // The rails of the empty page: read when the page opens and when Seerr is connected or removed.
+        .task(id: "\(active)-\(model.seerr.connected)") {
+            if active { await seerr.loadDiscover() }
+        }
         // Watched/bookmark change on a detail page: the tile below should not show
         // the old state. The hits stay until the new ones are there.
         .catchUp(at: model.listenRefresh, front: active) {
@@ -408,6 +458,20 @@ struct SearchView: View {
         .padding(.bottom, 10)
     }
 
+    private func blockTitle(verbatim text: String, _ count: Int) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(verbatim: text)
+                .font(Theme.section)
+                .tracking(Theme.lockSection)
+                .foregroundStyle(Theme.font)
+            Spacer(minLength: 8)
+            if count > 0 { CountMark(count: count) }
+        }
+        .padding(.horizontal, Theme.margin(wide: wide))
+        .padding(.top, 16)
+        .padding(.bottom, 10)
+    }
+
     /// **The search heading - the same level as every group title.**
     ///
     /// It first used 13 semibold with 0.5 tracking, then 11 capitals from
@@ -427,20 +491,117 @@ struct SearchView: View {
             .foregroundStyle(Theme.font)
     }
 
-    private func seerrGrid(usableNow: CGFloat) -> some View {
+    /// The tiles of titles the own server does not have, flat as the design draws them: the capsule says where
+    /// each one stands, the line under the title says film or series.
+    private func seerrGrid(_ cards: [SeerrCard], usableNow: CGFloat) -> some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(),
                                                      spacing: Theme.tileSpacing),
                                  count: Theme.columns(usableNow: usableNow, wide: wide)),
                   // 20: the same grid row spacing as everywhere else.
                   alignment: .leading, spacing: Theme.gridRowGap) {
-            ForEach(seerrHit) { t in
-                NavigationLink(value: t) { SeerrTile(hit: t) }
+            ForEach(cards) { card in
+                NavigationLink(value: card.route) { SeerrTile(card: card) }
                     .buttonStyle(Theme.PressRow())
                     .simultaneousGesture(TapGesture().onEnded { remember(term) })
             }
         }
         .padding(.horizontal, Theme.margin(wide: wide))
         .padding(.bottom, 10)
+    }
+
+    // MARK: Seerr part of the results
+
+    /// What the library found by TMDB id is not drawn twice among the Seerr tiles.
+    private var knownTmdb: Set<String> { Set(hit.compactMap { $0.providerIds?["Tmdb"] }) }
+
+    /// Titles from Seerr that the own server does not have (the flow decides, shared by every platform).
+    private var seerrTiles: [SeerrCard] { seerr.tiles(known: knownTmdb) }
+
+    /// People of the Seerr search that the own server has (they open the person's page).
+    private var ownPeople: [(card: SeerrCard, person: Person)] { seerr.ownPeople }
+
+    /// Collections of the Seerr search that the own server has.
+    private var ownCollections: [Item] { seerr.ownCollections }
+
+    /// How many entries stand in the own-server block (the number beside its heading).
+    private var ownHeading: Int { hit.count + ownPeople.count + ownCollections.count }
+
+    /// The page has something from Seerr to draw: tiles, a person or a collection the library has.
+    private var seerrShows: Bool { seerr.shows(known: knownTmdb) }
+
+    /// Seerr is connected but did not answer: the box, not an empty block.
+    private var seerrOffline: Bool { seerr.offline }
+
+    private func seerrGroupTitle(_ kind: SwiftlyCore.SearchGroupKind) -> String { seerr.groupTitle(kind) }
+
+    /// "Auch nicht bei Seerr." (the core's line) only when Seerr really answered with nothing.
+    private var nothingText: LocalizedStringKey {
+        if let line = seerr.nothingLine {
+            return "\(line) Manchmal ist es nur ein Buchstabe."
+        }
+        return "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe."
+    }
+
+    /// **One calm box, one way out.** The library results above are fine, so the box says so; the button asks
+    /// Seerr again for the same word.
+    private var offlineBox: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Seerr antwortet gerade nicht. Deine Bibliothek läuft normal.")
+                .font(.app(size: 15))
+                .foregroundStyle(Theme.fontQuiet)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, 13)
+                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
+            Button {
+                retrySeerr()
+            } label: {
+                Text("Erneut versuchen")
+            }
+            .buttonStyle(SecondaryButtonStyle())
+        }
+        .padding(.horizontal, Theme.margin(wide: wide))
+        .padding(.bottom, 10)
+        .frame(maxWidth: wide ? Theme.readWidth : .infinity, alignment: .leading)
+    }
+
+    /// The people of the own library that Seerr found: round portraits, as in the cast.
+    @ViewBuilder
+    private func people(usableNow: CGFloat) -> some View {
+        let list = ownPeople
+        if !list.isEmpty {
+            Text(seerrGroupTitle(.people))
+                .growing(Theme.rowTitleSize, .semibold)
+                .foregroundStyle(Theme.font)
+                .padding(.horizontal, Theme.margin(wide: wide))
+                .padding(.top, Theme.cardGap - 10)
+                .padding(.bottom, 12)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 84, maximum: 110), spacing: 14)],
+                      alignment: .leading, spacing: Theme.gridRowGap) {
+                ForEach(list, id: \.card.id) { pair in
+                    NavigationLink(value: PersonRoute(person: pair.person, origin: nil)) {
+                        CastTile(image: pair.card.poster.flatMap { URL(string: $0) },
+                                 name: pair.card.title, role: nil)
+                    }
+                    .buttonStyle(Theme.PressButton())
+                    .simultaneousGesture(TapGesture().onEnded { remember(term) })
+                }
+            }
+            .padding(.horizontal, Theme.margin(wide: wide))
+            .padding(.bottom, 10)
+        }
+    }
+
+    private func retrySeerr() {
+        seerrTask?.cancel()
+        let clean = term.trimmingCharacters(in: .whitespaces)
+        seerrPending = true
+        seerrTask = Task {
+            await seerr.search(clean)
+            guard !Task.isCancelled else { return }
+            seerrPending = false
+        }
     }
 
     /// **What was searched last.**
@@ -543,41 +704,41 @@ struct SearchView: View {
     /// With a delay so not every keystroke triggers a request.
     private func searching(_ term: String) {
         task?.cancel()
+        seerrTask?.cancel()
         let clean = term.trimmingCharacters(in: .whitespaces)
         // The threshold lives in the package so it is the same on all six versions -
         // it used to be typed individually everywhere.
         guard DisplayRules.searchTermFits(clean) else {
             hit = []
-            seerrHit = []
+            seerr.reset()
+            seerrPending = false
             // An earlier failure belongs to an earlier search.
             disrupted = false
             hunts = false
             return
         }
         hunts = true
+        // **Side by side, not one after the other.** The own server is the reason anyone uses the app; it must
+        // not wait for an extra. Seerr runs in its own task and joins the page when it answers.
+        seerrPending = true
+        seerrTask = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await seerr.search(clean)
+            guard !Task.isCancelled else { return }
+            seerrPending = false
+        }
         task = Task {
             #if canImport(SwiftlyCore)
-            // The Rust core debounces and searches (`AppModel.coreServes`); the extra search keeps its
-            // own 0.3 s wait.
+            // The Rust core debounces and searches (`AppModel.coreServes`).
             if model.coreServes {
-                async let foreignRust: [SeerrHit] = {
-                    try? await Task.sleep(for: .milliseconds(300))
-                    guard !Task.isCancelled else { return [] }
-                    return await model.seerr.searching(clean)
-                }()
                 if let rustHits = await model.searchRust(clean) {
                     guard !Task.isCancelled else { return }
                     disrupted = false
                     hit = ListRules.withoutDouble(rustHits)
                     hunts = false
-                    let toIt = await foreignRust
-                    guard !Task.isCancelled else { return }
-                    withAnimation(Theme.reveal) {
-                        seerrHit = toIt.filter { !$0.state.alreadyPresent }
-                    }
                     return
                 }
-                _ = await foreignRust
                 guard !Task.isCancelled else { return }
                 // The core is the only search of this session: its failure is the server out of reach.
                 disrupted = true
@@ -591,25 +752,12 @@ struct SearchView: View {
             try? await Task.sleep(for: .milliseconds(300))
             #endif
             guard !Task.isCancelled else { return }
-            // **Side by side, not one after the other.** The own server is the reason
-            // anyone uses the app; it must not wait for an extra. So what it has is shown first.
-            async let foreign = model.seerr.searching(clean)
             let result = await model.search(clean)
             guard !Task.isCancelled else { return }
             disrupted = result == nil
             // Duplicate IDs make a tap miss.
             hit = ListRules.withoutDouble(result ?? [])
             hunts = false
-
-            let toIt = await foreign
-            guard !Task.isCancelled else { return }
-            // What the own server already has does not belong in the lower block -
-            // otherwise the same title would appear twice. Animated: if Seerr comes
-            // later, the "On your server" heading would otherwise push all hits down
-            // without transition.
-            withAnimation(Theme.reveal) {
-                seerrHit = toIt.filter { !$0.state.alreadyPresent }
-            }
         }
     }
 }

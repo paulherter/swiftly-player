@@ -54,7 +54,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import de.paulherter.swiftly.shared.Strength
 import de.paulherter.swiftly.Destination
 import de.paulherter.swiftly.SearchState
-import de.paulherter.swiftly.SeerrMark
+import de.paulherter.swiftly.key
+import de.paulherter.swiftly.openSeerrCard
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import de.paulherter.swiftly.tmdbImage
 import de.paulherter.swiftly.SwiftlyApplication
 import de.paulherter.swiftly.GridTile
 import de.paulherter.swiftly.CountMark
@@ -111,7 +115,7 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
         val clean = st.term.trim()
         if (!KernRules.searchTermFits(clean)) {
             // Below two characters nothing is searched, and the hits give way to the history.
-            st.hit = emptyList(); st.seerr = emptyList(); st.disrupted = false; st.hunts = false; st.searched = ""
+            st.hit = emptyList(); st.seerrInfo = null; st.disrupted = false; st.hunts = false; st.searched = ""
             answered = false; waited = false
             return@LaunchedEffect
         }
@@ -199,13 +203,15 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
         Row(Modifier.fillMaxSize().padding(start = TvTheme.edgePage), horizontalArrangement = Arrangement.spacedBy(SearchLayout.historyLeft - TvTheme.edgePage - SearchLayout.keyboardWidth)) {
             // Design: keyboard card 80..540 pt, hits and history from 620 pt.
             TvSearchKeyboard(st.term, { st.term = it }, focus, speaking,
+                // Down from the bottom row (nothing lies below it) lands on the hits, as the way "down to the results".
+                below = { landing },
                 speak = if (canSpeak) ({
                     speaking = true
                     runCatching { speechResult.launch(speech) }.onFailure { speaking = false }
                 }) else null,
                 modifier = Modifier.padding(top = headerBottom + 14.dp)
-                    // Down from the bar and Left from the hits land on the last key, not on whichever
-                    // key lies beside the tile.
+                    // Down from the bar, Left from the hits and Up from the top row of the hits land on the last key, not on
+                    // whichever key lies beside the tile.
                     .focusProperties { enter = { focus.key(focus.lastKey) } }
                     .onFocusChanged { if (it.hasFocus) zone[0] = 1 }
                     .focusGroup())
@@ -213,7 +219,7 @@ fun TvSearch(app: SwiftlyApplication, open: (Destination) -> Unit) {
                 Column(Modifier.width(SearchLayout.resultsWidth).fillMaxHeight()
                         .focusProperties {
                             enter = { landing ?: FocusRequester.Default }
-                            exit = { dir -> if (dir == androidx.compose.ui.focus.FocusDirection.Left) focus.key(focus.lastKey) else FocusRequester.Default }
+                            exit = { dir -> if (dir == androidx.compose.ui.focus.FocusDirection.Left || dir == androidx.compose.ui.focus.FocusDirection.Up) focus.key(focus.lastKey) else FocusRequester.Default }
                         }
                         .onFocusChanged {
                             inResults = it.hasFocus
@@ -329,16 +335,16 @@ private fun HistoryRow(text: String, symbol: Glyph, modifier: Modifier, perform:
 private fun Hits(st: SearchState, series: List<GridTile>, films: List<GridTile>, titles: Boolean,
                  focus: SearchFocus, open: (Destination) -> Unit) {
     val app = LocalContext.current.applicationContext as SwiftlyApplication
+    val run = rememberCoroutineScope()
     Column(verticalArrangement = Arrangement.spacedBy(TvTheme.railsSpacing)) {
         Block(translated("Serien"), series.size, titles) { Tiles(series) { HitTile(it, focus, open) } }
         Block(translated("Filme"), films.size, titles) { Tiles(films) { HitTile(it, focus, open) } }
         Block(translated("Kann angefragt werden"), st.seerr.size, titles) {
             Tiles(st.seerr) { t ->
-                TvTile(t.poster, t.title, SeerrMark.shortWord(t.state) ?: t.year?.toString(), opacity = 0.45f,
+                TvTile(tmdbImage(t.poster, 342), t.title, t.badge?.word ?: t.year?.toString(), opacity = 0.45f,
                        modifier = Modifier.focusRequester(focus.hit("seerr-" + t.key)),
                        focusChanged = { if (it) focus.lastHit = "seerr-" + t.key }) {
-                    app.seerrHit[t.key] = t
-                    open(Destination(t.key, t.title, "Seerrtitel"))
+                    run.launch { openSeerrCard(app, t, open) }
                 }
             }
         }

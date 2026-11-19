@@ -81,8 +81,85 @@ public final class SyncPlayController {
 public final class URLSessionWebSocketLink: WebSocketLink {
     private let session: URLSession
     private let task = Mutex<URLSessionWebSocketTask?>(nil)
+    /// When a frame (or the answer to a Ping) last came in on the current socket.
+    private let heard = Mutex<Date>(.now)
+    /// The sign-of-life watch of the current socket.
+    private let watch = Mutex<Task<Void, Never>?>(nil)
+    /// Silence after which the socket is asked for a sign of life (a Ping), and how long the answer may take: the same
+    /// limits as the desktop links (`PING_AFTER` / `PONG_WITHIN` in `swiftly-sync`).
+    private let pingAfter: TimeInterval
+    private let pongWithin: TimeInterval
 
-    public init(session: URLSession = URLSession(configuration: .ephemeral)) { self.session = session }
+    /// A session of its own with limits so wide that they mean nothing: a long-lived socket is not a request that
+    /// has to answer within `timeoutIntervalForRequest` (60 s by default), and the server stays quiet while the
+    /// client reports. The old app did the same (`RemoteControl.durationSession`).
+    public static let longLivedSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 86_400
+        configuration.timeoutIntervalForResource = 86_400
+        return URLSession(configuration: configuration)
+    }()
+
+    public init(
+        session: URLSession = URLSessionWebSocketLink.longLivedSession, pingAfter: TimeInterval = 15,
+        pongWithin: TimeInterval = 10
+    ) {
+        self.session = session
+        self.pingAfter = pingAfter
+        self.pongWithin = pongWithin
+    }
+
+    /// One answer counts, however often URLSession calls back (a cancelled task can call twice).
+    private final class Once: @unchecked Sendable {
+        private let flag = Mutex(false)
+        func first() -> Bool {
+            flag.withLock { was -> Bool in
+                defer { was = true }
+                return !was
+            }
+        }
+    }
+
+    /// A Ping and its answer, or `false` when nothing came back within `seconds` (or the socket failed).
+    private static func ping(_ socket: URLSessionWebSocketTask, within seconds: TimeInterval) async -> Bool {
+        await withCheckedContinuation { (done: CheckedContinuation<Bool, Never>) in
+            let once = Once()
+            socket.sendPing { error in
+                if once.first() { done.resume(returning: error == nil) }
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(seconds))
+                if once.first() { done.resume(returning: false) }
+            }
+        }
+    }
+
+    /// A vanished peer (the machine slept, the Wi-Fi changed) sends no close and fails no read: the TCP connection
+    /// just stays "open". So after a quiet stretch the socket is pinged, and one that does not answer is cancelled,
+    /// which fails the pending `receive` and lets the core reconnect.
+    private func watchLife(of socket: URLSessionWebSocketTask) {
+        let (after, within) = (pingAfter, pongWithin)
+        let job = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let quiet = self?.heard.withLock({ Date.now.timeIntervalSince($0) }) else { return }
+                if quiet < after {
+                    try? await Task.sleep(for: .seconds(after - quiet))
+                    continue
+                }
+                let alive = await Self.ping(socket, within: within)
+                if Task.isCancelled { return }
+                guard alive else {
+                    socket.cancel(with: .abnormalClosure, reason: nil)
+                    return
+                }
+                self?.heard.withLock { $0 = .now }
+            }
+        }
+        watch.withLock { current in
+            current?.cancel()
+            current = job
+        }
+    }
 
     public func connect(url: String) async throws {
         guard let address = URL(string: url) else { throw SocketFailure.Other(message: "bad address") }
@@ -112,12 +189,16 @@ public final class URLSessionWebSocketLink: WebSocketLink {
             next.cancel(with: .goingAway, reason: nil)
             throw SocketFailure.SetupFailed(code: Int32(code))
         }
+        heard.withLock { $0 = .now }
+        watchLife(of: next)
     }
 
     public func receive() async throws -> String? {
         guard let current = task.withLock({ $0 }) else { throw SocketFailure.Other(message: "closed") }
         do {
-            switch try await current.receive() {
+            let frame = try await current.receive()
+            heard.withLock { $0 = .now }
+            switch frame {
             case .string(let text): return text
             case .data: return nil
             @unknown default: return nil
@@ -135,6 +216,10 @@ public final class URLSessionWebSocketLink: WebSocketLink {
     }
 
     public func close() {
+        watch.withLock { current in
+            current?.cancel()
+            current = nil
+        }
         task.withLock { current in
             current?.cancel(with: .goingAway, reason: nil)
             current = nil

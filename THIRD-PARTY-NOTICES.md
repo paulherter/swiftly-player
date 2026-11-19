@@ -101,7 +101,7 @@ Notes:
 | Lottie (lottie-ios) | 4.6.1 | Apache-2.0 | Airbnb, Inc. | https://github.com/airbnb/lottie-ios | Apple (iPhone, iPad, Mac, Apple TV) |
 | Inter (typeface) | Inter-SemiBold.ttf (18pt SemiBold); on Linux, Windows and Android also InterVariable.ttf | OFL-1.1 | The Inter Project Authors | https://github.com/rsms/inter | Apple (iPhone, iPad, Mac, Apple TV), Linux, Windows, Android |
 | Rust libraries of the Swiftly core (about 600 crates) | as locked in Cargo.lock; full list in rust-crates.txt | MIT, Apache-2.0, MPL-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, Unicode-3.0, MIT-0 (per crate) | The authors of each crate (named in each crate's own license text) | https://crates.io | Apple (iPhone, iPad, Mac, Apple TV), Android, Android TV, Windows, Linux |
-| Phosphor Icons (icon set) | 2.1.1 (bold and fill weights) | MIT | Phosphor Icons | https://github.com/phosphor-icons/core | Android |
+| Lucide (icon set) | lucide-static 1.65.0 (the icons the app uses, with a heavier stroke and a few drawn in the same style) | ISC | Lucide Icons and Contributors; some icons derived from Feather (Cole Bemis, MIT) | https://github.com/lucide-icons/lucide | Apple (iPhone, iPad, Mac, Apple TV), Android, Android TV, Linux, Windows |
 | Figtree (typeface of the website) | Webfont, see Website/schrift/ | OFL-1.1 | The Figtree Project Authors | https://github.com/erikdkennedy/figtree | Website |
 | Coil | 3.0.4 | Apache-2.0 | Coil Contributors | https://github.com/coil-kt/coil | Android, Android TV |
 | ZXing core | 3.5.3 | Apache-2.0 | ZXing authors | https://github.com/zxing/zxing | Android TV |
@@ -228,6 +228,7 @@ Notes:
 - [`LICENSES/BSD-3-Clause.txt`](LICENSES/BSD-3-Clause.txt)
 - [`LICENSES/FTL.txt`](LICENSES/FTL.txt)
 - [`LICENSES/GSM.txt`](LICENSES/GSM.txt)
+- [`LICENSES/ISC-Lucide.txt`](LICENSES/ISC-Lucide.txt)
 - [`LICENSES/ISC.txt`](LICENSES/ISC.txt)
 - [`LICENSES/LGPL-2.1-or-later.txt`](LICENSES/LGPL-2.1-or-later.txt)
 - [`LICENSES/LGPL-3.0-AetherEngine-exception.txt`](LICENSES/LGPL-3.0-AetherEngine-exception.txt)

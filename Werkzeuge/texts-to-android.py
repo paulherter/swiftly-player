@@ -78,6 +78,13 @@ direct_pairs = pairs(KIT / "SupportKeyKit/DirectSupportCopy.swift")
 for s, t in tabellen.items():
     add(t, s, shared_pairs)
 
+# The catalog also carries the direct-only keys (the Apple catalog guard wants every key there). They must not land in the
+# shared tables, which the Play build ships: pull them out here and put them into the direct flavor's own tables below,
+# with the catalog's translation where it has one (Russian).
+shared_keys = {kotlinformat(de) for de, _ in shared_pairs} | {"Weiter"}  # "Weiter" is also the player's resume label
+direct_only = {kotlinformat(de) for de, _ in direct_pairs} - shared_keys
+direct_catalog = {s: {k: t.pop(k) for k in list(t) if k.split("#")[0] in direct_only} for s, t in tabellen.items()}
+
 TARGET.mkdir(parents=True, exist_ok=True)
 for s, t in tabellen.items():
     (TARGET / f"{s}.json").write_text(json.dumps(t, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
@@ -89,5 +96,7 @@ if len(sys.argv) <= 1:
     for s in tabellen:
         t = {}
         add(t, s, direct_pairs)
+        if s not in ("de", "en"):  # the package owns de/en wording; other languages come from the catalog
+            t.update(direct_catalog[s])
         (direct / f"{s}.direct.json").write_text(json.dumps(t, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
         print(f"{s}: {len(t)} Direkt-Texte → {direct / (s + '.direct.json')}")

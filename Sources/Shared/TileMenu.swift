@@ -55,9 +55,6 @@ final class TileRequest {
     }
 
     var play: PlayRequest?
-    /// A title with several versions waiting for the pick. Shown on iPhone and
-    /// iPad (`MainView`); tvOS and macOS still start the default version.
-    var choice: VersionChoice?
     var load: LoadJob?
     var loadSheetOpen = false
     var message: String?
@@ -87,6 +84,13 @@ struct TileMenu: ViewModifier {
     /// running player. Without "Download": the load sheet would open under the
     /// player. The same rule on the Mac (`Sources/macOS/TileMenuMac.swift`).
     var inPlayer = false
+    /// **The address of the picture the tile itself shows**, when the caller knows it (Home rows do: it comes from the
+    /// core or from the Swift rule, see ``AppModel/homeTileImageURL(_:landscape:look:)``). The preview then draws exactly that
+    /// image, which the cache already holds. `nil`: the preview works it out (``TilePreview``).
+    var image: URL? = nil
+    /// "Remove from Continue Watching": the page owns the row and removes at once (`HomeModel.takeOutOfContinue`: it takes the
+    /// title out, sends the request and rolls back). `nil`: the menu has no such entry.
+    var onRemove: ((Item) -> Void)? = nil
 
     /// Movies, series and episodes. Collections, people and folders have nothing to
     /// play or tick off.
@@ -118,7 +122,7 @@ struct TileMenu: ViewModifier {
                 .contextMenu {
                 entries
             } preview: {
-                TilePreview(item: item, model: model, landscape: landscape)
+                TilePreview(item: item, model: model, landscape: landscape, image: image)
             }
         } else {
             content
@@ -191,8 +195,9 @@ struct TileMenu: ViewModifier {
                 Label("Gemeinsam schauen", icon: "person.2")
             }
         }
-        if continueWatching {
-            Button { remove() } label: {
+        // The page owns the row and removes through the shared model (`HomeModel.takeOutOfContinue`); no handler, no entry.
+        if continueWatching, let onRemove {
+            Button { onRemove(item) } label: {
                 Label("Aus Weiterschauen entfernen", icon: "minus.circle")
             }
         }
@@ -220,9 +225,7 @@ struct TileMenu: ViewModifier {
                     return
                 }
             }
-            let ask: VersionAsk? = VersionAsk(choose: { TileRequest.shared.choice = $0 },
-                                              failed: { TileRequest.shared.message = $0 })
-            PlayRequest.start(target, freshValue: true, ask: ask,
+            PlayRequest.start(target, freshValue: true,
                                   model: model, prepares: .constant(false),
                                   missing: {
                                       // Instead of silence when the server has no file.
@@ -237,17 +240,6 @@ struct TileMenu: ViewModifier {
         let model = model, item = item, afterwards = afterwards
         Task {
             if let error = await model.setWatched(item, an: an) {
-                TileRequest.shared.message = error
-                return
-            }
-            await afterwards?()
-        }
-    }
-
-    private func remove() {
-        let model = model, item = item, afterwards = afterwards
-        Task {
-            if let error = await model.fromContinueWatchingTake(item) {
                 TileRequest.shared.message = error
                 return
             }
@@ -299,15 +291,28 @@ private struct TilePreview: View {
     let model: AppModel
     let landscape: Bool
 
-    /// **The same image as the tile, in the same aspect ratio.** Before, a larger
-    /// 16:9 landscape image was used: it was not in the cache, the menu opened empty,
-    /// and on spring-back the system scaled a 16:9 image into a 2:3 tile, showing an
-    /// edge left and right for a moment. Now the same address (the cache answers at
-    /// once, `ImageCache`) and the same shape, only larger.
+    /// The caller's picture address, the tile's own (`TileMenu.image`).
+    let image: URL?
+
+    /// **The same image as the tile, at the same address.** The cache (`ImageCache`) is keyed by address, size
+    /// included: a preview built from any other address (another width, another core path) finds nothing, the menu
+    /// opens empty and the picture pops in, and on spring-back the system scales a different crop into the tile.
+    ///
+    /// Two causes were found (16.11.): the preview asked for the 600 px landscape or the 500 px poster while Home draws
+    /// 1000 px / 600 px, and on the core-fed pages the tile's address comes from the core (`RustTileLook.image`) while
+    /// the stand-in `Item` has no image marks at all, so the preview had no address and stayed blank.
     private var address: URL? {
+        if let image { return image }
+        if model.coreServes, let url = model.rustLooks[item.id]?.image { return url }
         let poster = model.imageURL(for: item, maxHeight: 500, portrait: true)
         return landscape ? (model.landscapeImageURL(for: item) ?? poster) : poster
     }
+    #if DEBUG
+    private var oldAddress: URL? {
+        let poster = model.imageURL(for: item, maxHeight: 500, portrait: true)
+        return landscape ? (model.landscapeImageURL(for: item) ?? poster) : poster
+    }
+    #endif
     private var width: CGFloat { landscape ? 320 : 220 }
     private var height: CGFloat { landscape ? width * 9 / 16 : width * 3 / 2 }
 
@@ -347,9 +352,11 @@ private struct TilePreview: View {
         .background(Theme.reason)
         #if DEBUG
         .onAppear {
-            AppLog.writeOut("[Kachelmenü] Vorschau \(Int(width))×\(Int(height)) · "
-                + (landscape ? "16:9" : "2:3") + " · Bild im Speicher: "
-                + (address.flatMap { ImageCache.shared.image($0) } != nil ? "ja" : "nein"))
+            AppLog.writeOut("[Kachelmenü] Vorschau \(item.seriesName ?? item.name) \(Int(width))×\(Int(height)) · "
+                + (landscape ? "16:9" : "2:3") + " · Adresse: " + (address == nil ? "keine" : "ja") + " · Bild im Speicher: "
+                + (address.flatMap { ImageCache.shared.image($0) } != nil ? "ja" : "nein")
+                // The address the preview used before 16.11. (600 px landscape / 500 px poster from the stand-in item): why it stayed empty.
+                + " · alte Regel: " + (oldAddress == nil ? "keine Adresse" : (ImageCache.shared.image(oldAddress!) != nil ? "im Speicher" : "nicht im Speicher")))
         }
         #endif
     }
@@ -360,10 +367,22 @@ private struct TilePreview: View {
 extension View {
     /// The tile menu; see ``TileMenu``.
     func tileMenu(_ item: Item, model: AppModel, continueWatching: Bool = false,
-                     landscape: Bool = false, inPlayer: Bool = false,
-                     afterwards: (() async -> Void)? = nil) -> some View {
+                     landscape: Bool = false, inPlayer: Bool = false, onRemove: ((Item) -> Void)? = nil,
+                     image: URL? = nil, afterwards: (() async -> Void)? = nil) -> some View {
         modifier(TileMenu(item: item, model: model, continueWatching: continueWatching,
-                             afterwards: afterwards, landscape: landscape, inPlayer: inPlayer))
+                             afterwards: afterwards, landscape: landscape, inPlayer: inPlayer, image: image,
+                             onRemove: onRemove))
+    }
+}
+
+extension AppModel {
+    /// **The one rule for the picture of a Home tile**, read by the card (`Tile`) and by the long-press preview
+    /// (`TileMenu.image`), so the two cannot drift apart again. The core's own address when it feeds the page; else the
+    /// landscape image of the title (an episode: its series' image, `ImageSelection.landscape`) or the poster, with the
+    /// poster as the landscape card's stand-in when the title has no landscape image.
+    func homeTileImageURL(_ item: Item, landscape: Bool, look: RustTileLook?) -> URL? {
+        let poster = imageURL(for: item, maxHeight: 600, portrait: true)
+        return look?.image ?? (landscape ? (landscapeImageURL(for: item, width: 1000) ?? poster) : poster)
     }
 }
 #endif

@@ -50,7 +50,14 @@ struct PlayerScreen: View {
     @State private var handoverRuns = false
     @State private var fadeOutMark = 0
     /// One of the three layers: audio and subtitles, episodes, settings.
-    @State private var openLayer: PlayerLayer?
+    /// The season list: a second box under the Folgen box's pill (its own session, as on iPhone and Mac).
+    @State private var seasonMenu = PlayerMenuSession()
+    /// **The menus of the buttons** (Optionen, Ton & Untertitel, the season box): the core builds every level, `TVPlayerMenuLayer` draws it.
+    @State private var menu = PlayerMenuSession()
+    /// The bar button that opened the open menu: focus returns to it on close (`closeMenu`).
+    @State private var focusReturn = PlayerMenuFocusReturn()
+    /// The seasons of the running series and the open one; the episodes layer fills it, the season box reads it.
+    @State private var seasonPicker = SeasonPicker()
     /// Preview images above the bar while scrubbing.
     @State private var trickplay = TrickplayImages()
     @State private var tracksSet = false
@@ -166,7 +173,7 @@ struct PlayerScreen: View {
     /// Playback pauses when the app is left; see below.
     @Environment(\.scenePhase) private var phase
 
-    enum FocusTarget: Hashable { case idle, bar, tracks, settings, episodes, offering, startRetry, startClose }
+    enum FocusTarget: Hashable { case idle, bar, tracks, chapters, settings, episodes, offering, startRetry, startClose }
 
     /// Tracks sent by the device that sent the first title, see ``PlayRequest/tracks``.
     private let ordered: (itemID: String, tracks: TrackIndices)?
@@ -189,7 +196,6 @@ struct PlayerScreen: View {
             _position = State(initialValue: PlayerShoot.position)
             _duration = State(initialValue: PlayerShoot.duration)
             _firstImagePresent = State(initialValue: true)
-            _openLayer = State(initialValue: PlayerShoot.layer ? .tracks : nil)
         }
     }
 
@@ -197,7 +203,7 @@ struct PlayerScreen: View {
         controlsVisible && firstImagePresent && !layerOpen
     }
 
-    private var layerOpen: Bool { openLayer != nil }
+    private var layerOpen: Bool { menu.isOpen || seasonMenu.isOpen }
 
     /// **The overlay above the picture**, only without controls and without a sheet. With controls open, the same offer sits in the bar.
     private var cardPresent: Bool {
@@ -248,11 +254,12 @@ struct PlayerScreen: View {
                 .focused($focus, equals: .idle)
                 // **Up leads upward.** After opening, focus is still here, not on the bar; a press up landed on the bar first, and only the second reached the buttons.
                 .onMoveCommand { bearing in
-                    if bearing == .up {
+                    // **Up or down shows the row** (Folgen, Untertitel, Einstellungen): first focus is the pill, or the captions without one.
+                    if bearing == .up || bearing == .down {
                         // The target is noted and applied when the controls appear; see `onChange(of: controlsPresent)`.
-                        targetShow = .tracks
+                        targetShow = rowFirst
                         // If they are already up because a focus move was dropped, nothing will apply it later, so do it here.
-                        if controlsPresent { focus = .tracks }
+                        if controlsPresent { focus = rowFirst }
                         showItem()
                     } else {
                         wakeControls()
@@ -386,14 +393,18 @@ struct PlayerScreen: View {
             }
 
             // **The three layers.** Fullscreen over the picture; the controls beneath yield (`controlsPresent`), the auto-hider rests, and Back closes the layer, not the player.
-            if let openLayer {
-                layersView(openLayer)
-                    .transition(.opacity)
-                    .zIndex(5)
-            }
+            // The Folgen box is a menu of the same session; it lies under the title (the title stays, as before).
+            TVFolgenLayer(session: menu) { tab in folgenPanel(tab) }
+                .zIndex(5)
 
             stateTitle
                 .zIndex(6)
+
+            // **The menus of the buttons**: over the title row, in the capsule's place (the season box hangs under the pill).
+            TVPlayerMenuLayer(session: menu, host: menuHost)
+                .zIndex(8)
+            TVPlayerMenuLayer(session: seasonMenu, host: menuHost)
+                .zIndex(9)
 
             // **What happens in the group, briefly at the top**, so nobody wonders why the film stopped. Under the title row, centered, where nothing needs focus.
             if groupShow, let event = gemeinsam.event {
@@ -537,6 +548,16 @@ struct PlayerScreen: View {
         #if DEBUG
         .onReceive(NotificationCenter.default.publisher(for: LiveRun.hideControls)) { _ in controlsVisible = false }
         .onReceive(NotificationCenter.default.publisher(for: LiveRun.showControls)) { _ in showItem() }
+        // The harness opens a panel like the iOS player does (`menu` and `chapters` scenarios): the same notification, the same names.
+        .onReceive(NotificationCenter.default.publisher(for: LiveRun.openLayer)) { note in
+            switch note.object as? String {
+            case "settings": openMenu(.settings)
+            case "tracks": openMenu(.tracks)
+            case "chapters": openMenu(.folgen, panel: .chapters)
+            case "episodes": openMenu(.folgen, panel: .episodes)
+            default: seasonMenu.close(); menu.close()
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: LiveRun.chooseQuality)) { note in
             // The harness picks a quality like the settings layer does (`qualitySelection`): the core decides, the screen files it.
             area?.coreChooseQuality(note.object as? Int)
@@ -570,7 +591,6 @@ struct PlayerScreen: View {
             showItem()
         }
         .onChange(of: sleepMinutes) { _, new in sleepTimeSet(new) }
-        .animation(Theme.motion(.easeInOut(duration: 0.2)), value: openLayer)
         .onAppear {
             model.playerOpen = true
             model.remoteCommand = execute
@@ -648,7 +668,8 @@ struct PlayerScreen: View {
             guard controlsVisible, running, !PlayerShoot.withoutImage else { return }
             // 8 s instead of 4: the bar disappeared noticeably faster than in other Apple TV clients (Swiftfin uses 10 s).
             try? await Task.sleep(for: .seconds(8))
-            guard !Task.isCancelled, !layerOpen else { return }
+            // **Not in the middle of a swipe**: the timer counts from the release (`swipeFinish` restarts it).
+            guard !Task.isCancelled, !layerOpen, !swipes else { return }
             // A marker nobody sees is no longer intended. If it stayed, the bar would show its old time instead of the position the next time it appears; see `markDiscard`.
             markDiscard()
             controlsVisible = false
@@ -711,8 +732,6 @@ struct PlayerScreen: View {
 
     /// While scrubbing a marker is set; then only the bar counts.
     private var seeks: Bool { seekTarget != nil }
-
-    private var iconCount: Int { hasEpisodes ? 3 : 2 }
 
     /// **Title top left, bar at the bottom, nothing between.** No pause button or skip buttons in the middle: input is on the clickpad. No close button: the Back key does that.
     private var itemWitness: some View {
@@ -786,30 +805,41 @@ struct PlayerScreen: View {
         .focusSection()
     }
 
-    /// Audio & subtitles, episodes (episodes only), settings.
+    /// **The capsule** (one glass, no X and no Übergeben on Apple TV: Menu closes): Folgen (a series, or a film with chapters),
+    /// Untertitel, Einstellungen. Same order as the iPhone's capsule.
     private var iconRail: some View {
-        HStack(spacing: PlayerMetric.buttonSpacing) {
-            IconButton(symbol: "captions.bubble", label: "Audio & Untertitel") {
-                unfoldLayer(.tracks)
+        TVBarCapsule {
+            if showsFolgen {
+                TVBarHalf(symbol: "rectangle.stack", label: "Folgen", open: menu.kind == .folgen && menu.isOpen) {
+                    openMenu(.folgen, panel: hasEpisodes ? .episodes : .chapters)
+                }
+                .focused($focus, equals: pillTarget)
+            }
+            TVBarHalf(symbol: "captions.bubble", label: "Audio & Untertitel", open: menu.kind == .tracks && menu.isOpen) {
+                openMenu(.tracks)
             }
             .focused($focus, equals: .tracks)
-            if hasEpisodes {
-                IconButton(symbol: "rectangle.stack", label: "Folgen") {
-                    unfoldLayer(.episodes)
-                }
-                .focused($focus, equals: .episodes)
-            }
-            IconButton(symbol: "slider.horizontal.3", label: "Einstellungen") {
-                unfoldLayer(.settings)
+            TVBarHalf(symbol: "slider.horizontal.3", label: "Einstellungen", open: menu.kind == .settings && menu.isOpen) {
+                openMenu(.settings)
             }
             .focused($focus, equals: .settings)
         }
+        // Centred on the title line (design: capsule y 50, title line 60 to 128).
+        .offset(y: -10)
     }
+
+    /// Folgen is there for a series and for a film with chapters (Kapitel).
+    private var showsFolgen: Bool { hasEpisodes || !chapter.isEmpty }
+
+    private var pillTarget: FocusTarget { hasEpisodes ? .episodes : .chapters }
+
+    /// Where focus lands when the row is asked for.
+    private var rowFirst: FocusTarget { showsFolgen ? pillTarget : .tracks }
 
     /// **The head, one layer above everything.** The title stays where it is with a layer open; if it lived in the header it would fade out with the controls and back in within the layer, flickering. Over the audio and settings layers the meta line stays too (design: "head stays"); the icons do not (see below).
     private var stateTitle: some View {
         let present = controlsPresent || layerOpen
-        let copy = openLayer == .tracks || openLayer == .settings
+        let copy = menu.isOpen && menu.kind != .folgen
         return HStack(alignment: .top, spacing: 24) {
             VStack(alignment: .leading, spacing: PlayerMetric.titleSpacing) {
                 Text(verbatim: titleLine)
@@ -830,7 +860,7 @@ struct PlayerScreen: View {
             // **No icons over a layer**, as with "Folgen": a lit white icon beside the
             // layer's own focused row left it unclear what had focus (round 3 on the
             // device). Same space as the header icons, so the title keeps its width.
-            Color.clear.frame(width: PlayerMetric.iconRail(count: iconCount), height: 1)
+            Color.clear.frame(width: 176, height: 1)
         }
         .padding(.horizontal, Theme.edgePage)
         .padding(.top, Theme.edgeTop)
@@ -840,37 +870,115 @@ struct PlayerScreen: View {
         .animation(Theme.motion(.easeInOut(duration: 0.2)), value: present)
     }
 
-    // MARK: - Layers
+    // MARK: - Menus
 
-    private func unfoldLayer(_ target: PlayerLayer) {
-        AppLog.writeOut("[Ebene] auf \(target)")
-        openLayer = target
+    /// The button again closes its menu; another button swaps it. Without the core there is nothing to draw: the core builds every level.
+    private func openMenu(_ kind: PlayerMenuKind, panel: PlayerMenuPanelTab = .episodes) {
+        // The season list is a second box over the Folgen box; every other button takes the place of what is open.
+        let session = kind == .seasons ? seasonMenu : menu
+        if kind != .seasons { seasonMenu.close() }
+        if session.isOpen, session.kind == kind { kind == .seasons ? session.close() : closeMenu(); return }
+        guard let core = area?.playerModel else {
+            AppLog.writeOut("[Menü] kein Kern, \(kind) bleibt zu")
+            return
+        }
+        fadeOutMark += 1
+        switch kind {
+        case .tracks: focusReturn.opened(from: .tracks)
+        case .settings: focusReturn.opened(from: .settings)
+        case .folgen: focusReturn.opened(from: panel == .chapters && !hasEpisodes ? .chapters : .episodes)
+        case .seasons, .handoff: focusReturn.opened(from: nil)
+        }
+        session.open(kind, player: core, panel: panel)
     }
 
-    /// Back to the button that opened the layer; a layer is not a change of place. The controls return and the auto-hider restarts.
-    private func layerClose() {
-        guard let was = openLayer else { return }
-        AppLog.writeOut("[Ebene] zu \(was)")
-        openLayer = nil
+    /// Back to the button that opened the menu; the season box leaves the panel where it is.
+    ///
+    /// **Why this sets `targetShow`:** the controls are hidden while a menu is open, so closing it makes them appear, and
+    /// `onChange(of: controlsPresent)` then puts focus on `targetShow` (the timeline) after this function ran and cancelled
+    /// its catch-up. The opener goes in there, so the one rule that places focus when the controls return lands on the button.
+    private func closeMenu() {
+        guard menu.isOpen else { return }
+        let kind = menu.kind
+        menu.close()
+        let opener = focusReturn.closed()
+        guard kind != .seasons, let opener else { return }
+        let target = focusTarget(for: opener)
+        targetShow = target
         showItem()
-        let target: FocusTarget = switch was {
-        case .tracks: .tracks
-        case .episodes: hasEpisodes ? .episodes : .bar
-        case .settings: .settings
-        }
         focus = target
-        // **Set again until it sticks.** The buttons become focusable in the same pass in
-        // which the layer leaves, and SwiftUI drops the first assignment; one retry was not
-        // always enough, and focus fell into the picture instead (round 3 on the device).
         focusCatchUp {
             for _ in 0..<8 {
                 try? await Task.sleep(for: .milliseconds(60))
-                guard !Task.isCancelled, openLayer == nil else { return }
-                if focus == target { return }
+                guard !Task.isCancelled, !menu.isOpen else { return }
+                if focus == target { break }
                 if controlsPresent { focus = target }
             }
+            // The controls' rule consumes `targetShow`; if it never ran, do not leave the opener behind for the next time.
+            if targetShow == target { targetShow = .bar }
         }
     }
+
+    private func focusTarget(for button: PlayerBarButton) -> FocusTarget {
+        switch button {
+        case .tracks: .tracks
+        case .settings: .settings
+        case .episodes: .episodes
+        case .chapters: .chapters
+        }
+    }
+
+    /// What the menus need from the screen: the inputs only it knows and the host actions.
+    private var menuHost: PlayerMenuHost {
+        var host = PlayerMenuHost()
+        host.inputs = { menuInputs() }
+        host.perform = { performMenu($0) }
+        host.quality = { limit in qualitySelection?.select(limit.map(Int.init)) }
+        host.sleep = { sleepMinutes = $0.map(Int.init) }
+        host.sleepEndOfEpisode = {
+            let left = max(1, (duration - position) / Double(max(tempo, 0.1)))
+            sleepMinutes = nil
+            sleepTask?.cancel()
+            sleepTask = Task {
+                try? await Task.sleep(for: .seconds(left))
+                guard !Task.isCancelled else { return }
+                area?.pause()
+                runsSet(false)
+                showItem()
+            }
+        }
+        host.fill = { on in
+            UserDefaults.standard.set(on, forKey: "bildfuellend")
+            area?.fillFrame(on)
+        }
+        host.afterPlayerAction = { pollCoreSwitch() }
+        return host
+    }
+
+    private func menuInputs() -> PlayerMenusInputs {
+        let group = inGroup ? gemeinsam.group.map { current in
+            PlayerMenuGroup(name: current.name,
+                            members: gemeinsam.participants.map { PlayerMenuGroupMember(name: $0, me: false, status: .watching) })
+        } : nil
+        let seasons = seasonPicker.seasons.map { SeasonRow(id: $0.id, name: $0.name, number: $0.indexNumber.map(Int64.init)) }
+        return PlayerMenusInputs(decimalSeparator: Locale.current.decimalSeparator ?? ".",
+                                 techBadge: UserDefaults.standard.bool(forKey: "technikschild"), group: group,
+                                 look: model.subtitleLook.info, seasons: seasons, shownSeason: seasonPicker.selected?.id,
+                                 handoff: .devices(devices: []), airplay: false)
+    }
+
+    /// The actions the core hands back: only the screen can do them.
+    private func performMenu(_ action: PlayerMenuAction) {
+        switch action {
+        case let .look(info): model.subtitleLook = SubtitleLook(info)
+        case let .techBadge(on): UserDefaults.standard.set(on, forKey: "technikschild")
+        case .leaveGroup: closeMenu(); leave()
+        case let .selectSeason(id): AppLog.writeOut("[Staffel] perform selectSeason \(id)"); seasonPicker.chosen = id; seasonMenu.close()
+        default: break
+        }
+    }
+
+    // MARK: - Folgen box
 
     /// Cancels the previous deferred placement and remembers the new one; see `focusPostPull`.
     private func focusCatchUp(_ labor: @escaping @MainActor () async -> Void) {
@@ -878,18 +986,17 @@ struct PlayerScreen: View {
         focusPostPull = Task { @MainActor in await labor() }
     }
 
+    /// The Folgen box's content: the episodes panel (with the Kapitel tab and the season button), or for a film its chapters.
     @ViewBuilder
-    private func layersView(_ which: PlayerLayer) -> some View {
-        switch which {
-        case .tracks:
-            TracksLayer(area: area)
-        case .settings:
-            SettingLayer(area: area, sleepMinutes: $sleepMinutes, quality: qualitySelection,
-                              gemeinsam: groupShow ? gemeinsam : nil,
-                              groupLeave: { leave() })
-        case .episodes:
-            EpisodesLayer(model: model, item: item, title: titleLine) { episode in
-                layerClose()
+    private func folgenPanel(_ tab: PlayerMenuPanelTab) -> some View {
+        if hasEpisodes {
+            EpisodesLayer(model: model, item: item, title: titleLine, picker: seasonPicker,
+                          seasonText: menu.model?.menus.episodes.seasonButton?.value.text,
+                          frozen: seasonMenu.isOpen, openSeasons: { openMenu(.seasons) },
+                          hasChapters: !chapter.isEmpty, chosenSeason: seasonPicker.chosen, area: area,
+                          chapterPreview: { trickplay.image(at: $0, model: model, core: .some($1)) },
+                          close: closeMenu, startTab: tab) { episode in
+                closeMenu()
                 // Choosing the current episode means: keep watching.
                 guard episode.id != item.id else { return }
                 // In a group nobody switches alone: the choice sets the queue and everyone loads the episode (as on iOS).
@@ -898,6 +1005,10 @@ struct PlayerScreen: View {
             }
             // **Not on every tick**; see `EpisodesLayer.==`.
             .equatable()
+        } else {
+            ChaptersLayer(area: area,
+                          preview: { trickplay.image(at: $0, model: model, core: .some($1)) },
+                          close: closeMenu)
         }
     }
 
@@ -1086,11 +1197,18 @@ struct PlayerScreen: View {
 
     /// Menu / Back. Called by `onExitCommand`, and by `BackWatch` when that stays silent.
     private func back() {
-        // **The layer lies on top, so it answers first.** A stale scrub marker used to take the press instead: the layer stayed and Back seemed dead.
-        if openLayer != nil {
+        // **An open menu answers first**: one level back, then closed (the focus returns to the button that opened it).
+        // The season list lies over the Folgen box, so it answers first; a stale scrub marker must not take the press instead.
+        if seasonMenu.isOpen {
+            seasonMenu.close()
+            AppLog.writeOut("[Zurück] Staffelliste")
+            return
+        }
+        if menu.isOpen {
             if seekTarget != nil || probing { markDiscard() }
-            layerClose()
-            AppLog.writeOut("[Zurück] Ebene zu")
+            if menu.navigator.current != nil { menu.back() } else { closeMenu() }
+            AppLog.writeOut("[Zurück] Menü")
+            return
         }
         // **Menu cancels scrubbing and takes the bar with it**, not playback. Someone who overshot wants to return to their place, not leave the film; one press has to clear the picture, or Back seems to do nothing until the bar times out.
         else if seekTarget != nil || probing {
@@ -1454,6 +1572,7 @@ struct PlayerScreen: View {
         swipes = false
         swipeEnd = Date()
         swipeOnlyOpened = false
+        fadeOutMark += 1
         guard rolling else { return }
         // **After a fast swipe the marker coasts and slows**, as in Apple's player and Swiftfin (x0.78 every 30 ms there). Without it the marker stopped dead under the finger and felt harsh.
         rollOut?.cancel()
@@ -1597,15 +1716,18 @@ struct PlayerScreen: View {
         let autoNext = autoSkip && SectionLogic.automatic(position: position, duration: duration,
                                                           sections: sections,
                                                           hasNextEpisode: next != nil) != nil
-        let done = new.tick(offering: offering,
-                          cardDue: (model.nextAutomatic || autoNext) && SectionLogic.cardDue(position: position, duration: duration,
+        // **The core decides the card** (its offer is the card; the screen only draws it with its layer). The old
+        // rule below plays only when the old way plays (`coreOfferFeed` is `nil` then).
+        let fed = area?.coreOfferFeed(base: offering, position: position, duration: duration)
+        let done = new.tick(offering: fed?.offering ?? offering,
+                          cardDue: fed?.cardDue ?? ((model.nextAutomatic || autoNext) && SectionLogic.cardDue(position: position, duration: duration,
                                                                      sections: sections,
                                                                      hasNextEpisode: next != nil,
-                                                                     remainingWindow: EpisodeCard.remainingWindow),
+                                                                     remainingWindow: EpisodeCard.remainingWindow)),
                           // Count only while it could be seen, not under the loading screen.
-                          running: running && firstImagePresent && !FrameTick.flipsOver,
+                          running: OfferingLayer.clocksRun(playing: running && firstImagePresent && !FrameTick.flipsOver, menuOpen: menu.isOpen),
                           elapsed: elapsed,
-                          countdown: SectionLogic.countdown(position: position, duration: duration,
+                          countdown: fed?.countdown ?? SectionLogic.countdown(position: position, duration: duration,
                                                                sections: sections,
                                                                remainingWindow: EpisodeCard.remainingWindow),
                           atEnd: EpisodeEnd.atEnd(position: position, duration: duration) && seekTarget == nil)
@@ -1621,8 +1743,14 @@ struct PlayerScreen: View {
     }
 
     private func fillSet() {
+        defer {
+            #if DEBUG
+            LiveRun.fillClockProbe = fillClock
+            LiveRun.countdownRunProbe = layer.countdownRun
+            #endif
+        }
         fillClock.set(share: countdownShare,
-                             running: running && firstImagePresent && !FrameTick.flipsOver,
+                             running: OfferingLayer.clocksRun(playing: running && firstImagePresent && !FrameTick.flipsOver, menuOpen: menu.isOpen),
                              length: layer.countdownLength)
     }
 
@@ -1664,7 +1792,8 @@ struct PlayerScreen: View {
     private func changeInto(_ episode: Item, since: Double = 0, fromCard: Bool = false) {
         guard !switches else { return }
         switches = true
-        openLayer = nil
+        seasonMenu.close()
+        menu.close()
         // From the card: it zooms over the whole picture and covers the switch.
         let zooms = fromCard && !inGroup && episode.id != item.id
         if zooms {
@@ -1706,6 +1835,8 @@ struct PlayerScreen: View {
                                                            seconds: since) },
                 failed: {
                     hintShow(String(localized: "Nächste Folge konnte nicht geladen werden."))
+                    // The core asked for this switch and stopped the old title: it puts it back at its position.
+                    area?.coreSwitchFailed()
                     // The old episode keeps playing but the server already knows it as finished. The loop registers it again.
                     startReported = false
                 }))
@@ -1952,6 +2083,8 @@ struct PlayerScreen: View {
         while !Task.isCancelled {
             try? await Task.sleep(for: PlaybackTick.displayTick)
             guard let area else { continue }
+            // A closed player reports nothing more (no Start after the Stop).
+            guard !area.finallyStopped else { break }
             if switchgear.gemeinsam { bridgeCatchUp() }
             // **The core runs the tick rules** for a title it plays; the old computation below stays for a group,
             // Plex and `-alterWiedergabeweg`.

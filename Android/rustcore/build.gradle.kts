@@ -24,6 +24,8 @@ android {
         create("direct") { dimension = "distribution" }
     }
     sourceSets {
+        // One pure-Kotlin file (CoreWords) that the Rust shell's Gradle project compiles too.
+        getByName("main") { java.srcDir("src/words/kotlin") }
         for (flavor in listOf("play", "direct")) {
             getByName(flavor) {
                 java.srcDir(rustOut.dir("$flavor/kotlin"))
@@ -32,6 +34,8 @@ android {
         }
     }
     testOptions {
+        // `android.util.Log` calls in the host code (the HTTP client logs a failed exchange) must not throw in JVM tests.
+        unitTests.isReturnDefaultValues = true
         unitTests.all {
             val flavor = if (it.name.contains("Play")) "play" else "direct"
             it.systemProperty("jna.library.path", rustOut.dir("$flavor/host").asFile.absolutePath)

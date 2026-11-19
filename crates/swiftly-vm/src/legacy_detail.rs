@@ -13,13 +13,13 @@ use swiftly_jellyfin::ItemsQuery;
 use swiftly_library::ListRules;
 use swiftly_library::series_state::SeasonSelectionRule;
 use swiftly_library::shuffle_run::{Rng, ShuffleRun};
-use swiftly_model::MediaVersions;
 use swiftly_model::{Item, Person};
 use swiftly_net::{ErrorKind, HttpTransport};
 use swiftly_rules::display_rules::runtime_show;
 
 use crate::account::AccountRef;
-use crate::detail::fetch_plan;
+use crate::cache::ViewCache;
+use crate::detail::{VersionOption, fetch_plan};
 use crate::detail_more::{TrailerCandidate, file_excerpt, trailer_candidates};
 use crate::home::{Client, Source, build_source};
 use crate::host::Host;
@@ -28,6 +28,7 @@ use crate::plex::Plex;
 use crate::tile::Words;
 use crate::title_text::{TitleText, resume_from};
 use std::future::Future;
+use swiftly_cache::Scope;
 use swiftly_playback::media_server::MediaServer;
 use swiftly_playback::playback_plan::PlaybackPlan;
 use swiftly_rules::alphabet_index::Sorting;
@@ -60,6 +61,9 @@ struct FileOut {
 struct VersionOut {
     id: String,
     label: String,
+    /// The version a tap on Play starts (the long-press menu marks it).
+    #[serde(rename = "standard")]
+    is_default: bool,
 }
 
 #[derive(Serialize)]
@@ -109,6 +113,25 @@ struct TitleOut {
     backdrop: Option<String>,
     #[serde(rename = "fassungen")]
     versions: Vec<VersionOut>,
+    /// The picture the list tile of this title showed (the host's picture memory has it under this address): the head
+    /// shows it until the sharp backdrop is there. Only in a seed.
+    #[serde(rename = "kachelbild", skip_serializing_if = "Option::is_none")]
+    tile_image: Option<String>,
+    /// The proof line's answer of an earlier visit (`proof_mark`), only in a seed: the chip shows from frame 1 and the
+    /// fresh plan replaces it. `planDa` stays false (the plan is still unknown).
+    #[serde(rename = "beleg", skip_serializing_if = "Option::is_none")]
+    proof_seed: Option<ProofSeedOut>,
+    /// This answer is the page's seed (stored copies, no server answer yet); the host treats the playback plan as unknown.
+    #[serde(rename = "vorab", skip_serializing_if = "std::ops::Not::not")]
+    seed: bool,
+}
+
+/// The stored answer of the proof line.
+#[derive(Serialize)]
+struct ProofSeedOut {
+    lossless: bool,
+    #[serde(rename = "methode", skip_serializing_if = "Option::is_none")]
+    method: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -132,6 +155,9 @@ struct StateOut {
 struct SeasonOut {
     id: String,
     name: String,
+    /// The season number (0 = specials), what the Seerr season rows are matched by.
+    #[serde(rename = "nummer", skip_serializing_if = "Option::is_none")]
+    number: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -144,6 +170,9 @@ struct SeriesOut {
     season_row: Option<String>,
     #[serde(rename = "staffelzahl", skip_serializing_if = "Option::is_none")]
     season_count: Option<i64>,
+    /// The season button shows its chevron: always (`SeasonsPart::chevron`), decided in the core for every platform.
+    #[serde(rename = "staffelpfeil")]
+    season_chevron: bool,
     #[serde(rename = "gattungen", skip_serializing_if = "Option::is_none")]
     genres: Option<String>,
     #[serde(rename = "kopfbild", skip_serializing_if = "Option::is_none")]
@@ -177,6 +206,17 @@ struct SeriesOut {
     actors: Vec<PersonOut>,
     #[serde(rename = "kulisse", skip_serializing_if = "Option::is_none")]
     backdrop: Option<String>,
+    #[serde(rename = "kachelbild", skip_serializing_if = "Option::is_none")]
+    tile_image: Option<String>,
+    /// The proof line's answer of an earlier visit (`proof_mark`), only in a seed: the chip shows from frame 1 and the
+    /// fresh plan replaces it. `planDa` stays false (the plan is still unknown).
+    #[serde(rename = "beleg", skip_serializing_if = "Option::is_none")]
+    proof_seed: Option<ProofSeedOut>,
+    #[serde(rename = "vorab", skip_serializing_if = "std::ops::Not::not")]
+    seed: bool,
+    /// The series' TMDB id: what the Seerr screens (season states, season chooser) ask for.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tmdb: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -293,6 +333,8 @@ pub struct DetailOf<S> {
     text: TitleText,
     language: String,
     state: Mutex<State>,
+    /// The stored copies of the account (the page seed), when the host has a cache.
+    cache: Option<(ViewCache, Scope)>,
     /// The audio streams of the titles the download calls looked at (`Kern._audioStreams`).
     pub(crate) audio_streams:
         Mutex<std::collections::HashMap<String, Vec<swiftly_model::MediaStream>>>,
@@ -521,7 +563,86 @@ impl<T: HttpTransport + 'static> DetailOf<Client<T>> {
         let Source::Jellyfin(client) = source else {
             return Err(ErrorKind::Decoding("not a Jellyfin account".into()));
         };
-        Ok(Self::with(client, addresses, host, account.user_id.clone()))
+        Ok(Self::with(client, addresses, host, account))
+    }
+}
+
+impl<T: HttpTransport + 'static> DetailOf<Client<T>> {
+    /// What the account stored of a title (the list entry and the full title of an earlier visit), `None` without a
+    /// cache entry. The same seed the view models open a page from (`crate::seed`).
+    fn seed_item(&self, id: &str) -> Option<Item> {
+        let (cache, scope) = self.cache.as_ref()?;
+        crate::seed::stored_item(id, cache, scope)
+    }
+
+    fn tile_image_of(id: &str) -> Option<String> {
+        crate::seed::head_stand_ins(id)
+            .into_iter()
+            .next()
+            .map(|i| i.address)
+    }
+
+    /// The first frame of a title page, in the shape of [`Self::title`] (without a playback plan: `planDa` false,
+    /// `vorab` true): text, genres and chips from the stored copies, the head picture the tile showed in `kachelbild`.
+    /// Empty text when nothing is stored. Never touches the network.
+    #[must_use]
+    pub fn title_seed(&self, id: &str) -> String {
+        let Some(item) = self.seed_item(id) else {
+            return String::new();
+        };
+        let mut out = self.title_out(&item, None, true);
+        out.tile_image = Self::tile_image_of(id);
+        out.proof_seed = self.stored_proof(&item.id, None);
+        json(&out).unwrap_or_default()
+    }
+
+    /// The first frame of a series page, in the shape of [`Self::series`]: the head from the stored copies, the seasons
+    /// and the viewer's state from the stored shape of the page (warmed from the Home rows). Empty text without a copy.
+    #[must_use]
+    pub fn series_seed(&self, id: &str) -> String {
+        let Some(first) = self.seed_item(id) else {
+            return String::new();
+        };
+        // An episode opens its series, as `series` does: the seed is the series' own copy and the episode's season.
+        let (series, hint_id, hint_number) = if first.type_.as_deref() == Some("Episode") {
+            let Some(series) = first.series_id.as_deref().and_then(|s| self.seed_item(s)) else {
+                return String::new();
+            };
+            (series, first.season_id.clone(), first.parent_index_number)
+        } else {
+            (first, None, None)
+        };
+        let shape = self.stored_shape(&series.id);
+        let (state, seasons) = shape.map(|s| (s.state, s.seasons)).unwrap_or_default();
+        let selected =
+            SeasonSelectionRule::choose(&seasons, hint_id.as_deref(), hint_number, state.as_ref())
+                .map(|s| s.id.clone());
+        let mut out = self.series_out(&series, state.as_ref(), &seasons, selected, true);
+        out.tile_image = Self::tile_image_of(id).or_else(|| Self::tile_image_of(&series.id));
+        // The proof line of the episode the page offers (the state's), as the view model keeps it.
+        out.proof_seed = state.as_ref().and_then(|f| self.stored_proof(&f.id, None));
+        json(&out).unwrap_or_default()
+    }
+
+    /// The stored episode rows of one season, in the shape of [`Self::episodes`]; empty text when the page never saw it.
+    #[must_use]
+    pub fn episodes_seed(&self, series: &str, season: &str) -> String {
+        let Some(shape) = self.stored_shape(series) else {
+            return String::new();
+        };
+        let Some((_, list)) = shape.episodes.iter().find(|(id, _)| id == season) else {
+            return String::new();
+        };
+        let images = list
+            .iter()
+            .map(|f| self.client.image_url(f, 220).map(|u| u.to_string()))
+            .collect();
+        json(&self.episode_rows(list, images)).unwrap_or_default()
+    }
+
+    fn stored_shape(&self, id: &str) -> Option<crate::series::Shape> {
+        let (cache, scope) = self.cache.as_ref()?;
+        cache.read_json(scope, crate::series::SHAPE, id)
     }
 }
 
@@ -532,15 +653,16 @@ impl<T: HttpTransport + 'static> DetailOf<Plex<T>> {
         let Source::Plex(client) = source else {
             return Err(ErrorKind::Decoding("not a Plex account".into()));
         };
-        Ok(Self::with(client, addresses, host, account.user_id.clone()))
+        Ok(Self::with(client, addresses, host, account))
     }
 }
 
 impl<S: DetailServer> DetailOf<S> {
-    fn with(client: Arc<S>, addresses: ImageAddress, host: &Host, account: String) -> Self {
+    fn with(client: Arc<S>, addresses: ImageAddress, host: &Host, who: &AccountRef) -> Self {
         Self {
             client,
-            account,
+            account: who.user_id.clone(),
+            cache: host.cache.clone().map(|c| (c, ViewCache::scope(who))),
             addresses,
             words: Words::new(host.locale.clone()),
             text: TitleText::new(host.locale.clone()),
@@ -591,11 +713,42 @@ impl<S: DetailServer> DetailOf<S> {
         }
     }
 
-    fn backdrop(&self, item: &Item, episode: Option<&Item>) -> Option<String> {
-        ImageSelection::landscape(item, &self.addresses, 1600)
-            .map(|l| l.url)
-            .or_else(|| ImageSelection::header_with_fallback(item, episode, &self.addresses, 1200))
+    /// The head picture's address. In a seed (the title has not answered) only a picture the stored copy names as a head
+    /// picture counts: a copy built from a tile names none, and its poster would stand in the landscape head (a portrait
+    /// poster cut to its middle) until the real backdrop replaced it. The page keeps the tile picture or the BlurHash
+    /// in the final frame instead (`kachelbild`); the poster fallback applies once the title has answered. The same
+    /// rule as the view models' `title_text::header_image_waiting`.
+    fn head(&self, item: &Item, episode: Option<&Item>, seed: bool) -> Option<String> {
+        if seed && ImageSelection::header(item, &self.addresses, 1200).is_none() {
+            return None;
+        }
+        ImageSelection::header_with_fallback(item, episode, &self.addresses, 1200)
             .map(|u| u.to_string())
+    }
+
+    fn backdrop(&self, item: &Item, episode: Option<&Item>, seed: bool) -> Option<String> {
+        ImageSelection::landscape(item, &self.addresses, 1600)
+            .map(|l| l.url.to_string())
+            .or_else(|| self.head(item, episode, seed))
+    }
+
+    /// The stored proof line of `id` when it still matches the delivery rules this host asks under.
+    fn stored_proof(&self, id: &str, fresh_version: Option<&str>) -> Option<ProofSeedOut> {
+        let (cache, scope) = self.cache.as_ref()?;
+        let mark = crate::proof_mark::read(cache, scope, id)?;
+        mark.usable(id, self.limit(), fresh_version)
+            .then_some(ProofSeedOut {
+                lossless: mark.direct_play,
+                method: mark.hint,
+            })
+    }
+
+    /// Keeps the answer of a plan for the next visit's first frame.
+    fn remember_proof(&self, id: &str, plan: &PlaybackPlan, version: String) {
+        if let Some((cache, scope)) = &self.cache {
+            let ticket = cache.ticket(scope);
+            crate::proof_mark::write(cache, &ticket, id, self.limit(), plan, version);
+        }
     }
 
     // ---- title ----------------------------------------------------------------------------------------------------
@@ -605,7 +758,15 @@ impl<S: DetailServer> DetailOf<S> {
         let (item, plan) = futures_util::future::join(c.item(id), c.plan(id, self.limit())).await;
         let i = item?;
         let plan = plan.ok().flatten();
-        let file = plan.as_ref().and_then(|p| p.source.as_ref()).map(|q| {
+        if let Some(p) = &plan {
+            self.remember_proof(&i.id, p, crate::proof_mark::version_of(&i));
+        }
+        json(&self.title_out(&i, plan.as_ref(), false))
+    }
+
+    /// The answer of [`Self::title`] from an item and its plan; the seed passes no plan.
+    fn title_out(&self, i: &Item, plan: Option<&PlaybackPlan>, seed: bool) -> TitleOut {
+        let file = plan.and_then(|p| p.source.as_ref()).map(|q| {
             let excerpt = file_excerpt(&self.text, q, &self.language);
             let row = |key: &str| {
                 excerpt
@@ -631,7 +792,7 @@ impl<S: DetailServer> DetailOf<S> {
                     .any(|s| s.type_.as_deref() == Some("Subtitle")),
             }
         });
-        let since = resume_from(&i);
+        let since = resume_from(i);
         let year_runtime = [
             i.production_year.map(|y| y.to_string()),
             i.runtime_seconds()
@@ -642,44 +803,36 @@ impl<S: DetailServer> DetailOf<S> {
         .flatten()
         .collect::<Vec<_>>()
         .join(" · ");
-        let versions = MediaVersions::choices(i.media_sources.as_deref())
-            .iter()
-            .filter_map(|v| {
-                let id = v.id.clone()?;
-                let detail = v.version_detail(&|bytes| {
-                    crate::downloads_vm::size_text(
-                        bytes,
-                        if self.language == "de" { "," } else { "." },
-                    )
-                });
-                let name = v.version_name_with(&self.words);
-                Some(VersionOut {
-                    id,
-                    label: if detail.is_empty() {
-                        name
-                    } else {
-                        format!("{name} · {detail}")
-                    },
-                })
-            })
-            .collect();
-        json(&TitleOut {
+        // The same list and the same default mark as the view model's long press on Play.
+        let versions = VersionOption::list(
+            i.media_sources.as_deref().unwrap_or_default(),
+            &self.words,
+            &self.language,
+            None,
+        )
+        .into_iter()
+        .map(|o| VersionOut {
+            id: o.id,
+            label: o.label,
+            is_default: o.is_default,
+        })
+        .collect();
+        TitleOut {
             id: i.id.clone(),
             name: i.name.clone(),
             kind: i.type_.clone().unwrap_or_default(),
-            secondary_line: self.text.secondary_line(&i),
+            secondary_line: self.text.secondary_line(i),
             year_runtime,
-            header_image: ImageSelection::header_with_fallback(&i, None, &self.addresses, 1200)
-                .map(|u| u.to_string()),
-            logo: ImageSelection::logo(&i, &self.addresses, 240).map(|u| u.to_string()),
+            header_image: self.head(i, None, seed),
+            logo: ImageSelection::logo(i, &self.addresses, 240).map(|u| u.to_string()),
             rating: i.community_rating,
             sharing: i.official_rating.clone(),
             plan_present: plan.is_some(),
-            lossless: plan.as_ref().is_some_and(|p| p.is_lossless()),
-            method: plan.as_ref().map(|p| p.method.raw_value().to_owned()),
+            lossless: plan.is_some_and(|p| p.is_lossless()),
+            method: plan.map(|p| p.method.raw_value().to_owned()),
             resume_from: since,
             resume_text: since.map(|s| self.text.time_text(s)),
-            remaining_time: self.text.remaining(&i),
+            remaining_time: self.text.resume_slot(i),
             progress: i
                 .user_data
                 .as_ref()
@@ -700,9 +853,12 @@ impl<S: DetailServer> DetailOf<S> {
                 .unwrap_or(false),
             watched: i.user_data.as_ref().and_then(|d| d.played).unwrap_or(false),
             file,
-            backdrop: self.backdrop(&i, None),
+            backdrop: self.backdrop(i, None, seed),
             versions,
-        })
+            tile_image: None,
+            proof_seed: None,
+            seed,
+        }
     }
 
     // ---- series ---------------------------------------------------------------------------------------------------
@@ -728,7 +884,19 @@ impl<S: DetailServer> DetailOf<S> {
         let selected =
             SeasonSelectionRule::choose(&seasons, hint_id.as_deref(), hint_number, state.as_ref())
                 .map(|s| s.id.clone());
-        let folks: Vec<&Person> = match state.as_ref().map(|s| s.actors()) {
+        json(&self.series_out(&series, state.as_ref(), &seasons, selected, false))
+    }
+
+    /// The answer of [`Self::series`] from the series, the viewer's state and the seasons; the seed passes stored ones.
+    fn series_out(
+        &self,
+        series: &Item,
+        state: Option<&Item>,
+        seasons: &[Item],
+        selected: Option<String>,
+        seed: bool,
+    ) -> SeriesOut {
+        let folks: Vec<&Person> = match state.map(|s| s.actors()) {
             Some(list) if !list.is_empty() => list,
             _ => series.actors(),
         };
@@ -737,7 +905,8 @@ impl<S: DetailServer> DetailOf<S> {
             .as_ref()
             .filter(|g| !g.is_empty())
             .map(|g| g.iter().take(2).cloned().collect::<Vec<_>>().join(", "));
-        json(&SeriesOut {
+        SeriesOut {
+            season_chevron: crate::series::SEASON_CHEVRON,
             id: series.id.clone(),
             name: series.name.clone(),
             year: series.production_year.map(|y| y.to_string()),
@@ -750,14 +919,8 @@ impl<S: DetailServer> DetailOf<S> {
                 i64::try_from(seasons.len()).ok()
             },
             genres,
-            header_image: ImageSelection::header_with_fallback(
-                &series,
-                state.as_ref(),
-                &self.addresses,
-                1200,
-            )
-            .map(|u| u.to_string()),
-            logo: ImageSelection::logo(&series, &self.addresses, 240).map(|u| u.to_string()),
+            header_image: self.head(series, state, seed),
+            logo: ImageSelection::logo(series, &self.addresses, 240).map(|u| u.to_string()),
             rating: series.community_rating,
             sharing: series.official_rating.clone(),
             description: series.overview.clone(),
@@ -774,7 +937,7 @@ impl<S: DetailServer> DetailOf<S> {
             plan_present: false,
             lossless: false,
             method: None,
-            state: state.as_ref().map(|f| StateOut {
+            state: state.map(|f| StateOut {
                 id: f.id.clone(),
                 resume: f
                     .user_data
@@ -782,7 +945,7 @@ impl<S: DetailServer> DetailOf<S> {
                     .and_then(|d| d.playback_position_ticks)
                     .unwrap_or(0)
                     > 0,
-                remaining_time: self.text.remaining(f),
+                remaining_time: self.text.resume_slot(f),
                 progress: f
                     .user_data
                     .as_ref()
@@ -792,18 +955,23 @@ impl<S: DetailServer> DetailOf<S> {
                 episode: f.index_number,
                 since: resume_from(f),
             }),
-            button_text: self.text.series_button(state.as_ref(), false),
+            button_text: self.text.series_button(state, false),
             seasons: seasons
                 .iter()
                 .map(|s| SeasonOut {
                     id: s.id.clone(),
                     name: s.name.clone(),
+                    number: s.index_number,
                 })
                 .collect(),
             selected,
             actors: folks.into_iter().map(|p| self.person_out(p)).collect(),
-            backdrop: self.backdrop(&series, state.as_ref()),
-        })
+            backdrop: self.backdrop(series, state, seed),
+            tile_image: None,
+            proof_seed: None,
+            seed,
+            tmdb: crate::series::tmdb_of(series),
+        }
     }
 
     // ---- episodes -------------------------------------------------------------------------------------------------
@@ -817,8 +985,12 @@ impl<S: DetailServer> DetailOf<S> {
         for f in &list {
             images.push(self.client.episode_image(f, 220).await);
         }
-        let rows: Vec<EpisodeOut> = list
-            .iter()
+        json(&self.episode_rows(&list, images))
+    }
+
+    /// The rows of one season's episode list; `images` is one picture address per episode.
+    fn episode_rows(&self, list: &[Item], images: Vec<Option<String>>) -> Vec<EpisodeOut> {
+        list.iter()
             .zip(images)
             .map(|(f, image)| {
                 let watched = f.user_data.as_ref().and_then(|d| d.played).unwrap_or(false);
@@ -857,8 +1029,7 @@ impl<S: DetailServer> DetailOf<S> {
                     remaining_time: self.text.remaining(f),
                 }
             })
-            .collect();
-        json(&rows)
+            .collect()
     }
 
     // ---- similar titles and extras, trailers ---------------------------------------------------------------------
@@ -1098,21 +1269,29 @@ impl<S: DetailServer> DetailOf<S> {
         self.request(self.client.metadata_refresh(id).await).await
     }
 
-    /// `Kern.fromContinueWatchingTake`: empty means done, otherwise the sentence for the failure.
+    /// `Kern.fromContinueWatchingTake`: empty means done, otherwise the sentence for the failure. A refusal is
+    /// always the one sentence of the home page's own removal (`HomeIntent::RemoveFromContinue`), never the
+    /// server's error text, so every host shows the same hint.
     #[allow(clippy::wrong_self_convention)] // name mirrors `Kern.fromContinueWatchingTake`
     pub async fn from_continue_watching_take(&self, id: &str) -> String {
-        self.request(self.client.point_back_set(id).await).await
+        match self.client.point_back_set(id).await {
+            Ok(()) => String::new(),
+            Err(_) => self.words.title("Das Entfernen hat nicht geklappt."),
+        }
     }
 
     /// `Kern.plan`: `{"lossless":..,"methode":..}` or `{}` when the server names no plan.
     pub async fn plan_answer(&self, id: &str) -> String {
         let limit = self.limit();
         match self.client.plan(id, limit).await {
-            Ok(Some(p)) => format!(
-                r#"{{"lossless":{},"methode":{}}}"#,
-                p.is_lossless(),
-                serde_json::to_string(p.method.raw_value()).unwrap_or_default()
-            ),
+            Ok(Some(p)) => {
+                self.remember_proof(id, &p, String::new());
+                format!(
+                    r#"{{"lossless":{},"methode":{}}}"#,
+                    p.is_lossless(),
+                    serde_json::to_string(p.method.raw_value()).unwrap_or_default()
+                )
+            }
             _ => "{}".into(),
         }
     }

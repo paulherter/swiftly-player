@@ -72,8 +72,32 @@ final class LibraryModel {
     /// date added is a sensible combination, and a shared value would play them
     /// against each other. `rememberName` tells them apart; without a name nothing
     /// is remembered.
+    ///
+    /// A place with a name starts on the core's default order ("Recently added", ``Sorting/pageDefault``) until the
+    /// viewer picks another; a list without a name (a collection) starts by name, as the core does.
     var sorting: Sorting = .name { didSet { secure() } }
     var filter: LibraryFilter = .all { didSet { secure() } }
+    /// Years and language the core narrows to (`"2010-2019|deu"`), remembered by the core. A change reloads
+    /// (it is part of ``identifier``). Always `"|"` where the core does not feed the list.
+    private(set) var narrowing = "|"
+
+    /// One row of the filter sheet: the core's, or a plain status row where the core does not feed the list.
+    struct SheetRow: Identifiable {
+        let id: String
+        let label: String
+        let selected: Bool
+        /// The group heading drawn above this row.
+        let heading: String?
+        #if canImport(SwiftlyCore)
+        let pick: CoreFilterPick?
+        #endif
+    }
+    #if canImport(SwiftlyCore)
+    /// The core's sheet while it feeds this list; refreshed while the sheet is open.
+    private(set) var coreSheet: CoreFilterSheet?
+    #endif
+    @ObservationIgnored private var sheetWatch: Task<Void, Never>?
+    @ObservationIgnored private var offeredLast: [LibraryFilter] = []
 
     /// Name under which both are stored; `nil` means not at all.
     private let rememberName: String?
@@ -81,6 +105,7 @@ final class LibraryModel {
     init(rememberName: String? = nil) {
         self.rememberName = rememberName
         guard let rememberName else { return }
+        sorting = .pageDefault
         let store = UserDefaults.standard
         if let raw = store.string(forKey: "sortierung.\(rememberName)"),
            let value = Sorting(rawValue: raw) { sorting = value }
@@ -101,7 +126,79 @@ final class LibraryModel {
     }
 
     /// If either changes, reload.
-    var identifier: String { "\(sorting.rawValue)|\(filter.rawValue)" }
+    var identifier: String {
+        narrowing == "|" ? "\(sorting.rawValue)|\(filter.rawValue)" : "\(sorting.rawValue)|\(filter.rawValue)|\(narrowing)"
+    }
+
+    /// What the filter pill shows: the core's text (status, year span, language) while it feeds the list.
+    var pillText: String {
+        #if canImport(SwiftlyCore)
+        // `filter` and `narrowing` are what the view observes; the core's text follows them.
+        _ = (filter, narrowing)
+        if rustActive, let shelf = rustShelf?.shelf { return shelf.pillText }
+        #endif
+        return filter.label
+    }
+
+    /// The rows of the filter sheet, flattened: the core's lines (group headings sit on the first row of a
+    /// group, a group still loading is one line without a pick).
+    func sheetRows(offered: [LibraryFilter]) -> [SheetRow] {
+        #if canImport(SwiftlyCore)
+        if rustActive, let sheet = coreSheet {
+            return sheet.lines.enumerated().map { entry in
+                SheetRow(id: "c\(entry.offset)", label: entry.element.label, selected: entry.element.selected,
+                         heading: entry.element.heading, pick: entry.element.pick)
+            }
+        }
+        return offered.map { SheetRow(id: "s.\($0.rawValue)", label: $0.label, selected: $0 == filter,
+                                      heading: nil, pick: .status(filter: $0.rust)) }
+        #else
+        return offered.map { SheetRow(id: "s.\($0.rawValue)", label: $0.label, selected: $0 == filter, heading: nil) }
+        #endif
+    }
+
+    /// The sheet is about to open: the core fetches years and languages; the rows follow while it loads.
+    func sheetOpened(offered: [LibraryFilter]) {
+        #if canImport(SwiftlyCore)
+        offeredLast = offered
+        sheetWatch?.cancel()
+        guard rustActive, let shelf = rustShelf?.shelf else { return }
+        shelf.openSheet()
+        coreSheet = shelf.sheet(offered: offered)
+        sheetWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                let seen = shelf.version
+                await shelf.changed(after: seen)
+                guard !Task.isCancelled, let self else { return }
+                self.coreSheet = shelf.sheet(offered: self.offeredLast)
+            }
+        }
+        #endif
+    }
+
+    func sheetClosed() { sheetWatch?.cancel() }
+
+    /// A row was picked. Status goes through ``filter`` (its own store); years and language go to the core,
+    /// which remembers and reloads; the page follows through ``identifier``.
+    func choose(_ row: SheetRow) {
+        #if canImport(SwiftlyCore)
+        guard let pick = row.pick else { return }
+        switch pick {
+        case .status(let value):
+            // The core takes the status at once (the pill follows); `filter` is the page's own store and trigger.
+            rustShelf?.shelf.pick(pick)
+            filter = LibraryFilter(rust: value)
+            if let shelf = rustShelf?.shelf { coreSheet = shelf.sheet(offered: offeredLast) }
+        case .years, .language:
+            guard let shelf = rustShelf?.shelf else { return }
+            shelf.pick(pick)
+            coreSheet = shelf.sheet(offered: offeredLast)
+            narrowing = shelf.narrowingKey
+        }
+        #else
+        if let match = LibraryFilter.allCases.first(where: { "s.\($0.rawValue)" == row.id }) { filter = match }
+        #endif
+    }
 
     // MARK: Letter strip
 
@@ -127,6 +224,12 @@ final class LibraryModel {
             return
         }
         #endif
+        // Only the name order has a strip (as in the core); another order shows none and fetches nothing.
+        guard asked == .name else {
+            alphabet = AlphabetIndex(entries: [], count: 0, sorting: asked, monthly: false)
+            alphabetFor = key
+            return
+        }
         guard let list = await model.indexList(from: source, sorting: asked, filter: filter) else { return }
         // Another order was picked meanwhile: its own load builds its index.
         guard sorting == asked else { return }
@@ -168,10 +271,14 @@ final class LibraryModel {
         // an older one finishes loading later.
         jumpAsked += 1
         let asked = jumpAsked
+        // **The title is the strip's own position, not a key search over the loaded tiles.** The tiles are stand-ins
+        // without a sort name, so their keys differ from the strip's (made from the full titles): every letter found
+        // no tile and the jump ended on the last one loaded, whatever letter was pressed (measured: one target for
+        // F, G, H, I, K, P, N). `first` is where the letter starts in the whole ordered list, which the grid follows.
         let start = alphabet.entries.first { $0.letter == letter }?.first ?? 0
         for _ in 0..<20 {
-            if let id = target(of: letter, in: alphabet) {
-                return asked == jumpAsked ? id : nil
+            if items.indices.contains(start) {
+                return asked == jumpAsked ? items[start].id : nil
             }
             guard stillMorePresent else { break }
             // A page being appended right now blocks `loadMore`; wait for it instead of
@@ -409,12 +516,13 @@ extension LibraryModel {
         if let held = rustShelf, held.key == key {
             shelf = held.shelf
         } else {
-            guard let fresh = model.rustScreens.shelf(for: model.session, source: source) else {
+            guard let fresh = model.rustScreens.shelf(for: model.session, source: source, rememberName: rememberName) else {
                 disrupted = items.isEmpty
                 return
             }
             shelf = fresh
             rustShelf = (key, fresh)
+            narrowing = fresh.narrowingKey
         }
         let page = await shelf.load(sorting: sorting, filter: filter)
         guard myOwn == run, !Task.isCancelled else { return }
@@ -451,3 +559,10 @@ extension LibraryModel {
     }
 }
 #endif
+
+extension Sorting {
+    /// The order a library page starts on until the viewer picks another: the core's rule ("Recently added"),
+    /// the same function Android reads. A list without a remember name (a collection) starts by name.
+    /// Without the core (`RustHome.swift` is not built) the same value, written out.
+    static var pageDefault: Sorting { coreDefaultPageSorting() }
+}

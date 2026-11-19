@@ -1,0 +1,86 @@
+{
+  "downloads.qualitaet": [
+    "original",
+    "hd1080",
+    "hd720",
+    "sd480"
+  ],
+  "downloads.stand": [
+    "wartet",
+    "laedt",
+    "angehalten",
+    "fertig",
+    "fehler"
+  ],
+  "engine.command": [
+    "load",
+    "play",
+    "pause",
+    "seek",
+    "rate",
+    "volume",
+    "delay",
+    "subdelay",
+    "audio",
+    "sub",
+    "fill",
+    "place",
+    "stop",
+    "pip"
+  ],
+  "engine.pip": [
+    "start",
+    "stop",
+    "refresh"
+  ],
+  "library.filter": [
+    "alle",
+    "angefangen",
+    "merkliste",
+    "ungesehen"
+  ],
+  "playback.angebot": [
+    "keiner",
+    "ueberspringen",
+    "naechste"
+  ],
+  "playback.einblendung": [
+    "nichts",
+    "knopf",
+    "karte"
+  ],
+  "playback.ergebnis": [
+    "gewechselt",
+    "gesperrt",
+    "abgebrochen",
+    "gescheitert"
+  ],
+  "playback.infoArt": [
+    "gut",
+    "warnend"
+  ],
+  "player.firstFrameRat": [
+    "nichts",
+    "warten",
+    "ausgabeNeu",
+    "softwareDekoder",
+    "aufgeben"
+  ],
+  "player.streamWatchRat": [
+    "nochNicht",
+    "sprungLaeuft",
+    "pufferWaechst",
+    "neuVerbinden"
+  ],
+  "plexSignIn.step": [
+    "waiting",
+    "profiles",
+    "servers",
+    "plexUnreachable",
+    "expired",
+    "failed",
+    "done",
+    "pinWrong",
+    "unreachable"
+  ]
+}

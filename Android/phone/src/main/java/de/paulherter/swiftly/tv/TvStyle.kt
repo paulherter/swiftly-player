@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -490,29 +491,44 @@ fun TvButton(text: String?, symbol: Glyph? = null, modifier: Modifier = Modifier
 }
 
 /**
- * **Lets the remote leave a text field again**, for `TvField` and the search field (`TvSearch`).
+ * **Lets the remote leave a text field again**, for `TvField` and the PIN field (`TvPlexSignIn`).
  *
- * `BasicTextField` consumes Up and Down itself (caret to start/end of line) and reports them as
- * handled, so the D-pad could not leave the field, e.g. neither to "Next" nor to "Advanced" on the
- * server page once the keyboard was closed. And **OK brings the keyboard back**: Compose shows it
- * only on first focus, so after closing it with Back, OK did not reopen it. Only the remote's
- * center key; Enter on a real keyboard still triggers the keyboard action.
+ * `BasicTextField` consumes all four arrows itself (caret moves) and reports them as handled, so the
+ * D-pad could not leave the field, neither to "Next" nor to "Advanced" on the server page nor from
+ * "Header name" to "Value". Whenever an arrow reaches the field (the system keyboard is not open and
+ * takes it first) it moves focus instead. **OK brings the keyboard**: `onOpen` first (`TvField` lets
+ * the system keyboard start only now), then `show()`, which also reopens it after Back closed it. Only
+ * the remote's center key; Enter on a real keyboard still triggers the keyboard action.
  */
 @Composable
-fun Modifier.remoteBarField(): Modifier {
+fun Modifier.remoteBarField(onOpen: () -> Unit = {}): Modifier {
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     return onPreviewKeyEvent { e ->
-        when (e.key) {
-            Key.DirectionUp, Key.DirectionDown -> {
-                if (e.type == KeyEventType.KeyDown)
-                    focus.moveFocus(if (e.key == Key.DirectionUp) androidx.compose.ui.focus.FocusDirection.Up else androidx.compose.ui.focus.FocusDirection.Down)
-                true
-            }
-            Key.DirectionCenter -> { if (e.type == KeyEventType.KeyUp) keyboard?.show(); true }
+        val direction = when (e.key) {
+            Key.DirectionUp -> androidx.compose.ui.focus.FocusDirection.Up
+            Key.DirectionDown -> androidx.compose.ui.focus.FocusDirection.Down
+            Key.DirectionLeft -> androidx.compose.ui.focus.FocusDirection.Left
+            Key.DirectionRight -> androidx.compose.ui.focus.FocusDirection.Right
+            else -> null
+        }
+        when {
+            direction != null -> { if (e.type == KeyEventType.KeyDown) focus.moveFocus(direction); true }
+            e.key == Key.DirectionCenter -> { if (e.type == KeyEventType.KeyUp) { onOpen(); keyboard?.show() }; true }
             else -> false
         }
     }
+}
+
+/**
+ * Set by the keyboard's "Next" key just before focus moves on, so the field that takes focus in the next
+ * moment opens the keyboard at once (typing goes on from field to field). Expires, so a "Next" that lands
+ * on a button does not open the keyboard at the next unrelated field.
+ */
+internal object TvKeyboardHandoff {
+    private var until = 0L
+    fun arm() { until = android.os.SystemClock.uptimeMillis() + 500 }
+    fun take(): Boolean = (android.os.SystemClock.uptimeMillis() <= until).also { until = 0L }
 }
 
 /**
@@ -521,31 +537,58 @@ fun Modifier.remoteBarField(): Modifier {
  * text field and it cannot be turned off. Compose needs no such detour: `BasicTextField` draws
  * nothing by itself and `decorationBox` takes over the whole surface, as in the search field in
  * `TvSearch`.
+ *
+ * **Focus does not open the system keyboard, OK does** (tvOS: select a field to type). Compose starts the
+ * keyboard the moment a field takes focus, and the open keyboard window takes every D-pad key first (it moves
+ * inside its own keys), so a remote could not leave the field except by closing the keyboard with Back first,
+ * and every field it reached opened the keyboard again. The input session therefore waits until OK was
+ * pressed (`typing`); until then the arrows move focus (`remoteBarField`). The keyboard's "Next" key keeps the
+ * keyboard open on the next field (`TvKeyboardHandoff`), "Done"/"Go" closes it and runs `keyboardAction`.
+ * A hardware keyboard types without the system keyboard.
+ *
+ * [next] replaces "the next element in the page" as the target of "Next", for pages with a button between
+ * two fields.
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun TvField(value: String, change: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier,
           secret: Boolean = false, imeAction: ImeAction = ImeAction.Next,
           keyboardType: KeyboardType = KeyboardType.Text, keyboardAction: () -> Unit = {},
           /** Off while the page works on what was typed (`.disabled(...)` on tvOS). */
-          enabled: Boolean = true) {
+          enabled: Boolean = true, next: (() -> Unit)? = null) {
     var focus by remember { mutableStateOf(false) }
+    var typing by remember { mutableStateOf(false) }
     val focusSteerer = androidx.compose.ui.platform.LocalFocusManager.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     // **The on-screen keyboard's key must always lead somewhere.** Custom `KeyboardActions` replace the
     // default behavior (close keyboard): a field without `keyboardAction` had a "Done" that did
     // nothing, so from the user name one could not reach the password. The default is therefore "Next"
     // into the next field; the final action dismisses the keyboard so the D-pad drives the page again.
-    val complete = { keyboard?.hide(); keyboardAction() }
+    val complete = { typing = false; keyboard?.hide(); keyboardAction() }
+    val goNext = {
+        TvKeyboardHandoff.arm()
+        next?.invoke() ?: focusSteerer.moveFocus(androidx.compose.ui.focus.FocusDirection.Next)
+        Unit
+    }
+    // The session of this field starts only once the user asked for the keyboard (see above).
+    val interceptor = remember {
+        androidx.compose.ui.platform.PlatformTextInputInterceptor { request, session ->
+            snapshotFlow { typing }.first { it }
+            session.startInputMethod(request)
+        }
+    }
     if (secret) VisibilityProtection()
     val color = if (focus) Theme.reason else Theme.font
+    androidx.compose.ui.platform.InterceptPlatformTextInput(interceptor) {
     BasicTextField(value, change, singleLine = true, enabled = enabled,
         textStyle = TvTheme.body.copy(color = color),
         cursorBrush = SolidColor(color),
         visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(imeAction = imeAction, keyboardType = keyboardType),
-        keyboardActions = KeyboardActions(onDone = { complete() }, onGo = { complete() }, onSearch = { complete() },
-            onNext = { focusSteerer.moveFocus(androidx.compose.ui.focus.FocusDirection.Next) }),
-        modifier = modifier.height(TvTheme.buttonHeight).onFocusChanged { focus = it.isFocused }.remoteBarField(),
+        keyboardActions = KeyboardActions(onDone = { complete() }, onGo = { complete() }, onSearch = { complete() }, onNext = { goNext() }),
+        modifier = modifier.height(TvTheme.buttonHeight)
+            .onFocusChanged { focus = it.isFocused; typing = it.isFocused && TvKeyboardHandoff.take() }
+            .remoteBarField(onOpen = { typing = true }),
         decorationBox = { inner ->
             // **No border**: a field is a filled capsule, not a drawn outline, on TV as well. At rest `area`,
             // not `erhoeht`: `erhoeht` is what lies **on** a surface.
@@ -557,6 +600,7 @@ fun TvField(value: String, change: (String) -> Unit, placeholder: String, modifi
                 inner()
             }
         })
+    }
 }
 
 /**

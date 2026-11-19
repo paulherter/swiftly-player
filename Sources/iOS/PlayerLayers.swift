@@ -1,4 +1,5 @@
 import JellyfinKit
+import SwiftlyCore
 import SwiftUI
 
 /// Player dimensions on iPhone and iPad, **in one place**, so a layer's X
@@ -61,7 +62,7 @@ struct PlayerMetric {
 
 /// The three layers above the picture.
 enum PlayerLayer: Equatable {
-    case tracks, episodes, settings
+    case tracks, episodes, settings, chapters
 }
 
 /// One of the round icon buttons at the top right, in the player and on
@@ -70,6 +71,8 @@ struct IconButton: View {
     let symbol: String
     let label: LocalizedStringKey
     let mass: PlayerMetric
+    /// A menu of this button is open: the button wears a light surface (white 12 %), faded in over 120 ms.
+    var open = false
     let action: () -> Void
 
     var body: some View {
@@ -78,6 +81,8 @@ struct IconButton: View {
                 .font(.app(size: mass.symbol, weight: Theme.overlayWeight))
                 .foregroundStyle(.white)
                 .frame(width: mass.button, height: mass.button)
+                .background(Circle().fill(Color.white.opacity(open ? 0.12 : 0)))
+                .animation(.easeOut(duration: 0.12), value: open)
                 .contentShape(Rectangle())
         }
         .buttonStyle(Theme.PressButton())
@@ -117,7 +122,7 @@ private struct LayersReason: View {
 
 /// Header of a layer: on the left what the layer shows, on the right the X,
 /// with the same dimensions as the player's header.
-private struct LayersHeader<Left: View>: View {
+struct LayersHeader<Left: View>: View {
     let mass: PlayerMetric
     let close: () -> Void
     @ViewBuilder let left: Left
@@ -126,10 +131,10 @@ private struct LayersHeader<Left: View>: View {
         HStack(alignment: .top, spacing: 12) {
             left
             Spacer(minLength: 0)
-            IconButton(symbol: "xmark", label: "Schließen", mass: mass, action: close)
-                // Exactly as in the player's `iconRail`: the glyph, not the 44 button, ends at
-                // the margin, so the X sits on the same spot as in the player.
-                .padding(.trailing, -(mass.button - mass.symbol) / 2)
+            // The same glass circle at the same spot as the player bar's X (design: 745 / 8), so the X does not move
+            // when the panel opens.
+            PlayerCloseButton(mass: mass, label: "Schließen", action: close)
+                .offset(y: -8)
         }
         .padding(.horizontal, mass.page)
         .padding(.top, mass.top)
@@ -335,12 +340,108 @@ struct DelayRow: View {
     }
 }
 
+// MARK: - Speed and subtitle offset (rows from the core)
+
+/// The "Geschwindigkeit" column: the speeds, their labels and the marked one come from the core's menu
+/// (`PlayerVm.menu`); a press sends the speed back. Nothing is listed or formatted here.
+private struct SpeedColumn: View {
+    let surface: VLCPlayerView?
+    let mass: PlayerMetric
+    @State private var refresh = 0
+
+    var body: some View {
+        let _ = refresh
+        if let menu = surface?.playerMenu() {
+            SelectionColumn(title: LocalizedStringKey(menu.speedTitle), mass: mass) {
+                ForEach(menu.speeds, id: \.value) { row in
+                    LayersRow(text: row.label == "Normal" ? String(localized: "Normal") : row.label,
+                              selected: row.selected, mass: mass) {
+                        surface?.tempo = row.value
+                        refresh += 1
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The "Untertitel-Versatz" rows: current value, four step buttons and the reset, all from the core's menu.
+private struct SubtitleOffsetRows: View {
+    let surface: VLCPlayerView?
+    let mass: PlayerMetric
+    @State private var refresh = 0
+
+    var body: some View {
+        let _ = refresh
+        if let menu = surface?.playerMenu() {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(LocalizedStringKey(menu.offsetTitle))
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                    Spacer()
+                    Text(verbatim: menu.offsetText)
+                        .font(Theme.listTitle.monospacedDigit())
+                        .foregroundStyle(menu.canReset ? Theme.font : Theme.fontQuiet)
+                }
+                .padding(.horizontal, PlayerMetric.inset)
+                HStack(spacing: 0) {
+                    ForEach(menu.offsetSteps, id: \.stepMs) { step in
+                        Button {
+                            surface?.offsetStep(step.stepMs)
+                            refresh += 1
+                        } label: {
+                            Text(verbatim: step.label)
+                                .font(Theme.listTitle.monospacedDigit())
+                                .foregroundStyle(Theme.font)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .frame(maxWidth: .infinity, minHeight: mass.button)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(Theme.PressButton())
+                    }
+                }
+                Button {
+                    surface?.offsetReset()
+                    refresh += 1
+                } label: {
+                    Text(LocalizedStringKey(menu.resetLabel))
+                        .font(Theme.listTitle)
+                        .foregroundStyle(Theme.accent)
+                        .padding(.horizontal, PlayerMetric.inset)
+                        .frame(maxWidth: .infinity, minHeight: mass.button, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(Theme.PressButton())
+                .opacity(menu.canReset ? 1 : 0.35)
+                .disabled(!menu.canReset)
+            }
+            .accessibilityElement(children: .contain)
+        }
+    }
+}
+
 // MARK: - Audio & subtitles
+
+/// What the tracks layer needs for the subtitle search. `nil` (Plex, no session) hides the entry.
+struct SubtitleSearchLink {
+    /// A search of the running title (the core's `SubtitleSearchVm`).
+    let make: () -> SwiftlyCore.SubtitleSearchVm?
+    /// The server has the new track (its stream index, `nil` when the server did not show it yet): the player reloads the
+    /// title at the position with that track switched on.
+    let added: (Int?) -> Void
+}
 
 struct TracksLayer: View {
     let surface: VLCPlayerView?
     let mass: PlayerMetric
+    var search: SubtitleSearchLink?
+    /// Opened from the menu's magnifier: starts in the search.
+    var startsInSearch = false
     let close: () -> Void
+
+    @State private var searchVm: SwiftlyCore.SubtitleSearchVm?
 
     /// The own choice, independent of VLC.
     ///
@@ -355,11 +456,14 @@ struct TracksLayer: View {
     /// As with track choice: what was set, we know ourselves; the surface is
     /// not an observed quantity.
     @State private var audioLag: Delay?
-    @State private var subtitleLag: Delay?
 
     var body: some View {
         ZStack(alignment: .top) {
             LayersReason()
+            if let searchVm {
+                SubtitleSearchPanel(vm: searchVm, mass: mass, added: { search?.added($0) })
+                LayersHeader(mass: mass, close: { startsInSearch ? close() : (self.searchVm = nil) }) { EmptyView() }
+            } else {
             ColumnsRail(mass: mass) {
                 SelectionColumn(title: "Audio", mass: mass, wide: true) {
                     ForEach(surface?.audioTracks ?? [], id: \.trackId) { track in
@@ -390,16 +494,22 @@ struct TracksLayer: View {
                             surface?.selectSubtitle(track)
                         }
                     }
-                    DelayRow(value: subtitleLag ?? surface?.subtitleDelay ?? .null,
-                                       mass: mass) { new in
-                        subtitleLag = new
-                        surface?.subtitleDelay = new
+                    if let search {
+                        LayersRow(text: String(localized: "Untertitel suchen …"), selected: false, mass: mass) {
+                            searchVm = search.make()
+                        }
                     }
-                    .padding(.top, Theme.tileSpacing)
+                    SubtitleOffsetRows(surface: surface, mass: mass)
+                        .padding(.top, Theme.tileSpacing)
                 }
             }
             LayersHeader(mass: mass, close: close) { EmptyView() }
+            }
         }
+        #if DEBUG
+        .task { if LiveRun.opensSubtitleSearch, searchVm == nil { searchVm = search?.make() } }
+        #endif
+        .task { if startsInSearch, searchVm == nil { searchVm = search?.make() } }
         // Top like the player's header: across to the edge in landscape, under
         // the island in portrait (`Playermass.topSkip`).
         .ignoresSafeArea(edges: mass.topSkip)
@@ -418,6 +528,105 @@ struct TracksLayer: View {
     }
 }
 
+// MARK: - Subtitle search
+
+/// The core's subtitle search drawn as it is: language chips, then the rows of the state. Nothing is decided here.
+private struct SubtitleSearchPanel: View {
+    let vm: SwiftlyCore.SubtitleSearchVm
+    let mass: PlayerMetric
+    let added: (Int?) -> Void
+    @State private var part: SwiftlyCore.SubtitleSearchPart
+    @State private var reported = false
+
+    init(vm: SwiftlyCore.SubtitleSearchVm, mass: PlayerMetric, added: @escaping (Int?) -> Void) {
+        self.vm = vm
+        self.mass = mass
+        self.added = added
+        _part = State(initialValue: vm.part())
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(verbatim: part.title)
+                .font(.app(size: mass.title, weight: .semibold))
+                .foregroundStyle(Theme.font)
+                .padding(.horizontal, PlayerMetric.inset)
+                .accessibilityAddTraits(.isHeader)
+            HStack(spacing: 8) {
+                ForEach(part.languages, id: \.value) { language in
+                    Button { vm.send(intent: .search(language: language.value)) } label: {
+                        Text(verbatim: language.label)
+                            .font(Theme.listTitle)
+                            .foregroundStyle(language.selected ? Theme.font : Theme.fontQuiet)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(language.selected ? Color.white.opacity(0.18) : .clear, in: Capsule())
+                    }
+                    .buttonStyle(Theme.PressButton())
+                    .accessibilityAddTraits(language.selected ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, PlayerMetric.inset)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    switch part.phase {
+                    case .idle, .loading:
+                        ProgressView().tint(.white).frame(maxWidth: .infinity).padding(.top, 24)
+                    case .results, .downloading:
+                        ForEach(part.rows, id: \.id) { row in
+                            Button { vm.send(intent: .download(id: row.id)) } label: {
+                                HStack(spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(verbatim: row.title).font(Theme.listTitle).foregroundStyle(Theme.font).lineLimit(1)
+                                        Text(verbatim: row.sourceLine).font(Theme.small).foregroundStyle(Theme.fontQuiet).lineLimit(1)
+                                        if !row.metaLine.isEmpty {
+                                            Text(verbatim: row.metaLine).font(Theme.small).foregroundStyle(Theme.fontVeryQuiet).lineLimit(1)
+                                        }
+                                    }
+                                    Spacer(minLength: 0)
+                                    if row.busy { ProgressView().tint(.white) }
+                                }
+                                .padding(.horizontal, PlayerMetric.inset).padding(.vertical, 8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(Theme.PressRow())
+                            .disabled(part.phase == .downloading)
+                        }
+                    case .empty, .noProvider, .failed, .done:
+                        Text(verbatim: part.message ?? "")
+                            .font(Theme.listTitle).foregroundStyle(Theme.fontQuiet)
+                            .padding(.horizontal, PlayerMetric.inset).padding(.top, 16)
+                    }
+                }
+            }
+        }
+        .padding(.top, mass.top + mass.button)
+        .padding(.horizontal, mass.page)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        #if DEBUG
+        // The live run presses the first row on its own cue: the core has nothing new to say after the results, so the
+        // pick cannot wait for a change of the part.
+        .onReceive(NotificationCenter.default.publisher(for: LiveRun.pickSearchRow)) { _ in
+            if part.phase == .results, let first = part.rows.first { vm.send(intent: .download(id: first.id)) }
+        }
+        #endif
+        .task {
+            vm.send(intent: .search(language: nil))
+            part = vm.part()
+            var seen = part.version
+            while !Task.isCancelled {
+                _ = try? await vm.changed(seen: seen)
+                part = vm.part()
+                seen = part.version
+                #if DEBUG
+                LiveRun.searchSnapshot = (String(describing: part.phase), part.rows.map(\.title), part.message ?? "")
+                #endif
+                if part.phase == .done, !reported { reported = true; added(part.selectedTrack.map(Int.init)) }
+            }
+        }
+    }
+}
+
 // MARK: - Settings
 
 struct SettingLayer: View {
@@ -429,6 +638,8 @@ struct SettingLayer: View {
     /// Only in a group: who is in it, and the way out.
     var gemeinsam: SharedModel? = nil
     var groupLeave: () -> Void = {}
+    /// "Problem melden" (Seerr), only when the account may report; the player opens the report sheet.
+    var report: (() -> Void)? = nil
     let close: () -> Void
 
     @AppStorage("technikschild") private var techBadge = false
@@ -466,6 +677,7 @@ struct SettingLayer: View {
                 // **Two picture formats, not three.** The player knows the whole picture
                 // and fill-screen (also via two-finger gesture); a stretched picture does
                 // not exist.
+                SpeedColumn(surface: surface, mass: mass)
                 SelectionColumn(title: "Bild", mass: mass) {
                     LayersRow(text: String(localized: "Original"), selected: !fillFrame, mass: mass) {
                         fillFrame = false
@@ -493,6 +705,13 @@ struct SettingLayer: View {
                     }
                     LayersRow(text: String(localized: "An"), selected: techBadge, mass: mass) {
                         techBadge = true
+                    }
+                }
+                // **A problem with this film or episode** goes to the people who run the server. The place
+                // (season, episode, the position now) is filled in by the player.
+                if let report {
+                    SelectionColumn(title: "Problem", mass: mass) {
+                        LayersRow(text: String(localized: "Problem melden"), selected: false, mass: mass, action: report)
                     }
                 }
                 // **Quality: Direct Play or a cap.** A cap means the server may convert;
@@ -538,8 +757,23 @@ struct EpisodesLayer: View {
     let close: () -> Void
     let start: (Item) -> Void
 
-    @State private var seasons: [Item] = []
-    @State private var selectedSeason: Item?
+    let picker: SeasonPicker
+    /// The core's season button (its value is the open season); `nil` without the core: the old list shows.
+    var seasonButton: PlayerMenuValueRow?
+    @Binding var anchors: PlayerMenuAnchors
+    var openSeasons: () -> Void = {}
+    /// The panel's tabs (design: Folgen | Kapitel; a film has only Kapitel) and the chapter strip's data.
+    var tabs: [PlayerMenuPanelTab] = [.episodes]
+    var chapters: PlayerChapters?
+    var chapterPreview: (Double, PlayerPreview?) -> CGImage? = { _, _ in nil }
+    var jumpToChapter: (Int) -> Void = { _ in }
+    /// Design option C: the panel as a 372 x 321 box under the Folgen button (like the other menus) instead of the full layer.
+    var boxed = false
+    @Environment(\.menuMaxHeight) private var menuMaxHeight
+    @State private var tab: PlayerMenuPanelTab
+    @Namespace private var tabLine
+    private var seasons: [Item] { get { picker.seasons } nonmutating set { picker.seasons = newValue } }
+    private var selectedSeason: Item? { get { picker.selected } nonmutating set { picker.selected = newValue } }
     @State private var episodes: [Item] = []
     @State private var seasonListOpen = false
 
@@ -547,8 +781,22 @@ struct EpisodesLayer: View {
     /// player preloads it at start with `preload`) is in the states before
     /// the first frame; otherwise the episodes would pop in only after the
     /// fade-in.
-    init(model: AppModel, item: Item, title: String, mass: PlayerMetric,
+    init(model: AppModel, item: Item, title: String, mass: PlayerMetric, picker: SeasonPicker,
+         seasonButton: PlayerMenuValueRow?, anchors: Binding<PlayerMenuAnchors>, openSeasons: @escaping () -> Void,
+         tabs: [PlayerMenuPanelTab] = [.episodes], startTab: PlayerMenuPanelTab = .episodes, chapters: PlayerChapters? = nil,
+         chapterPreview: @escaping (Double, PlayerPreview?) -> CGImage? = { _, _ in nil },
+         jumpToChapter: @escaping (Int) -> Void = { _ in }, boxed: Bool = false,
          close: @escaping () -> Void, start: @escaping (Item) -> Void) {
+        self.boxed = boxed
+        self.tabs = tabs
+        self.chapters = chapters
+        self.chapterPreview = chapterPreview
+        self.jumpToChapter = jumpToChapter
+        _tab = State(initialValue: tabs.contains(startTab) ? startTab : (tabs.first ?? .episodes))
+        self.picker = picker
+        self.seasonButton = seasonButton
+        _anchors = anchors
+        self.openSeasons = openSeasons
         self.model = model
         self.item = item
         self.title = title
@@ -558,10 +806,9 @@ struct EpisodesLayer: View {
         guard let series = item.seriesId,
               let remembered = SeriesCache.shared.state(series, with: model),
               !remembered.seasons.isEmpty else { return }
-        let season = SeasonSelectionRule.choose(from: remembered.seasons, state: item)
-        _seasons = State(initialValue: remembered.seasons)
-        _selectedSeason = State(initialValue: season)
-        _episodes = State(initialValue: season.flatMap { remembered.episodes[$0.id] } ?? [])
+        // The init runs on every re-evaluation of the parent: a season the viewer already chose must stay.
+        picker.adopt(seasons: remembered.seasons, rule: SeasonSelectionRule.choose(from: remembered.seasons, state: item))
+        _episodes = State(initialValue: picker.selected.flatMap { remembered.episodes[$0.id] } ?? [])
     }
 
     /// Seasons and the running season's episodes into the store, called as
@@ -579,19 +826,23 @@ struct EpisodesLayer: View {
         SeriesCache.shared.remember(seriesKeyID) { $0.episodes[season.id] = episodes }
     }
 
-    var body: some View {
+    private var fullContent: some View {
         ZStack(alignment: .top) {
             LayersReason()
             VStack(alignment: .leading, spacing: 0) {
                 LayersHeader(mass: mass, close: close) {
-                    VStack(alignment: .leading, spacing: 3) {
+                    // Design (Player-Menüs, runde 2): title, then one row with the tabs and, on the Folgen tab, the season button.
+                    VStack(alignment: .leading, spacing: 10) {
                         // Placeholder: the title itself is in the player (`stateTitle`) and
                         // does not fade along.
                         Text(verbatim: title)
                             .font(.app(size: mass.title, weight: .semibold))
                             .lineLimit(1)
                             .hidden()
-                        if !seasons.isEmpty {
+                        HStack(alignment: .center, spacing: 16) {
+                            panelTabs
+                        }
+                        if tab == .episodes, seasonButton == nil, !seasons.isEmpty {
                             ExpandList(label: selectedSeason?.name
                                               ?? String(localized: "Staffel"),
                                           entries: seasons,
@@ -615,9 +866,13 @@ struct EpisodesLayer: View {
 
                 // The same strip as on Apple TV: landscape tiles side by side, the running
                 // episode marked and brought to the middle once the row is there.
+                ZStack(alignment: .topLeading) {
+                if tab == .chapters {
+                    chapterStrip.transition(.opacity)
+                } else {
                 ScrollViewReader { reader in
                     ScrollView(.horizontal) {
-                        LazyHStack(alignment: .center, spacing: 12) {
+                        LazyHStack(alignment: .bottom, spacing: 12) {
                             ForEach(episodes) { episode in
                                 Button { start(episode) } label: {
                                     EpisodeStripTile(model: model, episode: episode,
@@ -636,6 +891,7 @@ struct EpisodesLayer: View {
                         .padding(.horizontal, mass.page)
                     }
                     .scrollIndicators(.hidden)
+                    .fixedSize(horizontal: false, vertical: true)
                     // **The running episode in view** once the row is there. On opening it
                     // sits there right away; if the row arrives later (server, season
                     // change), it glides there, and with reduced motion it jumps.
@@ -653,8 +909,12 @@ struct EpisodesLayer: View {
                         if seasonListOpen { seasonListOpen = false }
                     })
                 }
-                // Clear gap to the season picker, as on Apple TV.
-                .padding(.top, 24)
+                .transition(.opacity)
+                }
+                }
+                .animation(Theme.motionReduced ? Theme.fadeReduced : .easeOut(duration: 0.15), value: tab)
+                // Design: the running tile's top sits 36 below the tab row.
+                .padding(.top, 36)
 
                 Spacer(minLength: 0)
             }
@@ -665,10 +925,181 @@ struct EpisodesLayer: View {
                     .onTapGesture { if seasonListOpen { seasonListOpen = false } }
             }
         }
-        .ignoresSafeArea(edges: mass.topSkip)
+    }
+
+    var body: some View {
+        Group { if boxed { boxContent } else { fullContent } }
+        .ignoresSafeArea(edges: boxed ? [] : mass.topSkip)
         .environment(\.wide, mass.pad)
         .accessibilityAction(.escape, close)
         .task { await load() }
+        #if DEBUG
+        // Scenario hook: a tap on the first tile of the strip (what a finger does), logged.
+        .onReceive(NotificationCenter.default.publisher(for: LiveRun.openLayer)) { note in
+            guard note.object as? String == "tapfirst", let first = episodes.first else { return }
+            LiveRun.event(["kind": "strip-tap", "episode": first.id, "season": selectedSeason?.id ?? "", "count": episodes.count])
+            start(first)
+        }
+        #endif
+        // A choice from the season box.
+        .onChange(of: picker.chosen) { _, id in
+            guard picker.takeChoice(id) != nil else { return }
+            Task { await episodesLoad(seasonSwitched: true) }
+        }
+    }
+
+    // MARK: Box (design option C)
+
+    private var boxContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            panelTabs
+                .padding(.leading, 10)
+                .frame(height: 46, alignment: .bottomLeading)
+                .padding(.bottom, 4)
+            ScrollViewReader { reader in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        if tab == .chapters {
+                            ForEach(chapters?.rows ?? [], id: \.index) { row in
+                                boxRow(id: Int(row.index), now: row.current,
+                                       title: row.title(numberTitle: chapters?.numberTitle ?? "Kapitel %lld"),
+                                       line: row.current ? "\(String(localized: "Läuft")) · \(row.startText)" : row.startText,
+                                       action: { jumpToChapter(Int(row.index)); close() }) {
+                                    Group {
+                                        if let image = chapterPreview(row.start, row.preview) {
+                                            Image(decorative: image, scale: 1).resizable().scaledToFill()
+                                        } else { Theme.area }
+                                    }
+                                    .frame(width: 100, height: 56)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                }
+                            }
+                        } else {
+                            ForEach(episodes) { episode in
+                                boxRow(id: episode.id, now: episode.id == item.id, title: episode.stripHeaderLine,
+                                       line: episode.stripDurationLine, action: { start(episode) }) {
+                                    Picture(url: model.imageURL(for: episode, maxHeight: 360)
+                                                   ?? model.landscapeImageURL(for: episode, width: 640),
+                                            width: 100, height: 56, corner: 8,
+                                            progress: episode.isWatched ? nil : episode.watchedShare) { Theme.area }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 20)
+                }
+                .scrollIndicators(.hidden)
+                .onChange(of: episodes.map(\.id), initial: true) { _, ids in
+                    if tab == .episodes, ids.contains(item.id) { reader.scrollTo(item.id, anchor: .center) }
+                }
+                .onAppear {
+                    if tab == .chapters, let now = chapters?.rows.first(where: \.current) { reader.scrollTo(Int(now.index), anchor: .center) }
+                }
+            }
+            .mask(LinearGradient(stops: [.init(color: .black, location: 0.86), .init(color: .clear, location: 1)],
+                                 startPoint: .top, endPoint: .bottom))
+            .animation(Theme.motionReduced ? Theme.fadeReduced : .easeOut(duration: 0.15), value: tab)
+        }
+        // The surface, edge and shadow are the menu box's (`MenuBox`): this is only what lies inside it.
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: min(MenuMetric.folgenHeight, menuMaxHeight))
+    }
+
+    private func boxRow<Still: View, ID: Hashable>(id: ID, now: Bool, title: String, line: String?, action: @escaping () -> Void,
+                                                   @ViewBuilder still: () -> Still) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                still().frame(width: 100, height: 56)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: title).font(.app(size: 13, weight: .semibold)).foregroundStyle(Theme.font)
+                        .lineLimit(2).multilineTextAlignment(.leading)
+                    if let line, !line.isEmpty {
+                        Text(verbatim: line).font(.app(size: 12)).foregroundStyle(now ? Theme.accent : Theme.fontVeryQuiet).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(8)
+            .background(now ? Theme.selected : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(Theme.PressButton())
+        .accessibilityAddTraits(now ? .isSelected : [])
+        .id(id)
+    }
+
+    /// Tabs "Folgen | Kapitel": 15 semibold, the open one white with a 2 pt line under it that glides to the other tab
+    /// (smooth 0.25), the other grey; 20 between the tabs, 5 between label and line.
+    private var panelTabs: some View {
+        HStack(alignment: .top, spacing: 20) {
+            ForEach(tabs, id: \.self) { t in
+                let on = t == tab
+                Button {
+                    // The first tab IS the season button: it opens the season list; from another tab it first comes back.
+                    if t == .episodes, seasonButton != nil, !seasons.isEmpty, on { openSeasons(); return }
+                    guard !on else { return }
+                    withAnimation(Theme.motionReduced ? Theme.fadeReduced : .smooth(duration: 0.25)) { tab = t }
+                } label: {
+                    HStack(spacing: 5) {
+                        if t == .episodes, let seasonButton {
+                            // "Staffel N ⌄" (the open season) in place of the word "Folgen", like the detail page's season picker.
+                            Text(verbatim: seasonButton.value.text)
+                                .contentTransition(.opacity)
+                            Image(icon: "chevron.down", size: 11).font(.app(size: 11, weight: .semibold))
+                        } else {
+                            Text(t == .episodes ? LocalizedStringKey("Folgen") : LocalizedStringKey("Kapitel"))
+                        }
+                    }
+                    .font(.app(size: 15, weight: .semibold))
+                    .foregroundStyle(on ? Theme.font : Theme.fontVeryQuiet)
+                    .padding(.bottom, 7)
+                    .overlay(alignment: .bottom) {
+                        if on { Theme.font.frame(height: 2).matchedGeometryEffect(id: "tabline", in: tabLine) }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(Theme.PressButton())
+                .background { if t == .episodes { Color.clear.menuAnchor(.seasons, into: $anchors) } }
+                .animation(Theme.toggle, value: t == .episodes ? seasonButton?.value.text : nil)
+                .accessibilityAddTraits(on ? .isSelected : [])
+                .accessibilityValue(Text(verbatim: t == .episodes ? (seasonButton?.value.text ?? "") : ""))
+            }
+        }
+    }
+
+    /// The chapter tiles in the same strip as the episodes: the running chapter larger, bottoms aligned.
+    private var chapterStrip: some View {
+        let rows = chapters?.rows ?? []
+        return ScrollViewReader { reader in
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .bottom, spacing: 12) {
+                    ForEach(rows, id: \.index) { row in
+                        Button { jumpToChapter(Int(row.index)); close() } label: {
+                            StripTile(width: mass.pad ? Theme.railsLandscapeWidth(wide: true) : 200,
+                                      height: mass.pad ? Theme.railsLandscapeHeight(wide: true) : 112, ongoing: row.current,
+                                      header: row.title(numberTitle: chapters?.numberTitle ?? "Kapitel %lld"),
+                                      line: row.current ? "\(String(localized: "Läuft")) · \(row.startText)" : row.startText) { w, h in
+                                Group {
+                                    if let image = chapterPreview(row.start, row.preview) {
+                                        Image(decorative: image, scale: 1).resizable().scaledToFill()
+                                    } else { Theme.area }
+                                }
+                                .frame(width: w, height: h)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                        }
+                        .buttonStyle(Theme.PressButton())
+                        .accessibilityAddTraits(row.current ? .isSelected : [])
+                        .id(row.index)
+                    }
+                }
+                .padding(.horizontal, mass.page)
+            }
+            .scrollIndicators(.hidden)
+            .fixedSize(horizontal: false, vertical: true)
+            .onAppear { if let now = rows.first(where: \.current) { reader.scrollTo(now.index, anchor: .center) } }
+        }
     }
 
     /// First what the series page's store already has, then fresh from the
@@ -677,7 +1108,9 @@ struct EpisodesLayer: View {
         guard let series = Item.preCommonSeries(toward: item) else { return }
         if let remembered = SeriesCache.shared.state(series.id, with: model), !remembered.seasons.isEmpty {
             seasons = remembered.seasons
-            selectedSeason = SeasonSelectionRule.choose(from: remembered.seasons, state: item)
+            // A season the viewer already chose stays; the rule only picks the first time.
+            selectedSeason = remembered.seasons.first(where: { $0.id == selectedSeason?.id })
+                ?? SeasonSelectionRule.choose(from: remembered.seasons, state: item)
             if let id = selectedSeason?.id, let list = remembered.episodes[id] { episodes = list }
         }
         // `nil` means disturbed: what the store had stays.
@@ -697,7 +1130,11 @@ struct EpisodesLayer: View {
         // the season has no episodes.
         guard let loaded = await model.episodes(series: series, season: season) else { return }
         // Whoever has chosen another season in the meantime gets its episodes.
-        guard season == selectedSeason?.id else { return }
+        guard season == selectedSeason?.id else {
+            AppLog.writeOut("[Staffel] episodes of \(season ?? "-") dropped, open is \(selectedSeason?.id ?? "-")")
+            return
+        }
+        AppLog.writeOut("[Staffel] episodes of \(season ?? "-") loaded: \(loaded.count)")
         if seasonSwitched {
             // The new season fades in instead of appearing abruptly. Arriving content
             // fades in over 0.28. Before it was easeOut 0.25: the same
@@ -719,26 +1156,14 @@ private struct EpisodeStripTile: View {
     let ongoing: Bool
     let pad: Bool
 
-    private var width: CGFloat { Theme.railsLandscapeWidth(wide: pad) }
-    private var height: CGFloat { Theme.railsLandscapeHeight(wide: pad) }
-
-    /// The running episode is this much larger than the others.
-    private let grow: CGFloat = 1.2
-    /// Picture, 8 gap, header line 16, gap 2, duration line 15.
-    private var tileHeight: CGFloat { height + 8 + 16 + 2 + 15 }
-
     var body: some View {
-        content
-            .scaleEffect(ongoing ? grow : 1)
-            // The layout grows with it, so neighbours move aside and the row is centered.
-            .frame(width: width * (ongoing ? grow : 1), height: tileHeight * (ongoing ? grow : 1))
-    }
-
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        StripTile(width: pad ? Theme.railsLandscapeWidth(wide: true) : 200,
+                  height: pad ? Theme.railsLandscapeHeight(wide: true) : 112, ongoing: ongoing,
+                  header: episode.stripHeaderLine, line: episode.stripDurationLine,
+                  watched: episode.isWatched) { w, h in
             Picture(url: model.imageURL(for: episode, maxHeight: 360)
                            ?? model.landscapeImageURL(for: episode, width: 640),
-                    width: width, height: height, corner: Theme.cornerTile,
+                    width: w, height: h, corner: 10,
                     // A full bar and a check mark would say the same twice.
                     progress: episode.isWatched ? nil : episode.watchedShare) {
                 Theme.area.overlay {
@@ -747,29 +1172,45 @@ private struct EpisodeStripTile: View {
                         .foregroundStyle(Theme.font)
                 }
             }
-            .overlay(alignment: .topTrailing) {
-                if episode.isWatched { TileBadge(mark: .watched) }
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: episode.stripHeaderLine)
-                    .font(Theme.tile)
-                    .foregroundStyle(Theme.font)
-                    .lineLimit(1)
-                    .frame(height: 16, alignment: .leading)
-                if let line = episode.stripDurationLine {
-                    Text(verbatim: line)
-                        .font(Theme.small)
-                        .foregroundStyle(Theme.fontVeryQuiet)
-                        .lineLimit(1)
-                        .frame(height: 15, alignment: .leading)
-                }
-            }
-            .frame(width: width, alignment: .leading)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: episode.stripHeaderLine))
         .accessibilityValue(Text(verbatim: [episode.stripDurationLine, episode.tileState]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")))
+    }
+}
+
+/// **One tile of the panel's strip** (design: still 200 x 112, radius 10; the running one 230 x 129, so 1.15 larger; 8 below
+/// it the header 13 semibold and the line 12 regular, 2 apart; the text is the same size on every tile and the stills sit
+/// on one bottom edge).
+private struct StripTile<Still: View>: View {
+    let width: CGFloat
+    let height: CGFloat
+    let ongoing: Bool
+    let header: String
+    var line: String?
+    var watched = false
+    @ViewBuilder let still: (CGFloat, CGFloat) -> Still
+
+    private let grow: CGFloat = 1.15
+
+    var body: some View {
+        let w = width * (ongoing ? grow : 1), h = height * (ongoing ? grow : 1)
+        VStack(alignment: .leading, spacing: 8) {
+            still(w, h)
+                .overlay(alignment: .topTrailing) { if watched { TileBadge(mark: .watched) } }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: header).font(.app(size: 13, weight: .semibold)).foregroundStyle(Theme.font)
+                    .lineLimit(1).frame(height: 16, alignment: .leading)
+                if let line {
+                    Text(verbatim: line).font(.app(size: 12)).foregroundStyle(Theme.fontVeryQuiet)
+                        .lineLimit(1).frame(height: 15, alignment: .leading)
+                }
+            }
+            .frame(width: w, alignment: .leading)
+        }
+        .frame(width: w, alignment: .leading)
+        .animation(Theme.motionReduced ? Theme.fadeReduced : .smooth(duration: 0.25), value: ongoing)
     }
 }
 
@@ -779,4 +1220,52 @@ struct QualitySelection {
     let directPlay: Bool
     let limit: Int
     let select: (Int?) -> Void
+}
+
+/// The chapter list: the core's rows (name or "Kapitel n", start, preview tile, running one marked); a tap sends the jump.
+struct ChaptersLayer: View {
+    let surface: VLCPlayerView?
+    let mass: PlayerMetric
+    /// The trickplay image for a start and the core's tile; `nil` without trickplay.
+    let preview: (Double, PlayerPreview?) -> CGImage?
+    let close: () -> Void
+
+    var body: some View {
+        let part = surface?.coreChapters
+        ZStack(alignment: .top) {
+            LayersReason()
+            ColumnsRail(mass: mass) {
+                SelectionColumn(title: LocalizedStringKey(part?.title ?? "Kapitel"), mass: mass, wide: true) {
+                    ForEach(part?.rows ?? [], id: \.index) { row in
+                        ChapterListRow(row: row, numberTitle: part?.numberTitle ?? "Kapitel %lld", mass: mass,
+                                       image: preview(row.start, row.preview)) {
+                            surface?.coreJump(toChapter: Int(row.index))
+                            close()
+                        }
+                    }
+                }
+            }
+            LayersHeader(mass: mass, close: close) { EmptyView() }
+        }
+        .ignoresSafeArea(edges: mass.topSkip)
+        .accessibilityAction(.escape, close)
+    }
+}
+
+/// The button around the shared row (`ChapterRowContent`): white on the layer's dark ground.
+private struct ChapterListRow: View {
+    let row: PlayerChapterRow
+    let numberTitle: String
+    let mass: PlayerMetric
+    let image: CGImage?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ChapterRowContent(row: row, numberTitle: numberTitle, image: image, look: .phone(pad: mass.pad))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .accessibilityAddTraits(row.current ? .isSelected : [])
+    }
 }

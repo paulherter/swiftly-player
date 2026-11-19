@@ -43,17 +43,31 @@ pub struct TakeoverRowInfo {
     pub title: String,
 }
 
+pub(crate) fn device_of(kind: DevicesKind) -> TakeoverDevice {
+    match kind {
+        DevicesKind::Phone => TakeoverDevice::Phone,
+        DevicesKind::Tablet => TakeoverDevice::Tablet,
+        DevicesKind::Computer => TakeoverDevice::Computer,
+        DevicesKind::Tv => TakeoverDevice::Tv,
+        DevicesKind::Unknown => TakeoverDevice::Unknown,
+    }
+}
+
+pub(crate) fn kind_of(device: TakeoverDevice) -> DevicesKind {
+    match device {
+        TakeoverDevice::Phone => DevicesKind::Phone,
+        TakeoverDevice::Tablet => DevicesKind::Tablet,
+        TakeoverDevice::Computer => DevicesKind::Computer,
+        TakeoverDevice::Tv => DevicesKind::Tv,
+        TakeoverDevice::Unknown => DevicesKind::Unknown,
+    }
+}
+
 fn row_info(r: TakeoverRow) -> TakeoverRowInfo {
     TakeoverRowInfo {
         id: r.id,
         device: r.device,
-        kind: match r.kind {
-            DevicesKind::Phone => TakeoverDevice::Phone,
-            DevicesKind::Tablet => TakeoverDevice::Tablet,
-            DevicesKind::Computer => TakeoverDevice::Computer,
-            DevicesKind::Tv => TakeoverDevice::Tv,
-            DevicesKind::Unknown => TakeoverDevice::Unknown,
-        },
+        kind: device_of(r.kind),
         title: r.title,
     }
 }

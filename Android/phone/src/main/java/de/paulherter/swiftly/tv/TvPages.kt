@@ -72,8 +72,15 @@ import org.json.JSONArray
 @Composable
 fun firstFocus(ready: Boolean = true): FocusRequester {
     val f = remember { FocusRequester() }
-    // Double deadline: the whole page must exist here, not just one button.
-    LaunchedEffect(ready) { if (ready) { delay(2 * TvTheme.focusDeadline); runCatching { f.requestFocus() } } }
+    // Focus goes to the page in the frame after it first appeared complete, not 60 ms later: a Select pressed right after the
+    // page opened (a script, a quick thumb) landed on nothing and did nothing, only the second press worked. Only when the target
+    // is not attached yet (a lazily built page) it waits the double deadline and tries again.
+    LaunchedEffect(ready) {
+        if (!ready) return@LaunchedEffect
+        androidx.compose.runtime.withFrameNanos { }
+        if (runCatching { f.requestFocus(); true }.getOrDefault(false)) return@LaunchedEffect
+        delay(2 * TvTheme.focusDeadline); runCatching { f.requestFocus() }
+    }
     return f
 }
 
@@ -245,7 +252,10 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
     val run = rememberCoroutineScope()
     LaunchedEffect(state.sorting, state.filter) { state.load(app.rk) }
     // A filter the panel no longer offers (the watchlist, switched off) falls back to "all".
-    LaunchedEffect(filter) { if (state.filter !in filter) state.filterSet("alle") }
+    LaunchedEffect(filter) { if (app.rk.filterStatus(state.filter) !in filter) state.filterSet("alle") }
+    // The filter panel draws the core's rows (decades, languages, status); they are re-read whenever the value or the scope
+    // changes, so the panel is current when it opens (the years and languages are fetched when it opens).
+    LaunchedEffect(state.filter, state.choice) { state.sheetRead(app.rk, filter) }
     de.paulherter.swiftly.WatchStateChange(app) { state.load(app.rk) }
     val collections = state.listSelected
     val focus = firstFocus(!state.loads || collections)
@@ -283,9 +293,12 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
                     // row anymore. Each names the value and expands the choice under itself; the selected row carries
                     // the accent.
                     if (!collections) {
-                        val filterSelection = filter.map { Choice(it, Choices.text(Choices.filter, it)) }
-                        TvCapsuleWithPanel(Choices.text(Choices.filter, state.filter), Glyph.Filter,
-                                         filterSelection, state.filter) { state.filterSet(it) }
+                        val rows = state.sheetRows
+                        TvCapsuleWithPanel(state.pill(app.rk), Glyph.Filter, rows?.entries.orEmpty(), "",
+                                         categories = rows?.headings.orEmpty(), ticked = rows?.ticked, inactive = rows?.inactive.orEmpty(),
+                                         onOpened = { run.launch { state.sheetOpened(app.rk, filter) {} } }) { value ->
+                            rows?.let { state.sheetPick(app.rk, it, value) }
+                        }
                         TvCapsuleWithPanel(Choices.text(Choices.sortings, state.sorting), Glyph.Sort,
                                          Choices.sortings, state.sorting) { state.sortingSet(it) }
                     }
@@ -358,7 +371,13 @@ fun TvLibrary(app: SwiftlyApplication, art: String, filter: List<String>, open: 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun TvCapsuleWithPanel(text: String, symbol: Glyph?, entries: List<Choice>, selected: String,
-                             categories: Map<String, String> = emptyMap(), select: (String) -> Unit) {
+                             categories: Map<String, String> = emptyMap(),
+                             /** Several rows ticked at once (the filter panel); then `selected` is ignored. */
+                             ticked: Set<String>? = null,
+                             /** Rows that show but do nothing (the filter panel's "loading" line). */
+                             inactive: Set<String> = emptySet(),
+                             /** The panel is about to open. */
+                             onOpened: () -> Unit = {}, select: (String) -> Unit) {
     var opened by remember { mutableStateOf(false) }
     val capsule = remember { FocusRequester() }
     // `exit = Cancel` also blocks programmatic `requestFocus` to the outside; `sharing` opens the
@@ -373,7 +392,7 @@ private fun TvCapsuleWithPanel(text: String, symbol: Glyph?, entries: List<Choic
     val padding = with(LocalDensity.current) { 8.dp.roundToPx() }
     Box {
         TvCapsule(text, Modifier.focusRequester(capsule), symbol = symbol, active = opened) {
-            if (opened) close() else { sharing[0] = false; opened = true }
+            if (opened) close() else { sharing[0] = false; onOpened(); opened = true }
         }
         if (opened) {
             BackHandler(onBack = { close() })
@@ -411,12 +430,14 @@ private fun TvCapsuleWithPanel(text: String, symbol: Glyph?, entries: List<Choic
                                 Text(over.uppercase(), style = Theme.group, color = Theme.fontVeryQuiet,
                                      modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp))
                             }
-                            val an = e.value == selected
+                            val an = if (ticked != null) e.value in ticked else e.value == selected
                             TvMenuRow(e.text, check = an, selected = an,
                                     modifier = (if (i == 0) Modifier.focusRequester(first) else Modifier)
                                         .semantics { this.selected = an }) {
-                                close()
-                                select(e.value)
+                                if (e.value !in inactive) {
+                                    close()
+                                    select(e.value)
+                                }
                             }
                         }
                     }

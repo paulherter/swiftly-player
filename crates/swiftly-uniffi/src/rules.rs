@@ -124,6 +124,23 @@ impl SubtitleCueIndex {
     }
 }
 
+/// The end each cue is shown until, one per `(starts[i], ends[i])` in the same order: a gap under the chain limit is
+/// bridged so the text swaps at once (one decision for every renderer, see `subtitle_cues::chain_ends`).
+#[uniffi::export]
+pub fn subtitle_chain_ends(starts: Vec<f64>, ends: Vec<f64>) -> Vec<f64> {
+    let spans: Vec<(f64, f64)> = starts.iter().copied().zip(ends.iter().copied()).collect();
+    let mut shown = swiftly_playback::subtitle_cues::chain_ends(&spans);
+    // A list that is longer on one side keeps its own ends for the unpaired rest.
+    shown.extend(ends.iter().skip(spans.len()));
+    shown
+}
+
+/// The gap (milliseconds) under which two cues chain; from this length on the fade of a pause stays.
+#[uniffi::export]
+pub fn subtitle_chain_gap_ms() -> u32 {
+    swiftly_playback::subtitle_cues::CHAIN_GAP_MS
+}
+
 /// Whether an audio track is the title's original language: the stream's own flag wins,
 /// otherwise the language is compared with the title's `OriginalLanguage`.
 #[uniffi::export]
@@ -199,12 +216,31 @@ pub fn delay_for_new_title(
     .milliseconds()
 }
 
+/// Automatic subtitles (`utAuto`) are on until the settings turn them off: the default a host passes when it finds no
+/// stored value (the start rule and the settings page use the same one).
+#[uniffi::export]
+pub fn automatic_subtitles_default() -> bool {
+    swiftly_playback::track_rule::AUTOMATIC_SUBTITLES_DEFAULT
+}
+
 /// The one-time migration of the subtitle language to the "automatic" switch (`utAuto`): a
 /// language chosen before the switch existed never took effect, so the switch goes on once.
 /// Call at every start; it does its work once. Returns the resulting `utAuto`.
 #[uniffi::export]
 pub fn migrate_subtitle_auto(store: Arc<dyn SettingsStore>) -> bool {
     migrate_on(Backing::Native(store))
+}
+
+/// What the core takes from the stored settings at start (the subtitle migration above and the switches the core reads
+/// where no store is at hand: "Leere Serien ausblenden", "Löschen vom Server sperren"). Every host calls it once when the
+/// core is created, before the first list is loaded; the settings page is not needed for a saved value to count.
+#[uniffi::export]
+pub fn apply_stored_settings(store: Arc<dyn SettingsStore>) {
+    apply_stored_on(Backing::Native(store));
+}
+
+pub(crate) fn apply_stored_on(backing: Backing) {
+    swiftly_vm::apply_stored_settings(&Settings::new(backing));
 }
 
 pub(crate) fn migrate_on(backing: Backing) -> bool {

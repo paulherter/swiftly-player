@@ -87,6 +87,22 @@ class TvActivity : ComponentActivity() {
                     phase = Phase.Start
                 }.onFailure { android.util.Log.w("Swiftly", "testServer sign-in failed: $it") }
             }
+            // Debug builds only: connect Seerr to a fixture by launch extra (`testSeerr` = address), no sign-in screen.
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                val address = intent?.getStringExtra("testSeerr")
+                if (!de.paulherter.swiftly.BuildConfig.DEBUG || address == null) return@LaunchedEffect
+                while (app.accountId().isEmpty()) kotlinx.coroutines.delay(500)
+                app.seerrRemember(org.json.JSONObject().put("adresse", address).put("keks", "connect.sid=fixture").toString())
+            }
+            // Debug builds only: open one page cold by launch extra (`testOpen` = Type:id), `testSheet` opens its request sheet, as in `MainActivity`.
+            LaunchedEffect(Unit) {
+                val spec = intent?.getStringExtra("testOpen")
+                if (!de.paulherter.swiftly.BuildConfig.DEBUG || spec.isNullOrEmpty()) return@LaunchedEffect
+                app.debugSheet = intent?.getStringExtra("testSheet") == "1"
+                while (app.accountId().isEmpty() || (spec.startsWith("Seerrtitel") && !app.seerrConnected.value)) delay(500)
+                delay(4000)
+                app.debugOpen.value = de.paulherter.swiftly.Destination(spec.substringAfter(':'), "", spec.substringBefore(':'))
+            }
             // Debug builds only: start playback of one item by launch extra (`testPlay` = item id), no taps, as in `MainActivity`.
             LaunchedEffect(Unit) {
                 val id = intent?.getStringExtra("testPlay")

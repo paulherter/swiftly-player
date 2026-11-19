@@ -14,11 +14,14 @@ use std::sync::Arc;
 use swiftly_design::tokens::{colour, desktop, touch};
 use swiftly_layout::{Align, Alignment, Axis};
 use swiftly_library::library_filter::Sorting;
-use swiftly_library::{LibraryFilter, MemoryKeyValue, RememberGenre, ShelfSource, SortingExt};
+use swiftly_library::{
+    FilterChoice, LibraryFilter, MemoryKeyValue, RememberGenre, SheetLine, ShelfSource, SortingExt,
+};
 use swiftly_render::{Color, DrawList, RgbaImage};
 use swiftly_rules::alphabet_index::{AlphabetIndex, Entry as IndexEntry};
 use swiftly_ui::components::color;
 use swiftly_ui::icons::Icons;
+use swiftly_ui::popover::{Anchor, MenuEntry, MenuItem};
 use swiftly_ui::{Action, Cx, Env, Node, Ui, UiEvent};
 use swiftly_vm::{
     GridPart, LibraryIntent, LibraryList, LibrarySpec, LibraryStatus, LibraryStatusPart, LibraryVm,
@@ -107,9 +110,33 @@ enum Open {
     Load(String),
 }
 
+/// What the filter pill and the filter sheet show: all of it comes from the core (`FilterSheet`), the screen only
+/// draws it and hands a line's `choice` back to `LibraryVm::pick`.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct FilterView {
+    /// The sheet's title.
+    title: String,
+    /// The pill's text (status, year span, language).
+    pill: String,
+    /// The rows of all groups, the group headings on their first line.
+    lines: Vec<SheetLine>,
+}
+
+impl FilterView {
+    fn of(vm: &LibraryVm<AppTransport>) -> FilterView {
+        let sheet = vm.filter_sheet(&LibraryFilter::ALL);
+        FilterView {
+            lines: sheet.flat_rows(),
+            title: sheet.title,
+            pill: sheet.pill,
+        }
+    }
+}
+
 #[derive(Clone, PartialEq)]
 struct Parts {
     status: Arc<LibraryStatusPart>,
+    filter: Arc<FilterView>,
     grid: Arc<GridPart>,
     bar: Bar,
     open: Open,
@@ -143,6 +170,11 @@ struct Ctx {
     title: String,
 }
 
+/// Whether the list is narrowed by anything: the status, a year span or a language.
+fn narrowed(status: &LibraryStatusPart) -> bool {
+    status.filter != LibraryFilter::All || status.years.is_some() || status.language.is_some()
+}
+
 fn label<T: PartialEq + Copy>(all: &[(T, &'static str)], v: T) -> &'static str {
     all.iter().find(|(x, _)| *x == v).map_or("", |(_, l)| l)
 }
@@ -164,7 +196,10 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
             Align::Center,
             Some(8.0),
             vec![
-                browse::heading(cx, &m, shown_title).padding(ins(0.0, 0.0, 0.0, -m.edge)),
+                // The title and its chevron keep the title's own width (`fixedSize`), whatever the row proposes.
+                browse::heading(cx, &m, shown_title)
+                    .fixed_size(true, false)
+                    .padding(ins(0.0, 0.0, 0.0, -m.edge)),
                 ctx.icons
                     .node("caret-down", 14.0, true, color(colour::FONT_QUIET)),
             ],
@@ -200,13 +235,7 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                         "lib.kind",
                     )
                 } else {
-                    browse::popup_chip(
-                        cx,
-                        &ctx.icons,
-                        None,
-                        label(&FILTERS, p.status.filter),
-                        "lib.filter",
-                    )
+                    browse::popup_chip(cx, &ctx.icons, None, &p.filter.pill, "lib.filter")
                 });
                 row.push(browse::popup_chip(
                     cx,
@@ -229,7 +258,7 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                     cx,
                     &ctx.icons,
                     "funnel",
-                    label(&FILTERS, p.status.filter),
+                    &p.filter.pill,
                     "lib.filter",
                     tv,
                 ));
@@ -307,7 +336,7 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
             .padding(ins(80.0, 0.0, 0.0, 0.0)),
         ),
         (_, true) => {
-            let narrowed = p.status.filter != LibraryFilter::All;
+            let narrowed = narrowed(&p.status);
             col.push(
                 empty_state(
                     cx,
@@ -315,7 +344,7 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                     if narrowed { "funnel" } else { "tray" },
                     if narrowed { "Nichts gefunden" } else { "Hier ist noch nichts" },
                     &if narrowed {
-                        format!("Unter \u{201E}{}\u{201C} liegt gerade nichts. Nimm einen anderen Filter.", label(&FILTERS, p.status.filter))
+                        format!("Unter \u{201E}{}\u{201C} liegt gerade nichts. Nimm einen anderen Filter.", p.filter.pill)
                     } else {
                         "Sobald in dieser Bibliothek etwas liegt, taucht es hier auf.".to_owned()
                     },
@@ -462,21 +491,34 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
             "pick.s.",
             true,
         )),
-        Open::Filter => Some(browse::sheet(
-            cx,
-            &ctx.icons,
-            &m,
-            "Filtern",
-            &FILTERS
+        Open::Filter => {
+            let rows: Vec<SheetRow> = p
+                .filter
+                .lines
                 .iter()
-                .map(|(f, l)| SheetRow {
-                    label: (*l).into(),
-                    selected: *f == p.status.filter,
+                .map(|l| SheetRow {
+                    label: l.label.clone(),
+                    selected: l.selected,
                 })
-                .collect::<Vec<_>>(),
-            "pick.f.",
-            true,
-        )),
+                .collect();
+            let heads: Vec<(usize, String)> = p
+                .filter
+                .lines
+                .iter()
+                .enumerate()
+                .filter_map(|(i, l)| l.heading.clone().map(|h| (i, h)))
+                .collect();
+            Some(browse::sheet_with(
+                cx,
+                &ctx.icons,
+                &m,
+                &p.filter.title,
+                &rows,
+                "pick.f.",
+                true,
+                &heads,
+            ))
+        }
         Open::Kind => Some(browse::sheet(
             cx,
             &ctx.icons,
@@ -606,6 +648,9 @@ pub struct LibraryScreen {
     pop: crate::desk::Pop,
     hub: crate::hub::HubSlot,
     vm: LibraryVm<AppTransport>,
+    /// The core's filter pill and sheet, rebuilt when the status changed (`filter_seen` is its version).
+    filter: Arc<FilterView>,
+    filter_seen: u64,
     tab: usize,
     open: Open,
     favourites: Vec<String>,
@@ -703,7 +748,9 @@ impl LibraryScreen {
             title: kind.title().to_owned(),
         };
         let tab = kind.tab();
+        let filter = Arc::new(FilterView::of(&vm));
         let parts = Parts {
+            filter: Arc::clone(&filter),
             status: vm.status(),
             grid: vm.grid(),
             bar: Bar {
@@ -746,6 +793,8 @@ impl LibraryScreen {
             ui,
             hub,
             vm,
+            filter,
+            filter_seen: 0,
             tab,
             open: Open::None,
             favourites: Vec::new(),
@@ -888,6 +937,41 @@ impl LibraryScreen {
             "kind" => Open::Kind,
             id => Open::Menu(id.to_owned()),
         };
+        if self.open == Open::Filter {
+            self.open_filter();
+        }
+    }
+
+    /// The filter sheet is about to show: the core fetches the decades and languages (rows follow while it loads) and the
+    /// screen takes its rows. On desktop the pill opens a popover with them.
+    fn open_filter(&mut self) {
+        self.vm.send(LibraryIntent::LoadFilterOptions);
+        self.refresh_filter();
+        if Form::of(self.ui.env().idiom) == Form::Desktop {
+            self.open_popover("lib.filter");
+        }
+    }
+
+    /// Takes the core's pill and sheet again when the status changed (a pick, the facets arriving). True when they changed.
+    fn refresh_filter(&mut self) -> bool {
+        let seen = self.vm.status().version;
+        if seen == self.filter_seen {
+            return false;
+        }
+        self.filter_seen = seen;
+        let fresh = FilterView::of(&self.vm);
+        if *self.filter == fresh {
+            return false;
+        }
+        self.filter = Arc::new(fresh);
+        true
+    }
+
+    /// Back to every title: no status, no year span, no language.
+    fn clear_filters(&mut self) {
+        self.vm.pick(FilterChoice::Years(None));
+        self.vm.pick(FilterChoice::Language(None));
+        self.vm.pick(FilterChoice::Status(LibraryFilter::All));
     }
     /// The tab the bar shows (changes when a bar entry is tapped).
     pub fn tab(&self) -> usize {
@@ -993,7 +1077,8 @@ impl LibraryScreen {
         let Some((_, _, index)) = self.index.clone() else {
             return;
         };
-        if let Some(i) = self.vm.jump_target(&key, &index) {
+        let loaded = self.vm.grid().tiles.len();
+        if let Some(i) = self.vm.jump_target(&key, &index).filter(|i| *i < loaded) {
             let (m, g, row_h, grid_top) = self.geometry();
             let y = f64::from(grid_top + (i / g.columns) as f32 * row_h - (m.top - 8.0));
             let now = self.now;
@@ -1095,7 +1180,12 @@ impl LibraryScreen {
         } else {
             ((self.offset() as f32 / 30.0).clamp(0.0, 1.0) * 8.0).round() as u8
         };
+        // The facets of the filter sheet arrive after it opened: the open popover takes the new rows.
+        if self.refresh_filter() && self.open == Open::Filter && self.pop.is_open() {
+            self.open_popover("lib.filter");
+        }
         self.ui.set_parts(Parts {
+            filter: Arc::clone(&self.filter),
             status,
             grid,
             bar: Bar {
@@ -1168,6 +1258,38 @@ impl LibraryScreen {
         }
     }
 
+    /// The core's filter sheet as a popover under the pill: each group's heading is a quiet row after a hairline, the
+    /// rows report `pick.f.<line>`, a group still loading is one greyed row.
+    fn open_filter_popover(&mut self, button: [f32; 4]) {
+        let mut entries = Vec::new();
+        for (i, line) in self.filter.lines.iter().enumerate() {
+            if let Some(heading) = &line.heading {
+                if i > 0 {
+                    entries.push(MenuEntry::Separator);
+                }
+                entries.push(MenuEntry::Item(
+                    MenuItem::new(Action::from("lib.heading"), heading.as_str()).disabled(),
+                ));
+            }
+            let item = MenuItem::new(
+                Action::from(format!("pick.f.{i}").as_str()),
+                line.label.as_str(),
+            )
+            .checked(line.selected);
+            entries.push(MenuEntry::Item(if line.choice.is_some() {
+                item
+            } else {
+                item.disabled()
+            }));
+        }
+        let below = [button[0], button[1] + 8.0, button[2], button[3]];
+        let anchor = Anchor::Button(swiftly_layout::Rect::new(
+            below[0], below[1], below[2], below[3],
+        ));
+        self.pop
+            .open(entries, anchor, swiftly_ui::feel::DROPDOWN_WIDTH);
+    }
+
     /// Desktop: the pill or title opens an anchored popover whose rows report the sheet's `pick.*` actions.
     fn open_popover(&mut self, which: &str) {
         let Some(button) = self.ui.frame_of(which) else {
@@ -1175,12 +1297,8 @@ impl LibraryScreen {
         };
         let rows: Vec<(String, String, bool)> = match which {
             "lib.filter" => {
-                let cur = self.vm.status().filter;
-                FILTERS
-                    .iter()
-                    .enumerate()
-                    .map(|(i, (f, l))| (format!("pick.f.{i}"), (*l).to_owned(), *f == cur))
-                    .collect()
+                self.open_filter_popover(button);
+                return;
             }
             "lib.kind" => {
                 let cur = self.remember;
@@ -1235,13 +1353,18 @@ impl LibraryScreen {
                 (Open::Section, "lib.title")
             };
             self.open = open;
-            self.open_popover(which);
+            if is("lib.filter") {
+                self.open_filter();
+            } else {
+                self.open_popover(which);
+            }
             return;
         }
         if is("sheet.close") {
             self.open = Open::None;
         } else if is("lib.filter") {
             self.open = Open::Filter;
+            self.open_filter();
         } else if is("lib.sort") {
             self.open = Open::Sort;
         } else if is("lib.kind") {
@@ -1250,11 +1373,10 @@ impl LibraryScreen {
             self.open = Open::Section;
         } else if is("retry") || is("more") {
             self.refreshes += 1;
-            let narrowed = self.vm.status().filter != LibraryFilter::All;
-            if narrowed && is("retry") && !self.vm.grid().tiles.is_empty() {
-                self.vm.send(LibraryIntent::SetFilter {
-                    filter: LibraryFilter::All,
-                });
+            let status = self.vm.status();
+            // "Filter zurücksetzen" of the empty page: the status, the years and the language all go.
+            if narrowed(&status) && is("retry") && status.status == LibraryStatus::Empty {
+                self.clear_filters();
             } else {
                 self.vm.send(if is("more") {
                     LibraryIntent::LoadMore
@@ -1273,9 +1395,13 @@ impl LibraryScreen {
                 }
             }
         }
-        for (i, (f, _)) in FILTERS.iter().enumerate() {
-            if is(&format!("pick.f.{i}")) {
-                self.vm.send(LibraryIntent::SetFilter { filter: *f });
+        // A row of the core's filter sheet: the line's choice goes to the core as it is.
+        let lines = Arc::clone(&self.filter);
+        for (i, line) in lines.lines.iter().enumerate() {
+            if let Some(choice) = &line.choice
+                && is(&format!("pick.f.{i}"))
+            {
+                self.vm.pick(choice.clone());
                 self.open = Open::None;
             }
         }
@@ -1334,6 +1460,9 @@ impl LibraryScreen {
                         self.vm
                             .send(LibraryIntent::SetWatchlist { id: id.clone(), on });
                         crate::desk::note_list_change();
+                    }
+                    Entry::Load if crate::live::current().is_some() => {
+                        crate::desk::request_download(&id);
                     }
                     Entry::Load => {
                         self.load = LoadSpec::demo(tile.as_ref().map_or("", |t| t.title.as_str()));
@@ -1655,12 +1784,13 @@ fn fetch_offering(
     crate::login_screen::Pending<Offered>,
     std::sync::mpsc::Receiver<(String, Vec<swiftly_vm::ImageRef>)>,
 ) {
-    use swiftly_library::CollectionDirectory;
     let (tx, rx) = crate::login_screen::Pending::channel();
     let (mosaic_tx, mosaic_rx) = std::sync::mpsc::channel();
     let art = if series { "tvshows" } else { "movies" };
     let client = w.core.client_for(&w.account).ok();
-    let locale = w.core.host().locale;
+    let host = w.core.host();
+    let locale = host.locale.clone();
+    let account = w.account.clone();
     if let Ok(server) = w.core.server_for(&w.account) {
         w.core.spawn(async move {
             let Ok((views, shares)) = crate::live_server::views_and_shares(&server).await else {
@@ -1668,14 +1798,9 @@ fn fetch_offering(
             };
             let (mut directory, mut playlists) = (None, None);
             if let Some(c) = &client {
-                let with_hidden = c.user_views(true).await.unwrap_or_else(|_| views.clone());
-                directory = if CollectionDirectory::hidden(&views, &with_hidden) {
-                    Some(CollectionDirectory::default())
-                } else {
-                    swiftly_library::client_ext::collection_directory(c, &with_hidden)
-                        .await
-                        .ok()
-                };
+                // The collections are the account's shared directory (the core keeps it for a minute for the home page,
+                // the detail pages and this one): a library page that opens right after another asks nothing again.
+                directory = swiftly_vm::account_directory(c, &host, &account).await;
                 playlists = swiftly_library::client_ext::playlist_directory(c)
                     .await
                     .ok();
@@ -1760,5 +1885,139 @@ fn live_spec(kind: &Kind) -> LibrarySpec {
             Kind::Watchlist => Some("merkliste".to_owned()),
             _ => None,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swiftly_layout::Size;
+    use swiftly_ui::Idiom;
+
+    fn screen(idiom: Idiom, size: Size) -> LibraryScreen {
+        let env = Env::new(size, 1.0, idiom);
+        let mut s = LibraryScreen::new(env, Cx::deterministic(), &Kind::Movies, Scenario::Ready);
+        let _ = s.frame(0.0);
+        s
+    }
+
+    /// Frames until the core has the sheet's decades and languages (they arrive from a pool thread).
+    fn until_facets(s: &mut LibraryScreen) {
+        let started = std::time::Instant::now();
+        let mut now = 0.0;
+        while s.filter.lines.iter().any(|l| l.choice.is_none()) || s.filter.lines.len() < 8 {
+            assert!(
+                started.elapsed().as_secs() < 10,
+                "the facets did not arrive"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            now += 16.0;
+            let _ = s.frame(now);
+        }
+    }
+
+    fn line_of(s: &LibraryScreen, label: &str) -> usize {
+        s.filter
+            .lines
+            .iter()
+            .position(|l| l.label == label)
+            .unwrap_or_else(|| panic!("no line {label}: {:?}", s.filter.lines))
+    }
+
+    #[test]
+    fn the_desktop_popover_shows_the_cores_rows_and_the_picks_combine() {
+        let mut s = screen(Idiom::Desktop, Size::new(1280.0, 800.0));
+        assert_eq!(s.filter.pill, "Alle");
+        s.show("filter");
+        assert!(s.pop.is_open(), "the pill opens the popover");
+        until_facets(&mut s);
+        let text: Vec<_> = s
+            .filter
+            .lines
+            .iter()
+            .map(|l| (l.heading.as_deref(), l.label.as_str()))
+            .collect();
+        assert_eq!(
+            text[..4],
+            [
+                (None, "Alle"),
+                (None, "Angefangen"),
+                (None, "Merkliste"),
+                (None, "Ungesehen")
+            ]
+        );
+        assert_eq!(
+            text[4..7],
+            [
+                (Some("Erscheinungsjahr"), "Alle Jahre"),
+                (None, "2020\u{2013}2029"),
+                (None, "2010\u{2013}2019"),
+            ]
+        );
+        assert!(
+            text.contains(&(Some("Sprache"), "Alle Sprachen")),
+            "{text:?}"
+        );
+
+        // A decade, then a language, then a status: each one stays when the next is picked.
+        let decade = line_of(&s, "2010\u{2013}2019");
+        s.open = Open::Filter;
+        s.tapped(&Action::from(format!("pick.f.{decade}").as_str()));
+        assert_eq!(s.open, Open::None);
+        assert!(!s.pop.is_open(), "a pick closes the popover");
+        assert_eq!(
+            s.vm.status().years,
+            Some(swiftly_library::YearSpan::decade(2010))
+        );
+        let german = line_of(&s, "Deutsch");
+        s.open = Open::Filter;
+        s.tapped(&Action::from(format!("pick.f.{german}").as_str()));
+        let unwatched = line_of(&s, "Ungesehen");
+        s.open = Open::Filter;
+        s.tapped(&Action::from(format!("pick.f.{unwatched}").as_str()));
+        let _ = s.frame(5000.0);
+        let status = s.vm.status();
+        assert_eq!(status.filter, LibraryFilter::Unwatched);
+        assert_eq!(status.language.as_deref(), Some("deu"));
+        assert_eq!(
+            s.filter.pill,
+            "Ungesehen \u{b7} 2010\u{2013}2019 \u{b7} Deutsch"
+        );
+        let picked: Vec<_> = s
+            .filter
+            .lines
+            .iter()
+            .filter(|l| l.selected)
+            .map(|l| l.label.as_str())
+            .collect();
+        assert_eq!(picked, ["Ungesehen", "2010\u{2013}2019", "Deutsch"]);
+
+        // "Alle Jahre" lifts only the years.
+        let all_years = line_of(&s, "Alle Jahre");
+        s.open = Open::Filter;
+        s.tapped(&Action::from(format!("pick.f.{all_years}").as_str()));
+        let _ = s.frame(6000.0);
+        assert_eq!(s.filter.pill, "Ungesehen \u{b7} Deutsch");
+        s.clear_filters();
+        let _ = s.frame(7000.0);
+        assert_eq!(s.filter.pill, "Alle");
+    }
+
+    #[test]
+    fn the_touch_sheet_draws_the_same_lines_with_headings() {
+        let mut s = screen(Idiom::Phone, Size::new(390.0, 844.0));
+        s.show("filter");
+        until_facets(&mut s);
+        let _ = s.frame(2000.0);
+        assert!(s.sheet_open());
+        assert!(!s.pop.is_open(), "touch has a bottom sheet, no popover");
+        let heads: Vec<_> = s
+            .filter
+            .lines
+            .iter()
+            .filter_map(|l| l.heading.as_deref())
+            .collect();
+        assert_eq!(heads, ["Erscheinungsjahr", "Sprache"]);
+        assert_eq!(s.filter.title, "Filtern");
     }
 }

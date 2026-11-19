@@ -21,13 +21,11 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 MacPageTitle(text: "Allgemein", bottom: 0)
 
-                // Two columns of 470, gap 24 (design). Left: offline, then Swiftly. Right: server
+                // Two columns of 470, gap 24 (design). Left: offline. Right: server
                 // and services, then sync. Rows only the connected kind can use are not shown.
                 HStack(alignment: .top, spacing: 24) {
                     VStack(alignment: .leading, spacing: 0) {
                         offline
-                        MacSupportSettingsGroup()
-                            .padding(.top, 6)
                     }
                     .frame(minWidth: 0, maxWidth: 470, alignment: .topLeading)
                     VStack(alignment: .leading, spacing: 0) {

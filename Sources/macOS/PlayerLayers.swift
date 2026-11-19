@@ -1,5 +1,9 @@
 import JellyfinKit
 import SwiftUI
+import enum SwiftlyCore.PlayerMenuPanelTab
+import struct SwiftlyCore.PlayerChapterRow
+import struct SwiftlyCore.PlayerChapters
+import struct SwiftlyCore.PlayerPreview
 
 /// Player dimensions on the Mac, in one place, so that the close button of a layer
 /// sits exactly where the player's close button sat.
@@ -51,9 +55,9 @@ struct PlayerMetric {
     static let inset: CGFloat = 10
 }
 
-/// The three layers above the video, the same offer as on iOS.
+/// The layers above the video, the same offer as on iOS.
 enum PlayerLayer: Equatable {
-    case tracks, episodes, settings
+    case tracks, settings
 }
 
 /// One of the plain icon buttons at the top right, in the player as on the layers.
@@ -68,7 +72,28 @@ struct IconButton: View {
     var key: String?
     /// Draws a diagonal slash over the glyph (muted speaker), in the glyph's stroke.
     var slashed = false
+    /// A part of the glass bar (design: halves 40 x 36, circles 36 x 36, symbol 18, hover white 6 %): `half` or `circle`.
+    var bar: Bar?
+    /// A menu hangs from it: white 18 %.
+    var open = false
+    /// The tooltip may show (off while the volume pill hangs under the speaker).
+    var tip = true
     let action: () -> Void
+
+    enum Bar { case half, circle }
+
+    private var size: CGSize {
+        switch bar {
+        case .half?: CGSize(width: 40, height: 36)
+        case .circle?: CGSize(width: 36, height: 36)
+        case nil: CGSize(width: mass.button, height: mass.button)
+        }
+    }
+
+    private var fill: Color {
+        if bar == nil { return hovers ? Theme.hoverArea : .clear }
+        return open ? Theme.ringProgress : (hovers ? Color.white.opacity(0.06) : .clear)
+    }
 
     @State private var hovers = false
     @State private var tipShown = false
@@ -76,7 +101,7 @@ struct IconButton: View {
     var body: some View {
         Button(action: action) {
             Image(icon: symbol)
-                .font(.app(size: mass.symbol, weight: .medium))
+                .font(.app(size: bar == nil ? mass.symbol : 18, weight: .medium))
                 .foregroundStyle(.white)
                 .overlay {
                     if slashed {
@@ -87,10 +112,9 @@ struct IconButton: View {
                         .frame(width: 22, height: 22)
                     }
                 }
-                .frame(width: mass.button, height: mass.button)
-                .background(hovers ? Theme.hoverArea : .clear,
-                            in: RoundedRectangle(cornerRadius: Theme.cornerField,
-                                                 style: .continuous))
+                .frame(width: size.width, height: size.height)
+                .background(fill, in: RoundedRectangle(cornerRadius: bar == nil ? Theme.cornerField : 18, style: .continuous))
+                .animation(.easeOut(duration: 0.12), value: open)
                 .contentShape(Rectangle())
         }
         .buttonStyle(Theme.PressButton())
@@ -99,10 +123,10 @@ struct IconButton: View {
         .onHover { hovers = $0 }
         .animation(Theme.timeFloat, value: hovers)
         .overlay(alignment: .topTrailing) {
-            if let key, tipShown {
+            if let key, tipShown, tip, !open {
                 HStack(spacing: 8) {
                     Text(label)
-                    Text(verbatim: key).foregroundStyle(Self.keyColor)
+                    if !key.isEmpty { Text(verbatim: key).foregroundStyle(Self.keyColor) }
                 }
                 .font(.app(size: 12, weight: .medium))
                 .foregroundStyle(.white)
@@ -112,7 +136,7 @@ struct IconButton: View {
                 .padding(.vertical, 5)
                 .background(Theme.raised, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .shadow(color: .black.opacity(0.5), radius: 9, y: 6)
-                .offset(x: 4, y: mass.button + 2)
+                .offset(x: 4, y: size.height + (bar == nil ? 2 : 6))
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
                 .transition(.opacity)
@@ -175,20 +199,24 @@ private struct SelectionColumn<ContentBody: View>: View {
     let title: LocalizedStringKey
     /// Short choices take `layerColumnWidth`; the track columns pass `trackColumnWidth`.
     var width: CGFloat = Theme.layerColumnWidth
+    /// Off inside the episodes panel, where the "Kapitel" tab already names the list (as on tvOS and iPhone).
+    var showsTitle = true
     @ViewBuilder let content: ContentBody
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Column heading = sheet heading: 17 semibold with its tracking. 18 bold is in no
             // scale, and bold is used exactly once, for the page title.
-            Text(title)
-                .font(Theme.categoryLarge)
-                .tracking(Theme.lockCategory)
-                .foregroundStyle(Theme.font)
-                .lineLimit(1)
-                .padding(.horizontal, PlayerMetric.inset)
-                .padding(.bottom, 9)
-                .accessibilityAddTraits(.isHeader)
+            if showsTitle {
+                Text(title)
+                    .font(Theme.categoryLarge)
+                    .tracking(Theme.lockCategory)
+                    .foregroundStyle(Theme.font)
+                    .lineLimit(1)
+                    .padding(.horizontal, PlayerMetric.inset)
+                    .padding(.bottom, 9)
+                    .accessibilityAddTraits(.isHeader)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) { content }
                     .padding(.bottom, 12)
@@ -364,6 +392,85 @@ private struct ParticipantRow: View {
     }
 }
 
+// MARK: - Speed and subtitle offset (rows from the core)
+
+/// The "Geschwindigkeit" column: speeds, labels and the marked one come from the core's menu
+/// (`PlayerVm.menu`); a press sends the speed back. Nothing is listed or formatted here.
+private struct SpeedColumn: View {
+    let area: VLCPlayerView?
+    @State private var refresh = 0
+
+    var body: some View {
+        let _ = refresh
+        if let menu = area?.playerMenu() {
+            SelectionColumn(title: LocalizedStringKey(menu.speedTitle)) {
+                ForEach(menu.speeds, id: \.value) { row in
+                    LayersRow(text: row.label == "Normal" ? String(localized: "Normal") : row.label,
+                              selected: row.selected) {
+                        area?.tempo = row.value
+                        refresh += 1
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The "Untertitel-Versatz" rows: value, four steps and reset, all from the core's menu.
+private struct SubtitleOffsetRows: View {
+    let area: VLCPlayerView?
+    @State private var refresh = 0
+
+    var body: some View {
+        let _ = refresh
+        if let menu = area?.playerMenu() {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(LocalizedStringKey(menu.offsetTitle))
+                        .font(Theme.small)
+                        .foregroundStyle(Theme.fontVeryQuiet)
+                    Spacer()
+                    Text(verbatim: menu.offsetText)
+                        .font(Theme.listTitle.monospacedDigit())
+                        .foregroundStyle(menu.canReset ? Theme.font : Theme.fontQuiet)
+                }
+                .padding(.horizontal, PlayerMetric.inset)
+                HStack(spacing: 0) {
+                    ForEach(menu.offsetSteps, id: \.stepMs) { step in
+                        Button {
+                            area?.offsetStep(step.stepMs)
+                            refresh += 1
+                        } label: {
+                            Text(verbatim: step.label)
+                                .font(Theme.listTitle.monospacedDigit())
+                                .foregroundStyle(Theme.font)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, minHeight: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                Button {
+                    area?.offsetReset()
+                    refresh += 1
+                } label: {
+                    Text(LocalizedStringKey(menu.resetLabel))
+                        .font(Theme.listTitle)
+                        .foregroundStyle(Theme.accent)
+                        .padding(.horizontal, PlayerMetric.inset)
+                        .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .opacity(menu.canReset ? 1 : 0.35)
+                .disabled(!menu.canReset)
+            }
+            .accessibilityElement(children: .contain)
+        }
+    }
+}
+
 // MARK: - Audio and subtitles
 
 struct TracksLayer: View {
@@ -377,7 +484,6 @@ struct TracksLayer: View {
     @State private var audioSelection: String?
     @State private var subtitleSelection: String??
     @State private var audioLag: Delay?
-    @State private var subtitleLag: Delay?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -410,12 +516,8 @@ struct TracksLayer: View {
                             area?.selectSubtitle(track)
                         }
                     }
-                    DelayRow(value: subtitleLag ?? area?.subtitleDelay ?? .null,
-                                       mass: mass) { new in
-                        subtitleLag = new
-                        area?.subtitleDelay = new
-                    }
-                    .padding(.top, Theme.tileSpacing)
+                    SubtitleOffsetRows(area: area)
+                        .padding(.top, Theme.tileSpacing)
                 }
             }
             LayersHeader(mass: mass, close: close) { EmptyView() }
@@ -487,6 +589,7 @@ struct SettingLayer: View {
                 }
                 // Two picture formats, not three: the iOS rule verbatim. The player knows the
                 // original picture and fill (also via pinch); a stretched picture does not exist.
+                SpeedColumn(area: area)
                 SelectionColumn(title: "Bild") {
                     LayersRow(text: String(localized: "Original"), selected: !fillFrame) {
                         fillFrame = false
@@ -546,107 +649,4 @@ struct QualitySelection {
     let directPlay: Bool
     let limit: Int
     let select: (Int?) -> Void
-}
-
-// MARK: - Episodes
-
-/// The series' episodes, using the same rows as the Mac series page (`EpisodesRow`
-/// in `SeriesView.swift`), not rebuilt.
-///
-/// The title sits exactly where it sat in the player (`stateTitle` in
-/// `PlayerScreen.swift`); in place of the meta line is the series page's season
-/// picker (`Staffelwahl`, also there).
-///
-/// Loading mirrors the iOS version (`EpisodesLayer` in `Sources/iOS/PlayerLayers.swift`):
-/// first the series page's cache, then fresh from the server, cross-fade only on a
-/// season switch. A separate type instead of a shared function, because both
-/// versions depend on their own `@State` values and moving this into `JellyfinKit`
-/// would go beyond the macOS-only scope.
-struct EpisodesLayer: View {
-    let model: AppModel
-    /// The episode currently playing.
-    let item: Item
-    let title: String
-    let mass: PlayerMetric
-    let close: () -> Void
-    let start: (Item) -> Void
-
-    @State private var seasons: [Item] = []
-    @State private var selectedSeason: Item?
-    @State private var episodes: [Item] = []
-    @State private var seasonListOpen = false
-
-    var body: some View {
-        ZStack(alignment: .top) {
-            LayersReason()
-            VStack(alignment: .leading, spacing: 0) {
-                LayersHeader(mass: mass, close: close) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        // Placeholder: the title itself is shown by the player (`stateTitle`) and does
-                        // not fade with this.
-                        Text(verbatim: title)
-                            .font(.app(size: mass.title, weight: .bold))
-                            .lineLimit(1)
-                            .hidden()
-                        if !seasons.isEmpty {
-                            SeasonSelection(seasons: seasons, selected: $selectedSeason,
-                                        opened: $seasonListOpen, limited: true)
-                                .onChange(of: selectedSeason?.id) { _, _ in
-                                    Task { await episodesLoad(seasonSwitched: true) }
-                                }
-                        }
-                    }
-                }
-                // The expanded season list lies over the episodes.
-                .zIndex(1)
-
-                // Same strip as on the TV: horizontal cards, running episode in the middle.
-                PlayerEpisodeStrip(model: model, episodes: episodes, currentID: item.id,
-                                   afterwards: { await episodesLoad() },
-                                   start: start,
-                                   leading: mass.titleLeft, trailing: mass.page)
-                    .padding(.top, 24)
-                    .transition(.opacity)
-
-                Spacer(minLength: 0)
-            }
-        }
-        .accessibilityAction(.escape, close)
-        .task { await load() }
-    }
-
-    /// First what the series page's cache already has, then fresh from the server.
-    private func load() async {
-        guard let series = Item.preCommonSeries(toward: item) else { return }
-        if let remembered = SeriesCache.shared.state(series.id, with: model), !remembered.seasons.isEmpty {
-            seasons = remembered.seasons
-            selectedSeason = SeasonSelectionRule.choose(from: remembered.seasons, state: item)
-            if let id = selectedSeason?.id, let list = remembered.episodes[id] { episodes = list }
-        }
-        // `nil` means a failure: what the cache had stays.
-        guard let freshValue = await model.seasons(series), !freshValue.isEmpty else { return }
-        seasons = freshValue
-        if selectedSeason == nil || !freshValue.contains(where: { $0.id == selectedSeason?.id }) {
-            selectedSeason = SeasonSelectionRule.choose(from: freshValue, state: item)
-        }
-        await episodesLoad()
-    }
-
-    /// Cross-fade only on a season switch; on open the list is shown immediately.
-    private func episodesLoad(seasonSwitched: Bool = false) async {
-        guard let series = item.seriesId else { return }
-        let season = selectedSeason?.id
-        // Failed means the list stays as it was. Clearing it would claim the season has no
-        // episodes.
-        guard let loaded = await model.episodes(series: series, season: season) else { return }
-        // Whoever has switched to another season in the meantime gets that season's
-        // episodes.
-        guard season == selectedSeason?.id else { return }
-        if seasonSwitched {
-            withAnimation(Theme.reveal) { episodes = loaded }
-        } else {
-            episodes = loaded
-        }
-        if let season { SeriesCache.shared.remember(series) { $0.episodes[season] = loaded } }
-    }
 }

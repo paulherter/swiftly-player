@@ -30,8 +30,14 @@ struct HomeView: View {
     @State private var refreshTicks = 0
     @State private var prepares = false
     @State private var message: String?
-    /// A title with several versions waiting for the pick.
-    @State private var versionChoice: VersionChoice?
+    /// The Seerr block above the rows (arrival banner, "Angefragt", the manager's line); the core decides if it shows.
+    @State private var seerr = SeerrHomeFlow()
+    /// The two Seerr sections of the Start page (Einstellungen > Darstellung > Startseite): "Anfrage ist da" on, "Meine
+    /// Anfragen" off until switched on. Same keys as the core's settings, so a switch there redraws this page.
+    @AppStorage(SeerrArrival.hintKey) private var arrivalOn = true
+    @AppStorage(SeerrArrival.requestsKey) private var requestsOn = false
+    /// The title of an arrival card the viewer tapped: its page opens.
+    @State private var arrivedPage: Item?
     /// Switching server signs out: ask for confirmation first.
     @State private var signOutSheet = false
     /// None of the requests succeeded.
@@ -45,7 +51,7 @@ struct HomeView: View {
 
     /// The rows are showing; no switch in progress. On a tap in the profile picker
     /// they go off immediately, before the account changes.
-    private var showItem: Bool { !change && !AccountSwitchTransition.shared.waits }
+    private var showItem: Bool { !change && !AccountSwitchTransition.shared.waits && !seerr.holdsPage(model) }
     /// The rows are in the tree, except between the tap and the release.
     private var built: Bool { showItem || structure }
     @State private var structure = false
@@ -179,12 +185,29 @@ struct HomeView: View {
                               text: "Abmelden", cautionary: true) { model.signOut() },
             ], note: "Du kannst dich jederzeit wieder anmelden.")
         }
+        // Seerr signs in after the first rows: the block follows when the connection comes or goes (shared modifier).
+        .seerrHomeReload(seerr, model: model)
+        #if DEBUG
+        // Proof hook: `-SwiftlyOpenSeries <id>` opens that series page straight from a bare stand-in (id only, no season
+        // count), as a link or a cold open does, so a recording sees the page's very first frames.
+        .task {
+            let args = ProcessInfo.processInfo.arguments
+            guard let at = args.firstIndex(of: "-SwiftlyOpenSeries"), at + 1 < args.count else { return }
+            try? await Task.sleep(for: .seconds(4))
+            let json = #"{"Id":"\#(args[at + 1])","Name":"","Type":"Series"}"#
+            arrivedPage = try? JSONDecoder().decode(Item.self, from: Data(json.utf8))
+        }
+        #endif
+        .navigationDestination(item: $arrivedPage) { title in
+            if title.type == "Series" {
+                SeriesDetailView(model: model, series: title)
+            } else {
+                ItemDetailView(model: model, item: title)
+            }
+        }
         .playerCover(item: $play) { wish in
             PlayerScreen(model: model, item: wish.item,
                          plan: wish.plan, startAt: wish.startAt)
-        }
-        .versionChoice($versionChoice) { choice, version in
-            launch(choice, picking: version)
         }
     }
 
@@ -298,6 +321,9 @@ struct HomeView: View {
                 if model.genreChips, !model.startGenres.isEmpty {
                     genreChips.railEntrance(0, present: showItem)
                 }
+                // **Seerr's two sections stand in the row order below** like any other row, loaded together with the
+                // rows (`load()`). Their room is reserved from the first frame (the shape of the last start, blank) and
+                // they fade in over it, so the rows never move. Nothing at all without Seerr or with nothing to say.
                 // **The fixed rows, libraries and collections in ONE configured order**
                 // (Settings → Appearance → Home; the core heals the stored list). A library row
                 // has its name as the title and opens the library or collection.
@@ -305,6 +331,16 @@ struct HomeView: View {
                     switch row {
                     case .fixed(let rail):
                         pinned(rail).railEntrance(i + 1, present: showItem)
+                    case .seerrArrival:
+                        if state.loaded {
+                            SeerrHomeBlock(part: .arrival, flow: seerr, model: model, play: playArrival, open: openArrival)
+                                .railEntrance(i + 1, present: showItem)
+                        }
+                    case .seerrRequests:
+                        if state.loaded {
+                            SeerrHomeBlock(part: .requests, flow: seerr, model: model, play: playArrival, open: openArrival)
+                                .railEntrance(i + 1, present: showItem)
+                        }
                     case .library(let r):
                         Rail(model: model, title: "", name: r.name, items: r.items,
                               target: CollectionRoute(collection: model.startLibraries.first { $0.id == r.id }?.item
@@ -372,24 +408,54 @@ struct HomeView: View {
 
     /// From the continue rows straight into the episode, without an intermediate
     /// page.
+    /// **"Aus Weiterschauen entfernen": gone in the first frame.** The row loses the title at once with its normal change
+    /// motion (the neighbours close up, an emptied row goes), the request runs in the background, and only a refusal puts
+    /// the title back with a short message. Before, the row waited for the round trip and the reload.
+    private func removeFromContinue(_ item: Item) {
+        withAnimation(Theme.reveal) { state.takeOutOfContinue(item, model: model) }
+    }
+
+    /// "Abspielen" on the arrival banner: a film starts, a series opens its page.
+    /// "Abspielen" on an arrival card: starts the title (a series: its next episode up) and never only opens a page.
+    private func playArrival(_ libraryId: String) {
+        Task {
+            guard let item = await model.item(id: libraryId) else {
+                message = String(localized: "Der Server hat keine Datei zu diesem Titel.")
+                return
+            }
+            if item.type == "Series" {
+                guard let episode = await model.episodeToPlay(series: item) else {
+                    message = String(localized: "Der Server hat keine Datei zu diesem Titel.")
+                    return
+                }
+                launch(episode)
+            } else {
+                launch(item)
+            }
+        }
+    }
+
+    /// A tap on the card or its cover: the title's page.
+    private func openArrival(_ libraryId: String) {
+        Task {
+            guard let item = await model.item(id: libraryId) else {
+                message = String(localized: "Der Server hat keine Datei zu diesem Titel.")
+                return
+            }
+            arrivedPage = item
+        }
+    }
+
     private func launch(_ item: Item) {
         // On press, not after the answer (see `Theme.jerk`).
         Theme.jerk(.medium)
         // **No spinner on the tile.** Dimmed with a spinner the start looked jerky; the
         // player should simply open.
-        // Fetched fresh: the position in the list entry is often stale. The same fetch
-        // brings the versions, so a title with several asks which one.
+        // Fetched fresh: the position in the list entry is often stale. A title with several
+        // versions starts its default one.
         PlayRequest.start(item, freshValue: true,
-                          ask: VersionAsk(choose: { versionChoice = $0 },
-                                          failed: { message = $0 }),
                           model: model, prepares: $prepares,
                           // Instead of silence: say that it failed.
-                          missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
-                          play: { play = $0 })
-    }
-
-    private func launch(_ choice: VersionChoice, picking version: MediaSource) {
-        PlayRequest.start(choice, picking: version, model: model, prepares: $prepares,
                           missing: { message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
                           play: { play = $0 })
     }
@@ -403,6 +469,7 @@ struct HomeView: View {
             if !state.continueWatching.isEmpty {
                 Rail(model: model, title: "Weiterschauen",
                       items: state.continueWatching, landscape: true, remainingTime: true, direct: launch,
+                      remove: removeFromContinue,
                       looks: state.rustTileLooks(rail: rail.rawValue, on: model.coreServes))
             }
         case .nextEpisode:
@@ -464,11 +531,20 @@ struct HomeView: View {
         AccountSwitchTransition.note("startseite: laden (konto \(model.accountSwitch))")
         let interval = AccountSwitchTransition.symbolText.beginInterval("startseiteLaden")
         let a = CACurrentMediaTime()
+        // What the core raises by itself (a refused removal puts the title back) shows with the row's change motion.
+        state.rowMotion = { apply in withAnimation(Theme.reveal) { apply() } }
+        state.onNotice = { text in
+            AppLog.writeOut("[Weiterschauen] Kern: Server lehnt ab, Titel zurückgelegt, Hinweis: \(text)")
+            TileRequest.shared.message = text
+        }
+        // The Seerr block is read next to the rows, so both are there at the same moment.
+        async let seerrLoad: Void = seerr.load(model)
         if model.coreServes {
             await state.loadRust(model)
         } else {
             await state.load(model)
         }
+        await seerrLoad
         AccountSwitchTransition.symbolText.endInterval("startseiteLaden", interval)
         AccountSwitchTransition.note("startseite: geladen nach \(Int((CACurrentMediaTime() - a) * 1000)) ms")
     }
@@ -479,10 +555,14 @@ struct HomeView: View {
 
     private enum OrderedRow: Identifiable {
         case fixed(StartRail)
+        case seerrArrival
+        case seerrRequests
         case library(Home.LibraryRail)
         var id: String {
             switch self {
             case .fixed(let rail): rail.rawValue
+            case .seerrArrival: HomeRowOrder.seerrArrival
+            case .seerrRequests: HomeRowOrder.seerrRequests
             case .library(let r): HomeRowOrder.libraryId(r.id)
             }
         }
@@ -494,6 +574,9 @@ struct HomeView: View {
         let fixed = Set(fixedRails)
         let byId = Dictionary(libraries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         return model.rowOrder.compactMap { id in
+            // The core lists the Seerr sections only while Seerr is connected; each one has its own switch.
+            if id == HomeRowOrder.seerrArrival { return arrivalOn ? OrderedRow.seerrArrival : nil }
+            if id == HomeRowOrder.seerrRequests { return requestsOn ? OrderedRow.seerrRequests : nil }
             if let lib = HomeRowOrder.library(of: id) { return byId[lib].map(OrderedRow.library) }
             return StartRail(rawValue: id).flatMap { fixed.contains($0) ? OrderedRow.fixed($0) : nil }
         }
@@ -545,6 +628,9 @@ private struct Rail: View {
     var remainingTime = false
     /// Set means: tapping starts immediately instead of leading to the page.
     var direct: ((Item) -> Void)? = nil
+    /// "Remove from Continue Watching" in the tile menu: the page takes the title out at once and tells the server in the
+    /// background (`HomeView.removeFromContinue`). `nil` outside that row.
+    var remove: ((Item) -> Void)? = nil
     /// The tile that is starting: dimmed, with a spinner.
     var loads: String? = nil
     /// Texts and picture address from the Rust core (`AppModel.coreServes`), by title id; `nil` otherwise.
@@ -565,6 +651,25 @@ private struct Rail: View {
         let image = landscape ? Theme.railsLandscapeHeight(wide: wide)
                         : Theme.railsHeight(wide: wide)
         return 28 + 12 + image + 8 + 34
+    }
+
+    /// Finger down on a tile: the series it leads to (the tile itself, or the series of an episode tile) is asked
+    /// ahead, so its page opens with the season picker and the episode rows in place.
+    /// The head picture of the page (exact size, front of the queue) starts at the same moment: a page that waited for
+    /// its own request began it half a second after the tap, and for a title the server had not resized yet the head
+    /// stayed blurry until that finished.
+    private func warmSeries(of item: Item) {
+        // The head picture of the page this tile opens: on its way (exact size, front of the queue) while the page opens.
+        if let head = model.core.headPictureAhead(session: model.session, item: item) {
+            ImageCache.shared.warmHead(head, height: Theme.heroHeightValue)
+        }
+        let id = item.type == "Series" ? item.id : (item.type == "Episode" ? item.seriesId : nil)
+        if let id { model.core.warmSeries(session: model.session, id: id) }
+        // Seerr's seasons for the same series, so the season menu's rows are ready when the page opens.
+        if model.seerr.connected, item.type == "Series",
+           let tmdb = item.providerIds?["Tmdb"].flatMap({ Int64($0) }) {
+            SeerrTitleWarm.warm(hub: model.seerr.hub, tmdb: tmdb)
+        }
     }
 
     var body: some View {
@@ -613,14 +718,16 @@ private struct Rail: View {
                             .buttonStyle(Theme.PressButton())
                             // The series is still reachable, just no longer on the playback path: "Go to
                             // overview" is in the tile menu, along with everything every tile can do.
-                            .tileMenu(item, model: model, continueWatching: true, landscape: landscape)
+                            .tileMenu(item, model: model, continueWatching: true, landscape: landscape, onRemove: remove,
+                                      image: model.homeTileImageURL(item, landscape: landscape, look: looks?[item.id]))
                         } else {
                             NavigationLink(value: item) {
                                 Tile(model: model, item: item, landscape: landscape, newAccess: newAccess, remainingTime: remainingTime,
                                      look: looks?[item.id])
                             }
-                            .buttonStyle(Theme.PressButton())
-                            .tileMenu(item, model: model, landscape: landscape)
+                            .buttonStyle(Theme.PressButton(onDown: { warmSeries(of: item) }))
+                            .tileMenu(item, model: model, landscape: landscape,
+                                      image: model.homeTileImageURL(item, landscape: landscape, look: looks?[item.id]))
                         }
                     }
                 }
@@ -655,8 +762,7 @@ private struct Tile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picture(url: look?.image ?? (landscape ? model.landscapeImageURL(for: item, width: 1000)
-                           : model.imageURL(for: item, maxHeight: 600, portrait: true)),
+            Picture(url: model.homeTileImageURL(item, landscape: landscape, look: look),
                  width: width, height: height, corner: Theme.cornerTile,
                  progress: progress) {
                 // If the title has no landscape image, the poster steps in: cropped, but still

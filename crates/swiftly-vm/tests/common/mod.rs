@@ -69,6 +69,10 @@ pub struct Net {
     pub many: AtomicBool,
     /// "r1" was watched to its end meanwhile: the server's continue list no longer has it.
     pub r1_finished: AtomicBool,
+    /// The server refuses to change user data (`POST UserItems/{id}/UserData`): answers 500.
+    pub refuse_user_data: AtomicBool,
+    /// "r1" was taken out of Continue Watching (a `UserData` post for it went through): the continue list no longer has it.
+    pub r1_removed: AtomicBool,
     pub seen: Mutex<Vec<HttpRequest>>,
 }
 
@@ -84,11 +88,23 @@ impl Net {
             force: Mutex::new(None),
             many: AtomicBool::new(false),
             r1_finished: AtomicBool::new(false),
+            refuse_user_data: AtomicBool::new(false),
+            r1_removed: AtomicBool::new(false),
             seen: Mutex::new(Vec::new()),
         })
     }
     pub fn requests(&self) -> usize {
         self.seen.lock().unwrap().len()
+    }
+    /// How many `UserData` posts for `id` arrived (held back requests count: they are recorded when sent).
+    pub fn user_data_posts(&self, id: &str) -> usize {
+        let needle = format!("UserItems/{id}/UserData");
+        self.seen
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r.url.path().ends_with(&needle))
+            .count()
     }
 }
 
@@ -121,7 +137,8 @@ impl Net {
             return VIEWS.to_owned();
         }
         if path.ends_with("UserItems/Resume") {
-            let done = self.r1_finished.load(Ordering::SeqCst);
+            let done =
+                self.r1_finished.load(Ordering::SeqCst) || self.r1_removed.load(Ordering::SeqCst);
             return list(&items_of(
                 catalog,
                 if b {
@@ -172,6 +189,15 @@ impl HttpTransport for Net {
             Err(ErrorKind::Network { code: -1009 })
         } else if let Some((status, body)) = self.force.lock().unwrap().clone() {
             Ok(HttpResponse::new(status, body))
+        } else if request.url.path().ends_with("/UserData") {
+            if self.refuse_user_data.load(Ordering::SeqCst) {
+                Ok(HttpResponse::new(500, "{}"))
+            } else {
+                if request.url.path().ends_with("UserItems/r1/UserData") {
+                    self.r1_removed.store(true, Ordering::SeqCst);
+                }
+                Ok(HttpResponse::new(204, ""))
+            }
         } else {
             Ok(HttpResponse::new(200, self.answer(&request)))
         };

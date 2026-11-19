@@ -131,8 +131,11 @@ fn track_rule() {
                 server_default: c["server_sub"].as_i64(),
                 automatic: c["automatic"].as_bool().unwrap(),
                 audio_index: c["audio_index"].as_i64(),
+                // The old app has no device step.
+                audio_by_device: false,
                 audio_wish: s(&c["tonwunsch"]),
                 preferred_language: pref_sub,
+                device_language: None,
                 ordered: c["ordered_sub"].as_i64(),
             },
         );
@@ -146,6 +149,8 @@ fn track_rule() {
                 automatic: c["automatic"].as_bool().unwrap(),
                 audio_language: pref_audio,
                 subtitle_language: pref_sub,
+                device_language: None,
+                original: Default::default(),
             },
         );
         let imprint_json =

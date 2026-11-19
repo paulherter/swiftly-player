@@ -138,8 +138,6 @@ struct PlaylistView: View {
     private func start() {
         guard core?.start() != nil, let first = model.playlistStart(shown.map { Item(rust: $0) }) else { return }
         PlayRequest.start(first, freshValue: true,
-                          ask: VersionAsk(choose: { TileRequest.shared.choice = $0 },
-                                          failed: { TileRequest.shared.message = $0 }),
                           model: model, prepares: $prepares,
                           missing: { TileRequest.shared.message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
                           play: { play.wrappedValue = $0 })

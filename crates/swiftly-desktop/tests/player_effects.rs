@@ -271,11 +271,13 @@ fn close_leaves_the_screen_and_plans_nothing() {
 }
 
 #[test]
-fn a_plan_that_fails_shows_the_failed_screen_and_asks_only_once() {
+fn a_plan_that_fails_puts_the_old_title_back_with_one_hint_and_asks_only_once() {
+    use swiftly_vm::{Phase, PlayerStage, SWITCH_FAILED_HINT};
     let (mut s, fake, mut now) = rig(true);
     run(&mut s, &mut now, 1000.0);
     s.send_intent(PlayerIntent::NextEpisode, now);
-    run(&mut s, &mut now, 1500.0);
+    // 20 frames later: one request, answered with a failure, and the player is not left in `Switching`.
+    run(&mut s, &mut now, 20.0 * STEP);
     assert_eq!(fake.asks.lock().unwrap().len(), 1);
     assert!(!s.switching());
     assert!(
@@ -284,4 +286,23 @@ fn a_plan_that_fails_shows_the_failed_screen_and_asks_only_once() {
         s.log()
     );
     assert!(!s.is_closed());
+    assert_ne!(
+        s.vm().stage(),
+        PlayerStage::Switching,
+        "the player hangs in Switching"
+    );
+    assert_ne!(s.vm().stage(), PlayerStage::Failed);
+    assert_eq!(s.vm().transport().hint.as_deref(), Some(SWITCH_FAILED_HINT));
+    // The old title reopens and plays again; no automatic retry follows.
+    settle(&mut s, now);
+    run(&mut s, &mut now, 3000.0);
+    assert_eq!(s.vm().stage(), PlayerStage::Playing);
+    assert_eq!(s.vm().transport().phase, Phase::Playing);
+    assert_eq!(fake.asks.lock().unwrap().len(), 1, "asked again by itself");
+    // Next is the retry.
+    s.send_intent(PlayerIntent::NextEpisode, now);
+    run(&mut s, &mut now, 1500.0);
+    assert_eq!(fake.asks.lock().unwrap().len(), 2);
+    assert!(!s.switching());
+    assert_eq!(s.vm().transport().hint.as_deref(), Some(SWITCH_FAILED_HINT));
 }

@@ -67,8 +67,14 @@ public final class PlayerEngineDriver: PlayerEngine, @unchecked Sendable {
     private let commands: AsyncStream<Command>.Continuation
     private let known = Mutex(Known())
     /// Where the engine's events go. A class, so the pump can hold it without holding the driver.
-    private final class Sink: Sendable {
-        let receiver = Mutex<(@MainActor (PlayerEngineEvent) -> Void)?>(nil)
+    ///
+    /// **Main actor and a plain property, never a closure inside a generic lock** (`Mutex<closure?>`): every
+    /// `withLock` on a closure kept in generic storage re-wraps it in two reabstraction thunks (it is taken out at
+    /// the closure's own abstraction and written back at the generic one), so the call chain grew by two frames
+    /// per engine event and the main stack overflowed after about half an hour of playback (build 48 crash).
+    /// Both writers and readers (`connect`, `receive`, the pump) already run on the main actor.
+    @MainActor private final class Sink {
+        var receiver: (@MainActor (PlayerEngineEvent) -> Void)?
     }
     private let sink: Sink
     private let pump: Task<Void, Never>
@@ -89,7 +95,7 @@ public final class PlayerEngineDriver: PlayerEngine, @unchecked Sendable {
                     // reports its own, the state would keep the position of the title before (or of the
                     // failed attempt) and the start watchdog would judge on it. The new load starts here.
                     let at = r.start ?? 0
-                    sink.receiver.withLock { $0 }?(.clock(position: at, sourceTime: at))
+                    sink.receiver?(.clock(position: at, sourceTime: at))
                 case .play: port.play()
                 case .pause: port.pause()
                 case .seek(let s): port.seek(s)
@@ -117,7 +123,7 @@ public final class PlayerEngineDriver: PlayerEngine, @unchecked Sendable {
     /// Where the engine's events go: `PlayerModel.engineEvent` (set once the model exists).
     @MainActor
     public func connect(_ receiver: @escaping @MainActor (PlayerEngineEvent) -> Void) {
-        sink.receiver.withLock { $0 = receiver }
+        sink.receiver = receiver
     }
 
     /// An event from the port: remembers the track lists, then hands it on.
@@ -129,8 +135,7 @@ public final class PlayerEngineDriver: PlayerEngine, @unchecked Sendable {
                 $0.subtitles = Set(subtitles.map(\.id))
             }
         }
-        let receiver = sink.receiver.withLock { $0 }
-        receiver?(event)
+        sink.receiver?(event)
     }
 
     /// Ends the driver after a `stop`: nothing more is delivered.

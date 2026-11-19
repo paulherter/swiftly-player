@@ -91,6 +91,8 @@ struct RootView: View {
             }
         }
         .animation(.default, value: model.phase)
+        // Focus may find nothing in its first pass while the curtain, picker or a sign-in screen is up; see `TVFocusGuard`.
+        .tvFocusGuard("root", key: RootFocusKey(started: started, picker: pickerOpen, phase: model.phase))
         // Once at the root, not on every tile. A setting decides which tile shows its progress bar, and call sites that pass `progress:` should not need to know. It is read where the bar is made; see `EnvironmentValues.progressOnTiles`.
         .environment(\.progressOnTiles, model.progressOnTiles)
         .environment(\.watchlistShown, model.watchlistShown)
@@ -114,6 +116,13 @@ struct RootView: View {
         .tvSupportPresentation(model: model)
         .tvGiftPresentation(model: model)
     }
+}
+
+/// What changes which screen can take focus at the root.
+private struct RootFocusKey: Equatable {
+    let started: Bool
+    let picker: Bool
+    let phase: AppModel.Phase
 }
 
 // MARK: - Input field

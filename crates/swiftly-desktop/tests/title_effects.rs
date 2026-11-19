@@ -23,9 +23,15 @@ fn settled() -> (DetailScreen, f64) {
 }
 
 #[test]
-fn from_start_in_the_more_menu_asks_for_the_version_and_plays_from_second_zero() {
+fn from_start_in_the_more_menu_plays_the_default_version_from_second_zero_without_asking() {
     let (mut s, mut now) = settled();
     assert!(s.take_play().is_none());
+    // The demo title has two versions, and a start still never asks which one.
+    assert_eq!(
+        s.vm().versions().len(),
+        2,
+        "the demo title lists two versions"
+    );
     s.vm().send(swiftly_vm::DetailIntent::Menu(
         swiftly_vm::MenuKind::PlayFromStart,
     ));
@@ -33,18 +39,14 @@ fn from_start_in_the_more_menu_asks_for_the_version_and_plays_from_second_zero()
         now += 17.0;
         let _ = s.frame(now);
     }
-    // The demo title has two versions: the core's `Play` effect shows the choice, headed with the core's word.
-    assert_eq!(s.sheet_kind(), 2, "the version sheet is open");
-    let f = s.frame_of("version:1").expect("the second version row");
-    s.touch_down(f[0] + 8.0, f[1] + 8.0, now);
-    s.touch_up(f[0] + 8.0, f[1] + 8.0, now + 30.0);
-    for _ in 0..4 {
-        now += 17.0;
-        let _ = s.frame(now);
-    }
-    let req = s.take_play().expect("the pick started playback");
+    // A start never ends in a "choose a version" answer: no sheet, playback begins at once.
+    assert_eq!(s.sheet_kind(), 0, "no version sheet opens");
+    let req = s.take_play().expect("the menu entry started playback");
     assert_eq!(req.since, 0.0, "from the start, not from the resume point");
-    assert_eq!(req.source_id.as_deref(), Some("s1080"));
+    assert_eq!(
+        req.source_id, None,
+        "no version is pinned: the playback plan takes its own default"
+    );
 }
 
 fn series() -> (swiftly_desktop::series_screen::SeriesScreen, f64) {

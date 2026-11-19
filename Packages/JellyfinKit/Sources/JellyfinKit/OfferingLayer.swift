@@ -57,6 +57,13 @@ public struct OfferingLayer: Sendable, Equatable {
     /// only with the controls.
     public static let buttonDuration: Double = 6
 
+    /// Whether the overlay's clocks (the card's countdown and the skip button's fill) may run:
+    /// while an open player menu is up they hold, on every platform. `playing` is the screen's
+    /// own "plays and is visible" condition.
+    public static func clocksRun(playing: Bool, menuOpen: Bool) -> Bool {
+        playing && !menuOpen
+    }
+
     public enum OfferingPresentation: Sendable, Equatable {
         case nothing
         case button(ButtonOffering)
@@ -247,6 +254,13 @@ public struct OfferingLayer: Sendable, Equatable {
     public mutating func takeAutoSkip() -> Bool {
         defer { autoSkipDue = false }
         return autoSkipDue
+    }
+
+    /// How far the next-episode countdown has run, 0 to 1, also while a menu or the controls cover the card (it holds then);
+    /// `nil` without such an offer. Read by the live run, never drawn.
+    public var countdownRun: Double? {
+        guard occasion == .nextEpisode, !closed, !triggered else { return nil }
+        return min(run / length, 1)
     }
 
     /// How long the fill of the currently shown card runs.

@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -103,7 +104,7 @@ internal class SearchFocus(private val st: de.paulherter.swiftly.SearchState) {
  */
 @Composable
 internal fun TvSearchKeyboard(term: String, change: (String) -> Unit, focus: SearchFocus,
-                              speaking: Boolean, speak: (() -> Unit)?, modifier: Modifier = Modifier) {
+                              speaking: Boolean, speak: (() -> Unit)?, below: () -> FocusRequester? = { null }, modifier: Modifier = Modifier) {
     val rows = remember(speak != null) { searchKeyRows(speech = speak != null) }
     Column(modifier
             .width(SearchLayout.keyboardWidth)
@@ -130,7 +131,7 @@ internal fun TvSearchKeyboard(term: String, change: (String) -> Unit, focus: Sea
             // microphone, 72 pt high) sits at both edges.
             rows.forEachIndexed { i, row ->
                 Row(Modifier.width(SearchLayout.keysWidth), horizontalArrangement = Arrangement.SpaceBetween) {
-                    row.forEach { key -> KeyButton(key, term, change, focus, speaking, speak, tall = i == rows.lastIndex) }
+                    row.forEach { key -> KeyButton(key, term, change, focus, speaking, speak, tall = i == rows.lastIndex, below = below) }
                 }
             }
         }
@@ -199,7 +200,7 @@ private fun Caret() {
 
 @Composable
 private fun KeyButton(key: SearchKey, term: String, change: (String) -> Unit, focus: SearchFocus,
-                      speaking: Boolean, speak: (() -> Unit)?, tall: Boolean = false) {
+                      speaking: Boolean, speak: (() -> Unit)?, tall: Boolean = false, below: () -> FocusRequester? = { null }) {
     val muted = when (key.kind) {
         "space" -> !KernRules.searchKeySpaceFits(term)
         "delete" -> false
@@ -212,6 +213,8 @@ private fun KeyButton(key: SearchKey, term: String, change: (String) -> Unit, fo
         else -> key.character
     }
     FocusArea(Modifier.size(SearchLayout.keyWidth(key.span), if (tall) SearchLayout.fieldHeight else TvSpec.searchKey)
+                    // The bottom row has nothing under it: Down goes to the hits (if there are any), not nowhere.
+                    .then(if (tall) Modifier.focusProperties { below()?.let { down = it } } else Modifier)
                     .focusRequester(focus.key(key.id))
                     .semantics(mergeDescendants = true) { contentDescription = description },
         magnifier = TvTheme.focusMagnifierSmall, lift = true, liftCorner = TvTheme.cornerSmall,

@@ -35,6 +35,10 @@ import de.paulherter.swiftly.shared.translated
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import de.paulherter.swiftly.rustcore.SeerrCast
+import de.paulherter.swiftly.rustcore.SeerrTileCard
+import de.paulherter.swiftly.rustcore.seerrCastPerson
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -47,6 +51,17 @@ data class PeopleState(val description: String?, val born: String?, val place: S
                          val banner: List<String>, val title: List<GridTile>, val tmdb: Int? = null,
                          /** The server did not answer the title list; not "no titles". */
                          val disrupted: Boolean = false)
+
+/** The cast tile of a Seerr title as the person page's target: the core's one open-person intent (`seerrCastPerson`). */
+internal fun seerrPersonTarget(cast: SeerrCast, origin: String?): Destination {
+    val info = seerrCastPerson(cast)
+    return Destination("tmdb:${info.tmdb}", info.name, "Person", info.role, origin, info.tmdb?.toInt(), info.imageUrl)
+}
+
+/** What a person page loads: a person of a Seerr title has no library entry, so the page is complete at once. */
+internal suspend fun personLoad(app: SwiftlyApplication, target: Destination): PeopleState =
+    if (target.tmdb != null) PeopleState(null, null, null, target.image, emptyList(), emptyList(), tmdb = target.tmdb)
+    else personRead(withContext(Dispatchers.IO) { app.rk.person(target.id).await() })
 
 internal fun personRead(json: String): PeopleState = JSONObject(json).let { o ->
     PeopleState(o.fieldText("beschreibung"), o.fieldText("geboren"), o.fieldText("ort"), o.fieldText("bild"),
@@ -78,22 +93,22 @@ fun PersonPage(app: SwiftlyApplication, target: Destination, open: (Destination)
     LaunchedEffect(target.id, attempt) {
         failed = false
         try {
-            val new = personRead(withContext(Dispatchers.IO) { app.rk.person(target.id).await() })
+            val new = personLoad(app, target)
             state = new
             app.peopleCache[target.id] = new
         } catch (e: CancellationException) { throw e } catch (_: Exception) { failed = true }
     }
     val s = state
-    // Seerr's filmography arrives later, minus what is already on the server under another name.
-    var requestable by remember(target.id) { mutableStateOf<List<SeerrTile>?>(null) }
+    // What the person did that is not on the server: the core's list (`SeerrListsScreen.person_credits`, already without
+    // the titles the server has), arriving later under the own titles.
+    var requestable by remember(target.id) { mutableStateOf<List<SeerrTileCard>?>(null) }
+    val run = rememberCoroutineScope()
     val tmdb = s?.tmdb
     val seerrPresent = app.seerrConnected.value
     LaunchedEffect(tmdb, seerrPresent) {
         if (tmdb == null || !seerrPresent) return@LaunchedEffect
-        val ownOnes = s?.title.orEmpty().mapTo(HashSet()) { it.title.lowercase() }
         requestable = try {
-            seerrTilesRead(withContext(Dispatchers.IO) { app.rk.seerrFilmography(tmdb.toLong()).await() })
-                .filter { it.title.lowercase() !in ownOnes }
+            withContext(Dispatchers.IO) { app.seerr.lists().personCredits(tmdb.toLong()) }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
     }
     val seerrReady = requestable != null || !seerrPresent || (s != null && tmdb == null)
@@ -176,10 +191,7 @@ fun PersonPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                 requestable?.takeIf { it.isNotEmpty() }?.let { list ->
                     Segment(translated("Kann angefragt werden"), Theme.tileSpacing) {
                         tilesWithKey(list, { it.key }) { t ->
-                            SeerrTileView(t, Modifier.width(Theme.tileWidth)) {
-                                app.seerrHit[t.key] = t
-                                open(Destination(t.key, t.title, "Seerrtitel"))
-                            }
+                            SeerrCardTile(t, Modifier.width(Theme.tileWidth)) { run.launch { openSeerrCard(app, t, open) } }
                         }
                     }
                 }

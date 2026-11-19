@@ -341,6 +341,7 @@ private fun disturbedRead(json: String): Boolean = JSONObject(json).optBoolean("
 @Composable
 fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val e = app.settings
+    val seerrFlow = remember(app) { de.paulherter.swiftly.SeerrHomeFlow(app) }
     var rails by remember { mutableStateOf(app.startRails) }
     var disrupted by remember { mutableStateOf(false) }
     val run = rememberCoroutineScope()
@@ -351,6 +352,7 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
         // An account switch in progress does the loading; returning to the page does not (it would fetch the old account).
         if (de.paulherter.swiftly.AccountSwitchTransition.waits && !de.paulherter.swiftly.AccountSwitchTransition.switched) return
         running++
+        run.launch { seerrFlow.load() }
         val key = de.paulherter.swiftly.startKey(e)
         try { runCatching {
             withContext(Dispatchers.IO) {
@@ -359,7 +361,7 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                     e.startGenres.toTypedArray(), e.genreChips, e.startLibrariesJson()).await()
             }
         }.onSuccess { json ->
-            val list = railsRead(json).also { app.startRails = it }
+            val list = railsRead(json).also { app.startRails = it; app.continueHiddenAfterLoad(it) }
             rails = list
             disrupted = disturbedRead(json)
             if (!disrupted) { app.startLoaded = System.currentTimeMillis(); app.startKey = key } else app.startKey = ""
@@ -371,6 +373,7 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
             }
         }.onFailure { disrupted = true } } finally { running-- }
     }
+    LaunchedEffect(app.seerrConnected.value) { seerrFlow.load() }
     LaunchedEffect(de.paulherter.swiftly.startKey(e)) {
         if (!de.paulherter.swiftly.startFresh(app, de.paulherter.swiftly.startKey(e))) load()
     }
@@ -403,8 +406,12 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
         return l?.getOrNull(parts[0].toIntOrNull() ?: -1)?.tiles?.firstOrNull { it.id == parts.getOrNull(1) }
     }
     var current by remember { mutableStateOf(tileTo(lastAtTitle, rails)) }
-    val list = rails
-    LaunchedEffect(list) { if (current == null) current = list?.firstOrNull()?.tiles?.firstOrNull() }
+    val list = rails?.withoutRemoved(app.continueHidden.value)
+    // The header shows the focused tile. A tile just removed from the row (long OK menu) must leave the header in the same
+    // frame: derived here from the visible rows, not from a later focus event.
+    val listedIds = list?.flatMap { r -> r.tiles.map { it.id } }?.toSet()
+    val shown = current?.takeIf { listedIds == null || it.id in listedIds } ?: list?.firstOrNull()?.tiles?.firstOrNull()
+    LaunchedEffect(list) { if (current == null || current != shown) current = shown }
     // With the restored title, show the matching image immediately; otherwise the backdrop fades in
     // from empty after coming back.
     //
@@ -414,7 +421,7 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     // fallbacks only apply to an old core.
     fun backdropFrom(k: Tile?) = k?.let { it.backdrop ?: it.landscape ?: it.poster }
     var image by remember { mutableStateOf(backdropFrom(current)) }
-    LaunchedEffect(current) { delay(250); image = backdropFrom(current) }
+    LaunchedEffect(shown) { delay(250); image = backdropFrom(shown) }
 
     // Pass along what is already known when opening, see `TvPreOff`. An episode leads to the series
     // page, whose details, rating and description are the series', not the episode's: only name and
@@ -561,7 +568,7 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                         //
                         // Short crossfade (200 ms), not a hard jump: the text still changes immediately with focus
                         // (no debounce as for the image), just softly.
-                        Crossfade(current, animationSpec = tween(200), label = "kopfauskunft") { k ->
+                        Crossfade(shown, animationSpec = tween(200), label = "kopfauskunft") { k ->
                             if (k != null) {
                                 HeaderInfo(k.name, k.episodeName, k.detailsRow, k.rating, k.sharing, k.description,
                                              Modifier.padding(start = TvTheme.edgePage, top = 98.dp)) {
@@ -601,7 +608,11 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                 key("platzhalter-quer") { TvRailsPlaceholder(landscape = true) }
                                 key("platzhalter-plakat") { TvRailsPlaceholder(landscape = false) }
                             }
-                            (if (switches) emptyList() else list.orEmpty()).forEachIndexed { i, r -> key("$i-${r.title}") {
+                            val shownRails = if (switches || seerrFlow.holdsPage()) emptyList() else list.orEmpty()
+                            de.paulherter.swiftly.homeLayout(app, shownRails, seerrFlow).forEach { row ->
+                              if (row is de.paulherter.swiftly.HomeRowItem.SeerrRow) key("seerr-${row.part}") {
+                                  de.paulherter.swiftly.TvSeerrPartView(app, seerrFlow, row.part, open)
+                              } else if (row is de.paulherter.swiftly.HomeRowItem.RailRow) { val i = row.index; val r = row.rail; key("$i-${r.title}") {
                                 Column(Modifier.railEntrance(i).onGloballyPositioned { c ->
                                     val status = c.positionInParent().y.roundToInt() to c.size.height
                                     if (railsStatus[i] != status) railsStatus[i] = status
@@ -640,7 +651,7 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                         }
                                     }
                                 }
-                            } }
+                            } } }
                         }
                     }
                 }

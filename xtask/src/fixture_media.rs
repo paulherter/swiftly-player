@@ -29,6 +29,24 @@ fn many_episodes() -> bool {
     std::env::var_os("SWIFTLY_FIXTURE_MANY_EPISODES").is_some()
 }
 
+/// `SWIFTLY_FIXTURE_EPISODE_CHAPTERS=1`: every bench episode carries three chapters (a bar split in pieces, the player
+/// panel's "Folgen | Kapitel" tabs). Off by default: the bench media script writes none and the plain runs measure a bar
+/// without chapters. A run that changes episodes (the menus scenario starts episode 2 and 3) needs them on every episode.
+fn episode_chapters() -> bool {
+    std::env::var_os("SWIFTLY_FIXTURE_EPISODE_CHAPTERS").is_some()
+}
+
+fn with_chapters(id: &str, json: String, on: bool) -> String {
+    if !on || !id.starts_with("bm-ep") || json.contains("\"Chapters\"") {
+        return json;
+    }
+    json.replacen(
+        r#""Type": "Episode","#,
+        r#""Type": "Episode", "Chapters": [{"Name": "Anfang", "StartPositionTicks": 0}, {"Name": "Mitte", "StartPositionTicks": 30000000}, {"Name": "Ende", "StartPositionTicks": 80000000}],"#,
+        1,
+    )
+}
+
 fn extra_episode_file(dir: &std::path::Path, name: &str, many: bool) -> Option<Vec<u8>> {
     let rest = name.strip_prefix("bm-ep")?;
     let (digits, ext) = rest.split_once('.')?;
@@ -166,6 +184,7 @@ fn answer_in(dir: &std::path::Path, path: &str, query: &str) -> Option<Reply> {
         read(&dir, &format!("{id}.item.json"))
             .map(|b| with_still(id, String::from_utf8_lossy(&b).into_owned()))
             .map(|json| with_progress(id, json, many_episodes()))
+            .map(|json| with_chapters(id, json, episode_chapters()))
     };
     match parts.as_slice() {
         // Item detail: /Users/<u>/Items/<id> and /Items/<id>.
@@ -279,7 +298,7 @@ mod tests {
 
     #[test]
     fn bench_episodes_carry_a_still_and_many_episodes_make_extra_files() {
-        use super::{extra_episode_file, with_progress, with_still};
+        use super::{extra_episode_file, with_chapters, with_progress, with_still};
         let one =
             r#"{"Id": "bm-ep1", "Name": "Bench Episode 1", "Type": "Episode", "IndexNumber": 1}"#;
         let tagged = with_still("bm-ep1", one.to_owned());
@@ -287,6 +306,15 @@ mod tests {
             tagged.contains(r#""ImageTags": {"Primary": "pbm-ep1"}"#),
             "{tagged}"
         );
+        // Chapters only on request, only on episodes, and never twice.
+        assert_eq!(with_chapters("bm-ep1", one.to_owned(), false), one);
+        let chaptered = with_chapters("bm-ep2", one.to_owned(), true);
+        assert!(
+            chaptered.contains(r#""Chapters": [{"Name": "Anfang""#),
+            "{chaptered}"
+        );
+        assert_eq!(with_chapters("bm-ep2", chaptered.clone(), true), chaptered);
+        assert_eq!(with_chapters("bm-h264", one.to_owned(), true), one);
         // Not twice, and only episodes.
         assert_eq!(with_still("bm-ep1", tagged.clone()), tagged);
         assert_eq!(with_still("bm-h264", one.to_owned()), one);

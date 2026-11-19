@@ -70,6 +70,31 @@ pub fn resolve(key: &Key, mods: ModifiersState, repeat: bool, ctx: Ctx) -> Optio
         Key::Named(NamedKey::Enter) if mods.alt_key() && !mods.control_key() && !repeat => {
             return Some(Action::ToggleFullscreen);
         }
+        // The version list of the Play button on the title page in front (the Mac's "Fassung wählen…", Option-Return
+        // there; Alt+Enter is fullscreen here, so the list takes the Menu key, Shift+F10 and Ctrl+Enter). The page answers
+        // only when it has versions to offer; otherwise the key goes on.
+        Key::Named(NamedKey::ContextMenu) if !repeat && !ctx.player_open && !ctx.text_focus => {
+            return Some(Action::Command("cmd.versions"));
+        }
+        Key::Named(NamedKey::F10)
+            if mods.shift_key()
+                && !mods.control_key()
+                && !mods.alt_key()
+                && !repeat
+                && !ctx.player_open
+                && !ctx.text_focus =>
+        {
+            return Some(Action::Command("cmd.versions"));
+        }
+        Key::Named(NamedKey::Enter)
+            if mods.control_key()
+                && !mods.alt_key()
+                && !repeat
+                && !ctx.player_open
+                && !ctx.text_focus =>
+        {
+            return Some(Action::Command("cmd.versions"));
+        }
         // Esc leaves fullscreen, but only when no player is open (there it steps back in the player) and nothing is typed.
         Key::Named(NamedKey::Escape)
             if plain && ctx.fullscreen && !ctx.player_open && !ctx.text_focus =>
@@ -122,6 +147,7 @@ pub fn resolve(key: &Key, mods: ModifiersState, repeat: bool, ctx: Ctx) -> Optio
         Key::Named(NamedKey::ArrowDown) => Some(Action::Player(PlayerKey::Down)),
         // Return starts the offer that is showing (`PlayerScreen.swift:656`).
         Key::Named(NamedKey::Enter) if !repeat => Some(Action::Player(PlayerKey::Enter)),
+        Key::Named(NamedKey::ContextMenu) if !repeat => Some(Action::Player(PlayerKey::Context)),
         Key::Character(c) => match c.to_lowercase().as_str() {
             m @ ("f" | "t" | "m" | "g" | "h" | "j" | "k") if !repeat => m
                 .chars()
@@ -133,19 +159,22 @@ pub fn resolve(key: &Key, mods: ModifiersState, repeat: bool, ctx: Ctx) -> Optio
     }
 }
 
-/// Corner radius of the window outline in points on Linux, where a frameless window has no corners of its own: the radius
-/// of KDE's Breeze window decoration, so the window is as round as every other KDE window (Dolphin, Spotify, Discord) and
-/// not as round as a Mac window. Measured on the real KDE desktop at scale 1.5 (alpha of a window capture, circle fit of
-/// the four corners): Dolphin 8.6 to 9.5 device pixels = 5.7 to 6.3 pt, against 11.2 to 11.5 for this window at the
-/// former 8 pt. Breeze has no setting for it (no key in `breezerc` or the decoration's config), so the measured 6 pt is
-/// the value. Windows 11 keeps the radius DWM gives the window (8 px at 100 %, asked for with `CornerPreference::Round`).
-pub const WINDOW_CORNER_PT: f32 = 6.0;
+/// Breeze draws its window corners with a 5 dp radius plus a soft outline, and KDE offers no way to read what the active
+/// decoration uses (no key in `breezerc`, no protocol; KDecoration3 hands the radius to KWin only). So the radius is a
+/// per-OS fit of what a real Breeze window shows: the area its top-left corner leaves uncovered (`Werkzeuge/desktop-live/
+/// corner-probe.sh`, KCalc in a private nested KWin, Plasma 6.8) equals that of a circle of 8.6 px at scale 1, 11.5 px at
+/// 1.5 and 14.0 px at 2, which is `3.2 + 5.4 * scale`; the renderer's soft edge shows about 0.7 px less than its radius
+/// (an app corner of 11 px measured 10.7 px by the same area), so the base is 3.9. Windows 11 keeps the radius DWM gives the window (8 px at 100 %,
+/// asked for with `CornerPreference::Round`).
+pub const WINDOW_CORNER_BASE_PX: f32 = 3.9;
+/// The part of the corner radius that grows with the scale, in points (see [`WINDOW_CORNER_BASE_PX`]).
+pub const WINDOW_CORNER_PT: f32 = 5.4;
 
 /// The corner radius in device pixels for a window at `scale`: none when it fills the screen (fullscreen or maximised) or
 /// the platform draws the corners itself (anything but Linux).
 pub fn window_corner_px(scale: f32, fullscreen: bool, maximized: bool) -> f32 {
     if cfg!(target_os = "linux") && !fullscreen && !maximized {
-        (WINDOW_CORNER_PT * scale).round()
+        (WINDOW_CORNER_BASE_PX + WINDOW_CORNER_PT * scale).round()
     } else {
         0.0
     }
@@ -161,6 +190,56 @@ pub fn resize_is_stale(
     scale_event: bool,
 ) -> bool {
     !scale_event && window_px == drawn_px && (scale - drawn_scale).abs() <= f32::EPSILON
+}
+
+/// Whether a `Resized` event draws its frame inside the event (`true`) or only asks for a redraw (`false`). One rule for every OS.
+/// A drag makes one event per step, and every step would refit the swap chain (a new one per size; 0.6 ms on Linux, 18-80 ms on
+/// Windows) and queue a frame, so the frames fall behind the pointer. The frame goes through `RedrawRequested` instead, which
+/// draws the newest size once: Linux waits there for the compositor's frame callback (one frame in flight), Windows gets it
+/// from the `WM_PAINT` the resize itself queues, inside the system's size loop. A scale change goes the same way (the window is
+/// resized with it, and the redraw fits surface and layout to scale and size together). `inline` is the `SWIFTLY_RESIZE_INLINE`
+/// switch that brings the old frame-per-event behaviour back, to measure against: the only inline draw path left.
+pub fn resize_draws_in_event(inline: bool) -> bool {
+    inline
+}
+
+/// A redraw that was asked for by a resize but has not run yet, and the fallback for the case that it never runs (a frame
+/// callback the compositor never answers, a `WM_PAINT` the size loop swallowed): after `RESIZE_FALLBACK_MS` the app draws once
+/// by itself. During a drag every redraw clears it within a frame, so it only fires when a redraw was really lost.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ResizeFallback {
+    asked_at: Option<f64>,
+}
+
+/// How long a resize may wait for its `RedrawRequested` before the app draws the newest size itself.
+pub const RESIZE_FALLBACK_MS: f64 = 250.0;
+
+impl ResizeFallback {
+    /// A resize asked for a redraw at `now` (ms). An earlier ask that is still open keeps its time: the wait counts from the first.
+    pub fn asked(&mut self, now: f64) {
+        self.asked_at.get_or_insert(now);
+    }
+
+    /// A redraw ran (any reason): nothing is pending any more.
+    pub fn drawn(&mut self) {
+        self.asked_at = None;
+    }
+
+    /// Whether the fallback draw is due at `now`; taking it clears the ask, so it fires once per lost redraw.
+    pub fn take_due(&mut self, now: f64) -> bool {
+        match self.asked_at {
+            Some(at) if now - at >= RESIZE_FALLBACK_MS => {
+                self.asked_at = None;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// When the event loop must wake for the fallback (ms), if a redraw is pending.
+    pub fn wake_at(&self) -> Option<f64> {
+        self.asked_at.map(|at| at + RESIZE_FALLBACK_MS)
+    }
 }
 
 /// The fullscreen state to ask for when toggling from `current`.
@@ -306,7 +385,7 @@ mod tests {
         assert_eq!(window_corner_px(1.5, false, false) > 0.0, linux);
         assert_eq!(
             window_corner_px(1.5, false, false),
-            if linux { 9.0 } else { 0.0 }
+            if linux { 12.0 } else { 0.0 }
         );
         assert_eq!(window_corner_px(1.5, true, false), 0.0);
         assert_eq!(window_corner_px(1.5, false, true), 0.0);
@@ -314,8 +393,8 @@ mod tests {
 
     use super::*;
 
-    /// The Breeze radius is 6 pt: 6 px at scale 1, 9 at 1.5, 12 at 2. Windows 11 rounds the window itself (DWM, 8 px at
-    /// 100 %), so the renderer cuts nothing there; macOS never reaches this code.
+    /// The Breeze fit is 9 px at scale 1, 12 at 1.5, 15 at 2 (a Breeze window leaves 8.6, 11.5, 14.0 px uncovered). Windows 11 rounds the window itself
+    /// (DWM, 8 px at 100 %), so the renderer cuts nothing there; macOS never reaches this code.
     #[test]
     fn the_window_corner_is_the_breeze_radius_on_linux_and_dwm_s_own_on_windows() {
         let (one, one_and_a_half, two) = (
@@ -324,11 +403,11 @@ mod tests {
             window_corner_px(2.0, false, false),
         );
         if cfg!(target_os = "linux") {
-            assert_eq!((one, one_and_a_half, two), (6.0, 9.0, 12.0));
+            assert_eq!((one, one_and_a_half, two), (9.0, 12.0, 15.0));
         } else {
             assert_eq!((one, one_and_a_half, two), (0.0, 0.0, 0.0));
         }
-        assert!((WINDOW_CORNER_PT - 6.0).abs() < f32::EPSILON);
+        assert!((WINDOW_CORNER_PT - 5.4).abs() < f32::EPSILON);
     }
 
     const PLAYER: Ctx = Ctx {
@@ -369,6 +448,50 @@ mod tests {
         assert_eq!(resolve(&enter, ModifiersState::empty(), false, APP), None);
         assert_eq!(toggled(None), Some(Fullscreen::Borderless(None)));
         assert_eq!(toggled(Some(Fullscreen::Borderless(None))), None);
+    }
+
+    /// The Play button's version list has a keyboard path that does not collide with Alt+Enter (fullscreen).
+    #[test]
+    fn the_version_list_opens_on_the_menu_key_shift_f10_and_ctrl_enter() {
+        let versions = Some(Action::Command("cmd.versions"));
+        let none = ModifiersState::empty();
+        assert_eq!(
+            resolve(&Key::Named(NamedKey::ContextMenu), none, false, APP),
+            versions
+        );
+        assert_eq!(
+            resolve(
+                &Key::Named(NamedKey::F10),
+                ModifiersState::SHIFT,
+                false,
+                APP
+            ),
+            versions
+        );
+        assert_eq!(resolve(&Key::Named(NamedKey::F10), none, false, APP), None);
+        let enter = Key::Named(NamedKey::Enter);
+        assert_eq!(
+            resolve(&enter, ModifiersState::CONTROL, false, APP),
+            versions
+        );
+        assert_eq!(
+            resolve(&enter, ModifiersState::ALT, false, APP),
+            Some(Action::ToggleFullscreen),
+            "Alt+Enter stays fullscreen"
+        );
+        // Not while typing and not with a key held down.
+        let typing = Ctx {
+            text_focus: true,
+            ..APP
+        };
+        assert_eq!(
+            resolve(&Key::Named(NamedKey::ContextMenu), none, false, typing),
+            None
+        );
+        assert_eq!(
+            resolve(&Key::Named(NamedKey::ContextMenu), none, true, APP),
+            None
+        );
     }
 
     #[test]
@@ -502,6 +625,43 @@ mod tests {
             resolve(&r, ModifiersState::empty(), false, PLAYER),
             Some(Action::Player(PlayerKey::Enter))
         );
+    }
+
+    #[test]
+    fn a_resize_frame_is_drawn_once_per_redraw_on_every_os() {
+        // No frame inside the event (a frame per step refits the swap chain and floods the present queue), a scale change
+        // included: only the A/B switch for the old behaviour draws there.
+        assert!(!resize_draws_in_event(false));
+        assert!(resize_draws_in_event(true));
+    }
+
+    #[test]
+    fn a_lost_redraw_is_drawn_by_the_fallback_once() {
+        let mut f = ResizeFallback::default();
+        assert_eq!(f.wake_at(), None);
+        assert!(!f.take_due(1_000.0), "nothing asked, nothing due");
+        f.asked(100.0);
+        f.asked(180.0);
+        assert_eq!(
+            f.wake_at(),
+            Some(100.0 + RESIZE_FALLBACK_MS),
+            "counts from the first ask"
+        );
+        assert!(!f.take_due(349.0));
+        assert!(f.take_due(350.0));
+        assert!(!f.take_due(900.0), "once per lost redraw");
+        assert_eq!(f.wake_at(), None);
+    }
+
+    #[test]
+    fn a_redraw_that_runs_cancels_the_fallback() {
+        let mut f = ResizeFallback::default();
+        f.asked(0.0);
+        f.drawn();
+        assert!(!f.take_due(10_000.0));
+        // The next resize of the same drag starts a new wait.
+        f.asked(10_000.0);
+        assert_eq!(f.wake_at(), Some(10_000.0 + RESIZE_FALLBACK_MS));
     }
 
     #[test]

@@ -28,6 +28,7 @@ mod android;
 mod check;
 mod components;
 mod desktop;
+mod fixture_admin;
 mod fixture_big;
 mod fixture_hls;
 mod fixture_media;
@@ -151,6 +152,9 @@ fn apple(args: &[String]) -> Result<(), Fail> {
     // Only the macOS arm64 slice and the Swift bindings (`Generated.swift`), no other slice and no xcframework: the
     // quick way to refresh the generated file after an export changed (the full run stays the check of the whole).
     let mut bindings_only = false;
+    // `--check-bindings`: generate the same way, write nothing, fail when the committed `Generated.swift` differs
+    // (a merge once left the regenerated file out and the shared Swift views stopped compiling).
+    let mut check_bindings = false;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -163,6 +167,10 @@ fn apple(args: &[String]) -> Result<(), Fail> {
             }
             "--debug" => release = false,
             "--bindings-only" => bindings_only = true,
+            "--check-bindings" => {
+                bindings_only = true;
+                check_bindings = true;
+            }
             other => return Err(format!("unknown option {other}")),
         }
     }
@@ -258,11 +266,21 @@ fn apple(args: &[String]) -> Result<(), Fail> {
             .to_owned();
         if name.ends_with(".swift") {
             let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-            fs::write(
-                sources.join("Generated.swift"),
-                patch_foreign_futures(&patch_async_cancellation(&text)?),
-            )
-            .map_err(|e| e.to_string())?;
+            let patched = patch_foreign_futures(&patch_async_cancellation(&text)?);
+            if check_bindings {
+                let committed =
+                    fs::read_to_string(sources.join("Generated.swift")).unwrap_or_default();
+                if committed != patched {
+                    return Err(
+                        "Packages/SwiftlyCore/Sources/SwiftlyCore/Generated.swift is stale: run \
+                         `cargo run -p xtask -- apple --bindings-only` and commit it"
+                            .into(),
+                    );
+                }
+                eprintln!("xtask: Generated.swift matches a fresh generation");
+                return Ok(());
+            }
+            fs::write(sources.join("Generated.swift"), patched).map_err(|e| e.to_string())?;
         } else if name.ends_with(".h") {
             fs::copy(&path, headers.join(&name)).map_err(|e| e.to_string())?;
         } else if name.ends_with(".modulemap") {

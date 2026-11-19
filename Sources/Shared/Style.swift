@@ -115,12 +115,19 @@ static var progressTravel: Animation? {
     }
 
     struct PressButton: ButtonStyle {
+        /// Runs once when the finger goes down (not on release): the page behind the button starts asking its server
+        /// answers then, a moment before it opens.
+        var onDown: (() -> Void)? = nil
+
         func makeBody(configuration: Configuration) -> some View {
             configuration.label
                 .scaleEffect(configuration.isPressed && !motionReduced ? 0.97 : 1)
                 .opacity(configuration.isPressed ? 0.85 : 1)
                 .animation(Theme.pressCurve(configuration.isPressed),
                            value: configuration.isPressed)
+                .onChange(of: configuration.isPressed) { _, down in
+                    if down { onDown?() }
+                }
         }
     }
 
@@ -699,53 +706,7 @@ struct SecondaryButtonStyle: ButtonStyle {
 
 
 
-/// Thin progress bar at the bottom edge of a tile.
-///
-/// Measures itself instead of the surrounding frame. `containerRelativeFrame`
-/// took the width of the nearest *container*; in a horizontal row that is the
-/// whole row, not the tile. The bar then ran far beyond the tile and even pushed
-/// the title down in the "Continue Watching" row. `GeometryReader` doesn't work
-/// here either: it expands greedily. `onGeometryChange` measures without touching
-/// the layout.
-struct ProgressBar: View {
-    let share: Double
-    /// **Capsule where it stands free in a row**, as in the download list. On a tile
-    /// it stays square: there it forms the edge of the image, and a rounded edge would
-    /// sit in front of it.
-    var round = false
-    @State private var width: CGFloat = 0
-
-    /// **Flush with the bottom edge, not floating.**
-    ///
-    /// It used to float: eight points of spacing, capsule shape. Feedback on device:
-    /// it looked better at the bottom. A bar that forms the edge reads as part of the
-    /// image; one that floats inside reads as a second thing on top of it.
-    var body: some View {
-        ZStack(alignment: .leading) {
-            // **Light track, not dark.**
-            //
-            // It was light once, then dark, and the reason for that was "a light gray
-            // disappears on light posters". That is true for a *gray*; white at 30 percent
-            // does not disappear, it lies on top as a veil, and it is what Apple's TV app
-            // shows on its cards. Feedback: "we had it light before too, that looked
-            // better."
-            //
-            // The difference is not taste. Read as dark, the bar says "something is missing
-            // here"; read as light, it says "this is how long the whole thing is, and this
-            // is how far you are": the track is the length, not the remainder. And on a tile
-            // that is itself framed dark, the dark track vanished into the edge.
-            Rectangle().fill(Color.white.opacity(0.30))
-            // The filled part is a capsule itself, otherwise it ends straight on the inside.
-            (round ? AnyShape(Capsule()) : AnyShape(Rectangle()))
-                .fill(Theme.accent)
-                .frame(width: width * min(max(share, 0), 1))
-        }
-        .clipShape(round ? AnyShape(Capsule()) : AnyShape(Rectangle()))
-        // Four points instead of three; at three it was barely visible on the tiles.
-        .frame(height: 4)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-    }
-}
+// `ProgressBar` lives in `ProgressBar.swift` (iPhone and Mac share it; the TV draws a taller one).
 
 /// The same bar, but only if the setting allows it.
 ///
@@ -763,194 +724,6 @@ struct TileProgress: View {
 
     var body: some View {
         if showItem { ProgressBar(share: share) }
-    }
-}
-
-/// Image at a fixed size.
-///
-/// Important: the size comes from the frame, the image only overlays it. If you
-/// put `aspectRatio(.fill)` directly on the image instead, it becomes wider than
-/// its frame; `clipped()` then clips the rendering but not the layout size, and
-/// everything around it shifts.
-struct Picture<Placeholder: View>: View {
-    let url: URL?
-    var width: CGFloat?
-    var height: CGFloat?
-    /// Instead of a fixed height: the height follows the width.
-    ///
-    /// Needed as soon as the tile fills its column instead of having a fixed size.
-    /// Before, the poster grid computed the height from `tileWidth`; on iPhone
-    /// that happened to be right because three columns are about 110 pt wide there.
-    /// On iPad and Mac the columns are wider, the height stayed at 168, and the
-    /// posters were squashed.
-    var ratio: CGFloat?
-    var corner: CGFloat = Theme.corner
-    /// Progress at the bottom edge. Deliberately **here** and not as an overlay from
-    /// outside: an overlay lies outside the mask, so the bar would stick out past the
-    /// rounded corners with square ends.
-    var progress: Double? = nil
-    @ViewBuilder var placeholder: () -> Placeholder
-
-    /// Profile → Appearance. See `EnvironmentValues.progressOnTiles`.
-    @Environment(\.progressOnTiles) private var barShow
-
-    /// **Loads via ``ImageCache``, not via `AsyncImage`.**
-    ///
-    /// This used `AsyncImage`, while `NetworkImage.swift` already held a loader that
-    /// avoids exactly its three faults: it decodes off the main thread, remembers the
-    /// result and downsamples to the required edge length. The users of it were the
-    /// Mac, the download page and the profile icon, **but not the home page and the
-    /// library**, the two surfaces that get scrolled and where fifty posters decode
-    /// at the same time.
-    ///
-    /// Built and not connected, the same class as the two download rules. No test
-    /// sees this: both loaders work.
-    ///
-    /// **The retry counter goes away**, and that is no loss. It counted
-    /// `NSURLErrorCancelled`, the cancellation `AsyncImage` triggers itself as soon as
-    /// its tile leaves the screen, only to remain in the error state afterwards. A
-    /// bandage around somebody else's property. `ImageCache` fetches in a task of
-    /// its own that doesn't hang on the tile; there is nothing to cancel and nothing
-    /// to retry.
-    @State private var loaded: Image?
-    @State private var visible = false
-    /// No image to be expected: no address, or the fetch came back without one. Only
-    /// then does the caller's placeholder step in, not already during loading,
-    /// otherwise it flashes briefly in front of every tile.
-    @State private var withoutImage = false
-
-    /// **Look up what is known once at creation, not on every draw.**
-    ///
-    /// The cache lookup used to sit in `body`. It looked harmless and wasn't:
-    /// `ImageCache.image(_:)` first takes the address apart to remove the access
-    /// token (`URLComponents`, filter, reassemble). In `body` that means on **every**
-    /// pass, for **every** tile, on the main thread. A detail page draws many images
-    /// and goes through several passes; this was work that took the track away from
-    /// loading without ever contributing anything.
-    ///
-    /// So here, as `NetworkImage` has done from the start: ask once before drawing. A
-    /// value supplied later would come one pass too late, and that one pass is the
-    /// flash.
-    @MainActor
-    init(url: URL?, width: CGFloat? = nil, height: CGFloat? = nil,
-         ratio: CGFloat? = nil, corner: CGFloat = Theme.corner,
-         progress: Double? = nil,
-         @ViewBuilder placeholder: @escaping () -> Placeholder) {
-        self.url = url
-        self.width = width
-        self.height = height
-        self.ratio = ratio
-        self.corner = corner
-        self.progress = progress
-        self.placeholder = placeholder
-        let immediate = url.flatMap { ImageCache.shared.image($0) }
-        _loaded = State(initialValue: immediate)
-        _visible = State(initialValue: immediate != nil)
-        _withoutImage = State(initialValue: url == nil)
-    }
-
-    var body: some View {
-        frameRect
-            .overlay {
-                if let loaded {
-                    loaded.resizable().aspectRatio(contentMode: .fill)
-                        .opacity(visible ? 1 : 0)
-                } else if url != nil, !withoutImage {
-                    // **No placeholder while loading.** The callers' placeholder is the film symbol
-                    // and means "there is no image for this title". During the fetch that is simply
-                    // wrong, and you could see it.
-                    LoadField(corner: 0)
-                } else {
-                    placeholder()
-                }
-            }
-            .task(id: url) {
-                guard let url else { loaded = nil; withoutImage = true; return }
-                withoutImage = false
-                if let present = ImageCache.shared.image(url) {
-                    loaded = present
-                    visible = true
-                    return
-                }
-                loaded = nil
-                visible = false
-                // **The tile knows its size, so it says so.**
-                //
-                // Without it every image is decoded at 1200 pt, twelve times the memory for a
-                // poster 112 pt wide. The screen has at most three pixels per point; add a bit
-                // so a poster doesn't fray on spring animations, and nobody needs more.
-                //
-                // Where no fixed width is available (in the grid the column sets it), it stays at
-                // the full edge length.
-                let needed = [width, height].compactMap { $0 }.max()
-                    .map { Int($0 * 3.2) }
-                guard let new = await ImageCache.shared.load(url, border: needed) else {
-                    withoutImage = true
-                    return
-                }
-                loaded = new
-                withAnimation(Theme.reveal) { visible = true }
-            }
-            .overlay(alignment: .bottom) {
-                // **Zero is not progress.**
-                //
-                // This was only `if let progress`. But for a title never started, Jellyfin
-                // returns not `nil` but **0**, so the bar was drawn with width zero. As long as
-                // its track was dark this hardly showed; since it became light (white 30 %), a
-                // light stripe lies on every series not started. Feedback: "stripe also shows up
-                // on series I haven't started."
-                //
-                // A bar says "this is how far you are". Whoever hasn't started has no position,
-                // and then nothing belongs there.
-                if let progress, progress > 0, barShow {
-                    TileProgress(share: progress)
-                }
-            }
-            .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-            // A fill image can be far wider than the frame; clipping only hides it, taps would
-            // still land on the overflow and open the neighbouring title.
-            .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-    }
-
-    /// The surface everything is measured against.
-    private var area: some View {
-        Color.clear
-            .frame(width: width, height: height)
-            .frame(maxWidth: width == nil ? .infinity : nil)
-    }
-
-    /// **`aspectRatio` only when there is a ratio.**
-    ///
-    /// `aspectRatio(nil, contentMode: .fit)` doesn't mean "leave it" but "take the
-    /// content's ratio", and the content here is a `Color.clear`, which has none.
-    /// Where a width is set this doesn't show: the surface is fixed anyway. Where only
-    /// a height is set, nothing is left for the width to hang on, and the surface
-    /// collapsed to a strip at the left edge.
-    ///
-    /// That is exactly how `Heldbild` came about (height yes, width no, ratio no),
-    /// and with it the image at the top of every detail page in the narrow layout. The
-    /// ratio was added later from main, for the poster grid; callers without one were
-    /// not considered.
-    @ViewBuilder
-    private var frameRect: some View {
-        if let ratio {
-            area.aspectRatio(ratio, contentMode: .fit)
-        } else {
-            area
-        }
-    }
-}
-
-extension Picture where Placeholder == Color {
-    init(url: URL?, width: CGFloat? = nil, height: CGFloat? = nil,
-         ratio: CGFloat? = nil, corner: CGFloat = Theme.corner,
-         progress: Double? = nil) {
-        self.init(url: url, width: width, height: height,
-                  ratio: ratio, corner: corner,
-                  progress: progress) {
-            Theme.area
-        }
     }
 }
 
@@ -1055,6 +828,7 @@ struct SelectionSheet<Record: Identifiable>: View {
                 // space below the last row that does nothing.
                 .frame(height: min(contentHeight, Theme.sheetListMax))
                 .scrollIndicators(.hidden)
+                .sheetListFade()
 
                 SheetLine()
                 SheetCancel { opened = false }
@@ -1362,6 +1136,51 @@ extension SubpageHeader where Right == EmptyView {
 }
 
 extension View {
+    /// **A sheet's list fades at the edge where more rows run on**, like the pages under their headers.
+    /// A list cut at a hard line looked like it ended there; the fade only shows where something is
+    /// hidden (top once scrolled, bottom while rows follow), so a list that fits keeps clean edges.
+    /// Every scrolling list inside a sheet uses this (`Werkzeuge/check.sh` checks it).
+    func sheetListFade() -> some View {
+        modifier(SheetListFade())
+    }
+}
+
+/// How much of each edge of a sheet list fades (0 = none, 1 = full).
+private struct ListEdges: Equatable {
+    var top: Double = 0
+    var bottom: Double = 0
+}
+
+private struct SheetListFade: ViewModifier {
+    @State private var edges = ListEdges()
+    private let depth: CGFloat = 36
+
+    func body(content: Content) -> some View {
+        content
+            // Steps of 0.1 over 24 pt of travel: the mask is redrawn only while an edge comes or goes.
+            .onScrollGeometryChange(for: ListEdges.self) { g in
+                let above = g.contentOffset.y + g.contentInsets.top
+                let below = g.contentSize.height + g.contentInsets.bottom - g.contentOffset.y - g.containerSize.height
+                func step(_ v: CGFloat) -> Double { (Double(min(max(v / 24, 0), 1)) * 10).rounded() / 10 }
+                return ListEdges(top: step(above), bottom: step(below))
+            } action: { _, new in
+                edges = new
+            }
+            .mask {
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.black.opacity(1 - edges.top), .black],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: depth)
+                    Color.black
+                    LinearGradient(colors: [.black, .black.opacity(1 - edges.bottom)],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: depth)
+                }
+            }
+    }
+}
+
+extension View {
     /// **Content runs under the subpage title and fades there**, like on Profile, Home and
     /// the libraries. With the header stacked above the scroll area the page ended in a
     /// hard edge right below the title.
@@ -1498,12 +1317,34 @@ struct PageTab: View {
     var firstLabel: String? = nil
     /// Small chevron after the first tab's label; points up while `chevronOpen`.
     var firstChevron = false
+    /// The chevron's width stays reserved (drawn invisible) while `firstChevron` is off: the season count is not known
+    /// yet, the chevron stood from frame 1, and a one-season series takes it away without moving the tabs after it.
+    var firstChevronReserved = false
     var chevronOpen = false
+    /// Tabs that may still arrive (the series "Extras"): they take their width and gap in the row from frame 1, drawn
+    /// invisible and not tappable until they are real, so the row never changes when they come.
+    var hiddenTabs: Set<Int> = []
     /// Called when a tab is tapped that is already selected.
     var onReselect: ((Int) -> Void)? = nil
 
     var body: some View {
-        HStack(spacing: 28) {
+        // **Every word keeps its own width from the first frame** (`lineLimit(1)` + `fixedSize`, the rule of the
+        // desktop season tab): when the season picker arrives the first label grows ("Folgen" -> "Staffel 1"), and
+        // the stack used to take the width from the other labels, which then wrapped ("Besetzun / g"). On a narrow
+        // screen the gaps give way (28, 18, 10), never the words.
+        ViewThatFits(in: .horizontal) {
+            tabs(gap: 28)
+            tabs(gap: 18)
+            tabs(gap: 10)
+        }
+        .padding(.horizontal, Theme.edgeSpacing)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.line).frame(height: 1)
+        }
+    }
+
+    private func tabs(gap: CGFloat) -> some View {
+        HStack(spacing: gap) {
             ForEach(Array(title.enumerated()), id: \.offset) { pair in
                 let active = pair.offset == selected
                 Button {
@@ -1516,12 +1357,17 @@ struct PageTab: View {
                         } else {
                             Text(pair.element)
                         }
-                        if pair.offset == 0, firstChevron {
+                        if pair.offset == 0, firstChevron || firstChevronReserved {
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 11, weight: .semibold))
                                 .rotationEffect(.degrees(chevronOpen ? 180 : 0))
+                                .opacity(firstChevron ? 1 : 0)
+                                .animation(Theme.motionReduced ? nil : .easeOut(duration: 0.15), value: firstChevron)
+                                .accessibilityHidden(!firstChevron)
                         }
                     }
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                         // **One weight.** `active ? .semibold : .regular` in a horizontal row shifts the
                         // neighbors to its right when switching, since semibold is wider. Which tab is
                         // open is told by tone and line, and neither changes a width.
@@ -1541,6 +1387,9 @@ struct PageTab: View {
                         .padding(.top, -15)
                 }
                 .buttonStyle(Theme.PressButton())
+                .opacity(hiddenTabs.contains(pair.offset) ? 0 : 1)
+                .allowsHitTesting(!hiddenTabs.contains(pair.offset))
+                .accessibilityHidden(hiddenTabs.contains(pair.offset))
                 // Which tab was open depended solely on the accent line and on the bold weight;
                 // for VoiceOver all three were the same. Found on tvOS too: wherever a state
                 // depends only on color, it is not spoken.
@@ -1548,10 +1397,6 @@ struct PageTab: View {
                 .accessibilityHint(pair.offset == 0 && firstChevron ? Text("Staffel wählen") : Text(verbatim: ""))
             }
             Spacer(minLength: 0)
-        }
-        .padding(.horizontal, Theme.edgeSpacing)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.line).frame(height: 1)
         }
     }
 }
@@ -1628,6 +1473,94 @@ struct CastTile: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: [name, role ?? ""].filter { !$0.isEmpty }
             .joined(separator: ", ")))
+    }
+}
+
+/// The "Besetzung" row as a placeholder of its final height (two-line name and role under the portrait), for a film
+/// whose cast is not known yet: the real row replaces it in place and nothing above it moves.
+struct CastSlot: View {
+    @Environment(\.wide) private var wide
+    var body: some View {
+        Segment(title: "Besetzung") {
+            HStack(spacing: 14) {
+                ForEach(0..<6, id: \.self) { _ in
+                    VStack(spacing: 8) {
+                        Circle().fill(Theme.fontVeryQuiet.opacity(0.15))
+                            .frame(width: Theme.castSize, height: Theme.castSize)
+                        VStack(spacing: 2) {
+                            Text(verbatim: "Name\nName").font(Theme.tile).lineLimit(2).hidden()
+                            Text(verbatim: "Rolle").font(Theme.small).lineLimit(1).hidden()
+                        }
+                    }
+                    .frame(width: Theme.castWidth)
+                }
+            }
+            .padding(.horizontal, Theme.margin(wide: wide))
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// The description before the title has answered: three text lines of the real size (the text is cut at three lines), so
+/// the text arrives in its place and moves nothing below it.
+struct DescriptionSlot: View {
+    var body: some View {
+        Text(verbatim: "Zeile\nZeile\nZeile")
+            .growing(15)
+            .lineSpacing(3)
+            .hidden()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 9) {
+                    ForEach(0..<3, id: \.self) { line in
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Theme.fontVeryQuiet.opacity(0.15))
+                            .frame(height: 12)
+                            .padding(.trailing, line == 2 ? 120 : 0)
+                    }
+                }
+                .padding(.top, 4)
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// Remaining time and watched bar under the Play button, with their place reserved from frame 1.
+///
+/// Whether a title has a resume point is only known when the server's item has arrived (a tile from a library row
+/// carries none), and the two lines used to be added then, moving everything below Play. The slot is always there at
+/// its final height (a 12 pt line and a 4 pt bar); the text and the bar fade in inside it.
+struct ResumeSlot: View {
+    var remaining: String?
+    var progress: Float?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(verbatim: remaining ?? "0")
+                .growing(12).monospacedDigit()
+                .foregroundStyle(Theme.fontQuiet)
+                .opacity(remaining == nil ? 0 : 1)
+            ProgressBar(share: Double(progress ?? 0))
+                .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+                .opacity((progress ?? 0) > 0 ? 1 : 0)
+        }
+        .accessibilityHidden(remaining == nil)
+    }
+}
+
+/// The "Gesehen von" row as a placeholder of its final height (60 pt avatars), while the viewers have not answered.
+struct WatchersSlot: View {
+    @Environment(\.wide) private var wide
+    var body: some View {
+        Segment(title: "Gesehen von") {
+            HStack(spacing: 14) {
+                ForEach(0..<3, id: \.self) { _ in
+                    Circle().fill(Theme.fontVeryQuiet.opacity(0.15)).frame(width: 60, height: 60)
+                }
+            }
+            .padding(.horizontal, Theme.margin(wide: wide))
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -2187,15 +2120,19 @@ enum Region: Int, CaseIterable, Identifiable {
         }
     }
 
-    /// Filled Phosphor asset for the bottom bar (`Sources/iOS/Icons.xcassets`).
-    var tabAsset: String? {
+    /// Bottom-bar icon (`Sources/iOS/Icons.xcassets`, drawn from `design/icons/mapping.json`, `tab-*`):
+    /// outline when not selected, the filled variant when selected, as in Apple's tab bars.
+    func tabAsset(selected: Bool) -> String? {
+        let base: String
         switch self {
-        case .start:      "icon.house.fill"
-        case .movies:     "icon.film-strip.fill"
-        case .seriesList: "icon.cards-three.fill"
-        case .downloads:  "icon.arrow-circle-down.fill"
-        case .search, .watchlist: nil
+        case .start:      base = "icon.tab-home"
+        case .movies:     base = "icon.tab-movies"
+        case .seriesList: base = "icon.tab-series"
+        case .downloads:  base = "icon.tab-downloads"
+        case .search:     base = "icon.tab-search"
+        case .watchlist:  base = "icon.bookmark-simple"
         }
+        return selected ? base + ".fill" : base
     }
 }
 
@@ -2235,14 +2172,13 @@ private struct SectionButton: View {
 
     @ViewBuilder private var content: some View {
         let kern = VStack(spacing: iconOnly ? 4 : 3) {
-            // Bottom bar: our **filled** Phosphor symbols; search keeps
-            // the outline glass, as Apple's bar does.
+            // Bottom bar: outline when not selected, filled when selected (like Apple's bar).
             Group {
-                if !iconOnly, let filled = section.tabAsset { Image(filled) }
+                if !iconOnly, let asset = section.tabAsset(selected: active) { Image(asset) }
                 else { Image(icon: section.symbol, size: iconOnly ? 25 : 20) }
             }
-                // 24: our Phosphor glyph sits smaller in its box than Apple's, so at 20 the
-                // filled icons read small next to the labels.
+                // 24: our glyph sits smaller in its box than Apple's, so at 20 the
+                // icons read small next to the labels.
                 .font(.app(size: iconOnly ? 25 : 24, weight: active ? .semibold : .regular))
                 .frame(height: iconOnly ? nil : Theme.tabIconHeight)
                 .overlay(alignment: .topTrailing) {
@@ -3222,62 +3158,98 @@ struct SearchField: View {
     }
 }
 
-/// Description that stands on one line and expands on tap.
+/// Description that stands on three lines and expands on tap.
 ///
 /// The full text was too heavy on the detail pages.
+///
+/// **Truncated or not is decided in the first layout pass, never after a measure.** The "Mehr" line used to
+/// appear when two `onGeometryChange` heights had come back (a state change a frame or more later), and pushed
+/// everything below it down by 34 pt. Now `CutLayout` measures the three-line cut and offers exactly that height to
+/// a `ViewThatFits`: the plain text if it fits, else the cut text with its button. One pass, one answer.
 struct CollapsibleText: View {
     @Environment(\.onImageTint) private var onImage
     let text: String
     @State private var opened = false
-    /// Height of the whole text and of the three-line cut, measured; "Mehr" only where they differ.
-    @State private var full: CGFloat = 0
-    @State private var cut: CGFloat = 0
 
-    private var truncated: Bool { full > cut + 1 }
+    private func body(_ lines: Int?) -> some View {
+        Text(text)
+            .growing(15)
+            .lineSpacing(3)
+            .foregroundStyle(Theme.font)
+            .lineLimit(lines)
+            .multilineTextAlignment(.leading)
+            // Without this, a truncated text reports the width of the *whole* sentence as its
+            // ideal size and the page jumps in width on expanding.
+            .fixedSize(horizontal: false, vertical: true)
+            // **`minWidth: 0`: never wider than the space.**
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func toggle(_ title: LocalizedStringKey) -> some View {
+        Button {
+            withAnimation(Theme.leap) { opened.toggle() }
+        } label: {
+            Text(title)
+                .font(Theme.tile)
+                .foregroundStyle(Theme.accent)
+                .frame(minHeight: 28, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        // No surface over artwork color (experiment `experiment-glas`): the press shows
+        // only in the text's opacity.
+        .buttonStyle(Theme.PressText(active: onImage))
+        .accessibilityHint(opened ? "Zuklappen" : "Aufklappen")
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(text)
-                .growing(15)
-                .lineSpacing(3)
-                .foregroundStyle(Theme.font)
-                .lineLimit(opened ? nil : 3)
-                .multilineTextAlignment(.leading)
-                // Without this, a truncated text reports the width of the *whole* sentence as its
-                // ideal size and the page jumps in width on expanding.
-                .fixedSize(horizontal: false, vertical: true)
-                // **`minWidth: 0`: never wider than the space.**
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { if !opened { cut = $0 } }
-                .background {
-                    // An unlimited copy, only to know how tall the full text would be.
-                    Text(text)
-                        .growing(15)
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                        .hidden()
-                        .accessibilityHidden(true)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { full = $0 }
+        CutLayout(opened: opened) {
+            Group {
+                if opened {
+                    VStack(alignment: .leading, spacing: 6) {
+                        body(nil)
+                        toggle("Weniger")
+                    }
+                } else {
+                    ViewThatFits(in: .vertical) {
+                        body(nil)
+                        VStack(alignment: .leading, spacing: 6) {
+                            body(3)
+                            toggle("Mehr")
+                        }
+                    }
                 }
-            if truncated || opened {
-                Button {
-                    withAnimation(Theme.leap) { opened.toggle() }
-                } label: {
-                    Text(opened ? "Weniger" : "Mehr")
-                        .font(Theme.tile)
-                        .foregroundStyle(Theme.accent)
-                        .frame(minHeight: 28, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                // No surface over artwork color (experiment `experiment-glas`): the press shows
-                // only in the text's opacity.
-                .buttonStyle(Theme.PressText(active: onImage))
-                .accessibilityHint(opened ? "Zuklappen" : "Aufklappen")
             }
+            // The three-line cut, only to know its height.
+            body(3)
+                .hidden()
+                .accessibilityHidden(true)
         }
         // VoiceOver reads the whole text anyway; the truncation is purely visual.
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// Child 0 is the content, child 1 the hidden three-line cut. The content gets the cut's height as its vertical
+/// proposal (nothing when `opened`), which is what lets `ViewThatFits` choose between "whole text" and "cut + Mehr"
+/// in the same pass.
+private struct CutLayout: Layout {
+    var opened: Bool
+
+    private func cutHeight(_ subviews: Subviews, width: CGFloat?) -> CGFloat {
+        subviews[1].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width
+        let cut = cutHeight(subviews, width: width)
+        return subviews[0].sizeThatFits(ProposedViewSize(width: width, height: opened ? nil : cut))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let cut = cutHeight(subviews, width: bounds.width)
+        let box = ProposedViewSize(width: bounds.width, height: opened ? nil : cut)
+        subviews[0].place(at: bounds.origin, anchor: .topLeading, proposal: box)
+        subviews[1].place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(width: bounds.width, height: nil))
     }
 }
 
@@ -3332,12 +3304,20 @@ struct HeroRunOut: View {
     }
 }
 
-/// The line under the play button: Direct Play, rating, age rating.
+/// The line under the play button: rating, age rating, and last the playback mark (Direct Play).
 ///
 /// It used to sit above the button, together with year, runtime and genres in two
 /// lines, which was overloaded. Year and runtime now sit in the hero image; only
 /// what concerns playback stays here.
+///
+/// **The playback mark stands last, because its width is the only one that is not known while the row waits.** It
+/// settles as "Direct Play" or as a hint ("Transcode", ...), words of different widths, and a chip with chips to its
+/// right moved them when it settled. Stars and age rating are known from the title in hand (`expectedRating`,
+/// `expectedAge`), so they keep their place and width; nothing stands to the right of the mark that could move.
 struct ProofRow: View {
+    /// **The chips are not known yet.** The row then stands as skeleton chips with the size of the real ones, and
+    /// turns into the real chips in the same frame, in place: no fade, no slide, no shift of what is next to them.
+    var waiting = false
     var directPlayFlag: Bool = false
     var hint: String?
     var rating: Double?
@@ -3352,28 +3332,43 @@ struct ProofRow: View {
     /// medium, spacing 6 and 8. If someone changes a size, two lines drift apart that
     /// should look the same side by side.
     var own: (symbol: String, word: String, color: Color)?
-
     var body: some View {
+        if waiting { waitingRow } else { chips }
+    }
+
+    /// **What the title in hand says stands as real chips at once; only the playback mark waits.** Stars and age rating
+    /// come with the tile and the stored copy (`ratingText`, `sharing`), so they are drawn in frame 1 in their final
+    /// place. The mark comes with the plan, stands last, and is kept as a skeleton of its final size (invisible real
+    /// words on a quiet fill); when it settles it replaces the skeleton in place and nothing next to it moves.
+    private var waitingRow: some View {
+        HStack(spacing: 8) {
+            if let ratingText {
+                mark("star.fill", Text(verbatim: ratingText), color: Theme.fontQuiet, weight: .semibold)
+            }
+            if let sharing { Badge(text: Self.ageWords(sharing), rounding: 8) }
+            mark("checkmark", Text("Direct Play"), color: Theme.fontVeryQuiet, weight: .semibold).hidden()
+                .background(skeletonFill)
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// The age rating as the badge words it: a plain number reads "ab 12".
+    private static func ageWords(_ rating: String) -> String {
+        rating.allSatisfy(\.isNumber) ? String(localized: "ab \(rating)") : rating
+    }
+
+    private var skeletonFill: some View {
+        RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
+            .fill(Theme.fontVeryQuiet.opacity(0.15))
+    }
+
+    @ViewBuilder
+    private var chips: some View {
         // **8 between shells, not 14.** 14 dates from when only Direct Play carried a
         // shell and the rating stood bare next to it. Since all three marks have
         // surfaces, they stand like value pills and the fields of the action row: 8
         // apart.
         HStack(spacing: 8) {
-            if let own {
-                mark(own.symbol, Text(verbatim: own.word),
-                      color: own.color, weight: .semibold)
-            } else if directPlayFlag {
-                // **Semibold, not `.heavy`.** Extra bold was a fourth weight besides Regular,
-                // Medium and Semibold, and thus the only violation of "at most three weights"
-                //. The icon is a checkmark at 11 pt; what makes it louder is the
-                // accent color, not the weight.
-                mark("checkmark", Text("Direct Play"),
-                      color: Theme.accent, weight: .semibold)
-            } else if let hint {
-                mark("exclamationmark.triangle.fill", Text(hint),
-                      color: Theme.warning, weight: .regular)
-            }
-
             // In the same shell as Direct Play: before, the rating was the only item in the
             // row standing bare.
             if let ratingText {
@@ -3388,7 +3383,24 @@ struct ProofRow: View {
             // mark with 3 sits right next to things with 10; it was the most angular element
             // on the page. Here and not at the building block: `Badge` is also used in the
             // Mac and TV targets, and those have their own scale.
-            if let sharing { Badge(text: sharing.allSatisfy(\.isNumber) ? String(localized: "ab \(sharing)") : sharing, rounding: 8) }
+            if let sharing { Badge(text: Self.ageWords(sharing), rounding: 8) }
+
+            // **Last, so that its width moves nothing** (see the type's comment): "Direct Play", a hint, or on the Seerr page
+            // the status.
+            if let own {
+                mark(own.symbol, Text(verbatim: own.word),
+                      color: own.color, weight: .semibold)
+            } else if directPlayFlag {
+                // **Semibold, not `.heavy`.** Extra bold was a fourth weight besides Regular,
+                // Medium and Semibold, and thus the only violation of "at most three weights"
+                //. The icon is a checkmark at 11 pt; what makes it louder is the
+                // accent color, not the weight.
+                mark("checkmark", Text("Direct Play"),
+                      color: Theme.accent, weight: .semibold)
+            } else if let hint {
+                mark("exclamationmark.triangle.fill", Text(hint),
+                      color: Theme.warning, weight: .regular)
+            }
 
             Spacer(minLength: 0)
         }
@@ -3824,9 +3836,15 @@ struct HeroImage: View {
     let url: URL?
     var height: CGFloat = Theme.heroHeightValue
     var space: String = "blatt"
+    /// The BlurHash of the head picture, painted until it is there.
+    var blur: String? = nil
+    /// The pictures the title's tiles showed (landscape first): frame 1 shows the first one the picture memory holds.
+    var stand: [URL] = []
 
     var body: some View {
-        Picture(url: url, height: height, corner: 0)
+        Picture(url: url, height: height, corner: 0, blur: blur, stand: stand)
+            .anchored(.top)
+            .urgent()
             .visualEffect { [height, space] content, status in
                 let stretch = max(0, status.frame(in: .named(space)).minY)
                 let mass = (height + stretch) / max(height, 1)

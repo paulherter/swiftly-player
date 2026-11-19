@@ -165,6 +165,62 @@ final class RecordingPort: PlayerEnginePort {
         await observing.value
     }
 
+    /// **The build 48 crash.** The engine reports its clock four times a second for the whole film. The sink
+    /// used to keep the receiver in a `Mutex<closure?>`; every `withLock` re-wrapped the closure in two
+    /// reabstraction thunks, so the call chain between the port and the core grew by two frames per event and the
+    /// main stack overflowed after about half an hour. The depth at the receiver must stay flat.
+    @Test @MainActor func theStackDoesNotGrowWithEveryEngineEvent() {
+        let port = RecordingPort()
+        port.answersLoads = false
+        let driver = PlayerEngineDriver(port: port)
+        var depths: [Int] = []
+        var received = 0
+        driver.connect { _ in
+            received += 1
+            if received % 250 == 1 { depths.append(Thread.callStackReturnAddresses.count) }
+        }
+        var position = 0.0
+        for _ in 0..<20_000 {
+            port.emit?(.clock(position: position, sourceTime: position))
+            position += 0.25
+        }
+        #expect(received == 20_000)
+        let first = depths.first ?? 0
+        let deepest = depths.max() ?? 0
+        #expect(first > 0 && deepest <= first + 2, "the stack grew from \(first) to \(deepest) frames over 20 000 events")
+    }
+
+    /// Build 48 crashed while the player closed (the screen's last reference to the driver fell): the driver's receiver
+    /// was a chain of one reabstraction thunk context per engine event, and releasing the chain recursed three frames per
+    /// link on the main stack (about 8 000 links, 1 MB). The probe sits at the bottom of the chain, so the stack depth
+    /// where it is released is the depth of the whole release.
+    @Test @MainActor func closingTheDriverAfterManyEventsDoesNotRecurseThroughTheReceiverChain() async {
+        final class Box { var depth = -1 }
+        final class Probe {
+            let box: Box
+            init(_ box: Box) { self.box = box }
+            deinit { box.depth = Thread.callStackReturnAddresses.count }
+        }
+        let box = Box()
+        let port = RecordingPort()
+        port.answersLoads = false
+        var driver: PlayerEngineDriver? = PlayerEngineDriver(port: port)
+        do {
+            let probe = Probe(box)
+            driver?.connect { _ in _ = probe }
+        }
+        var position = 0.0
+        for _ in 0..<1_000 {
+            port.emit?(.clock(position: position, sourceTime: position))
+            position += 0.25
+        }
+        driver = nil
+        // The pump task holds the receiver until it sees the end of the command stream.
+        for _ in 0..<500 where box.depth < 0 { await Task.yield() }
+        #expect(box.depth > 0, "the receiver was never released with the driver")
+        #expect(box.depth < 200, "releasing the receiver recursed \(box.depth) frames deep after 1 000 events")
+    }
+
     private func loadRequest() -> PlayerLoad {
         PlayerLoad(
             url: "https://tv.example.test/v", headers: [], start: nil, audioServerIndex: nil, subtitleServerIndex: -1,

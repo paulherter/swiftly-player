@@ -24,6 +24,19 @@ impl LegacyDetail {
     pub fn playback_selection(&self, always_direct_play: bool, megabit: i64) {
         self.inner.playback_selection(always_direct_play, megabit);
     }
+    /// The first frame of a title page from the stored copies (no network, no await): the `Kern.title` shape with
+    /// `vorab` true, or an empty string when nothing is stored of the title.
+    pub fn title_seed(&self, id: String) -> String {
+        self.inner.title_seed(&id)
+    }
+    /// The first frame of a series page from the stored copies (the `Kern.series` shape), or an empty string.
+    pub fn series_seed(&self, id: String) -> String {
+        self.inner.series_seed(&id)
+    }
+    /// The stored episode rows of one season (the `Kern.episodes` shape), or an empty string.
+    pub fn episodes_seed(&self, series: String, season: String) -> String {
+        self.inner.episodes_seed(&series, &season)
+    }
     /// `Kern.title`.
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn title(&self, id: String) -> Result<String, CoreError> {
@@ -116,17 +129,19 @@ impl LegacyDetail {
     pub async fn download_item(&self, ids: Vec<String>) -> Result<String, CoreError> {
         Ok(self.inner.download_item(&ids).await)
     }
-    /// `Kern.downloadAudioOptions`: `{"angeboten","optionen":[{"id","text"}],"vorgabe"}`.
+    /// `Kern.downloadAudioOptions`: `{"angeboten","optionen":[{"id","text"}],"vorgabe"}`. `device_language` is the
+    /// language of the device as a tag (`Locale.getDefault().toLanguageTag()`), empty when unknown.
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn download_audio_options(
         &self,
         ids: Vec<String>,
         preferred: String,
         locale: String,
+        device_language: String,
     ) -> Result<String, CoreError> {
         let streams = self.inner.download_audio_streams(&ids).await;
         Ok(self.inner.download_audio_options(
-            &crate::downloads::TrackNames::new(&locale),
+            &crate::downloads::TrackNames::new(&locale).with_device_language(Some(device_language)),
             &streams,
             &preferred,
         ))

@@ -223,6 +223,10 @@ private struct SupportProfileIntro: ViewModifier {
                 }
             }
             .task {
+                #if DEBUG
+                // Proof hook (same as the Mac's other asks): `-SwiftlyNoSupportAsk` keeps it off a window capture.
+                if ProcessInfo.processInfo.arguments.contains("-SwiftlyNoSupportAsk") { return }
+                #endif
                 // Once, and only for someone who does not support yet.
                 guard !UserDefaults.standard.bool(forKey: SupportLinks.profileIntroKey),
                       !SupportModel.shared.isSupporter else { return }

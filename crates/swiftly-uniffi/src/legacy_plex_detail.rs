@@ -186,10 +186,11 @@ impl LegacyPlexDetail {
         ids: Vec<String>,
         preferred: String,
         locale: String,
+        device_language: String,
     ) -> Result<String, CoreError> {
         let streams = self.inner.download_audio_streams(&ids).await;
         Ok(self.inner.download_audio_options(
-            &crate::downloads::TrackNames::new(&locale),
+            &crate::downloads::TrackNames::new(&locale).with_device_language(Some(device_language)),
             &streams,
             &preferred,
         ))

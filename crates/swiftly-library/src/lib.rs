@@ -24,6 +24,7 @@ pub mod library_filter;
 pub mod library_genre;
 pub mod library_state;
 pub mod list_rules;
+pub mod narrowing;
 pub mod pages_ratio;
 pub mod playlist_directory;
 pub mod refresh;
@@ -44,10 +45,17 @@ pub use library_filter::{LibraryFilter, RememberGenre, SortingExt};
 pub use library_genre::{LibraryGenre, LibraryShare};
 pub use library_state::{LibraryCommand, LibraryState};
 pub use list_rules::ListRules;
+pub use narrowing::{
+    Facet, FilterChoice, FilterFacets, FilterGroup, FilterGroupKind, FilterRow, FilterSheet,
+    LanguageIndex, ListFilter, Narrowing, SheetLine, YearSpan, normalize_language, pill_text,
+};
 pub use playlist_directory::{PlaylistDirectory, VideoPlaylist};
 pub use series_state::SeasonSelectionRule;
 pub use shelf::{ShelfSource, TitleFilter};
 pub use start_libraries::{StartLibraries, StartLibrary};
-pub use start_order::{OrderEditor, OrderEvent, OrderRefused, StartOrder, library_row_id};
+pub use start_order::{
+    HomeForm, OrderEditor, OrderEvent, OrderRefused, SEERR_ARRIVAL_ROW, SEERR_REQUESTS_ROW,
+    SeerrSection, StartOrder, is_seerr_row, library_row_id, seerr_row_default_on,
+};
 pub use start_rails::{LibraryJump, StartRail, StartRailsEpisode};
 pub use store::{KeyValue, MemoryKeyValue, MemoryStore, Store};

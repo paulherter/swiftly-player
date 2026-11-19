@@ -31,6 +31,8 @@ pub use layer::{
 };
 pub use mock::{MockTransport, Recorded};
 #[cfg(feature = "reqwest")]
-pub use reqwest_transport::{ReqwestTransport, TlsOptions, TransportConfig};
+pub use reqwest_transport::{
+    ReqwestTransport, TlsOptions, TransportConfig, map_error as map_reqwest_error,
+};
 pub use transport::HttpTransport;
 pub use url::Url;

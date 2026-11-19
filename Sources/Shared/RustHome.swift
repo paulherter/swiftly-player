@@ -92,18 +92,22 @@ final class RustScreens {
     }
 
     /// A grid for this list; the library page keeps it between loads.
-    func shelf(for session: Session?, source: JellyfinKit.ShelfSource) -> RustShelf? {
+    func shelf(for session: Session?, source: JellyfinKit.ShelfSource, rememberName: String? = nil) -> RustShelf? {
         guard let session, let account = AccountRef(session) else { return nil }
         let spec = SwiftlyCore.LibrarySpec(
             source: SwiftlyCore.ShelfSource(
                 parent: source.parent, onlyOut: source.onlyOut, art: source.art, collection: source.collection),
-            genre: nil, rememberName: nil)
+            genre: nil, rememberName: rememberName)
         guard let vm = try? RustHomeFeed.core.libraryVm(account: account, locale: Self.language, spec: spec) else {
             return nil
         }
         return RustShelf(SwiftlyCore.LibraryModel(vm: vm))
     }
 }
+
+/// The core's filter sheet and its picks, named here so the page code needs no `import SwiftlyCore`.
+typealias CoreFilterSheet = SwiftlyCore.FilterSheetPart
+typealias CoreFilterPick = SwiftlyCore.FilterPick
 
 /// The core's grid of one list, turned into what the library page holds.
 @MainActor
@@ -144,6 +148,26 @@ final class RustShelf {
                 .init(letter: $0.key, first: Int($0.first), label: $0.label, gap: $0.gap)
             },
             count: Int(part.count), sorting: sorting, monthly: part.monthly)
+    }
+
+    /// The filter sheet the core builds for this list.
+    func sheet(offered: [JellyfinKit.LibraryFilter]) -> SwiftlyCore.FilterSheetPart {
+        core.filterSheet(offered: offered.map(\.rust))
+    }
+    /// The sheet is about to open: the core fetches what it offers.
+    func openSheet() { core.loadFilterOptions() }
+    var version: UInt64 { core.version }
+    func changed(after seen: UInt64) async { await core.waitForChange(after: seen) }
+    /// A row of the sheet (status, years or language): the core maps it to its intent, narrows and reloads itself.
+    func pick(_ pick: SwiftlyCore.FilterPick) { core.pick(pick) }
+    /// What the filter pill shows, as the core words it ("Ungesehen · 2010–2019 · Deutsch").
+    var pillText: String { core.pillText() }
+    /// What the core narrows to now, as text (`"2010-2019|deu"`, `"|"` for nothing).
+    var narrowingKey: String { core.narrowingKey }
+    /// Returns when the core's own load has settled; then the page.
+    func settledPage() async -> Page {
+        await core.settled()
+        return page()
     }
 
     /// The strip key of a loaded title, as the core computes it from the full title.
@@ -202,6 +226,14 @@ extension JellyfinKit.Sorting {
 }
 
 extension JellyfinKit.LibraryFilter {
+    init(rust: SwiftlyCore.LibraryFilter) {
+        switch rust {
+        case .all: self = .all
+        case .begun: self = .begun
+        case .watchlist: self = .watchlist
+        case .unwatched: self = .unwatched
+        }
+    }
     var rust: SwiftlyCore.LibraryFilter {
         switch self {
         case .all: .all
@@ -244,13 +276,17 @@ extension Item {
             }
         }
         let data: UserItemData? =
-            (watched || favorite || unplayed != nil || tile.progress != nil)
+            (watched || favorite || unplayed != nil || tile.progress != nil || facts.positionTicks != nil)
             ? UserItemData(
+                playbackPositionTicks: facts.positionTicks,
                 played: watched, isFavorite: favorite,
                 playedPercentage: tile.progress.map { Double($0) * 100 }, unplayedItemCount: unplayed)
             : nil
+        // The position and runtime travel with the stand-in, so a detail page opened from it words its Play button
+        // ("Fortsetzen ab 12:34") in the first frame instead of changing it when the title arrives.
         self.init(
             id: tile.id, name: facts.name, type: facts.kind, productionYear: facts.year.map(Int.init),
+            runTimeTicks: facts.runTimeTicks,
             seriesName: facts.kind == "Episode" ? tile.title : nil,
             indexNumber: facts.episodeNumber.map(Int.init),
             parentIndexNumber: facts.seasonNumber.map(Int.init), seriesId: facts.seriesId,
@@ -286,4 +322,13 @@ extension RustTileLook {
     }
 }
 
+#endif
+
+#if canImport(SwiftlyCore)
+/// The core's start order of a library page (`legacy_default_page_sorting`), as the app's `Sorting`.
+func coreDefaultPageSorting() -> JellyfinKit.Sorting {
+    JellyfinKit.Sorting(rawValue: legacyDefaultPageSorting()) ?? .latest
+}
+#else
+func coreDefaultPageSorting() -> JellyfinKit.Sorting { .latest }
 #endif

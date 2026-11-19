@@ -1,4 +1,4 @@
-//! Stress modes of the fixture server (`cargo xtask fixture-server --mode empty|long|huge|i18n|slow|offline-flaky|auth-expire`).
+//! Stress modes of the fixture server (`cargo xtask fixture-server --mode empty|long|huge|i18n|slow|offline-flaky|auth-expire|refuse-userdata`).
 //! Purely additive: with no mode every request goes to the old routing untouched. Modes can be combined with commas
 //! (`--mode huge,i18n,slow`). `GET /fixture/mode` tells the tester what is on.
 
@@ -24,6 +24,8 @@ pub(crate) struct Config {
     pub i18n: bool,
     /// Another device of the same user is playing `m1` (`GET /Sessions`), and the hand-over endpoints answer.
     pub sessions: bool,
+    /// `POST UserItems/{id}/UserData` (the tile menu's "remove from Continue Watching") answers 500.
+    pub refuse_user_data: bool,
     /// Fixed latency per request in ms (0 = off).
     pub latency_ms: u64,
     /// Every Nth countable request fails (0 = off): odd failures answer 503, even ones drop the connection.
@@ -49,12 +51,13 @@ impl Config {
                 "huge" => c.huge = true,
                 "i18n" => c.i18n = true,
                 "sessions" => c.sessions = true,
+                "refuse-userdata" => c.refuse_user_data = true,
                 "slow" => c.latency_ms = latency.unwrap_or(400),
                 "offline-flaky" => c.flaky_every = flaky.unwrap_or(5),
                 "auth-expire" => c.expire_after = expire.unwrap_or(20),
                 other => {
                     return Err(format!(
-                        "unknown mode `{other}` (empty|long|huge|i18n|sessions|slow|offline-flaky|auth-expire)"
+                        "unknown mode `{other}` (empty|long|huge|i18n|sessions|refuse-userdata|slow|offline-flaky|auth-expire)"
                     ));
                 }
             }
@@ -77,6 +80,7 @@ impl Config {
             (self.huge, "huge"),
             (self.i18n, "i18n"),
             (self.sessions, "sessions"),
+            (self.refuse_user_data, "refuse-userdata"),
             (self.latency_ms > 0, "slow"),
             (self.flaky_every > 0, "offline-flaky"),
             (self.expire_after > 0, "auth-expire"),

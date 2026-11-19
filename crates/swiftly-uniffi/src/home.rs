@@ -5,13 +5,22 @@
 use std::sync::Arc;
 
 use swiftly_jellyfin::ServerKind;
+use swiftly_library::HomeForm;
 use swiftly_vm::{
-    AccountRef, Badge, Change, HomeIntent, HomePrefs, ImageKind, ImageRef, Rail, RailKind,
-    RailsPart, Status, StatusPart, Tile, TileFacts,
+    AccountRef, Badge, Change, HomeIntent, HomePrefs, ImageKind, ImageRef, NoticePart, Rail,
+    RailKind, RailsPart, Status, StatusPart, Tile, TileFacts,
 };
 
 use crate::error::CoreError;
 use crate::transport::CoreTransport;
+
+/// Which kind of device draws the Start page (the Seerr sections it shows differ; declared in `swiftly-library`).
+#[uniffi::remote(Enum)]
+pub enum HomeForm {
+    Handheld,
+    Desktop,
+    Tv,
+}
 
 #[uniffi::remote(Enum)]
 pub enum ServerKind {
@@ -84,6 +93,10 @@ pub struct TileFacts {
     pub season_number: Option<i32>,
     pub episode_number: Option<i32>,
     pub child_count: Option<i32>,
+    #[uniffi(default = None)]
+    pub position_ticks: Option<i64>,
+    #[uniffi(default = None)]
+    pub run_time_ticks: Option<i64>,
 }
 
 #[uniffi::remote(Enum)]
@@ -135,6 +148,15 @@ pub enum HomeIntent {
     Refresh,
     AccountSwitched { account: Option<AccountRef> },
     Visible { rail: String },
+    RemoveFromContinue { item_id: String },
+    DismissNotice,
+}
+
+#[uniffi::remote(Record)]
+pub struct NoticePart {
+    pub version: u64,
+    pub seq: u64,
+    pub message: Option<String>,
 }
 
 #[uniffi::remote(Record)]
@@ -198,18 +220,28 @@ pub struct HomeLibraryChoice {
 }
 
 /// The effective combined row order for the settings list: `stored` healed against the fixed rows that exist and
-/// the chosen libraries. Save the result (after a move) under the per-server setting `startReihenfolge`.
+/// the chosen libraries and, with `seerr` (Seerr connected), the sections of `seerr:arrival` and `seerr:requests` that `form` shows (handheld both, desktop only the banner, TV none). Save the result (after a move) under the per-server setting `startReihenfolge`.
 #[uniffi::export]
 pub fn home_row_order(
     stored: Vec<String>,
     disconnected: bool,
     libraries: Vec<HomeLibraryChoice>,
+    seerr: bool,
+    form: HomeForm,
 ) -> Vec<String> {
     let libs: Vec<_> = libraries
         .iter()
         .map(|c| swiftly_library::StartLibrary::new(&c.id, &c.name, c.collection))
         .collect();
-    swiftly_library::StartOrder::applicable(&stored, disconnected, &libs)
+    swiftly_library::StartOrder::applicable_for(&stored, disconnected, &libs, seerr, form)
+}
+
+/// The one-time carry-over of the old per-kind order: with no combined order stored, the old `startReihen` fixed rows
+/// (`old_fixed`) as the list to store under `startReihenfolge`; empty when there is nothing to store (an order is stored
+/// already, or nothing old). Call it before [`home_row_order`] and store a non-empty answer.
+#[uniffi::export]
+pub fn home_row_order_carried(stored: Vec<String>, old_fixed: Vec<String>) -> Vec<String> {
+    swiftly_library::StartOrder::carried_over(&stored, &old_fixed).unwrap_or_default()
 }
 
 /// Moves one row of the combined order (`from` to `to`, clamped).
@@ -227,6 +259,12 @@ pub fn part_rails() -> u32 {
 #[uniffi::export]
 pub fn part_status() -> u32 {
     swiftly_vm::part::STATUS
+}
+
+/// Bit of `Change.parts` for the hint part (`HomeVm::notice`).
+#[uniffi::export]
+pub fn part_notice() -> u32 {
+    swiftly_vm::part::NOTICE
 }
 
 /// The home page: parts to read, intents to send, `changed` to wait on.
@@ -261,6 +299,12 @@ impl HomeVm {
     /// The rails (ids of all titles, tile data of the window).
     pub fn rails(&self) -> RailsPart {
         RailsPart::clone(&self.vm.rails())
+    }
+
+    /// The hint the page raised by itself (a refused removal from Continue Watching): show `message` once, then send
+    /// `HomeIntent::DismissNotice`.
+    pub fn notice(&self) -> NoticePart {
+        NoticePart::clone(&self.vm.notice())
     }
 
     /// Tile data of `count` titles of a rail from `start` on.

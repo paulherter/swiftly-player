@@ -1,5 +1,6 @@
 import JellyfinKit
 import SwiftUI
+import SwiftlyCore
 
 /// Connect Seerr: the TV flow.
 ///
@@ -19,6 +20,9 @@ struct SeerrConnectView: View {
     @State private var password = ""
     /// "Advanced": custom headers for a service in front of Seerr.
     @State private var headers: [HeaderRow] = []
+    @State private var method: SwiftlyCore.SignInMethod?
+    /// The core's sign-in screen (not connected / signing in / failed with words / connected), one per page visit.
+    @State private var flow: SeerrSetupFlow?
 
     var body: some View {
         ZStack {
@@ -49,6 +53,15 @@ struct SeerrConnectView: View {
             if user.isEmpty { user = model.session?.userName ?? "" }
             await seerr.lookUp()
         }
+        // Not connected: the core's screen decides what shows. Connected (also by the server's synced session), or after a
+        // disconnect, a fresh one.
+        .task(id: seerr.connected) {
+            guard !seerr.connected else { flow = nil; return }
+            if method == nil, model.session?.kind == .plex { method = .plex }
+            let fresh = SeerrSetupFlow(seerr: seerr)
+            flow = fresh
+            await fresh.open()
+        }
     }
 
     @ViewBuilder
@@ -74,29 +87,79 @@ struct SeerrConnectView: View {
 
     @ViewBuilder
     private var formSheet: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            InputField(placeholder: "seerr.example.de", text: $address, content: .URL)
-            InputField(placeholder: "Benutzername", text: $user, content: .username)
-            InputField(placeholder: "Passwort", text: $password,
-                        safe: true, content: .password)
-            TVAdvanced(rows: $headers)
+        if let flow, flow.opened, !flow.working {
+            switch flow.info.entry {
+            case .notSetUp:
+                Text(verbatim: flow.info.notSetUp ?? "")
+                    .font(Theme.body).foregroundStyle(Theme.fontQuiet)
+                    .frame(width: 900, alignment: .leading)
+                    .padding(.top, 44)
+            case .askAddress, .knownAddress:
+                signInForm(flow)
+            }
+        } else {
+            // The core's own loading line; no spinner on the TV, the page keeps its shape.
+            Text(verbatim: flow?.info.busy ?? "")
+                .font(Theme.body).foregroundStyle(Theme.fontQuiet)
+                .padding(.top, 44)
+        }
+    }
 
-            if let error = seerr.error {
+    private func signInForm(_ flow: SeerrSetupFlow) -> some View {
+        let rows = flow.methods
+        let chosen = rows.first { $0.method == method } ?? rows.first
+        return VStack(alignment: .leading, spacing: 20) {
+            // The address: asked once per server of the administrator only. Everyone else sees it as a line.
+            if flow.info.entry == .askAddress {
+                InputField(placeholder: "seerr.example.de", text: $address, content: .URL)
+                TVAdvanced(rows: $headers)
+            } else if let known = flow.info.address {
+                HStack(spacing: 24) {
+                    Text(verbatim: known).font(Theme.body).foregroundStyle(Theme.fontQuiet).lineLimit(1)
+                    if flow.info.canEditAddress {
+                        Button("Adresse ändern") { flow.editAddress() }
+                            .buttonStyle(ThemedButtonStyle())
+                    }
+                }
+            }
+            if rows.count > 1 {
+                HStack(spacing: 16) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                        Button {
+                            method = row.method
+                            // The Jellyfin name is the media server's; an e-mail is typed.
+                            user = row.method == .jellyfin ? (model.session?.userName ?? "") : ""
+                        } label: {
+                            Text(verbatim: row.title).font(Theme.body)
+                                .padding(.horizontal, 26).padding(.vertical, 10)
+                        }
+                        .buttonStyle(HubTabStyle(selected: row.method == chosen?.method))
+                    }
+                }
+                .focusSection()
+            }
+            if let chosen {
+                if let label = chosen.userLabel {
+                    InputField(placeholder: LocalizedStringKey(label), text: $user,
+                               content: chosen.method == .jellyfin ? .username : .emailAddress)
+                }
+                if chosen.needsPassword {
+                    InputField(placeholder: "Passwort", text: $password, safe: true, content: .password,
+                               completion: { Task { await signIn(chosen, flow) } })
+                }
+            }
+
+            if let error = flow.info.error {
                 Text(verbatim: error)
-                    // Failed is not "waiting". The sign-in went wrong, so `error`; the reasoning is at the
-                    // token in `Colors.swift`. Server intake and Quick Connect already do it right.
+                    // Failed is not "waiting". The sign-in went wrong, so `error`.
                     .font(Theme.small).foregroundStyle(Theme.error)
             }
 
             // No disabled button: while nothing is entered there is nothing to do, and a grey button claims the opposite.
-            if !address.isEmpty, !user.isEmpty, !password.isEmpty {
-                Button(seerr.reportAn ? "Verbinde…" : "Verbinden") {
-                    guard !seerr.reportAn else { return }
-                    Task {
-                        await seerr.linkUp(address: address, user: user,
-                                              password: password, headers: headers.headers)
-                        if seerr.connected { password = "" }
-                    }
+            if let chosen, ready(chosen, flow) {
+                Button(flow.working ? "Verbinde…" : "Anmelden") {
+                    guard !flow.working else { return }
+                    Task { await signIn(chosen, flow) }
                 }
                 .buttonStyle(ThemedButtonStyle())
             }
@@ -108,89 +171,43 @@ struct SeerrConnectView: View {
         .frame(width: 900, alignment: .leading)
         .padding(.top, 44)
     }
-}
 
-/// A title the user's own server doesn't have yet: the TV tile.
-///
-/// Pale, and that is the whole message. Moving over the grid, one should see without
-/// reading that there is nothing to play here.
-struct SeerrTile: View {
-    let hit: SeerrHit
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Picture(url: hit.poster(width: 500),
-                 width: Theme.posterWidth, height: Theme.posterHeight,
-                 symbolText: hit.isSeries ? "tv" : "film")
-                .opacity(0.45)
-                .overlay(alignment: .bottomLeading) { mark.padding(10) }
-
-            Text(verbatim: hit.title)
-                .font(Theme.tile)
-                .foregroundStyle(Theme.fontQuiet)
-                .lineLimit(1)
-                .padding(.top, 14)
-
-            Text(verbatim: subtitle)
-                .font(Theme.small)
-                .foregroundStyle(Theme.fontVeryQuiet)
-                .lineLimit(1)
-                .padding(.top, 2)
-        }
-        .frame(width: Theme.posterWidth, alignment: .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "\(hit.title), \(hit.state.announcement)"))
+    private func ready(_ row: SwiftlyCore.SetupMethodRow, _ flow: SeerrSetupFlow) -> Bool {
+        if flow.info.entry == .askAddress, address.isEmpty { return false }
+        if row.userLabel != nil, user.isEmpty { return false }
+        if row.needsPassword, password.isEmpty { return false }
+        return true
     }
 
-    private var subtitle: String {
-        let art = hit.isSeries ? String(localized: "Serie") : String(localized: "Film")
-        return hit.year.map { "\($0) · \(art)" } ?? art
-    }
-
-    @ViewBuilder
-    private var mark: some View {
-        if hit.state != .present {
-            // The measures of `Shared/SeerrTile.swift`, doubled. There: icon 10 semibold, text
-            // `Theme.badge`, spacing 3, padding 5/7 by 3. Here it was 15 bold and 17 semibold, neither iPhone nor TV steps.
-            HStack(spacing: 6) {
-                Image(icon: hit.state.symbol)
-                    .font(.app(size: 20, weight: .semibold))
-                if let word = hit.state.shortWord {
-                    Text(verbatim: word).font(Theme.badge)
-                }
-            }
-            .foregroundStyle(Theme.reason)
-            .padding(.horizontal, hit.state.shortWord == nil ? 10 : 14)
-            .padding(.vertical, 6)
-            .background(hit.state.color, in: Capsule())
-        }
+    private func signIn(_ row: SwiftlyCore.SetupMethodRow, _ flow: SeerrSetupFlow) async {
+        await flow.signIn(row.method, address: address, headers: headers, name: user, password: password)
+        if seerr.connected { password = "" }
     }
 }
 
 /// The page of a title the user's own server doesn't have yet.
 ///
-/// The same page as usual, just a different action: the big button changes from Play to Request.
+/// The same page as usual, just a different action: the big button asks. Every word, state and the request
+/// sheet come from the core through `SeerrTitleFlow` (shared with iPhone and Mac); this draws them for the remote.
 struct SeerrDetailView: View {
     let model: AppModel
-    let hit: SeerrHit
+    let hit: JellyfinKit.SeerrHit
 
-    /// State, words, button, season panel and the second tap live in the core (`SeerrScreen`).
-    @State private var flow: SeerrCore.Flow?
+    @State private var flow: SeerrTitleFlow?
     /// Focus must move into the panel on opening; tvOS doesn't do it while the trigger stays.
-    @FocusState private var firstRow: Int?
-    /// The request row: focus lands here if no season is available. Otherwise the panel opened and nothing in it held focus.
+    @FocusState private var firstRow: Int64?
+    /// The request row: focus lands here if no season is available.
     @FocusState private var atJob: Bool
-    /// Start focus belongs on the button, and returns there when the panel closes: a panel is
-    /// not a change of place but something that opens above the button. Same reasoning as the
-    /// More button of the detail page.
+    /// Start focus belongs on the button, and returns there when the panel closes.
     @FocusState private var atButton: Bool
+    /// The request being decided (its buttons are off until the page has read again).
+    @State private var adminBusy: Int64?
 
-    private var page: SeerrCore.Page? { flow?.page }
-    /// The server knows better than the search hit from before; the core keeps the newer one.
-    private var state: SeerrState { page.map { SeerrCore.state($0.hit.state) } ?? hit.state }
-    private var seasonsOpen: Bool { page?.sheetOpen ?? false }
+    private var info: SwiftlyCore.SeerrTitleInfo? { flow?.info }
+    private var sheet: SwiftlyCore.SeerrSheetInfo? { flow?.sheet }
+    private var seasonsOpen: Bool { flow?.sheetOpen ?? false }
 
-    init(model: AppModel, hit: SeerrHit) {
+    init(model: AppModel, hit: JellyfinKit.SeerrHit) {
         self.model = model
         self.hit = hit
     }
@@ -200,26 +217,44 @@ struct SeerrDetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 header
 
-                // Rows like on every other page, not one block. The cast used to be a bare `ScrollView`
-                // of tiles: with no button there is nothing to focus, so the remote could not get down
-                // at all, and the margin came from the outer block, which no longer exists. `railsSection`
-                // carries margin, title and spacing, the same function as the home, movie and series pages.
-                if !similarOne.isEmpty {
+                waitingSeasons
+
+                // The episodes of a series, in the page's own flow right under the header (`SeerrEpisodes`).
+                if let flow, flow.episodeSeasonRow != nil {
+                    SeerrEpisodes(flow: flow, margin: Theme.edgePage)
+                        .padding(.top, Theme.railsHeaderPadding)
+                        .padding(.bottom, Theme.railsSpacing - Theme.railsPadding - Theme.railsHeaderPadding)
+                }
+
+                if let similar = flow?.similar, !similar.isEmpty {
                     railsSection {
                         RailTitle(text: "Ähnliche Titel")
                     } content: {
-                        seerrStrip
+                        strip {
+                            ForEach(similar.prefix(20)) { card in
+                                NavigationLink(value: card.route) { SeerrTile(card: card, width: Theme.posterWidth) }
+                                    .buttonStyle(TileStyle())
+                            }
+                        }
                     }
                 }
-                if !cast.isEmpty {
+                if let cast = info?.cast, !cast.isEmpty {
                     railsSection {
                         RailTitle(text: "Besetzung")
                     } content: {
-                        castStrip
+                        strip {
+                            ForEach(Array(cast.prefix(12).enumerated()), id: \.offset) { _, person in
+                                NavigationLink(value: PersonRoute(seerrCast: person, origin: info?.title)) {
+                                    CastTile(image: person.image.flatMap { URL(string: $0) },
+                                             name: person.name, role: person.role)
+                                }
+                                .buttonStyle(TileStyle())
+                            }
+                        }
                     }
                 }
-                if flow == nil || page?.disturbed == true {
-                    // Jellyseerr's address, not the user's own server's: that one runs, or we wouldn't be on this page.
+                if flow == nil || info?.load == .offline || info?.load == .failed {
+                    // Seerr's address, not the user's own server's: that one runs, or we wouldn't be on this page.
                     DisturbState(model: model, address: model.seerr.address,
                                  retry: { Task { await load() } })
                         .frame(height: Theme.posterHeight)
@@ -229,44 +264,38 @@ struct SeerrDetailView: View {
             .padding(.bottom, Theme.completionPadding)
         }
         .scrollIndicators(.hidden)
-        // The side margin is granted once, not twice. It was missing here, so this page alone sat
-        // twice as far in: tvOS keeps 80 pt free itself and `Theme.edgePage` adds 80 again. The
-        // same line with its reasoning is in `DetailView`.
         .ignoresSafeArea()
-        .imageReason(url: hit.backdrop(width: 1280))
-        // While the panel is open the rest is not a focus target, like the More sheet of the
-        // detail page. `focusSection` only orders focus; without the lock a press to the left
-        // jumps out of the panel and leaves it open.
+        .imageReason(url: info?.backdrop.flatMap { URL(string: $0) } ?? hit.backdrop(width: 1280))
+        // While the panel is open the rest is not a focus target, like the More sheet of the detail page.
         .defaultFocus($atButton, true, priority: .userInitiated)
         .onChange(of: seasonsOpen) { _, opened in if !opened { atButton = true } }
         .disabled(seasonsOpen)
         // Below the request button, at its edge; see `PanelAnchor`.
         .panel(under: seasonsOpen ? "staffeln" : nil) {
-            seasonPanel.transition(.opacity)
+            requestPanel.transition(.opacity)
         }
         .animation(Theme.focusAnimation, value: seasonsOpen)
         .task { await load() }
     }
 
     private func load() async {
-        guard let client = model.seerr.coreClient else { return }
-        let made = flow ?? SeerrCore.Flow(model: client)
+        guard model.seerr.connected else { return }
+        let made = flow ?? SeerrTitleFlow(hub: model.seerr.hub, art: hit.art, tmdb: Int64(hit.id))
         flow = made
-        await made.open(SeerrCore.coreHit(hit))
+        await made.start()
     }
 
-    /// The same header as on a real detail page.
-    ///
-    /// There used to be a title line without an image: the page carried only the tinted
-    /// backdrop and the TMDB landscape image was never seen. Structure, measures and order are
-    /// those of `DetailHeader`: backdrop right, header shadow over it, text block left at 140 + offset.
+    private var title: String {
+        guard let name = info?.title, !name.isEmpty else { return hit.title }
+        return name
+    }
+
+    /// The same header as on a real detail page: backdrop right, shadow over it, text block left.
     private var header: some View {
         ZStack(alignment: .topLeading) {
-            Backdrop(url: hit.backdrop(width: 1280))
+            Backdrop(url: info?.backdrop.flatMap { URL(string: $0) } ?? hit.backdrop(width: 1280))
                 .frame(maxWidth: .infinity, alignment: .trailing)
-
             HeaderShadow()
-
             block
                 .padding(.leading, Theme.edgePage)
                 .padding(.top, 140 + Theme.headerOffsetDetail)
@@ -275,13 +304,9 @@ struct SeerrDetailView: View {
         .focusSection()
     }
 
-    /// Title, facts, description, button: the order of `HeaderInfo`, with the same grades and
-    /// heights. The status sits in the facts line instead of its own below, so the button stays
-    /// at the height it has on every other page and the panel below hits its spot.
     private var block: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(verbatim: hit.title)
-                // Page title from the ladder; there is no 60 there.
+            Text(verbatim: title)
                 .font(Theme.titleLarge)
                 .tracking(Theme.lockTitle)
                 .foregroundStyle(Theme.font)
@@ -291,23 +316,24 @@ struct SeerrDetailView: View {
 
             HStack(spacing: 24) {
                 Text(verbatim: secondaryLine)
-                    // One fact: 12 on the iPhone, double here.
                     .font(Theme.small)
                     .foregroundStyle(Theme.fontVeryQuiet)
                     .lineLimit(1)
-                proofRow
+                // Status and rating in the same shell, like on the iPhone.
+                ProofRow(directPlayFlag: false,
+                         rating: info?.rating.flatMap { $0 > 0 ? $0 : nil },
+                         own: info?.badge.map { ($0.symbol, $0.line, $0.kind.tint) })
             }
             .frame(height: 34)
             .padding(.top, 14)
 
-            Text(verbatim: page?.description ?? "")
+            Text(verbatim: info?.overview ?? "")
                 .font(Theme.body)
                 .lineSpacing(Theme.descriptionPadding)
                 .foregroundStyle(Theme.fontVeryQuiet)
                 .lineLimit(3)
                 .padding(.top, 22)
-                .frame(width: 1000, height: Theme.descriptionHeight(3),
-                       alignment: .topLeading)
+                .frame(width: 1000, height: Theme.descriptionHeight(3), alignment: .topLeading)
 
             action.padding(.top, 36)
         }
@@ -315,102 +341,69 @@ struct SeerrDetailView: View {
     }
 
     private var secondaryLine: String {
-        page?.secondaryLine ?? (hit.isSeries ? String(localized: "Serie") : String(localized: "Film"))
-    }
-
-    /// Status and rating in the same shell, like on the iPhone, where both go through the same `ProofRow`.
-    private var proofRow: some View {
-        ProofRow(directPlayFlag: false,
-                   rating: page?.rating.flatMap { $0 > 0 ? $0 : nil },
-                   own: (state.symbol, state.word, state.color))
+        if let line = info?.secondaryLine, !line.isEmpty { return line }
+        return hit.isSeries ? String(localized: "Serie") : String(localized: "Film")
     }
 
     /// A status is not a button. What is waiting or loading can't be requested again; there is information instead.
     @ViewBuilder
     private var action: some View {
-        if let page, page.canRequest {
+        if let info, info.primary.kind == .request || info.primary.kind == .locked {
             VStack(alignment: .leading, spacing: 20) {
-                Button(buttonText(page)) { pressed(page) }
+                Button(info.primary.text) { flow?.open(season: nil) }
                     .buttonStyle(ThemedButtonStyle())
+                    .disabled(!info.primary.enabled)
                     .focused($atButton)
                     .panelTrigger("staffeln")
-                if let error = page.error {
-                    // A failed request is an error, not a warning.
-                    Text(verbatim: error).font(Theme.small).foregroundStyle(Theme.error)
+                if let quota = flow?.quota {
+                    Text(verbatim: quota)
+                        .font(Theme.small)
+                        .foregroundStyle(info.primary.kind == .locked ? Theme.warning : Theme.fontVeryQuiet)
                 }
             }
-        } else {
-            inquiry(page?.note ?? state.hint)
+        } else if let info, info.primary.kind != .hidden {
+            inquiry(info.primary.text)
         }
     }
 
-    /// The second step says what to do: the wording (four variants, rolled once on press, never the same
-    /// twice) comes from the core, the same on every platform.
-    private func buttonText(_ page: SeerrCore.Page) -> String {
-        if page.running { return String(localized: "Wird angefragt…") }
-        if hit.isSeries { return String(localized: "Staffeln wählen") }
-        return page.buttonText
-    }
-
-    /// Two steps, and the second is the actual order. With a remote a click happens especially fast.
-    /// For a series the panel takes over the second step: the choice is made there and the last
-    /// row triggers. The core decides what the press does.
-    private func pressed(_ page: SeerrCore.Page) {
-        guard !page.running else { return }
-        Task { await flow?.press() }
-    }
-
-    /// The season choice is a panel, not a block in the flow.
-    ///
-    /// It was a plain list below the button with `.plain` buttons: tvOS painted its own white
-    /// focus pill over them, the rows didn't sit in our grid, and the Menu button didn't close
-    /// it because nobody listened.
-    ///
-    /// Structure, width, rounding, shadow and focus handling are those of `Handlungstafel`, the
-    /// same panel that opens under the More button on the detail page. What differs is multiple
-    /// selection: tapping a row does not close it, and the last row is the order.
-    private var seasonPanel: some View {
+    /// **The action panel (620 wide)**: the core's sheet. Tapping a season row ticks it and does not close the
+    /// panel; the last row is the order. The administrator's 4K / quality / folder stay out on the TV.
+    private var requestPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Seven seasons don't fit on the screen. The panel starts at 542; seven rows of 84 plus the
-            // request row are 673 and end behind the lower edge. With no area to scroll, everything from
-            // the fifth on was unreachable, including the row that requests.
-            //
-            // Four rows high, the rest scrolls and focus brings the area along. The request row sits
-            // outside it and is always visible.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(page?.seasons ?? [], id: \.number) { st in
-                        Button {
-                            guard st.requestable else { return }
-                            flow?.toggleSeason(Int(st.number))
-                        } label: {
-                            seasonRow(st)
+            // Four rows high, the rest scrolls and focus brings the area along; the request row stays visible.
+            if let rows = sheet?.rows, !rows.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(rows) { row in
+                            Button {
+                                guard row.selectable else { return }
+                                flow?.toggle(row.number)
+                            } label: { seasonRow(row) }
+                            .buttonStyle(RowsStyle())
+                            .accessibilityAddTraits(row.selected ? [.isButton, .isSelected] : .isButton)
+                            .focused($firstRow, equals: row.number)
                         }
-                        .buttonStyle(RowsStyle())
-                        // Selected is the accent color of the whole row, as `seasonRow` says, and VoiceOver
-                        // doesn't see color. Without the trait the selected season sounds like any other, and a
-                        // multiple choice you can't hear isn't one.
-                        .accessibilityAddTraits(st.selected
-                                                ? [.isButton, .isSelected] : .isButton)
-                        .focused($firstRow, equals: Int(st.number))
                     }
                 }
+                .scrollIndicators(.hidden)
+                .frame(height: CGFloat(max(min(rows.count, 4), 1)) * Theme.rowsHeight)
+                Rectangle().fill(Theme.margin).frame(height: 1)
             }
-            .scrollIndicators(.hidden)
-            .frame(height: panelHeight)
 
-            Rectangle().fill(Theme.margin).frame(height: 1)
+            if let error = sheet?.error {
+                Text(verbatim: error).font(Theme.small).foregroundStyle(Theme.error)
+                    .padding(.horizontal, 24).padding(.vertical, 12)
+            }
 
-            // Never send empty. Without seasons the request means "all" to Seerr, a case nobody should
-            // trigger by accident. While nothing is selected the row says so too.
-            let enabled = page?.sheetButtonEnabled ?? false
+            // Never send empty: while nothing is ticked the row says so and does nothing.
+            let enabled = sheet?.primary.enabled ?? false
             Button {
                 guard enabled else { return }
-                Task { await flow?.confirmSeasons() }
+                Task { await flow?.confirm() }
             } label: {
                 HStack(spacing: 22) {
                     Image(icon: "plus").frame(width: 38)
-                    Text(verbatim: page?.sheetButton ?? "")
+                    Text(verbatim: sheet?.primary.text ?? "")
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(enabled ? Theme.font : Theme.fontVeryQuiet)
@@ -420,86 +413,71 @@ struct SeerrDetailView: View {
         }
         .frame(width: 620)
         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
-        // No border, no shadow; see `TVBausteine`.
         .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
         .focusSection()
         .task {
-            if let first = firstSelectable { firstRow = first } else { atJob = true }
+            if let first = sheet?.rows.first(where: \.selectable) { firstRow = first.number } else { atJob = true }
         }
-        .onExitCommand { flow?.closeSheet() }
+        .onExitCommand { flow?.close() }
     }
 
-    /// The row itself as its own building block so the compiler can check it in finite time;
-    /// as one expression in the `label` it gave up.
-    private func seasonRow(_ st: SeerrCore.SeasonRow) -> some View {
-        let an = st.selected
-        let free = st.requestable
-        return HStack(spacing: 22) {
-            Image(icon: symbolText(for: st))
-                .frame(width: 38)
-                .foregroundStyle(an ? Theme.accent : Theme.fontQuiet)
-                // The icon is only an image; "selected" is carried by the button's trait, "already there" stands as a suffix on the row.
-                .accessibilityHidden(true)
-            Text(verbatim: st.title)
-            Spacer(minLength: 0)
-            if let episodes = st.episodes {
-                Text(verbatim: episodes)
-                    .foregroundStyle(Theme.fontQuiet)
-            }
+    /// **Seasons with a request waiting, for an account that may decide** (the iPhone's "Freigeben" / "Ablehnen" under a
+    /// season row): the season and its state in the core's words, two focusable buttons. The rule and the call are
+    /// shared (`SeasonAdmin`); a decision reads the page again, so the season shows its new state.
+    @ViewBuilder
+    private var waitingSeasons: some View {
+        let rows = (info?.seasons ?? []).compactMap { row in
+            SeasonAdmin.waitingRequest(row, model: model).map { (row, $0) }
         }
-        // What is already there is not an offer; what is selected takes the accent color of the whole row.
-        // `fontQuiet` and not very quiet: on the raised surface the very quiet text is 3.12:1.
-        .foregroundStyle(an ? Theme.accent : (free ? Theme.font : Theme.fontQuiet))
-        // The box icon is hidden, so the status must stand as a word or the only information vanishes.
-        .accessibilityHint(free ? Text("") : Text(verbatim: st.note ?? ""))
-    }
-
-    /// At most four rows, below that it scrolls. With fewer seasons the panel is exactly as tall as it has rows.
-    private var panelHeight: CGFloat {
-        let count = min(page?.seasons.count ?? 0, 4)
-        return CGFloat(max(count, 1)) * Theme.rowsHeight
-    }
-
-    /// Box, checkmark, or the circle for what is already there.
-    private func symbolText(for st: SeerrCore.SeasonRow) -> String {
-        guard st.requestable else { return "checkmark.circle" }
-        return st.selected ? "checkmark.square.fill" : "square"
-    }
-
-    /// Where focus lands when the panel opens: the first season that can be had at all.
-    private var firstSelectable: Int? {
-        (page?.seasons ?? []).first { $0.requestable }.map { Int($0.number) }
-    }
-
-    private var cast: [SeerrPerson] { (page?.cast ?? []).prefix(12).map(SeerrCore.person) }
-    private var similarOne: [SeerrHit] { (page?.similar ?? []).prefix(20).map { SeerrCore.hit($0.hit) } }
-
-    /// Every tile is a focus target, but not a button.
-    ///
-    /// On the TV focus moves the page; what isn't a focus target can't be reached. A header
-    /// without focus made the whole row unreachable. A button without a target was the other
-    /// extreme: it gave way on press and did nothing. There is no person page for TMDB heads,
-    /// the same limit as on the iPhone, where they only stand there.
-    private var castStrip: some View {
-        strip {
-            ForEach(Array(cast.enumerated()), id: \.offset) { _, person in
-                WatchTile {
-                    CastTile(image: person.image(width: 300),
-                                     name: person.name, role: person.role)
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 18) {
+                RailTitle(text: "Staffeln")
+                ForEach(rows, id: \.0.number) { row, request in
+                    HStack(spacing: 24) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(verbatim: row.title).font(Theme.body).foregroundStyle(Theme.font)
+                            Text(verbatim: row.badge.line.isEmpty ? row.badge.word : row.badge.line)
+                                .font(Theme.small).foregroundStyle(row.badge.kind.tint)
+                        }
+                        .frame(width: 420, alignment: .leading)
+                        Button("Ablehnen") { decide(request, approve: false) }
+                            .buttonStyle(ThemedButtonStyle(height: 64))
+                        Button("Freigeben") { decide(request, approve: true) }
+                            .buttonStyle(ThemedButtonStyle(height: 64))
+                    }
+                    .disabled(adminBusy == request)
+                    .opacity(adminBusy == request ? 0.5 : 1)
                 }
             }
+            .padding(.horizontal, Theme.edgePage)
+            .padding(.top, Theme.railsHeaderPadding)
+            .focusSection()
         }
     }
 
-    /// "Similar titles": missing here although Seerr delivers them and iPhone, iPad and Mac show
-    /// them. Each leads to its own request page.
-    private var seerrStrip: some View {
-        strip {
-            ForEach(similarOne) { t in
-                NavigationLink(value: t) { SeerrTile(hit: t) }
-                    .buttonStyle(TileStyle())
+    private func decide(_ request: Int64, approve: Bool) {
+        adminBusy = request
+        Task {
+            await SeasonAdmin.decide(request, approve: approve, model: model, flow: flow)
+            adminBusy = nil
+        }
+    }
+
+    private func seasonRow(_ row: SwiftlyCore.SeerrSeasonRowInfo) -> some View {
+        HStack(spacing: 22) {
+            Image(icon: row.selectable ? (row.selected ? "checkmark.square.fill" : "square") : "checkmark.circle")
+                .frame(width: 38)
+                .foregroundStyle(row.selected ? Theme.accent : Theme.fontQuiet)
+                .accessibilityHidden(true)
+            Text(verbatim: row.title)
+            Spacer(minLength: 0)
+            if let episodes = row.episodes {
+                Text(verbatim: episodes).foregroundStyle(Theme.fontQuiet)
+            } else if !row.selectable {
+                Text(verbatim: row.badge.word.isEmpty ? row.badge.line : row.badge.word).foregroundStyle(Theme.fontQuiet)
             }
         }
+        .foregroundStyle(row.selected ? Theme.accent : (row.selectable ? Theme.font : Theme.fontQuiet))
     }
 
     private func inquiry(_ text: String) -> some View {
@@ -523,5 +501,67 @@ private struct WatchTile<ContentBody: View>: View {
             .animation(Theme.focusAnimation, value: focus)
             .focusable()
             .focused($focus)
+    }
+}
+
+// MARK: - Home block
+
+/// **What Seerr adds to the Home rows on the TV**, in two sections that sit in the Home row order like any other row:
+/// "Anfrage ist da" (the arrival stack, `DesktopArrivalSection`: select opens it, a focusable X removes a card) and
+/// "Meine Anfragen" (a rail of Seerr tiles). The core decides every word and whether anything shows (`SeerrHomeInfo`);
+/// the Home page loads this together with its rows, so the block is there when the page appears. The administrator's
+/// line, the lists and the queue stay out on the TV.
+struct TVSeerrHomeBlock: View {
+    enum Part { case arrival, requests }
+
+    let part: Part
+    let model: AppModel
+    let flow: SeerrHomeFlow
+    /// True while focus is on a control of the arrival stack (the Start page makes room for the open stack).
+    var focusWithin: Binding<Bool> = .constant(false)
+    /// Set by the Start page to put focus on the front card when the stack is the first row.
+    var claimFocus: Binding<Bool> = .constant(false)
+
+    @State private var arrived: Item?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let info = flow.block(model) {
+                switch part {
+                case .arrival where !info.arrivals.isEmpty:
+                    DesktopArrivalSection(arrivals: info.arrivals, expanded: info.arrivalsExpanded,
+                                          pending: info.state == .pending,
+                                          play: { id in Task { arrived = await model.item(id: id) } },
+                                          openTitle: { id in Task { arrived = await model.item(id: id) } },
+                                          close: { flow.dismissArrival($0) },
+                                          setExpanded: { flow.setArrivalsExpanded($0) },
+                                          focusWithin: focusWithin, claimFocus: claimFocus)
+                        .padding(.bottom, Theme.railsSpacing)
+                        .transition(.opacity)
+                case .requests where !info.rail.isEmpty:
+                    railsSection {
+                        RailTitle(name: info.railTitle)
+                    } content: {
+                        ScrollView(.horizontal) {
+                            LazyHStack(alignment: .top, spacing: Theme.gridColumn) {
+                                ForEach(info.rail) { card in
+                                    NavigationLink(value: card.route) { SeerrTile(card: card, width: Theme.posterWidth) }
+                                        .buttonStyle(TileStyle())
+                                }
+                            }
+                            .padding(.horizontal, Theme.edgePage)
+                        }
+                        .scrollClipDisabled()
+                    }
+                    // Pending: blank content of the last start's shape keeps the room; nothing shows or takes focus.
+                    .modifier(SeerrReserved(pending: info.state == .pending))
+                default:
+                    EmptyView()
+                }
+            }
+        }
+        .navigationDestination(item: $arrived) { item in
+            DetailView(model: model, item: item)
+        }
     }
 }

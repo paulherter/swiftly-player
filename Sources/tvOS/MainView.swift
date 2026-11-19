@@ -72,6 +72,9 @@ struct MainView: View {
     #if DEBUG
     /// `-SwiftlyLiveLookPage`: the subtitle look page, opened by the live run for a shot.
     @State private var liveLookPage = false
+    @State private var liveLicences = false
+    /// `-SwiftlyOpenManagement`: the management hub opened by a launch argument for a running-app proof.
+    @State private var liveHub: ManagementHubRoute?
     #endif
 
     /// On subpages the top bar yields: content counts there, and Menu goes back.
@@ -301,13 +304,6 @@ struct MainView: View {
             tileRequest.play = nil
             play = wish
         }
-        // A tile menu on a title with several versions asks which one.
-        .versionChoice($tileRequest.choice) { choice, version in
-            PlayRequest.start(choice, picking: version, model: model, prepares: .constant(false),
-                              missing: { tileRequest.message = String(localized: "Der Server hat keine Datei zu diesem Titel.") }) {
-                play = $0
-            }
-        }
         .onChange(of: gemeinsam.wish?.id) { _, new in
             guard new != nil, let wish = gemeinsam.wish else { return }
             gemeinsam.wish = nil
@@ -353,6 +349,23 @@ struct MainView: View {
         #if DEBUG
         .task { LiveRun.start(model, open: { play = $0 }, close: { play = nil }, look: { liveLookPage = $0 }) }
         .fullScreenCover(isPresented: $liveLookPage) { TVSubtitleLookView(model: model) { liveLookPage = false } }
+        .fullScreenCover(isPresented: $liveLicences) { TVLicensesView { liveLicences = false } }
+        // Proof hook: `-SwiftlyOpenLicences` opens the licence page once the home page stands.
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("-SwiftlyOpenLicences") else { return }
+            try? await Task.sleep(for: .seconds(6))
+            liveLicences = true
+        }
+        .fullScreenCover(item: $liveHub) { route in TVManagementHub(model: model, route: route) { liveHub = nil } }
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("-SwiftlyOpenManagement") else { return }
+            let flow = ManagementEntryFlow()
+            for _ in 0..<30 {
+                try? await Task.sleep(for: .seconds(1))
+                await flow.load(model)
+                if let entry = flow.entry { liveHub = ManagementHubRoute(entry); return }
+            }
+        }
         #endif
         .onDisappear {
             Task { await model.remoteControlEnd() }
@@ -476,11 +489,16 @@ struct MainView: View {
             //
             // On the remaining sections it stays: tiles scroll under the bar, and without it they
             // hit it bright.
-            // Only Filme and Serien: their grids scroll under the tabs. Elsewhere nothing lies
-            // behind the bar, and a shade there read as a bar of its own.
-            if (barPresent || anRoot), section == .movies || section == .seriesList {
+            // Filme, Serien and Suche: their lists scroll under the tabs. Elsewhere nothing lies
+            // behind the bar, and a shade there read as a bar of its own. On Suche only the hits scroll;
+            // the keyboard beside them stays clear of it.
+            if (barPresent || anRoot), section == .movies || section == .seriesList || section == .search {
                 // Only a quiet shadow: the look's glow lies behind the page and must shine through.
                 HeaderHistory(soft: true).zIndex(1)
+                    .mask(alignment: .trailing) {
+                        Rectangle().frame(width: section == .search
+                                          ? Theme.screenWidth - (SearchLayout.historyLeft - SearchLayout.columnTrim) : nil)
+                    }
                     .opacity(barPresent && LibraryScroll.shared.scrolled ? 1 : 0)
                     .animation(Theme.motion(.easeInOut(duration: 0.2)), value: LibraryScroll.shared.scrolled)
             }

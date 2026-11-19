@@ -1,7 +1,12 @@
 //! The client (`SeerrClient`, Seerr.swift) over an injected transport and cookie jar.
 
 use swiftly_jellyfin::{OwnHeader, OwnHeaders};
-use swiftly_net::{ErrorKind, HttpRequest, HttpTransport, Method, TransportReason, Url, url_error};
+use swiftly_net::{
+    ErrorKind, HttpRequest, HttpResponse, HttpTransport, Method, TransportReason, Url, url_error,
+};
+
+use crate::errors::AskError;
+use crate::setup::SignInKind;
 
 use crate::mapping::Seerr;
 use crate::models::{SeerrAccess, SeerrDetail, SeerrHit};
@@ -83,6 +88,20 @@ pub fn error_to_show(first: ErrorKind, second: ErrorKind) -> ErrorKind {
     if keep_first { first } else { second }
 }
 
+/// The text of a sign-in that worked but brought no cookie (also what the cause classifier looks for).
+pub(crate) const NO_SESSION: &str = "Seerr hat keine Sitzung mitgegeben.";
+
+/// The sentences the Jellyfin-only sign-in has always shown for 401/403 and 404.
+fn legacy_text(e: ErrorKind) -> ErrorKind {
+    match e {
+        ErrorKind::Http {
+            status: 401 | 403, ..
+        } => other("Name oder Passwort stimmen nicht."),
+        ErrorKind::Http { status: 404, .. } => other("Unter dieser Adresse antwortet kein Seerr."),
+        e => e,
+    }
+}
+
 fn other(text: &str) -> ErrorKind {
     ErrorKind::Transport(TransportReason::Other(text.to_string()))
 }
@@ -96,6 +115,18 @@ fn api_url(address: &str, path: &str, query: &[(&str, &str)]) -> Result<Url, Err
         text.push_str(&encode(v));
     }
     Url::parse(&text).map_err(|_| other("Adresse unbrauchbar."))
+}
+
+/// The stash key of a read: the path with its query.
+fn stash_key(path: &str, query: &[(&str, &str)]) -> String {
+    let mut key = path.to_owned();
+    for (i, (k, v)) in query.iter().enumerate() {
+        key.push(if i == 0 { '?' } else { '&' });
+        key.push_str(k);
+        key.push('=');
+        key.push_str(v);
+    }
+    key
 }
 
 fn encode(s: &str) -> String {
@@ -116,12 +147,54 @@ fn apply_headers(req: &mut HttpRequest, headers: &[OwnHeader]) {
     }
 }
 
+/// Where the client keeps the last answer of every read (`GET`) call, so a screen can show what it last saw before
+/// Seerr answers (see [`replaying`]). One per connection; the key is the call's path and query.
+pub trait BodyStash: Send + Sync {
+    /// The stored answer of `key`: `None` = never stored; `Some(empty)` = the server last said "not found".
+    fn get(&self, key: &str) -> Option<Vec<u8>>;
+    /// Stores the answer of `key` (`body` empty = the server said "not found").
+    fn put(&self, key: &str, body: &[u8]);
+}
+
+thread_local! {
+    /// Set while a [`Replaying`] future is polled on this thread: reads then come from the stash, not the network.
+    static REPLAY: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// Runs `work` with every read answered from the client's stash, without a network call, so a screen paints its last
+/// seen content at once. `None` when any read was not stored (the pass is then incomplete and must be dropped).
+/// `work` must not spawn: the switch is per poll on the polling thread, so a concurrent live read on another
+/// thread is never answered from the stash.
+pub async fn replaying<F: std::future::Future>(work: F) -> Option<F::Output> {
+    let mut work = std::pin::pin!(work);
+    let mut missed = false;
+    let out = std::future::poll_fn(|cx| {
+        REPLAY.with(|r| r.set(Some(false)));
+        let polled = work.as_mut().poll(cx);
+        missed |= REPLAY.with(|r| r.replace(None)) == Some(true);
+        polled
+    })
+    .await;
+    (!missed).then_some(out)
+}
+
+/// True while a [`replaying`] pass is polled on this thread (nothing goes to the network then).
+pub fn is_replaying() -> bool {
+    REPLAY.with(std::cell::Cell::get).is_some()
+}
+
 /// The Seerr client of one stored connection.
 pub struct SeerrClient<T: HttpTransport, J: CookieJar = NoCookies> {
     access: SeerrAccess,
     transport: T,
     jar: J,
+    stash: Option<std::sync::Arc<dyn BodyStash>>,
+    log: Option<SeerrLog>,
 }
+
+/// Where the client writes its timing lines (the host's log). A line never holds a secret: only the method, the
+/// path without its query, the status and the milliseconds.
+pub type SeerrLog = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
 
 impl<T: HttpTransport> SeerrClient<T, NoCookies> {
     /// A client without a cookie jar.
@@ -130,6 +203,8 @@ impl<T: HttpTransport> SeerrClient<T, NoCookies> {
             access,
             transport,
             jar: NoCookies,
+            stash: None,
+            log: None,
         }
     }
 }
@@ -141,6 +216,75 @@ impl<T: HttpTransport, J: CookieJar> SeerrClient<T, J> {
             access,
             transport,
             jar,
+            stash: None,
+            log: None,
+        }
+    }
+
+    /// The same client writing one `[Seerr]` line per call (method, path, status, milliseconds) to `log`.
+    #[must_use]
+    pub fn with_log(mut self, log: SeerrLog) -> Self {
+        self.log = Some(log);
+        self
+    }
+
+    /// One `[Seerr]` line into the host's log (nothing without a log). Screens use it for their own timings.
+    pub fn note(&self, line: &str) {
+        if let Some(log) = &self.log {
+            log(&format!("[Seerr] {line}"));
+        }
+    }
+
+    /// The log of this client, for a timer that outlives a borrow of it.
+    pub fn log_sink(&self) -> Option<SeerrLog> {
+        self.log.clone()
+    }
+
+    /// `transport.send` with its duration in the log: `GET request 200 143ms`, or `no answer` after a failure.
+    async fn timed(&self, req: HttpRequest) -> Result<HttpResponse, ErrorKind> {
+        let Some(log) = &self.log else {
+            return self.transport.send(req).await;
+        };
+        let what = format!(
+            "{} {}",
+            format!("{:?}", req.method).to_uppercase(),
+            req.url
+                .path()
+                .trim_start_matches("/api/v1/")
+                .trim_start_matches('/')
+        );
+        let began = std::time::Instant::now();
+        let answer = self.transport.send(req).await;
+        let ms = began.elapsed().as_millis();
+        match &answer {
+            Ok(a) => log(&format!("[Seerr] {what} {} {ms}ms", a.status)),
+            Err(_) => log(&format!("[Seerr] {what} no answer {ms}ms")),
+        }
+        answer
+    }
+
+    /// The same client keeping the answers of its reads in `stash` (see [`BodyStash`], [`replaying`]).
+    #[must_use]
+    pub fn with_stash(mut self, stash: std::sync::Arc<dyn BodyStash>) -> Self {
+        self.stash = Some(stash);
+        self
+    }
+
+    /// A list read of `path` / `query` that this client stashed no longer shows the row `id` (the row was withdrawn
+    /// or deleted): the stored answer loses it, so a later paint from the stash cannot bring it back. Nothing is
+    /// touched when no such answer is stored.
+    pub fn drop_from_stored_list(&self, path: &str, query: &[(&str, &str)], id: i64) {
+        let Some(stash) = &self.stash else { return };
+        let key = stash_key(path, query);
+        let Some(body) = stash.get(&key) else { return };
+        let Ok(mut page) = serde_json::from_slice::<serde_json::Value>(&body) else {
+            return;
+        };
+        if let Some(rows) = page.get_mut("results").and_then(|r| r.as_array_mut()) {
+            rows.retain(|row| row.get("id").and_then(serde_json::Value::as_i64) != Some(id));
+        }
+        if let Ok(kept) = serde_json::to_vec(&page) {
+            stash.put(&key, &kept);
         }
     }
 
@@ -156,8 +300,9 @@ impl<T: HttpTransport, J: CookieJar> SeerrClient<T, J> {
         }
     }
 
-    /// `POST auth/jellyfin`. No old cookie goes along (express-session would then keep the old
-    /// session and send no `Set-Cookie`). The cookie comes from `Set-Cookie`, else from the jar.
+    /// `POST auth/jellyfin` with the media server's account. No old cookie goes along
+    /// (express-session would then keep the old session and send no `Set-Cookie`). The cookie comes
+    /// from `Set-Cookie`, else from the jar.
     pub async fn sign_in(
         transport: &T,
         jar: &J,
@@ -166,15 +311,32 @@ impl<T: HttpTransport, J: CookieJar> SeerrClient<T, J> {
         password: &str,
         headers: &[OwnHeader],
     ) -> Result<SeerrAccess, ErrorKind> {
-        let mut req = HttpRequest::new(Method::Post, api_url(address, "auth/jellyfin", &[])?);
+        let kind = SignInKind::Jellyfin {
+            user: user.to_owned(),
+            password: password.to_owned(),
+        };
+        Self::sign_in_with(transport, jar, address, &kind, headers)
+            .await
+            .map_err(legacy_text)
+    }
+
+    /// One sign-in of any kind (`auth/jellyfin`, `auth/local`, `auth/plex`) at one address. Errors
+    /// stay raw: a refusal is `ErrorKind::Http` with the first bytes of the body, which
+    /// [`SignInCause::classify`](crate::setup::SignInCause::classify) turns into a cause.
+    pub async fn sign_in_with(
+        transport: &T,
+        jar: &J,
+        address: &str,
+        kind: &SignInKind,
+        headers: &[OwnHeader],
+    ) -> Result<SeerrAccess, ErrorKind> {
+        let mut req = HttpRequest::new(Method::Post, api_url(address, kind.path(), &[])?);
         apply_headers(&mut req, headers);
         req.set_header("Content-Type", "application/json");
         // `signInSession`: a 301/302 on the way (http -> https) must not turn the POST into a GET.
         req.keep_method = true;
-        req.body = Some(
-            serde_json::to_vec(&serde_json::json!({ "username": user, "password": password }))
-                .map_err(|e| ErrorKind::Decoding(e.to_string()))?,
-        );
+        req.body =
+            Some(serde_json::to_vec(&kind.body()).map_err(|e| ErrorKind::Decoding(e.to_string()))?);
         let answer = transport.send(req).await?;
         // A login page in front of Seerr first; 404 is "no Seerr here" (HTML error page too).
         if answer.status != 404 && answer.is_login_page() {
@@ -182,8 +344,6 @@ impl<T: HttpTransport, J: CookieJar> SeerrClient<T, J> {
         }
         match answer.status {
             200 | 201 => {}
-            401 | 403 => return Err(other("Name oder Passwort stimmen nicht.")),
-            404 => return Err(other("Unter dieser Adresse antwortet kein Seerr.")),
             status => {
                 return Err(ErrorKind::Http {
                     status,
@@ -207,7 +367,7 @@ impl<T: HttpTransport, J: CookieJar> SeerrClient<T, J> {
                 .ok()
                 .and_then(|u| jar.session_cookie(&u))
         })
-        .ok_or_else(|| other("Seerr hat keine Sitzung mitgegeben."))?;
+        .ok_or_else(|| other(NO_SESSION))?;
         Ok(SeerrAccess::new(address, &cookie, headers))
     }
 
@@ -221,10 +381,27 @@ impl<T: HttpTransport, J: CookieJar> SeerrClient<T, J> {
         password: &str,
         headers: &[OwnHeader],
     ) -> Result<SeerrAccess, ErrorKind> {
+        let kind = SignInKind::Jellyfin {
+            user: user.to_owned(),
+            password: password.to_owned(),
+        };
+        Self::sign_in_typed_with(transport, jar, typed, &kind, headers)
+            .await
+            .map_err(legacy_text)
+    }
+
+    /// [`sign_in_typed`](Self::sign_in_typed) for any kind of sign-in, with raw errors.
+    pub async fn sign_in_typed_with(
+        transport: &T,
+        jar: &J,
+        typed: &str,
+        kind: &SignInKind,
+        headers: &[OwnHeader],
+    ) -> Result<SeerrAccess, ErrorKind> {
         let candidates = Seerr::addresses(typed);
         let mut first_error: Option<ErrorKind> = None;
         for address in &candidates {
-            match Self::sign_in(transport, jar, address, user, password, headers).await {
+            match Self::sign_in_with(transport, jar, address, kind, headers).await {
                 Ok(a) => return Ok(a),
                 Err(e) => {
                     first_error = Some(match first_error {
@@ -257,7 +434,7 @@ impl<T: HttpTransport, J: CookieJar> SeerrClient<T, J> {
 
     async fn hole(&self, path: &str) -> Option<Vec<u8>> {
         let req = self.petition(path, Method::Get, &[], None).ok()?;
-        let answer = self.transport.send(req).await.ok()?;
+        let answer = self.timed(req).await.ok()?;
         (answer.status == 200).then_some(answer.body)
     }
 
@@ -266,31 +443,96 @@ impl<T: HttpTransport, J: CookieJar> SeerrClient<T, J> {
         let Ok(req) = self.petition("search", Method::Get, &[("query", term)], None) else {
             return Vec::new();
         };
-        match self.transport.send(req).await {
+        match self.timed(req).await {
             Ok(a) if a.status == 200 => Seerr::hit_from_search(&a.body),
             _ => Vec::new(),
         }
     }
 
-    /// `POST request`. 409 (someone was faster) is no error.
+    /// `POST request` for the old screens (desktop, Android). A duplicate (409) still counts as done
+    /// there; every other refusal says its real reason. New code uses [`SeerrClient::request`].
     pub async fn ask_for(
         &self,
         art: &str,
         id: i64,
         seasons: Option<&[i64]>,
     ) -> Result<(), ErrorKind> {
-        let body = serde_json::to_vec(&Seerr::request_body(art, id, seasons))
-            .map_err(|e| ErrorKind::Decoding(e.to_string()))?;
-        let req = self.petition("request", Method::Post, &[], Some(body))?;
-        let answer = self.transport.send(req).await?;
-        match answer.status {
-            200 | 201 | 409 => Ok(()),
-            401 | 403 => Err(other("Deine Seerr-Anmeldung gilt nicht mehr.")),
-            status => Err(ErrorKind::Http {
-                status,
-                body: answer.text_prefix(200),
-            }),
+        let body = Seerr::request_body(art, id, seasons);
+        match self
+            .send(Method::Post, "request", &[], Some(body), true)
+            .await
+        {
+            Ok(_) | Err(AskError::Exists) => Ok(()),
+            Err(e) => Err(e.into_kind()),
         }
+    }
+
+    /// One call with the typed failure of [`AskError`]: any 2xx answers `Ok`. `creating` is the
+    /// `POST request` that makes a new request (409 = duplicate, 202 = no season left).
+    pub(crate) async fn send(
+        &self,
+        method: Method,
+        path: &str,
+        query: &[(&str, &str)],
+        body: Option<serde_json::Value>,
+        creating: bool,
+    ) -> Result<HttpResponse, AskError> {
+        let body = match body {
+            Some(v) => Some(
+                serde_json::to_vec(&v)
+                    .map_err(|e| AskError::Network(ErrorKind::Decoding(e.to_string())))?,
+            ),
+            None => None,
+        };
+        let req = self
+            .petition(path, method, query, body)
+            .map_err(AskError::Network)?;
+        let answer = self.timed(req).await.map_err(AskError::Network)?;
+        if answer.status != 404 && answer.is_login_page() {
+            return Err(AskError::Network(ErrorKind::Transport(
+                TransportReason::LoginPage,
+            )));
+        }
+        if creating && answer.status == 202 {
+            return Err(AskError::NoSeasons);
+        }
+        if (200..300).contains(&answer.status) {
+            return Ok(answer);
+        }
+        let text = String::from_utf8_lossy(&answer.body).into_owned();
+        Err(AskError::from_answer(answer.status, &text, creating))
+    }
+
+    /// `GET path` read as `D` (a body that is no JSON of that shape is a `Network(Decoding)` error). Every answer
+    /// is stashed; inside [`replaying`] the stashed answer is returned and nothing goes out.
+    pub(crate) async fn get_json<D: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+    ) -> Result<D, AskError> {
+        let key = stash_key(path, query);
+        if REPLAY.with(std::cell::Cell::get).is_some() {
+            let stored = self.stash.as_ref().and_then(|s| s.get(&key));
+            return match stored {
+                Some(body) if body.is_empty() => Err(AskError::NotFound),
+                Some(body) => serde_json::from_slice(&body)
+                    .map_err(|e| AskError::Network(ErrorKind::Decoding(e.to_string()))),
+                None => {
+                    REPLAY.with(|r| r.set(Some(true)));
+                    Err(AskError::NotFound)
+                }
+            };
+        }
+        let answer = self.send(Method::Get, path, query, None, false).await;
+        if let Some(stash) = &self.stash {
+            match &answer {
+                Ok(a) => stash.put(&key, &a.body),
+                Err(AskError::NotFound) => stash.put(&key, &[]),
+                Err(_) => {}
+            }
+        }
+        serde_json::from_slice(&answer?.body)
+            .map_err(|e| AskError::Network(ErrorKind::Decoding(e.to_string())))
     }
 
     /// Detail plus suggestions (two fetches side by side). Missing suggestions keep the page.
@@ -336,7 +578,7 @@ impl<T: HttpTransport, J: CookieJar> SeerrClient<T, J> {
         let Ok(req) = self.petition("auth/me", Method::Get, &[], None) else {
             return SeerrSessionState::Unreachable;
         };
-        match self.transport.send(req).await {
+        match self.timed(req).await {
             Ok(a) => SeerrSessionState::from_status(a.status),
             Err(_) => SeerrSessionState::Unreachable,
         }

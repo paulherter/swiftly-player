@@ -40,6 +40,7 @@ Every key is `swiftly.` plus the name below. Values are text.
 | `merklisteAn` | `true`/`false` | watchlist shown |
 | `alphabetAn` | `true`/`false` | letter strip beside lists |
 | `neuGetrennt` | `true`/`false` | new movies and new series as separate rows |
+| `seerrArrivalHint` | `true`/`false` | show the "is here" banner on Home for requested titles that have arrived |
 | `startReihen` | JSON array of strings | order of the fixed home rows (`continueWatching`, `nextEpisode`, `newMovies`, `newSeries`, `newArrivals`) |
 | `startAus` | JSON array of strings | hidden home rows (same names) |
 | `genreChips` | `true`/`false` | genres as chips instead of rows |

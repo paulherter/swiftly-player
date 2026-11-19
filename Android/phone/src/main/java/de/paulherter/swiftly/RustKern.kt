@@ -6,16 +6,19 @@ import de.paulherter.swiftly.shared.Texts
 import de.paulherter.swiftly.rustcore.AccountRef
 import de.paulherter.swiftly.rustcore.Core
 import de.paulherter.swiftly.rustcore.CoreException
+import de.paulherter.swiftly.rustcore.FilterPick
+import de.paulherter.swiftly.rustcore.FilterSheetPart
+import de.paulherter.swiftly.rustcore.LibraryFilter
 import de.paulherter.swiftly.rustcore.LegacyDetail
 import de.paulherter.swiftly.rustcore.LegacyPlexDetail
 import de.paulherter.swiftly.rustcore.LegacyHoldCounters
 import de.paulherter.swiftly.rustcore.LegacyLibrary
 import de.paulherter.swiftly.rustcore.LegacyPlayback
+import de.paulherter.swiftly.rustcore.PlayerMenu
 import de.paulherter.swiftly.rustcore.LegacyLogin
 import de.paulherter.swiftly.rustcore.legacySubtitleFileStyleAdjustable
 import de.paulherter.swiftly.rustcore.legacyUserImage
 import de.paulherter.swiftly.rustcore.LegacyPlexSignIn
-import de.paulherter.swiftly.rustcore.LegacySeerr
 import de.paulherter.swiftly.rustcore.NetHeader
 import de.paulherter.swiftly.rustcore.ServerKind
 import de.paulherter.swiftly.rustcore.host.AndroidDatagramHost
@@ -314,6 +317,39 @@ class RustKern(private val app: SwiftlyApplication) {
         return scope.future { l.offeringLoad(); null }
     }
 
+    // The filter sheet of a list page (decades, languages, status), its pill and the pick: all in the core
+    // (`LegacySection::filter_*`), the page only draws. The page's filter is ONE value: a status plus the narrowing
+    // (`alle`, `ungesehen|j2010-2019|sdeu`), what `sectionPage` takes.
+
+    /** The sheet is about to open: fetches the years and languages of this list, once per list. */
+    fun filterLoad(art: String, choice: String): CompletableFuture<Void?> {
+        val l = libOrNull() ?: return noCore("filterLoad")
+        return scope.future { l.filterLoad(art, choice); null }
+    }
+
+    /** The rows and the pill for `filter`; `offered` are the status filters this page offers (raw values). */
+    fun filterSheet(art: String, choice: String, filter: String, offered: List<String>): CompletableFuture<FilterSheetPart> {
+        val l = libOrNull() ?: return noCore("filterSheet")
+        val statuses = offered.mapNotNull { raw -> LibraryFilter.values().firstOrNull { statusRaw(it) == raw } }
+        return scope.future { l.filterSheet(art, choice, filter, statuses) }
+    }
+
+    /** The filter value after a row was picked, `filter` itself without a core. */
+    fun filterPick(filter: String, pick: FilterPick): String = libOrNull()?.filterPick(filter, pick) ?: filter
+
+    /** What the pill shows; the plain status word without a core. */
+    fun filterPill(filter: String): String = libOrNull()?.filterPill(filter) ?: Choices.text(Choices.filter, filter)
+
+    /** The status part of a filter value (`alle`, `ungesehen`, ...), for the page's own "offered" check. */
+    fun filterStatus(filter: String): String = libOrNull()?.filterStatus(filter) ?: filter
+
+    private fun statusRaw(f: LibraryFilter) = when (f) {
+        LibraryFilter.ALL -> "alle"
+        LibraryFilter.BEGUN -> "angefangen"
+        LibraryFilter.WATCHLIST -> "merkliste"
+        LibraryFilter.UNWATCHED -> "ungesehen"
+    }
+
     fun collections(art: String): CompletableFuture<String> = libFut({ it.collections(art) }, { noCore("collections") })
     fun playlists(art: String): CompletableFuture<String> = libFut({ it.playlists(art) }, { noCore("playlists") })
     fun playlistPage(id: String, art: String): CompletableFuture<String> = libFut({ it.playlistPage(id, art) }, { noCore("playlistPage") })
@@ -329,6 +365,13 @@ class RustKern(private val app: SwiftlyApplication) {
     fun search(term: String): CompletableFuture<String> = acct({ c, a -> c.legacySearch(a, language, term) }, { noCore("search") })
 
     // ---- Detail / series -----------------------------------------------------------------------------------------
+
+    // ---- Page seed (no network, no await: the first frame of a page) ----------------------------------------------
+
+    /** The title page's first frame from the core's stored copies; empty when nothing is stored or the Swift/Plex path answers. */
+    fun titleSeed(id: String): String = rustOrNull()?.detail?.titleSeed(id).orEmpty()
+    fun seriesSeed(id: String): String = rustOrNull()?.detail?.seriesSeed(id).orEmpty()
+    fun episodesSeed(series: String, season: String): String = rustOrNull()?.detail?.episodesSeed(series, season).orEmpty()
 
     fun title(id: String): CompletableFuture<String> = dfut({ it.title(id) }, { it.title(id) }, { noCore("title") })
     fun series(id: String): CompletableFuture<String> = dfut({ it.series(id) }, { it.series(id) }, { noCore("series") })
@@ -445,6 +488,12 @@ class RustKern(private val app: SwiftlyApplication) {
     fun offeringPressed() { playing()?.playback?.offeringPressed() ?: noCore("offeringPressed") }
     fun nextAutomaticSet(on: Boolean) { anyPlayback()?.nextAutomaticSet(on) }
     fun resumeTarget(position: Double, inGroup: Boolean): Double = playing()?.playback?.resumeTarget(position, inGroup) ?: noCore("resumeTarget")
+    // The speed and subtitle-offset rows: the core builds them (the same builder as `PlayerVm.menu` on the other platforms).
+    fun menu(tempo: Float, offsetMs: Long): PlayerMenu = playing()?.playback?.menu(tempo, offsetMs) ?: noCore("menu")
+    fun menuOffsetStep(offsetMs: Long, stepMs: Int): Long = playing()?.playback?.menuOffsetStep(offsetMs, stepMs) ?: noCore("menuOffsetStep")
+    fun menuOffsetRemembered(memory: String, title: String): Long? = playing()?.playback?.menuOffsetRemembered(memory, title)
+    fun menuOffsetRemember(memory: String, title: String, offsetMs: Long): String =
+        playing()?.playback?.menuOffsetRemember(memory, title, offsetMs) ?: memory
     fun prebufferDue(position: Double, duration: Double, networkFavorable: Boolean): Boolean =
         playing()?.playback?.prebufferDue(position, duration, networkFavorable) ?: noCore("prebufferDue")
     fun episodePrepare(): CompletableFuture<Void?> {
@@ -482,11 +531,14 @@ class RustKern(private val app: SwiftlyApplication) {
         return scope.future { r.playback.episodeSwitch(id, position) }
     }
 
+    /** The subtitle (server stream index) to switch on at the next load of this title; `null` takes the order back. */
+    fun orderSubtitle(id: String, index: Long?) { playing()?.playback?.orderSubtitle(id, index) ?: noCore("orderSubtitle") }
     fun subtitleFiles(): String = playing()?.playback?.subtitleFiles() ?: noCore("subtitleFiles")
     fun subtitleAttributeSet(index: Long, attribute: String) { playing()?.playback?.subtitleAttributeSet(index, attribute) ?: noCore("subtitleAttributeSet") }
+    /** `deviceLanguage`: the language of the device as a tag (`Locale.getDefault().toLanguageTag()`), empty when unknown. */
     fun tracksSelect(audio: String, subtitle: String, audioNow: Long, audioWish: String, subtitlePreference: String, automatic: Boolean,
-                     audioMemory: String, subtitleMemory: String): String =
-        playing()?.playback?.tracksSelect(audio, subtitle, audioNow, audioWish, subtitlePreference, automatic, audioMemory, subtitleMemory)
+                     audioMemory: String, subtitleMemory: String, deviceLanguage: String): String =
+        playing()?.playback?.tracksSelect(audio, subtitle, audioNow, audioWish, subtitlePreference, automatic, audioMemory, subtitleMemory, deviceLanguage)
             ?: noCore("tracksSelect")
     fun openSubtitle(subtitle: String): Long = playing()?.playback?.openSubtitle(subtitle) ?: noCore("openSubtitle")
     fun audioFromHand(audio: String, id: Long, memory: String): String = playing()?.playback?.audioFromHand(audio, id, memory) ?: noCore("audioFromHand")
@@ -499,6 +551,8 @@ class RustKern(private val app: SwiftlyApplication) {
     }
     fun chapterBar(duration: Double, width: Double, minWidth: Double, gap: Double): String =
         current?.playback?.chapterBar(duration, width, minWidth, gap) ?: """{"stuecke":[],"fang":[]}"""
+    fun chapterList(at: Double): String =
+        current?.playback?.chapterList(at) ?: """{"titel":"Kapitel","nummerTitel":"Kapitel %lld","kapitel":[]}"""
     fun chapterName(at: Double): String = current?.playback?.chapterName(at) ?: ""
     fun chapterPiece(share: Double, duration: Double, width: Double, minWidth: Double): Long =
         current?.playback?.chapterPiece(share, duration, width, minWidth) ?: -1L
@@ -602,27 +656,15 @@ class RustKern(private val app: SwiftlyApplication) {
 
     fun downloadItem(ids: Array<String>): CompletableFuture<String> =
         dfut({ it.downloadItem(ids.toList()) }, { it.downloadItem(ids.toList()) }, { noCore("downloadItem") })
-    fun downloadAudioOptions(ids: Array<String>, preferred: String): CompletableFuture<String> =
-        dfut({ it.downloadAudioOptions(ids.toList(), preferred, language) }, { it.downloadAudioOptions(ids.toList(), preferred, language) }, { noCore("downloadAudioOptions") })
+    /** The sound a download starts on follows the start language rule: the settings first, then the language of the device (not of the app). */
+    fun downloadAudioOptions(ids: Array<String>, preferred: String): CompletableFuture<String> {
+        val device = java.util.Locale.getDefault().toLanguageTag()
+        return dfut({ it.downloadAudioOptions(ids.toList(), preferred, language, device) }, { it.downloadAudioOptions(ids.toList(), preferred, language, device) }, { noCore("downloadAudioOptions") })
+    }
     fun downloadWithAudio(list: String, choice: String): String =
         rustOrNull()?.detail?.downloadWithAudio(list, choice, language) ?: plexDetailOrNull()?.downloadWithAudio(list, choice, language) ?: noCore("downloadWithAudio")
     fun downloadHeaderImage(series: String, width: Long): CompletableFuture<String> =
         dfut({ it.downloadHeaderImage(series, width) }, { it.downloadHeaderImage(series, width) }, { noCore("downloadHeaderImage") })
-    // ---- Seerr: the stored access is kept here; the core's object is built on first use (off the main thread) ----
-
-    @Volatile private var seerrAccess: String? = null
-    @Volatile private var seerrObject: LegacySeerr? = null
-
-    private fun seerr(): LegacySeerr? = seerrObject ?: synchronized(barrier) {
-        seerrObject ?: seerrAccess?.let { a -> runCatching { core().legacySeerr(a) }.getOrNull() }?.also { seerrObject = it }
-    }
-
-    /** Sets the remembered access (`{"adresse","keks","koepfe"}`, the vault's text); garbage means not connected. */
-    fun seerrSet(access: String) { synchronized(barrier) { seerrAccess = access; seerrObject = null } }
-
-    /** The platform cookies go too, so a still-valid session cannot keep a new sign-in from getting its own. */
-    fun seerrDisconnect() { val old = seerrObject; synchronized(barrier) { seerrAccess = null; seerrObject = null }; old?.forgetCookies() }
-
     // ---- Server search, public users, Quick Connect, sign-in and adding a server: the core's, in the old JSON ----
 
     @Volatile private var loginObject: LegacyLogin? = null
@@ -679,18 +721,6 @@ class RustKern(private val app: SwiftlyApplication) {
     fun plexServers(): CompletableFuture<String> = plexCall { it.servers() }
     fun plexPickServer(id: String): CompletableFuture<String> = plexCall { it.pickServer(id) }
     fun plexReset() { plexFlow?.reset() }
-
-    /** Signs in with the Jellyfin name and password; the answer is the access to store. `headers` are the "Advanced" rows. */
-    fun seerrConnect(address: String, user: String, password: String, headers: String): CompletableFuture<String> = scope.future {
-        try { core().legacySeerrConnect(address, user, password, headers).also { seerrSet(it) } }
-        catch (e: Throwable) { throw unwrap<Unit>(e) }
-    }
-
-    fun seerrApplies(): CompletableFuture<Boolean> = scope.future { seerr()?.applies() ?: false }
-    fun seerrSearch(term: String): CompletableFuture<String> = scope.future { seerr()?.search(term) ?: "[]" }
-    fun seerrFilmography(tmdb: Long): CompletableFuture<String> = scope.future { seerr()?.filmography(tmdb) ?: "[]" }
-    fun seerrDetail(art: String, id: Long): CompletableFuture<String> = scope.future { seerr()?.detail(art, id) ?: "{}" }
-    fun seerrRequest(art: String, id: Long, seasons: String): CompletableFuture<String> = scope.future { seerr()?.request(art, id, seasons) ?: "nichtAngemeldet" }
 
     fun watchers(id: String): CompletableFuture<String> =
         if (plex) CompletableFuture.completedFuture("absent") else fut({ it.detail.watchers(id) }, { noCore("watchers") })

@@ -135,6 +135,11 @@ pub fn legacy_span() -> String {
 pub fn legacy_languages(from: String, locale: String) -> String {
     swiftly_vm::languages(&from, loc(&locale))
 }
+/// The audio language picker (like the file, "Original", every language).
+#[uniffi::export]
+pub fn legacy_audio_languages(locale: String) -> String {
+    swiftly_vm::audio_languages(loc(&locale))
+}
 /// `Kern.bufferLevels`.
 #[uniffi::export]
 pub fn legacy_buffer_levels(locale: String) -> String {

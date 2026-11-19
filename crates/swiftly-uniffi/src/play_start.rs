@@ -56,6 +56,11 @@ pub struct PlaySettings {
     pub subtitle_language: String,
     /// `utAuto`.
     pub automatic_subtitles: bool,
+    /// The language of the device as the system names it: Apple `Locale.preferredLanguages.first`,
+    /// Android `Locale.getDefault().toLanguageTag()`. The start language rule takes it after the
+    /// settings; `None` when the host does not know it.
+    #[uniffi(default = None)]
+    pub device_language: Option<String>,
     /// The bitrate the profile reports (`BitratesLimit.of`).
     pub max_bitrate: i64,
     /// `pufferstufe`.
@@ -355,6 +360,7 @@ fn request_of(r: PlayPlanRequest) -> StartRequest {
             audio_language: r.settings.audio_language,
             subtitle_language: r.settings.subtitle_language,
             automatic_subtitles: r.settings.automatic_subtitles,
+            device_language: r.settings.device_language,
             max_bitrate: r.settings.max_bitrate,
             buffer_level: level(r.settings.buffer_level),
             frame_rate_match: r.settings.frame_rate_match,
@@ -406,6 +412,7 @@ fn answer_of(
                         is_forced: s.is_forced.unwrap_or(false),
                         is_external: s.is_external.unwrap_or(false),
                         is_hearing_impaired: s.is_hearing_impaired.unwrap_or(false),
+                        is_original: s.is_original.unwrap_or(false),
                     })
                     .collect(),
                 runtime,
@@ -682,6 +689,7 @@ fn media_streams(streams: Vec<PlayerStream>) -> Vec<swiftly_model::MediaStream> 
             is_forced: Some(t.is_forced),
             is_external: Some(t.is_external),
             is_hearing_impaired: Some(t.is_hearing_impaired),
+            is_original: Some(t.is_original),
             ..swiftly_model::MediaStream::default()
         })
         .collect()
@@ -725,7 +733,9 @@ pub fn remember_track_choice(
 /// The starting audio and subtitle track of a title, for the streams of one version.
 /// `audio_memory` and `subtitle_memory` are the dictionaries `tonJeTitel` and `utJeTitel`,
 /// `title` the key (`account|series`). `audio_fallback`: the audio track the engine already plays,
-/// used (also for the subtitle rule) when no rule names one.
+/// used (also for the subtitle rule) when no rule names one. `device_language`: the language of the
+/// device as the system names it (Apple `Locale.preferredLanguages.first`, "de-DE"), `original_language`:
+/// the title's `OriginalLanguage`; the rule takes them after the settings (`track_rule`).
 #[uniffi::export]
 #[allow(clippy::too_many_arguments)]
 pub fn start_track_choice(
@@ -740,6 +750,8 @@ pub fn start_track_choice(
     title: String,
     ordered: Option<PlayOrderedTracks>,
     audio_fallback: Option<i64>,
+    device_language: Option<String>,
+    original_language: Option<String>,
 ) -> StartTrackChoice {
     let media = media_streams(streams);
     let memory = swiftly_vm::MemoryDictionaries(HashMap::from([
@@ -756,6 +768,7 @@ pub fn start_track_choice(
         audio_language,
         subtitle_language,
         automatic_subtitles,
+        device_language,
         max_bitrate: 0,
         buffer_level: BufferLevel::Normal,
         frame_rate_match: false,
@@ -767,6 +780,7 @@ pub fn start_track_choice(
         Some(&memory),
         &title,
         &settings,
+        original_language.as_deref(),
         ordered.map(|o| TrackIndices {
             audio: o.audio,
             subtitle: o.subtitle,
@@ -866,5 +880,67 @@ mod shuffle_tests {
         let o = ShuffleRunModel::ordered(json.into()).unwrap();
         assert_eq!(o.ids(), vec!["a", "b", "c"]);
         assert_eq!(o.next_after("b".into()).unwrap().id, "c");
+    }
+}
+
+#[cfg(test)]
+mod original_flag_tests {
+    use super::*;
+
+    fn audio(index: i64, language: &str, is_default: bool, is_original: bool) -> PlayerStream {
+        PlayerStream {
+            index,
+            kind: "Audio".into(),
+            language: Some(language.into()),
+            codec: Some("eac3".into()),
+            channels: Some(6),
+            title: None,
+            is_default,
+            is_forced: false,
+            is_external: false,
+            is_hearing_impaired: false,
+            is_original,
+        }
+    }
+
+    /// The tracks the start picks for a device that speaks Italian: no Italian track in the file.
+    fn started(streams: Vec<PlayerStream>) -> StartTrackChoice {
+        start_track_choice(
+            streams,
+            Some(1),
+            None,
+            String::new(),
+            String::new(),
+            false,
+            HashMap::new(),
+            HashMap::new(),
+            "acct|title".into(),
+            None,
+            None,
+            Some("it-IT".into()),
+            None,
+        )
+    }
+
+    /// Jellyfin 12 marks the original-language track with `IsOriginal`. It reaches the rule through `PlayerStream`, so
+    /// the Apple hosts, which pass these rows, get the same start as the hosts that read the raw streams.
+    #[test]
+    fn a_track_the_server_flags_as_original_is_the_start_when_no_wish_matches() {
+        let flagged = vec![
+            audio(1, "eng", true, false),
+            audio(2, "deu", false, false),
+            audio(3, "jpn", false, true),
+        ];
+        assert_eq!(started(flagged).audio, Some(3));
+        let unflagged = vec![
+            audio(1, "eng", true, false),
+            audio(2, "deu", false, false),
+            audio(3, "jpn", false, false),
+        ];
+        assert_eq!(
+            started(unflagged).audio,
+            Some(1),
+            "the server's default when nothing is flagged"
+        );
     }
 }

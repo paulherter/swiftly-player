@@ -246,6 +246,7 @@ fn requests_http() {
                         ids: list(a, "ids"),
                         person_ids: list(a, "people"),
                         genres: list(a, "genres"),
+                        years: Vec::new(),
                         slim: a["slim"] == true,
                     };
                     drop(client.items(&q).await);
@@ -456,12 +457,15 @@ fn requests_http() {
             vec![]
         });
         let seen = mock.seen.lock().unwrap().clone();
-        // Intended deviation (5387e046): Rust also asks for `ChildCount` in the item list fields, so the core can hide
-        // series without seasons; the Swift app does not. Everything else must stay equal.
+        // Intended deviation (5387e046): Rust also asks for `ChildCount` and `RecursiveItemCount` in the item list fields,
+        // so the core can hide series without seasons or episodes; the Swift app does not. Everything else must stay equal.
         let seen: Value = serde_json::from_str(
             &serde_json::to_string(&seen)
                 .unwrap()
-                .replace(",ChildCount", ""),
+                .replace(r#",["Fields","ChildCount,RecursiveItemCount"]"#, "")
+                .replace("&Fields=ChildCount,RecursiveItemCount", "")
+                .replace(",ChildCount", "")
+                .replace(",RecursiveItemCount", ""),
         )
         .unwrap();
         json!({ "urls": urls, "seen": seen })

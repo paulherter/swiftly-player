@@ -91,6 +91,7 @@ fn request() -> StartRequest {
             audio_language: String::new(),
             subtitle_language: "ger".into(),
             automatic_subtitles: true,
+            device_language: None,
             max_bitrate: 120_000_000,
             buffer_level: BufferLevel::Normal,
             frame_rate_match: false,

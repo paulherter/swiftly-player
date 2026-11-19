@@ -438,6 +438,9 @@ pub struct AccountPreGift {
     pub convert_allowed: Option<bool>,
     /// `Policy.EnableAudioPlaybackTranscoding`; `None` if the server says nothing.
     pub audio_convert_allowed: Option<bool>,
+    /// `Policy.IsAdministrator`: the account may see and run the server. `None` and `false` both hide the
+    /// server management page.
+    pub is_administrator: Option<bool>,
 }
 
 impl AccountPreGift {
@@ -454,7 +457,15 @@ impl AccountPreGift {
             downloads_allowed,
             convert_allowed,
             audio_convert_allowed,
+            is_administrator: None,
         }
+    }
+
+    /// The same, with `Policy.IsAdministrator` as the server answered it.
+    #[must_use]
+    pub fn with_administrator(mut self, is_administrator: Option<bool>) -> Self {
+        self.is_administrator = is_administrator;
+        self
     }
 
     /// Whether a smaller quality is offered when downloading (OfferingLayer.swift:347-349).
@@ -486,6 +497,9 @@ impl<'de> Deserialize<'de> for AccountPreGift {
             convert: Option<bool>,
             #[serde(rename = "EnableAudioPlaybackTranscoding", default)]
             audio_convert: Option<bool>,
+            // A wrongly typed value reads as "not an administrator" rather than failing the whole answer.
+            #[serde(rename = "IsAdministrator", default)]
+            administrator: Option<serde_json::Value>,
         }
         #[derive(Deserialize)]
         struct Outer {
@@ -500,6 +514,11 @@ impl<'de> Deserialize<'de> for AccountPreGift {
             downloads_allowed: outer.policy.as_ref().and_then(|p| p.download),
             convert_allowed: outer.policy.as_ref().and_then(|p| p.convert),
             audio_convert_allowed: outer.policy.as_ref().and_then(|p| p.audio_convert),
+            is_administrator: outer.policy.as_ref().and_then(|p| {
+                p.administrator
+                    .as_ref()
+                    .and_then(serde_json::Value::as_bool)
+            }),
         })
     }
 }
@@ -1136,5 +1155,191 @@ mod tests {
         assert!(e.close());
         assert_eq!(rc_card(&mut e, 30.0), 0);
         assert!(!e.next_at_end());
+    }
+
+    // MARK: The end of an episode without an outro that reaches the end of the file (17.11.).
+
+    use crate::sections::{SectionLogic, Segment};
+
+    /// What a walk through the end of an episode showed, on a fake clock of half-second ticks.
+    #[derive(Debug, Default)]
+    struct Walk {
+        /// Clock when the card first showed.
+        card_at: Option<f64>,
+        /// Clock of the first tick that asks the host to advance.
+        advance_at: Option<f64>,
+    }
+
+    /// The callers' decisions (`legacy_playback_run::catch_up`, `PlayerVm::offering_catch_up`) from
+    /// `from` seconds on: the picture runs to `duration`, then the file has ended; 25 s later the
+    /// walk stops. `cancel_after`: Back is pressed this long after the card showed.
+    fn walk(
+        duration: f64,
+        sections: &[Segment],
+        has_next: bool,
+        automatic: bool,
+        from: f64,
+        cancel_after: Option<f64>,
+    ) -> Walk {
+        let mut e = layer();
+        let mut out = Walk::default();
+        let mut clock = from;
+        let mut cancelled = false;
+        while clock < duration + 25.0 {
+            clock += 0.5;
+            let position = clock.min(duration);
+            let running = clock < duration;
+            let ended = episodes_end::at_end(position, duration)
+                || episodes_end::short_at_end(position, duration);
+            let offering = SectionLogic::offering_with_tail(position, duration, sections, has_next);
+            let due = automatic
+                && SectionLogic::card_due_with_tail(position, duration, sections, has_next);
+            let countdown = SectionLogic::countdown(position, duration);
+            let fired = e.tick(offering, due, running, 0.5, countdown, ended);
+            if out.card_at.is_none() && matches!(e.display(), OfferingPresentation::Card { .. }) {
+                out.card_at = Some(clock);
+            }
+            // The end-of-file path of the tick: only through a live card, never after a cancel.
+            let at_the_end = e.next_at_end()
+                && has_next
+                && episodes_end::advance(position, duration, 600.0, e.card_counts());
+            if (fired || at_the_end) && out.advance_at.is_none() {
+                out.advance_at = Some(clock);
+            }
+            if let (Some(card), Some(after), false) = (out.card_at, cancel_after, cancelled)
+                && clock >= card + after
+            {
+                assert!(e.close(), "Back found no card to cancel");
+                cancelled = true;
+            }
+        }
+        out
+    }
+
+    fn near(value: Option<f64>, expected: f64, tolerance: f64) -> bool {
+        value.is_some_and(|v| (v - expected).abs() <= tolerance)
+    }
+
+    #[test]
+    fn an_episode_without_markers_shows_the_card_for_the_last_seven_seconds_and_advances_at_the_end()
+     {
+        // 2 minutes: the long-file rules (over 5 minutes) offered nothing here before.
+        let w = walk(120.0, &[], true, true, 0.0, None);
+        assert!(near(w.card_at, 113.0, 0.5), "{w:?}");
+        assert!(
+            near(w.advance_at, 121.0, 1.0),
+            "advance with the fill, at the end: {w:?}"
+        );
+    }
+
+    #[test]
+    fn a_long_episode_without_markers_gets_the_short_card_like_a_short_one() {
+        // Decided 17.11.: no marker reaching the end of the file means the short card, whatever the length.
+        for (duration, from) in [(1500.0, 1400.0), (320.0, 250.0), (7200.0, 7100.0)] {
+            let w = walk(duration, &[], true, true, from, None);
+            assert!(near(w.card_at, duration - 7.0, 0.5), "{duration}: {w:?}");
+            assert!(
+                near(w.advance_at, duration + 0.9, 1.0),
+                "{duration}: advance at the end of the file: {w:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_outro_that_ends_a_minute_before_the_end_gets_the_card_in_the_last_seconds() {
+        let early = [Segment::new(Art::Credits, 1300.0, 1440.0)];
+        let w = walk(1500.0, &early, true, true, 1380.0, None);
+        assert!(near(w.card_at, 1493.0, 0.5), "{w:?}");
+        assert!(near(w.advance_at, 1501.0, 1.0), "{w:?}");
+    }
+
+    #[test]
+    fn an_outro_to_the_end_of_the_file_keeps_its_card_from_the_start_of_the_outro() {
+        let credits = [Segment::new(Art::Credits, 1320.0, 1500.0)];
+        let w = walk(1500.0, &credits, true, true, 1300.0, None);
+        assert!(near(w.card_at, 1320.0, 0.5), "{w:?}");
+        assert!(
+            near(w.advance_at, 1328.0, 1.0),
+            "seven seconds of fill plus the rest: {w:?}"
+        );
+    }
+
+    #[test]
+    fn an_episode_shorter_than_the_countdown_shows_the_card_for_what_is_left() {
+        let w = walk(5.0, &[], true, true, 0.0, None);
+        assert!(w.card_at.is_some_and(|c| c <= 1.0), "{w:?}");
+        assert!(near(w.advance_at, 6.0, 1.0), "{w:?}");
+    }
+
+    #[test]
+    fn cancelling_the_closing_card_means_no_advance_at_the_end() {
+        for (duration, sections, from) in [
+            (120.0, vec![], 100.0),
+            (
+                1500.0,
+                vec![Segment::new(Art::Credits, 1300.0, 1440.0)],
+                1480.0,
+            ),
+        ] {
+            let w = walk(duration, &sections, true, true, from, Some(2.0));
+            assert!(w.card_at.is_some(), "{w:?}");
+            assert_eq!(w.advance_at, None, "a cancelled card still advanced: {w:?}");
+        }
+    }
+
+    #[test]
+    fn automatic_off_shows_no_card_and_never_advances() {
+        for (duration, sections, from) in [
+            (120.0, vec![], 100.0),
+            (
+                1500.0,
+                vec![Segment::new(Art::Credits, 1300.0, 1440.0)],
+                1480.0,
+            ),
+        ] {
+            let w = walk(duration, &sections, true, false, from, None);
+            assert_eq!(w.card_at, None, "{w:?}");
+            assert_eq!(w.advance_at, None, "{w:?}");
+        }
+    }
+
+    #[test]
+    fn a_movie_or_the_last_episode_gets_neither_card_nor_advance() {
+        for (duration, sections, from) in [
+            (120.0, vec![], 100.0),
+            (7200.0, vec![], 7100.0),
+            (
+                1500.0,
+                vec![Segment::new(Art::Credits, 1300.0, 1440.0)],
+                1480.0,
+            ),
+        ] {
+            let w = walk(duration, &sections, false, true, from, None);
+            assert_eq!(w.card_at, None, "{w:?}");
+            assert_eq!(w.advance_at, None, "{w:?}");
+        }
+    }
+
+    /// `Policy.IsAdministrator` decides whether the server page is offered; a missing or wrongly typed value is "no".
+    #[test]
+    fn the_administrator_flag_comes_from_the_policy() {
+        let admin: AccountPreGift =
+            serde_json::from_str(r#"{"Policy":{"IsAdministrator":true}}"#).expect("decodes");
+        assert_eq!(admin.is_administrator, Some(true));
+        let plain: AccountPreGift =
+            serde_json::from_str(r#"{"Policy":{"IsAdministrator":false}}"#).expect("decodes");
+        assert_eq!(plain.is_administrator, Some(false));
+        let none: AccountPreGift =
+            serde_json::from_str(r#"{"Configuration":{}}"#).expect("decodes");
+        assert_eq!(none.is_administrator, None);
+        let odd: AccountPreGift =
+            serde_json::from_str(r#"{"Policy":{"IsAdministrator":"yes"}}"#).expect("decodes");
+        assert_eq!(odd.is_administrator, None);
+        assert_eq!(
+            AccountPreGift::new(None, None, None, None)
+                .with_administrator(Some(true))
+                .is_administrator,
+            Some(true)
+        );
     }
 }

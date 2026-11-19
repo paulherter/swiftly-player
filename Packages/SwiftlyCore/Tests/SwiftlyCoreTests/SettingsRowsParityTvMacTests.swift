@@ -141,7 +141,8 @@ struct SettingsRowsParityTvMacTests {
             Old(key: "nurUeberWLAN", title: "Nur über WLAN", under: "Downloads warten, bis du im WLAN bist"),
             Old(key: "naechsteFolgeLaden", title: "Nächste Folge laden",
                 under: "Lädt die nächste, löscht die gesehene"),
-            Old(key: "downloadsSpeicher", title: "Speicher", under: "3 Titel auf diesem Mac", value: "2,31 GB"),
+            // The core says "Gerät" on every desktop (the same app runs on Linux and Windows), no longer "Mac".
+            Old(key: "downloadsSpeicher", title: "Speicher", under: "3 Titel auf diesem Gerät", value: "2,31 GB"),
             Old(key: "seerr", title: "Seerr", under: "Anfragen, was noch nicht da ist"),
             Old(key: "eigeneHeader", title: "Eigene Header", under: "Für einen Dienst vor dem Server"),
             Old(key: "einstellungenSync", title: "Auf allen Geräten gleich", under: "Liegt auf deinem Server"),

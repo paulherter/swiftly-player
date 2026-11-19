@@ -84,6 +84,14 @@ extension FocusedValues {
     /// so the items work before the window publishes these.
     @Entry var canBack: Bool?
     @Entry var canForward: Bool?
+    /// The page in front: does Play offer a choice of versions? `nil` when no detail page is in front.
+    /// Enables "Fassung wählen…" in "Wiedergabe" (see ``VersionCommand``).
+    @Entry var versionsOffered: Bool?
+}
+
+extension EnvironmentValues {
+    /// Whether this page is the top one of its stack; the ones beneath answer no menu command.
+    @Entry var pageOnTop: Bool = true
 }
 
 struct MenuBar: Commands {
@@ -93,6 +101,7 @@ struct MenuBar: Commands {
     @FocusedValue(\.playerKeysFree) private var playerKeysFree
     @FocusedValue(\.canBack) private var canBack
     @FocusedValue(\.canForward) private var canForward
+    @FocusedValue(\.versionsOffered) private var versionsOffered
     /// The skip lengths from Settings, for the item names ("10 s zurück").
     @AppStorage("zurueckSek") private var backSeconds = 10
     @AppStorage("vorSek") private var forwardSeconds = 30
@@ -150,6 +159,11 @@ struct MenuBar: Commands {
         // otherwise they would swallow the keys of a focused list or button. Each item sends
         // the same message the key press does, so nothing runs twice.
         CommandMenu(Text("Wiedergabe")) {
+            // The keyboard route to the Play button's right-click list: the same versions, as a dialog.
+            Button("Fassung wählen…") { CommandPost.dispatch(.pickVersion) }
+                .keyboardShortcut(.return, modifiers: .option)
+                .disabled(!VersionCommand.isEnabled(offered: versionsOffered, playerOpen: playerOpen))
+            Divider()
             Button("Abspielen/Pause") { CommandPost.dispatch(.playToggle) }
                 .keyboardShortcut(.space, modifiers: [])
                 .disabled(playerOpen != true || playerKeysFree == false)
@@ -191,6 +205,8 @@ enum AppCommand: String {
 enum MenuCommand: String {
     case forward = "vor", switchProfile = "profilWechseln"
     case playTracks = "spielTon"
+    /// "Fassung wählen…": the detail page in front opens its version list.
+    case pickVersion = "fassungWaehlen"
 }
 
 /// A menu item that sends its command as a message.
@@ -243,10 +259,42 @@ enum CommandPost {
     }
 }
 
-/// This delegate answers one question only, which AppKit asks by itself.
+/// Keeps the app running when its window closes, and makes sure the window is there after launch.
 @MainActor
 final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
+
+    /// **The window must exist after launch, even when SwiftUI does not present it.**
+    ///
+    /// Measured: a second process of the same bundle id (started with `open -n` or the binary directly, while
+    /// another copy runs or is still shutting down) never gets its `Window`: the main thread idles in
+    /// `nextEvent`, `RootView` is never built (3 of 3 runs). Finder and `open` without `-n` hand the launch to
+    /// the running copy instead, so a normal launch does not reach this; the proof runs did.
+    /// One second after launch, a missing window is opened the same way as "Fenster > Swiftly".
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { MainActor.assumeIsolated { Self.ensureMainWindow() } }
+    }
+
+    static func hasMainWindow() -> Bool {
+        NSApp.windows.contains { $0.identifier?.rawValue.hasPrefix(SwiftlyApp.mainWindow) == true }
+    }
+
+    static func ensureMainWindow() {
+        guard !hasMainWindow() else { return }
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+            .map(\.processIdentifier).filter { $0 != ProcessInfo.processInfo.processIdentifier }
+        let seen = NSApp.windows.map { "\($0.identifier?.rawValue ?? "-")/\($0.isVisible ? "sichtbar" : "versteckt")" }
+        AppLog.writeOut("[App] kein Fenster nach dem Start (andere Instanzen: \(others), Fenster: \(seen)); öffne es über Fenster > Swiftly")
+        guard let menu = NSApp.windowsMenu,
+              let index = menu.items.firstIndex(where: { $0.title == "Swiftly" && $0.keyEquivalent == "0" }) else {
+            AppLog.writeOut("[App] Menüpunkt Fenster > Swiftly fehlt")
+            return
+        }
+        menu.performActionForItem(at: index)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            MainActor.assumeIsolated { AppLog.writeOut("[App] Fenster nach Nachöffnen: \(hasMainWindow() ? "da" : "fehlt")") }
+        }
+    }
 }
 
 /// "Window > Swiftly": brings the main window back when closed and to the front

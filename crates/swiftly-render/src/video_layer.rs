@@ -27,6 +27,11 @@ pub(crate) struct VideoLayer {
     place: wgpu::Buffer,
     texture: Option<(wgpu::Texture, wgpu::TextureView, (u32, u32))>,
     bind_group: Option<wgpu::BindGroup>,
+    /// The texture belongs to the host (a shared GPU buffer), not to `upload`.
+    external: bool,
+    /// The newest uploaded frame as RGBA, kept so a list with frosted glass (drawn by the software renderer) can
+    /// blur the film too. `None` for a texture the host owns.
+    cpu: Option<Vec<u8>>,
     pub(crate) fit: VideoFit,
 }
 
@@ -119,8 +124,59 @@ impl VideoLayer {
             place,
             texture: None,
             bind_group: None,
+            external: false,
+            cpu: None,
             fit: VideoFit::Fit,
         }
+    }
+
+    /// The uploaded frame (`w`, `h`, RGBA) and where it sits in a target of `target` pixels, for the software path.
+    /// `None` when the frame lives only on the GPU.
+    pub(crate) fn software_base(
+        &self,
+        target: (u32, u32),
+    ) -> Option<crate::software::VideoBase<'_>> {
+        let (_, _, (w, h)) = self.texture.as_ref()?;
+        let rgba = self.cpu.as_deref()?;
+        Some(crate::software::VideoBase {
+            w: *w,
+            h: *h,
+            rgba,
+            rect: Self::clip_rect((*w, *h), target, self.fit),
+        })
+    }
+
+    /// True when the frame is a texture of the host (no CPU copy exists).
+    pub(crate) fn is_external(&self) -> bool {
+        self.external
+    }
+
+    /// Shows `texture` (a frame the GPU already holds, e.g. imported from a DMA-buf) as the video. No copy is made;
+    /// the host calls this whenever the newest frame lives in another texture of its ring.
+    pub(crate) fn set_external(&mut self, ctx: &GpuContext, texture: &wgpu::Texture) {
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.bind_group = Some(ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("swiftly-render video bindings"),
+            layout: &self.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.place.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        }));
+        let size = (texture.width(), texture.height());
+        self.texture = Some((texture.clone(), view, size));
+        self.external = true;
+        self.cpu = None;
     }
 
     /// Copies a `w x h` RGBA frame into the texture (a new texture when the size changed).
@@ -128,7 +184,8 @@ impl VideoLayer {
         if w == 0 || h == 0 || rgba.len() < w as usize * h as usize * 4 {
             return;
         }
-        if self.texture.as_ref().is_none_or(|t| t.2 != (w, h)) {
+        if self.external || self.texture.as_ref().is_none_or(|t| t.2 != (w, h)) {
+            self.external = false;
             let texture = ctx.device().create_texture(&wgpu::TextureDescriptor {
                 label: Some("swiftly-render video frame"),
                 size: wgpu::Extent3d {
@@ -163,6 +220,14 @@ impl VideoLayer {
                 ],
             }));
             self.texture = Some((texture, view, (w, h)));
+        }
+        let n = w as usize * h as usize * 4;
+        match &mut self.cpu {
+            Some(c) => {
+                c.clear();
+                c.extend_from_slice(&rgba[..n]);
+            }
+            None => self.cpu = Some(rgba[..n].to_vec()),
         }
         if let Some((texture, _, _)) = &self.texture {
             ctx.queue().write_texture(

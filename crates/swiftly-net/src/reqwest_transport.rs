@@ -300,8 +300,9 @@ fn chain_text(e: &reqwest::Error) -> (String, Option<io::ErrorKind>) {
 }
 
 /// Sorts a reqwest failure into the codes the Swift code knows (`JellyfinError(petition:)`,
-/// JellyfinClient.swift:56-69). The certificate question is asked first, like there.
-fn map_error(e: reqwest::Error) -> ErrorKind {
+/// JellyfinClient.swift:56-69). The certificate question is asked first, like there. Public so that a download (which
+/// runs its own request) words its failure like every other call does, never with the library's English text.
+pub fn map_error(e: reqwest::Error) -> ErrorKind {
     let (text, io_kind) = chain_text(&e);
     if e.is_builder() {
         return ErrorKind::InvalidServerUrl;

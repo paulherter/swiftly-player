@@ -5,6 +5,8 @@
 mod accounts;
 mod airplay;
 mod core;
+#[cfg(test)]
+mod core_words_contract;
 mod detail;
 mod diagnostics;
 mod downloads;
@@ -24,7 +26,6 @@ mod legacy_playback;
 mod legacy_player;
 mod legacy_plex_detail;
 mod legacy_search;
-mod legacy_seerr;
 mod legacy_statics;
 mod legacy_support;
 #[cfg(test)]
@@ -36,6 +37,7 @@ mod looks;
 mod pages;
 mod play_start;
 mod player;
+mod player_menus;
 mod plex_live;
 mod plex_sign_in;
 mod probe;
@@ -43,10 +45,12 @@ mod remote;
 mod rules;
 mod search;
 mod seerr;
+mod server_admin;
 mod settings;
 mod settings_sync;
 mod state;
 mod state_more;
+mod subtitle_search;
 mod sync_play;
 mod visual;
 pub use state_more::{
@@ -56,7 +60,14 @@ pub use state_more::{
     SettingsSyncPhaseState,
 };
 mod forwarder;
+mod seerr_admin_screen;
+mod seerr_lists_screen;
+mod seerr_remote;
 mod seerr_screen;
+mod seerr_setup_screen;
+#[cfg(test)]
+mod seerr_tests;
+mod seerr_title_screen;
 mod stores;
 mod support;
 mod takeover;
@@ -106,6 +117,7 @@ pub use looks::{
 };
 pub use pages::{
     DateText, PersonInfo, PersonModel, PersonPage, PlaylistEmptyText, PlaylistModel, PlaylistPage,
+    seerr_cast_person,
 };
 pub use player::{PlayerEngine, PlayerIntent, PlayerStart, PlayerVm};
 pub use seerr::{
@@ -147,8 +159,9 @@ pub use remote::{
     WebSocketLink,
 };
 pub use rules::{
-    HostSubtitleFile, HostTrack, HostTrackMapping, SubtitleCueIndex, audio_is_original,
-    audio_label_with_original, map_host_tracks, matching_next_version, migrate_subtitle_auto,
+    HostSubtitleFile, HostTrack, HostTrackMapping, SubtitleCueIndex, apply_stored_settings,
+    audio_is_original, audio_label_with_original, map_host_tracks, matching_next_version,
+    migrate_subtitle_auto,
 };
 pub use search::SearchVm;
 pub use seerr_screen::{
@@ -169,3 +182,8 @@ pub use transport::{
 };
 
 uniffi::setup_scaffolding!();
+pub use seerr_admin_screen::{SeerrAdminScreen, SeerrRequestDetail};
+pub use seerr_lists_screen::{
+    LibraryFailure, SeerrHub, SeerrLibrary, SeerrListsScreen, SeerrMenuEntry, SeerrMenuKind,
+};
+pub use seerr_title_screen::{SeerrRequestResult, SeerrTitleScreen};

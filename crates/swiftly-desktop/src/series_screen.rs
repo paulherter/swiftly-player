@@ -3,9 +3,10 @@
 //! for `touch`, `desktop` and `tv`. Differences from the Swift `SeriesView` are noted in the code.
 
 use crate::detail_screen::{
-    Art, HERO_DESKTOP, Head, Kit, Pushed, UiState, body_touch, cast_rail, fill_frame, ground, hero,
-    hero_buttons, ins, look, menu_key, mood_strips, poster_tile, resume_info, rgba, sheet,
-    status_card, tile_rail, top_bar, txt, txt_center, version_sheet, weight, wide,
+    Art, HERO_DESKTOP, Head, Kit, Pushed, UiState, VERSION_MENU_WIDTH, body_touch, cast_rail,
+    fill_frame, ground, hero, hero_buttons, ins, look, menu_key, mood_strips, poster_tile,
+    resume_info, rgba, sheet, status_card, tile_rail, top_bar, txt, txt_center, version_entries,
+    weight, wide,
 };
 use crate::home::Form;
 use crate::home_data::Scenario;
@@ -33,15 +34,10 @@ struct Data {
     more: Arc<MorePart>,
     /// The texts of the More menu (the core's `more_menu`; the sheet of touch lists them).
     menu: Vec<String>,
-    /// The version rows (`MediaSource.versionLabel`) and the heading of the choice.
-    versions: Vec<String>,
     /// Whether the hero picture's hues are known: the mood backdrop is built from them, and the page must be rebuilt when
     /// they arrive after the page (the view alone never learns about them).
     tones: bool,
 }
-
-/// The heading of the version choice on the series page (the Mac's literal "Fassung wählen").
-const VERSION_TITLE: &str = "Fassung wählen";
 
 /// A tile for an episode row, so the tile menu knows what it is (the Mac builds the menu from the episode's `Item`).
 fn episode_tile(e: &EpisodeRow, series: &str) -> swiftly_vm::Tile {
@@ -71,9 +67,15 @@ fn head_of(b: &SeriesButtonPart, directors: Vec<String>) -> Head {
     Head {
         id: b.id.clone(),
         image: b.image.clone(),
+        stand: crate::detail_screen::Stand {
+            pictures: b.tile_images.clone(),
+            blur: b.image_blur_hash.clone(),
+        },
         title: b.title.clone(),
         secondary: b.secondary_line.clone(),
         overview: b.overview.clone(),
+        // The button's label answers with the title: until then three quiet lines hold the description's place.
+        overview_wait: b.overview.is_none() && !b.label_ready && !b.state_failed,
         directors,
         label: b.label.clone(),
         enabled: b.enabled,
@@ -84,16 +86,25 @@ fn head_of(b: &SeriesButtonPart, directors: Vec<String>) -> Head {
         fav_caption: b.favorite_caption.clone(),
         download: None,
         // The line under the title: Direct Play, rating, age (`DetailView.swift:578`).
-        proof: b.proof.visible.then(|| {
-            (
+        proof: if b.proof.visible
+            || matches!(b.proof.phase, swiftly_vm::ProofPhase::Waiting)
+            || b.proof.rating.is_some()
+            || b.proof.age_rating.is_some()
+        {
+            Some((
                 b.proof.direct_play,
                 b.proof.hint.clone(),
                 b.proof.rating.clone(),
                 b.proof.age_rating.clone(),
-            )
-        }),
+            ))
+        } else {
+            None
+        },
+        // Like the Mac (`proof.phase != .settled`): the playback chip's slot is held from frame 1, whatever else is known.
+        proof_pending: !b.proof.visible && matches!(b.proof.phase, swiftly_vm::ProofPhase::Waiting),
         message: b.message.clone(),
         trailer: false,
+        versions: false,
     }
 }
 
@@ -111,28 +122,22 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
     let (w, h) = episode_size(lk.form);
     let mut img = k
         .art
-        .node_for(e.image.as_ref(), true, &e.id, w, h, lk.corner)
+        .node_blur(
+            e.image.as_ref(),
+            e.image_blur_hash.as_deref(),
+            true,
+            &e.id,
+            w,
+            h,
+            lk.corner,
+        )
         .paint(Paint::Stroke {
             color: color(colour::TILE_BORDER),
             width: 1.0,
             radius: lk.corner,
         });
     if let Some(p) = e.progress.filter(|p| *p > 0.0 && !e.watched) {
-        let bar = Node::zstack(
-            Alignment::BOTTOM_LEADING,
-            vec![
-                Node::rect(Color::new(1.0, 1.0, 1.0, 0.30), 0.0).frame(
-                    Some(w),
-                    Some(4.0),
-                    Alignment::CENTER,
-                ),
-                Node::rect(color(colour::MARK_ACCENT), 0.0).frame(
-                    Some(w * p.clamp(0.0, 1.0)),
-                    Some(4.0),
-                    Alignment::CENTER,
-                ),
-            ],
-        );
+        let bar = crate::home::progress_bar(w, lk.corner, p);
         img = img.overlay(bar, Alignment::BOTTOM_LEADING);
     }
     if e.watched {
@@ -182,43 +187,6 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
         return n;
     }
     if lk.form == Form::Desktop {
-        // Mac `EpisodeRow`: 160 x 90 still, 16 apart, 10 around (the row is 110 high, 820 wide, radius 12); the title 15
-        // semibold with the runtime (12 very quiet) and, when watched, `checkmark.circle.fill` 14; the overview 13 quiet,
-        // three lines, 5 below. Hover fills the whole row with `groupsArea` (`timeFloat`); a right click opens the menu.
-        let mut head = vec![txt(
-            k.cx,
-            &name,
-            weight(lk.body, 15.0, 600),
-            colour::FONT,
-            Some(2),
-        )];
-        if !second.is_empty() {
-            head.push(txt(
-                k.cx,
-                &second,
-                weight(lk.small, 12.0, 400),
-                colour::FONT_VERY_QUIET,
-                Some(1),
-            ));
-        }
-        if e.watched {
-            head.push(k.icons.node(
-                "check-circle.fill",
-                14.0,
-                false,
-                color(colour::FONT_VERY_QUIET),
-            ));
-        }
-        let mut lines = vec![Node::hstack(Align::Center, Some(8.0), head)];
-        if let Some(o) = e.overview.as_ref().filter(|o| !o.is_empty()) {
-            lines.push(txt(
-                k.cx,
-                o,
-                weight(lk.small, 13.0, 400),
-                colour::FONT_QUIET,
-                Some(3),
-            ));
-        }
         // Download and More appear under the pointer (`SeriesView.swift:817`: "a pointer cannot swipe"). They are
         // always in the layout and only faded, so the text does not reflow on hover: 18 wide, 14 apart, 12 from the
         // text, 2 down.
@@ -249,12 +217,15 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
         );
         let icon_w = 18.0 * icons.len() as f32 + 14.0 * (icons.len() as f32 - 1.0) + 12.0;
         let icons = Node::hstack(Align::Start, Some(14.0), icons).padding(ins(2.0, 12.0, 0.0, 0.0));
-        let text = Node::vstack(Align::Start, Some(5.0), lines).frame(
-            Some(820.0 - 20.0 - w - 16.0 - icon_w),
-            None,
-            Alignment::TOP_LEADING,
+        let still = k.art.node_blur(
+            e.image.as_ref(),
+            e.image_blur_hash.as_deref(),
+            true,
+            &e.id,
+            w,
+            h,
+            10.0,
         );
-        let still = k.art.node_for(e.image.as_ref(), true, &e.id, w, h, 10.0);
         let shown = if e.watched {
             Some(1.0)
         } else {
@@ -262,35 +233,28 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
         };
         let still = match shown {
             Some(p) => {
-                let p = p.clamp(0.0, 1.0);
-                let bar = Node::zstack(
-                    Alignment::BOTTOM_LEADING,
-                    vec![
-                        Node::rect(Color::new(1.0, 1.0, 1.0, 0.30), 0.0).frame(
-                            Some(w),
-                            Some(4.0),
-                            Alignment::CENTER,
-                        ),
-                        Node::rect(color(colour::MARK_ACCENT), 0.0).frame(
-                            Some(w * p),
-                            Some(4.0),
-                            Alignment::CENTER,
-                        ),
-                    ],
-                );
+                // The still is drawn with a corner of 10: the bar follows the same mask.
+                let bar = crate::home::progress_bar(w, 10.0, p);
                 still.overlay(bar, Alignment::BOTTOM_LEADING)
             }
             None => still,
         };
-        return Node::hstack(Align::Start, Some(16.0), vec![still, text, icons])
-            .padding(ins(10.0, 10.0, 10.0, 10.0))
-            .frame(Some(820.0), Some(110.0), Alignment::TOP_LEADING)
-            .key(key)
-            .on_tap(Action::from(format!("episode:{}", e.id).as_str()))
-            .on_secondary(Action::from(format!("tilemenu:{}", e.id).as_str()))
-            .hover_surface(color(colour::GROUPS_AREA), 12.0)
-            .hoverable()
-            .press_style(swiftly_ui::interact::PressStyle::Row);
+        // Hover fills the whole row with `groupsArea` (`timeFloat`); a right click opens the menu.
+        return mac_episode_row(
+            k,
+            still,
+            &name,
+            &second,
+            e.watched,
+            e.overview.as_deref(),
+            Some((icons, icon_w)),
+        )
+        .key(key)
+        .on_tap(Action::from(format!("episode:{}", e.id).as_str()))
+        .on_secondary(Action::from(format!("tilemenu:{}", e.id).as_str()))
+        .hover_surface(color(colour::GROUPS_AREA), 12.0)
+        .hoverable()
+        .press_style(swiftly_ui::interact::PressStyle::Row);
     }
     let text = Node::vstack(
         Align::Start,
@@ -312,6 +276,69 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
         .frame(None, None, Alignment::LEADING)
         .key(key)
         .on_tap(Action::from(format!("episode:{}", e.id).as_str()))
+}
+
+/// The body of the Mac `EpisodeRow`, shared by the library series page and the Seerr title page, so both list episodes
+/// the same way: the still (160 x 90, the caller adds its bars and marks), 16 apart, 10 around (the row is 110 high,
+/// 820 wide, radius 12); the title 15 semibold with the runtime (12 very quiet) and, when watched,
+/// `check-circle.fill` 14; the overview 13 quiet, three lines, 5 below. `tools` is the pointer-only icon column and its
+/// width (the library page's Download and More); the caller adds key, taps and hover.
+pub(crate) fn mac_episode_row(
+    k: &Kit,
+    still: Node,
+    name: &str,
+    second: &str,
+    watched: bool,
+    overview: Option<&str>,
+    tools: Option<(Node, f32)>,
+) -> Node {
+    let lk = &k.lk;
+    let (w, _) = episode_size(Form::Desktop);
+    let mut head = vec![txt(
+        k.cx,
+        name,
+        weight(lk.body, 15.0, 600),
+        colour::FONT,
+        Some(2),
+    )];
+    if !second.is_empty() {
+        head.push(txt(
+            k.cx,
+            second,
+            weight(lk.small, 12.0, 400),
+            colour::FONT_VERY_QUIET,
+            Some(1),
+        ));
+    }
+    if watched {
+        head.push(k.icons.node(
+            "check-circle.fill",
+            14.0,
+            false,
+            color(colour::FONT_VERY_QUIET),
+        ));
+    }
+    let mut lines = vec![Node::hstack(Align::Center, Some(8.0), head)];
+    if let Some(o) = overview.filter(|o| !o.is_empty()) {
+        lines.push(txt(
+            k.cx,
+            o,
+            weight(lk.small, 13.0, 400),
+            colour::FONT_QUIET,
+            Some(3),
+        ));
+    }
+    let tools_w = tools.as_ref().map_or(0.0, |t| t.1);
+    let text = Node::vstack(Align::Start, Some(5.0), lines).frame(
+        Some(820.0 - 20.0 - w - 16.0 - tools_w),
+        None,
+        Alignment::TOP_LEADING,
+    );
+    let mut kids = vec![still, text];
+    kids.extend(tools.map(|t| t.0));
+    Node::hstack(Align::Start, Some(16.0), kids)
+        .padding(ins(10.0, 10.0, 10.0, 10.0))
+        .frame(Some(820.0), Some(110.0), Alignment::TOP_LEADING)
 }
 
 fn episodes_section(k: &Kit, d: &Data) -> Node {
@@ -510,13 +537,15 @@ fn tabs(k: &Kit, d: &Data, sx: &UiState) -> Node {
             .iter()
             .find(|s| Some(&s.id) == d.seasons.selected.as_ref())
             .map_or_else(|| "Folgen".to_owned(), |s| s.name.clone()),
-        d.seasons.seasons.len() > 1,
+        // The core's rule (`chevron`): decided from facts that are there in frame 1, the same on every platform.
+        d.seasons.chevron,
     )];
     labels.push(("Besetzung".into(), false));
     labels.push(("Ähnliches".into(), false));
-    if !d.more.extras.is_empty() {
-        labels.push(("Extras".into(), false));
-    }
+    // Extras stands in the row from frame 1: a quiet, invisible word while the extras are unknown or none, so the tab
+    // row never changes when they arrive (the word lights up in place).
+    let extras = !d.more.extras.is_empty();
+    labels.push(("Extras".into(), false));
     let mac = lk.form == Form::Desktop;
     let size = if lk.form == Form::Tv {
         34.0
@@ -530,6 +559,7 @@ fn tabs(k: &Kit, d: &Data, sx: &UiState) -> Node {
         .enumerate()
         .map(|(i, (s, chevron))| {
             let on = usize::from(sx.tab) == i;
+            let hidden = i == 3 && !extras;
             // `TabButton`: the word turns bright under the pointer as well.
             let lit = on || (mac && sx.hover_tab == Some(i as u8));
             let c = if lit {
@@ -537,7 +567,10 @@ fn tabs(k: &Kit, d: &Data, sx: &UiState) -> Node {
             } else {
                 colour::FONT_QUIET
             };
-            let mut row = vec![txt(k.cx, s, weight(lk.rail, size, 600), c, Some(1))];
+            // The tab is as wide as its word, the chevron and the gap: a long season name ("Staffel 13") must never be
+            // squeezed into what the row proposes for the half of the pair (`fixedSize`).
+            let mut row =
+                vec![txt(k.cx, s, weight(lk.rail, size, 600), c, Some(1)).fixed_size(true, false)];
             if *chevron {
                 // Mac: the chevron points up while the season list is open (`chevronOpen`).
                 let name = if !mac {
@@ -572,6 +605,9 @@ fn tabs(k: &Kit, d: &Data, sx: &UiState) -> Node {
                 n = n
                     .padding(ins(0.0, 0.0, 11.0, 0.0))
                     .overlay(wide(line, Alignment::BOTTOM), Alignment::BOTTOM);
+            }
+            if hidden {
+                return n.opacity(0.0, swiftly_ui::Motion::Instant);
             }
             n = n.key(key.as_str()).on_tap(Action::from(key.as_str()));
             if mac {
@@ -728,13 +764,6 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
         }
     };
     let mut kids = head;
-    if lk.form != Form::Touch && !d.more.watchers.is_empty() {
-        // `WatchersRow`: between the head and the tabs, 34 below the head (`SeriesView.swift:153`).
-        kids.push(
-            crate::detail_screen::watchers_rail(&k, &d.more.watchers)
-                .padding(ins(34.0, 0.0, 0.0, 0.0)),
-        );
-    }
     let (gap, top) = if lk.form == Form::Desktop {
         (14.0, 34.0)
     } else {
@@ -744,6 +773,14 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
         Node::vstack(Align::Start, Some(gap), vec![tabs(&k, d, sx), section])
             .padding(ins(top, 0.0, 0.0, 0.0)),
     );
+    if lk.form != Form::Touch && !d.more.watchers.is_empty() {
+        // `WatchersRow`: after the tab content, so its late answer moves nothing above it (it sat between the head and the
+        // tabs and pushed the picker and the episodes down when it arrived).
+        kids.push(
+            crate::detail_screen::watchers_rail(&k, &d.more.watchers)
+                .padding(ins(34.0, 0.0, 0.0, 0.0)),
+        );
+    }
     let mut column = wide(
         Node::vstack(Align::Start, Some(0.0), kids).padding(ins(0.0, 0.0, bottom_pad, 0.0)),
         Alignment::TOP_LEADING,
@@ -768,19 +805,13 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
     let scroll = Node::scroll(Axis::Vertical, None, column).key("series-scroll");
     let mut page = fill_frame(scroll, Alignment::TOP_LEADING)
         .overlay(top_bar(&k, &h.title, sx.header), Alignment::TOP);
-    if lk.form == Form::Desktop
-        && let Some(menu) = sx.menu.overlay(cx, env)
-    {
+    if let Some(menu) = sx.menu.overlay(cx, env) {
         page = page.overlay(menu, Alignment::TOP_LEADING);
     }
     match sx.sheet {
         1 => {
             let rows: Vec<(String, bool)> = d.menu.iter().map(|s| (s.clone(), false)).collect();
             page = page.overlay(sheet(&k, &h.title, &rows, "menu"), Alignment::CENTER);
-        }
-        2 => {
-            let rows: Vec<(String, bool)> = d.versions.iter().map(|s| (s.clone(), false)).collect();
-            page = page.overlay(version_sheet(&k, VERSION_TITLE, &rows), Alignment::CENTER);
         }
         3 => {
             let rows: Vec<(String, bool)> = d
@@ -814,9 +845,8 @@ pub struct SeriesScreen {
     message_since: Option<f64>,
     /// Trailer links the core wants opened in the browser, taken by the app.
     web_req: Vec<String>,
-    /// The versions of the open choice and the title and second it starts at.
+    /// The versions the open version menu lists (a pick is looked up here).
     versions: Vec<swiftly_vm::VersionOption>,
-    choose: Option<(String, f64)>,
     /// The More menu as the core lists it.
     menu: Vec<swiftly_vm::MenuEntry>,
     /// The options last sent to the core.
@@ -858,7 +888,7 @@ impl SeriesScreen {
         let icons = Icons::new(&cx, env.scale);
         let art2 = Rc::clone(&art);
         let art3 = Rc::clone(&art);
-        let data = Self::data(&vm, &[], &[], &art);
+        let data = Self::data(&vm, &[], &art);
         let host = Pushed::new(
             env,
             cx,
@@ -878,7 +908,6 @@ impl SeriesScreen {
             message_since: None,
             web_req: Vec::new(),
             versions: Vec::new(),
-            choose: None,
             menu: Vec::new(),
             sent_options: crate::live::current().map(|w| title_data::live_series_options(&w)),
             tile_id: None,
@@ -893,13 +922,9 @@ impl SeriesScreen {
         s
     }
 
-    fn data(
-        vm: &SeriesVm<AppTransport>,
-        versions: &[swiftly_vm::VersionOption],
-        menu: &[swiftly_vm::MenuEntry],
-        art: &Art,
-    ) -> Data {
-        let head = head_of(&vm.button(), vm.directors());
+    fn data(vm: &SeriesVm<AppTransport>, menu: &[swiftly_vm::MenuEntry], art: &Art) -> Data {
+        let mut head = head_of(&vm.button(), vm.directors());
+        head.versions = vm.versions_next().len() >= 2;
         let tones = !art.tones_for(head.image.as_ref(), &head.id).is_empty();
         Data {
             head,
@@ -907,14 +932,13 @@ impl SeriesScreen {
             episodes: vm.episodes(),
             more: vm.more(),
             menu: menu.iter().map(|e| e.text.clone()).collect(),
-            versions: versions.iter().map(|v| v.label.clone()).collect(),
             tones,
         }
     }
 
     fn refresh(&mut self) {
         self.menu = self.vm.more_menu();
-        let d = Self::data(&self.vm, &self.versions, &self.menu, &self.art);
+        let d = Self::data(&self.vm, &self.menu, &self.art);
         // The Extras tab goes away with the extras: back to the episodes (`SeriesView.swift:251`).
         if self.host.sx.tab == 3 && d.more.extras.is_empty() {
             self.host.sx.tab = 0;
@@ -973,20 +997,59 @@ impl SeriesScreen {
         }
     }
 
+    /// Opens the version menu of the Play button (the main button's episode): only its versions, the default one
+    /// checked. Nothing opens with one version or while its versions are not known. `keyboard` highlights the first
+    /// row at once. True when a menu opened.
+    pub fn open_versions(&mut self, anchor: Anchor, keyboard: bool) -> bool {
+        let versions = self.vm.versions_next();
+        self.show_versions(versions, anchor, keyboard)
+    }
+
+    /// The version menu from the Play button's own rect: a long press and the keyboard commands.
+    pub fn open_versions_at_play(&mut self, keyboard: bool) -> bool {
+        let rect = self
+            .host
+            .ui()
+            .frame_of("play")
+            .map_or(swiftly_layout::Rect::new(0.0, 0.0, 280.0, 56.0), |f| {
+                swiftly_layout::Rect::new(f[0], f[1], f[2], f[3])
+            });
+        self.open_versions(Anchor::Button(rect), keyboard)
+    }
+
+    /// Whether Play has a version choice to offer now.
+    pub fn versions_offered(&self) -> bool {
+        !self.vm.versions_next().is_empty()
+    }
+
+    fn show_versions(
+        &mut self,
+        versions: Vec<swiftly_vm::VersionOption>,
+        anchor: Anchor,
+        keyboard: bool,
+    ) -> bool {
+        if versions.len() < 2 || self.host.sx.menu.is_open() || self.host.sx.sheet != 0 {
+            return false;
+        }
+        self.host.sx.menu.open(
+            version_entries(&versions),
+            anchor,
+            VERSION_MENU_WIDTH,
+            keyboard,
+        );
+        if keyboard {
+            // Opened by the keyboard, Enter starts the default version: the highlight starts on the checked row.
+            self.host.sx.menu.highlight_checked();
+        }
+        self.versions = versions;
+        self.log.push("versions open".into());
+        true
+    }
+
     /// What a press on Play (or a menu entry that plays) does, as the core decides it (`SeriesCore.launch`).
     fn launch(&mut self, action: PlayAction, since: Option<f64>) {
         match action {
             PlayAction::Wait => {}
-            PlayAction::Choose {
-                item_id,
-                since: at,
-                versions,
-            } => {
-                self.choose = Some((item_id, since.unwrap_or(at)));
-                self.versions = versions;
-                self.log.push("play choose".into());
-                self.host.sx.sheet = 2;
-            }
             // The list entry has no `MediaSources`: the player fetches and asks itself (as on the Mac).
             PlayAction::Resolve { item_id, since: at } => {
                 self.play_req = Some(crate::live_play::PlayRequest {
@@ -1206,6 +1269,10 @@ impl SeriesScreen {
                 .iter()
                 .find(|(id, _)| is(&format!("epseen:{id}")))
                 .cloned();
+            let row_load = episodes
+                .iter()
+                .find(|(id, _)| is(&format!("epload:{id}")))
+                .cloned();
             if a == popover::DISMISS {
                 self.host.sx.menu.close();
             } else if let Some((id, watched)) = row_menu {
@@ -1216,8 +1283,11 @@ impl SeriesScreen {
                     .map_or(swiftly_layout::Rect::new(0.0, 0.0, 18.0, 18.0), |f| {
                         swiftly_layout::Rect::new(f[0], f[1], f[2], f[3])
                     });
+                // "Laden" for an episode that can be downloaded (signed in, the download button offered, no copy yet).
+                let load = crate::live::current()
+                    .is_some_and(|w| w.download_button() && !w.on_device(&id));
                 self.host.sx.menu.open(
-                    short_episode_menu(&id, watched),
+                    short_episode_menu(&id, watched, load),
                     Anchor::Button(rect),
                     260.0,
                     false,
@@ -1226,6 +1296,9 @@ impl SeriesScreen {
                 self.host.sx.menu.close();
                 let play = self.episode_action(&id);
                 self.launch(play, None);
+            } else if let Some((id, _)) = row_load {
+                self.host.sx.menu.close();
+                crate::desk::request_download(&id);
             } else if let Some((id, watched)) = row_seen {
                 self.host.sx.menu.close();
                 self.vm
@@ -1276,6 +1349,23 @@ impl SeriesScreen {
                     .sx
                     .menu
                     .open(items, Anchor::Button(rect), 260.0, false);
+            } else if is(crate::detail_screen::PLAY_MENU) {
+                // Right click on Play: the versions of the main button's episode at the pointer (nothing with one).
+                let p = self.host.pointer;
+                self.open_versions(Anchor::Pointer(swiftly_layout::Point::new(p.0, p.1)), false);
+            } else if is(crate::detail_screen::PLAY_HOLD) {
+                self.open_versions_at_play(false);
+            } else if let Some(id) = self
+                .versions
+                .iter()
+                .find(|v| is(&format!("ver:{}", v.id)))
+                .map(|v| v.id.clone())
+            {
+                // A row of the version menu: the core's `play_next(pick)`.
+                self.host.sx.menu.close();
+                self.log.push(format!("start version {id}"));
+                let a = self.vm.play_next(Some(&id));
+                self.launch(a, None);
             } else if is("play") {
                 let a = self.vm.play_next(None);
                 self.launch(a, None);
@@ -1318,6 +1408,7 @@ impl SeriesScreen {
                     role: c.role,
                     image: c.image,
                     origin: self.title_now(),
+                    tmdb: None,
                 });
             } else if is("favorite") {
                 self.vm.send(SeriesIntent::SetWatchlist {
@@ -1362,7 +1453,7 @@ impl SeriesScreen {
             } else {
                 for i in 0..4_u8 {
                     if is(&format!("tab:{i}")) {
-                        let several = self.vm.seasons().seasons.len() > 1;
+                        let several = self.vm.seasons().chevron;
                         if i == 0 && self.host.sx.tab == 0 && several {
                             if desktop {
                                 // Mac: the first tab toggles the season list under it (220 wide, `leap`).
@@ -1426,20 +1517,6 @@ impl SeriesScreen {
                         self.vm.send(SeriesIntent::Menu(self.menu[i].kind.clone()));
                     }
                 }
-                for i in 0..self.versions.len() {
-                    if is(&format!("version:{i}")) {
-                        self.host.sx.sheet = 0;
-                        self.play_req = self.choose.clone().map(|(item_id, since)| {
-                            crate::live_play::PlayRequest {
-                                item_id,
-                                since,
-                                source_id: Some(self.versions[i].id.clone()),
-                            }
-                        });
-                        self.log
-                            .push(format!("start version {}", self.versions[i].id));
-                    }
-                }
                 self.tile_pick(&a);
                 let seasons = self.vm.seasons();
                 for (i, s) in seasons.seasons.iter().enumerate() {
@@ -1488,6 +1565,10 @@ impl SeriesScreen {
             self.host.sx.menu.close();
             let Some(t) = tile.clone() else { continue };
             match e {
+                crate::tile_menu::Entry::Load => {
+                    crate::desk::request_download(&id);
+                    continue;
+                }
                 crate::tile_menu::Entry::Together => {
                     self.requests
                         .push(swiftly_vm::TileRequest::Together { id: id.clone() });
@@ -1706,8 +1787,8 @@ impl SeriesScreen {
 }
 
 /// The short menu of an episode row: play it, mark it (the Mac's `Menu` in `EpisodesRow`).
-fn short_episode_menu(id: &str, watched: bool) -> Vec<popover::MenuEntry> {
-    vec![
+fn short_episode_menu(id: &str, watched: bool, load: bool) -> Vec<popover::MenuEntry> {
+    let mut rows = vec![
         popover::MenuEntry::Item(MenuItem::new(
             Action::from(format!("epplay:{id}").as_str()),
             "Abspielen",
@@ -1720,7 +1801,14 @@ fn short_episode_menu(id: &str, watched: bool) -> Vec<popover::MenuEntry> {
                 "Als gesehen markieren"
             },
         )),
-    ]
+    ];
+    if load {
+        rows.push(popover::MenuEntry::Item(MenuItem::new(
+            Action::from(format!("epload:{id}").as_str()),
+            "Laden",
+        )));
+    }
+    rows
 }
 
 #[cfg(test)]
@@ -1765,6 +1853,37 @@ mod round2_tests {
         );
     }
 
+    /// Opened by the keyboard, the version menu of the main button starts on the checked default and Enter starts it.
+    #[test]
+    fn a_keyboard_opened_version_menu_starts_on_the_default_and_enter_starts_it() {
+        let mut s = demo();
+        s.open(0.0);
+        let mut now = 0.0;
+        for _ in 0..30 {
+            now += 16.0;
+            let _ = s.frame(now);
+        }
+        let v = |id: &str, is_default: bool| swiftly_vm::VersionOption {
+            id: id.into(),
+            name: id.into(),
+            label: id.into(),
+            is_default,
+        };
+        let play = s.frame_of("play").expect("the Play button");
+        let at = Anchor::Button(swiftly_layout::Rect::new(
+            play[0], play[1], play[2], play[3],
+        ));
+        assert!(s.show_versions(vec![v("a", false), v("b", true), v("c", false)], at, true));
+        assert_eq!(s.host.sx.menu.highlighted(), Some(1), "the checked row");
+        let _ = s.nav_key(swiftly_ui::NavKey::Enter, true, now);
+        assert!(!s.menu_open(), "Enter closes the menu");
+        assert!(
+            s.log.iter().any(|l| l == "start version b"),
+            "Enter starts the default: {:?}",
+            s.log
+        );
+    }
+
     #[test]
     fn a_season_the_reader_picked_stays_when_the_fresh_one_arrives() {
         let mut s = demo();
@@ -1785,8 +1904,8 @@ mod round2_tests {
 
     #[test]
     fn the_short_episode_menu_has_two_rows_and_names_the_watched_switch_by_state() {
-        let unseen = short_episode_menu("e1", false);
-        let seen = short_episode_menu("e1", true);
+        let unseen = short_episode_menu("e1", false, false);
+        let seen = short_episode_menu("e1", true, false);
         assert_eq!(unseen.len(), 2);
         let texts = |m: &[popover::MenuEntry]| -> Vec<String> {
             m.iter()
@@ -1798,5 +1917,10 @@ mod round2_tests {
         };
         assert_eq!(texts(&unseen), ["Abspielen", "Als gesehen markieren"]);
         assert_eq!(texts(&seen), ["Abspielen", "Als ungesehen markieren"]);
+        // Signed in with the download button offered, an episode without a copy also has "Laden".
+        assert_eq!(
+            texts(&short_episode_menu("e1", false, true)),
+            ["Abspielen", "Als gesehen markieren", "Laden"]
+        );
     }
 }

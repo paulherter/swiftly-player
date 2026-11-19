@@ -38,82 +38,18 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
-
-/** A Seerr result: `state` is Seerr's own number, `requestable` the rule from the package. */
-data class SeerrTile(val id: Int, val art: String, val title: String, val year: Int?, val poster: String?,
-                       val backdrop: String?, val state: Int, val requestable: Boolean) {
-    val isSeries: Boolean get() = art == "tv"
-    val key: String get() = "$art:$id"
-}
-
-fun seerrTileRead(o: JSONObject) = SeerrTile(o.getInt("id"), o.getString("art"), o.getString("titel"),
-    if (o.isNull("jahr")) null else o.getInt("jahr"), o.fieldText("plakat"), o.fieldText("kulisse"), o.getInt("stand"), o.optBoolean("anfragbar"))
-
-fun seerrTilesRead(json: String): List<SeerrTile> =
-    JSONArray(json).let { a -> (0 until a.length()).map { seerrTileRead(a.getJSONObject(it)) } }
-
-/**
- * Mirrors `SeerrMark`: **one table** for tile and detail page; there used to be two and they
- * drifted apart. Two words per state on purpose: the detail page's long sentence does not fit at
- * 112 pt. "Requested" instead of "Loading": the request is through, no bytes are flowing.
- */
-object SeerrMark {
-    private val amber = Color(0.85f, 0.60f, 0.17f)
-    private val blue = Color(0.29f, 0.56f, 0.85f)
-
-    fun color(state: Int): Color = when (state) { 2 -> amber; 3 -> blue; else -> Theme.accent }
-
-    fun symbol(state: Int): Glyph = when (state) {
-        2 -> Glyph.Clock
-        3 -> Glyph.LoadCircle
-        4 -> Glyph.Contrast
-        5 -> Glyph.Checkmark
-        else -> Glyph.PlusCircle
-    }
-
-    fun word(state: Int) = translated(when (state) {
-        2 -> "Wartet auf Freigabe"; 3 -> "Angefragt"; 4 -> "Teilweise vorhanden"; 5 -> "Auf deinem Server"
-        else -> "Nicht auf deinem Server"
-    })
-
-    fun shortWord(state: Int): String? = when (state) {
-        2 -> translated("wartet"); 3 -> translated("angefragt"); 4 -> translated("teilweise"); else -> null
-    }
-
-    fun hint(state: Int) = translated(when (state) {
-        2 -> "Deine Anfrage liegt beim Verwalter des Servers. Du musst nichts weiter tun."
-        3 -> "Deine Anfrage ist durch. Der Titel erscheint von selbst in deiner Bibliothek."
-        else -> "Dieser Titel liegt bereits auf deinem Server."
-    })
-}
-
-/**
- * Mirrors `SeerrTile`: **faded, and that is the whole message**: someone scrolling fast sees
- * without reading that there is nothing to play. The badge on it stays fully opaque.
- */
-@Composable
-fun SeerrTileView(k: SeerrTile, modifier: Modifier = Modifier, perform: () -> Unit) {
-    Column(modifier.reveal().tapOn(perform), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(Theme.cornerTile)).background(Theme.area)) {
-            AsyncImage(model = k.poster, contentDescription = k.title, contentScale = ContentScale.Crop,
-                       modifier = Modifier.fillMaxSize().alpha(0.45f))
-            if (k.state != 5) {
-                val short = SeerrMark.shortWord(k.state)
-                Row(Modifier.align(Alignment.BottomStart).padding(6.dp).clip(CircleShape).background(SeerrMark.color(k.state))
-                        .padding(horizontal = if (short != null) 7.dp else 5.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Symbol(SeerrMark.symbol(k.state), 10.dp, color = Theme.reason, strength = Strength.Semibold)
-                    short?.let { Text(it, style = Theme.badge.copy(letterSpacing = 0.sp), color = Theme.reason) }
-                }
-            }
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(k.title, style = Theme.tile, color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(listOfNotNull(k.year?.toString(), translated(if (k.isSeries) "Serie" else "Film")).joinToString(" · "),
-                 style = Theme.small, color = Theme.fontVeryQuiet, maxLines = 1)
-        }
-    }
-}
+import de.paulherter.swiftly.rustcore.PrimaryKind
+import de.paulherter.swiftly.rustcore.SeerrSetupInfo
+import de.paulherter.swiftly.rustcore.SeerrSetupScreen
+import de.paulherter.swiftly.rustcore.SeerrTitleInfo
+import de.paulherter.swiftly.rustcore.SeerrTitleScreen
+import de.paulherter.swiftly.rustcore.SetupEntry
+import de.paulherter.swiftly.rustcore.SetupPhase
+import de.paulherter.swiftly.rustcore.SignInMethod
+import de.paulherter.swiftly.rustcore.TitleLoad
+import de.paulherter.swiftly.shared.Texts
+import androidx.compose.foundation.horizontalScroll
+import kotlinx.coroutines.isActive
 
 /** Heading of a result block with count, e.g. "On your server", "Can be requested". */
 @Composable
@@ -127,188 +63,231 @@ fun BlockTitle(title: String, count: Int, modifier: Modifier = Modifier) {
 }
 
 /**
- * Mirrors `SeerrSettingsView`. Sign-in with Jellyfin's own name and password; **the password
- * is not stored**, only the session Seerr issues, encrypted, per Jellyfin server. "Disconnect",
- * not "Sign out": the account at Seerr stays untouched.
+ * The host side of the core's `SeerrSetupScreen`, shared by the phone page and the TV page (`TvSeerrPage`): it opens the
+ * screen, hands a connection the core returns to the vault and keeps the address config (`seerrServer|<server>`). What
+ * is asked, which ways in exist, what is busy and which sentence a failure gets stay the core's; the two pages only draw it.
+ */
+class SeerrSetupHost(private val app: SwiftlyApplication, private val run: kotlinx.coroutines.CoroutineScope) {
+    var screen by mutableStateOf<SeerrSetupScreen?>(null)
+    var info by mutableStateOf<SeerrSetupInfo?>(null)
+    var method by mutableStateOf<SignInMethod?>(null)
+    val connected: Boolean get() = info?.phase == SetupPhase.CONNECTED
+    private var signing: kotlinx.coroutines.Job? = null
+    private val configKey: String get() = "seerrServer|" + app.seerrServer()
+
+    /** What the core now says; a connection it hands back is stored (and the server's address config with it). */
+    private fun settle(s: SeerrSetupScreen) {
+        val now = s.info()
+        info = now
+        if (now.phase == SetupPhase.CONNECTED) {
+            val connection = s.connection()
+            if (connection != null) {
+                val access = SeerrScreens.accessOf(connection)
+                if (access != app.seerrStored()) app.seerrRemember(access) else app.seerrConnected.value = true
+            }
+            now.serverConfig?.let { app.store.remember(configKey, it) }
+        }
+    }
+
+    /** Opens the screen with the stored session; the core checks it and either connects or shows the form. */
+    suspend fun open() {
+        val s = withContext(Dispatchers.IO) { app.rk.core().seerrSetup(Texts.language, null) }
+        screen = s
+        val stored = app.seerrStored()?.let { SeerrScreens.connectionOf(it) }
+        withContext(Dispatchers.IO) { try { s.start(true, app.store.rememberValue(configKey), stored, null, null, null) } catch (e: CancellationException) { throw e } catch (_: Exception) {} }
+        settle(s)
+        method = method ?: s.info().methods.firstOrNull()?.method
+    }
+
+    /** One sign-in at a time; the core shows its busy line while it works. `done` runs afterwards (clear the password). */
+    fun signIn(address: String, headersJson: String, user: String, email: String, password: String, done: () -> Unit) {
+        val s = screen ?: return
+        val i = info ?: return
+        if (signing?.isActive == true) return
+        val typed = if (i.entry == SetupEntry.ASK_ADDRESS) address else i.address.orEmpty()
+        val own = SeerrScreens.headersOf(headersJson)
+        signing = run.launch {
+            val working = launch(Dispatchers.IO) {
+                try {
+                    when (method) {
+                        SignInMethod.LOCAL -> s.signInLocal(typed, own, email, password)
+                        SignInMethod.PLEX -> s.signInPlex(typed, own, "")
+                        else -> s.signInJellyfin(typed, own, user, password)
+                    }
+                } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+            }
+            while (working.isActive) { info = s.info(); delay(150) }
+            settle(s); done()
+        }
+    }
+
+    fun editAddress() { screen?.let { s -> s.editAddress(); settle(s) } }
+
+    /** Forgets the connection (core, vault, platform cookies) and shows the form again. */
+    fun disconnect(done: () -> Unit) {
+        val s = screen ?: return
+        s.disconnect(); app.seerrDisconnect(); done()
+        run.launch { withContext(Dispatchers.IO) { runCatching { s.start(true, app.store.rememberValue(configKey), null, null, null, null) } }; settle(s) }
+    }
+}
+
+@Composable
+fun rememberSeerrSetup(app: SwiftlyApplication): SeerrSetupHost {
+    val run = rememberCoroutineScope()
+    val host = remember { SeerrSetupHost(app, run) }
+    LaunchedEffect(app.seerrServer()) { host.open() }
+    return host
+}
+
+/**
+ * Mirrors `SeerrSettingsView`: draws the core's `SeerrSetupScreen` through `SeerrSetupHost`, which the TV page uses as well.
  */
 @Composable
 fun SeerrSettingsPage(app: SwiftlyApplication, back: () -> Unit) {
+    val host = rememberSeerrSetup(app)
     var address by remember { mutableStateOf("") }
     var user by remember { mutableStateOf(app.username().takeIf { it != "?" }.orEmpty()) }
+    var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var leftUp by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var carries by remember { mutableStateOf<Boolean?>(null) }
+    var arrival by remember { mutableStateOf(seerrArrivalOn(app)) }
     /** "Advanced": custom headers for a service in front of Seerr. They end up in the credentials, i.e. the vault. */
     val headers = rememberHeaderRow()
-    val run = rememberCoroutineScope()
-    val connected = app.seerrConnected.value
-    LaunchedEffect(connected) {
-        // No network or broken response: "does not hold" instead of a crash out of the effect.
-        carries = if (!connected) null else try { withContext(Dispatchers.IO) { app.rk.seerrApplies().await() } }
-                 catch (e: CancellationException) { throw e } catch (_: Exception) { false }
-    }
-    fun linkUp() {
-        if (leftUp || address.isBlank() || user.isBlank() || password.isBlank()) return
-        leftUp = true; error = null
-        run.launch {
-            try {
-                app.seerrRemember(withContext(Dispatchers.IO) { app.rk.seerrConnect(address, user, password, headers.asJson()).await() })
-                password = ""
-            } catch (e: CancellationException) { throw e } catch (e: Exception) { error = errorString(app, e) }
-            leftUp = false
-        }
-    }
+    val info = host.info
+    val connected = host.connected
+    val method = host.method
+    fun signIn() = host.signIn(address, headers.asJson(), user, email, password) { password = "" }
 
     SettingPage("Seerr", back) {
         Text(translated("Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen."),
              style = Theme.body.copy(lineHeight = 21.sp), color = Theme.fontQuiet, modifier = Modifier.padding(horizontal = Theme.edgeSpacing))
-        if (connected) {
+        val i = info
+        if (i != null && connected) {
             SettingGroup(translated("Verbunden")) {
-                ValueRow(Glyph.Chain, app.seerrAddress().orEmpty(),
-                          value = when (carries) { true -> translated("Aktiv"); false -> translated("Sitzung abgelaufen"); null -> null })
+                // The core only reports "connected" after it checked the session, so there is no separate "expired" state to draw.
+                ValueRow(Glyph.Chain, app.seerrAddress().orEmpty(), value = translated("Aktiv"))
                 SeparatorLine()
-                ValueRow(Glyph.CrossCircle, translated("Verbindung trennen")) { app.seerrDisconnect(); password = "" }
-            }
-        } else {
-            // `formSheet`: 26 below the intro, fields 12 apart, error 14 above in `error`, button 20, hint 12.
-            Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 26.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    InputField(address, { address = it }, Glyph.Chain, "seerr.example.de", address = true)
-                    InputField(user, { user = it }, Glyph.Person, translated("Benutzername"))
-                    InputField(password, { password = it }, Glyph.Padlock, translated("Passwort"), secret = true) { linkUp() }
-                    AdvancedSection(headers)
+                ValueRow(Glyph.CrossCircle, translated("Verbindung trennen")) {
+                    host.disconnect { password = "" }
                 }
-                error?.let { Text(it, style = Theme.small, color = Theme.error, modifier = Modifier.padding(top = 14.dp)) }
+            }
+            SettingGroup(translated("Startseite")) {
+                ChoiceRow(Glyph.SparkleSearch, translated("Ankunft-Hinweise anzeigen"), an = arrival) { arrival = it; seerrArrivalSet(app, it) }
+            }
+        } else if (i != null) {
+            Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 26.dp)) {
+                i.notSetUp?.let { Text(it, style = Theme.body.copy(lineHeight = 21.sp), color = Theme.fontQuiet) }
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    when (i.entry) {
+                        SetupEntry.ASK_ADDRESS -> { InputField(address, { address = it }, Glyph.Chain, "seerr.example.de", address = true); AdvancedSection(headers) }
+                        SetupEntry.KNOWN_ADDRESS -> {
+                            ValueRow(Glyph.Chain, i.address.orEmpty())
+                            if (i.canEditAddress) ValueRow(Glyph.Chain, translated("Adresse ändern")) { host.editAddress() }
+                        }
+                        SetupEntry.NOT_SET_UP -> {}
+                    }
+                    if (i.entry != SetupEntry.NOT_SET_UP) {
+                        if (i.methods.size > 1) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                            i.methods.forEach { m ->
+                                Text(m.title, style = Theme.small, color = if (method == m.method) Theme.reason else Theme.font,
+                                     modifier = Modifier.clip(CircleShape).background(if (method == m.method) Theme.font else Theme.area)
+                                         .tapOn { host.method = m.method }.padding(horizontal = 12.dp, vertical = 7.dp))
+                            }
+                        }
+                        val chosen = i.methods.firstOrNull { it.method == method } ?: i.methods.firstOrNull()
+                        if (chosen != null) {
+                            if (chosen.method == SignInMethod.LOCAL) InputField(email, { email = it }, Glyph.Person, chosen.userLabel ?: translated("E-Mail"))
+                            else if (chosen.method == SignInMethod.JELLYFIN) InputField(user, { user = it }, Glyph.Person, chosen.userLabel ?: translated("Name"))
+                            if (chosen.needsPassword) InputField(password, { password = it }, Glyph.Padlock, translated("Passwort"), secret = true) { signIn() }
+                        }
+                    }
+                }
+                i.error?.let { Text(it, style = Theme.small, color = Theme.error, modifier = Modifier.padding(top = 14.dp)) }
+                val ready = i.entry != SetupEntry.NOT_SET_UP && i.methods.isNotEmpty() && (i.entry != SetupEntry.ASK_ADDRESS || address.isNotBlank()) && password.isNotBlank()
                 // No disabled button: it appears as soon as everything is there.
                 when {
-                    leftUp -> Text(translated("Verbinde…"), style = Theme.body, color = Theme.fontQuiet, modifier = Modifier.padding(top = 20.dp))
-                    address.isNotBlank() && user.isNotBlank() && password.isNotBlank() ->
-                        PrimaryButton(translated("Verbinden"), modifier = Modifier.padding(top = 20.dp)) { linkUp() }
+                    i.busy != null -> Text(i.busy.orEmpty(), style = Theme.body, color = Theme.fontQuiet, modifier = Modifier.padding(top = 20.dp))
+                    ready -> PrimaryButton(i.methods.firstOrNull { it.method == method }?.title ?: translated("Verbinden"), modifier = Modifier.padding(top = 20.dp)) { signIn() }
                 }
-                Text(translated("Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr."),
-                     style = Theme.small.copy(lineHeight = 17.sp), color = Theme.fontVeryQuiet, modifier = Modifier.padding(top = 12.dp))
             }
         }
     }
 }
 
-private val confirmations = listOf("Nochmal, dann läuft’s", "Nochmal — ab die Post", "Nochmal, dann frag ich", "Nochmal, her damit")
-
 /**
- * Mirrors `SeerrDetailView`: **the same layout as the real title page**; three separate versions
- * used to drift apart. Requesting takes two steps: the second tap is the order, the confirmation
- * falls back after five seconds. For a series the season sheet is the second step; nothing is
- * preselected, and an empty selection is never sent, since it would mean "all".
+ * Mirrors `SeerrDetailView`: draws the core's `SeerrTitleScreen` (page, season rows, request sheet). The state line, the one
+ * primary button, the quota and every sentence come from the core; the host only draws them and forwards the taps.
  */
 @Composable
 fun SeerrDetailPage(app: SwiftlyApplication, target: Destination, open: (Destination) -> Unit, back: () -> Unit) {
-    val k = app.seerrHit[target.id] ?: run { LaunchedEffect(Unit) { back() }; return }
-    var detail by remember(target.id) { mutableStateOf<JSONObject?>(null) }
-    var state by remember(target.id) { mutableIntStateOf(k.state) }
-    var requestable by remember(target.id) { mutableStateOf(k.requestable) }
-    var requested by remember(target.id) { mutableStateOf(false) }
-    var confirmed by remember { mutableStateOf(false) }
-    var version by remember { mutableIntStateOf(0) }
-    var running by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
+    val art = target.id.substringBefore(':')
+    val tmdb = target.id.substringAfter(':').toLongOrNull()
+    if (tmdb == null) { LaunchedEffect(Unit) { back() }; return }
+    var screen by remember(target.id) { mutableStateOf<SeerrTitleScreen?>(null) }
+    var info by remember(target.id) { mutableStateOf<SeerrTitleInfo?>(null) }
+    var retry by remember { mutableIntStateOf(0) }
     val run = rememberCoroutineScope()
     val jerk = rememberJerk()
-    LaunchedEffect(target.id) {
-        detail = runCatching { JSONObject(withContext(Dispatchers.IO) { app.rk.seerrDetail(k.art, k.id.toLong()).await() }) }.getOrNull()
-        // The server knows better than the search result from before (`SeerrDetail.state`).
-        detail?.takeIf { it.has("stand") && !it.isNull("stand") }?.let { state = it.getInt("stand"); requestable = it.optBoolean("anfragbar") }
+    LaunchedEffect(target.id, retry) {
+        val s = withContext(Dispatchers.IO) { app.seerr.title(art, tmdb) }
+        screen = s
+        info = withContext(Dispatchers.IO) { try { s.load() } catch (e: CancellationException) { throw e } catch (_: Exception) { s.info() } }
     }
-    LaunchedEffect(confirmed) { if (confirmed) { delay(5000); confirmed = false } }
-
-    fun askFor(seasons: List<Int>) {
-        if (k.isSeries && seasons.isEmpty()) return
-        running = true
-        run.launch {
-            val reason = withContext(Dispatchers.IO) { app.rk.seerrRequest(k.art, k.id.toLong(), seasons.joinToString(",")).await() }
-            if (reason.isEmpty()) {
-                // Read the state, do not assume: if Seerr approves at once, the title is not "waiting".
-                runCatching { JSONObject(withContext(Dispatchers.IO) { app.rk.seerrDetail(k.art, k.id.toLong()).await() }) }.getOrNull()?.let { freshValue ->
-                    detail = freshValue
-                    if (freshValue.has("stand") && !freshValue.isNull("stand")) { state = freshValue.getInt("stand"); requestable = freshValue.optBoolean("anfragbar") }
-                }
-                if (requestable) { state = 2; requestable = false }
-                requested = state == 2
-            } else message = errorString(reason)
-            running = false
-            confirmed = false
-        }
-    }
-    fun seasonSheet() {
-        val raw = detail?.optJSONArray("staffeln") ?: return
-        val list = (0 until raw.length()).map { raw.getJSONObject(it) }
-        app.sheet.value = SheetRequest(translated("Welche Staffeln?"),
-            list.map { o ->
-                val episodes = o.getInt("folgen")
-                Choice(o.getInt("nummer").toString(),
-                     translated("Staffel %lld", o.getInt("nummer")), if (episodes > 0) "· " + translated("%lld Folgen", episodes) else null)
-            },
-            null,
-            moreCompartment = emptySet(),
-            locked = list.filter { !it.optBoolean("anfragbar") }
-                .associate { it.getInt("nummer").toString() to translated(if (it.getInt("stand") == 5) "vorhanden" else "unterwegs") },
-            completionText = { n -> if (n == 0) translated("Staffel wählen") else translated("%lld anfragen", n) },
-            completion = { amount -> askFor(amount.map { it.toInt() }.sorted()) }) {}
-    }
-
-    val d = detail
-    val secondaryLine = listOfNotNull(
-        k.year?.toString(),
-        if (k.isSeries) d?.optJSONArray("staffeln")?.length()?.takeIf { it > 0 }?.let { n -> if (n == 1) translated("1 Staffel") else translated("%lld Staffeln", n) }
-        else d?.fieldNumber("laufzeit")?.toInt()?.takeIf { it > 0 }?.let { translated("%lld Min.", it) },
-        d?.fieldTexts("genres")?.takeIf { it.isNotEmpty() }?.joinToString(", "),
-    ).joinToString(" · ").ifEmpty { translated(if (k.isSeries) "Serie" else "Film") }
     val scroll = rememberScrollState()
     val density = LocalDensity.current.density
-
+    val i = info
+    // Debug builds only (`testSheet`): the request sheet opens by itself once the page stands.
+    LaunchedEffect(i?.load) {
+        if (!BuildConfig.DEBUG || !app.debugSheet || i?.load != TitleLoad.CONTENT || i.primary.kind != PrimaryKind.REQUEST) return@LaunchedEffect
+        app.debugSheet = false
+        kotlinx.coroutines.delay(1500)
+        screen?.let { s -> seerrSheetShow(app, s, null) { info = s.info() } }
+    }
     Box(Modifier.fillMaxSize().background(Theme.reason)) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
-            Hero(k.backdrop, k.title, secondaryLine)
-            Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                // The same `ProofRow` as on the title page, with the state as free-form evidence.
-                // 0 means "no rating" at TMDB, not zero stars.
-                ProofRow(true, false, false, null, d?.fieldNumber("bewertung")?.takeIf { it > 0 }, null,
-                           own = Triple(SeerrMark.symbol(state), SeerrMark.word(state), SeerrMark.color(state)))
-                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    when {
-                        requested -> HintBox(translated("Angefragt. Sobald sie freigegeben ist, lädt sie von selbst."))
-                        // White like "Resume", not accent: the badge above already carries the color. "Really request?"
-                        // did not read as "press again". Every variant starts with "Nochmal"; one is drawn at random on
-                        // the first tap, never the same twice.
-                        requestable -> PlayButton(if (confirmed) Glyph.Checkmark else Glyph.Plus,
-                            when { running -> translated("Wird angefragt…"); confirmed -> translated(confirmations[version]); else -> translated("Anfragen") },
-                            an = !running, main = true) {
-                            jerk(Jerk.Medium)
-                            when {
-                                k.isSeries -> seasonSheet()
-                                confirmed -> askFor(emptyList())
-                                else -> { version = (confirmations.indices - version).random(); confirmed = true }
+            when {
+                i == null || i.load == TitleLoad.LOADING -> Box(Modifier.fillMaxWidth().height(420.dp), contentAlignment = Alignment.Center) { Spinner(28.dp) }
+                i.load != TitleLoad.CONTENT -> Box(Modifier.fillMaxWidth().height(420.dp)) {
+                    EmptyState(Glyph.WlanDisruption, i.error ?: translated("Seerr antwortet gerade nicht."), translated("Deine Bibliothek läuft normal."),
+                               primaryButton = translated("Erneut versuchen") to { retry++ })
+                }
+                else -> {
+                    Hero(tmdbImage(i.backdrop ?: i.poster, 780), i.title, i.secondaryLine)
+                    Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        // The same `ProofRow` as on the title page, with the core's state line as free-form evidence.
+                        ProofRow(true, false, false, null, i.rating?.takeIf { it > 0 }, null,
+                                   own = i.badge?.let { b -> Triple(SeerrBadgeMark.glyph(b.kind), b.line, SeerrBadgeMark.color(b.kind)) })
+                        when (i.primary.kind) {
+                            PrimaryKind.REQUEST, PrimaryKind.BUSY -> PlayButton(Glyph.Plus, i.primary.text, an = i.primary.enabled && i.primary.kind == PrimaryKind.REQUEST, main = true) {
+                                jerk(Jerk.Medium)
+                                screen?.let { s -> seerrSheetShow(app, s, null) { info = s.info() } }
+                            }
+                            PrimaryKind.REQUESTED, PrimaryKind.LOCKED -> HintBox(i.primary.text)
+                            PrimaryKind.HIDDEN -> {}
+                        }
+                        if (i.seasons.isNotEmpty()) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(Theme.corner)).background(Theme.area)) {
+                            i.seasons.forEach { r ->
+                                Row(Modifier.fillMaxWidth().heightIn(min = 46.dp).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text(r.title, style = Theme.body, color = Theme.font)
+                                    r.episodes?.let { Text("· $it", style = Theme.small, color = Theme.fontVeryQuiet) }
+                                    Spacer(Modifier.weight(1f))
+                                    Capsule(r.badge)
+                                }
                             }
                         }
-                        else -> HintBox(SeerrMark.hint(state))
+                        i.overview?.let { CollapsibleText(it) }
                     }
-                }
-                d?.fieldText("beschreibung")?.let { CollapsibleText(it) }
-            }
-            val folks = d?.fieldList("besetzung") { WithAct(it.getString("id"), it.getString("name"), it.fieldText("rolle"), it.fieldText("bild")) }.orEmpty()
-            if (folks.isNotEmpty()) Segment(translated("Besetzung"), 14.dp) {
-                tilesWithKey(folks.take(12), { it.id }) { p -> CastTile(p) }
-            }
-            val similar = d?.fieldList("aehnliches") { seerrTileRead(it) }.orEmpty()
-            if (similar.isNotEmpty()) Segment(translated("Ähnliche Titel"), Theme.tileSpacing) {
-                tilesWithKey(similar, { it.key }) { t ->
-                    SeerrTileView(t, Modifier.width(Theme.tileWidth)) { app.seerrHit[t.key] = t; open(Destination(t.key, t.title, "Seerrtitel")) }
+                    if (i.cast.isNotEmpty()) Segment(translated("Besetzung"), 14.dp) {
+                        tilesWithKey(i.cast.take(12), { it.name + it.role }) { p -> CastTile(WithAct(p.name, p.name, p.role, tmdbImage(p.image, 185))) { open(seerrPersonTarget(p, i.title)) } }
+                    }
+                    if (i.similar.isNotEmpty()) Segment(translated("Ähnliche Titel"), Theme.tileSpacing) {
+                        tilesWithKey(i.similar, { it.key }) { t -> SeerrCardTile(t, Modifier.width(Theme.tileWidth)) { run.launch { openSeerrCard(app, t, open) } } }
+                    }
                 }
             }
             Spacer(Modifier.navigationBarsPadding().height(30.dp))
         }
-        DetailHeader(k.title, { ((scroll.value / density - 150f) / 70f).coerceIn(0f, 1f) }, back)
-        HintStrip(message, Modifier.align(Alignment.BottomCenter)) { message = null }
+        DetailHeader(i?.title ?: target.name, { ((scroll.value / density - 150f) / 70f).coerceIn(0f, 1f) }, back)
     }
 }
 

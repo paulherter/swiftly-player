@@ -79,7 +79,7 @@ class LegacyPlexPlaybackParityTest {
             tick(p, "t01-loading", 12.0, 0.0, image = false, audio = false)
             tick(p, "t02-first", 12.0, 0.5)
             tick(p, "t03-start", 12.0, 1.0)
-            same("plpx-select", p.tracksSelect("[]", "[]", -1, "", "", false, "{}", "{}"))
+            same("plpx-select", p.tracksSelect("[]", "[]", -1, "", "", false, "{}", "{}", ""))
             tick(p, "t04", 12.0, 5.0)
             same("plpx-controls-open", p.controlsChanged(true))
             same("plpx-jump", p.jumpReported(9.5))

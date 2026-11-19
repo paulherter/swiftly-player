@@ -20,7 +20,7 @@ import FoundationNetworking
 ///
 /// The numbers come from the API and read exactly like this:
 /// `1 = UNKNOWN, 2 = PENDING, 3 = PROCESSING, 4 = PARTIALLY_AVAILABLE,
-/// 5 = AVAILABLE, 6 = DELETED`. They are not renamed: anyone seeing them in the
+/// 5 = AVAILABLE, 6 = BLOCKLISTED, 7 = DELETED`. They are not renamed: anyone seeing them in the
 /// log should recognise them in Seerr's own UI.
 public enum SeerrState: Int, Codable, Sendable, Equatable {
     /// Nobody has requested it. The only state that deserves a button.
@@ -29,7 +29,8 @@ public enum SeerrState: Int, Codable, Sendable, Equatable {
     case loads = 3
     case partWayPresent = 4
     case present = 5
-    case deleted = 6
+    case blocklisted = 6
+    case deleted = 7
 
     /// May the user request here?
     ///
@@ -39,7 +40,7 @@ public enum SeerrState: Int, Codable, Sendable, Equatable {
     public var requestable: Bool {
         switch self {
         case .opened, .deleted, .partWayPresent: true
-        case .waitsSharing, .loads, .present: false
+        case .waitsSharing, .loads, .present, .blocklisted: false
         }
     }
 

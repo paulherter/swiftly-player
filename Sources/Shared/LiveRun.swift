@@ -13,6 +13,13 @@ import AppKit
 ///   -SwiftlyFixture <url>        sign in to the fixture server (`cargo run -p xtask -- fixture-server`)
 ///   -SwiftlyLiveMemory           keep the fixture account in memory only (a device with real accounts)
 ///   -SwiftlyFixtureKind plex     the account is a Plex one (default Jellyfin)
+///   -SwiftlyFixtureUser gast     the account is the fixture's non-administrator (`fixture-server --admin`)
+///   -SwiftlyFixtureSeerr         Seerr is connected to the fixture server (it answers `/api/v1`), session cookie
+///                                `connect.sid=fixture`, no password; kept in memory, never in the Keychain
+///   -SwiftlyFixturePlexToken <t> the Plex account's plex.tv token (default `fixture`); `plex-ok` signs in to the fixture's Seerr
+///   -SwiftlySeerrReset           forget the stored Seerr session, password and per-server address of the fixture's server
+///   -SwiftlyFixtureSeerrRole admin   the fixture's Seerr user becomes an administrator (`POST /__seerr/role?admin`)
+///                                before the first Seerr call; default `user`
 ///   -SwiftlyLiveTitles a,b,c     item ids to walk through (the catalog, data-driven by the caller)
 ///   -SwiftlyLiveDir <path>       where the handshake files go (default: tmp)
 ///   -SwiftlyLiveFullscreen       macOS: also enter and leave full screen once (it crashes AppKit today, see the Mac report)
@@ -33,12 +40,50 @@ enum LiveRun {
         arguments.firstIndex(of: name).flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
     }
 
+    /// `-SwiftlyLiveNextAutomatic YES|NO`: the "next episode automatically" choice for this run only (never stored). Without it the
+    /// device owner's own choice (stored or synced) decides, and a title's end on a device whose owner turned it off shows no
+    /// card at all, which is the rule and not a failure (see `scenarioEndCard`, which reports who decided).
+    static var pinnedNextAutomatic: Bool? { value("-SwiftlyLiveNextAutomatic").map { ["YES", "TRUE", "1"].contains($0.uppercased()) } }
+
+    /// `-SwiftlyLiveDemoDevices`: the handoff box lists two made-up devices (the fixture server has none), for the `menus` scenario.
+    static var demoDevices: Bool { value("-SwiftlyLiveDemoDevices") != nil }
+    static let demoDeviceIDs = ["demo-wohnzimmer", "demo-schlafzimmer"]
+
     /// Posted before a shot: the player hides its controls so the picture and the subtitle are bare.
     nonisolated static let hideControls = Notification.Name("SwiftlyLiveHideControls")
+    nonisolated static let openTracks = Notification.Name("SwiftlyLiveOpenTracks")
+    /// Scenario `subtitle-search`: the tracks layer opens the search panel by itself; the panel reports its state here
+    /// and presses the first row on `pickSearchRow`.
+    nonisolated(unsafe) static var opensSubtitleSearch = false
+    /// The player screen's card countdown clock (set by `PlayerScreen.fillSet`), so a scenario can read its value.
+    nonisolated(unsafe) static var fillClockProbe: FillClock?
+    /// The offering layer's countdown run (holds while a menu covers the card), set by `PlayerScreen.fillSet`.
+    nonisolated(unsafe) static var countdownRunProbe: Double?
+    nonisolated static let pickSearchRow = Notification.Name("SwiftlyLivePickSearchRow")
+    nonisolated(unsafe) static var searchSnapshot: (phase: String, rows: [String], message: String)?
     /// tvOS: bring the controls back for the controls shot.
     nonisolated static let showControls = Notification.Name("SwiftlyLiveShowControls")
     /// iOS: a quality choice as the quality layer makes it; the object is the limit in Mbit/s (`nil` = original).
     nonisolated static let chooseQuality = Notification.Name("SwiftlyLiveChooseQuality")
+    /// The live run opens a player panel for a screenshot (`menu` scenario): object "settings", "tracks" or "none".
+    nonisolated static let openLayer = Notification.Name("SwiftlyLiveOpenLayer")
+
+    /// The `filter` scenario's way to the open library page: a command posted to `LibraryView`, which fills `report`.
+    nonisolated static let libraryCommand = Notification.Name("SwiftlyLiveLibraryCommand")
+    @MainActor final class LibraryCommand {
+        /// `open` / `close` the filter sheet, `rows` (the sheet as drawn), `pick` (a row, as the user taps it) or `titles` (the list).
+        let action: String
+        /// For `pick`: `years:2010-2019`, `years:none`, `language:deu`, `language:none`, `status:ungesehen`.
+        let value: String
+        let art: String
+        var report: [String: Any]?
+        init(_ action: String, value: String = "", art: String = "movies") { self.action = action; self.value = value; self.art = art }
+    }
+    /// Set by the `MainView` of iPhone/iPad and Mac: shows a section by its case name (`"movies"`), the way a tap on the bar does.
+    static var showRegion: ((String) -> Void)?
+
+    /// How many of the next plans the app asks for are refused (`AppModel.plan`), for the `switchfail` scenario.
+    static var failPlans = 0
 
     /// The quality cap (Mbit/s) the timing scenario chooses mid-play (`-SwiftlyLiveQualityLimit`, default 8).
     static var qualityLimit: Int { Int(value("-SwiftlyLiveQualityLimit") ?? "") ?? 8 }
@@ -65,12 +110,42 @@ enum LiveRun {
     static func session() -> Session? {
         guard let raw = value("-SwiftlyFixture"), let address = URL(string: raw) else { return nil }
         if value("-SwiftlyFixtureKind") == "plex" {
+            // `-SwiftlyFixturePlexToken`: the plex.tv token of the account (the fixture's Seerr takes `plex-ok`).
             let details = PlexSessionDetails(machineIdentifier: "plexfx", serverName: "Fixture Plex",
-                                             accountToken: "fixture", isLocal: true)
+                                             accountToken: value("-SwiftlyFixturePlexToken") ?? "fixture", isLocal: true)
             return Session(accessToken: "fixture", userID: "demo", userName: "demo",
                            serverURL: address, kind: .plex, plex: details)
         }
+        // `-SwiftlyFixtureUser gast`: the fixture's administrator mode (`--admin`) has a second user who is none.
+        if value("-SwiftlyFixtureUser") == "gast" {
+            return Session(accessToken: "fixture-token-gast", userID: "u2", userName: "gast", serverURL: address)
+        }
         return Session(accessToken: "fixture", userID: "u1", userName: "demo", serverURL: address)
+    }
+
+    // MARK: Seerr on the fixture
+
+    /// The Seerr connection for `-SwiftlyFixtureSeerr` (the fixture server is the Seerr as well), or `nil`.
+    static func seerrAccess() -> SeerrAccess? {
+        guard arguments.contains("-SwiftlyFixtureSeerr"), let raw = value("-SwiftlyFixture"),
+              let address = URL(string: raw) else { return nil }
+        return SeerrAccess(address: address, cookie: "connect.sid=fixture")
+    }
+
+    /// Sets the role of the fixture's Seerr user (`-SwiftlyFixtureSeerrRole admin|user`, default `user`) and waits for
+    /// the answer, so the first Seerr call already sees it.
+    static func seerrRole(for access: SeerrAccess) async {
+        let role = value("-SwiftlyFixtureSeerrRole") == "admin" ? "admin" : "user"
+        guard var parts = URLComponents(url: access.address.appendingPathComponent("__seerr/role"),
+                                        resolvingAgainstBaseURL: false) else { return }
+        parts.query = role
+        guard let url = parts.url else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 10
+        let answer = try? await URLSession.shared.data(for: request)
+        let status = (answer?.1 as? HTTPURLResponse)?.statusCode ?? 0
+        AppLog.writeOut("[Livelauf] Seerr-Rolle \(role) an \(access.address.absoluteString): \(status)")
     }
 
     // MARK: Handshake files
@@ -92,7 +167,7 @@ enum LiveRun {
     private static var phase = Phase.idle { didSet { event(["phase": "\(phase)"]) } }
     private static var counter = 0
 
-    private static func event(_ fields: [String: Any]) {
+    static func event(_ fields: [String: Any]) {
         var f = fields
         f["t"] = Date().timeIntervalSince1970
         guard let data = try? JSONSerialization.data(withJSONObject: f, options: [.sortedKeys]) else { return }
@@ -280,7 +355,14 @@ enum LiveRun {
             event(["kind": "open", "title": id, "ok": true, "method": "\(plan.method)", "firstFrameSeconds": firstFrame, "resumeWanted": resume,
                    "position": view.positionSeconds, "duration": view.durationSeconds,
                    "video": "\(Int(view.videoSize.width))x\(Int(view.videoSize.height))",
-                   "pipPossible": pipPossible(view)])
+                   "pipPossible": pipPossible(view),
+                   // The tracks the start rule chose (the Jellyfin indices that play now, the names the panel shows), and the
+                   // language the device reports: the proof of the start language rule.
+                   "audioIndex": view.playingTracks.audio.map { $0 as Any } ?? NSNull(),
+                   "subtitleIndex": view.playingTracks.subtitle.map { $0 as Any } ?? NSNull(),
+                   "audioChosen": view.audioTracks.filter(\.isSelected).map(\.prettyName),
+                   "subtitleChosen": view.subtitleTracks.filter(\.isSelected).map(\.prettyName),
+                   "deviceLanguage": StartTracks.deviceLanguage ?? ""])
             if lookWatch {
                 #if os(macOS)
                 NSApp.activate()  // the sync polls only while the app is in front, like a user watching a title
@@ -549,9 +631,145 @@ extension LiveRun {
         case "memory": await scenarioMemory(model, open: open, close: close)
         case "download": await scenarioDownload(model, open: open, close: close)
         case "timing": await scenarioTiming(model, open: open, close: close)
+        case "menu": await scenarioMenu(model, open: open, close: close)
+        case "menus": await scenarioMenus(model, open: open, close: close)
+        case "menu-motion": await scenarioMenuMotion(model, open: open, close: close)
+        case "player-bar": await scenarioPlayerBar(model, open: open, close: close)
+        case "chapters": await scenarioChapters(model, open: open, close: close)
+        case "chapters-remote": await scenarioChaptersRemote(model, open: open, close: close)
         case "pausedseek": await scenarioPausedSeek(model, open: open, close: close)
+        case "chain": await scenarioChain(model, open: open, close: close)
+        case "soak": await scenarioSoak(model, open: open, close: close)
+        case "exit": await scenarioExit(model, open: open, close: close)
+        case "firstframe": await scenarioFirstFrame(model, open: open, close: close)
+        case "background": await scenarioBackground(model, open: open, close: close)
+        case "inactive": await scenarioInactive(model, open: open, close: close)
+        case "progress": await scenarioProgress(model, open: open, close: close)
+        case "language": await scenarioLanguage(model, open: open, close: close)
+        case "switchfail": await scenarioSwitchFail(model, open: open, close: close)
+        case "endcard": await scenarioEndCard(model, open: open, close: close)
+        case "menus-countdown": await scenarioMenusCountdown(model, open: open, close: close)
+        case "filter": await scenarioFilter()
+        case "tabs": await scenarioTabs(model)
+        case "subtitle-search": await scenarioSubtitleSearch(model, open: open, close: close)
         default: event(["kind": "result", "ok": false, "why": "unknown scenario \(name)"])
         }
+    }
+
+    /// Sends a command to the library page and waits for its report (12 s).
+    private static func ask(_ action: String, _ value: String = "") async -> [String: Any] {
+        let command = LibraryCommand(action, value: value)
+        NotificationCenter.default.post(name: libraryCommand, object: command)
+        for _ in 0..<120 where command.report == nil { try? await Task.sleep(for: .milliseconds(100)) }
+        return command.report ?? ["error": "no answer"]
+    }
+
+    /// The list once it has settled: loaded, not growing for 1.5 s.
+    private static func settledTitles() async -> [String: Any] {
+        var last: [String: Any] = [:]
+        var stable = 0
+        for _ in 0..<150 {
+            try? await Task.sleep(for: .milliseconds(500))
+            let now = await ask("titles")
+            let key = "\(now["loads"] ?? "")|\(now["identifier"] ?? "")|\((now["ids"] as? [String])?.count ?? -1)"
+            let before = "\(last["loads"] ?? "")|\(last["identifier"] ?? "")|\((last["ids"] as? [String])?.count ?? -1)"
+            stable = key == before ? stable + 1 : 0
+            last = now
+            if stable >= 3, (now["loads"] as? Bool) == false { break }
+        }
+        return last
+    }
+
+    /// Waits (20 s) until the open sheet holds more than the four status rows and nothing loads any more: the core adds the year and
+    /// language groups after the sheet opened.
+    private static func sheetLoaded() async {
+        for _ in 0..<80 {
+            let rows = await ask("rows")
+            if (rows["loading"] as? Bool) == false, ((rows["rows"] as? [String])?.count ?? 0) > 4 { return }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+    }
+
+    /// The library filter sheet (GitHub #28): open the movies library, pick the decade 2010-2019, then German, then "unwatched" on top,
+    /// and say after each step which titles the list holds (`Werkzeuge/live-filter-judge.py` checks them against the fixture's rule).
+    /// The fixture runs with `SWIFTLY_FIXTURE_FILTER_SET=1` (three decades, audio languages, every fourth film watched).
+    /// Subtitle search on the running player: German search -> three rows -> press the first -> the server's new track is
+    /// in the subtitle list after the reload. Shots: the result rows, the track list afterwards.
+    private static func scenarioSubtitleSearch(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        guard let view = await openTitle(model, "g1", open: open) else { return }
+        try? await Task.sleep(for: .seconds(3))
+        let before = Array(view.subtitleNames().values).sorted()
+        event(["kind": "subtitle-before", "tracks": before])
+        opensSubtitleSearch = true
+        NotificationCenter.default.post(name: openTracks, object: nil)
+        for _ in 0..<40 where searchSnapshot?.phase != "results" { try? await Task.sleep(for: .milliseconds(500)) }
+        event(["kind": "subtitle-search", "phase": searchSnapshot?.phase ?? "none", "rows": searchSnapshot?.rows ?? []])
+        try? await Task.sleep(for: .milliseconds(800))
+        await shot("search-results", [:])
+        NotificationCenter.default.post(name: pickSearchRow, object: nil)
+        for _ in 0..<60 where searchSnapshot?.phase != "done" { try? await Task.sleep(for: .milliseconds(500)) }
+        event(["kind": "subtitle-done", "phase": searchSnapshot?.phase ?? "none", "message": searchSnapshot?.message ?? ""])
+        try? await Task.sleep(for: .seconds(7))
+        let names = Array(view.subtitleNames().values).sorted()
+        // The player names a track by language, format and source, so the fixture's "Deutsch (Suche)" shows as "Deutsch · SRT · Datei":
+        // the new track is the one that was not in the list before.
+        let added = names.filter { !before.contains($0) }
+        let chosen = view.subtitleTracks.filter(\.isSelected).map(\.prettyName)
+        event(["kind": "subtitle-after", "tracks": names, "found": !added.isEmpty, "added": added, "chosen": chosen])
+        opensSubtitleSearch = false
+        NotificationCenter.default.post(name: openTracks, object: nil)
+        try? await Task.sleep(for: .seconds(1.5))
+        await shot("tracks-after", [:])
+        // The result holds only when the new track is also the one that is switched on after the reload.
+        event(["kind": "result", "ok": !added.isEmpty && chosen.contains { added.contains($0) }])
+    }
+
+    private static func scenarioFilter() async {
+        showRegion?("movies")
+        try? await Task.sleep(for: .seconds(2))
+        func step(_ name: String, _ pick: String?) async {
+            if let pick {
+                _ = await ask("open")
+                await sheetLoaded()
+                var picked = await ask("pick", pick)
+                for _ in 0..<20 where (picked["found"] as? Bool) != true {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    picked = await ask("pick", pick)
+                }
+                event(["kind": "filter-pick", "step": name, "pick": pick, "found": picked["found"] ?? false])
+                try? await Task.sleep(for: .milliseconds(600))
+            }
+            let list = await settledTitles()
+            event(["kind": "filter-list", "step": name, "pill": list["pill"] ?? "", "identifier": list["identifier"] ?? "",
+                   "total": list["total"] ?? -1, "ids": list["ids"] ?? [], "years": list["years"] ?? []])
+        }
+        await step("all", nil)
+        await step("decade", "years:2010-2019")
+        await step("decade+german", "language:deu")
+        await step("decade+german+unwatched", "status:ungesehen")
+        // The sheet as the user sees it with the three choices on: the one shot.
+        _ = await ask("open")
+        await sheetLoaded()
+        let rows = await ask("rows")
+        event(["kind": "filter-sheet", "rows": rows["rows"] ?? [], "loading": rows["loading"] ?? true])
+        try? await Task.sleep(for: .seconds(1))
+        await shot("filter-sheet", ["step": "decade+german+unwatched"])
+        _ = await ask("close")
+    }
+
+    /// `-SwiftlyLiveScenario tabs`: each bottom-bar tab selected once (Start, Filme, Serien, Downloads, Suche), one shot each
+    /// (`tab-<region>`), so the outline/filled state of the five icons can be judged. The Downloads tab is shown for the run only.
+    private static func scenarioTabs(_ model: AppModel) async {
+        let before = model.downloadsAn
+        model.downloadsAn = true
+        try? await Task.sleep(for: .seconds(2))
+        for region in ["start", "movies", "seriesList", "downloads", "search"] {
+            showRegion?(region)
+            try? await Task.sleep(for: .seconds(1.5))
+            await shot("tab-\(region)", ["region": region])
+        }
+        model.downloadsAn = before
+        event(["kind": "result", "ok": true])
     }
 
     /// The picture after a seek while PAUSED must be the frame at the target (the burned-in clock of the bench clips shows it).
@@ -590,6 +808,255 @@ extension LiveRun {
         await closeTitle(view, id, close: close)
     }
 
+    /// Back-to-back subtitle cues (`bm-chain`, cues at 1-2 s, 2-3 s, 3.2-4.2 s, 4.6-5.6 s and 7-8 s): plays the title through with the
+    /// text track on and writes every subtitle refresh (media time, line on screen, wall clock) to `chain-frames.jsonl`. The outside
+    /// (`Werkzeuge/live-lauf.py --scenario chain`) records the screen and judges it with `Werkzeuge/chain-judge.py`.
+    private static func scenarioChain(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-chain"
+        guard let view = await openTitle(model, id, open: open) else { return }
+        NotificationCenter.default.post(name: hideControls, object: nil)
+        view.pause()
+        view.selectSubtitle(textTrack(view))
+        _ = await waitFor(5) { ((view.avEngine as? CorePlaybackBackend)?.liveSubtitleState?["cues"] as? Int ?? 0) > 0 }
+        view.seek(toSeconds: 0)
+        try? await Task.sleep(for: .seconds(1))
+        let log = dir.appendingPathComponent("chain-frames.jsonl")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? Data().write(to: log)
+        AetherPlayerEngine.subtitleProbe = { media, line in
+            let row: [String: Any] = ["media": (media * 1000).rounded() / 1000, "wall": Date().timeIntervalSince1970, "line": line ?? ""]
+            guard let data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]),
+                  let h = try? FileHandle(forWritingTo: log) else { return }
+            h.seekToEndOfFile(); h.write(data); h.write(Data("\n".utf8)); try? h.close()
+        }
+        event(["kind": "chain-go", "position": view.positionSeconds, "track": view.playingTracks.subtitle ?? -1])
+        _ = view.resume()
+        _ = await waitFor(14) { view.positionSeconds >= 9.2 }
+        AetherPlayerEngine.subtitleProbe = nil
+        event(["kind": "chain-done", "position": view.positionSeconds])
+        await closeTitle(view, id, close: close)
+    }
+
+    /// Progress reports: play a long title for `-SwiftlyLiveSeconds` (default 45 s), pause 3 s, play on, seek, and close. The
+    /// outside (`Werkzeuge/live-lauf.py --scenario progress`) reads what the fixture server received (`/fixture/reportlog`: path,
+    /// time and position of every report) and checks the spacing.
+    private static func scenarioProgress(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-pgs-mkv"
+        guard let view = await openTitle(model, id, open: open) else { return }
+        NotificationCenter.default.post(name: hideControls, object: nil)
+        let seconds = Double(value("-SwiftlyLiveSeconds") ?? "") ?? 45
+        event(["kind": "progress-play", "position": view.positionSeconds, "seconds": seconds])
+        try? await Task.sleep(for: .seconds(seconds))
+        event(["kind": "progress-pause", "position": view.positionSeconds])
+        view.pause()
+        try? await Task.sleep(for: .seconds(3))
+        _ = view.resume()
+        try? await Task.sleep(for: .seconds(4))
+        view.seek(toSeconds: max(0, view.positionSeconds - 30))
+        try? await Task.sleep(for: .seconds(3))
+        event(["kind": "progress-close", "position": view.positionSeconds])
+        await closeTitle(view, id, close: close)
+    }
+
+    /// The end of an episode no outro reaches the end of (`bm-ep1` of the `swiftly-live-media-b6a` fixture: 330 s, resumed at 315 s, no
+    /// marker, a next episode; the server runs with `SWIFTLY_FIXTURE_NO_MARKERS=1`): the core's card must open with the last seven seconds
+    /// (not 30 s before the end), fill, and the next episode must start. Samples every 250 ms: position, left to the end, the core's offer.
+    private static func scenarioEndCard(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-ep1"
+        guard let first = await openTitle(model, id, open: open) else { return }
+        NotificationCenter.default.post(name: hideControls, object: nil)
+        let engine = ObjectIdentifier(first.avEngine as AnyObject)
+        // Who decides "next episode automatically" on this device: a hidden offer with it off is the rule, not a failure.
+        let stored = UserDefaults.standard.object(forKey: "naechsteAuto") as? Bool
+        let effective = pinnedNextAutomatic ?? model.nextAutomatic
+        event(["kind": "endcard-prefs", "nextAutomatic": effective, "pinned": pinnedNextAutomatic.map { $0 as Any } ?? NSNull(),
+               "storedChoice": stored.map { $0 as Any } ?? NSNull(), "accountChoice": model.nextAutomaticAccount.map { $0 as Any } ?? NSNull()])
+        let began = Date()
+        var cardAt: Double?, leftAtCard: Double?, shotCard = false, switchedAt: Double?
+        var samples: [[String: Any]] = []
+        for _ in 0..<200 {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let now = current() else { continue }
+            let t = (Date().timeIntervalSince(began) * 100).rounded() / 100
+            let same = ObjectIdentifier(now.avEngine as AnyObject) == engine
+            let offer = (now.avEngine as? CorePlaybackBackend)?.offerNow
+            var kind = "none", share = -1.0
+            if let offer {
+                switch offer {
+                case .hidden: kind = "hidden"
+                case .button: kind = "button"
+                case let .card(_, s, _): kind = "card"; share = s
+                }
+            }
+            let read = now.coreTransport?.value
+            let position = read?.position ?? now.positionSeconds, duration = read?.duration ?? now.durationSeconds
+            samples.append(["t": t, "position": (position * 10).rounded() / 10, "left": ((duration - position) * 10).rounded() / 10, "offer": kind,
+                            "share": (share * 100).rounded() / 100, "sameEngine": same])
+            if kind == "card", cardAt == nil { cardAt = t; leftAtCard = duration - position }
+            if kind == "card", !shotCard, let c = cardAt, t - c >= 3 {
+                shotCard = true
+                await shot("\(id)--card", ["title": id, "track": "card", "position": position, "playing": now.isPlaying])
+            }
+            if !same, switchedAt == nil {
+                switchedAt = t
+                try? await Task.sleep(for: .seconds(3))
+                if let next = current() { await shot("\(id)--next-episode", ["title": id, "track": "next", "position": next.positionSeconds, "playing": next.isPlaying]) }
+                break
+            }
+        }
+        event(["kind": "endcard", "nextAutomatic": effective, "samples": samples, "cardAt": cardAt ?? -1, "leftAtCard": leftAtCard ?? -1, "switchedAt": switchedAt ?? -1,
+               "seconds": (Date().timeIntervalSince(began) * 10).rounded() / 10])
+        await closeTitle(current() ?? first, id, close: close)
+    }
+
+    /// A switch the core asked for finds no plan (a quality choice mid-play; `failPlans` refuses it, which is what a failing
+    /// next-episode plan looks like to the screen): the old title must keep its place and play on, the core's hint must show for
+    /// about 3 s, and the same choice made again must work. Samples every 250 ms: hint, position, running.
+    private static func scenarioSwitchFail(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-pgs-mkv"
+        guard var view = await openTitle(model, id, open: open) else { return }
+        // The controls stay up (the iPhone draws the hint inside them): the failure comes right after the first picture.
+        let before = view.positionSeconds
+        event(["kind": "switchfail", "phase": "before", "position": before, "playing": view.isPlaying])
+        failPlans = 1
+        let began = Date()
+        NotificationCenter.default.post(name: chooseQuality, object: qualityLimit)
+        var hintSince: Double?, hintGone: Double?, shotHint = false
+        var samples: [[String: Any]] = []
+        for _ in 0..<28 {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let now = current() else { continue }
+            let t = Date().timeIntervalSince(began)
+            let read = now.coreTransport?.value
+            let hint = read?.hint
+            samples.append(["t": (t * 100).rounded() / 100, "hint": hint ?? "", "position": read?.position ?? now.positionSeconds,
+                            "running": read?.running ?? now.isPlaying, "engineRunning": now.isPlaying])
+            if hint != nil, hintSince == nil { hintSince = t }
+            if hint == nil, hintSince != nil, hintGone == nil { hintGone = t }
+            if hint != nil, !shotHint {
+                shotHint = true
+                await shot("\(id)--2-hint", ["title": id, "track": "hint", "position": now.positionSeconds, "playing": now.isPlaying])
+            }
+        }
+        view = current() ?? view
+        let after = view.positionSeconds
+        let kept = after >= before - 1 && view.isPlaying
+        event(["kind": "switchfail", "phase": "samples", "samples": samples])
+        event(["kind": "switchfail", "phase": "after-failure", "before": before, "position": after, "playing": view.isPlaying,
+               "hintSeconds": (hintSince != nil && hintGone != nil) ? (hintGone! - hintSince!) : -1,
+               "hintFirstAt": hintSince ?? -1, "keptItsPlace": kept])
+        await shot("\(id)--3-after-hint", ["title": id, "track": "after-hint", "position": after, "playing": view.isPlaying])
+        // The retry: the same kind of choice again (another limit, so the core sees a change). Now the plan comes.
+        let engineBefore = view.avEngine.map { ObjectIdentifier($0 as AnyObject) }
+        let viewBefore = view
+        NotificationCenter.default.post(name: chooseQuality, object: qualityLimit / 2)
+        let reloaded = await waitFor(25) {
+            guard let now = current(), now.showsImage else { return false }
+            return now !== viewBefore || now.avEngine.map({ ObjectIdentifier($0 as AnyObject) }) != engineBefore
+        }
+        view = current() ?? view
+        try? await Task.sleep(for: .seconds(2))
+        event(["kind": "switchfail", "phase": "retry", "reloaded": reloaded, "position": view.positionSeconds, "playing": view.isPlaying])
+        await shot("\(id)--4-retry", ["title": id, "track": "retry", "position": view.positionSeconds, "playing": view.isPlaying])
+        let ok = kept && reloaded && hintSince != nil
+        event(["kind": "result", "title": id, "ok": ok,
+               "why": ok ? "old title kept its place, hint shown, retry reloaded" : "kept=\(kept) hint=\(hintSince != nil) retry=\(reloaded)"])
+        await closeTitle(view, id, close: close)
+    }
+
+    /// Pause, send the app to the background (the outside launches another app: `background-wanted`), wait there for the
+    /// `-SwiftlyLiveBackgroundSeconds` (default 60), come back (`foreground-wanted` is answered by the outside launching
+    /// the app again), press Play and measure how long until the picture runs again. Events: engine state and position
+    /// before, after the return and after Play, the time to the first running frame, a shot after the return and after Play.
+    private static func scenarioBackground(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-pgs-mkv"
+        guard let view = await openTitle(model, id, open: open) else { return }
+        NotificationCenter.default.post(name: hideControls, object: nil)
+        _ = await waitFor(20) { view.positionSeconds >= 5 }
+        view.pause()
+        try? await Task.sleep(for: .seconds(1))
+        let before = view.positionSeconds
+        event(["kind": "bg-before", "position": before, "playing": view.isPlaying])
+        #if canImport(UIKit)
+        event(["kind": "background-wanted"])
+        _ = await waitFor(60) { UIApplication.shared.applicationState == .background }
+        let began = Date()
+        event(["kind": "bg-entered", "state": "\(UIApplication.shared.applicationState.rawValue)"])
+        // Back to the front: the outside launches the app again after the wanted time.
+        _ = await waitFor(Double(value("-SwiftlyLiveBackgroundSeconds") ?? "") ?? 60 + 120) { UIApplication.shared.applicationState == .active }
+        let away = Date().timeIntervalSince(began)
+        // `-SwiftlyLiveBgPlayAtOnce`: Play is pressed the moment the app is active again, while the picture rebuild still runs
+        // (the press that used to be lost), not after the rebuild had two seconds to finish.
+        let atOnce = ProcessInfo.processInfo.arguments.contains("-SwiftlyLiveBgPlayAtOnce")
+        if !atOnce { try? await Task.sleep(for: .seconds(2)) }
+        event(["kind": "bg-returned", "away": away, "position": view.positionSeconds, "playing": view.isPlaying, "playAtOnce": atOnce])
+        if !atOnce { await shot("\(id)--after-return", ["title": id, "track": "after-return", "position": view.positionSeconds, "playing": view.isPlaying]) }
+        // `-SwiftlyLiveBgDeadProducer[=silent]`: the title was paused (Picture in Picture on a device), the long background is over
+        // and the engine's local producer is gone (forced here: the simulator never closes it). `silent`: nothing rebuilt on the
+        // return, so the Play press itself must rebuild; otherwise the failure arrives as an engine error and rebuilds once on its own.
+        #if DEBUG && os(iOS)
+        if let dead = value("-SwiftlyLiveBgDeadProducer") {
+            view.debugForceProducerTeardown(silent: dead == "silent")
+            try? await Task.sleep(for: .seconds(4))
+            event(["kind": "bg-dead", "silent": dead == "silent", "position": view.positionSeconds, "playing": view.isPlaying])
+        }
+        #endif
+        let pressed = Date()
+        _ = view.resume()
+        let ran = await waitFor(20) { view.isPlaying && view.positionSeconds > before + 0.5 }
+        event(["kind": "bg-play", "ran": ran, "msToPlay": Int(Date().timeIntervalSince(pressed) * 1000),
+               "position": view.positionSeconds, "before": before])
+        try? await Task.sleep(for: .seconds(2))
+        await shot("\(id)--after-play", ["title": id, "track": "after-play", "position": view.positionSeconds, "playing": view.isPlaying])
+        event(["kind": "engine-log", "lines": Array(LogRing.shared.excerpt(seconds: 600).filter { $0.contains("[Lebenslage]") || $0.contains("#597") || $0.contains("grace") || $0.contains("[Melden]") }.suffix(80))])
+        event(["kind": "result", "title": id, "ok": ran, "why": ran ? "picture and play came back" : "play did nothing after \(Int(away)) s in the background"])
+        #endif
+        await closeTitle(view, id, close: close)
+    }
+
+    /// Notification Center and Control Center pulled down while the film PLAYS. Phase 1: the app is only inactive (the
+    /// notifications `willResignActive`, `didBecomeActive` are posted, nothing else). Phase 2: the app really goes to the
+    /// background (the outside launches another app, `background-wanted`) and comes back after `-SwiftlyLiveBackgroundSeconds`.
+    /// Nothing presses Play. Events per phase: playing, position moved, and how many picture rebuilds ran (`Bild zurück:`).
+    /// Expected: playing and moving after both phases, no rebuild in either.
+    private static func scenarioInactive(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-pgs-mkv"
+        guard let view = await openTitle(model, id, open: open) else { return }
+        NotificationCenter.default.post(name: hideControls, object: nil)
+        _ = await waitFor(20) { view.positionSeconds >= 5 && view.isPlaying }
+        #if canImport(UIKit)
+        func rebuilds() -> Int { LogRing.shared.excerpt(seconds: 3600).filter { $0.contains("Bild zurück:") }.count }
+        func snap(_ phase: String, _ extra: [String: Any] = [:]) async {
+            let p0 = view.positionSeconds
+            try? await Task.sleep(for: .seconds(3))
+            var e: [String: Any] = ["kind": "inactive-\(phase)", "playing": view.isPlaying, "moved": view.positionSeconds > p0 + 1,
+                                    "position": view.positionSeconds, "rebuilds": rebuilds(),
+                                    "appState": "\(UIApplication.shared.applicationState.rawValue)"]
+            for (k, v) in extra { e[k] = v }
+            event(e)
+        }
+        await snap("start")
+        NotificationCenter.default.post(name: UIApplication.willResignActiveNotification, object: nil)
+        await snap("resigned")
+        NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        await snap("active-again")
+        let afterInactive = view.isPlaying && rebuilds() == 0
+        event(["kind": "background-wanted"])
+        _ = await waitFor(60) { UIApplication.shared.applicationState == .background }
+        try? await Task.sleep(for: .seconds(1.5))
+        event(["kind": "bg-entered", "playing": view.isPlaying, "position": view.positionSeconds])
+        _ = await waitFor(Double(value("-SwiftlyLiveBackgroundSeconds") ?? "") ?? 60 + 120) { UIApplication.shared.applicationState == .active }
+        await snap("background-return")
+        let afterBackground = view.isPlaying
+        event(["kind": "engine-log", "lines": Array(LogRing.shared.excerpt(seconds: 600).filter {
+            $0.contains("[Lebenslage]") || $0.contains("AppBackgrounded") || $0.contains("rate change") || $0.contains("#597") || $0.contains("grace")
+        }.suffix(60))])
+        event(["kind": "result", "title": id, "ok": afterInactive && afterBackground,
+               "why": "inactive only: playing=\(afterInactive) · after background: playing=\(afterBackground)"])
+        #endif
+        await closeTitle(view, id, close: close)
+    }
+
     /// Line 3: the ASS track of `bm-ass-styled` with "keep the file's style" on (file colours) and off (our look).
     private static func scenarioFileStyle(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
         let id = titles.first ?? "bm-ass-styled"
@@ -607,6 +1074,188 @@ extension LiveRun {
             await closeTitle(view, id, close: close)
         }
         model.subtitleLook.keepFileStyle = true
+    }
+
+    // MARK: Soak
+
+    /// What the engine's clock events did to the stack where they reach the core (`CorePlaybackBackend` calls `noteClock`).
+    struct ClockProbe {
+        var events = 0
+        var depthFirst = 0
+        var depthLast = 0
+        var depthDeepest = 0
+    }
+    static var clockProbe = ClockProbe()
+
+    /// One clock event reached the core: every eighth one the depth of the main stack is read.
+    static func noteClock() {
+        clockProbe.events += 1
+        guard clockProbe.events % 8 == 1 else { return }
+        let depth = Thread.callStackReturnAddresses.count
+        if clockProbe.depthFirst == 0 { clockProbe.depthFirst = depth }
+        clockProbe.depthLast = depth
+        clockProbe.depthDeepest = max(clockProbe.depthDeepest, depth)
+    }
+
+    /// The app's own memory footprint in MB (what the system counts against it).
+    private static func footprintMB() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        return result == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : -1
+    }
+
+    /// **A long film watched to the end of the run** (`-SwiftlyLiveSoakMinutes <n>`, default 45, title `-SwiftlyLiveTitles`,
+    /// default `bm-soak-mkv` of `Werkzeuge/pruefstand-medien.py --soak`). Nothing is touched: the crash of build 48 came
+    /// after about 25 minutes of plain watching (the driver's receiver grew by two frames per clock event). Every 30 s a
+    /// `soak-sample` event says where the film is, how deep the stack is where the clock reaches the core, how often the
+    /// core asked the system for a language name and how much memory the app holds; `soak-end` sums up.
+    private static func scenarioSoak(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-soak-mkv"
+        let minutes = Double(value("-SwiftlyLiveSoakMinutes") ?? "") ?? 45
+        guard let view = await openTitle(model, id, open: open) else { return }
+        NotificationCenter.default.post(name: hideControls, object: nil)
+        clockProbe = ClockProbe()
+        let begin = Date()
+        let namesAtStart = AppPlatform.asked.withLock { $0 }
+        event(["kind": "soak-start", "title": id, "minutes": minutes, "footprintMB": footprintMB(), "subtitleTracks": view.subtitleTracks.count])
+        // `-SwiftlyLiveBurst <n>`: n clock events at once before the real playback (a long session's worth, as the exit scenario does),
+        // so one run shows the stack depth and the memory after the burst and again after the real minutes.
+        if let burst = Int(value("-SwiftlyLiveBurst") ?? ""), burst > 0 {
+            let before = footprintMB()
+            (view.avEngine as? CorePlaybackBackend)?.debugClockBurst(burst)
+            event(["kind": "soak-burst", "asked": burst, "clockEvents": clockProbe.events, "depthFirst": clockProbe.depthFirst,
+                   "depthLast": clockProbe.depthLast, "depthDeepest": clockProbe.depthDeepest, "footprintBeforeMB": before, "footprintMB": footprintMB()])
+            // The burst comes through the debug call, a shorter path than the engine's own: the real playback measures its own depth.
+            clockProbe.depthFirst = 0; clockProbe.depthLast = 0; clockProbe.depthDeepest = 0
+        }
+        var samples = 0
+        while Date().timeIntervalSince(begin) < minutes * 60 {
+            try? await Task.sleep(for: .seconds(30))
+            samples += 1
+            event(["kind": "soak-sample", "n": samples, "elapsed": Date().timeIntervalSince(begin), "position": view.positionSeconds,
+                   "playing": view.isPlaying, "clockEvents": clockProbe.events, "depthFirst": clockProbe.depthFirst,
+                   "depthLast": clockProbe.depthLast, "depthDeepest": clockProbe.depthDeepest,
+                   "namesAsked": AppPlatform.asked.withLock { $0 } - namesAtStart, "footprintMB": footprintMB()])
+        }
+        let grown = clockProbe.depthLast - clockProbe.depthFirst
+        event(["kind": "soak-end", "elapsed": Date().timeIntervalSince(begin), "position": view.positionSeconds, "clockEvents": clockProbe.events,
+               "depthFirst": clockProbe.depthFirst, "depthLast": clockProbe.depthLast, "depthGrown": grown,
+               "namesAsked": AppPlatform.asked.withLock { $0 } - namesAtStart, "footprintMB": footprintMB(),
+               "ok": grown <= 2 && view.positionSeconds > 60])
+        await closeTitle(view, id, close: close)
+    }
+
+    /// **Closing the player with a downloaded title while other downloads run, again and again** (`-SwiftlyLiveCycles`, default 20;
+    /// the first of `-SwiftlyLiveTitles` plays from its file, the rest are the other downloads, started again before every close).
+    /// Build 48 crashed on exit after about half an hour of watching: the driver's receiver was a chain of one closure context per
+    /// engine event, and releasing it on close overflowed the main stack. A real session of that length is 5 000 clock events, so
+    /// every cycle delivers that many before it closes (`exit-cycle` says how deep the stack stays where they reach the core);
+    /// a crash ends the run silently, which `Werkzeuge/live-lauf.py` reports.
+    private static func scenarioExit(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        guard let account = model.session?.storageAccount, let played = titles.first else {
+            event(["kind": "result", "ok": false, "why": "no account or no title"]); return
+        }
+        let others = Array(titles.dropFirst())
+        let cycles = Int(value("-SwiftlyLiveCycles") ?? "") ?? 20
+        model.downloadsAn = true
+        var items: [Item] = []
+        for id in titles { if let item = await model.item(id: id) { items.append(item); knownItems[id] = item } }
+        func trigger(_ list: [Item]) {
+            model.downloads.trigger(list.map { f in
+                let q = f.mediaSources?.first
+                return DownloadItem(id: f.id, account: account, art: .film, title: f.name, runtimeTicks: f.runTimeTicks,
+                                    container: q?.container, source: q?.id, bytes: q?.size ?? 0, watchState: f.userData,
+                                    videoCodec: q?.videoCodec)
+            })
+        }
+        trigger(items.filter { $0.id == played })
+        _ = await waitFor(60) { model.downloads.file(for: played) != nil }
+        guard model.downloads.file(for: played) != nil else { event(["kind": "result", "ok": false, "why": "no download of \(played)"]); return }
+        var closed = 0
+        for n in 1...cycles {
+            // The other downloads start again every cycle (a finished file is removed first), so they run while the player closes.
+            model.downloads.remove(others)
+            trigger(items.filter { others.contains($0.id) })
+            guard let view = await openTitle(model, played, open: open) else { break }
+            clockProbe = ClockProbe()
+            (view.avEngine as? CorePlaybackBackend)?.debugClockBurst(5_000)
+            let states = model.downloads.entries.filter { others.contains($0.id) }.map { "\($0.id) \($0.state)" }
+            event(["kind": "exit-cycle", "n": n, "clockEvents": clockProbe.events, "depthFirst": clockProbe.depthFirst,
+                   "depthLast": clockProbe.depthLast, "othersAtClose": states, "playingFromFile": model.downloads.file(for: played) != nil,
+                   "footprintMB": footprintMB()])
+            await closeTitle(view, played, close: close)
+            closed += 1
+            event(["kind": "exit-closed", "n": n])
+        }
+        model.downloads.remove(items.map(\.id))
+        event(["kind": "exit-end", "cycles": cycles, "closed": closed, "ok": closed == cycles])
+    }
+
+    /// **The track chosen at the start shows from the first frame** (Discord 11, TestFlight "subtitles aren't appearing": chosen
+    /// automatically, drawn only after switching to another track and back). A hand pick is remembered per title, so the next
+    /// open starts with it chosen by the core like the start rule does (`LoadOptions.subtitleServerIndex`): nothing is touched
+    /// after the open. Samples the overlay every 100 ms for 10 s; inside a cue window (1-3, 4-6, 7-9 s, edges 0.5 s apart) the
+    /// line must be on screen. `firstframe-round` says the verdict; the first sample inside a window is shot.
+    private static func scenarioFirstFrame(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-multi-mkv"
+        guard let first = await openTitle(model, id, open: open) else { return }
+        guard let pick = textTrack(first) else { event(["kind": "result", "ok": false, "why": "no text track in \(id)"]); return }
+        let want = pick.stream?.index ?? -2
+        first.selectSubtitle(pick)
+        _ = await waitFor(6) { (first.playingTracks.subtitle ?? -1) == want }
+        await closeTitle(first, id, close: close)
+        let windows: [(Double, Double)] = [(1.5, 2.5), (4.5, 5.5), (7.5, 8.5)]
+        for round in 1...2 {
+            guard let view = await openTitle(model, id, open: open) else { return }
+            var inside = 0, shown = 0, shotTaken = false
+            var firstInside: [String: Any] = [:]
+            let end = Date().addingTimeInterval(10)
+            while Date() < end, current() === view {
+                let pos = view.positionSeconds
+                let state = (view.avEngine as? CorePlaybackBackend)?.liveSubtitleState
+                let line = (state?["line"] as? String) ?? ""
+                if windows.contains(where: { pos >= $0.0 && pos <= $0.1 }) {
+                    inside += 1
+                    if !line.isEmpty { shown += 1 }
+                    if firstInside.isEmpty {
+                        firstInside = ["position": pos, "line": line, "engineTrack": state?["engineTrack"] ?? -1, "cues": state?["cues"] ?? -1,
+                                       "playingTrack": view.playingTracks.subtitle ?? -1]
+                    }
+                    if !shotTaken {
+                        shotTaken = true
+                        await shot("\(id)--firstframe-\(round)", ["title": id, "track": "first-open-\(round)", "position": pos, "line": line])
+                    }
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            event(["kind": "firstframe-round", "round": round, "want": want, "playingTrack": view.playingTracks.subtitle ?? -1,
+                   "insideSamples": inside, "shownInside": shown, "firstInside": firstInside,
+                   "ok": inside > 0 && Double(shown) >= Double(inside) * 0.9])
+            await closeTitle(view, id, close: close)
+        }
+    }
+
+    /// The start language rule: each title opens with the settings as they are (`-utAuto YES`, `-AppleLanguages (de)` come as launch
+    /// arguments) and nothing chosen by hand; the event says which tracks the rule chose, in which device language.
+    private static func scenarioLanguage(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        event(["kind": "settings", "audioLanguage": model.audioLanguage, "subtitleLanguage": model.subtitleLanguage,
+               "automatic": model.subtitleAutomatic, "deviceLanguage": StartTracks.deviceLanguage ?? "",
+               "preferred": Locale.preferredLanguages])
+        for id in titles {
+            guard let view = await openTitle(model, id, open: open) else { continue }
+            let list = { (tracks: [SurfaceTrack]) in tracks.map { "\($0.stream?.index ?? -1) \($0.stream?.language ?? "-") \($0.prettyName)" } }
+            event(["kind": "language", "title": id, "deviceLanguage": StartTracks.deviceLanguage ?? "",
+                   "audioIndex": view.playingTracks.audio.map { $0 as Any } ?? NSNull(),
+                   "subtitleIndex": view.playingTracks.subtitle.map { $0 as Any } ?? NSNull(),
+                   "audio": list(view.audioTracks), "audioChosen": list(view.audioTracks.filter(\.isSelected)),
+                   "subtitles": list(view.subtitleTracks), "subtitleChosen": list(view.subtitleTracks.filter(\.isSelected))])
+            await closeTitle(view, id, close: close)
+        }
     }
 
     /// Line 7: the start rule alone picks the track (nothing chosen by hand); the cue of the forced track is drawn.
@@ -705,6 +1354,270 @@ extension LiveRun {
         NetworkLock.an = false
         model.downloads.simulateNetwork(distance: false)
         model.downloads.remove(items.map(\.id))
+    }
+
+    /// The chapter list of a title with chapters: the panel opens (shot), the jump the row makes goes to chapter 3, and the
+    /// position must stand on its start (event + shot).
+    private static func scenarioChapters(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-kapitel"
+        guard let view = await openTitle(model, id, open: open) else { return }
+        listing(view, id, "chapters")
+        _ = await waitFor(10) { (view.coreChapters?.rows.count ?? 0) > 2 }
+        let rows = view.coreChapters?.rows ?? []
+        event(["kind": "chapters", "phase": "list", "title": id,
+               "rows": rows.map { "\($0.index + 1) \($0.name ?? "-") \($0.start) s\($0.current ? " *" : "")" }, "ok": rows.count > 2])
+        NotificationCenter.default.post(name: openLayer, object: "chapters")
+        try? await Task.sleep(for: .seconds(1.5))
+        await shot("chapters-list", ["title": id, "track": "chapters", "position": view.positionSeconds])
+        guard rows.count > 2 else { return }
+        let want = rows[2].start
+        view.coreJump(toChapter: 2)
+        NotificationCenter.default.post(name: openLayer, object: "none")
+        _ = await waitFor(5) { abs(view.positionSeconds - want) < 1.0 }
+        let now = view.coreChapters?.rows.first(where: \.current)
+        event(["kind": "chapters", "phase": "jumped", "title": id, "wantStart": want, "position": view.positionSeconds,
+               "runningChapter": (now?.index).map { $0 + 1 } ?? 0, "ok": abs(view.positionSeconds - want) < 1.0])
+        await shot("chapters-after-jump", ["title": id, "track": "chapters-jump", "position": view.positionSeconds])
+        close()
+    }
+
+    /// **The chapter list through the real remote path.** Only opens the title (paused at the start) and then WATCHES: every change of
+    /// the running chapter goes to the events (`chapters-remote` / `running`), so a UI test that presses the remote (controls ->
+    /// "Kapitel" -> a row) can be judged from the log. Nothing is posted to the player; the test does all the input. Ends after
+    /// `-SwiftlyLiveSoakMinutes` minutes (default 3) or when the player closes.
+    private static func scenarioChaptersRemote(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-kapitel"
+        guard let view = await openTitle(model, id, open: open) else { return }
+        view.pause()
+        _ = await waitFor(10) { (view.coreChapters?.rows.count ?? 0) > 2 }
+        let rows = view.coreChapters?.rows ?? []
+        event(["kind": "chapters-remote", "phase": "ready", "title": id, "rows": rows.map { "\($0.index + 1) \($0.name ?? "-") \($0.start) s" }, "ok": rows.count > 2])
+        var last = -1
+        let end = Date().addingTimeInterval((value("-SwiftlyLiveSoakMinutes").flatMap(Double.init) ?? 3) * 60)
+        while Date() < end, VLCPlayerView.playersOpen {
+            let running = (view.coreChapters?.rows.first(where: \.current)?.index).map { Int($0) + 1 } ?? 0
+            if running != last {
+                last = running
+                event(["kind": "chapters-remote", "phase": "running", "title": id, "runningChapter": running, "position": view.positionSeconds])
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        close()
+    }
+
+    /// **The next-episode countdown waits while a menu is open** (iPhone): the 330 s `bm-ep1` of the `swiftly-live-media-b6a` fixture
+    /// (no markers, resumed at 315 s, the server with `SWIFTLY_FIXTURE_NO_MARKERS=1`) opens the card for the last seven seconds. Once
+    /// the card is up the "Ton & Untertitel" menu opens: the card's fill value is read twice while it is open (equal) and once after
+    /// it closed (larger). Four shots; the values are in the `menus-countdown` event.
+    private static func scenarioMenusCountdown(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-ep1"
+        guard let first = await openTitle(model, id, open: open) else { return }
+        NotificationCenter.default.post(name: hideControls, object: nil)
+        var cardUp = false
+        for _ in 0..<80 {
+            try? await Task.sleep(for: .milliseconds(100))
+            if case .card = (current()?.avEngine as? CorePlaybackBackend)?.offerNow { cardUp = true; break }
+        }
+        guard cardUp else {
+            event(["kind": "menus-countdown", "error": "the card never opened"])
+            await closeTitle(current() ?? first, id, close: close)
+            return
+        }
+        func fill() -> Double { ((countdownRunProbe ?? -1) * 1000).rounded() / 1000 }
+        // The Apple TV simulator needs seconds for a screenshot, and the card lives only seven: there the values are read
+        // first and a single picture of the open menu follows.
+        #if os(tvOS)
+        let quick = true
+        #else
+        let quick = false
+        #endif
+        func snap(_ name: String, shoot: Bool = true) async -> Double {
+            let value = fill()
+            if shoot { await shot(name, ["title": id, "track": name, "fill": value, "position": current()?.positionSeconds ?? -1]) }
+            return value
+        }
+        try? await Task.sleep(for: .milliseconds(400))
+        let running = await snap("countdown-1-laeuft", shoot: !quick)
+        NotificationCenter.default.post(name: openLayer, object: "tracks")
+        try? await Task.sleep(for: .milliseconds(500))
+        let open1 = await snap("countdown-2-menue-offen", shoot: !quick)
+        try? await Task.sleep(for: .milliseconds(1200))
+        let open2 = await snap("countdown-3-menue-offen-spaeter")
+        NotificationCenter.default.post(name: openLayer, object: "none")
+        try? await Task.sleep(for: .milliseconds(600))
+        let closed = await snap("countdown-4-menue-zu")
+        event(["kind": "menus-countdown", "running": running, "open1": open1, "open2": open2, "closed": closed,
+               "frozen": open1 == open2, "movesAfter": closed > open2])
+        await closeTitle(current() ?? first, id, close: close)
+    }
+
+    /// Speed and subtitle offset through the core's menu rows (the calls the menu rows make): 1.5x must advance the position
+    /// 1.5x as fast as the wall clock, and an offset of +1.0 s must move the cue (nominally 1-3 s) one second later.
+    /// **The player's menu boxes in the real player** (iPhone): `bm-tracks45` shows "Ton & Untertitel" with its long list and
+    /// "Zeit anpassen"; the episode `bm-ep1` shows "Optionen", the episodes panel with the season button switched to season 2
+    /// and "Übergeben an …". Steps go through `openLayer` (see `PlayerScreen`).
+    private static func scenarioMenus(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-ep1"
+        guard let view = await openTitle(model, id, open: open) else { return }
+        listing(view, id, "menus")
+        try? await Task.sleep(for: .seconds(2))
+        func step(_ what: String, _ name: String, wait: Double = 1.3) async {
+            NotificationCenter.default.post(name: openLayer, object: what)
+            try? await Task.sleep(for: .seconds(wait))
+            await shot(name, ["title": id, "track": name, "position": view.positionSeconds])
+        }
+        if id == "bm-tracks45" {
+            await step("tracks", "menus-ton-untertitel")
+            await step("scroll", "menus-ton-gescrollt")
+            await step("time", "menus-zeit-anpassen")
+            await step("look", "menus-aussehen")
+            await step("none", "menus-closed-3", wait: 0.6)
+            await step("audio", "menus-ton")
+            await step("none", "menus-closed", wait: 0.6)
+            // Frame 15: the intro offer (2 s to 5 s in the fixture) with the track menu open.
+            view.seek(toSeconds: 2.6)
+            try? await Task.sleep(for: .seconds(0.4))
+            await step("tracks", "menus-intro-offen", wait: 0.8)
+        } else {
+            // Frame 16 runs first, on the first episode, before any earlier step lets the countdown advance the clip:
+            // the next-episode offer (outro 6 s to 10 s in the fixture) with the track menu open. The countdown value is
+            // shot while the menu is open (twice, frozen) and again after it closed (moving).
+            view.seek(toSeconds: 6.4)
+            try? await Task.sleep(for: .seconds(0.4))
+            await step("tracks", "menus-naechste-folge-offen", wait: 0.6)
+            try? await Task.sleep(for: .seconds(0.8))
+            await shot("menus-naechste-folge-offen-spaeter", ["title": id, "track": "menus-naechste-folge-offen-spaeter", "position": view.positionSeconds])
+            await step("none", "menus-naechste-folge-zu", wait: 0.8)
+            // Back to the start so the later steps still run on this episode.
+            view.seek(toSeconds: 0.5)
+            try? await Task.sleep(for: .seconds(0.6))
+            await step("settings", "menus-optionen")
+            await step("sleep", "menus-schlafzeit")
+            await step("quality", "menus-qualitaet")
+            await step("none", "menus-closed", wait: 0.6)
+            await step("pill", "menus-pille-oeffnet", wait: 2)
+            await step("none", "menus-closed-pille", wait: 0.8)
+            await step("episodes", "menus-folgen-staffel-1", wait: 2)
+            await step("seasons", "menus-staffelwahl")
+            await step("season2", "menus-folgen-staffel-2", wait: 2)
+            await step("kapitel", "menus-kapitel")
+            await step("tapfirst", "menus-folgen-gestartet", wait: 3)
+            await step("none", "menus-closed-2", wait: 0.6)
+            await step("handoff", "menus-uebergeben")
+            await step("handoffbusy", "menus-uebergeben-laedt", wait: 0.6)
+            await step("none", "menus-closed-4", wait: 0.6)
+        }
+        NotificationCenter.default.post(name: openLayer, object: "none")
+        close()
+    }
+
+    /// **Open, close and the switch between the capsule's two menus** in the real player, for a screen recording: every step
+    /// logs its wall-clock time (`motion` events) so the frames of the video can be cut around it.
+    private static func scenarioMenuMotion(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-ep3"
+        guard let view = await openTitle(model, id, open: open) else { return }
+        listing(view, id, "menu-motion")
+        try? await Task.sleep(for: .seconds(3))
+        func step(_ what: String, wait: Double = 1.6) async {
+            event(["kind": "motion", "step": what, "t": Date().timeIntervalSince1970])
+            NotificationCenter.default.post(name: openLayer, object: what)
+            try? await Task.sleep(for: .seconds(wait))
+        }
+        await step("settings")
+        await step("tracks")
+        await step("none", wait: 1.2)
+        await step("tracks")
+        await step("none", wait: 1.2)
+        await step("episodes", wait: 2.5)
+        await shot("menu-motion-folgen", ["title": id, "track": "folgen", "position": view.positionSeconds])
+        await step("seasons", wait: 1.2)
+        await shot("menu-motion-staffelliste", ["title": id, "track": "staffelliste", "position": view.positionSeconds])
+        await step("none", wait: 0.8)
+        event(["kind": "motion", "step": "end", "t": Date().timeIntervalSince1970])
+        close()
+    }
+
+    /// **The top bar in the real player**: controls shown and idle, the volume pill dropped down, the subtitles menu open.
+    private static func scenarioPlayerBar(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-ep1"
+        guard let view = await openTitle(model, id, open: open) else { return }
+        listing(view, id, "player-bar")
+        try? await Task.sleep(for: .seconds(2))
+        func step(_ what: String, _ name: String, wait: Double = 1.3) async {
+            NotificationCenter.default.post(name: openLayer, object: what)
+            try? await Task.sleep(for: .seconds(wait))
+            await shot(name, ["title": id, "track": name, "position": view.positionSeconds])
+        }
+        await step("controls", "bar-1-idle", wait: 1.0)
+        await step("volume", "bar-2-volume", wait: 1.0)
+        await step("none", "bar-3-closed", wait: 0.8)
+        await step("tracks", "bar-4-untertitel", wait: 1.3)
+        await step("none", "bar-5-closed", wait: 0.6)
+        close()
+    }
+
+    private static func scenarioMenu(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-multi-mkv"
+        guard var view = await openTitle(model, id, open: open) else { return }
+        listing(view, id, "menu")
+        view.selectSubtitle(textTrack(view))
+        let index = textTrack(view)?.stream?.index ?? -2
+        _ = await waitFor(5) { (view.playingTracks.subtitle ?? -1) == index }
+        func current() -> VLCPlayerView? { view }
+        func rows() -> [String: Any] {
+            guard let m = view.playerMenu() else { return [:] }
+            return ["speeds": m.speeds.map { "\($0.label)\($0.selected ? "*" : "")" }, "offsetText": m.offsetText, "offsetMs": m.offsetMs,
+                    "steps": m.offsetSteps.map(\.label), "canReset": m.canReset]
+        }
+        event(["kind": "menu", "phase": "rows-at-start", "rows": rows(), "ok": view.playerMenu()?.speeds.first(where: \.selected)?.value == 1])
+        // Speed: normal for 3 s of wall clock, then 1.5x for 4 s.
+        func rate(_ phase: String, seconds: Double, want: Double) async {
+            let (p0, t0) = (view.positionSeconds, Date())
+            try? await Task.sleep(for: .seconds(seconds))
+            let (p1, t1) = (view.positionSeconds, Date())
+            let ratio = (p1 - p0) / t1.timeIntervalSince(t0)
+            event(["kind": "menu", "phase": phase, "positionFrom": p0, "positionTo": p1, "wall": t1.timeIntervalSince(t0), "ratio": ratio,
+                   "want": want, "ok": abs(ratio - want) < 0.15 * want])
+        }
+        await rate("speed-1x", seconds: 2, want: 1)
+        view.tempo = 1.5
+        event(["kind": "menu", "phase": "rows-at-1.5", "rows": rows(), "ok": view.playerMenu()?.speeds.first(where: \.selected)?.value == 1.5])
+        try? await Task.sleep(for: .seconds(0.5))
+        // The fixture is about 10 s long: the window ends before the file does.
+        await rate("speed-1.5x", seconds: 2.5, want: 1.5)
+        NotificationCenter.default.post(name: openLayer, object: "settings")
+        try? await Task.sleep(for: .seconds(1.2))
+        await shot("menu-speed-1.5x", ["title": id, "track": "menu-speed", "position": view.positionSeconds])
+        NotificationCenter.default.post(name: openLayer, object: "none")
+        view.tempo = 1
+        // Subtitle offset: the position where the first cue shows and goes away again, from the overlay line.
+        func cueEdges(_ phase: String, shift: Double) async {
+            view.pause(); view.seek(toSeconds: 0.3); try? await Task.sleep(for: .seconds(1)); _ = view.resume()
+            var appeared: Double?, vanished: Double?
+            let end = Date().addingTimeInterval(9)
+            while Date() < end, let v = current() {
+                let pos = v.positionSeconds
+                let line = ((v.avEngine as? CorePlaybackBackend)?.liveSubtitleState?["line"] as? String) ?? ""
+                if appeared == nil, !line.isEmpty { appeared = pos }
+                if appeared != nil, vanished == nil, line.isEmpty, pos > (appeared ?? 0) + 0.3 { vanished = pos; break }
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+            let a = appeared ?? -1, d = vanished ?? -1
+            event(["kind": "menu", "phase": phase, "cueAppearedAt": a, "cueVanishedAt": d, "shift": shift, "rows": rows(),
+                   "ok": a >= 0 && d >= 0 && abs(a - (1 + shift)) < 0.6 && abs(d - (3 + shift)) < 0.6])
+        }
+        await cueEdges("offset-0", shift: 0)
+        view.offsetStep(500); view.offsetStep(500)
+        await cueEdges("offset-plus-1s", shift: 1)
+        NotificationCenter.default.post(name: openLayer, object: "tracks")
+        try? await Task.sleep(for: .seconds(1.2))
+        await shot("menu-offset-plus-1s", ["title": id, "track": "menu-offset", "position": view.positionSeconds])
+        NotificationCenter.default.post(name: openLayer, object: "none")
+        view.offsetStep(-500)
+        event(["kind": "menu", "phase": "offset-minus-half", "rows": rows(), "ok": view.playerMenu()?.offsetMs == 500])
+        view.offsetReset()
+        event(["kind": "menu", "phase": "offset-reset", "rows": rows(), "ok": view.playerMenu()?.offsetMs == 0 && view.playerMenu()?.canReset == false])
+        close()
     }
 
     /// Line 14: with a text track on, the line the overlay shows follows the cue windows (1-3, 4-6, 7-9 s) after

@@ -73,6 +73,7 @@ struct SeerrTests {
     func onlyWhatMakesSense() {
         #expect(SeerrState.opened.requestable)
         #expect(SeerrState.deleted.requestable)
+        #expect(!SeerrState.blocklisted.requestable)
         #expect(SeerrState.partWayPresent.requestable)
         #expect(!SeerrState.waitsSharing.requestable)
         #expect(!SeerrState.loads.requestable)
@@ -264,6 +265,8 @@ struct SeerrTests {
         #expect(try state(#"{"mediaInfo":{"status":3}}"#) == .loads)
         #expect(try state(#"{"mediaInfo":{"status":4}}"#) == .partWayPresent)
         #expect(try state(#"{"mediaInfo":{"status":5}}"#) == .present)
+        #expect(try state(#"{"mediaInfo":{"status":6}}"#) == .blocklisted)
+        #expect(try state(#"{"mediaInfo":{"status":7}}"#) == .deleted)
         #expect(try state(#"{"overview":"x"}"#) == .opened)
     }
 

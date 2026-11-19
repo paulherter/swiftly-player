@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use swiftly_l10n::Locale;
 use swiftly_library::Store;
@@ -36,6 +36,19 @@ impl Clock for SystemClock {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0.0, |d| d.as_secs_f64())
+    }
+}
+
+/// How old something stamped at `at` is at `now`, both read from the host's [`Clock`]. The age of a remembered answer is
+/// always measured on that clock and never on `std::time::Instant`: on Apple `Instant` does not count the time the
+/// device sleeps, so after a night in the background an answer from the evening would still count as a minute old.
+/// A clock that went backwards (`now` before `at`) gives [`Duration::MAX`]: nothing can be said about the age, so it is
+/// old.
+pub(crate) fn age(now: f64, at: f64) -> Duration {
+    if now >= at {
+        Duration::try_from_secs_f64(now - at).unwrap_or(Duration::MAX)
+    } else {
+        Duration::MAX
     }
 }
 
@@ -101,5 +114,46 @@ impl<T: HttpTransport> HttpTransport for Shared<T> {
         request: HttpRequest,
     ) -> impl Future<Output = Result<HttpResponse, ErrorKind>> + Send {
         self.0.send(request)
+    }
+}
+
+/// A host clock for tests that can jump ahead: the device sleeps through a night while the runtime's own clock
+/// (`Instant`) stands still.
+#[cfg(test)]
+pub(crate) struct JumpClock(std::sync::Mutex<f64>);
+
+#[cfg(test)]
+impl JumpClock {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self(std::sync::Mutex::new(1_000_000.0)))
+    }
+
+    /// The device sleeps (or simply waits) this long.
+    pub(crate) fn sleep_through(&self, seconds: f64) {
+        *self.0.lock().unwrap() += seconds;
+    }
+}
+
+#[cfg(test)]
+impl Clock for JumpClock {
+    fn now(&self) -> f64 {
+        *self.0.lock().unwrap()
+    }
+}
+
+#[cfg(test)]
+mod age_tests {
+    use super::*;
+
+    #[test]
+    fn the_age_is_the_difference_on_the_host_clock() {
+        assert_eq!(age(110.5, 100.0), Duration::from_millis(10_500));
+        assert_eq!(age(100.0, 100.0), Duration::ZERO);
+    }
+
+    #[test]
+    fn a_clock_that_went_backwards_makes_it_old() {
+        assert_eq!(age(99.0, 100.0), Duration::MAX);
+        assert_eq!(age(f64::NAN, 100.0), Duration::MAX);
     }
 }

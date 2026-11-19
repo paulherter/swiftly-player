@@ -23,11 +23,13 @@ enum IconMap {
         "bubble.left.and.bubble.right": "icon.chats",
         "calendar": "icon.calendar-blank",
         "capsule": "icon.capsule",
+        "captions": "icon.captions",
         "captions.bubble": "icon.subtitles",
         "character.textbox": "icon.textbox",
         "chart.bar": "icon.chart-bar",
         "chart.bar.fill": "icon.chart-bar.fill",
         "checkmark": "icon.check",
+        "display": "icon.monitor",
         "checkmark.circle": "icon.check-circle",
         "checkmark.circle.fill": "icon.check-circle.fill",
         "checkmark.square.fill": "icon.check-square.fill",
@@ -64,7 +66,9 @@ enum IconMap {
         "gift": "icon.gift",
         "globe": "icon.globe",
         "gobackward": "icon.arrow-counter-clockwise",
+        "gobackward.10": "icon.back-10",
         "goforward": "icon.arrow-clockwise",
+        "goforward.10": "icon.forward-10",
         "heart.fill": "icon.heart.fill",
         "hourglass": "icon.hourglass",
         "house": "icon.house",
@@ -143,12 +147,13 @@ enum IconMap {
         "xmark.circle.fill": "icon.x-circle.fill"
     ]
 
-    /// Assets that also come as `.light`, `.w28` and `.w32` for an even stroke across sizes.
+    /// Assets that also come as `.light` (34 pt and up) and `.w28` (16 pt and below) strokes.
     static let outlined: Set<String> = [
         "icon.align-bottom-simple",
         "icon.arrow-circle-down",
         "icon.arrow-clockwise",
         "icon.arrow-counter-clockwise",
+        "icon.back-10",
         "icon.arrow-down",
         "icon.arrow-u-up-left",
         "icon.arrow-up-right",
@@ -189,6 +194,7 @@ enum IconMap {
         "icon.eye-slash",
         "icon.file-text",
         "icon.film-strip",
+        "icon.forward-10",
         "icon.funnel",
         "icon.gauge",
         "icon.gear",
@@ -232,6 +238,8 @@ enum IconMap {
         "icon.stack",
         "icon.star",
         "icon.subtitles",
+        "icon.captions",
+        "icon.monitor",
         "icon.tag",
         "icon.television",
         "icon.text-aa",

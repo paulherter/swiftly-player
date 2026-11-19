@@ -475,12 +475,18 @@ impl EntityCache {
     /// library, a WebSocket that is down): every list of the scope is marked stale and the
     /// screens refresh. The hook for the polling fallback.
     pub fn lists_changed(&self, scope: &Scope) {
+        self.lists_changed_quietly(scope);
+        self.notify(&CacheChange::ListsStale(scope.clone()));
+    }
+
+    /// Like `lists_changed`, but no screen is told: the lists are stale for the next visit and a fetch that
+    /// started before is stored stale. For a reconnect of the socket, which must never reload the home screen.
+    pub fn lists_changed_quietly(&self, scope: &Scope) {
         {
             let mut g = lock(&self.inner.generations);
             g.entry(scope.clone()).or_insert((0, 0)).1 += 1;
         }
         self.mark_lists_stale(scope);
-        self.notify(&CacheChange::ListsStale(scope.clone()));
     }
 
     /// A ticket for a fetch that is about to start in `scope`.

@@ -65,6 +65,8 @@ pub struct TileMenu {
     ctl: MenuController,
     id: Option<String>,
     entries: Vec<Entry>,
+    /// Whether the title was on the watchlist when the menu opened (the row said "Nicht mehr merken").
+    favourite: bool,
     /// The devices of an open "Abspielen auf \u{2026}" list: id and name, in row order.
     devices: Vec<(String, String)>,
 }
@@ -97,7 +99,13 @@ impl TileMenu {
         self.ctl.open(rows, Anchor::Pointer(p), 0.0, keyboard);
         self.id = Some(tile.id.clone());
         self.entries = entries;
+        self.favourite = host.favourite;
         true
+    }
+
+    /// Whether the open menu was built for a title on the watchlist (what its "Merken" row said).
+    pub fn favourite(&self) -> bool {
+        self.favourite
     }
 
     /// Opens the device list of "Abspielen auf \u{2026}" for `title` at window point `p`.
@@ -458,155 +466,6 @@ impl HintBar {
     }
 }
 
-/// The shell's "Fassung wählen" (`.versionChoice` on the Mac's `MainView`, a confirmation dialog): a title with several
-/// versions asks which one to start, wherever the play came from (a tile menu, a row, the player's next title). A card
-/// centred over the window on a dim ground: the heading, one row per version (`versionLabel`) and "Abbrechen".
-pub struct VersionDialog {
-    ui: Ui<Option<Vec<String>>>,
-    labels: Option<Vec<String>>,
-}
-
-/// What a click on the version dialog meant.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum VersionClick {
-    /// The version in this row.
-    Pick(usize),
-    /// "Abbrechen", or a click beside the card.
-    Cancel,
-    /// On the card but on nothing that acts.
-    Inside,
-}
-
-/// The heading of the dialog (the Mac's literal).
-pub const VERSION_TITLE: &str = "Fassung wählen";
-
-impl VersionDialog {
-    /// A dialog for a window of `env`.
-    pub fn new(env: Env, cx: Cx) -> VersionDialog {
-        let ui = Ui::new(
-            move |p: &Option<Vec<String>>, env: &Env, cx: &Cx| {
-                let lk = crate::detail_screen::look(env);
-                let Some(labels) = p else {
-                    return Node::spacer().frame(Some(0.0), Some(0.0), Alignment::CENTER);
-                };
-                let row = |text: &str, key: String, accent: bool| {
-                    crate::detail_screen::wide(
-                        crate::detail_screen::txt(
-                            cx,
-                            text,
-                            crate::detail_screen::weight(lk.body, lk.body.size, 600),
-                            if accent {
-                                colour::MARK_ACCENT
-                            } else {
-                                colour::FONT
-                            },
-                            Some(1),
-                        )
-                        .padding(home::ins(0.0, 16.0, 0.0, 16.0))
-                        .frame(None, Some(40.0), Alignment::LEADING),
-                        Alignment::LEADING,
-                    )
-                    .key(key.as_str())
-                    .a11y(swiftly_ui::a11y::A11yNode::new(
-                        key.as_str(),
-                        swiftly_ui::a11y::Role::Button,
-                        text,
-                    ))
-                };
-                let mut kids = vec![
-                    crate::detail_screen::txt(
-                        cx,
-                        VERSION_TITLE,
-                        crate::detail_screen::weight(lk.body, lk.body.size + 2.0, 600),
-                        colour::FONT,
-                        Some(1),
-                    )
-                    .padding(home::ins(0.0, 16.0, 8.0, 16.0)),
-                ];
-                for (i, l) in labels.iter().enumerate() {
-                    kids.push(row(l, format!("ver:{i}"), false));
-                }
-                kids.push(row("Abbrechen", "ver:cancel".to_owned(), true));
-                let card = Node::vstack(Align::Start, Some(2.0), kids)
-                    .padding(home::ins(8.0, 8.0, 8.0, 8.0))
-                    .frame(Some(420.0), None, Alignment::TOP_LEADING)
-                    .background(
-                        Node::rect(color(colour::RAISED), 16.0).paint(swiftly_ui::Paint::Stroke {
-                            color: color(colour::MARGIN),
-                            width: 1.0,
-                            radius: 16.0,
-                        }),
-                        Alignment::CENTER,
-                    )
-                    .key("ver:card")
-                    .a11y(swiftly_ui::a11y::A11yNode::new(
-                        "ver:card",
-                        swiftly_ui::a11y::Role::Dialog,
-                        VERSION_TITLE,
-                    ))
-                    .appear_from(0.97, 0.0);
-                home::fill_frame(card, Alignment::CENTER).background(
-                    Node::rect(Color::new(0.0, 0.0, 0.0, 0.35), 0.0),
-                    Alignment::CENTER,
-                )
-            },
-            None,
-            env,
-            cx,
-        );
-        VersionDialog { ui, labels: None }
-    }
-
-    /// A new window size.
-    pub fn set_env(&mut self, env: Env) {
-        self.ui.set_env(env);
-    }
-
-    /// Opens the dialog over `labels` (one per version), or closes it with `None`.
-    pub fn set(&mut self, labels: Option<Vec<String>>) {
-        self.labels = labels.clone();
-        self.ui.set_parts(labels);
-    }
-
-    /// Whether the dialog is open.
-    pub fn is_open(&self) -> bool {
-        self.labels.is_some()
-    }
-
-    /// What a screen reader gets: the dialog, its heading and one button per version and "Abbrechen"; nothing when closed.
-    pub fn a11y_nodes(&self) -> Vec<swiftly_ui::a11y::A11yNode> {
-        if self.is_open() {
-            self.ui.a11y_nodes()
-        } else {
-            Vec::new()
-        }
-    }
-
-    /// What a click at `(x, y)` meant; `None` when the dialog is closed.
-    pub fn click(&self, x: f32, y: f32) -> Option<VersionClick> {
-        let labels = self.labels.as_ref()?;
-        let inside = |key: &str| {
-            self.ui
-                .frame_of(key)
-                .is_some_and(|f| x >= f[0] && x <= f[0] + f[2] && y >= f[1] && y <= f[1] + f[3])
-        };
-        if let Some(i) = (0..labels.len()).find(|i| inside(&format!("ver:{i}"))) {
-            return Some(VersionClick::Pick(i));
-        }
-        Some(if inside("ver:cancel") || !inside("ver:card") {
-            VersionClick::Cancel
-        } else {
-            VersionClick::Inside
-        })
-    }
-
-    /// The dialog over the window at `now`, and whether it still wants frames.
-    pub fn frame(&mut self, now: f64) -> (DrawList, bool) {
-        let list = self.ui.frame(now);
-        (list, self.ui.needs_frame())
-    }
-}
-
 /// What a tap on the Discord card meant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CardTap {
@@ -909,6 +768,18 @@ thread_local! {
     static MINE: std::cell::Cell<(bool, bool)> = const { std::cell::Cell::new((true, true)) };
     static LIST_CHANGES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static HINTS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    static LOADS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// A tile menu's "Laden" was picked for title `id` (a screen cannot read the title itself): the suite reads the live
+/// title and opens the add sheet on the Downloads page, as the film page's "Laden" does.
+pub fn request_download(id: &str) {
+    LOADS.with(|l| l.borrow_mut().push(id.to_owned()));
+}
+
+/// The titles whose "Laden" was picked since the last call, oldest first.
+pub fn take_download_requests() -> Vec<String> {
+    LOADS.with(|l| std::mem::take(&mut *l.borrow_mut()))
 }
 
 /// A screen has something to say that no screen of its own can: the suite shows it in the strip at the bottom of the
@@ -1331,18 +1202,19 @@ impl Curtain {
     /// A curtain for `env`.
     pub fn new(env: Env, cx: Cx) -> Curtain {
         let reduce = env.reduce_motion;
-        // Rasterised at the size it is drawn: 520 pt for 1024 composition units.
+        // Rasterised for the pixels it is drawn at: 520 pt for 1024 composition units (again, from the pictures of the
+        // `Lottie`, when the window's scale changes).
         let lottie = std::rc::Rc::new(crate::lottie::Lottie::load(
             &cx,
             crate::lottie::START_ANIMATION,
             env.scale * 520.0 / 1024.0,
         ));
         let ui = Ui::new(
-            move |p: &(u8, u32), env: &Env, _cx: &Cx| {
+            move |p: &(u8, u32), env: &Env, cx: &Cx| {
                 let a = f32::from(p.0) / 255.0;
                 let frame = f64::from(p.1) / 100.0;
                 let art = match (*lottie).as_ref() {
-                    Some(l) => l.node(frame, 520.0),
+                    Some(l) => l.node(cx, frame, 520.0, env.scale),
                     None => Node::fixed(520.0, 520.0),
                 }
                 .a11y(swiftly_ui::a11y::A11yNode::new(
@@ -1449,40 +1321,5 @@ mod card_tests {
         assert_eq!(Card::account("  _-7", "x").initial(), "7");
         assert_eq!(Card::Demo.initial(), "S");
         assert_eq!(Card::Hidden.initial(), "S");
-    }
-}
-
-#[cfg(test)]
-mod version_dialog_a11y_tests {
-    use super::*;
-    use swiftly_ui::a11y::Role;
-
-    /// The "Fassung wählen" card is a dialog with one button per version and "Abbrechen" for a screen reader.
-    #[test]
-    fn the_version_choice_is_in_the_accessibility_tree() {
-        let env = Env::new(
-            swiftly_layout::Size::new(1280.0, 800.0),
-            1.0,
-            swiftly_ui::Idiom::Desktop,
-        );
-        let mut d = VersionDialog::new(env, Cx::deterministic());
-        let _ = d.frame(0.0);
-        assert!(d.a11y_nodes().is_empty(), "closed: nothing");
-        d.set(Some(vec!["1080p HEVC".into(), "4K Dolby Vision".into()]));
-        let _ = d.frame(100.0);
-        let tree = d.a11y_nodes();
-        let all: Vec<&swiftly_ui::a11y::A11yNode> = tree.iter().flat_map(|n| n.walk()).collect();
-        let dialog = all
-            .iter()
-            .find(|n| n.role == Role::Dialog)
-            .expect("a dialog");
-        assert_eq!(dialog.label, VERSION_TITLE);
-        for label in ["1080p HEVC", "4K Dolby Vision", "Abbrechen"] {
-            assert!(
-                all.iter()
-                    .any(|n| n.role == Role::Button && n.label == label),
-                "{label}: no button"
-            );
-        }
     }
 }

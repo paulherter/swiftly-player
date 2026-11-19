@@ -248,8 +248,7 @@ fn user_views() {
 
 // ---- :449-531 --------------------------------------------------------------------------
 
-const FIELDS_LIST: &str =
-    "Overview,PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,ChildCount";
+const FIELDS_LIST: &str = "Overview,PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,ChildCount,RecursiveItemCount";
 
 #[test]
 fn items_defaults() {
@@ -279,6 +278,7 @@ fn items_with_every_argument_in_swift_order() {
         ids: vec!["a".into(), "b".into()],
         person_ids: vec!["p1".into()],
         genres: vec!["Action".into(), "Sci-Fi & Fantasy".into()],
+        years: Vec::new(),
         slim: false,
     };
     block_on(c.items(&q)).expect("items");
@@ -289,6 +289,28 @@ fn items_with_every_argument_in_swift_order() {
             "https://tv.example.de/Items?userId=u1&Limit=50&StartIndex=100&SortBy=DateCreated&SortOrder=Descending&Fields={FIELDS_LIST}&Recursive=true&ParentId=lib1&IncludeItemTypes=Movie,Series&Filters=IsResumable,IsFavorite&Ids=a,b&PersonIds=p1&Genres=Action%7CSci-Fi%20%26%20Fantasy&IsPlayed=false"
         ),
     );
+}
+
+#[test]
+fn items_years_are_a_comma_list_after_genres_and_before_is_played() {
+    let c = jf(MockTransport::new());
+    let q = ItemsQuery {
+        parent_id: Some("lib1".into()),
+        recursive: true,
+        include_item_types: vec!["Movie".into()],
+        years: (2010..=2012).collect(),
+        is_watched: Some(false),
+        ..ItemsQuery::default()
+    };
+    block_on(c.items(&q)).expect("items");
+    let url = last(&c).url.as_str().to_owned();
+    assert!(
+        url.contains("&Years=2010,2011,2012&IsPlayed=false"),
+        "{url}"
+    );
+    // Without years the request carries no `Years` at all.
+    block_on(c.items(&ItemsQuery::default())).expect("items");
+    assert!(!last(&c).url.as_str().contains("Years"));
 }
 
 #[test]
@@ -304,7 +326,7 @@ fn items_slim_drops_limit_start_and_fields_then_appends_lean_flags() {
     block_on(c.items(&q)).expect("items");
     assert_get(
         &last(&c),
-        "https://tv.example.de/Items?userId=u1&SortBy=SortName&SortOrder=Ascending&Recursive=true&ParentId=lib1&IsPlayed=true&Fields=SortName,DateCreated&EnableImages=false&EnableUserData=false",
+        "https://tv.example.de/Items?userId=u1&SortBy=SortName&SortOrder=Ascending&Recursive=true&ParentId=lib1&IsPlayed=true&Fields=SortName,DateCreated,ChildCount,RecursiveItemCount&EnableImages=false&EnableUserData=false",
     );
 }
 
@@ -392,7 +414,7 @@ fn collection_members() {
     block_on(c.collection_members("box1")).expect("items");
     assert_get(
         &last(&c),
-        "https://tv.example.de/Items?userId=u1&ParentId=box1&IncludeItemTypes=Movie,Series&Limit=2000&EnableImages=false&EnableUserData=false",
+        "https://tv.example.de/Items?userId=u1&ParentId=box1&IncludeItemTypes=Movie,Series&Limit=2000&EnableImages=false&EnableUserData=false&Fields=ChildCount,RecursiveItemCount",
     );
 }
 
@@ -477,7 +499,7 @@ fn item_genres_similar_extras_trailers() {
     block_on(c.similar("8", 12)).expect("similar");
     assert_get(
         &last(&c),
-        "https://tv.example.de/Items/8/Similar?userId=u1&limit=24&Fields=ProviderIds",
+        "https://tv.example.de/Items/8/Similar?userId=u1&limit=24&Fields=ProviderIds,ChildCount,RecursiveItemCount",
     );
 
     // :753 / :941 lenient lists: the broken entry is skipped
@@ -508,7 +530,7 @@ fn search_encodes_the_term() {
         &last(&c),
         &format!(
             "https://tv.example.de/Items?userId=u1&searchTerm=Tom%20%26%20Jerry:%20%C3%84pfel&Recursive=true&IncludeItemTypes=Movie,Series&Limit=40&Fields={}",
-            "Overview,PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,ChildCount"
+            "Overview,PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,ChildCount,RecursiveItemCount"
         ),
     );
 }

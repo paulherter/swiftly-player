@@ -157,16 +157,14 @@ pub struct Suite {
     discord: crate::desk::DiscordCard,
     /// The panel of watching together and continuing on this device, over everything but the player.
     together_ui: crate::together_ui::TogetherUi,
+    /// The view models behind the writes of the Home tile menu (watched, unwatched, watchlist)
+    /// until their request has gone out.
+    tile_writers: Vec<swiftly_vm::DetailVm<crate::net::AppTransport>>,
     /// When the groups and devices were last asked for (ms of the suite clock).
     together_at: f64,
     /// The panel that shows the picture leaving for another device, and when it opened.
     /// The next title comes from the group: if it cannot open here, the group is told.
     group_start: bool,
-    /// The shell's "Fassung wählen" and the title it asks for.
-    version_dialog: (
-        crate::desk::VersionDialog,
-        Option<crate::live_play::VersionAsk>,
-    ),
     nudge: Option<(swiftly_vm::Nudge, f64)>,
     /// The window buttons in the toolbar row (the window has no system frame).
     controls: crate::desk::WindowControls,
@@ -180,8 +178,6 @@ pub struct Suite {
     parked: [Option<Top>; 5],
     /// Pages below the page in front that came back when it closes: a title page under the person page opened from it.
     under: Vec<Top>,
-    /// The genre names being fetched for the chips row (live app).
-    genres: Option<crate::login_screen::Pending<Vec<String>>>,
     /// A press that began in the sidebar while a page is pushed: it belongs to the tabs.
     side_press: bool,
     /// The area change in progress: the tab left and when (the 0.12 s out, 0.22 s in cross fade of the content).
@@ -324,9 +320,9 @@ impl Suite {
             hint: crate::desk::HintBar::new(env, cx.clone()),
             discord: crate::desk::DiscordCard::new(env, cx.clone()),
             together_ui: crate::together_ui::TogetherUi::new(env, cx.clone()),
+            tile_writers: Vec::new(),
             together_at: f64::NEG_INFINITY,
             group_start: false,
-            version_dialog: (crate::desk::VersionDialog::new(env, cx.clone()), None),
             nudge: None,
             controls: crate::desk::WindowControls::new(env, cx.clone()),
             win_action: None,
@@ -335,7 +331,6 @@ impl Suite {
             parked: Default::default(),
             under: Vec::new(),
             side_press: false,
-            genres: None,
             fade: None,
             curtain: None,
             cx,
@@ -473,7 +468,7 @@ impl Suite {
         self.movies.vm().send(swiftly_vm::LibraryIntent::Load);
         self.series.vm().send(swiftly_vm::LibraryIntent::Load);
         self.watch.start_watchlist();
-        self.genres = Some(crate::live::fetch_genres(&w));
+        self.home.set_chips(crate::home_data::live_chips(&w));
         self.live = Some(w);
         self.seen = [0; 5];
         self.tab = 0;
@@ -571,7 +566,7 @@ impl Suite {
         self.home = home;
         self.home.vm().send(swiftly_vm::HomeIntent::Load);
         if let Some(w) = self.live.clone() {
-            self.genres = Some(crate::live::fetch_genres(&w));
+            self.home.set_chips(crate::home_data::live_chips(&w));
         }
         self.seen[0] = 0;
     }
@@ -588,6 +583,7 @@ impl Suite {
         if self.tab == 0 && self.top.is_none() && self.player.is_none() {
             self.home_seen = seen;
             self.home.vm().send(swiftly_vm::HomeIntent::Load);
+            self.home.reload_seerr();
         }
     }
 
@@ -597,6 +593,7 @@ impl Suite {
     fn start_in_front(&mut self) {
         if self.tab == 0 && self.live.is_some() && self.top.is_none() && self.player.is_none() {
             self.home.vm().send(swiftly_vm::HomeIntent::Refresh);
+            self.home.reload_seerr();
         }
     }
 
@@ -627,6 +624,8 @@ impl Suite {
     fn page_env(&self) -> Env {
         let mut e = self.env;
         e.size.w = (e.size.w - self.side()).max(1.0);
+        // The window's own arrows are there whenever the sidebar is (`frame_inner` draws them over every page).
+        e.window_nav = self.side() > 0.0;
         e
     }
 
@@ -925,6 +924,7 @@ impl Suite {
             *w.next_kind.borrow_mut() = t.kind.clone();
             *w.last_title.borrow_mut() = (t.id.clone(), t.name.clone());
             *w.next_spec.borrow_mut() = t.spec.clone();
+            *w.seed_tile.borrow_mut() = tile.clone();
         }
         let series = target.as_ref().is_some_and(|t| t.series);
         // `SeasonTarget`: an episode tile carries the season it had when its list loaded; the episode is fetched
@@ -1065,6 +1065,7 @@ impl Suite {
         match (&live, &self.live) {
             (Some(core), Some(w)) => {
                 DownloadsScreen::over(env, cx, crate::live_downloads::shared(core, &w.account))
+                    .with_settings(Arc::clone(&core.settings))
             }
             _ => DownloadsScreen::new(env, cx, DlScenario::Mixed),
         }
@@ -1272,9 +1273,16 @@ impl Suite {
     /// Keeps the machine's page and panel equal to what is on screen (a shortcut or a screen may have changed it).
     fn resync_nav(&mut self) {
         use crate::nav_machine::{Page, Panel};
+        // A page pushed from a panel (Profile > "Meine Anfragen", the management pages) keeps the panel's sidebar row
+        // lit: the panel is still open underneath, so the sidebar follows the page the user is on, not the tab behind.
+        let panel_of = |t: &Top| match t {
+            Top::Settings(_) => Some(Panel::Settings),
+            Top::Login(_) => Some(Panel::Accounts),
+            _ => None,
+        };
         let panel = match &self.top {
-            Some(Top::Settings(_)) if !self.panel_closing => Some(Panel::Settings),
-            Some(Top::Login(_)) if !self.panel_closing => Some(Panel::Accounts),
+            Some(Top::Page(_)) => self.under.iter().rev().find_map(panel_of),
+            Some(t) if !self.panel_closing => panel_of(t),
             _ => None,
         };
         self.nav.panel = panel;
@@ -1296,6 +1304,11 @@ impl Suite {
                     .with_check(Box::new(crate::server_check::LiveCheck::new(
                         std::sync::Arc::clone(core),
                     )))
+                    .with_seerr_desk_opt(crate::seerr_desk::Desk::stored(core))
+                    .with_admin(match crate::server_admin_link::LiveAdmin::new(core) {
+                        Some(l) => Box::new(l),
+                        None => Box::new(crate::server_admin_link::NoAdmin),
+                    })
                     .with_choices(Box::new(crate::home_choices::LiveChoices::new(
                         std::sync::Arc::clone(core),
                     )))
@@ -1458,7 +1471,8 @@ impl Suite {
                         env,
                         cx.clone(),
                         crate::live_downloads::shared(core, &w.account),
-                    ),
+                    )
+                    .with_settings(Arc::clone(&core.settings)),
                     _ => DownloadsScreen::new(env, cx.clone(), DlScenario::Mixed),
                 }))),
                 Dest::Accounts => Some(Top::Login(Box::new(match &live {
@@ -1571,7 +1585,7 @@ impl Suite {
                 crate::signin_flows::copy_text(&text);
             }
             if let Some(url) = l.take_open() {
-                crate::signin_flows::open_url(&url);
+                crate::effects::post(crate::effects::Effect::OpenUrl(url));
             }
         }
         if let (Some(core), Some(Top::Settings(sc)), true) =
@@ -1700,6 +1714,13 @@ impl Suite {
         }
     }
 
+    /// The app goes to the background: a running player reports its position now.
+    pub fn player_app_backgrounded(&mut self, now: f64, paused: bool) {
+        if let Some(p) = &mut self.player {
+            p.app_backgrounded(now, paused);
+        }
+    }
+
     /// The window is closing: a running player stops and reports its position (`NSWindow.willCloseNotification`).
     /// Returns whether a player was open.
     pub fn player_window_closing(&mut self, now: f64) -> bool {
@@ -1733,6 +1754,13 @@ impl Suite {
             .is_some_and(|p| p.take_fullscreen_request())
     }
 
+    /// A redraw that reuses the last built interface: the open player hands over its newest video picture.
+    pub fn player_video_step(&mut self) {
+        if let Some(p) = self.player.as_mut() {
+            p.video_step();
+        }
+    }
+
     /// The cursor hides together with the controls.
     pub fn player_cursor_hidden(&self) -> bool {
         self.player.as_ref().is_some_and(|p| p.cursor_hidden())
@@ -1757,7 +1785,7 @@ impl Suite {
             _ => Vec::new(),
         };
         for link in links {
-            let _ = crate::signin_flows::open_url(&link);
+            crate::effects::post(crate::effects::Effect::OpenUrl(link));
         }
         let (n, last) = match &self.top {
             Some(Top::Detail(d)) => (d.log().len(), d.log().last().cloned()),
@@ -1798,29 +1826,80 @@ impl Suite {
         let (Some(core), Some(w)) = (&self.core, &self.live) else {
             return;
         };
-        if self.search.has_seerr() {
+        if self.search.has_seerr() && self.home.has_seerr() {
             return;
         }
-        if let Some(backend) = crate::seerr_flow::Live::stored(core) {
-            let flow = crate::seerr_flow::Flow::new(backend, w.core.host().locale);
-            self.search.set_seerr(flow);
+        // One desk for both: the search and the home block share the connection, the rights and the titles read so far.
+        if let Some(desk) =
+            crate::seerr_desk::Desk::stored(core).map(|d| d.with_account(w.account.clone()))
+        {
+            if !self.search.has_seerr() {
+                self.search.set_seerr(desk.clone());
+            }
+            if !self.home.has_seerr() {
+                self.home.set_seerr(desk);
+            }
+        }
+    }
+
+    /// Seerr connects in Settings or goes away: the Start block follows at once, without a restart (the iPhone reloads
+    /// its block when `connected` changes). One lookup in the settings map per frame.
+    fn sync_seerr_home(&mut self) {
+        let Some(core) = &self.core else { return };
+        let stored = core.seerr_stored().is_some();
+        if stored && !self.home.has_seerr() {
+            self.attach_seerr();
+        } else if !stored && self.home.has_seerr() {
+            self.home.clear_seerr();
         }
     }
 
     /// A Seerr tile (search block, suggestions, the person's request rail) opens the Seerr title page over the stack
     /// (the Mac's `navigator.openIt(.seerrTitle)`).
     fn check_seerr(&mut self, now: f64) {
+        use crate::seerr_desk::SeerrRoute;
+        let server_open = match &mut self.top {
+            Some(Top::Page(p)) => p.take_server_open(),
+            _ => false,
+        };
+        if server_open {
+            if let Some(Top::Settings(s)) = self.under.last_mut() {
+                s.show_server_page();
+            }
+            self.back(now);
+            return;
+        }
+        let route = match &mut self.top {
+            Some(Top::Settings(s)) => s.take_seerr_route(),
+            None if self.tab == 0 => self.home.take_admin_open().then_some(SeerrRoute::Admin),
+            _ => None,
+        };
         let hit = match &mut self.top {
             Some(Top::Page(p)) => p.take_seerr(),
             None if self.tab == 3 => self.search.take_seerr(),
+            None if self.tab == 0 => self.home.take_seerr(),
             _ => None,
         };
-        let (Some(hit), Some(w)) = (hit, self.live.clone()) else {
+        let Some(w) = self.live.clone() else {
             return;
         };
-        let Some(page) = PageScreen::seerr_live(self.env, self.cx.clone(), &w, hit) else {
+        let page = if let Some(route) = route {
+            match route {
+                SeerrRoute::Requests => PageScreen::requests_live(self.env, self.cx.clone(), &w),
+                SeerrRoute::Admin => PageScreen::admin_live(self.env, self.cx.clone(), &w),
+                SeerrRoute::Issues => {
+                    PageScreen::admin_live_on(self.env, self.cx.clone(), &w, true)
+                }
+            }
+        } else if let Some(hit) = hit {
+            PageScreen::seerr_live(self.env, self.cx.clone(), &w, hit)
+        } else {
+            None
+        };
+        let Some(mut page) = page else {
             return;
         };
+        page.set_server_tab(matches!(self.top, Some(Top::Settings(_))));
         let mut top = Top::Page(Box::new(page.with_images(Rc::clone(&w.hub))));
         let pe = self.page_env();
         on_top!(&mut top, s => s.set_env(pe));
@@ -1839,7 +1918,7 @@ impl Suite {
         let (tap, tile) = match &mut self.top {
             Some(Top::Detail(d)) => (d.take_person(), d.take_tile()),
             Some(Top::Series(s)) => (s.take_person(), s.take_tile()),
-            Some(Top::Page(p)) => (None, p.take_tile()),
+            Some(Top::Page(p)) => (p.take_person(), p.take_tile()),
             _ => return,
         };
         if tap.is_some() && self.live.is_none() {
@@ -1951,6 +2030,11 @@ impl Suite {
         self.fade_in_only = std::mem::take(&mut self.left_downloads);
     }
 
+    /// Whether the Downloads page is still fading in (tests).
+    pub fn downloads_fade_running(&self) -> bool {
+        self.page_fade.is_some()
+    }
+
     /// Whether the running area fade only fades the new page in (tests).
     pub fn fade_in_only(&self) -> bool {
         self.fade.is_some() && self.fade_in_only
@@ -2057,6 +2141,7 @@ impl Suite {
                     *w.next_kind.borrow_mut() = t.kind.clone();
                     *w.last_title.borrow_mut() = (t.id.clone(), t.name.clone());
                     *w.next_spec.borrow_mut() = t.spec.clone();
+                    *w.seed_tile.borrow_mut() = None;
                 }
                 self.fresh_season = None;
                 self.push_page(
@@ -2213,15 +2298,6 @@ impl Suite {
         if self.curtain.is_some() {
             return;
         }
-        // The version dialog is modal: every click belongs to it.
-        if self.version_dialog.0.is_open() {
-            match self.version_dialog.0.click(x, y) {
-                Some(crate::desk::VersionClick::Pick(i)) => self.pick_version(Some(i)),
-                Some(crate::desk::VersionClick::Cancel) => self.pick_version(None),
-                _ => {}
-            }
-            return;
-        }
         if self.player.is_none() && self.together_ui.open() {
             self.together_ui.touch_down(x, y, now);
             return;
@@ -2260,7 +2336,9 @@ impl Suite {
         if self.env.idiom == swiftly_ui::Idiom::Desktop && self.discord.hits(x - self.side(), y) {
             match self.discord.click(x - self.side(), y) {
                 Some(crate::desk::CardTap::Join) => {
-                    crate::signin_flows::open_url(crate::effects::DISCORD_URL);
+                    crate::effects::post(crate::effects::Effect::OpenUrl(
+                        crate::effects::DISCORD_URL.to_owned(),
+                    ));
                     self.discord.set_open(false);
                 }
                 Some(crate::desk::CardTap::Close) => self.discord.set_open(false),
@@ -2513,10 +2591,6 @@ impl Suite {
 
     /// Back (Esc, mouse back button): closes a sheet or the keyboard first, then pops the title page.
     pub fn back(&mut self, now: f64) -> bool {
-        if self.version_dialog.0.is_open() {
-            self.pick_version(None);
-            return true;
-        }
         if self.player.is_none() && self.together_ui.open() {
             self.together_ui.escape();
             return true;
@@ -2622,6 +2696,13 @@ impl Suite {
                 self.show(Top::Downloads(Box::new(screen)), now);
                 true
             }
+            // "Fassung wählen…": the title page in front opens the version list of its Play button (Menu key, Shift+F10,
+            // Ctrl+Enter). False when no page is in front or it has nothing to choose.
+            "cmd.versions" => match &mut self.top {
+                Some(Top::Detail(d)) => d.open_versions_at_play(true),
+                Some(Top::Series(s)) => s.open_versions_at_play(true),
+                _ => false,
+            },
             "cmd.back" => self.back(now),
             "cmd.forward" => self.forward(now),
             "cmd.quit" => {
@@ -3052,7 +3133,9 @@ impl Suite {
         *was_open = open;
         match self.home.take_support_tap() {
             Some(crate::home::SupportTap::Open) => {
-                let _ = crate::signin_flows::open_url(crate::support_card::SUPPORTER_PAGE);
+                crate::effects::post(crate::effects::Effect::OpenUrl(
+                    crate::support_card::SUPPORTER_PAGE.to_owned(),
+                ));
             }
             Some(crate::home::SupportTap::Snooze) => {
                 card.snooze(wall);
@@ -3076,6 +3159,21 @@ impl Suite {
             let (id, _) = w.last_title.borrow().clone();
             self.film_read = crate::live_downloads::film_read(&w.core, &w.account, &id, anchor);
             self.busy_until = self.busy_until.max(now + 2500.0);
+        }
+        // A tile menu's "Laden" (Home, libraries, search, rails): the same read, the sheet centred. One read at a time;
+        // the other picks wait their turn.
+        if self.film_read.is_none()
+            && let Some(w) = &self.live
+        {
+            let mut picks = crate::desk::take_download_requests();
+            if !picks.is_empty() {
+                let id = picks.remove(0);
+                for rest in picks {
+                    crate::desk::request_download(&rest);
+                }
+                self.film_read = crate::live_downloads::film_read(&w.core, &w.account, &id, None);
+                self.busy_until = self.busy_until.max(now + 2500.0);
+            }
         }
         let Some(read) = self.film_read.take() else {
             return;
@@ -3209,6 +3307,7 @@ impl Suite {
                     *w.next_kind.borrow_mut() = found.kind.clone();
                     *w.last_title.borrow_mut() = (found.id.clone(), found.title.clone());
                     *w.next_spec.borrow_mut() = swiftly_vm::SeriesSpec::default();
+                    *w.seed_tile.borrow_mut() = None;
                 }
                 let target = crate::title_target::Target {
                     series: found.series_page(),
@@ -3486,9 +3585,27 @@ impl Suite {
         for screen in [&self.movies, &self.series, &self.watch] {
             requests.extend(screen.vm().take_requests());
         }
+        // The Home menu's writes that have been answered no longer need their view model.
+        crate::tile_menu::prune(&mut self.tile_writers);
         for line in self.home.take_requests() {
             let mut parts = line.splitn(3, ':');
             match (parts.next(), parts.next(), parts.next()) {
+                // The writes of the Home menu: the same `DetailVm` intents the Mac's `setWatched` and `setWatchlist` run
+                // (removing from Continue Watching is the core's `HomeIntent::RemoveFromContinue`, sent by the page).
+                (Some(name @ ("Watched" | "Unwatched" | "Remember")), Some(id), flag) => {
+                    let entry = match name {
+                        "Watched" => crate::tile_menu::Entry::Watched,
+                        "Unwatched" => crate::tile_menu::Entry::Unwatched,
+                        _ => crate::tile_menu::Entry::Remember,
+                    };
+                    if let Some(tile) = self.home.tile_of(id) {
+                        // "Remember" carries the way its row was labelled ("Merken" / "Nicht mehr merken"): the write
+                        // is what the row promised, whatever the badge says by now.
+                        let favourite = crate::tile_menu::favourite_of_request(flag, &tile);
+                        let cx = crate::tile_menu::rail_cx(false, favourite);
+                        let _ = crate::tile_menu::run(&entry, &tile, &cx, &mut self.tile_writers);
+                    }
+                }
                 (Some("Together"), Some(id), _) => requests.push(R::Together { id: id.to_owned() }),
                 (Some("PlayOn"), Some(id), Some(device)) => requests.push(R::PlayOn {
                     id: id.to_owned(),
@@ -3539,21 +3656,6 @@ impl Suite {
         self.starting = None;
         let (Some(w), true) = (&self.live, self.player.is_none()) else {
             return;
-        };
-        let done = match done {
-            // Several versions (Plex): the title page shows its version sheet; elsewhere the first version plays.
-            Ok(crate::live_play::Prepared::Choose(ask)) => {
-                if let Some(Top::Detail(d)) = &mut self.top {
-                    d.offer_versions(ask.item_id, ask.since, ask.versions);
-                } else {
-                    // Anywhere else the shell asks, like the Mac's `.versionChoice` on its main view.
-                    let labels = ask.versions.iter().map(|v| v.label.clone()).collect();
-                    self.version_dialog.0.set(Some(labels));
-                    self.version_dialog.1 = Some(ask);
-                }
-                return;
-            }
-            other => other,
         };
         let opened_id = done
             .as_ref()
@@ -3629,37 +3731,6 @@ impl Suite {
         self.hint.show(text, now);
     }
 
-    /// Whether the version dialog is open.
-    pub fn version_dialog_open(&self) -> bool {
-        self.version_dialog.0.is_open()
-    }
-
-    /// Opens the version dialog for a title (tests; the app opens it when a start comes back with several versions).
-    pub fn ask_versions(&mut self, ask: crate::live_play::VersionAsk) {
-        let labels = ask.versions.iter().map(|v| v.label.clone()).collect();
-        self.version_dialog.0.set(Some(labels));
-        self.version_dialog.1 = Some(ask);
-    }
-
-    /// Closes the version dialog; with a pick the title starts on that version.
-    fn pick_version(&mut self, pick: Option<usize>) {
-        self.version_dialog.0.set(None);
-        let Some(ask) = self.version_dialog.1.take() else {
-            return;
-        };
-        let (Some(i), Some(w)) = (pick, self.live.clone()) else {
-            return;
-        };
-        if let Some(v) = ask.versions.get(i) {
-            let req = crate::live_play::PlayRequest {
-                item_id: ask.item_id.clone(),
-                since: ask.since,
-                source_id: Some(v.id.clone()),
-            };
-            self.starting = Some(w.core.prepare_play(&w.account, req));
-        }
-    }
-
     /// Shows `text` in the strip for what went wrong with the shared session (above the tile strip).
     pub fn show_shared_error(&mut self, text: &str, now: f64) {
         self.hint.show_in(crate::desk::Strip::Shared, text, now);
@@ -3680,14 +3751,6 @@ impl Suite {
         // under it, and the player draws no curtain: a curtain left up would swallow every click of the player.
         if self.player.is_some() {
             self.curtain = None;
-        }
-        if let Some(p) = &self.genres
-            && let Ok(mut names) = p.0.try_recv()
-        {
-            // The chips row shows the first dozen genres (it scrolls on the Mac; here the row has the width of the page).
-            names.truncate(8);
-            self.home.set_chips(names);
-            self.genres = None;
         }
         let (mut list, mut more) = self.frame_pages(now);
         more |= self.frame_stage(&mut list, now);
@@ -3714,10 +3777,6 @@ impl Suite {
             let (card, card_wants) = self.discord.frame(now);
             list.append_shifted(&card, self.side());
             wants |= card_wants || self.nudge.is_some();
-            self.version_dialog.0.set_env(self.env);
-            let (dialog, dialog_wants) = self.version_dialog.0.frame(now);
-            list.append_shifted(&dialog, 0.0);
-            wants |= dialog_wants;
             let mut curtain_wants = false;
             if let Some(c) = &mut self.curtain {
                 match c.frame(now) {
@@ -3811,6 +3870,7 @@ impl Suite {
         self.sync_mine(now);
         self.sync_home_settings(now);
         self.refresh_home_if_stale();
+        self.sync_seerr_home();
         self.refresh_hover(now);
         // The sections behind the one in front read their libraries too, so none opens on skeleton tiles.
         for (i, screen) in [
@@ -3868,7 +3928,10 @@ impl Suite {
 
             if let (Some(t0), Some(Top::Downloads(_))) = (self.page_fade, &self.top) {
                 // Downloads appears like a section change: its content fades in over the page it replaces.
-                let e = (now - t0) / 1000.0;
+                // Like `base_frame`: the curve carries the Mac's 0.12 s delay (the old page's time to leave), and Downloads
+                // has no old page that leaves, so the fade starts at once. With the delay kept the page showed nothing
+                // for 0.12 s and then needed 0.22 s more: a slow, late fade next to the 0.22 s of every other page.
+                let e = (now - t0) / 1000.0 + Id::SectionOut.curve().settle_seconds();
                 let curve = Id::SectionIn.curve();
                 if e < curve.settle_seconds() {
                     over.fade(curve.progress(e) as f32);
@@ -3888,6 +3951,18 @@ impl Suite {
             } else {
                 None
             };
+            // One trace line per frame of a push or pop (`Werkzeuge/desktop-live/stack-trace-check.py` reads them): whether the
+            // page below was drawn.
+            if crate::script::tracing() && (below.is_some() || !covers) {
+                crate::script::trace(&format!(
+                    "stack below={:?} covers={covers} under={} under_quads={:?} over_quads={} slide={}",
+                    below.map(|b| b.0),
+                    self.under.len(),
+                    under_page.as_ref().map(|p| p.quads().len()),
+                    over.quads().len(),
+                    self.slide.is_some()
+                ));
+            }
             self.after_top();
             if covers && off == 0.0 {
                 return (over, wants_top);
@@ -3950,13 +4025,6 @@ impl Suite {
         // The together panel is modal over the whole window (it takes every click and key): it alone is reachable.
         if self.player.is_none() && self.together_ui.open() {
             return ("Gemeinsam", self.together_ui.a11y_nodes());
-        }
-        // The version choice is modal over the whole window (clicks beside it cancel): it alone is reachable.
-        if self.version_dialog.0.is_open() {
-            return (
-                crate::desk::VERSION_TITLE,
-                self.version_dialog.0.a11y_nodes(),
-            );
         }
         let (title, mut nodes) = self.a11y_pages();
         // The player covers the whole window: its nodes are already in window points, with no sidebar beside them.
@@ -4046,6 +4114,15 @@ impl Suite {
         }
     }
 
+    /// Why the screen on top wants the next frame (for the frame statistics): the player says exactly, any other page
+    /// is "page".
+    pub fn frame_reason(&self) -> &'static str {
+        match &self.player {
+            Some(p) => p.frame_reason().unwrap_or("shell"),
+            None => "page",
+        }
+    }
+
     /// Whether a frame is wanted without a new event.
     pub fn wants_frame(&self) -> bool {
         if self.stage.is_some()
@@ -4109,23 +4186,6 @@ fn collect_side(
     }
 }
 
-/// Two sample versions for the version dialog (the live script's `ask-versions` step and the tests).
-pub fn sample_versions() -> crate::live_play::VersionAsk {
-    let v = |id: &str, label: &str| swiftly_vm::VersionOption {
-        id: id.to_owned(),
-        name: label.to_owned(),
-        label: label.to_owned(),
-    };
-    crate::live_play::VersionAsk {
-        item_id: "sample".into(),
-        since: 0.0,
-        versions: vec![
-            v("a", "Kinofassung \u{b7} 2160p \u{b7} HEVC \u{b7} 18,6 GB"),
-            v("b", "Extended \u{b7} 1080p \u{b7} H.264 \u{b7} 9,2 GB"),
-        ],
-    }
-}
-
 #[cfg(test)]
 mod player_resize_tests {
     use super::*;
@@ -4174,5 +4234,43 @@ mod player_resize_tests {
         let full = Env::new(Size::new(2560.0, 1440.0), 1.5, Idiom::Desktop);
         s.set_env(full);
         assert_eq!(width(&mut s, 16.0), 2560.0);
+    }
+}
+
+#[cfg(test)]
+mod sidebar_panel_tests {
+    use super::*;
+    use crate::nav_machine::Selected;
+    use swiftly_layout::Size;
+    use swiftly_ui::Idiom;
+
+    /// A page pushed over the open Settings panel (Profile > "Meine Anfragen", the management pages) keeps the profile
+    /// row selected: the sidebar follows the panel underneath, not the tab behind it.
+    #[test]
+    fn a_page_opened_from_settings_keeps_settings_selected() {
+        let env = Env::new(Size::new(1280.0, 800.0), 1.5, Idiom::Desktop);
+        let mut s = Suite::new(env, Cx::deterministic());
+        assert!(s.open_settings(0.0));
+        s.resync_nav();
+        assert_eq!(s.selected(), Selected::Settings);
+        // The same push as `check_seerr` makes for the requests page.
+        let mut page = Top::Page(Box::new(PageScreen::new(
+            env,
+            s.cx.clone(),
+            PageKind::Genre,
+            Scenario::Ready,
+        )));
+        on_top!(&mut page, p => p.open(100.0));
+        let prev = s.top.take().expect("the settings panel");
+        s.under.push(prev);
+        s.top = Some(page);
+        s.resync_nav();
+        assert_eq!(s.selected(), Selected::Settings, "page over Settings");
+        // Back to the panel and then closed: the tab row is selected again.
+        let page = s.top.take();
+        drop(page);
+        s.top = s.under.pop();
+        s.resync_nav();
+        assert_eq!(s.selected(), Selected::Settings, "panel again");
     }
 }

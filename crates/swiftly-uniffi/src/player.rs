@@ -34,6 +34,7 @@ use swiftly_vm::{
 use crate::core::Platform;
 use crate::error::CoreError;
 use crate::library::TextKeys;
+use crate::player_menus::{PlayerMenuAction, PlayerMenus, PlayerMenusInputs};
 use crate::stores::KeyValueStore;
 use crate::transport::ForeignTransport;
 
@@ -466,6 +467,9 @@ pub struct PlayerStream {
     pub is_forced: bool,
     pub is_external: bool,
     pub is_hearing_impaired: bool,
+    /// Jellyfin 12's `IsOriginal`: the server marks this track as the title's original-language track.
+    #[uniffi(default = false)]
+    pub is_original: bool,
 }
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
@@ -680,6 +684,7 @@ pub enum PlayerPanel {
     Tracks,
     Episodes,
     Settings,
+    Chapters,
 }
 
 impl From<PlayerPanel> for PlayerLayer {
@@ -688,6 +693,7 @@ impl From<PlayerPanel> for PlayerLayer {
             PlayerPanel::Tracks => Self::Tracks,
             PlayerPanel::Episodes => Self::Episodes,
             PlayerPanel::Settings => Self::Settings,
+            PlayerPanel::Chapters => Self::Chapters,
         }
     }
 }
@@ -697,6 +703,7 @@ fn panel(l: PlayerLayer) -> PlayerPanel {
         PlayerLayer::Tracks => PlayerPanel::Tracks,
         PlayerLayer::Episodes => PlayerPanel::Episodes,
         PlayerLayer::Settings => PlayerPanel::Settings,
+        PlayerLayer::Chapters => PlayerPanel::Chapters,
     }
 }
 
@@ -720,6 +727,10 @@ pub enum PlayerIntent {
     Panel {
         panel: Option<PlayerPanel>,
     },
+    /// A row of the chapter list was chosen (`PlayerChapterRow.index`): seeks to its start and closes the panel.
+    JumpToChapter {
+        index: u32,
+    },
     SelectAudio {
         index: i64,
     },
@@ -730,6 +741,12 @@ pub enum PlayerIntent {
     SubtitleDelay {
         milliseconds: i64,
     },
+    /// A press of an offset button of the menu (`PlayerMenu.offset_steps[].step_ms`).
+    SubtitleOffsetStep {
+        step_ms: i32,
+    },
+    /// The reset button of the subtitle offset.
+    SubtitleOffsetReset,
     AudioDelay {
         milliseconds: i64,
     },
@@ -745,6 +762,8 @@ pub enum PlayerIntent {
     Sleep {
         minutes: Option<u32>,
     },
+    /// Sleep timer "Ende dieser Folge": pauses when the running episode ends.
+    SleepEndOfEpisode,
     PressOffering,
     /// Esc/Menu: closes the card, then a panel, then the controls, then the player.
     Dismiss,
@@ -782,11 +801,14 @@ impl From<PlayerIntent> for VmIntent {
             PlayerIntent::ToggleControls => Self::ToggleControls,
             PlayerIntent::WakeControls => Self::WakeControls,
             PlayerIntent::Panel { panel } => Self::Layer(panel.map(Into::into)),
+            PlayerIntent::JumpToChapter { index } => Self::JumpToChapter(index as usize),
             PlayerIntent::SelectAudio { index } => Self::SelectAudio(index),
             PlayerIntent::SelectSubtitle { index } => Self::SelectSubtitle(index),
             PlayerIntent::SubtitleDelay { milliseconds } => {
                 Self::SubtitleDelay(Delay::from_milliseconds(milliseconds))
             }
+            PlayerIntent::SubtitleOffsetStep { step_ms } => Self::SubtitleOffsetStep(step_ms),
+            PlayerIntent::SubtitleOffsetReset => Self::SubtitleOffsetReset,
             PlayerIntent::AudioDelay { milliseconds } => {
                 Self::AudioDelay(Delay::from_milliseconds(milliseconds))
             }
@@ -794,6 +816,7 @@ impl From<PlayerIntent> for VmIntent {
             PlayerIntent::Volume { percent } => Self::Volume(percent),
             PlayerIntent::Fill { on } => Self::Fill(on),
             PlayerIntent::Sleep { minutes } => Self::Sleep(minutes),
+            PlayerIntent::SleepEndOfEpisode => Self::SleepEndOfEpisode,
             PlayerIntent::PressOffering => Self::PressOffering,
             PlayerIntent::Dismiss => Self::Back2,
             PlayerIntent::NextEpisode => Self::NextEpisode,
@@ -864,6 +887,29 @@ pub struct PlayerPreview {
     pub height: i64,
 }
 
+/// One row of the chapter panel.
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct PlayerChapterRow {
+    /// Sent back as `PlayerIntent::JumpToChapter`.
+    pub index: u32,
+    /// The server's name, shown as it is; `None`: the host shows `PlayerChapters.number_title` with `number`.
+    pub name: Option<String>,
+    pub number: i64,
+    /// Start in seconds.
+    pub start: f64,
+    /// Trickplay tile at the start (the same one the scrubber previews).
+    pub preview: Option<PlayerPreview>,
+    pub current: bool,
+}
+
+/// The chapter panel; `title` and `number_title` are German catalog keys the host translates.
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct PlayerChapters {
+    pub title: String,
+    pub number_title: String,
+    pub rows: Vec<PlayerChapterRow>,
+}
+
 #[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
 pub struct PlayerQuality {
     pub direct_play: bool,
@@ -903,6 +949,68 @@ pub struct PlayerTracks {
     pub subtitles_off: bool,
     pub audio_delay_ms: i64,
     pub subtitle_delay_ms: i64,
+}
+
+/// One speed row of the player menu.
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct PlayerSpeedRow {
+    /// Send back as `PlayerIntent::Tempo`.
+    pub value: f32,
+    /// German catalog key "Normal" for 1x, else "1,25×" with the host's separator.
+    pub label: String,
+    pub selected: bool,
+}
+
+/// One subtitle-offset button of the player menu.
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+pub struct PlayerOffsetStepRow {
+    /// Send back as `PlayerIntent::SubtitleOffsetStep`.
+    pub step_ms: i32,
+    pub label: String,
+}
+
+/// The speed and subtitle-offset rows of the player menu: one model for every platform; a host draws these rows
+/// and sends the matching intent. Titles and `reset_label` are German catalog keys the host translates.
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct PlayerMenu {
+    pub speed_title: String,
+    pub speeds: Vec<PlayerSpeedRow>,
+    pub offset_title: String,
+    pub offset_ms: i64,
+    pub offset_text: String,
+    pub offset_steps: Vec<PlayerOffsetStepRow>,
+    pub reset_label: String,
+    pub can_reset: bool,
+}
+
+impl From<swiftly_vm::PlayerMenu> for PlayerMenu {
+    fn from(m: swiftly_vm::PlayerMenu) -> Self {
+        Self {
+            speed_title: m.speed_title.to_owned(),
+            speeds: m
+                .speeds
+                .into_iter()
+                .map(|r| PlayerSpeedRow {
+                    value: r.value,
+                    label: r.label,
+                    selected: r.selected,
+                })
+                .collect(),
+            offset_title: m.offset_title.to_owned(),
+            offset_ms: m.offset_ms,
+            offset_text: m.offset_text,
+            offset_steps: m
+                .offset_steps
+                .into_iter()
+                .map(|r| PlayerOffsetStepRow {
+                    step_ms: r.step_ms,
+                    label: r.label,
+                })
+                .collect(),
+            reset_label: m.reset_label.to_owned(),
+            can_reset: m.can_reset,
+        }
+    }
 }
 
 #[derive(uniffi::Enum, Clone, Debug, PartialEq)]
@@ -1509,6 +1617,59 @@ impl PlayerVm {
         }
     }
 
+    /// The chapter list (empty rows: no chapter button).
+    pub fn chapters(&self) -> PlayerChapters {
+        let part = self.inner.vm.chapters();
+        PlayerChapters {
+            title: part.title.to_owned(),
+            number_title: part.number_title.to_owned(),
+            rows: part
+                .rows
+                .into_iter()
+                .map(|r| PlayerChapterRow {
+                    index: r.index as u32,
+                    name: r.name,
+                    number: r.number,
+                    start: r.start,
+                    preview: r.preview.map(|t| PlayerPreview {
+                        sheet: t.sheet,
+                        x: t.x,
+                        y: t.y,
+                        width: t.width,
+                        height: t.height,
+                    }),
+                    current: r.current,
+                })
+                .collect(),
+        }
+    }
+
+    /// The speed and subtitle-offset rows; `decimal_separator` is the host locale's ("," or ".").
+    pub fn menu(&self, decimal_separator: String) -> PlayerMenu {
+        self.inner.vm.menu(&decimal_separator).into()
+    }
+
+    /// Every menu of the player (options, speed, sleep, picture, quality, group, tracks, subtitle look, timing,
+    /// episodes, handoff) in one read; texts are catalogue keys (`PlayerMenuWords`), every press a `PlayerMenuAction`.
+    /// Read it when a sheet opens and when the player, season, group, look or device list changes.
+    pub fn menus(&self, inputs: PlayerMenusInputs) -> PlayerMenus {
+        self.inner.vm.menus(&inputs.into()).into()
+    }
+
+    /// A press in a menu. A `Player` action is carried out here (`None` comes back); any other action (navigation,
+    /// settings, group, system) is returned unchanged for the host to carry out: `Open` -> show that level, `Look` ->
+    /// store the look, `TechBadge` -> store the setting, `LeaveGroup`, `LockScreen`, `ReportProblem`, `SearchSubtitles`,
+    /// `SelectSeason` -> the series model's season choice, `Handoff` -> the takeover, `AirPlay` -> the route picker.
+    pub fn press_menu(&self, action: PlayerMenuAction) -> Option<PlayerMenuAction> {
+        match action {
+            PlayerMenuAction::Player { intent } => {
+                self.send(intent);
+                None
+            }
+            other => Some(other),
+        }
+    }
+
     pub fn offer(&self) -> PlayerOffer {
         match self.inner.vm.offer().view {
             OfferView::Hidden => PlayerOffer::Hidden,
@@ -1540,6 +1701,12 @@ impl PlayerVm {
     /// This model replaces one that reloaded the title after a quality choice (call before `start`).
     pub fn after_quality_switch(&self) {
         self.inner.vm.after_quality_switch();
+    }
+
+    /// The host got no plan for `StartEpisode` / `ReloadForSubtitle`: the old title comes back (playing or paused at
+    /// the same position, or still over) with one hint, and nothing asks again by itself.
+    pub fn switch_failed(&self) {
+        self.inner.vm.switch_failed(self.inner.now());
     }
 
     /// Replaces the title (after `StartEpisode`, once the host has the next plan).
@@ -1699,6 +1866,7 @@ mod tests {
             is_forced: false,
             is_external: false,
             is_hearing_impaired: false,
+            is_original: false,
         }]
     }
 

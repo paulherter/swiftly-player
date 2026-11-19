@@ -286,6 +286,60 @@ struct MainView: View {
         }
         #if DEBUG
         .task {
+            // Proof hook: `-SwiftlyLiveSection 1` starts on that bar area (0 start, 1 movies, 2 series ...).
+            let args = ProcessInfo.processInfo.arguments
+            guard let at = args.firstIndex(of: "-SwiftlyLiveSection"), at + 1 < args.count,
+                  let raw = Int(args[at + 1]), let area = Region(rawValue: raw) else { return }
+            section = area
+        }
+        .task {
+            // Proof hook (Werkzeuge/sheet-ride-run.sh): `-SwiftlyLiveOpenTitle movie:2002` opens a Seerr title page cold.
+            let args = ProcessInfo.processInfo.arguments
+            guard let at = args.firstIndex(of: "-SwiftlyLiveOpenTitle"), at + 1 < args.count else { return }
+            let parts = args[at + 1].split(separator: ":")
+            guard parts.count == 2, let id = Int(parts[1]) else { return }
+            try? await Task.sleep(for: .seconds(4))
+            paths[section.rawValue].append(SeerrHit(id: id, art: String(parts[0]), title: "", year: nil,
+                                                    posterPath: nil, backdropPath: nil, state: .opened))
+        }
+        .task {
+            // Proof hook (Werkzeuge/detail-frames-run.sh): `-SwiftlyLiveOpenItem Series:s1` opens a detail page from a bare
+            // item (id and type only, no seed text), like a row that carries nothing but the title.
+            let args = ProcessInfo.processInfo.arguments
+            guard let at = args.firstIndex(of: "-SwiftlyLiveOpenItem"), at + 1 < args.count else { return }
+            let parts = args[at + 1].split(separator: ":")
+            guard parts.count == 2 else { return }
+            let after = args.firstIndex(of: "-SwiftlyLiveOpenAfterMs").flatMap { args.indices.contains($0 + 1) ? Int(args[$0 + 1]) : nil } ?? 4000
+            let item = Item(id: String(parts[1]), name: "", type: String(parts[0]))
+            // `-SwiftlyLiveWarmMs 500`: the finger-down warm-up of the head picture that many ms before the page opens (a real
+            // press-to-page takes about that long); without it the run shows the page asking for its picture itself.
+            let warm = args.firstIndex(of: "-SwiftlyLiveWarmMs").flatMap { args.indices.contains($0 + 1) ? Int(args[$0 + 1]) : nil }
+            try? await Task.sleep(for: .milliseconds(max(0, after - (warm ?? 0))))
+            if let warm {
+                NSLog("Livelauf head warm")
+                if let head = model.core.headPictureAhead(session: model.session, item: item) { ImageCache.shared.warmHead(head, height: Theme.heroHeightValue) }
+                try? await Task.sleep(for: .milliseconds(warm))
+            }
+            NSLog("Livelauf open item")
+            paths[section.rawValue].append(item)
+        }
+        .task {
+            // Proof hook: `-SwiftlyOpenProfile` opens the Profile page, `-SwiftlyOpenManagement` the management hub behind its one row.
+            let args = ProcessInfo.processInfo.arguments
+            let hub = args.contains("-SwiftlyOpenManagement")
+            guard hub || args.contains("-SwiftlyOpenProfile") else { return }
+            try? await Task.sleep(for: .seconds(4))
+            guard hub else { paths[section.rawValue].append(ProfileRoute()); return }
+            let flow = ManagementEntryFlow()
+            for _ in 0..<30 {
+                await flow.load(model)
+                if flow.entry != nil { break }
+                try? await Task.sleep(for: .seconds(1))
+            }
+            guard let entry = flow.entry else { return }
+            paths[section.rawValue].append(ManagementHubRoute(entry))
+        }
+        .task {
             guard AccountSwitchRun.an else { return }
             try? await Task.sleep(for: .seconds(4))
             AccountSwitchTransition.note("selbsttest: profil oeffnen")
@@ -315,13 +369,6 @@ struct MainView: View {
             guard new != nil, let wish = tileRequest.play else { return }
             tileRequest.play = nil
             takeoverRequest = wish
-        }
-        // A tile menu on a title with several versions asks which one.
-        .versionChoice($tileRequest.choice) { choice, version in
-            PlayRequest.start(choice, picking: version, model: model, prepares: .constant(false),
-                              missing: { tileRequest.message = String(localized: "Der Server hat keine Datei zu diesem Titel.") }) {
-                takeoverRequest = $0
-            }
         }
         // **Sent from another client** (dashboard, web client): the same player again, from
         // every section; a running one is replaced.
@@ -366,6 +413,7 @@ struct MainView: View {
         // binding to nil does not reach `PlayerCover` while the frame covers this view (SwiftUI pauses updates
         // of a view that is not in a window), so a second title never opened.
         .task {
+            LiveRun.showRegion = { name in section = Region.allCases.first { String(describing: $0) == name } ?? .start }
             LiveRun.start(model, open: { takeoverRequest = $0 },
                           close: { if let frame = PlayerFrame.active { frame.close() } else { takeoverRequest = nil } },
                           look: { show in
@@ -579,6 +627,21 @@ extension View {
             .navigationDestination(for: SeerrRoute.self) { _ in
                 SeerrSettingsView(model: model, seerr: model.seerr)
             }
+            .navigationDestination(for: SeerrRequestsRoute.self) { _ in
+                RequestsView(model: model)
+            }
+            .navigationDestination(for: SeerrIssuesRoute.self) { _ in
+                AdminIssuesView(model: model)
+            }
+            .navigationDestination(for: SeerrAdminRoute.self) { _ in
+                AdminQueueView(model: model)
+            }
+            .navigationDestination(for: ManagementHubRoute.self) { route in
+                ManagementHubView(model: model, route: route)
+            }
+            .navigationDestination(for: ServerLogsRoute.self) { _ in
+                ServerLogsView(model: model)
+            }
             .navigationDestination(for: PlaybackRoute.self) { _ in
                 PlaybackSettingsView(model: model)
             }
@@ -769,6 +832,12 @@ struct LibraryView: View {
         // the new one. `load()` explains why a cancellation is not a failure
         // here.
         .task(id: "\(state.identifier)|\(model.accountSwitch)") { await loadAlone() }
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: LiveRun.libraryCommand)) { note in
+            guard let command = note.object as? LiveRun.LibraryCommand, command.art == art else { return }
+            liveCommand(command)
+        }
+        #endif
         // **A row heading on the home page asked for this page in an order.** A page that is
         // already built does not read the store again; changing the order here reloads it
         // through the identifier above, as a tap on the sort chip would.
@@ -799,6 +868,41 @@ struct LibraryView: View {
             newLoad()
         }
     }
+
+    #if DEBUG
+    /// The `filter` live scenario (`LiveRun.scenarioFilter`) works the page the way a user does: open the sheet, tap a row, read the list.
+    private func liveCommand(_ command: LiveRun.LibraryCommand) {
+        switch command.action {
+        case "open": filterListOpen = true; command.report = [:]
+        case "close": filterListOpen = false; command.report = [:]
+        case "rows":
+            let rows = state.sheetRows(offered: offeredFilter)
+            command.report = ["rows": rows.map { "\($0.heading ?? "")|\($0.label)|\($0.selected ? "x" : "")" },
+                              "loading": rows.contains { $0.label == "\u{2026}" }]
+        case "pick":
+            let row = state.sheetRows(offered: offeredFilter).first { liveMatches($0, command.value) }
+            if let row { state.choose(row); filterListOpen = false }
+            command.report = ["found": row != nil]
+        default:
+            command.report = ["loads": state.loads, "identifier": state.identifier, "total": state.total, "pill": state.pillText,
+                              "ids": state.items.map(\.id), "years": state.items.map { $0.productionYear ?? 0 }]
+        }
+    }
+
+    /// `years:2010-2019`, `years:none`, `language:deu`, `language:none`, `status:ungesehen` against a sheet row.
+    private func liveMatches(_ row: LibraryModel.SheetRow, _ want: String) -> Bool {
+        #if canImport(SwiftlyCore)
+        switch row.pick {
+        case .years(let years)?: return want == "years:" + (years.map { "\($0.from)-\($0.to)" } ?? "none")
+        case .language(let language)?: return want == "language:" + (language ?? "none")
+        case .status(let value)?: return want == "status:" + LibraryFilter(rust: value).rawValue
+        case nil: return false
+        }
+        #else
+        return false
+        #endif
+    }
+    #endif
 
     private func content(usableNow: CGFloat) -> some View {
         let count = Theme.columns(usableNow: usableNow, wide: wide)

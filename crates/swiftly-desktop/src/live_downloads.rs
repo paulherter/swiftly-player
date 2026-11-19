@@ -231,7 +231,7 @@ impl Inner {
             }
             let r = match tokio::time::timeout(STALL, req.send()).await {
                 Ok(Ok(r)) => r,
-                Ok(Err(e)) => return self.failed(&parts, e.to_string()),
+                Ok(Err(e)) => return self.failed(&parts, transfer_reason(e)),
                 Err(_) => return self.failed(&parts, "Zeitüberschreitung."),
             };
             match r.status().as_u16() {
@@ -286,7 +286,7 @@ impl Inner {
                         return self.failed(&parts, "Zeitüberschreitung.");
                     }
                 }
-                Ok(Err(e)) => return self.failed(&parts, e.to_string()),
+                Ok(Err(e)) => return self.failed(&parts, transfer_reason(e)),
                 Ok(Ok(Some(chunk))) => {
                     quiet_since = Instant::now();
                     if std::io::Write::write_all(&mut file, &chunk).is_err() {
@@ -680,6 +680,21 @@ fn catch_up_covers(core: &Core, account: &AccountRef, vm: &DownloadsVm<Dyn>) {
     });
 }
 
+/// The sentence for a failed transfer, in the app's words (the library's own text is English: "error decoding response
+/// body"): the same mapping every other call goes through.
+fn transfer_reason(e: reqwest::Error) -> String {
+    crate::live::say(&swiftly_net::map_reqwest_error(e))
+}
+
+/// Whether `account` has a copy of title `id` on this device or one queued or running (the Mac's
+/// `downloads.entries(for:) != nil`): such a title offers no "Laden".
+pub fn on_device(dir: &Path, account: &str, id: &str) -> bool {
+    load_list(std::fs::read(dir.join("liste.json")).ok().as_deref())
+        .items
+        .iter()
+        .any(|i| i.account == account && i.id == id)
+}
+
 /// The finished download `id` of `account`: the item and the path of its file.
 pub fn finished(dir: &Path, account: &str, id: &str) -> Option<(DownloadItem, PathBuf)> {
     let items = load_list(std::fs::read(dir.join("liste.json")).ok().as_deref()).items;
@@ -911,14 +926,22 @@ pub fn film_request(
     poster: Option<String>,
 ) -> crate::load_sheets::LoadRequest {
     let src = swiftly_downloads::item::first_source(item);
+    let episode = item.type_.as_deref() == Some("Episode");
     let mut d = DownloadItem::new(
         item.id.clone(),
         account,
-        Art::Film,
+        if episode { Art::Episode } else { Art::Film },
         item.name.clone(),
         src.and_then(|s| s.size).unwrap_or(0),
         now,
     );
+    if episode {
+        // Like the season sheet's rows: the series, its id and the numbers, so the Downloads page files it under its show.
+        d.series = item.series_name.clone();
+        d.series_identifier = item.series_id.clone();
+        d.season = item.parent_index_number;
+        d.episode = item.index_number;
+    }
     d.runtime_ticks = item.run_time_ticks;
     d.container = src.and_then(|s| s.container.clone());
     d.source = src.and_then(|s| s.id.clone());
@@ -1010,7 +1033,11 @@ pub fn film_read(
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0.0, |d| d.as_secs_f64());
         let request = crate::live_server::item(&server, &id).await.ok().map(|i| {
-            let poster = poster_address(&server, &i);
+            let poster = if i.type_.as_deref() == Some("Episode") {
+                picture_address(&server, &i, Look::Still)
+            } else {
+                poster_address(&server, &i)
+            };
             film_request(&i, &key, now, anchor, poster)
         });
         let _ = tx.send(request);
@@ -1048,6 +1075,61 @@ mod tests {
         );
         assert_eq!(got[0].0, DownloadItem::image_name("acc", "e1"));
         assert!(missing_covers(&dir, &[], &url).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_transfer_is_worded_in_german_never_with_the_librarys_english() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        // A refused connection: reqwest says "error sending request for url (...)".
+        let e = rt
+            .block_on(reqwest::Client::new().get("http://127.0.0.1:1/x").send())
+            .unwrap_err();
+        let english = e.to_string();
+        let said = transfer_reason(e);
+        assert!(!said.is_empty() && said != english, "{said:?}");
+        assert!(!said.contains("error sending request"), "{said:?}");
+        assert!(
+            !said.contains("127.0.0.1"),
+            "an address is no user text: {said:?}"
+        );
+    }
+
+    #[test]
+    fn an_episode_request_files_the_title_under_its_series_and_a_queued_title_is_on_the_device() {
+        let item: swiftly_model::Item = serde_json::from_str(
+            r#"{"Id":"e9","Name":"Folge","Type":"Episode","SeriesName":"Serie","SeriesId":"s9","ParentIndexNumber":2,"IndexNumber":3,"MediaSources":[{"Id":"src","Container":"mkv","Size":10}]}"#,
+        )
+        .unwrap();
+        let crate::load_sheets::LoadRequest::Add { items, .. } =
+            film_request(&item, "acc", 1.0, None, None)
+        else {
+            panic!("a single title is an Add request");
+        };
+        let d = &items[0];
+        assert_eq!(d.art, Art::Episode);
+        assert_eq!(
+            (
+                d.series.as_deref(),
+                d.series_identifier.as_deref(),
+                d.season,
+                d.episode
+            ),
+            (Some("Serie"), Some("s9"), Some(2), Some(3))
+        );
+        // The list on disk: any state counts as "on the device", for that account only.
+        let dir = std::env::temp_dir().join(format!("swiftly-ondevice-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!on_device(&dir, "acc", "e9"));
+        let queued = DownloadItem::new("e9", "acc", Art::Episode, "Folge", 1, 1.0);
+        std::fs::write(dir.join("liste.json"), encode_list(&[queued]).unwrap()).unwrap();
+        assert!(on_device(&dir, "acc", "e9"));
+        assert!(!on_device(&dir, "other", "e9"));
+        assert!(!on_device(&dir, "acc", "e1"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

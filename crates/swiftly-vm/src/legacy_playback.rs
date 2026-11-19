@@ -18,7 +18,9 @@ use swiftly_playback::device_profile::Flavour;
 use swiftly_playback::original_audio;
 use swiftly_playback::track_label::{self, LabelText, codec_name_value, codec_name_value_vlc_id};
 use swiftly_playback::track_mapping::{PlayerTrack, SubtitleFile, TrackImprint, TrackMapping};
-use swiftly_playback::track_rule::{self, Choice, Subtitle, SubtitleInput};
+use swiftly_playback::track_rule::{
+    self, Choice, LanguageWishes, OriginalStep, Subtitle, SubtitleInput,
+};
 use swiftly_rules::buffer_level::BufferLevel;
 use swiftly_rules::chapter::{Chapter, ChapterBar};
 use swiftly_rules::playback_levels::bitrate_limit_of;
@@ -238,6 +240,39 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
         f(&mut self.state.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
+    /// The speed and subtitle-offset rows of the player menu, built by the same function as [`crate::PlayerVm::menu`]
+    /// ([`crate::player_menu::build`]): every platform lists the same speeds and steps. `tempo` is the speed the host plays at,
+    /// `offset_ms` the subtitle offset it applies (positive: the text comes later).
+    pub fn menu(&self, tempo: f32, offset_ms: i64) -> crate::PlayerMenu {
+        crate::player_menu::build(
+            tempo,
+            offset_ms,
+            crate::decimal_separator(self.host.locale.language()),
+        )
+    }
+
+    /// The offset after one step button (`step_ms` from the menu's rows): clamped and rounded like the player view model.
+    pub fn menu_offset_step(&self, offset_ms: i64, step_ms: i32) -> i64 {
+        crate::player_menu::stepped(offset_ms, step_ms).milliseconds()
+    }
+
+    /// The offset remembered for a title (`title` is the item id); `memory_json` is the host's stored dictionary
+    /// (title to milliseconds).
+    pub fn menu_offset_remembered(&self, memory_json: &str, title: &str) -> Option<i64> {
+        crate::player_menu::remembered(&offset_memory(memory_json), title).map(|d| d.milliseconds())
+    }
+
+    /// The memory dictionary after the title's offset changed; zero removes the entry.
+    pub fn menu_offset_remember(&self, memory_json: &str, title: &str, offset_ms: i64) -> String {
+        let mut all = offset_memory(memory_json);
+        crate::player_menu::write(
+            &mut all,
+            title,
+            swiftly_rules::delay::Delay::from_milliseconds(offset_ms),
+        );
+        serde_json::to_string(&all).unwrap_or_default()
+    }
+
     /// `Kern.playbackSelection`.
     pub fn playback_selection(&self, always_direct_play: bool, megabit: i64) {
         self.locked(|s| {
@@ -288,6 +323,13 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
         self.locked(|s| s.ordered = Some((item_id.to_owned(), TrackIndices { audio, subtitle })));
     }
 
+    /// The subtitle a host switches on at the next load of this title, by the server's stream index (the track the subtitle
+    /// search added; `None` takes the order back). The audio of an earlier order stays. The same order as one from
+    /// another client: the plan carries it and `tracks_select` maps it to the player's track, whatever the track is called.
+    pub fn order_subtitle(&self, item_id: &str, subtitle: Option<i64>) {
+        self.locked(|s| s.ordered = Some(order_with_subtitle(s.ordered.take(), item_id, subtitle)));
+    }
+
     /// The plan of a title without setting anything (`playbackFetch`): the old playback stays until a new one is installed.
     pub(crate) async fn fetch(
         &self,
@@ -324,6 +366,7 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
                 audio_language: String::new(),
                 subtitle_language: String::new(),
                 automatic_subtitles: false,
+                device_language: None,
                 max_bitrate: bitrate_limit_of(always, megabit),
                 buffer_level: BufferLevel::Normal,
                 frame_rate_match: false,
@@ -631,6 +674,7 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
         automatic: bool,
         audio_memory: &str,
         subtitle_memory: &str,
+        device_language: &str,
     ) -> String {
         let audio_tracks = tracks(audio);
         let sub_tracks = tracks(subtitle);
@@ -645,21 +689,39 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
             let audio_all = memory(audio_memory);
             let remembered_audio = track_rule::read_audio(&audio_all, &title);
             let ordered = s.ordered.as_ref().filter(|(item, _)| *item == ready.item.id).map(|(_, t)| *t);
-            let mut audio_index = track_rule::audio(
+            let device = Some(device_language).filter(|d| !d.is_empty());
+            let pick = track_rule::audio_pick(
                 &streams,
                 remembered_audio.as_ref(),
-                audio_wish,
+                &LanguageWishes {
+                    setting: audio_wish,
+                    device,
+                    original: OriginalStep::On(ready.item.original_language.as_deref()),
+                },
                 source.and_then(|m| m.default_audio_stream_index),
                 ordered.and_then(|o| o.audio),
+                &|_| true,
             );
+            let mut audio_index = pick.and_then(|p| p.index);
+            // Whether the language of the device chose the audio (a forced track of another language then stays off).
+            let mut audio_by_device = pick.is_some_and(|p| p.by == track_rule::AudioBy::Device);
             let mut audio_id: Option<i64> = None;
             if let Some(position) = audio_index.and_then(|i| z.audio_position(i)) {
                 audio_id = Some(audio_tracks[position].id);
             } else {
-                if !audio_wish.is_empty()
-                    && let Some(hit) = audio_tracks.iter().find(|t| swiftly_rules::language::fits(&t.name, audio_wish))
+                // The tracks could not be matched to the server's: the name of the player's track stands in
+                // for the language of the setting, else of the device.
+                audio_by_device = false;
+                let wanted = if audio_wish.is_empty() {
+                    device.and_then(track_rule::device_language_key).unwrap_or_default()
+                } else {
+                    audio_wish.to_owned()
+                };
+                if !wanted.is_empty()
+                    && let Some(hit) = audio_tracks.iter().find(|t| swiftly_rules::language::fits(&t.name, &wanted))
                 {
                     audio_id = Some(hit.id);
+                    audio_by_device = audio_wish.is_empty();
                 }
                 let ongoing = audio_id.unwrap_or(audio_now);
                 audio_index = audio_tracks.iter().position(|t| t.id == ongoing).and_then(|p| z.audio.get(p).copied().flatten());
@@ -671,8 +733,10 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
                     server_default: source.and_then(|m| m.default_subtitle_stream_index),
                     automatic,
                     audio_index,
+                    audio_by_device,
                     audio_wish,
                     preferred_language: subtitle_preference,
+                    device_language: device,
                     ordered: ordered.and_then(|o| o.subtitle),
                 },
             );
@@ -907,6 +971,23 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
         })
     }
 
+    /// `Kern.chapterList`: the chapter panel's rows as `{"titel","nummerTitel","kapitel":[{"index","name","nummer","start","jetzt"}]}`
+    /// (`name` is `null` when the file names none: the host shows `nummerTitel` with `nummer`). `at` is the playing
+    /// position, which marks the running chapter. Empty `kapitel` without chapters (no chapter tab then).
+    pub fn chapter_list(&self, at: f64) -> String {
+        let chapters = self.locked(|s| s.chapters.clone());
+        let now = ChapterBar::chapter_at(at, &chapters).map(|c| c.from);
+        let rows: Vec<_> = chapters
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                json!({"index": i, "name": Some(c.name.clone()).filter(|n| !n.is_empty()), "nummer": i + 1,
+                       "start": c.from, "jetzt": now == Some(c.from)})
+            })
+            .collect();
+        json!({"titel": "Kapitel", "nummerTitel": "Kapitel %lld", "kapitel": rows}).to_string()
+    }
+
     /// `Kern.chapterPiece`: the piece of the bar containing a fraction, -1 without one.
     pub fn chapter_piece(&self, share: f64, duration: f64, width: f64, min_width: f64) -> i64 {
         let pieces = self.pieces(duration, width, min_width);
@@ -975,7 +1056,7 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
             let plan = &ready.plan;
             let mut rows = vec![json!({
                 "text": tech::delivery(plan.method, &localizer),
-                "art": if tech::weight(plan.method) == tech::Weight::Good { "gut" } else { "warnend" },
+                "art": crate::core_words::info_art::of(tech::weight(plan.method) == tech::Weight::Good),
                 "kopf": true,
             })];
             let join = |values: Vec<Option<String>>| {
@@ -1145,8 +1226,60 @@ fn file_url(path: &str) -> String {
     out
 }
 
+/// The stored offset dictionary (title to milliseconds as text); anything unreadable is empty.
+fn offset_memory(json: &str) -> std::collections::HashMap<String, String> {
+    serde_json::from_str(json).unwrap_or_default()
+}
+
+/// An order for `item_id` with `subtitle` set and the audio of an earlier order for the same title kept.
+fn order_with_subtitle(
+    earlier: Option<(String, TrackIndices)>,
+    item_id: &str,
+    subtitle: Option<i64>,
+) -> (String, TrackIndices) {
+    let audio = earlier
+        .filter(|(item, _)| item == item_id)
+        .and_then(|(_, t)| t.audio);
+    (item_id.to_owned(), TrackIndices { audio, subtitle })
+}
+
+#[cfg(test)]
+mod order_tests {
+    use super::*;
+
+    #[test]
+    fn a_subtitle_order_keeps_the_audio_of_the_same_title_only() {
+        let earlier = Some((
+            "a".to_owned(),
+            TrackIndices {
+                audio: Some(2),
+                subtitle: Some(7),
+            },
+        ));
+        let (item, t) = order_with_subtitle(earlier.clone(), "a", Some(5));
+        assert_eq!(
+            (item.as_str(), t.audio, t.subtitle),
+            ("a", Some(2), Some(5))
+        );
+        let (_, t) = order_with_subtitle(earlier.clone(), "a", None);
+        assert_eq!((t.audio, t.subtitle), (Some(2), None));
+        let (item, t) = order_with_subtitle(earlier, "b", Some(5));
+        assert_eq!((item.as_str(), t.audio, t.subtitle), ("b", None, Some(5)));
+        let (_, t) = order_with_subtitle(None, "a", Some(5));
+        assert_eq!((t.audio, t.subtitle), (None, Some(5)));
+    }
+}
+
 #[cfg(test)]
 mod slab_tests {
+    #[test]
+    fn the_offset_memory_reads_a_stored_dictionary_and_survives_garbage() {
+        let all = super::offset_memory(r#"{"film-1":"1000"}"#);
+        assert_eq!(all.get("film-1").map(String::as_str), Some("1000"));
+        assert!(super::offset_memory("not json").is_empty());
+        assert!(super::offset_memory("{}").is_empty());
+    }
+
     #[test]
     fn file_url_encodes_like_the_old_url() {
         assert_eq!(

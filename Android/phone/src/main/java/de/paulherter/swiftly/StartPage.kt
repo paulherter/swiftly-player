@@ -93,7 +93,9 @@ data class Rail(val title: String, val key: String?, val landscape: Boolean, val
                  val library: String? = null,
                  /** New movies and new series: the area (`movies`, `tvshows`) and the order the header
                      opens it in (`StartRail.libraryJump`). */
-                 val jumpArt: String? = null, val jumpSorting: String? = null)
+                 val jumpArt: String? = null, val jumpSorting: String? = null,
+                 /** The row id in the core's Home order (`StartOrder`): a fixed row's raw value or `library:<id>`; empty for genre rows. */
+                 val id: String = "")
 
 /** Reads the answer of `Kern.home`; the rows are already finished there. */
 internal fun railsRead(json: String): List<Rail> {
@@ -106,7 +108,7 @@ internal fun railsRead(json: String): List<Rail> {
         val library = r.optString("bibliothek").takeIf { r.has("bibliothek") && !r.isNull("bibliothek") && it.isNotEmpty() }
         val jumpArt = r.optString("sprungArt").takeIf { r.has("sprungArt") && !r.isNull("sprungArt") && it.isNotEmpty() }
         val jumpSorting = r.optString("sprungSortierung").takeIf { r.has("sprungSortierung") && !r.isNull("sprungSortierung") && it.isNotEmpty() }
-        Rail(title, key, r.getBoolean("quer"), library = library, jumpArt = jumpArt, jumpSorting = jumpSorting,
+        Rail(title, key, r.getBoolean("quer"), id = r.optString("kennung"), library = library, jumpArt = jumpArt, jumpSorting = jumpSorting,
              tiles = (0 until tiles.length()).map { k ->
             val o = tiles.getJSONObject(k)
             Tile(o.getString("id"), o.getString("name"), o.getString("typ"),
@@ -130,6 +132,20 @@ internal fun railsRead(json: String): List<Rail> {
     }
 }
 
+/**
+ * The rows without the tiles just removed from "Continue watching" (`SwiftlyApplication.continueHidden`); a row that
+ * runs empty goes away with them. Continue Watching is the landscape row, as everywhere in this file.
+ */
+internal fun List<Rail>.withoutRemoved(gone: Set<String>): List<Rail> =
+    if (gone.isEmpty()) this
+    else map { r -> if (r.landscape) r.copy(tiles = r.tiles.filter { it.id !in gone }) else r }.filter { it.tiles.isNotEmpty() }
+
+/** A load that no longer lists a removed title ends its hiding; one that still does keeps it hidden until the server catches up. */
+internal fun SwiftlyApplication.continueHiddenAfterLoad(fresh: List<Rail>) {
+    val listed = fresh.filter { it.landscape }.flatMap { r -> r.tiles.map { it.id } }.toSet()
+    continueHidden.value = continueHidden.value.filter { it in listed }.toSet()
+}
+
 /** What the home rows depend on in the settings; the same key on the phone and the TV. */
 internal fun startKey(e: Settings): String =
     listOf(e.newAccessDisconnected, e.startRails, e.startOut, e.startGenres, e.genreChips, e.startLibraries.map { it.id }).joinToString("|")
@@ -144,15 +160,14 @@ internal fun startFresh(app: SwiftlyApplication, key: String): Boolean =
 
 /**
  * **From Continue Watching straight into playback** (`starte` in `HomeView`): fetch the position
- * fresh, the one from the list is often stale; a title with several versions asks which one (issue 33).
+ * fresh, the one from the list is often stale; a title with several versions starts the default one (long press on Play picks).
  * Without a plan the tap goes to the detail page. True = handled.
  */
 internal suspend fun continueWatchingAsking(app: SwiftlyApplication, id: String): Boolean {
     val loaded = runCatching { titleRead(withContext(Dispatchers.IO) { app.rk.title(id).await() }) }.getOrNull()
     if (loaded == null) { app.message.value = translated("Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal."); return true }
     if (!loaded.planPresent) return false
-    // The full title is in hand, so its versions are known: several of them ask, one plays (issue 33).
-    playOrChoose(app, loaded, id, loaded.resumeFrom)
+    playDefault(app, id, loaded.resumeFrom)
     return true
 }
 
@@ -174,6 +189,7 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
     }
     var error by remember { mutableStateOf<String?>(null) }
     val e = app.settings
+    val seerr = remember(app) { SeerrHomeFlow(app) }
     // How many loads are on their way. The lifecycle effect below fires on the very first composition as
     // well, next to the effect for the settings; without this a cold start fetched every row twice
     // (`HomeModel.runningRuns` on Apple).
@@ -182,6 +198,7 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
         // During an account switch, that reloads, not the return to the page that coincides with it.
         if (AccountSwitchTransition.waits && !AccountSwitchTransition.switched) return
         running++
+        run.launch { seerr.load() }
         val key = startKey(e)
         try {
             val json = withContext(Dispatchers.IO) {
@@ -189,7 +206,7 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
                                     app.store.rememberValue("bibliothek-movies").orEmpty(), app.store.rememberValue("bibliothek-tvshows").orEmpty(),
                                     e.startGenres.toTypedArray(), e.genreChips, e.startLibrariesJson()).await()
             }
-            rails = railsRead(json).also { app.startRails = it }
+            rails = railsRead(json).also { app.startRails = it; app.continueHiddenAfterLoad(it) }
             app.startLoaded = System.currentTimeMillis()
             app.startKey = key
             error = null
@@ -199,6 +216,9 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
             running--
         }
     }
+    // The two Seerr switches (settings) and the order change the block: the core reads it again with the new values.
+    val seerrSwitches = StartOrderStore.version.intValue.let { seerrArrivalOn(app) to seerrRequestsOn(app) }
+    LaunchedEffect(app.seerrConnected.value, seerrSwitches) { seerr.load() }
     // Reload as soon as order, hidden rows or genres change; on entering the page only when it is due.
     LaunchedEffect(startKey(e)) { if (!startFresh(app, startKey(e))) load() }
     // **Refetch after watching, with no grace period**: Continue Watching is certainly stale then.
@@ -280,13 +300,22 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
             if (e.genreChips && e.startGenres.isNotEmpty() && !switches) item(key = "gattungschips") {
                 Box(Modifier.railEntrance(0)) { GenreChips(e.startGenres) { g -> open(Destination(g, g, "Genre")) } }
             }
-            val visible = if (switches) emptyList() else rails ?: emptyList()
-            itemsIndexed(visible, key = { _, r -> (r.library?.let { "bib$it" } ?: r.title) }) { i, rail ->
-                RailView(rail, open, libraryJump, if (rail.landscape) { k -> continueWatching(k) } else null, afterwards,
-                             Modifier.animateItem(fadeInSpec = Motion.reveal(), placementSpec = null, fadeOutSpec = null).railEntrance(i + 1))
+            // The rows in the core's Home order (`startReihenfolge`): Seerr's two sections stand where the user put them, and the
+            // block holds its room (skeleton cards) until Seerr answers, so the rows below never move.
+            val shown = if (switches || seerr.holdsPage()) emptyList() else (rails ?: emptyList()).withoutRemoved(app.continueHidden.value)
+            val layout = if (switches || seerr.holdsPage()) emptyList() else homeLayout(app, shown, seerr)
+            items(layout, key = { row -> when (row) {
+                is HomeRowItem.RailRow -> (row.rail.library?.let { "bib$it" } ?: row.rail.title)
+                is HomeRowItem.SeerrRow -> "seerr-${row.part}"
+            } }) { row ->
+                when (row) {
+                    is HomeRowItem.SeerrRow -> SeerrHomePartView(app, seerr, row.part, open)
+                    is HomeRowItem.RailRow -> RailView(row.rail, open, libraryJump, if (row.rail.landscape) { k -> continueWatching(k) } else null, afterwards,
+                        Modifier.animateItem(fadeInSpec = Motion.reveal(), placementSpec = null, fadeOutSpec = null).railEntrance(row.index + 1))
+                }
             }
             // "Support Swiftly" at the very end, only when the package says so (`SupportPrompt`).
-            if (visible.isNotEmpty()) item(key = "unterstuetzen") {
+            if (shown.isNotEmpty()) item(key = "unterstuetzen") {
                 Box(Modifier.padding(top = 4.dp)) { de.paulherter.swiftly.support.SupportHomeCard(app) }
             }
         }

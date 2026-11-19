@@ -29,6 +29,8 @@ enum UserEvent {
     Extra(crate::window_extras::Event),
     /// A button of the system's media widgets or a headset was pressed (sent from the system's thread).
     Media,
+    /// The player's engine has something new (a picture, a property, an end): see `Running::video_wake`.
+    Video,
 }
 
 impl From<accesskit_winit::Event> for UserEvent {
@@ -65,6 +67,10 @@ enum Acquired {
 }
 
 /// How long to wait before asking a covered window or a failing surface for an image again.
+/// How old the held picture of the interface may get while a film plays and only its engine wakes the window: the pace
+/// of the idle poll, so a clock, a progress bar or an end of file never wait longer than that.
+const VIDEO_UI_PERIOD_MS: f64 = 250.0;
+
 const RETRY_MS: f64 = 100.0;
 
 /// The wgpu side of the window.
@@ -79,6 +85,16 @@ struct Gpu {
     lost: Arc<std::sync::atomic::AtomicBool>,
     /// The video layer under the UI; `None` = the player screen copies frames into the image page (CPU path).
     video: Option<crate::frame_surface::GpuVideoHost>,
+    /// Milliseconds the last `draw` spent recording and submitting the picture, and handing the image to the swap chain.
+    last_render_ms: f64,
+    last_present_ms: f64,
+    /// Same, for what `draw` does before the renderer (view, video sync, window corner).
+    last_prelude_ms: f64,
+    /// `SWIFTLY_DESKTOP_TRACE_GPU=1`: wait for the graphics hardware after every picture, to see how long it really runs
+    /// (the swap-chain refit of the next resize otherwise waits for it unseen). Slows the app down; measuring only.
+    probe_gpu: bool,
+    last_gpu_ms: f64,
+    last_draw_ms: f64,
 }
 
 impl Gpu {
@@ -87,19 +103,36 @@ impl Gpu {
         window: Arc<Window>,
         opts_dump: bool,
     ) -> Result<Gpu, String> {
-        let mut desc = wgpu::InstanceDescriptor::new_with_display_handle(Box::new(
-            event_loop.owned_display_handle(),
-        ));
-        desc.backends = wgpu::Backends::VULKAN
+        let build = |backends: wgpu::Backends| -> Result<_, String> {
+            let mut desc = wgpu::InstanceDescriptor::new_with_display_handle(Box::new(
+                event_loop.owned_display_handle(),
+            ));
+            // The standard wgpu switch (`WGPU_BACKEND=dx12`) still picks the graphics API, for measuring one against another.
+            desc.backends = wgpu::Backends::from_env().unwrap_or(backends);
+            let instance = wgpu::Instance::new(desc);
+            let surface = instance
+                .create_surface(Arc::clone(&window))
+                .map_err(|e| format!("create_surface: {e}"))?;
+            let ctx = pollster::block_on(GpuContext::from_instance(&instance, Some(&surface)))
+                .map_err(|e| e.to_string())?;
+            Ok((instance, surface, ctx))
+        };
+        let all = wgpu::Backends::VULKAN
             | wgpu::Backends::DX12
             | wgpu::Backends::METAL
             | wgpu::Backends::GL;
-        let instance = wgpu::Instance::new(desc);
-        let surface = instance
-            .create_surface(Arc::clone(&window))
-            .map_err(|e| format!("create_surface: {e}"))?;
-        let ctx = pollster::block_on(GpuContext::from_instance(&instance, Some(&surface)))
-            .map_err(|e| e.to_string())?;
+        // Vulkan first only when the Windows video GPU way is asked for (it shares images with the engine through Vulkan's
+        // Win32 memory export); DX12 and the rest stay as the way out. Every other case tries all backends, as before.
+        let (instance, surface, ctx) = if swiftly_render::vulkan_first() {
+            build(wgpu::Backends::VULKAN).or_else(|e| {
+                eprintln!(
+                    "swiftly-desktop: no Vulkan adapter for the window ({e}); trying the others"
+                );
+                build(all)
+            })?
+        } else {
+            build(all)?
+        };
         let size = window.inner_size();
         let mut config = ctx
             .surface_config(&surface, size.width.max(1), size.height.max(1))
@@ -149,6 +182,8 @@ impl Gpu {
                     flag.store(true, std::sync::atomic::Ordering::SeqCst);
                 }
             });
+        #[cfg(all(feature = "mpv", any(target_os = "linux", windows)))]
+        crate::dmabuf_import::announce(&ctx);
         let video =
             crate::frame_surface::GpuVideoHost::new(ctx.device().limits().max_texture_dimension_2d);
         Ok(Gpu {
@@ -160,6 +195,12 @@ impl Gpu {
             renderer,
             config,
             lost,
+            last_render_ms: 0.0,
+            last_present_ms: 0.0,
+            last_prelude_ms: 0.0,
+            probe_gpu: std::env::var_os("SWIFTLY_DESKTOP_TRACE_GPU").is_some(),
+            last_gpu_ms: 0.0,
+            last_draw_ms: 0.0,
         })
     }
 
@@ -206,6 +247,7 @@ impl Gpu {
         shell: &Shell,
         dump: Option<&std::path::Path>,
     ) -> Result<(), String> {
+        let draw_began = Instant::now();
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -229,13 +271,24 @@ impl Gpu {
         } else {
             CLEAR
         };
+        let render_began = Instant::now();
+        self.last_prelude_ms = render_began.duration_since(draw_began).as_secs_f64() * 1000.0;
         shell.with_sources(|src| self.renderer.draw(list, &view, size, ground, src));
+        self.last_render_ms = render_began.elapsed().as_secs_f64() * 1000.0;
+        if self.probe_gpu {
+            let gpu_began = Instant::now();
+            let _ = self.ctx.device().poll(wgpu::PollType::wait_indefinitely());
+            self.last_gpu_ms = gpu_began.elapsed().as_secs_f64() * 1000.0;
+        }
         // The readback copies the very texture that is presented next: what the swapchain shows.
         let dumped = dump.map(|path| {
             crate::dump::dump_texture(&self.ctx, &frame.texture, self.config.format, path)
         });
         self.window.pre_present_notify();
+        let present_began = Instant::now();
         self.ctx.queue().present(frame);
+        self.last_present_ms = present_began.elapsed().as_secs_f64() * 1000.0;
+        self.last_draw_ms = draw_began.elapsed().as_secs_f64() * 1000.0;
         dumped.unwrap_or(Ok(()))
     }
 }
@@ -248,6 +301,13 @@ struct Running {
     continuous: bool,
     /// The redraw was asked by the idle poll of the real app (not by input): it presents only if the picture changed.
     idle_poll: bool,
+    /// The engine woke the window since the last frame (a new picture or a property of the film), and nothing else did
+    /// (`other`): the frame may reuse the last built picture of the interface and only bring the video up to date.
+    video_wake: bool,
+    /// Something other than the engine asked for a frame (input, a window event, another view model's answer).
+    other: bool,
+    /// The last built picture of the interface while a film plays and nothing animates, and when it was built (ms).
+    held: Option<(DrawList, f64)>,
     /// Fingerprint of the last picture an idle poll looked at.
     last_fp: Option<u64>,
     size_px: (u32, u32),
@@ -266,6 +326,8 @@ struct Running {
     cursor_hidden: bool,
     /// The system's media widgets (SMTC, MPRIS); only in the real app.
     media: Option<crate::media_keys::MediaSync<crate::os_media::OsMedia>>,
+    /// Addresses whose activation token the compositor has not answered yet (`browser_open`).
+    opening: crate::browser_open::Waiting<winit::event_loop::AsyncRequestSerial>,
 }
 
 /// The native window handle SMTC needs (`None` off Windows).
@@ -278,6 +340,21 @@ fn hwnd_of(window: &Window) -> Option<*mut std::ffi::c_void> {
 }
 
 impl Running {
+    /// Opens an address in the browser with this window's activation token, so an already running browser comes to
+    /// the front (Wayland/X11, see `browser_open`); where there is no token the opener starts at once.
+    fn open_url(&mut self, url: String, now_ms: f64) {
+        #[cfg(target_os = "linux")]
+        if std::env::var_os("SWIFTLY_NO_BROWSER").is_none() {
+            use winit::platform::startup_notify::WindowExtStartupNotify;
+            if let Ok(serial) = self.window.request_activation_token() {
+                self.opening.add(serial, url, now_ms);
+                return;
+            }
+        }
+        let _ = now_ms;
+        let _ = crate::signin_flows::open_url(&url);
+    }
+
     /// Publishes the tree of the screen in front when a screen reader is connected.
     fn publish_tree(&mut self) {
         let (title, nodes) = self.shell.a11y_nodes();
@@ -295,6 +372,8 @@ struct App {
     proxy: EventLoopProxy<UserEvent>,
     opts: Options,
     start: Instant,
+    /// Total time the scripted shots took (see [`App::now`]).
+    shot_pause: Duration,
     run: Option<Running>,
     stats: Option<FrameStats>,
     mods: ModifiersState,
@@ -306,6 +385,8 @@ struct App {
     touch_next: usize,
     /// `--script`: the steps still to run, and the frame a step asked to dump.
     script: Option<crate::script::Script>,
+    /// The `anchor` step's point (window points) for `move-from`.
+    script_anchor: Option<(f64, f64)>,
     shot: Option<std::path::PathBuf>,
     /// Single instance, launches, input-to-present timer.
     extras: crate::window_extras::Extras,
@@ -327,6 +408,14 @@ struct App {
     /// A scale change happened: the title bar's dark mode is set again with the resize that follows it (Windows
     /// resets it while it moves the window to the new scale).
     retheme: bool,
+    /// Time from a `Resized` event to the frame presented at that size (printed with `SWIFTLY_DESKTOP_TRACE=1`).
+    resize_latency: crate::resize_latency::ResizeLatency,
+    /// A resize asked for a redraw that has not run yet (the fallback draws when it never comes).
+    resize_fallback: crate::window_rules::ResizeFallback,
+    /// `SWIFTLY_RESIZE_BENCH`: the window drags itself, for the nested compositor of the live checks.
+    resize_bench: Option<crate::resize_latency::ResizeBench>,
+    /// The last step of the bench was asked for at this time (ms); the summary follows after a pause.
+    bench_done_at: Option<f64>,
     /// Keeps the Wayland toplevel icon alive (the compositor needs its buffers as long as the window shows it).
     #[cfg(all(
         unix,
@@ -336,13 +425,25 @@ struct App {
 }
 
 impl App {
+    /// The app clock in ms. Time spent writing a scripted `shot` (a 4K readback plus PNG encode, 200 to 350 ms) is left
+    /// out, so a series of shots shows consecutive frames of an animation and not one frame per 300 ms of it.
     fn now(&self) -> f64 {
-        self.start.elapsed().as_secs_f64() * 1000.0
+        (self.start.elapsed().saturating_sub(self.shot_pause)).as_secs_f64() * 1000.0
+    }
+
+    /// The wall-clock instant of the app-clock time `ms` (see [`App::now`]): every wake-up deadline goes through here.
+    fn instant_of(&self, ms: f64) -> Instant {
+        wall_deadline(self.start, self.shot_pause, ms)
     }
 
     fn redraw(&mut self, event_loop: &ActiveEventLoop) {
+        let entered = Instant::now();
         let now_ms = self.now();
-        self.retry_at = None;
+        if self.verbose_events {
+            eprintln!("swiftly-desktop: redraw at {now_ms:.1} ms");
+        }
+        self.resize_fallback.drawn();
+        let retried = self.retry_at.take().is_some();
         self.run_script(event_loop, now_ms);
         self.note_quit(event_loop);
         let Some(run) = self.run.as_mut() else { return };
@@ -374,7 +475,13 @@ impl App {
         let full = run.window.fullscreen().is_some();
         run.shell.set_fullscreen(full);
         for e in run.shell.take_effects() {
-            crate::effects::perform(&e);
+            match e {
+                crate::effects::Effect::OpenUrl(url) => run.open_url(url, now_ms),
+                other => crate::effects::perform(&other),
+            }
+        }
+        for url in run.opening.expired(now_ms) {
+            let _ = crate::signin_flows::open_url(&url);
         }
         // The system's media widgets: tell them what plays, and let their buttons drive the player.
         if let Some(m) = run.media.as_mut() {
@@ -392,21 +499,35 @@ impl App {
             run.window.set_cursor_visible(!hide);
         }
         let scale = run.window.scale_factor() as f32;
-        if (size.width, size.height) != run.size_px || (scale - run.scale).abs() > f32::EPSILON {
+        let size_changed = (size.width, size.height) != run.size_px;
+        // Where the milliseconds of this frame go (printed with `SWIFTLY_DESKTOP_TRACE=1`).
+        let (mut t_refit, mut t_shell) = (0.0f64, 0.0f64);
+        let redraw_began = Instant::now();
+        let t_head = redraw_began.duration_since(entered).as_secs_f64() * 1000.0;
+        if size_changed || (scale - run.scale).abs() > f32::EPSILON {
             run.size_px = (size.width, size.height);
             run.scale = scale;
+            let refit_began = Instant::now();
             run.gpu.resize(size.width, size.height);
+            t_refit = refit_began.elapsed().as_secs_f64() * 1000.0;
+            if size_changed {
+                self.resize_latency.configure_cost(t_refit);
+            }
+            let shell_began = Instant::now();
             run.shell.resize(run.size_px, scale);
+            t_shell = shell_began.elapsed().as_secs_f64() * 1000.0;
         }
         // The idle poll of the real app only looks: build the picture, and present nothing when it equals the last one
         // (acquiring and presenting a swap-chain image four times a second cost 4.7 % of a core on a Windows machine).
+        let announce_began = Instant::now();
         if let Some(host) = &run.gpu.video {
             host.announce(&run.shell.video(), run.size_px);
         }
+        let t_announce = announce_began.elapsed().as_secs_f64() * 1000.0;
         let mut pre: Option<(DrawList, bool)> = None;
         if std::mem::take(&mut run.idle_poll) && self.shot.is_none() {
-            let at = Instant::now().duration_since(self.start).as_secs_f64() * 1000.0;
-            let (list, more) = run.shell.frame(at);
+            // The same clock as every other frame: a wall-clock time here ran ahead of it by the shots' pause.
+            let (list, more) = run.shell.frame(now_ms);
             let fp = fingerprint(&list);
             if !more && run.last_fp == Some(fp) {
                 return;
@@ -416,7 +537,13 @@ impl App {
         } else {
             run.last_fp = None;
         }
-        let (frame, refit) = match run.gpu.acquire() {
+        let acquire_began = Instant::now();
+        let acquired = run.gpu.acquire();
+        let t_acquire = acquire_began.elapsed().as_secs_f64() * 1000.0;
+        if size_changed {
+            self.resize_latency.acquire_wait(t_acquire);
+        }
+        let (frame, refit) = match acquired {
             Acquired::Frame(f, refit) => {
                 self.retries = 0;
                 (f, refit)
@@ -427,7 +554,7 @@ impl App {
                 return;
             }
             Acquired::Retry | Acquired::Later => {
-                if self.stats.is_some() {
+                if self.stats.is_some() || self.verbose_events {
                     eprintln!(
                         "swiftly-desktop: no surface image now (window covered or surface busy), asking again"
                     );
@@ -438,11 +565,50 @@ impl App {
         };
         // The clock is read after the (vsync-blocking) acquire, so frame times are vsync-aligned.
         let began = Instant::now();
-        let now = began.duration_since(self.start).as_secs_f64() * 1000.0;
+        let now = began
+            .duration_since(self.start)
+            .saturating_sub(self.shot_pause)
+            .as_secs_f64()
+            * 1000.0;
+        let layout_began = Instant::now();
+        // A film plays and only its engine woke the window: the interface did not change, so the last built picture of it
+        // is drawn again over the new video picture instead of laying out and painting the whole tree at the video's
+        // rate. The interface is built anew when anything else asked, when it animates, and at the idle poll's pace
+        // (a clock, a progress bar, an end of file arrive through the same wake).
+        let reuse = run.video_wake
+            && !run.other
+            && !run.continuous
+            && !retried
+            && !size_changed
+            && pre.is_none()
+            && self.shot.is_none()
+            && self.opts.dump_frame.is_none()
+            && self.resize_bench.is_none()
+            && run
+                .held
+                .as_ref()
+                .is_some_and(|(_, at)| now - *at < VIDEO_UI_PERIOD_MS && now >= *at);
+        let mut built_at = now;
         let (list, more) = match pre.take() {
             Some(p) => p,
-            None => run.shell.frame(now),
+            None if reuse => match run.held.take() {
+                Some((list, at)) => {
+                    built_at = at;
+                    // The interface is the old one, the video picture must not be: without this the host drops the
+                    // video layer in this draw (no live player seen) and the picture stands still.
+                    run.shell.player_video_step();
+                    (list, false)
+                }
+                None => run.shell.frame(now),
+            },
+            None => {
+                crate::stats::UI_BUILDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                run.shell.frame(now)
+            }
         };
+        run.video_wake = false;
+        run.other = false;
+        let t_layout = layout_began.elapsed().as_secs_f64() * 1000.0;
         self.frames_drawn += 1;
         while let Some(&(at, code, x, y)) = self.opts.touch_script.get(self.touch_next)
             && at <= self.frames_drawn
@@ -455,7 +621,13 @@ impl App {
             (self.opts.dump_frame.as_deref())
                 .filter(|_| !self.dumped && self.frames_drawn >= self.opts.after_frames.max(1))
         });
-        match run.gpu.draw(frame, &list, &run.shell, dump) {
+        let draw_began = Instant::now();
+        let drawn = run.gpu.draw(frame, &list, &run.shell, dump);
+        run.held = (!more && run.shell.player_open()).then_some((list, built_at));
+        if shot.is_some() {
+            self.shot_pause += draw_began.elapsed();
+        }
+        match drawn {
             Ok(()) if shot.is_some() => {
                 crate::script::trace(&format!(
                     "shot {}",
@@ -490,16 +662,48 @@ impl App {
                     " STALE"
                 }
             );
+            eprintln!(
+                "swiftly-desktop: frame cost ms: {} refit {t_refit:.1}, layout of the shell {t_shell:.1}, wait for image {t_acquire:.1}, frame {t_layout:.1}, head {t_head:.1}, video announce {t_announce:.1}, draw prelude {:.1}, render {:.1}, gpu {:.1}, present {:.1}, draw total {:.1}, redraw so far {:.1}",
+                if size_changed { "RESIZE" } else { "same size" },
+                run.gpu.last_prelude_ms,
+                run.gpu.last_render_ms,
+                run.gpu.last_gpu_ms,
+                run.gpu.last_present_ms,
+                run.gpu.last_draw_ms,
+                redraw_began.elapsed().as_secs_f64() * 1000.0
+            );
         }
         if refit {
             let s = run.window.inner_size();
             run.gpu.resize(s.width, s.height);
             run.window.request_redraw();
         }
+        // The frame for the size the window has now: the resize that asked for it is answered.
+        let at_window_size = {
+            let s = run.window.inner_size();
+            (s.width, s.height) == run.size_px
+        };
+        // The app clock (`App::now`), read through the fields while `run` is borrowed.
+        let presented_at = self
+            .start
+            .elapsed()
+            .saturating_sub(self.shot_pause)
+            .as_secs_f64()
+            * 1000.0;
+        if at_window_size
+            && let Some(ms) = self.resize_latency.presented(presented_at)
+            && self.verbose_events
+        {
+            eprintln!("swiftly-desktop: resize shown {ms:.1} ms after the Resized event");
+        }
         self.extras.presented();
         let cpu_ms = began.elapsed().as_secs_f64() * 1000.0;
+        if size_changed {
+            self.resize_latency.frame_cost(cpu_ms);
+        }
         if let Some(s) = self.stats.as_mut() {
             s.record(now, cpu_ms, run.continuous);
+            s.why(run.shell.frame_reason(), more);
         }
         run.continuous = more;
         // The input method opens only over a text field, and its candidate window follows the caret.
@@ -570,7 +774,8 @@ impl App {
     }
 
     fn input_changed(&mut self) {
-        if let Some(run) = &self.run {
+        if let Some(run) = self.run.as_mut() {
+            run.other = true;
             run.window.request_redraw();
         }
     }
@@ -712,12 +917,21 @@ impl ApplicationHandler<UserEvent> for App {
             .current_monitor()
             .and_then(|m| m.refresh_rate_millihertz())
             .map_or(1000.0 / 60.0, |mhz| 1_000_000.0 / f64::from(mhz));
-        if self.opts.stats {
+        if self.opts.stats || self.verbose_events {
             let info = gpu.ctx.adapter_info();
             eprintln!(
-                "swiftly-desktop: {} ({:?}), {}x{} px at {scale}x, surface format {:?}, FIFO, refresh period {period_ms:.2} ms",
-                info.name, info.backend, size.width, size.height, gpu.config.format
+                "swiftly-desktop: {} ({:?}, {:?}), {}x{} px at {scale}x, surface format {:?}, {:?}, latency {}, refresh period {period_ms:.2} ms",
+                info.name,
+                info.backend,
+                info.device_type,
+                size.width,
+                size.height,
+                gpu.config.format,
+                gpu.config.present_mode,
+                gpu.config.desired_maximum_frame_latency
             );
+        }
+        if self.opts.stats {
             self.stats = Some(FrameStats::new(period_ms, self.now()));
         }
         let mut shell = match self.opts.home {
@@ -770,6 +984,12 @@ impl ApplicationHandler<UserEvent> for App {
                 let _ = proxy.send_event(UserEvent::Media);
             }));
         }
+        {
+            let proxy = self.proxy.clone();
+            crate::live_play::set_video_waker(std::sync::Arc::new(move || {
+                let _ = proxy.send_event(UserEvent::Video);
+            }));
+        }
         let media = (self.opts.live && !self.opts.offscreen)
             .then(|| {
                 let proxy = self.proxy.clone();
@@ -795,14 +1015,29 @@ impl ApplicationHandler<UserEvent> for App {
             ime: crate::ime::ImeSync::default(),
             cursor_hidden: false,
             media,
+            opening: crate::browser_open::Waiting::default(),
+            video_wake: false,
+            other: false,
+            held: None,
         });
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
         let now = self.now();
+        if let UserEvent::Video = event {
+            crate::stats::VIDEO_WAKES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if let Some(run) = self.run.as_mut() {
+                run.video_wake = true;
+                run.window.request_redraw();
+            }
+            return;
+        }
+        if let Some(run) = self.run.as_mut() {
+            run.other = true;
+        }
         let ev = match event {
             UserEvent::Access(ev) => ev,
-            UserEvent::Media => {
+            UserEvent::Media | UserEvent::Video => {
                 if let Some(run) = self.run.as_ref() {
                     run.window.request_redraw();
                 }
@@ -837,6 +1072,11 @@ impl ApplicationHandler<UserEvent> for App {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         self.extras.arrived(&event);
+        if !matches!(event, WindowEvent::RedrawRequested)
+            && let Some(run) = self.run.as_mut()
+        {
+            run.other = true;
+        }
         let now = self.now();
         if self.verbose_events
             && matches!(
@@ -856,6 +1096,12 @@ impl ApplicationHandler<UserEvent> for App {
         }
         match event {
             WindowEvent::DroppedFile(path) => self.extras.dropped(&path),
+            #[cfg(target_os = "linux")]
+            WindowEvent::ActivationTokenDone { serial, token } => {
+                if let Some(url) = self.run.as_mut().and_then(|run| run.opening.done(&serial)) {
+                    let _ = crate::signin_flows::open_url_with(&url, Some(&token.into_raw()));
+                }
+            }
             // Dark only by design (no light variant in the design): the title bar stays dark whatever the system says.
             WindowEvent::ThemeChanged(_) => {
                 if let Some(run) = &self.run {
@@ -907,11 +1153,23 @@ impl ApplicationHandler<UserEvent> for App {
                 if self.verbose_events {
                     eprintln!("swiftly-desktop: Resized event at {now:.1} ms");
                 }
-                // Live resize: fit the surface and the layout to the new size and present in this same event. Waiting for a
-                // later RedrawRequested leaves the old picture stretched (and a black or white strip) for a frame or more.
-                // A drag of the edge queues one event per compositor step; every one after the first sees the window's latest
-                // size already presented, and a frame for it would only wait for the next vertical blank again (one
-                // blocked present per queued event is how the content fell seconds behind the pointer).
+                if matches!(event, WindowEvent::Resized(_)) {
+                    self.resize_latency.resized(now);
+                }
+                if self.verbose_events {
+                    eprintln!(
+                        "swiftly-desktop: Resized handler head {:.1} ms (event at {now:.1}, handler now {:.1})",
+                        (self.now() - now).max(0.0),
+                        self.now()
+                    );
+                }
+                // Live resize, the same on every OS: the event only asks for a redraw, and `RedrawRequested` fits the surface
+                // and the layout to the newest size and draws once. A drag queues one event per step; a frame per step refits
+                // the swap chain every time (wgpu waits for the device and builds a new one: 0.6 ms on Linux, 18-80 ms on
+                // Windows) and queues a frame behind each. Linux: winit holds `RedrawRequested` until the compositor's frame
+                // callback of the last frame arrived, so one frame is in flight (a frame per configure made KWin queue
+                // hundreds of frames, seconds behind the pointer). Windows: the resize queues a `WM_PAINT` that the system's
+                // size loop delivers as `RedrawRequested`. Every event after a frame at the window's size is skipped.
                 let current = self.run.as_ref().is_some_and(|run| {
                     let s = run.window.inner_size();
                     crate::window_rules::resize_is_stale(
@@ -923,7 +1181,16 @@ impl ApplicationHandler<UserEvent> for App {
                     )
                 });
                 if self.run.is_some() && !current {
-                    self.redraw(event_loop);
+                    if crate::window_rules::resize_draws_in_event(
+                        crate::resize_latency::inline_resize_frames(),
+                    ) {
+                        self.redraw(event_loop);
+                    } else if let Some(run) = &self.run {
+                        // The next `RedrawRequested` draws the newest size once (scale changes too); if it never comes,
+                        // `about_to_wait` draws after `RESIZE_FALLBACK_MS`.
+                        self.resize_fallback.asked(now);
+                        run.window.request_redraw();
+                    }
                 }
             }
             WindowEvent::Occluded(hidden) => {
@@ -1066,6 +1333,51 @@ impl ApplicationHandler<UserEvent> for App {
                 None => r.window.request_redraw(),
             }
         }
+        // A resize asked for a redraw that never came (a frame callback the compositor did not answer, a swallowed `WM_PAINT`):
+        // draw the newest size once by hand.
+        if self.resize_fallback.take_due(now) && self.run.is_some() {
+            if self.verbose_events || self.stats.is_some() {
+                eprintln!(
+                    "swiftly-desktop: resize redraw lost, drawing after {} ms",
+                    crate::window_rules::RESIZE_FALLBACK_MS
+                );
+            }
+            self.redraw(event_loop);
+        }
+        if let Some(at) = self.resize_fallback.wake_at() {
+            wake = Some(wake.map_or(at, |w| w.min(at)));
+        }
+        // The synthetic drag (`SWIFTLY_RESIZE_BENCH`): one step of the window size per interval, then the summary.
+        if let Some(bench) = self.resize_bench.as_mut()
+            && let Some(r) = self.run.as_ref()
+        {
+            let s = r.window.inner_size();
+            if let Some((w, h)) = bench.due(now, (s.width, s.height)) {
+                // Wayland sends no `Resized` event for a size the window asked for itself: the step is the start.
+                self.resize_latency.resized(now);
+                let _ = r
+                    .window
+                    .request_inner_size(winit::dpi::PhysicalSize::new(w, h));
+                if bench.finished() {
+                    self.bench_done_at = Some(now);
+                }
+            }
+            if let Some(at) = bench.next_at() {
+                wake = Some(wake.map_or(at, |w| w.min(at)));
+            }
+        }
+        if let Some(done) = self.bench_done_at {
+            let report_at =
+                done + crate::resize_latency::ResizeBench::settle().as_secs_f64() * 1000.0;
+            if now >= report_at {
+                self.bench_done_at = None;
+                if let Some(line) = self.resize_latency.summary() {
+                    eprintln!("swiftly-desktop: {line}");
+                }
+            } else {
+                wake = Some(wake.map_or(report_at, |w| w.min(report_at)));
+            }
+        }
         if let Some(limit) = self.opts.quit_after {
             let at = limit * 1000.0;
             if now >= at {
@@ -1102,9 +1414,9 @@ impl ApplicationHandler<UserEvent> for App {
             wake = Some(wake.map_or(next, |w| w.min(next)));
         }
         event_loop.set_control_flow(match wake {
-            Some(ms) => {
-                ControlFlow::WaitUntil(self.start + Duration::from_secs_f64((ms / 1000.0).max(0.0)))
-            }
+            // The deadlines are app-clock times: mapped without the shots' pause they lay in the past once the pause
+            // passed 250 ms, and the loop woke at once forever (a busy loop of 35 % of a core while a film played).
+            Some(ms) => ControlFlow::WaitUntil(self.instant_of(ms)),
             None => ControlFlow::Wait,
         });
     }
@@ -1334,6 +1646,7 @@ impl App {
         };
         let due = script.due_with(now, open, &has);
         self.synthetic = true;
+        let ran = !due.is_empty();
         for step in due {
             match step {
                 Step::Key(name) => {
@@ -1384,6 +1697,24 @@ impl App {
                                 "swiftly-desktop: script: no control named {text:?}; known: {names:?}"
                             );
                         }
+                    }
+                }
+                Step::Anchor(text) => {
+                    self.script_anchor = self.run.as_ref().and_then(|r| {
+                        let (_, nodes) = r.shell.a11y_nodes();
+                        find_label(&nodes, &text)
+                            .map(|b| (f64::from(b[0] + b[2] / 2.0), f64::from(b[1] + b[3] / 2.0)))
+                    });
+                    if self.script_anchor.is_none() {
+                        eprintln!("swiftly-desktop: script: no control named {text:?} to anchor");
+                    }
+                }
+                Step::MoveFrom(dx, dy) => {
+                    if let (Some((ax, ay)), Some(scale)) = (
+                        self.script_anchor,
+                        self.run.as_ref().map(|r| f64::from(r.scale)),
+                    ) {
+                        self.pointer_moved((ax + dx) * scale, (ay + dy) * scale, now);
                     }
                 }
                 Step::Type(text) => {
@@ -1441,12 +1772,6 @@ impl App {
                     }
                     self.input_changed();
                 }
-                Step::AskVersions => {
-                    if let Some(s) = self.run.as_mut().and_then(|r| r.shell.suite_mut()) {
-                        s.ask_versions(crate::suite::sample_versions());
-                    }
-                    self.input_changed();
-                }
                 Step::Labels(filter) => {
                     if let Some(r) = self.run.as_ref() {
                         let (title, nodes) = r.shell.a11y_nodes();
@@ -1459,7 +1784,11 @@ impl App {
             }
         }
         self.synthetic = false;
-        self.input_changed();
+        // Only a step that ran changed something. Asking for another frame every time made a script run (a wait, an
+        // `until` that polls) draw at the display's rate for good, whatever was on screen.
+        if ran {
+            self.input_changed();
+        }
     }
 }
 
@@ -1489,22 +1818,47 @@ fn collect_labels(nodes: &[swiftly_ui::a11y::A11yNode], out: &mut Vec<String>) {
     }
 }
 
-/// The frame (window points) of the first node whose name contains `text`.
+/// The frame (window points) of the first node whose name contains `text`. A `text` that starts with `#` is a stable
+/// test key instead: the node whose key is exactly the rest (`#btn-decline-confirm`), however its words read.
 fn find_label(nodes: &[swiftly_ui::a11y::A11yNode], text: &str) -> Option<[f32; 4]> {
-    // The smallest match: a container may carry the words of its children, the control itself is what a script means.
-    fn smallest(nodes: &[swiftly_ui::a11y::A11yNode], text: &str, best: &mut Option<[f32; 4]>) {
+    if let Some(key) = text.strip_prefix('#') {
+        fn by_key(nodes: &[swiftly_ui::a11y::A11yNode], key: &str) -> Option<[f32; 4]> {
+            nodes.iter().find_map(|n| {
+                if n.key == key {
+                    n.bounds
+                } else {
+                    by_key(&n.children, key)
+                }
+            })
+        }
+        return by_key(nodes, key);
+    }
+    // An exact name wins ("Anfragen" is the button, not the link "Meine Anfragen" that also contains it); otherwise the
+    // smallest match: a container may carry the words of its children, the control itself is what a script means.
+    fn smallest(
+        nodes: &[swiftly_ui::a11y::A11yNode],
+        text: &str,
+        exact: bool,
+        best: &mut Option<[f32; 4]>,
+    ) {
         for n in nodes {
-            if n.label.contains(text)
-                && let Some(b) = n.bounds
+            if (if exact {
+                n.label == text
+            } else {
+                n.label.contains(text)
+            }) && let Some(b) = n.bounds
                 && best.is_none_or(|o| b[2] * b[3] < o[2] * o[3])
             {
                 *best = Some(b);
             }
-            smallest(&n.children, text, best);
+            smallest(&n.children, text, exact, best);
         }
     }
     let mut best = None;
-    smallest(nodes, text, &mut best);
+    smallest(nodes, text, true, &mut best);
+    if best.is_none() {
+        smallest(nodes, text, false, &mut best);
+    }
     best
 }
 
@@ -1590,6 +1944,7 @@ pub fn run(opts: Options) -> Result<(), String> {
         cursor_px: (0.0, 0.0),
         opts,
         start: Instant::now(),
+        shot_pause: Duration::ZERO,
         run: None,
         stats: None,
         mods: ModifiersState::empty(),
@@ -1599,10 +1954,15 @@ pub fn run(opts: Options) -> Result<(), String> {
         dumped: false,
         touch_next: 0,
         script,
+        script_anchor: None,
         shot: None,
         retry_at: None,
         retries: 0,
         retheme: false,
+        resize_latency: crate::resize_latency::ResizeLatency::default(),
+        resize_fallback: crate::window_rules::ResizeFallback::default(),
+        resize_bench: crate::resize_latency::ResizeBench::from_env(),
+        bench_done_at: None,
         #[cfg(all(
             unix,
             not(any(target_os = "macos", target_os = "ios", target_os = "android"))
@@ -1660,14 +2020,62 @@ fn resize_icon(d: winit::window::ResizeDirection) -> winit::window::CursorIcon {
     }
 }
 
+/// The wall-clock instant of app-clock time `ms`, for a clock that started at `start` and has left out `paused`.
+fn wall_deadline(start: Instant, paused: Duration, ms: f64) -> Instant {
+    start + paused + Duration::from_secs_f64((ms / 1000.0).max(0.0))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_deadline_of_the_app_clock_stays_ahead_after_shots_paused_it() {
+        use super::wall_deadline;
+        use std::time::{Duration, Instant};
+        let start = Instant::now() - Duration::from_secs(20);
+        let paused = Duration::from_millis(900);
+        // The app clock reads 20 s - 0.9 s; the next poll is due 250 ms later on that clock.
+        let now_app = (start.elapsed() - paused).as_secs_f64() * 1000.0;
+        let due = wall_deadline(start, paused, now_app + 250.0);
+        assert!(
+            due > Instant::now(),
+            "a future app-clock deadline must not lie in the past"
+        );
+        assert!(due <= Instant::now() + Duration::from_millis(260));
+        // Without a pause both clocks are one.
+        assert_eq!(
+            wall_deadline(start, Duration::ZERO, 1500.0),
+            start + Duration::from_millis(1500)
+        );
+    }
+
     #[cfg(not(target_os = "macos"))]
     use super::edit_event;
-    use super::{resize_edge, resize_icon};
+    use super::{find_label, resize_edge, resize_icon};
     #[cfg(not(target_os = "macos"))]
     use winit::keyboard::{Key, ModifiersState, NamedKey};
     use winit::window::{CursorIcon, ResizeDirection as D};
+
+    /// A script's `move-label Anfragen` means the button of that exact name, not the smaller link "Meine Anfragen" whose
+    /// name contains it; a partial name still finds the smallest control that holds it.
+    #[test]
+    fn a_label_search_prefers_the_exact_name() {
+        use swiftly_ui::a11y::{A11yNode, Role};
+        let node = |label: &str, w: f32, h: f32| {
+            let mut n = A11yNode::new(label, Role::Button, label);
+            n.bounds = Some([0.0, 0.0, w, h]);
+            n
+        };
+        let nodes = vec![
+            node("Anfragen", 320.0, 48.0),
+            node("Meine Anfragen", 130.0, 38.0),
+        ];
+        assert_eq!(
+            find_label(&nodes, "Anfragen"),
+            Some([0.0, 0.0, 320.0, 48.0])
+        );
+        assert_eq!(find_label(&nodes, "Meine"), Some([0.0, 0.0, 130.0, 38.0]));
+        assert_eq!(find_label(&nodes, "Fehlt"), None);
+    }
 
     /// The input layer (Windows/Linux, Ctrl as the shortcut key): Ctrl+A is select all, in either letter case, and Tab
     /// is not a text edit (it moves the keyboard to the next field), so the window handler never types it.

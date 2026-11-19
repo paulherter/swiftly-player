@@ -49,10 +49,17 @@ fn version_options_carry_the_label_of_the_choice() {
     let net = film_server(false);
     let vm = film_vm(&net);
     vm.send(DetailIntent::Load);
-    wait_for("title", || vm.actions().play.enabled);
-    let PlayAction::Choose { versions, .. } = vm.play(None) else {
-        panic!("two versions ask");
-    };
+    wait_for("title", || vm.actions().play.ready.is_ready());
+    // A tap never asks; the long press reads the options.
+    assert!(matches!(
+        vm.play(None),
+        PlayAction::Start {
+            source_id: None,
+            ..
+        }
+    ));
+    let versions = vm.versions();
+    assert_eq!(versions.len(), 2);
     assert_eq!(versions[0].name, "  4K  ");
     assert_eq!(versions[0].label, "4K · 2160p · HEVC · 10,3 GB");
     // No name: the word "Fassung", and nothing else to tell it apart.
@@ -66,7 +73,7 @@ fn detail_item_json_is_the_entry_then_the_fresh_title() {
     let first: serde_json::Value = serde_json::from_str(&vm.item_json().unwrap()).unwrap();
     assert_eq!(first["Name"], "Eintrag");
     vm.send(DetailIntent::Load);
-    wait_for("title", || vm.actions().play.enabled);
+    wait_for("title", || vm.actions().play.ready.is_ready());
     let fresh: serde_json::Value = serde_json::from_str(&vm.item_json().unwrap()).unwrap();
     assert_eq!(fresh["Id"], "f1");
     assert_eq!(fresh["Name"], "Film");
@@ -214,14 +221,7 @@ fn series_without_a_state_has_no_plan_and_shows_the_row_at_once() {
     assert!(!vm.button().proof.direct_play);
     assert_eq!(net.count("PlaybackInfo"), 0);
     let texts: Vec<_> = vm.more_menu().into_iter().map(|e| e.text).collect();
-    assert_eq!(
-        texts,
-        [
-            "Zufällig abspielen",
-            "Staffel 1 als gesehen",
-            "Metadaten neu einlesen"
-        ]
-    );
+    assert_eq!(texts, ["Zufällig abspielen", "Metadaten neu einlesen"]);
 }
 
 #[test]
@@ -237,16 +237,10 @@ fn series_menu_follows_title_actions_for_series() {
             "Folge von vorn abspielen",
             "Nächste Folge abspielen",
             "Zufällig abspielen",
-            "Staffel 1 als gesehen",
             "Metadaten neu einlesen"
         ]
     );
-    assert_eq!(
-        list[3].kind,
-        MenuKind::MarkSeasonWatched {
-            name: "Staffel 1".into()
-        }
-    );
+    assert!(!texts.iter().any(|t| t.contains("als gesehen")));
     vm.send(SeriesIntent::Options(SeriesOptions {
         together: true,
         download_button: true,
@@ -262,7 +256,6 @@ fn series_menu_follows_title_actions_for_series() {
             "Folge von vorn abspielen",
             "Gemeinsam schauen",
             "Zufällig abspielen",
-            "Staffel 1 als gesehen",
             "Metadaten neu einlesen"
         ]
     );

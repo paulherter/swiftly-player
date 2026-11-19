@@ -26,7 +26,7 @@ import Testing
         let json = try #require(encode(list))
         return try LoadSelectionModel(
             seasonIds: ["s1"], preloaded: [LoadSeasonEpisodes(seasonId: "s1", episodesJson: json)],
-            locale: "en", audioLanguage: "", selectQuality: select)
+            locale: "en", audioLanguage: "", selectQuality: select, deviceLanguage: "")
     }
 
     private func encode(_ list: [Item]) -> String? {
@@ -82,9 +82,48 @@ import Testing
         #expect(m.state(free: 0).audio == wish)
     }
 
+    /// A film with an English default track and a German dub, as the film sheet reads it.
+    private static let dubbedFilm: [MediaStream] = {
+        let json = """
+            [{"Index":0,"Type":"Video","Codec":"h264"},
+             {"Index":1,"Type":"Audio","Codec":"eac3","Language":"eng","IsDefault":true,"Channels":6},
+             {"Index":2,"Type":"Audio","Codec":"eac3","Language":"ger","Channels":6}]
+            """
+        return (try? JSONDecoder().decode([MediaStream].self, from: Data(json.utf8))) ?? []
+    }()
+
+    private static func rows(_ streams: [MediaStream]) -> [PlayerStream] {
+        streams.compactMap { s in
+            s.index.map {
+                PlayerStream(index: Int64($0), kind: s.type ?? "", language: s.language, codec: s.codec,
+                             channels: s.channels.map(Int64.init), title: s.title, isDefault: s.isDefault ?? false,
+                             isForced: false, isExternal: false, isHearingImpaired: false, isOriginal: false)
+            }
+        }
+    }
+
+    /// The film sheet started on the settings language alone (`DownloadAudio.preselected`), so a German device with
+    /// default settings started an English film with a German dub on all tracks while the season sheet started on the
+    /// German one. The core's start rule takes the device language after the settings.
+    @Test func theFilmSheetStartsOnTheDeviceLanguageAndTheSettingsStillWin() throws {
+        let film = Self.dubbedFilm
+        #expect(film.count == 3, "the fixture decodes")
+        let rows = Self.rows(film)
+        let options = DownloadAudio.trackOptions(streams: film)
+        // Nothing in the settings: the old picker said "all tracks"; the core takes the device language.
+        #expect(DownloadAudio.preselected(options: options, streams: film, preferredLanguage: "") == .all)
+        #expect(downloadAudioStart(streams: rows, audioLanguage: "", locale: "en", deviceLanguage: "de-DE") == .track(index: 2))
+        #expect(downloadAudioStart(streams: rows, audioLanguage: "", locale: "en", deviceLanguage: "en-US") == .track(index: 1))
+        #expect(downloadAudioStart(streams: rows, audioLanguage: "", locale: "en", deviceLanguage: "") == .all)
+        #expect(downloadAudioStart(streams: rows, audioLanguage: "", locale: "en", deviceLanguage: "fr-FR") == .all)
+        // The settings language is what the old picker used, and it still comes first.
+        #expect(DownloadAudio.preselected(options: options, streams: film, preferredLanguage: "English") == .track(1))
+        #expect(downloadAudioStart(streams: rows, audioLanguage: "English", locale: "en", deviceLanguage: "de-DE") == .track(index: 1))
+    }
+
     @Test func theFetchPlanIsThreeSeasonsAtATime() throws {
         let m = try LoadSelectionModel(seasonIds: (1...7).map { "s\($0)" }, preloaded: [], locale: "en",
-                                       audioLanguage: "", selectQuality: false)
+                                       audioLanguage: "", selectQuality: false, deviceLanguage: "")
         #expect(m.beginLoad().map(\.count) == [3, 3, 1])
     }
 

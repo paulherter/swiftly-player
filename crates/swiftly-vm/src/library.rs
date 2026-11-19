@@ -16,11 +16,15 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use swiftly_jellyfin::ItemsQuery;
-use swiftly_library::client_ext::{natural_list, natural_page, title_filter};
+use swiftly_library::client_ext::{
+    language_index, natural_list, natural_page, title_filter_narrowed, year_options,
+};
 use swiftly_library::library_filter::Sorting;
 use swiftly_library::library_state::{FillStep, PAGES_SIZE, Page};
 use swiftly_library::{
-    KeyValue, LibraryCommand, LibraryFilter, LibraryState, RememberGenre, ShelfSource, SortingExt,
+    Facet, FilterChoice, FilterFacets, FilterSheet, KeyValue, LanguageIndex, LibraryCommand,
+    LibraryFilter, LibraryState, ListFilter, Narrowing, RememberGenre, ShelfSource, SortingExt,
+    YearSpan,
 };
 use swiftly_model::Item;
 use swiftly_net::{ErrorKind, HttpTransport};
@@ -97,6 +101,13 @@ pub struct LibraryStatusPart {
     pub sorting: Sorting,
     /// The filter in use.
     pub filter: LibraryFilter,
+    /// Only titles produced in these years (`None`: all years).
+    pub years: Option<YearSpan>,
+    /// Only titles with an audio track in this language (`None`: any).
+    pub language: Option<String>,
+    /// Counts up whenever what the filter sheet offers changed (years and languages arrived), so a
+    /// host that watches the status re-reads [`LibraryVm::filter_sheet`].
+    pub sheet_stamp: u64,
     /// There are more titles beyond the ones shown.
     pub more_available: bool,
     /// A further page is being fetched.
@@ -127,6 +138,18 @@ pub enum LibraryIntent {
         /// The filter.
         filter: LibraryFilter,
     },
+    /// Only titles produced in these years, `None` for all years; reloads.
+    SetYears {
+        /// The span.
+        years: Option<YearSpan>,
+    },
+    /// Only titles with an audio track in this language, `None` for any; reloads.
+    SetLanguage {
+        /// The three-letter code from the sheet.
+        language: Option<String>,
+    },
+    /// The filter sheet is about to open: fetch what it offers (years, languages) once per list.
+    LoadFilterOptions,
     /// Fetch the next page now (also the retry after a failure).
     LoadMore,
     /// A tile came into view: one of the last three rows loads more.
@@ -206,6 +229,12 @@ struct Live<T: HttpTransport> {
     failure: FailureNote,
     grid: Arc<GridPart>,
     status: Arc<LibraryStatusPart>,
+    /// What the filter sheet offers and which list it was fetched for (`facets_for`).
+    facets: FilterFacets,
+    facets_for: Option<String>,
+    sheet_stamp: u64,
+    /// Which titles have which audio language, for the list in `facets_for`.
+    languages: Option<(String, Arc<LanguageIndex>)>,
 }
 
 struct Inner<T: HttpTransport> {
@@ -289,13 +318,25 @@ impl<T: HttpTransport + 'static> Backend<T> {
         self.noting(self.kind.items(query).await)
     }
 
-    async fn title_filter(
+    async fn title_filter_narrowed(
         &self,
         source: &ShelfSource,
-        filters: &[String],
-        watched: Option<bool>,
+        filter: &ListFilter,
+        languages: Option<&LanguageIndex>,
     ) -> Result<TitleFilter, ErrorKind> {
-        self.noting(self.kind.title_filter(source, filters, watched).await)
+        self.noting(
+            self.kind
+                .title_filter_narrowed(source, filter, languages)
+                .await,
+        )
+    }
+
+    async fn years(&self, source: &ShelfSource) -> Result<Vec<i32>, ErrorKind> {
+        self.noting(self.kind.years(source).await)
+    }
+
+    async fn language_index(&self, source: &ShelfSource) -> Result<LanguageIndex, ErrorKind> {
+        self.noting(self.kind.language_index(source).await)
     }
 
     #[allow(clippy::too_many_arguments)] // the Swift signature, kept 1:1
@@ -398,15 +439,39 @@ impl<T: HttpTransport + 'static> Kind<T> {
         }
     }
 
-    async fn title_filter(
+    /// The title filter with the narrowing applied. Plex offers neither years nor languages, so
+    /// it answers the plain status filter.
+    async fn title_filter_narrowed(
         &self,
         source: &ShelfSource,
-        filters: &[String],
-        watched: Option<bool>,
+        filter: &ListFilter,
+        languages: Option<&LanguageIndex>,
     ) -> Result<TitleFilter, ErrorKind> {
         match self {
-            Self::Jelly(c) => title_filter(&**c, source, filters, watched).await,
-            Self::Plex(c) => MediaServer::title_filter(&**c, source, filters, watched).await,
+            Self::Jelly(c) => title_filter_narrowed(&**c, source, filter, languages).await,
+            Self::Plex(c) => {
+                MediaServer::title_filter(
+                    &**c,
+                    source,
+                    &filter.jellyfin_filter(),
+                    filter.is_watched(),
+                )
+                .await
+            }
+        }
+    }
+
+    async fn years(&self, source: &ShelfSource) -> Result<Vec<i32>, ErrorKind> {
+        match self {
+            Self::Jelly(c) => year_options(&**c, source).await,
+            Self::Plex(_) => Err(ErrorKind::Decoding("plex: no year facet".into())),
+        }
+    }
+
+    async fn language_index(&self, source: &ShelfSource) -> Result<LanguageIndex, ErrorKind> {
+        match self {
+            Self::Jelly(c) => language_index(&**c, source).await,
+            Self::Plex(_) => Err(ErrorKind::Decoding("plex: no language facet".into())),
         }
     }
 
@@ -501,6 +566,7 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
     ) -> Result<Self, ErrorKind> {
         let (client, plex) = clients(&transport, &host, account.as_ref())?;
         let state = LibraryState::new(spec.remember_name.as_deref(), &*kv);
+        let first_sorting = state.sorting;
         let live = Live {
             switch: 1,
             scope: account.as_ref().map(crate::cache::ViewCache::scope),
@@ -510,6 +576,10 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
             more_running: false,
             toggle_error: None,
             failure: FailureNote::default(),
+            facets: FilterFacets::default(),
+            facets_for: None,
+            sheet_stamp: 0,
+            languages: None,
             grid: Arc::new(GridPart {
                 version: 1,
                 tiles: Vec::new(),
@@ -518,8 +588,11 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
             status: Arc::new(LibraryStatusPart {
                 version: 1,
                 status: LibraryStatus::Loading,
-                sorting: Sorting::Name,
+                sorting: first_sorting,
                 filter: LibraryFilter::All,
+                years: None,
+                language: None,
+                sheet_stamp: 0,
                 more_available: false,
                 loading_more: false,
                 refreshing: false,
@@ -794,12 +867,12 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
             let live = self.inner.live();
             (
                 live.state.sorting,
-                live.state.filter,
+                live.state.list_filter(),
                 live.switch,
                 live.state.items.clone(),
             )
         };
-        let key = self.inner.strip_key(sorting, filter, switch);
+        let key = self.inner.strip_key(sorting, &filter, switch);
         let whole = self
             .inner
             .lists
@@ -810,60 +883,22 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
         library_list::alphabet(whole.as_deref().map_or(&loaded, |l| l), sorting)
     }
 
-    /// Fetches the whole list of the order on screen once (slim), so the strip covers every title and not only the
-    /// loaded pages (`AppModel.indexList`). "By name" is the list the grid already holds. No-op without a server;
+    /// Fetches the whole "By name" list once, so the A-Z strip covers every title and not only the loaded pages
+    /// (`AppModel.indexList`). Other orders have no strip, so nothing is fetched for them. No-op without a server;
     /// a failed fetch leaves the strip on the loaded titles.
     pub async fn load_alphabet(&self) {
         let (sorting, filter, switch, backend) = {
             let live = self.inner.live();
             (
                 live.state.sorting,
-                live.state.filter,
+                live.state.list_filter(),
                 live.switch,
                 live.backend(),
             )
         };
         let Some(backend) = backend else { return };
-        let key = self.inner.strip_key(sorting, filter, switch);
-        if sorting == Sorting::Name {
-            if self.inner.collator.is_some() {
-                let _ = self.inner.natural(&backend, switch, filter, false).await;
-            }
-            return;
-        }
-        if self
-            .inner
-            .lists
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .contains_key(&key)
-        {
-            return;
-        }
-        let source = self.inner.source();
-        let answer = backend
-            .items(&ItemsQuery {
-                parent_id: source.parent.clone(),
-                sort_by: sorting.input_field().into(),
-                sort_order: source.bearing(sorting).into(),
-                filters: filter.jellyfin_filter(),
-                is_watched: filter.is_watched(),
-                recursive: self.inner.recursive() || self.inner.spec.genre.is_some(),
-                include_item_types: self.inner.types().iter().map(|t| (*t).to_owned()).collect(),
-                genres: self.inner.spec.genre.iter().cloned().collect(),
-                slim: true,
-                ..ItemsQuery::default()
-            })
-            .await;
-        // The switch moved on (account change): the answer belongs to nobody.
-        if let Ok(answer) = answer
-            && self.inner.live().switch == switch
-        {
-            self.inner
-                .lists
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .insert(key, Arc::new(answer.items));
+        if sorting == Sorting::Name && self.inner.collator.is_some() {
+            let _ = self.inner.natural(&backend, switch, &filter, false).await;
         }
     }
 
@@ -877,16 +912,12 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
             .map(|i| index.key(&library_list::index_item(i)))
     }
 
-    /// Position among the loaded titles of the first one under `key`; `None`: not loaded yet (load more, ask again).
+    /// Position in the list of the first title under `key`, from the strip's own entries (the whole list when it was
+    /// fetched), not from the loaded tiles: those carry no sort name, so their keys differ from the strip's. The
+    /// position may lie past the loaded titles (load more, ask again; compare with the grid's tile count). A letter
+    /// without titles gives the next one that has some; `None` for a key past the last letter or unknown.
     pub fn jump_target(&self, key: &str, index: &AlphabetIndex) -> Option<usize> {
-        let live = self.inner.live();
-        let rows: Vec<_> = live
-            .state
-            .items
-            .iter()
-            .map(library_list::index_item)
-            .collect();
-        index.target_for_key(key, &rows)
+        index.first_for_key(key)
     }
 
     /// The version of the view model; moves whenever a part is replaced.
@@ -931,6 +962,83 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
         self.inner.live().plex = plex;
     }
 
+    fn set_narrowing(&self, narrowing: Narrowing) {
+        let inner = &self.inner;
+        let writes = Writes::default();
+        {
+            let mut live = inner.live();
+            if live.state.narrowing == narrowing {
+                return;
+            }
+            live.state.set_narrowing(narrowing, &writes);
+        }
+        // Remembering goes to the host's store (foreign code) after the lock is released.
+        writes.replay(&*inner.kv);
+        Inner::start_load(inner);
+    }
+
+    /// The filter sheet every platform draws: the rows, which are picked, what is still loading.
+    /// `offered` are the status filters this page offers (the host knows whether the watchlist is
+    /// on and what the kind of list allows).
+    pub fn filter_sheet(&self, offered: &[LibraryFilter]) -> FilterSheet {
+        let inner = &self.inner;
+        let key = inner.facets_key();
+        let (status, narrowing, facets, ready) = {
+            let live = inner.live();
+            let ready = live.facets_for.as_deref() == Some(key.as_str());
+            (
+                live.state.filter,
+                live.state.narrowing.clone(),
+                live.facets.clone(),
+                ready,
+            )
+        };
+        let facets = if !inner.supports_facets() {
+            FilterFacets::default()
+        } else if ready {
+            facets
+        } else {
+            FilterFacets {
+                years: Facet::Loading,
+                languages: Facet::Loading,
+            }
+        };
+        let lang = inner.host.locale.language().to_owned();
+        FilterSheet::build(
+            offered,
+            status,
+            &narrowing,
+            &facets,
+            &|key| inner.words.title(key),
+            &|code| crate::language_names::language_name(code, &lang),
+        )
+    }
+
+    /// What the filter pill shows now: the status, the year span and the language ("Ungesehen \u{b7}
+    /// 2010\u{2013}2019 \u{b7} Deutsch"). Right without the sheet ever having been opened.
+    pub fn pill_text(&self) -> String {
+        let inner = &self.inner;
+        let (status, narrowing) = {
+            let live = inner.live();
+            (live.state.filter, live.state.narrowing.clone())
+        };
+        let lang = inner.host.locale.language().to_owned();
+        swiftly_library::pill_text(status, &narrowing, &|key| inner.words.title(key), &|code| {
+            crate::language_names::language_name(code, &lang)
+        })
+    }
+
+    /// A row of the filter sheet was picked: one call for every kind of row, so no platform maps the
+    /// choice to an intent itself. Years and language are remembered per list and combine with the
+    /// status filter; the list reloads.
+    pub fn pick(&self, choice: FilterChoice) {
+        self.send(match choice {
+            FilterChoice::Status(filter) => LibraryIntent::SetFilter { filter },
+            FilterChoice::Years(years) => LibraryIntent::SetYears { years },
+            FilterChoice::Language(language) => LibraryIntent::SetLanguage { language },
+        });
+    }
+
     /// Sends an intent.
     pub fn send(&self, intent: LibraryIntent) {
         let inner = &self.inner;
@@ -962,6 +1070,29 @@ impl<T: HttpTransport + 'static> LibraryVm<T> {
                 writes.replay(&*inner.kv);
                 Inner::start_load(inner);
             }
+            LibraryIntent::SetYears { years } => {
+                let narrowing = {
+                    let live = inner.live();
+                    Narrowing {
+                        years,
+                        ..live.state.narrowing.clone()
+                    }
+                };
+                self.set_narrowing(narrowing);
+            }
+            LibraryIntent::SetLanguage { language } => {
+                let narrowing = {
+                    let live = inner.live();
+                    Narrowing {
+                        language: language
+                            .as_deref()
+                            .and_then(swiftly_library::normalize_language),
+                        ..live.state.narrowing.clone()
+                    }
+                };
+                self.set_narrowing(narrowing);
+            }
+            LibraryIntent::LoadFilterOptions => Inner::load_facets(inner),
             LibraryIntent::LoadMore => Inner::start_more(inner, None),
             LibraryIntent::Visible { id, columns } => {
                 Inner::start_more(inner, Some((id, i64::from(columns))));
@@ -1007,6 +1138,108 @@ impl<T: HttpTransport + 'static> Inner<T> {
             .clone()
     }
 
+    /// What the sheet's choices belong to: list, genre, account.
+    fn facets_key(&self) -> String {
+        let switch = self.live().switch;
+        format!(
+            "{}|{}|{switch}",
+            self.source().key(),
+            self.spec.genre.as_deref().unwrap_or("")
+        )
+    }
+
+    /// Years and languages are offered for a Jellyfin or Emby library list; not for Plex (no
+    /// verified mapping), a collection, a genre page or the Merkliste.
+    fn supports_facets_of(&self, live: &Live<T>) -> bool {
+        let source = self.source();
+        live.client.is_some()
+            && live.plex.is_none()
+            && !source.collection
+            && self.spec.genre.is_none()
+            && !self.is_watchlist()
+    }
+
+    fn supports_facets(&self) -> bool {
+        let live = self.live();
+        self.supports_facets_of(&live)
+    }
+
+    /// The years and languages the sheet offers, fetched once per list and account.
+    fn load_facets(self: &Arc<Self>) {
+        let key = self.facets_key();
+        let (backend, switch) = {
+            let mut live = self.live();
+            let Some(backend) = live.backend() else {
+                return;
+            };
+            if !self.supports_facets_of(&live) {
+                return;
+            }
+            let failed = matches!(live.facets.languages, Facet::Failed)
+                || matches!(live.facets.years, Facet::Failed);
+            if live.facets_for.as_deref() == Some(key.as_str()) && !failed {
+                return;
+            }
+            live.facets = FilterFacets {
+                years: Facet::Loading,
+                languages: Facet::Loading,
+            };
+            live.facets_for = Some(key.clone());
+            live.sheet_stamp += 1;
+            self.publish(&mut live);
+            (backend, live.switch)
+        };
+        let inner = Arc::clone(self);
+        self.host.spawner.spawn(Box::pin(async move {
+            let source = inner.source();
+            let years = backend.years(&source).await;
+            {
+                let mut live = inner.live();
+                if live.switch != switch || live.facets_for.as_deref() != Some(key.as_str()) {
+                    return;
+                }
+                live.facets.years = years.map_or(Facet::Failed, Facet::Ready);
+                live.sheet_stamp += 1;
+                inner.publish(&mut live);
+            }
+            let index = backend.language_index(&source).await;
+            let mut live = inner.live();
+            if live.switch != switch || live.facets_for.as_deref() != Some(key.as_str()) {
+                return;
+            }
+            live.facets.languages = match index {
+                Ok(index) => {
+                    let list = index.languages();
+                    live.languages = Some((key, Arc::new(index)));
+                    Facet::Ready(list)
+                }
+                Err(_) => Facet::Failed,
+            };
+            live.sheet_stamp += 1;
+            inner.publish(&mut live);
+        }));
+    }
+
+    /// The language index of this list: the one the sheet fetched, else one scan now.
+    async fn language_index_for(
+        &self,
+        client: &Backend<T>,
+        switch: u64,
+    ) -> Option<Arc<LanguageIndex>> {
+        let key = self.facets_key();
+        if let Some((for_key, index)) = &self.live().languages
+            && *for_key == key
+        {
+            return Some(Arc::clone(index));
+        }
+        let index = Arc::new(client.language_index(&self.source()).await.ok()?);
+        let mut live = self.live();
+        if live.switch == switch {
+            live.languages = Some((key, Arc::clone(&index)));
+        }
+        Some(index)
+    }
+
     fn live(&self) -> MutexGuard<'_, Live<T>> {
         self.live.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -1049,6 +1282,11 @@ impl<T: HttpTransport + 'static> Inner<T> {
             status,
             s.sorting,
             s.filter,
+            (
+                s.narrowing.years,
+                s.narrowing.language.clone(),
+                live.sheet_stamp,
+            ),
             backend.is_some() && s.still_more_present(),
             live.more_running,
             backend.is_some() && s.running,
@@ -1061,6 +1299,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 old.status,
                 old.sorting,
                 old.filter,
+                (old.years, old.language.clone(), old.sheet_stamp),
                 old.more_available,
                 old.loading_more,
                 old.refreshing,
@@ -1091,6 +1330,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 status,
                 sorting,
                 filter,
+                (years, language, sheet_stamp),
                 more_available,
                 loading_more,
                 refreshing,
@@ -1102,6 +1342,9 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 status,
                 sorting,
                 filter,
+                years,
+                language,
+                sheet_stamp,
                 more_available,
                 loading_more,
                 refreshing,
@@ -1215,6 +1458,10 @@ impl<T: HttpTransport + 'static> Inner<T> {
             live.state = fresh;
             live.more_running = false;
             live.toggle_error = None;
+            live.facets = FilterFacets::default();
+            live.facets_for = None;
+            live.languages = None;
+            live.sheet_stamp += 1;
             self.lists
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
@@ -1265,10 +1512,20 @@ impl<T: HttpTransport + 'static> Inner<T> {
         while let Some(current) = command.take() {
             match current {
                 LibraryCommand::FetchTitleFilter { run, filter } => {
-                    let fetched = client
-                        .title_filter(source, &filter.jellyfin_filter(), filter.is_watched())
-                        .await
-                        .ok();
+                    let wants_language = filter.narrowing.language.is_some();
+                    let languages = if wants_language {
+                        self.language_index_for(client, switch).await
+                    } else {
+                        None
+                    };
+                    let fetched = if wants_language && languages.is_none() {
+                        None
+                    } else {
+                        client
+                            .title_filter_narrowed(source, &filter, languages.as_deref())
+                            .await
+                            .ok()
+                    };
                     let mut live = self.live();
                     if live.switch != switch {
                         return;
@@ -1285,8 +1542,9 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 } => {
                     // The first page of an unfiltered grid paints from the cache before the fetch
                     // and is stored after it (stale-while-revalidate).
-                    let remembered = (mode == Mode::Load && since == 0 && !source.is_filtering())
-                        .then(|| self.remember(switch, sorting, filter, count))
+                    let sifts = self.live().state.sifts(source);
+                    let remembered = (mode == Mode::Load && since == 0 && !sifts)
+                        .then(|| self.remember(switch, sorting, &filter, count))
                         .flatten();
                     let mut painted = false;
                     if let Some(memory) = &remembered
@@ -1304,7 +1562,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
                         }
                     }
                     let page = self
-                        .fetch_page(client, switch, sorting, filter, since, count)
+                        .fetch_page(client, switch, sorting, &filter, since, count)
                         .await;
                     let changed = match (&remembered, &page) {
                         (Some(memory), Some(page)) => memory.write(page),
@@ -1316,7 +1574,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
                     }
                     if painted && page.is_some() && !changed {
                         // Same answer as the painted copy: nothing to patch, nothing to redraw.
-                    } else if source.is_filtering() {
+                    } else if live.state.sifts(source) {
                         if let FillStep::Fetch(next) = live.state.fill_page(run, page, false) {
                             command = Some(next);
                         }
@@ -1344,7 +1602,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
         &self,
         switch: u64,
         sorting: Sorting,
-        filter: LibraryFilter,
+        filter: &ListFilter,
         count: usize,
     ) -> Option<Remembered> {
         let cache = self.host.cache.clone()?;
@@ -1383,7 +1641,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
         client: &Backend<T>,
         switch: u64,
         sorting: Sorting,
-        filter: LibraryFilter,
+        filter: &ListFilter,
         since: usize,
         count: usize,
     ) -> Option<Page> {
@@ -1427,6 +1685,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 sort_order: source.bearing(sorting).into(),
                 filters: filter.jellyfin_filter(),
                 is_watched: filter.is_watched(),
+                years: filter.years(),
                 recursive: self.recursive() || self.spec.genre.is_some(),
                 include_item_types: self.types().iter().map(|t| (*t).to_owned()).collect(),
                 genres: self.spec.genre.iter().cloned().collect(),
@@ -1441,7 +1700,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
     }
 
     /// Where the whole list of an order is kept: "By name" under the natural list's key, the others next to it.
-    fn strip_key(&self, sorting: Sorting, filter: LibraryFilter, switch: u64) -> String {
+    fn strip_key(&self, sorting: Sorting, filter: &ListFilter, switch: u64) -> String {
         let base = format!(
             "{}|{}|{}|{switch}",
             self.source().key(),
@@ -1460,7 +1719,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
         &self,
         client: &Backend<T>,
         switch: u64,
-        filter: LibraryFilter,
+        filter: &ListFilter,
         fresh: bool,
     ) -> Option<Arc<Vec<Item>>> {
         let source = &self.source();
@@ -1489,6 +1748,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
                     sort_order: source.bearing(Sorting::Name).into(),
                     filters: filter.jellyfin_filter(),
                     is_watched: filter.is_watched(),
+                    years: filter.years(),
                     recursive: true,
                     include_item_types: types.iter().map(|t| (*t).to_owned()).collect(),
                     genres: vec![genre.clone()],
@@ -1514,6 +1774,11 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 .await
                 .ok()?
         };
+        let mut list = list;
+        // The whole list is asked without years; the span is cut here (a title without a year is out).
+        if let Some(span) = filter.narrowing.years {
+            list.retain(|i| i.production_year.is_some_and(|y| span.contains(y)));
+        }
         let list = Arc::new(list);
         self.lists
             .lock()

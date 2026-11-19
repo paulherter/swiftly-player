@@ -13,6 +13,21 @@ use common::{Net, account, rig, until};
 use swiftly_library::{HomeStore, MemoryStore};
 use swiftly_vm::{Badge, FailKind, HomeIntent, HomeVm, ImageKind, Load, RailKind, Status, part};
 
+const REFUSED: &str = "Das Entfernen hat nicht geklappt.";
+
+fn continue_ids(vm: &HomeVm<Net>) -> Vec<String> {
+    vm.rails()
+        .rails
+        .iter()
+        .find(|r| r.kind == RailKind::ContinueWatching)
+        .map(|r| r.ids.clone())
+        .unwrap_or_default()
+}
+
+fn remove(id: &str) -> HomeIntent {
+    HomeIntent::RemoveFromContinue { item_id: id.into() }
+}
+
 fn titles(vm: &HomeVm<Net>) -> Vec<String> {
     vm.rails().rails.iter().map(|r| r.title.clone()).collect()
 }
@@ -204,6 +219,18 @@ fn offline_the_preview_stays_and_the_status_says_so() {
 
 #[test]
 fn refresh_reloads_only_after_thirty_seconds() {
+    /// The request count once the page has stopped asking (the collections are asked for after the rows are up).
+    fn settled(net: &Net) -> usize {
+        let mut last = net.requests();
+        loop {
+            std::thread::sleep(Duration::from_millis(100));
+            let now = net.requests();
+            if now == last {
+                return now;
+            }
+            last = now;
+        }
+    }
     let net = Net::new(true);
     let rig = rig(
         net.clone(),
@@ -214,7 +241,7 @@ fn refresh_reloads_only_after_thirty_seconds() {
     let vm = &rig.vm;
     vm.send(HomeIntent::Load);
     until(vm, "ready", common::ready);
-    let loaded = net.requests();
+    let loaded = settled(&net);
 
     rig.clock.set(1029.9);
     vm.send(HomeIntent::Refresh);
@@ -225,7 +252,7 @@ fn refresh_reloads_only_after_thirty_seconds() {
     vm.send(HomeIntent::Refresh);
     until(vm, "reload", |_| net.requests() > loaded);
     until(vm, "ready again", common::ready);
-    let reloaded = net.requests();
+    let reloaded = settled(&net);
 
     // `Load` (pull to refresh) is not bound by the rule.
     vm.send(HomeIntent::Load);
@@ -541,4 +568,230 @@ fn a_failed_home_names_why_for_its_error_text() {
         LoadFailure::Failed(FailKind::Unreadable).copy("x").0,
         "Antwort unlesbar"
     );
+}
+
+/// "Remove from Continue Watching": the title is gone from the rails part in the very call that sends the intent,
+/// before the request is even answered; a success changes nothing more.
+#[test]
+fn removing_from_continue_is_gone_at_once_and_a_success_changes_nothing_more() {
+    let net = Net::new(true);
+    let rig = rig(
+        net.clone(),
+        Arc::new(MemoryStore::new()),
+        "de",
+        Some("TOKEN-A"),
+    );
+    let vm = &rig.vm;
+    vm.send(HomeIntent::Load);
+    until(vm, "ready", common::ready);
+    assert_eq!(continue_ids(vm), ["r1", "e1"]);
+
+    // The server is slow: the request stays out while the page already shows the change.
+    net.gate.close();
+    let seen = vm.version();
+    vm.send(remove("r1"));
+    assert_eq!(
+        continue_ids(vm),
+        ["e1"],
+        "gone in the first frame, no round trip"
+    );
+    let change = futures_executor::block_on(vm.changed(seen));
+    assert_eq!(change.parts, part::RAILS, "one update, rails only");
+    assert_eq!(vm.rails().rails[0].tiles.len(), 1);
+    until(vm, "request out", |_| net.user_data_posts("r1") == 1);
+    assert_eq!(continue_ids(vm), ["e1"]);
+
+    net.gate.open();
+    until(vm, "server knows", |_| {
+        net.r1_removed.load(Ordering::SeqCst)
+    });
+    // A load after the confirmation shows what the server says: still without it, no hint.
+    vm.send(HomeIntent::Load);
+    until(vm, "ready again", common::ready);
+    assert_eq!(continue_ids(vm), ["e1"]);
+    assert_eq!(vm.notice().message, None);
+    assert_eq!(net.user_data_posts("r1"), 1);
+}
+
+#[test]
+fn a_refused_removal_puts_the_title_back_in_place_with_one_hint_in_the_same_update() {
+    let net = Net::new(true);
+    net.refuse_user_data.store(true, Ordering::SeqCst);
+    let rig = rig(
+        net.clone(),
+        Arc::new(MemoryStore::new()),
+        "de",
+        Some("TOKEN-A"),
+    );
+    let vm = &rig.vm;
+    vm.send(HomeIntent::Load);
+    until(vm, "ready", common::ready);
+    assert_eq!(vm.notice().message, None);
+
+    // e1 sits at index 1: it must come back there, not first or last by accident.
+    net.gate.close();
+    vm.send(remove("e1"));
+    assert_eq!(continue_ids(vm), ["r1"]);
+    let seen = vm.version();
+    net.gate.open();
+    until(vm, "hint", |vm| vm.notice().message.is_some());
+    assert_eq!(continue_ids(vm), ["r1", "e1"], "back at its old place");
+    let notice = vm.notice();
+    assert_eq!(notice.message.as_deref(), Some(REFUSED));
+    assert_eq!(notice.seq, 1);
+    // The rails and the hint arrived in one update: no frame shows the title back without the hint or the reverse.
+    assert_eq!(vm.rails().version, notice.version);
+    let change = futures_executor::block_on(vm.changed(seen));
+    assert_eq!(change.parts, part::RAILS | part::NOTICE);
+
+    // The host shows it once and dismisses it; a second refusal is a new hint.
+    vm.send(HomeIntent::DismissNotice);
+    assert_eq!(vm.notice().message, None);
+    vm.send(remove("r1"));
+    until(vm, "second hint", |vm| vm.notice().message.is_some());
+    assert_eq!(vm.notice().seq, 2);
+    assert_eq!(continue_ids(vm), ["r1", "e1"]);
+    assert_eq!(net.user_data_posts("r1"), 1);
+}
+
+#[test]
+fn a_second_remove_of_the_same_title_sends_no_second_request() {
+    let net = Net::new(true);
+    let rig = rig(
+        net.clone(),
+        Arc::new(MemoryStore::new()),
+        "de",
+        Some("TOKEN-A"),
+    );
+    let vm = &rig.vm;
+    vm.send(HomeIntent::Load);
+    until(vm, "ready", common::ready);
+    net.gate.close();
+    vm.send(remove("r1"));
+    let version = vm.version();
+    vm.send(remove("r1"));
+    vm.send(remove("not-on-the-page"));
+    assert_eq!(vm.version(), version, "the second tap changes nothing");
+    assert_eq!(continue_ids(vm), ["e1"]);
+    until(vm, "request out", |_| net.user_data_posts("r1") == 1);
+    net.gate.open();
+    until(vm, "server knows", |_| {
+        net.r1_removed.load(Ordering::SeqCst)
+    });
+    // The title is gone for good: asking again is still nothing.
+    vm.send(remove("r1"));
+    assert_eq!(net.user_data_posts("r1"), 1);
+}
+
+/// A reload whose answer was fetched before the server knew about the removal lands while the request is out: it must
+/// not bring the title back, and a refusal afterwards still restores it.
+#[test]
+fn a_refresh_that_lands_while_the_removal_is_out_does_not_bring_the_title_back() {
+    let net = Net::new(true);
+    let rig = rig(
+        net.clone(),
+        Arc::new(MemoryStore::new()),
+        "de",
+        Some("TOKEN-A"),
+    );
+    let vm = &rig.vm;
+    vm.send(HomeIntent::Load);
+    until(vm, "ready", common::ready);
+
+    net.gate.close();
+    let before = net.requests();
+    vm.send(HomeIntent::Load);
+    until(vm, "refresh requests out", |_| net.requests() >= before + 3);
+    vm.send(remove("r1"));
+    assert_eq!(continue_ids(vm), ["e1"]);
+    until(vm, "removal out", |_| net.user_data_posts("r1") == 1);
+
+    net.gate.open();
+    until(vm, "refresh landed", common::ready);
+    assert_eq!(continue_ids(vm), ["e1"], "the stale answer still had it");
+    until(vm, "server knows", |_| {
+        net.r1_removed.load(Ordering::SeqCst)
+    });
+    vm.send(HomeIntent::Load);
+    until(vm, "ready again", common::ready);
+    assert_eq!(continue_ids(vm), ["e1"]);
+    assert_eq!(vm.notice().message, None);
+}
+
+#[test]
+fn a_refusal_after_a_refresh_landed_still_restores_the_title() {
+    let net = Net::new(true);
+    net.refuse_user_data.store(true, Ordering::SeqCst);
+    let rig = rig(
+        net.clone(),
+        Arc::new(MemoryStore::new()),
+        "de",
+        Some("TOKEN-A"),
+    );
+    let vm = &rig.vm;
+    vm.send(HomeIntent::Load);
+    until(vm, "ready", common::ready);
+
+    net.gate.close();
+    let before = net.requests();
+    vm.send(HomeIntent::Load);
+    until(vm, "refresh requests out", |_| net.requests() >= before + 3);
+    vm.send(remove("r1"));
+    until(vm, "removal out", |_| net.user_data_posts("r1") == 1);
+    net.gate.open();
+    until(vm, "hint", |vm| vm.notice().message.is_some());
+    until(vm, "ready", common::ready);
+    assert_eq!(
+        continue_ids(vm),
+        ["r1", "e1"],
+        "the refusal wins over the refresh"
+    );
+}
+
+#[test]
+fn an_answer_for_an_account_that_was_switched_away_is_dropped() {
+    let net = Net::new(true);
+    net.refuse_user_data.store(true, Ordering::SeqCst);
+    let rig = rig(
+        net.clone(),
+        Arc::new(MemoryStore::new()),
+        "de",
+        Some("TOKEN-A"),
+    );
+    let vm = &rig.vm;
+    vm.send(HomeIntent::Load);
+    until(vm, "ready", common::ready);
+    net.gate.close();
+    vm.send(remove("r1"));
+    until(vm, "removal out", |_| net.user_data_posts("r1") == 1);
+    vm.send(HomeIntent::AccountSwitched {
+        account: Some(account("TOKEN-B")),
+    });
+    net.gate.open();
+    until(vm, "ready", common::ready);
+    std::thread::sleep(Duration::from_millis(150));
+    assert_eq!(
+        vm.notice().message,
+        None,
+        "the other account's page gets no hint"
+    );
+    assert_eq!(continue_ids(vm), ["x1"]);
+}
+
+#[test]
+fn the_hint_follows_the_language() {
+    let net = Net::new(true);
+    net.refuse_user_data.store(true, Ordering::SeqCst);
+    let rig = rig(
+        net.clone(),
+        Arc::new(MemoryStore::new()),
+        "en",
+        Some("TOKEN-A"),
+    );
+    let vm = &rig.vm;
+    vm.send(HomeIntent::Load);
+    until(vm, "ready", common::ready);
+    vm.send(remove("r1"));
+    until(vm, "hint", |vm| vm.notice().message.is_some());
+    assert_eq!(vm.notice().message.as_deref(), Some("Couldn't remove it."));
 }

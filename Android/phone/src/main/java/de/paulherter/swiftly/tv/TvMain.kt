@@ -108,7 +108,7 @@ fun TvBackdropReport(image: String?, ready: Boolean = true) {
 /** Subpages that do not use the shared backdrop (counterpart of `TvSubpage`). Person and
  *  Seerr title draw their own (rotating banner, foreign URLs) on an opaque background. */
 private val withoutSharedBackdrop = setOf("Person", "Genre", "BoxSet", "Playlist", "Profil", "WeiteresKonto", "ServerAufnahme",
-    "Wiedergabeeinstellungen", "Untertitelaussehen", "Darstellung", "Einstellungen", "Seerr", "Seerrtitel", "Genrewahl", "Merkliste")
+    "Wiedergabeeinstellungen", "Untertitelaussehen", "Darstellung", "Einstellungen", "Seerr", "Verwaltung", "Seerrtitel", "Genrewahl", "Merkliste")
 
 private fun pagesKey(b: TvSection, depth: Int, id: String?) = "${b.name}/$depth/${id.orEmpty()}"
 
@@ -194,6 +194,8 @@ fun TvMain(app: SwiftlyApplication) {
         alt.lastOrNull()?.let { backdrops.remove(pagesKey(section, alt.size, it.id)) }
         stack[section] = alt.dropLast(1)
     }
+    // Debug builds only (`testOpen`): a page opened cold, once.
+    LaunchedEffect(app.debugOpen.value) { app.debugOpen.value?.let { app.debugOpen.value = null; open(it) } }
     val top = stack[section].orEmpty()
 
     // Watch Next (`TvContinueWatchingShelf`) returns here via "swiftly://titel/<id>", the same address
@@ -209,7 +211,7 @@ fun TvMain(app: SwiftlyApplication) {
         val id = address.lastPathSegment?.takeIf { Regex("[A-Za-z0-9-]{1,64}").matches(it) } ?: return@LaunchedEffect
         section = TvSection.Start
         runCatching { titleRead(withContext(Dispatchers.IO) { app.rk.title(id).await() }) }.getOrNull()?.let { t ->
-            if (t.planPresent) de.paulherter.swiftly.playOrChoose(app, t, id, t.resumeFrom) else open(Destination(id, t.name, t.type))
+            if (t.planPresent) de.paulherter.swiftly.playDefault(app, id, t.resumeFrom) else open(Destination(id, t.name, t.type))
         }
     }
 
@@ -344,6 +346,11 @@ fun TvMain(app: SwiftlyApplication) {
         // A group message: the same strip as on the pages; in the player, the player shows it.
         if (play == null) app.sharedError.value?.let {
             TvHintStrip(it, Modifier.align(Alignment.TopCenter).padding(top = 74.dp)) { app.sharedError.value = null }
+        }
+        // The shared hint line (`app.message`, set by shared code such as the tile menu when the server refuses a
+        // change). The phone draws it in `MainView`; without this strip a refusal was silent on TV.
+        if (play == null) app.message.value?.let {
+            TvHintStrip(it, Modifier.align(Alignment.TopCenter).padding(top = 74.dp)) { app.message.value = null }
         }
         // While the player runs, the panel belongs to it.
         if (play == null) TvPanel(app)
@@ -517,6 +524,7 @@ private fun TvSubpage(app: SwiftlyApplication, target: Destination, open: (Desti
         "Darstellung" -> PresentationPage(app, open, back)
         "Einstellungen" -> SettingsPage(app, open, back)
         "Seerr" -> TvSeerrPage(app, back)
+        "Verwaltung" -> TvManagementPage(app, open, back)
         "EigeneKoepfe" -> { androidx.activity.compose.BackHandler(onBack = back); TvOwnHeadersPage(app, back) }
         "Lizenzen" -> TvLicenses(app, back)
         "Seerrtitel" -> TvSeerrDetailPage(app, target, open, back)
@@ -726,6 +734,9 @@ fun TvPanel(app: SwiftlyApplication) {
                      modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
                 w.subline?.let { Text(it, style = TvTheme.body, color = Theme.fontQuiet,
                      modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) }
+                // Own content (the Seerr request panel draws the core's rows) instead of the entries.
+                val own = w.content
+                if (own != null) own(this, close) else
                 Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
                     w.entries.forEachIndexed { i, e ->
                         w.categories[e.value]?.let { over ->

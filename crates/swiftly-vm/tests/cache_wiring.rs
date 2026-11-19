@@ -173,6 +173,31 @@ fn an_event_refreshes_the_grid_with_the_new_answer() {
     wait_for("refetch", || old.count("/Items") > before);
 }
 
+/// The refresh a reconnect after a real drop causes (`lists_changed`): the grid on screen stays as it is, never goes
+/// back to loading, and is patched when the fresh answer comes. Held back with the gate to look at the time between.
+#[test]
+fn a_reconnect_refresh_keeps_the_standing_grid_on_screen() {
+    let cache = cache();
+    let net = server("");
+    let a = vm(&net, &cache, "A");
+    a.send(LibraryIntent::Load);
+    wait_for("load", || ready(&a));
+    let tiles = a.grid().tiles.len();
+    assert_eq!(tiles, N);
+    let before = net.count("/Items");
+    net.gate.close();
+    cache
+        .entity_cache()
+        .lists_changed(&ViewCache::scope(&account("A")));
+    wait_for("the refetch started", || net.count("/Items") > before);
+    // While the answer is on its way: still ready, same tiles, no loading state.
+    assert_eq!(a.status().status, LibraryStatus::Ready);
+    assert_eq!(a.grid().tiles.len(), tiles);
+    net.gate.open();
+    wait_for("settled", || ready(&a));
+    assert_eq!(a.grid().tiles.len(), tiles);
+}
+
 #[test]
 fn a_storm_of_cancelled_loads_leaves_the_cache_usable() {
     let cache = cache();

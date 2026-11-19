@@ -1,5 +1,6 @@
 import JellyfinKit
 import SwiftUI
+import enum SwiftlyCore.HomeRowOrder
 
 /// The home page: horizontal rows like on iPhone, only larger and driven by focus.
 struct HomeView: View {
@@ -37,7 +38,7 @@ struct HomeView: View {
     /// when the switch starts, not when the new content arrives.
     @State private var change = false
     /// The rows are showing; no switch in progress.
-    private var showItem: Bool { !change && !AccountSwitchTransition.shared.waits }
+    private var showItem: Bool { !change && !AccountSwitchTransition.shared.waits && !seerr.holdsPage(model) }
     /// The rows are in the tree except between the switch and its release. Then nothing
     /// invisible can take focus; it stays on the profile image at the top.
     private var built: Bool { showItem || structure }
@@ -223,6 +224,34 @@ struct HomeView: View {
         }
     }
 
+    private enum OrderedRow: Identifiable {
+        case fixed(StartRail)
+        case seerrArrival
+        case seerrRequests
+        case library(Home.LibraryRail)
+        var id: String {
+            switch self {
+            case .fixed(let rail): rail.rawValue
+            case .seerrArrival: HomeRowOrder.seerrArrival
+            case .seerrRequests: HomeRowOrder.seerrRequests
+            case .library(let r): HomeRowOrder.libraryId(r.id)
+            }
+        }
+    }
+
+    /// The visible rows in the combined order: hidden or non-fitting fixed rows and libraries without content drop
+    /// out; each Seerr section has its own switch (the core lists them only while Seerr is connected).
+    private var orderedRows: [OrderedRow] {
+        let fixed = Set(fixedRails)
+        let byId = Dictionary(libraries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return model.rowOrder.compactMap { id in
+            if id == HomeRowOrder.seerrArrival { return arrivalOn ? OrderedRow.seerrArrival : nil }
+            if id == HomeRowOrder.seerrRequests { return requestsOn ? OrderedRow.seerrRequests : nil }
+            if let lib = HomeRowOrder.library(of: id) { return byId[lib].map(OrderedRow.library) }
+            return StartRail(rawValue: id).flatMap { fixed.contains($0) ? OrderedRow.fixed($0) : nil }
+        }
+    }
+
     /// The chosen libraries and collections that currently have titles.
     private var libraries: [Home.LibraryRail] {
         state.libraryRails(for: model.startLibraries)
@@ -354,10 +383,17 @@ struct HomeView: View {
             guard let now, let before, before.rail != now.rail else { return }
             if let target = frontmostMark(now.rail), target != now { atTitle = target }
         }
+        // The first tile exists now; if tvOS's first pass ran without it, ask again.
+        .tvFocusGuard("home", key: startMark)
         .onChange(of: startMark, initial: true) { _, mark in
             guard !startFocusSet, let mark else { return }
             startFocusSet = true
-            atTitle = mark
+            if stackFirst { arrivalClaim = true } else { atTitle = mark }
+        }
+        // The stack answered after the first tile took focus and nobody moved yet: move focus up to it.
+        .onChange(of: stackFirst) { _, first in
+            guard first, atTitle == nil || atTitle == startMark, lastAtTitle == nil || lastAtTitle == startMark else { return }
+            arrivalClaim = true
         }
         // Focus does not return from the player by itself.
         //
@@ -390,6 +426,30 @@ struct HomeView: View {
     ///
     /// Order dependent, so a successful pass proves nothing. The lazy stack also estimated
     /// row heights and accumulated a focus offset.
+    /// The Seerr block above the rows (arrival banner, "Angefragt"); the core decides if it shows.
+    @State private var seerr = SeerrHomeFlow()
+    @AppStorage(SeerrArrival.hintKey) private var arrivalOn = true
+    @AppStorage(SeerrArrival.requestsKey) private var requestsOn = false
+    /// Focus is on a control of the arrival stack.
+    @State private var arrivalFocus = false
+    /// One-shot request: focus goes to the arrival stack's front card.
+    @State private var arrivalClaim = false
+
+    /// The arrival stack is the first row of the page and is answered (not a skeleton): it is the first focusable row,
+    /// so default focus lands on it and the page stays at the top. Otherwise the first tile scrolled it out of view.
+    private var stackFirst: Bool {
+        guard case .seerrArrival? = orderedRows.first,
+              let info = seerr.block(model), !info.arrivals.isEmpty, info.state != .pending else { return false }
+        return true
+    }
+
+    /// The open stack (3 cards + "Weniger anzeigen" = 640 pt) is taller than the window under the header zone (570),
+    /// so while focus is inside it the header zone gives its room to the rails: the stack shows whole and nothing
+    /// scrolls under the title. It returns when focus goes back to a tile.
+    private var headerGivesWay: Bool {
+        arrivalFocus && (seerr.block(model)?.arrivalsExpanded ?? false)
+    }
+
     private var rails: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 0) {
@@ -399,23 +459,32 @@ struct HomeView: View {
                     genreChips.railEntrance(1, present: showItem)
                 }
 
-                // The fixed rows in the configured order, without hidden ones (Profile, Appearance,
-                // Home). Staggered after an account switch (``Reihenauftritt``).
-                ForEach(Array(fixedRails.enumerated()), id: \.element) { i, rail in
-                    pinned(rail).railEntrance(i + 2, present: showItem)
-                }
-
-                // The chosen libraries and collections, then the genres.
-                ForEach(Array(libraries.enumerated()), id: \.element.id) { j, bib in
-                    railsSection {
-                        RailTitle(name: bib.name)
-                    } content: {
-                        Strip(model: model, items: bib.items,
-                                 rail: .library(bib.id),
-                                 atTitle: $atTitle, frontmost: frontmost)
+                // The fixed rows, Seerr's two sections, libraries and collections in ONE configured order (Settings >
+                // Darstellung > Startseite; the core heals the stored list), without hidden ones. Seerr's sections are
+                // loaded together with the rows (`load()`), so they are part of the page when the rows show. Staggered
+                // after an account switch (``Reihenauftritt``).
+                ForEach(Array(orderedRows.enumerated()), id: \.element.id) { i, row in
+                    switch row {
+                    case .fixed(let rail):
+                        pinned(rail).railEntrance(i + 2, present: showItem)
+                    case .seerrArrival:
+                        TVSeerrHomeBlock(part: .arrival, model: model, flow: seerr, focusWithin: $arrivalFocus, claimFocus: $arrivalClaim)
+                            .railEntrance(i + 2, present: showItem)
+                    case .seerrRequests:
+                        TVSeerrHomeBlock(part: .requests, model: model, flow: seerr)
+                            .railEntrance(i + 2, present: showItem)
+                    case .library(let bib):
+                        railsSection {
+                            RailTitle(name: bib.name)
+                        } content: {
+                            Strip(model: model, items: bib.items,
+                                     rail: .library(bib.id),
+                                     atTitle: $atTitle, frontmost: frontmost)
+                        }
+                        .railEntrance(i + 2, present: showItem)
                     }
-                    .railEntrance(fixedRails.count + 2 + j, present: showItem)
                 }
+                // Then the genres.
                 ForEach(Array(state.genreRails.enumerated()), id: \.element.id) { j, genre in
                     if !genre.items.isEmpty {
                         railsSection {
@@ -426,7 +495,7 @@ struct HomeView: View {
                                      atTitle: $atTitle, frontmost: frontmost,
                                      looks: looks(.genre(genre.name)))
                         }
-                        .railEntrance(fixedRails.count + libraries.count + 2 + j, present: showItem)
+                        .railEntrance(orderedRows.count + 2 + j, present: showItem)
                     }
                 }
                 // Only after the last row, and only when it is due.
@@ -442,6 +511,8 @@ struct HomeView: View {
             .padding(.bottom, Theme.completionPadding)
         }
         .scrollIndicators(.hidden)
+        // Seerr signs in after the first rows: read again when the connection comes or a switch changes.
+        .seerrHomeReload(seerr, model: model)
         // Where focus stands on open is stated, not hoped for.
         //
         // While the lazy stack had created only the first row, focus landed there by default.
@@ -459,10 +530,16 @@ struct HomeView: View {
         //
         // `lastAtTitle` records where focus really was (it exists already because the readout
         // above needs the same fallback). On first open it is empty and `startMark` applies.
-        .defaultFocus($atTitle, lastAtTitle ?? startMark, priority: .userInitiated)
+        .defaultFocus($atTitle, lastAtTitle ?? (stackFirst ? nil : startMark), priority: .userInitiated)
         // Clipping here is intended. The tile's zoom is absorbed by the strip with `railsPadding`
         // inside its own bounds, so the vertical scroll view may clip, and only so can no tile
         // ever reach into the header zone.
+    }
+
+    /// **"Aus Weiterschauen entfernen"**: the same shared step as on iPhone (`HomeModel.takeOutOfContinue`); the row loses
+    /// the title in the first frame with the page's change motion, the core sends the request and rolls back on a refusal.
+    private func removeFromContinue(_ item: Item) {
+        withAnimation(Theme.reveal) { state.takeOutOfContinue(item, model: model) }
     }
 
     /// A fixed row: same structure as before, individually callable so the order from
@@ -477,7 +554,7 @@ struct HomeView: View {
                 segment("Weiterschauen") {
                     Strip(model: model, items: state.continueWatching,
                              rail: .continueWatching, landscape: true,
-                             direct: launch, atTitle: $atTitle,
+                             direct: launch, remove: removeFromContinue, atTitle: $atTitle,
                              frontmost: frontmost, looks: looks(.continueWatching))
                 }
             }
@@ -555,6 +632,7 @@ struct HomeView: View {
             inquiry
                 .padding(.leading, Theme.edgePage)
                 .padding(.top, Theme.contentTop)
+                .opacity(headerGivesWay ? 0 : 1)
         }
         // Full 510, measured from the screen edge.
         //
@@ -565,7 +643,8 @@ struct HomeView: View {
         // Not clipped: the landscape image is 700 high and ends with its own gradient. Cut at
         // 510 it would show the hard edge that once lay across the image as a light stripe. The
         // rows draw over it, being the next sibling.
-        .frame(height: Theme.heroHeight, alignment: .topLeading)
+        .frame(height: headerGivesWay ? Theme.barBottom : Theme.heroHeight, alignment: .topLeading)
+        .animation(Theme.reveal, value: headerGivesWay)
     }
 
     /// The image changes debounced and cross-faded.
@@ -656,14 +735,14 @@ struct HomeView: View {
     private func launch(_ item: Item) {
         // Fetch fresh: the entry in the list item is often stale.
         PlayRequest.start(item, freshValue: true,
-                              ask: VersionAsk(choose: { TileRequest.shared.choice = $0 },
-                                              failed: { TileRequest.shared.message = $0 }),
                               model: model, prepares: $prepares,
                               missing: { TileRequest.shared.message = String(localized: "Der Server hat keine Datei zu diesem Titel.") },
                               play: { play.wrappedValue = $0 })
     }
 
     private func load() async {
+        // The Seerr block is read next to the rows, so both are there at the same moment.
+        async let seerrLoad: Void = seerr.load(model)
         AccountSwitchTransition.note("startseite: laden (konto \(model.accountSwitch))")
         let a = Date()
         if model.coreServes {
@@ -672,6 +751,7 @@ struct HomeView: View {
             await state.load(model)
         }
         AccountSwitchTransition.note("startseite: geladen nach \(Int(Date().timeIntervalSince(a) * 1000)) ms")
+        await seerrLoad
         // Failed query and nothing there: do not overwrite a good preview with an empty one.
         if !(state.disrupted && state.allEmpty) { shelfWrite() }
     }
@@ -801,6 +881,9 @@ private struct Strip: View {
     var newAccess = false
     /// If set, clicking starts playback immediately instead of leading to the page.
     var direct: ((Item) -> Void)?
+    /// "Remove from Continue Watching" in the long-press menu: the page takes the title out through the shared home model
+    /// (`HomeModel.takeOutOfContinue`). `nil` outside that row.
+    var remove: ((Item) -> Void)?
     /// Reports upward which title is under focus.
     @FocusState.Binding var atTitle: TileMark?
     /// Registers here what is at the front of this row.
@@ -834,7 +917,8 @@ private struct Strip: View {
                                 // itself. The same menu as on iPhone (`TileMenu`), here with "To overview" and
                                 // "Remove from Continue Watching".
                                 .tileMenu(item, model: model,
-                                             continueWatching: rail == .continueWatching, landscape: landscape)
+                                             continueWatching: rail == .continueWatching, landscape: landscape,
+                                             onRemove: remove)
                         } else {
                             // On every tile since 1.0.5, not only on "Continue Watching", as on iPhone.
                             NavigationLink(value: item) { tile(item) }

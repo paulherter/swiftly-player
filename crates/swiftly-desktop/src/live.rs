@@ -161,6 +161,12 @@ impl Core {
         let settings = Arc::new(
             JsonFileStore::open(dir.join("settings.json")).map_err(|e| format!("settings: {e}"))?,
         );
+        // The core's own switches (empty series, delete lock) count from the first list on, not from the settings page.
+        swiftly_vm::apply_stored_settings(&swiftly_settings::Settings::new(
+            crate::settings_screen::Mem::shared(
+                Arc::clone(&settings) as Arc<dyn swiftly_settings::KeyValueStore>
+            ),
+        ));
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -208,7 +214,15 @@ impl Core {
             locale: Locale::parse("de"),
             device_name: device_name(),
             client_version: env!("CARGO_PKG_VERSION").into(),
-            cache: None,
+            // The stored lists, titles and series structures (as the other hosts keep them): a page opens complete from the
+            // tile it was opened from. Scripted runs keep the plain, cache-less core their tests are written for.
+            cache: if mock_is_none {
+                swiftly_vm::ViewCache::open_in(Some(&cache_dir()), |why| {
+                    eprintln!("swiftly-desktop: {why}")
+                })
+            } else {
+                None
+            },
         };
         Ok(Core {
             rt: Some(rt),
@@ -738,6 +752,9 @@ pub struct Wiring {
     pub next_kind: std::cell::RefCell<String>,
     /// Id and name of the title about to be pushed (series pages read it).
     pub last_title: std::cell::RefCell<(String, String)>,
+    /// The tile the page about to be pushed was opened from: the page's seed (resume point, watched state, marks) is made
+    /// of it by the core (`swiftly_vm::page_seed`), so the first frame already words the Play button right.
+    pub seed_tile: std::cell::RefCell<Option<swiftly_vm::Tile>>,
     /// Where the series page about to be pushed starts (the season of the episode or season tile that was tapped).
     pub next_spec: std::cell::RefCell<swiftly_vm::SeriesSpec>,
     /// Full titles fetched ahead while the pointer rested on their tile (the Mac's `SeriesCache.prefetch`): a page that
@@ -780,6 +797,7 @@ impl Wiring {
             hub,
             next_kind: Default::default(),
             last_title: Default::default(),
+            seed_tile: Default::default(),
             next_spec: Default::default(),
             ahead: Default::default(),
             download_right: Arc::new(std::sync::Mutex::new(
@@ -836,6 +854,15 @@ impl Wiring {
         )
     }
 
+    /// Whether a copy of title `id` is on this device or queued (such a title offers no "Laden").
+    pub fn on_device(&self, id: &str) -> bool {
+        crate::live_downloads::on_device(
+            &crate::live_downloads::downloads_dir(),
+            &self.account.key(),
+            id,
+        )
+    }
+
     /// Asks the server once for the account's download right (`GET Users/{id}`); a failed answer stays unknown.
     pub fn ask_download_right(&self) {
         if self.asked_right.replace(true) {
@@ -857,7 +884,12 @@ impl Wiring {
 
     /// A stand-in `Item` for a tapped tile; the view model loads the full title itself.
     pub fn stand_in(&self, id: &str, name: &str) -> swiftly_model::Item {
-        if let Some(item) = self.ahead.lock().ok().and_then(|a| a.get(id).cloned()) {
+        let fetched = self.ahead.lock().ok().and_then(|a| a.get(id).cloned());
+        // The tile that was tapped wins over the title fetched ahead (older than the tile): the core's one rule.
+        if let Some(tile) = self.seed_tile.borrow().as_ref().filter(|t| t.id == id) {
+            return swiftly_vm::page_seed(tile, fetched);
+        }
+        if let Some(item) = fetched {
             return item;
         }
         let kind = self.next_kind.borrow().clone();
@@ -1017,19 +1049,6 @@ pub fn smoke(address: &str, user: &str, password: &str) -> Result<String, String
         std::thread::sleep(Duration::from_millis(20));
     }
     Ok(out.join("\n"))
-}
-
-/// Asks the server for the genre names that have movies or series (`GET Genres`), for the chips row of Start.
-pub fn fetch_genres(w: &Wiring) -> crate::login_screen::Pending<Vec<String>> {
-    let (tx, rx) = crate::login_screen::Pending::channel();
-    if let Ok(server) = w.core.server_for(&w.account) {
-        w.core.spawn(async move {
-            if let Ok(names) = crate::live_server::genres(&server).await {
-                let _ = tx.send(names);
-            }
-        });
-    }
-    rx
 }
 
 #[cfg(test)]

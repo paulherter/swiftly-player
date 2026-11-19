@@ -125,6 +125,9 @@ struct ProfileView: View {
                 .buttonStyle(Theme.PressRow())
             }
             .padding(.top, 18)
+
+            // The one entry for requests and reports ("Verwaltung" / "Meine Anfragen"), as the core decides; none without Seerr.
+            MacManagementEntry(model: model)
         }
     }
 

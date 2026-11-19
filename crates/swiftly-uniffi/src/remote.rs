@@ -2,9 +2,15 @@
 //! takeover hints and SyncPlay messages over a WebSocket the host implements (URLSession on
 //! Apple, OkHttp on Android; a tungstenite one lives in `swiftly-net` for the desktop).
 //!
-//! The channel keeps the link alive (a keep-alive every 30 s, answers `ForceKeepAlive`), treats
-//! 90 s without any frame as a dead link, reconnects with the backoff of `RemoteControl` (2, 4,
-//! 8, 16, 30 s) and tells SyncPlay about every drop and return.
+//! The channel keeps the link alive (a keep-alive every 30 s, or half of the limit a
+//! `ForceKeepAlive` names; it answers that message at once), reconnects with the backoff of
+//! `RemoteControl` (2, 4, 8, 16, 30 s) and tells SyncPlay about every drop and return.
+//!
+//! A link is dead when the host reports an error (a read or write failed, the server closed it)
+//! or a send does not finish within `Timing::send_limit`. Silence is NOT a sign of death: a Jellyfin
+//! server sends `ForceKeepAlive` on connect and again only after 45 s without a client frame, so a
+//! client that reports every 30 s never hears from it again. A 90 s "no frame" watchdog used to drop
+//! every healthy socket after the third keep-alive and reload the home screen on each return.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -184,14 +190,19 @@ fn order_of(o: PlayOrder) -> RemotePlayOrder {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Timing {
     pub keep_alive: Duration,
-    pub silence: Duration,
+    /// A link that was down for less than this was not down long enough to have missed an event worth a refresh: the
+    /// screens on show keep their pages (a flaky network flapping every few seconds must not reload every page each time).
+    pub refresh_after_outage: Duration,
+    /// A send that has not finished after this long means the link is stuck.
+    pub send_limit: Duration,
 }
 
 impl Default for Timing {
     fn default() -> Self {
         Self {
             keep_alive: Duration::from_secs_f64(KEEP_ALIVE_INTERVAL),
-            silence: Duration::from_secs(90),
+            refresh_after_outage: Duration::from_secs(5),
+            send_limit: Duration::from_secs(20),
         }
     }
 }
@@ -213,6 +224,13 @@ pub struct RemoteChannel {
     stopped: Arc<AtomicBool>,
     wake: Arc<Notify>,
     running: AtomicBool,
+    /// When the link went down, while it is down (the first loss of a series of failed reconnects), on the runtime's
+    /// clock. On Apple that clock does not count the time the device sleeps, and a dead link is only noticed at wake,
+    /// so this alone measures a night in the background as a couple of seconds.
+    lost_since: std::sync::Mutex<Option<tokio::time::Instant>>,
+    /// When the link was last known to be alive, on the host's clock (wall time: it counts sleep): the last frame that
+    /// came in, or a keep-alive of ours that went out on time ([`Self::kept_up`]).
+    alive_at: std::sync::Mutex<Option<f64>>,
 }
 
 impl RemoteChannel {
@@ -232,6 +250,8 @@ impl RemoteChannel {
             stopped: Arc::new(AtomicBool::new(false)),
             wake: Arc::new(Notify::new()),
             running: AtomicBool::new(false),
+            lost_since: std::sync::Mutex::new(None),
+            alive_at: std::sync::Mutex::new(None),
         })
     }
 
@@ -252,17 +272,18 @@ impl RemoteChannel {
     /// `LibraryChanged` / `UserDataChanged` invalidate the cached lists and titles of the account.
     fn feed_cache(&self, raw: &str) {
         if let (Some(cache), Some(event)) = (&self.host.cache, swiftly_cache::parse_ws(raw)) {
-            cache
-                .entity_cache()
-                .apply_event(&swiftly_vm::ViewCache::scope(&self.account), &event);
+            cache.apply_event(&self.account, &event);
         }
     }
 
-    fn refresh_cache(&self) {
+    /// The channel is back after a REAL drop that lasted at least `Timing::refresh_after_outage` (the link ended:
+    /// closed, a failed read or write, a send that hung, a Ping nobody answered). Events may have been missed
+    /// meanwhile, so every list is stale and the screens on show refresh in the background: each keeps its standing page and patches it with the fresh answer (no blanking, no
+    /// spinner), and a burst counts once. A plain keep-alive cycle never gets here: it keeps the link up.
+    fn refresh_after_drop(&self) {
         if let Some(cache) = &self.host.cache {
-            cache
-                .entity_cache()
-                .lists_changed(&swiftly_vm::ViewCache::scope(&self.account));
+            cache.lists_changed(&self.account);
+            cache.link_came_back();
         }
     }
 
@@ -318,9 +339,63 @@ impl RemoteChannel {
                     }
                 }
             }
+            self.lost_since
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get_or_insert_with(tokio::time::Instant::now);
             self.emit_all(vec![ctl.on_lost()], "");
             let wait = Duration::from_secs_f64(ctl.next_reconnect_wait());
             let _ = tokio::time::timeout(wait, self.wake.notified()).await;
+        }
+    }
+
+    /// A frame came in: remembers when, and returns when the link was alive before it (`None` for the first of all).
+    fn heard_now(&self) -> Option<f64> {
+        self.alive_at
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .replace(self.host.clock.now())
+    }
+
+    /// A keep-alive of ours went out. A quiet link carries nothing else (Jellyfin does not answer a client that
+    /// reports on time, and the pongs of the socket do not reach `receive` on every platform), so without this a
+    /// link that was quiet for ten minutes would measure ten minutes of outage at its first flap.
+    ///
+    /// It counts only when it went out on time, that is when the link was alive about one interval ago. After a
+    /// longer gap the device slept (the runtime's timers do not count sleep on Apple): the send may have gone into a
+    /// socket that died meanwhile, so it proves nothing, and only a frame of the server revives the mark.
+    fn kept_up(&self) {
+        let now = self.host.clock.now();
+        let on_time = (self.timing.keep_alive + self.timing.send_limit).as_secs_f64();
+        let mut alive = self
+            .alive_at
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if alive.is_some_and(|before| now - before <= on_time) {
+            *alive = Some(now);
+        }
+    }
+
+    /// How long the link that is back was gone, `None` when that is unknown (so a refresh is the safe answer).
+    /// Two measures, the longer counts: the time since the loss was noticed (the runtime's clock, awake time only),
+    /// and the silence since the link was last alive on the host's clock, which also counts the time the device
+    /// slept. The link was alive at the last frame or at the last keep-alive that went out on time, so on a quiet
+    /// link that silence includes the stretch before the drop, up to one keep-alive interval, which was no outage:
+    /// that much is taken off (a flaky link must not refresh every page each time).
+    fn outage(&self, heard_before: Option<f64>) -> Option<Duration> {
+        let noticed = self
+            .lost_since
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+            .map(|since| since.elapsed());
+        let silent = heard_before.map(|before| {
+            Duration::from_secs_f64((self.host.clock.now() - before).max(0.0))
+                .saturating_sub(self.timing.keep_alive)
+        });
+        match (noticed, silent) {
+            (None, None) => None,
+            (a, b) => Some(a.unwrap_or_default().max(b.unwrap_or_default())),
         }
     }
 
@@ -332,7 +407,8 @@ impl RemoteChannel {
         }
     }
 
-    /// Reads one link until it ends; sends the keep-alive; a silent link is dead.
+    /// Reads one link until it ends; sends the keep-alive. Only a failed read or write, or a send that
+    /// hangs, ends it; a quiet server is normal.
     async fn session(&self, ctl: &mut RemoteControl, link: Arc<dyn WebSocketLink>) -> LinkError {
         let (tx, mut rx) = mpsc::unbounded_channel::<Frame>();
         let reader = Arc::clone(&link);
@@ -351,25 +427,27 @@ impl RemoteChannel {
                 }
             }
         }));
-        let mut heard = tokio::time::Instant::now();
+        let mut keep_every = self.timing.keep_alive;
         let mut kept = tokio::time::Instant::now();
         loop {
             if self.stopped.load(Ordering::SeqCst) {
                 link.close();
                 return LinkError::Other("stopped".to_owned());
             }
-            let next_keep = kept + self.timing.keep_alive;
-            let dead_at = heard + self.timing.silence;
-            let until = next_keep.min(dead_at);
-            match tokio::time::timeout_at(until, rx.recv()).await {
+            match tokio::time::timeout_at(kept + keep_every, rx.recv()).await {
                 Ok(Some(Frame::Text(frame))) => {
-                    heard = tokio::time::Instant::now();
+                    let heard_before = self.heard_now();
                     if let Some(text) = frame {
+                        if let Some(secs) = RemoteControl::force_keep_alive_interval(&text) {
+                            // The server names its limit; report at half of it, never slower than the default.
+                            keep_every = Duration::from_secs_f64(secs).min(self.timing.keep_alive);
+                            kept = tokio::time::Instant::now();
+                        }
                         self.feed_cache(&text);
                         for out in ctl.process(&text) {
-                            if let RemoteOutput::Send(reply) = &out {
-                                if let Err(e) = link.send(reply.clone()).await {
-                                    return e.into();
+                            if let RemoteOutput::Send(reply) = out {
+                                if let Err(e) = self.send_checked(&link, reply).await {
+                                    return e;
                                 }
                                 continue;
                             }
@@ -377,23 +455,40 @@ impl RemoteChannel {
                         }
                     }
                     if let Some(again) = ctl.on_received() {
-                        // Events were missed while the link was down: refresh what is on screen.
-                        self.refresh_cache();
+                        // Events may have been missed while the link was down: the screens on show refresh, but only
+                        // after a real outage (the reconnect backoff keeps running either way).
+                        let outage = self.outage(heard_before);
+                        if outage.is_none_or(|o| o >= self.timing.refresh_after_outage) {
+                            self.refresh_after_drop();
+                        }
                         self.emit_all(vec![again], "");
                     }
                 }
                 Ok(Some(Frame::Ended(e))) => return e,
                 Ok(None) => return LinkError::Other("reader ended".to_owned()),
                 Err(_) => {
-                    if tokio::time::Instant::now() >= dead_at {
-                        link.close();
-                        return LinkError::Other("silent link".to_owned());
-                    }
                     kept = tokio::time::Instant::now();
-                    if let Err(e) = link.send(KEEP_ALIVE.to_owned()).await {
-                        return e.into();
+                    if let Err(e) = self.send_checked(&link, KEEP_ALIVE.to_owned()).await {
+                        return e;
                     }
+                    self.kept_up();
                 }
+            }
+        }
+    }
+
+    /// A send that fails, or does not finish within the limit, ends the link.
+    async fn send_checked(
+        &self,
+        link: &Arc<dyn WebSocketLink>,
+        text: String,
+    ) -> Result<(), LinkError> {
+        match tokio::time::timeout(self.timing.send_limit, link.send(text)).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(e.into()),
+            Err(_) => {
+                link.close();
+                Err(LinkError::Other("send stuck".to_owned()))
             }
         }
     }
@@ -433,13 +528,40 @@ impl RemoteChannel {
 mod tests {
     use super::*;
     use std::sync::Mutex;
-    use swiftly_vm::{Spawner, SystemClock};
+    use swiftly_vm::{Clock, Spawner, SystemClock};
     use tokio::sync::Mutex as AsyncMutex;
 
     struct TokioSpawn;
     impl Spawner for TokioSpawn {
         fn spawn(&self, task: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>) {
             drop(tokio::spawn(task));
+        }
+    }
+
+    /// The host's clock in a test: it follows the runtime's (paused) time and can jump ahead, like the wall clock of a
+    /// phone that slept while the runtime's own clock stood still.
+    struct TestClock {
+        start: tokio::time::Instant,
+        slept: Mutex<f64>,
+    }
+
+    impl TestClock {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                start: tokio::time::Instant::now(),
+                slept: Mutex::new(0.0),
+            })
+        }
+
+        /// The device sleeps for this long without the runtime's clock noticing.
+        fn sleep_through(&self, seconds: f64) {
+            *self.slept.lock().unwrap() += seconds;
+        }
+    }
+
+    impl Clock for TestClock {
+        fn now(&self) -> f64 {
+            self.start.elapsed().as_secs_f64() + *self.slept.lock().unwrap()
         }
     }
 
@@ -475,6 +597,8 @@ mod tests {
         links: Mutex<Vec<Arc<Conn>>>,
         current: Mutex<Option<Arc<Conn>>>,
         urls: Mutex<Vec<String>>,
+        /// A send never finishes (a link that accepts nothing more).
+        stuck: std::sync::atomic::AtomicBool,
     }
 
     impl Connector {
@@ -506,6 +630,9 @@ mod tests {
             })
         }
         async fn send(&self, text: String) -> Result<(), SocketFailure> {
+            if self.stuck.load(Ordering::SeqCst) {
+                std::future::pending::<()>().await;
+            }
             self.conn().sent.lock().unwrap().push(text);
             Ok(())
         }
@@ -537,20 +664,44 @@ mod tests {
         kind: ServerKind,
         links: Vec<Arc<Conn>>,
     ) -> (Arc<RemoteChannel>, Arc<Connector>, Arc<Listener>) {
+        channel_with(kind, links, None)
+    }
+
+    fn channel_with(
+        kind: ServerKind,
+        links: Vec<Arc<Conn>>,
+        cache: Option<swiftly_cache::EntityCache>,
+    ) -> (Arc<RemoteChannel>, Arc<Connector>, Arc<Listener>) {
+        let (c, connector, listener, _clock) = channel_clocked(kind, links, cache);
+        (c, connector, listener)
+    }
+
+    fn channel_clocked(
+        kind: ServerKind,
+        links: Vec<Arc<Conn>>,
+        cache: Option<swiftly_cache::EntityCache>,
+    ) -> (
+        Arc<RemoteChannel>,
+        Arc<Connector>,
+        Arc<Listener>,
+        Arc<TestClock>,
+    ) {
+        let clock = TestClock::new();
         let connector = Arc::new(Connector {
             links: Mutex::new(links),
             current: Mutex::new(None),
             urls: Mutex::new(Vec::new()),
+            stuck: std::sync::atomic::AtomicBool::new(false),
         });
         let listener = Arc::new(Listener::default());
         let host = Host {
             spawner: Arc::new(TokioSpawn),
-            clock: Arc::new(SystemClock),
+            clock: Arc::clone(&clock) as _,
             store: Arc::new(NoStore),
             locale: swiftly_l10n::Locale::parse("en"),
             device_name: "test".into(),
             client_version: "0".into(),
-            cache: None,
+            cache: cache.map(swiftly_vm::ViewCache::new),
         };
         let account = AccountRef {
             base_url: "https://jf.example".into(),
@@ -568,7 +719,7 @@ mod tests {
             account,
             Timing::default(),
         );
-        (c, connector, listener)
+        (c, connector, listener, clock)
     }
 
     async fn pass(seconds: u64) {
@@ -638,8 +789,49 @@ mod tests {
         c.stop();
     }
 
+    const FORCE: &str = r#"{"MessageType":"ForceKeepAlive","Data":60}"#;
+
+    /// What a Jellyfin server does: `ForceKeepAlive` on connect, then nothing while the client reports.
     #[tokio::test(start_paused = true)]
-    async fn a_silent_link_is_dropped_and_reconnected_with_capabilities_again() {
+    async fn a_link_that_only_gets_quiet_stays_up_for_eleven_minutes() {
+        let l = link();
+        let (c, conn, listener) = channel(ServerKind::Jellyfin, vec![Arc::clone(&l), link()]);
+        Arc::clone(&c).start();
+        pass(1).await;
+        l.tx.send(Ok(Some(FORCE.to_owned()))).unwrap();
+        pass(11 * 60).await;
+        assert_eq!(conn.urls.lock().unwrap().len(), 1, "no reconnect");
+        assert_eq!(*listener.connected.lock().unwrap(), 1);
+        assert!(listener.events.lock().unwrap().is_empty());
+        // The answer to the force message plus a keep-alive every 30 s.
+        assert!(
+            l.sent.lock().unwrap().len() >= 22,
+            "{}",
+            l.sent.lock().unwrap().len()
+        );
+        assert!(l.sent.lock().unwrap().iter().all(|s| s == KEEP_ALIVE));
+        c.stop();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_limit_in_force_keep_alive_sets_the_interval() {
+        let l = link();
+        let (c, ..) = channel(ServerKind::Jellyfin, vec![Arc::clone(&l)]);
+        Arc::clone(&c).start();
+        pass(1).await;
+        l.tx.send(Ok(Some(
+            r#"{"MessageType":"ForceKeepAlive","Data":20}"#.to_owned(),
+        )))
+        .unwrap();
+        pass(1).await;
+        let before = l.sent.lock().unwrap().len(); // the answer
+        pass(35).await; // 10 s apart: three keep-alives
+        assert_eq!(l.sent.lock().unwrap().len() - before, 3);
+        c.stop();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_read_reconnects_with_capabilities_again() {
         let (first, second) = (link(), link());
         let (c, conn, listener) = channel(
             ServerKind::Jellyfin,
@@ -647,8 +839,14 @@ mod tests {
         );
         Arc::clone(&c).start();
         pass(1).await;
-        // 120 s of nothing: the 90 s watchdog fires, the backoff (2 s) passes, the second link opens.
-        pass(120).await;
+        first
+            .tx
+            .send(Err(SocketFailure::Other {
+                message: "Software caused connection abort".into(),
+            }))
+            .unwrap();
+        // The backoff (2 s) passes, the second link opens.
+        pass(5).await;
         assert_eq!(conn.urls.lock().unwrap().len(), 2);
         assert_eq!(*listener.connected.lock().unwrap(), 2);
         assert!(
@@ -668,6 +866,288 @@ mod tests {
                 .unwrap()
                 .contains(&RemoteEvent::ConnectionAgain)
         );
+        c.stop();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_send_that_never_finishes_drops_the_link() {
+        let (first, second) = (link(), link());
+        let (c, conn, _listener) = channel(
+            ServerKind::Jellyfin,
+            vec![Arc::clone(&first), Arc::clone(&second)],
+        );
+        Arc::clone(&c).start();
+        pass(1).await;
+        conn.stuck.store(true, Ordering::SeqCst);
+        // The keep-alive at 30 s hangs, the 20 s limit passes, the 2 s backoff passes.
+        pass(30 + 20 + 5).await;
+        conn.stuck.store(false, Ordering::SeqCst);
+        assert_eq!(conn.urls.lock().unwrap().len(), 2);
+        c.stop();
+    }
+
+    fn cache_and_scope() -> (swiftly_cache::EntityCache, swiftly_cache::Scope) {
+        use swiftly_cache::{CacheConfig, EntityCache};
+        let cache = EntityCache::in_memory(CacheConfig::default()).unwrap();
+        let scope = swiftly_vm::ViewCache::scope(&AccountRef {
+            base_url: "https://jf.example".into(),
+            user_id: "u1".into(),
+            token: "tok en".into(),
+            server_kind: ServerKind::Jellyfin,
+            device_id: "dev".into(),
+            plex_machine_id: None,
+            plex_account_token: None,
+        });
+        let t = cache.ticket(&scope);
+        cache
+            .put_list(&t, "home", &["a".to_owned()], Some(1))
+            .unwrap();
+        (cache, scope)
+    }
+
+    /// How often the channel told the open titles that the link was back (the count of its host's cache).
+    fn links_back(c: &RemoteChannel) -> u64 {
+        c.host.cache.as_ref().unwrap().links_back()
+    }
+
+    fn stale_heard(heard: &Mutex<Vec<swiftly_cache::CacheChange>>) -> usize {
+        heard
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|c| matches!(c, swiftly_cache::CacheChange::ListsStale(_)))
+            .count()
+    }
+
+    /// After a REAL drop the screens on show are told (once) to refresh in the background: events may have been
+    /// missed, and without this the open home/library/detail page stayed stale until it was visited again.
+    #[tokio::test(start_paused = true)]
+    async fn a_reconnect_after_a_real_drop_tells_the_screens_to_refresh_once() {
+        use swiftly_cache::CacheChange;
+        let (cache, scope) = cache_and_scope();
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let h = Arc::clone(&heard);
+        cache.subscribe(move |ch: &CacheChange| h.lock().unwrap().push(ch.clone()));
+        let (first, second) = (link(), link());
+        let (c, ..) = channel_with(
+            ServerKind::Jellyfin,
+            vec![Arc::clone(&first), Arc::clone(&second)],
+            Some(cache.clone()),
+        );
+        Arc::clone(&c).start();
+        pass(1).await;
+        first.tx.send(Ok(Some(FORCE.to_owned()))).unwrap();
+        pass(1).await;
+        assert_eq!(stale_heard(&heard), 0, "the first connect tells no screen");
+        first
+            .tx
+            .send(Err(SocketFailure::Other {
+                message: "gone".into(),
+            }))
+            .unwrap();
+        pass(10).await;
+        assert_eq!(
+            stale_heard(&heard),
+            0,
+            "nothing until the new link is heard"
+        );
+        second.tx.send(Ok(Some(FORCE.to_owned()))).unwrap();
+        pass(1).await;
+        // More frames on the new link do not tell the screens again.
+        second.tx.send(Ok(None)).unwrap();
+        pass(1).await;
+        assert!(cache.get_list(&scope, "home").unwrap().stale);
+        assert_eq!(stale_heard(&heard), 1, "{:?}", heard.lock().unwrap());
+        // An open title that gave up on advancing is told as well: the failure may have been the outage's.
+        assert_eq!(links_back(&c), 1, "the playback is told once");
+        c.stop();
+    }
+
+    /// A link that comes back within a few seconds (a flaky network, a roaming phone) has missed nothing worth a reload
+    /// of every open page: the app still hears that the connection is back, the pages keep standing.
+    #[tokio::test(start_paused = true)]
+    async fn a_reconnect_within_seconds_does_not_refresh_the_pages() {
+        use swiftly_cache::CacheChange;
+        let (cache, scope) = cache_and_scope();
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let h = Arc::clone(&heard);
+        cache.subscribe(move |ch: &CacheChange| h.lock().unwrap().push(ch.clone()));
+        let (first, second) = (link(), link());
+        let (c, _conn, listener) = channel_with(
+            ServerKind::Jellyfin,
+            vec![Arc::clone(&first), Arc::clone(&second)],
+            Some(cache.clone()),
+        );
+        Arc::clone(&c).start();
+        pass(1).await;
+        first.tx.send(Ok(Some(FORCE.to_owned()))).unwrap();
+        pass(1).await;
+        first
+            .tx
+            .send(Err(SocketFailure::Other {
+                message: "gone".into(),
+            }))
+            .unwrap();
+        pass(2).await;
+        second.tx.send(Ok(Some(FORCE.to_owned()))).unwrap();
+        pass(1).await;
+        assert_eq!(stale_heard(&heard), 0, "{:?}", heard.lock().unwrap());
+        assert!(!cache.get_list(&scope, "home").unwrap().stale);
+        assert_eq!(links_back(&c), 0, "a short flap tells no title");
+        assert!(
+            listener
+                .events
+                .lock()
+                .unwrap()
+                .contains(&RemoteEvent::ConnectionAgain),
+            "the app still hears that the connection is back"
+        );
+        c.stop();
+    }
+
+    /// A phone that slept for an hour: the runtime's clock did not count it, so the drop is only noticed when the
+    /// device wakes and the new link is up ~2 s later by that clock. The outage still was an hour long: the screens on
+    /// show refresh, because events were missed.
+    #[tokio::test(start_paused = true)]
+    async fn a_reconnect_after_the_device_slept_refreshes_the_pages() {
+        use swiftly_cache::CacheChange;
+        let (cache, scope) = cache_and_scope();
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let h = Arc::clone(&heard);
+        cache.subscribe(move |ch: &CacheChange| h.lock().unwrap().push(ch.clone()));
+        let (first, second) = (link(), link());
+        let (c, _conn, _listener, clock) = channel_clocked(
+            ServerKind::Jellyfin,
+            vec![Arc::clone(&first), Arc::clone(&second)],
+            Some(cache.clone()),
+        );
+        Arc::clone(&c).start();
+        pass(1).await;
+        first.tx.send(Ok(Some(FORCE.to_owned()))).unwrap();
+        pass(1).await;
+        // The device sleeps; at wake the dead link is noticed and the new one is up two seconds later.
+        clock.sleep_through(3600.0);
+        first
+            .tx
+            .send(Err(SocketFailure::Other {
+                message: "gone".into(),
+            }))
+            .unwrap();
+        pass(2).await;
+        second.tx.send(Ok(Some(FORCE.to_owned()))).unwrap();
+        pass(1).await;
+        assert_eq!(stale_heard(&heard), 1, "{:?}", heard.lock().unwrap());
+        assert!(cache.get_list(&scope, "home").unwrap().stale);
+        c.stop();
+    }
+
+    /// A link that stayed quiet for `quiet` seconds (the server does not answer a client that reports on time, so
+    /// only our own keep-alives went over it), then flapped for two seconds: how many screens were told to refresh.
+    async fn flap_after_quiet(quiet: u64) -> (usize, bool) {
+        use swiftly_cache::CacheChange;
+        let (cache, scope) = cache_and_scope();
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let h = Arc::clone(&heard);
+        cache.subscribe(move |ch: &CacheChange| h.lock().unwrap().push(ch.clone()));
+        let (first, second) = (link(), link());
+        let (c, ..) = channel_with(
+            ServerKind::Jellyfin,
+            vec![Arc::clone(&first), Arc::clone(&second)],
+            Some(cache.clone()),
+        );
+        Arc::clone(&c).start();
+        pass(1).await;
+        first.tx.send(Ok(Some(FORCE.to_owned()))).unwrap();
+        pass(quiet).await;
+        first
+            .tx
+            .send(Err(SocketFailure::Other {
+                message: "gone".into(),
+            }))
+            .unwrap();
+        pass(2).await;
+        second.tx.send(Ok(Some(FORCE.to_owned()))).unwrap();
+        pass(1).await;
+        c.stop();
+        let told = stale_heard(&heard);
+        (told, cache.get_list(&scope, "home").unwrap().stale)
+    }
+
+    /// The other way round: a flap after a quiet stretch (the last frame came up to one keep-alive interval before
+    /// the drop) was not an outage of that length.
+    #[tokio::test(start_paused = true)]
+    async fn a_flap_after_a_quiet_stretch_does_not_refresh_the_pages() {
+        assert_eq!(flap_after_quiet(25).await, (0, false));
+    }
+
+    /// The same after ten quiet minutes: Jellyfin does not answer a client that reports on time, so the server sent
+    /// nothing for that long. Our own keep-alives that went out are what the quiet stretch is measured against.
+    #[tokio::test(start_paused = true)]
+    async fn a_flap_after_ten_quiet_minutes_does_not_refresh_the_pages() {
+        assert_eq!(flap_after_quiet(600).await, (0, false));
+    }
+
+    /// A keep-alive that goes out when the device wakes from a sleep proves nothing about the link (the send may
+    /// land in a dead socket): the sleep still counts as the outage when the link then drops.
+    #[tokio::test(start_paused = true)]
+    async fn a_keep_alive_sent_after_a_sleep_does_not_hide_the_sleep() {
+        use swiftly_cache::CacheChange;
+        let (cache, scope) = cache_and_scope();
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let h = Arc::clone(&heard);
+        cache.subscribe(move |ch: &CacheChange| h.lock().unwrap().push(ch.clone()));
+        let (first, second) = (link(), link());
+        let (c, conn, _listener, clock) = channel_clocked(
+            ServerKind::Jellyfin,
+            vec![Arc::clone(&first), Arc::clone(&second)],
+            Some(cache.clone()),
+        );
+        Arc::clone(&c).start();
+        pass(1).await;
+        first.tx.send(Ok(Some(FORCE.to_owned()))).unwrap();
+        pass(100).await;
+        clock.sleep_through(3600.0);
+        let sent = conn.conn().sent.lock().unwrap().len();
+        pass(31).await;
+        assert!(
+            conn.conn().sent.lock().unwrap().len() > sent,
+            "a keep-alive went out at wake"
+        );
+        first
+            .tx
+            .send(Err(SocketFailure::Other {
+                message: "gone".into(),
+            }))
+            .unwrap();
+        pass(2).await;
+        second.tx.send(Ok(Some(FORCE.to_owned()))).unwrap();
+        pass(1).await;
+        assert_eq!(stale_heard(&heard), 1, "{:?}", heard.lock().unwrap());
+        assert!(cache.get_list(&scope, "home").unwrap().stale);
+        c.stop();
+    }
+
+    /// A plain keep-alive cycle (a quiet server, the client reporting every 30 s) tells no screen and marks nothing.
+    #[tokio::test(start_paused = true)]
+    async fn a_quiet_link_with_keep_alives_tells_no_screen() {
+        use swiftly_cache::CacheChange;
+        let (cache, scope) = cache_and_scope();
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let h = Arc::clone(&heard);
+        cache.subscribe(move |ch: &CacheChange| h.lock().unwrap().push(ch.clone()));
+        let l = link();
+        let (c, conn, _listener) = channel_with(
+            ServerKind::Jellyfin,
+            vec![Arc::clone(&l)],
+            Some(cache.clone()),
+        );
+        Arc::clone(&c).start();
+        pass(1).await;
+        l.tx.send(Ok(Some(FORCE.to_owned()))).unwrap();
+        pass(300).await; // five minutes: ten keep-alives, no frame from the server
+        assert_eq!(conn.urls.lock().unwrap().len(), 1, "the link stayed up");
+        assert_eq!(stale_heard(&heard), 0);
+        assert!(!cache.get_list(&scope, "home").unwrap().stale);
         c.stop();
     }
 

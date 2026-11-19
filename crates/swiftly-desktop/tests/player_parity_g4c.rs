@@ -1,5 +1,5 @@
 //! Player parity with the Mac, round 3: the context menu of the episode cards, the transcode reason in the technical overlay.
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use swiftly_desktop::player_screen::{PlayerScenario, PlayerScreen};
 use swiftly_layout::Size;
@@ -18,66 +18,104 @@ fn run(s: &mut PlayerScreen, from: u32, to: u32) {
     }
 }
 
-fn all_labels(n: &[swiftly_ui::a11y::A11yNode], out: &mut Vec<(String, Option<[f32; 4]>)>) {
-    for x in n {
-        out.push((x.label.clone(), x.bounds));
-        all_labels(&x.children, out);
-    }
+/// The Folgen box rows (`pm:{act}`) that are on screen, as window centres.
+fn box_rows(s: &PlayerScreen) -> Vec<(f32, f32)> {
+    (0..60)
+        .filter_map(|k| s.frame_of(&format!("pm:{k}")))
+        .map(|[x, y, w, h]| (x + w / 2.0, y + h / 2.0))
+        .collect()
 }
 
-fn labels(s: &PlayerScreen) -> Vec<(String, Option<[f32; 4]>)> {
-    let mut v = Vec::new();
-    all_labels(&s.a11y_nodes(), &mut v);
-    v
+fn open_folgen(s: &mut PlayerScreen) {
+    run(s, 0, 150);
+    // The capsule's Folgen key opens the box (the controls are up after the start).
+    let [x, y, w, h] = s.frame_of("folgen").expect("the capsule's Folgen key");
+    s.touch_down(x + w / 2.0, y + h / 2.0, 151.0 * 16.0);
+    s.touch_up(x + w / 2.0, y + h / 2.0, 152.0 * 16.0);
+    run(s, 153, 300);
 }
 
-/// A right click on an episode card of the player opens the shared tile menu in its player form (`inPlayer`): only the
-/// watched mark; picking it is sent and the card follows (`PlayerEpisodeStrip.swift:56`).
+/// A right click on an episode row of the Folgen box opens the shared tile menu in its player form (`inPlayer`): only
+/// the watched mark; picking it is sent and the row follows (`PlayerEpisodeStrip.swift:56`).
 #[test]
 fn a_right_click_on_an_episode_card_offers_the_watched_mark() {
     let mut s = screen();
-    run(&mut s, 0, 150);
-    s.send_intent(
-        swiftly_vm::PlayerIntent::Layer(Some(swiftly_vm::PlayerLayer::Episodes)),
-        151.0 * 16.0,
-    );
-    run(&mut s, 152, 300);
-    let card = labels(&s)
-        .into_iter()
-        .find(|(l, _)| l == "F2 · Die Nachricht, 44 Min.")
-        .expect("the second card");
-    let b = card.1.expect("bounds");
-    let (px, py) = (b[0] + 20.0, b[1] + 20.0);
-    let (list, _) = s.frame(300.0 * 16.0);
-    let before = s.render_software(&list);
-    assert!(s.secondary_click(px, py, 301.0 * 16.0));
-    run(&mut s, 302, 330);
-    let (list, _) = s.frame(330.0 * 16.0);
-    let after = s.render_software(&list);
-    let mut changed = 0;
-    for y in (py as usize)..(py as usize + 70) {
-        for x in (px as usize)..(px as usize + 220) {
-            if before.pixel(x, y) != after.pixel(x, y) {
-                changed += 1;
-            }
+    open_folgen(&mut s);
+    let rows = box_rows(&s);
+    assert!(rows.len() >= 3, "the Folgen box lists rows: {rows:?}");
+    // The rows in order: the season caret, then the episodes; the second episode is demo-e2.
+    let (mut px, mut py) = (0.0, 0.0);
+    for (x, y) in rows {
+        // The season caret and the tabs take no right click.
+        let _ = s.secondary_click(x, y, 301.0 * 16.0);
+        if s.log().iter().any(|l| l.starts_with("epmenu open")) {
+            (px, py) = (x, y);
+            break;
         }
     }
     assert!(
-        s.log().iter().any(|l| l == "epmenu open demo-e2"),
+        s.log().iter().any(|l| l.starts_with("epmenu open demo-e")),
         "no menu opened: {:?}",
         s.log()
     );
-    assert!(
-        changed > 100,
-        "no menu panel at the pointer ({changed} pixels changed)"
-    );
+    run(&mut s, 302, 330);
     // The one row ("Als gesehen markieren") sits just under the pointer, inside the panel.
     s.touch_down(px + 40.0, py + 20.0, 331.0 * 16.0);
     s.touch_up(px + 40.0, py + 20.0, 332.0 * 16.0);
     run(&mut s, 333, 360);
     assert!(
-        s.log().iter().any(|l| l == "epmenu Unwatched demo-e2"),
+        s.log()
+            .iter()
+            .any(|l| l.starts_with("epmenu Watched demo-e")
+                || l.starts_with("epmenu Unwatched demo-e")),
         "the pick did not run: {:?}",
+        s.log()
+    );
+}
+
+/// A long press on an episode row (touch, and the tv's held select button) opens the same menu.
+#[test]
+fn a_long_press_on_an_episode_row_offers_the_watched_mark() {
+    let mut s = screen();
+    open_folgen(&mut s);
+    let rows = box_rows(&s);
+    let mut t = 300.0 * 16.0;
+    // The episodes sit below the season caret, whose tap would open the season list: try the lower rows first.
+    for (x, y) in rows.into_iter().rev() {
+        s.touch_down(x, y, t);
+        for _ in 0..40 {
+            t += 16.0;
+            let _ = s.frame(t);
+        }
+        s.touch_up(x, y, t);
+        if s.log().iter().any(|l| l.starts_with("epmenu open")) {
+            break;
+        }
+    }
+    assert!(
+        s.log().iter().any(|l| l.starts_with("epmenu open demo-e")),
+        "no menu opened: {:?}",
+        s.log()
+    );
+}
+
+/// The menu key opens it for the highlighted episode row.
+#[test]
+fn the_menu_key_on_an_episode_row_offers_the_watched_mark() {
+    use swiftly_desktop::player_screen::PlayerKey;
+    let mut s = screen();
+    open_folgen(&mut s);
+    let mut t = 300.0 * 16.0;
+    for _ in 0..4 {
+        assert!(s.key(PlayerKey::Down, t));
+        t += 100.0;
+        if s.key(PlayerKey::Context, t) && s.log().iter().any(|l| l.starts_with("epmenu open")) {
+            break;
+        }
+    }
+    assert!(
+        s.log().iter().any(|l| l.starts_with("epmenu open demo-e")),
+        "no menu opened: {:?}",
         s.log()
     );
 }

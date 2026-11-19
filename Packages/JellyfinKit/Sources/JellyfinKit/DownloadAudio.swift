@@ -79,9 +79,13 @@ public enum DownloadAudio {
             ?? translated("Tonspur") + " \(position)"
     }
 
-    /// **What the choice starts on.** The track of the audio language from the
-    /// settings if there is one, otherwise all tracks: without a stated wish nothing
-    /// is cut away.
+    /// **What the choice starts on, by the settings alone.** The track of the audio
+    /// language from the settings if there is one, otherwise all tracks: without a
+    /// stated wish nothing is cut away.
+    ///
+    /// The apps do not call this any more: the film sheet asks the core
+    /// (`downloadAudioStart`), whose start rule also knows the language of the device. It
+    /// stays as the old app's reference that the oracle and its tests pin.
     public static func preselected(options: [DownloadAudioOption], streams: [MediaStream],
                                    preferredLanguage: String) -> DownloadAudioChoice {
         guard !preferredLanguage.isEmpty else { return .all }

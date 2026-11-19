@@ -11,6 +11,7 @@ import SwiftUI
 struct MoodLoader<ContentBody: View>: View {
     let url: URL?
     let content: ([Double]) -> ContentBody
+    @Environment(\.arrivalFades) private var arrivalFades
     @State private var tones: [Double]
 
     init(url: URL?, @ViewBuilder content: @escaping ([Double]) -> ContentBody) {
@@ -45,7 +46,7 @@ struct MoodLoader<ContentBody: View>: View {
             await InTravel.waitFor()
             #endif
             guard !Task.isCancelled else { return }
-            withAnimation(Self.reveal) { tones = new }
+            withAnimation(arrivalFades ? Self.reveal : nil) { tones = new }
         }
     }
 }

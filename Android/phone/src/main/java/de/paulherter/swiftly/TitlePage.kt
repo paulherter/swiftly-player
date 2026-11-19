@@ -97,48 +97,44 @@ data class Title(
     val logo: String? = null,
     /** The versions to choose from when the play button is pressed (`MediaVersions.choices`); empty = no choice. */
     val versions: List<Version> = emptyList(),
-)
-
-/** One version of a title: its source ID and the line shown in the choice ("Name · 1080p · HEVC · 18,6 GB"). */
-data class Version(val id: String, val label: String)
-
-/**
- * Mirrors the play button of `ItemDetailView` (iOS): **a title with several versions asks which one on
- * press** (4K next to 1080p, theatrical next to extended cut). One version, or a finished copy on the
- * device (the downloaded file is the one that plays), starts at once. A download still running does not
- * count: playback then streams from the server.
- */
-internal fun playOrChoose(app: SwiftlyApplication, t: Title?, id: String, since: Double?, beforePlay: () -> Unit = {}) {
-    val versions = if (app.downloads.file(id) == null) t?.versions.orEmpty() else emptyList()
-    if (versions.isEmpty()) { beforePlay(); app.play.value = PlayRequest(id, since); return }
-    app.sheet.value = SheetRequest(translated("Fassung wählen"), versions.map { Choice(it.id, it.label) }, null, longRows = true) { source ->
-        beforePlay(); app.play.value = PlayRequest(id, since, source)
-    }
+    /** The core's page seed (stored copies, no server answer yet): the playback plan is unknown, not absent. */
+    val seed: Boolean = false,
+    /** The picture the list tile showed (its memory-cache key): the hero's placeholder until the sharp backdrop is there. */
+    val tileImage: String? = null,
+    /** The proof line's answer of an earlier visit (the core's `beleg`, seed only): `lossless`/`method` hold it and the chip shows from frame 1. */
+    val proofStored: Boolean = false,
+) {
+    /** The proof chip has an answer to show: the fresh plan's, or the stored one of an earlier visit. */
+    val proofShown: Boolean get() = planPresent || proofStored
 }
 
-/** A press is already fetching the versions: a second tap on the same or another entry waits (`prepares` on Apple). */
-@Volatile private var versionsLoading = false
+/** One version of a title: its source ID and the line shown in the choice ("Name · 1080p · HEVC · 18,6 GB"). */
+data class Version(val id: String, val label: String, val isDefault: Boolean = false)
 
 /**
- * Mirrors `PlayRequest.start(ask:)` (issue 33): **the one path from tap to player where a title with
- * several versions asks which one.** Every place that starts a title without having its page loaded
- * (series button, episodes, "from the start", Continue watching, tile menus, playlists) comes through
- * here, instead of starting the server's default.
- *
- * - A copy on the device plays at once (the downloaded file is the one that plays).
- * - `title`: the page's loaded title; without it the full title is fetched first. "Not loaded" must
- *   never pass for "one version": if the fetch fails, the tap says so and starts nothing.
+ * **A tap on Play starts the default version at once** (the core's rule, `VersionOption::list`): a title with
+ * several versions no longer asks in front of the start. The others are offered by a long press on Play
+ * ([versionMenu]). A copy on the device plays as it is.
  */
-internal fun playAsking(app: SwiftlyApplication, id: String, since: Double?, title: Title? = null, beforePlay: () -> Unit = {}) {
-    if (title != null || app.downloads.file(id) != null) { playOrChoose(app, title, id, since, beforePlay); return }
-    if (versionsLoading) return
-    versionsLoading = true
-    app.applicationRun.launch {
-        try {
-            val loaded = runCatching { titleRead(withContext(Dispatchers.IO) { app.rk.title(id).await() }) }.getOrNull()
-            if (loaded == null) app.message.value = translated("Die Fassungen konnten nicht geladen werden. Probier es gleich nochmal.")
-            else playOrChoose(app, loaded, id, since, beforePlay)
-        } finally { versionsLoading = false }
+internal fun playDefault(app: SwiftlyApplication, id: String, since: Double?, beforePlay: () -> Unit = {}) {
+    beforePlay()
+    app.play.value = PlayRequest(id, since)
+}
+
+/**
+ * **Long press on Play: a small menu with only the versions**, the default one checked (the core's list and its
+ * `standard` mark). Null when there is nothing to choose (one version, or a copy on the device): the press then
+ * does nothing, as on Apple.
+ */
+internal fun versionMenu(app: SwiftlyApplication, t: Title?, id: String, since: Double?, beforePlay: () -> Unit = {}): (() -> Unit)? {
+    val versions = if (app.downloads.file(id) == null) t?.versions.orEmpty() else emptyList()
+    if (versions.size < 2) return null
+    return {
+        app.sheet.value = SheetRequest(translated("Fassung wählen"), versions.map { Choice(it.id, it.label) },
+            versions.firstOrNull { it.isDefault }?.id, longRows = true) { source ->
+            beforePlay()
+            app.play.value = PlayRequest(id, since, source)
+        }
     }
 }
 
@@ -153,7 +149,8 @@ internal fun titleRead(json: String): Title = JSONObject(json).let { o ->
     Title(o.getString("id"), o.getString("name"), o.optString("typ"), o.optString("nebenzeile"),
           o.optString("jahrLaufzeit"), o.fieldText("kopfbild"),
           o.fieldNumber("bewertung"), o.fieldText("freigabe"),
-          o.optBoolean("planDa"), o.optBoolean("lossless"), o.fieldText("methode"),
+          o.optBoolean("planDa"), o.optBoolean("lossless") || o.optJSONObject("beleg")?.optBoolean("lossless") == true,
+          o.fieldText("methode") ?: o.optJSONObject("beleg")?.fieldText("methode"),
           o.fieldNumber("fortsetzenAb"), o.fieldText("fortsetzenText"),
           o.fieldText("beschreibung"), o.fieldTexts("regie"),
           o.fieldList("darsteller") { WithAct(it.getString("id"), it.getString("name"), it.fieldText("rolle"), it.fieldText("bild")) },
@@ -162,8 +159,13 @@ internal fun titleRead(json: String): Title = JSONObject(json).let { o ->
               FileInfo(d.fieldText("container"), d.fieldText("video"), d.fieldTexts("ton"), d.optString("untertitel"), d.optBoolean("hatUntertitel"))
           }, if (o.has("kulisse")) o.fieldText("kulisse") else null,
           o.fieldText("restzeit"), o.fieldNumber("fortschritt"), o.fieldText("logo"),
-          o.fieldList("fassungen") { Version(it.getString("id"), it.getString("label")) })
+          o.fieldList("fassungen") { Version(it.getString("id"), it.getString("label"), it.optBoolean("standard")) },
+          o.optBoolean("vorab"), o.fieldText("kachelbild"), o.has("beleg"))
 }
+
+/** Frame 1 of a title page: what the core stored of the title (list entry and an earlier visit), `null` when nothing. */
+internal fun titleSeed(app: SwiftlyApplication, id: String): Title? =
+    app.rk.titleSeed(id).takeIf { it.isNotEmpty() }?.let { runCatching { titleRead(it) }.getOrNull() }
 
 /** The facade reports "not signed in" as an identifier because the wording lives in the app catalog. */
 internal fun errorString(reason: String, server: String? = null) = when (reason) {
@@ -203,7 +205,9 @@ internal fun errorString(context: android.content.Context, error: Throwable): St
  */
 @Composable
 fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) -> Unit, back: () -> Unit) {
-    var title by remember(target.id) { mutableStateOf(app.titleCache[target.id]) }
+    var title by remember(target.id) { mutableStateOf(app.titleCache[target.id] ?: titleSeed(app, target.id)) }
+    /** Play was pressed before any title was known (not even the seed): the press starts when the title arrives. */
+    var queuedPress by remember(target.id) { mutableStateOf(false) }
     var similar by remember(target.id) { mutableStateOf<List<GridTile>>(emptyList()) }
     var extras by remember(target.id) { mutableStateOf<List<Extra>>(emptyList()) }
     var watchers by remember(target.id) { mutableStateOf<List<Watcher>>(emptyList()) }
@@ -260,6 +264,7 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
             // From here on without interruption: everything lands in the same frame.
             watchers = seen
             new?.let { title = it; app.titleCache[target.id] = it; remembered = it.remembered; watched = it.watched }
+            if (queuedPress && new != null) { queuedPress = false; playDefault(app, target.id, new.resumeFrom) { jerk(Jerk.Medium) } }
             titleDisturbed = new == null && title == null
             fieldAccept(surroundings)
             collections = rails
@@ -304,20 +309,17 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
         CompositionLocalProvider(LocalImageColor provides true, LocalImageAudio provides mood.tones) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll).moodReason(mood, Theme.heroHeightValue)) {
             Hero(t?.headerImage, name, t?.secondaryLine.orEmpty(), mood,
-                logo = if (app.settings.titleAsLogo) t?.logo else null)
+                logo = if (app.settings.titleAsLogo) t?.logo else null, tile = t?.tileImage)
 
             Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 4.dp),
                    verticalArrangement = Arrangement.spacedBy(Theme.blockGap)) {
                 ProofRow(t)
                 // Button and action row as one block: `actionGap` between them, `blockGap` to everything else.
                 Column(Modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(Theme.actionGap)) {
-                val menu = LocalTileMenu.current
-                PlayButtons(t,
-                    // Long press: the title's tile menu, as on its tile.
-                    lengthy = menu?.let { m -> {
-                        m(TileMenuRequest(target.id, name, t?.type?.ifEmpty { null } ?: "Movie", t?.headerImage, landscape = true,
-                                             t?.secondaryLine, afterwards = { section.launch { refresh() } }))
-                    } }) { since -> playOrChoose(app, t, target.id, since) { jerk(Jerk.Medium) } }
+                // Tap: the default version at once. Long press: only the versions (nothing with one version).
+                PlayButtons(t, lengthy = versionMenu(app, t, target.id, t?.resumeFrom) { jerk(Jerk.Medium) }) { since ->
+                    if (title == null) queuedPress = true else playDefault(app, target.id, since) { jerk(Jerk.Medium) }
+                }
                 if (titleDisturbed && t == null) DisturbHint(app.serverAddress(), spacingTop = 12.dp,
                     retry = { titleDisturbed = false; section.launch { load() } })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -356,7 +358,7 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                             if (choice == "gemeinsam") { section.launch { kotlinx.coroutines.delay(SheetSwitch); sharedCreateOpen(app, target.id, name) }; return@SheetRequest }
                             section.launch {
                                 when (choice) {
-                                    "vonvorn" -> playAsking(app, target.id, null, t)
+                                    "vonvorn" -> playDefault(app, target.id, null)
                                     "zuruecksetzen" -> {
                                         val reason = withContext(Dispatchers.IO) { app.rk.watched(target.id, false).await() }
                                         if (reason.isNotEmpty()) message = errorString(reason)
@@ -373,6 +375,8 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                 }
                 }
                 // `description`: blurb, 8 below it "Director" in 12, 5 in between.
+                // No text yet (a seed from a tile): the three-line slot stands until the title has answered.
+                if (t?.description == null && (t == null || t.seed)) DescriptionSlot()
                 t?.description?.let { text ->
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         CollapsibleText(text)
@@ -384,13 +388,17 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
                 }
             }
 
+            // The cast row stands in frame 1 (from the seed, else placeholders of final size); only the rows below it fade in.
+            val cast = t?.actors.orEmpty()
+            if (cast.isNotEmpty() || !bottomPresent) Segment(translated("Besetzung"), 14.dp) {
+                if (cast.isNotEmpty()) {
+                    // The same person can appear twice in the cast; `tilesWithKey` counts them through.
+                    tilesWithKey(cast, { it.id }) { p -> CastTile(p) { open(Destination(p.id, p.name, "Person", p.role, name)) } }
+                } else items(4) { CastTile(WithAct("", " ", " ", null)) }
+            }
             // Everything below fades in together once `load` is done (see there).
             AnimatedVisibility(bottomPresent, enter = fadeIn(Motion.reveal()), exit = fadeOut()) {
             Column {
-            if (t != null && t.actors.isNotEmpty()) Segment(translated("Besetzung"), 14.dp) {
-                // The same person can appear twice in the cast; `tilesWithKey` counts them through.
-                tilesWithKey(t.actors, { it.id }) { p -> CastTile(p) { open(Destination(p.id, p.name, "Person", p.role, name)) } }
-            }
             WatchedBy(watchers)
             if (extras.isNotEmpty()) Segment(translated("Extras"), 12.dp) {
                 tilesWithKey(extras, { it.id }) { e -> ExtraTile(e) { jerk(Jerk.Medium); app.play.value = PlayRequest(e.id, null) } }
@@ -418,11 +426,27 @@ fun TitlePage(app: SwiftlyApplication, target: Destination, open: (Destination) 
     }
 }
 
+/**
+ * The head picture: the sharp backdrop, and until it is there the picture the list tile showed (still in the picture
+ * memory under the tile's address, drawn with the same `Crop`), so the page opens with a picture in frame 1.
+ */
+@Composable
+private fun HeroPicture(image: String?, tile: String?) {
+    val context = LocalContext.current
+    val request = remember(image, tile) {
+        coil3.request.ImageRequest.Builder(context).data(image ?: tile)
+            .apply { if (tile != null) placeholderMemoryCacheKey(tile) }.build()
+    }
+    AsyncImage(model = request, contentDescription = null, contentScale = ContentScale.Crop,
+        // A stand-in that does not match the head's shape (the tile's picture) is cut at its top, as on Apple.
+        alignment = Alignment.TopCenter, modifier = Modifier.fillMaxSize())
+}
+
 /** Mirrors `Heldbild` + `HeroRunOut`: 300 high, gradient 190, title and subline at the bottom left. */
 @Composable
-internal fun Hero(image: String?, name: String, secondaryLine: String, mood: AvState? = null, logo: String? = null) {
+internal fun Hero(image: String?, name: String, secondaryLine: String, mood: AvState? = null, logo: String? = null, tile: String? = null) {
     Box(Modifier.fillMaxWidth().height(Theme.heroHeightValue)) {
-        AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        HeroPicture(image, tile)
         HeroRunOut(Modifier.align(Alignment.BottomStart), mood)
         Column(Modifier.align(Alignment.BottomStart).padding(horizontal = Theme.edgeSpacing).padding(bottom = 16.dp),
                verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -458,12 +482,14 @@ internal fun HeroRunOut(modifier: Modifier = Modifier, mood: AvState? = null) {
  */
 @Composable
 private fun ProofRow(t: Title?) =
-    ProofRow(t != null, t?.planPresent == true, t?.lossless == true, t?.method, t?.rating, t?.sharing)
+    ProofRow(t != null, t?.proofShown == true, t?.lossless == true, t?.method, t?.rating, t?.sharing, planPending = t?.seed == true)
 
 @Composable
 internal fun ProofRow(loaded: Boolean, planPresent: Boolean, lossless: Boolean, method: String?, rating: Double?, sharing: String?,
                         /** A free-form evidence text instead of the playback plan; on the Seerr page, the status. */
-                        own: Triple<Glyph, String, Color>? = null) {
+                        own: Triple<Glyph, String, Color>? = null,
+                        /** The playback chip is still to come: its place is kept (a capsule of its size), so the chips next to it do not move. */
+                        planPending: Boolean = false) {
     val visible by animateFloatAsState(if (loaded) 1f else 0f, Motion.reveal(), label = "beleg")
     // 8 between the capsules as on iOS; 14 applied while the rating had no capsule.
     Row(Modifier.heightIn(min = 26.dp).alpha(visible), verticalAlignment = Alignment.CenterVertically,
@@ -471,6 +497,8 @@ internal fun ProofRow(loaded: Boolean, planPresent: Boolean, lossless: Boolean, 
         if (own != null) {
             val (symbolText, word, color) = own
             ProofMark(symbolText, word, color, Strength.Semibold)
+        } else if (planPending && !planPresent) {
+            Box(Modifier.size(width = 104.dp, height = 26.dp).clip(RoundedCornerShape(Theme.cornerSmall)).background(Theme.fontQuiet.copy(alpha = 0.15f)))
         } else if (planPresent) {
             // Direct play carries the checkmark in semibold, the hint the triangle in regular.
             val color = if (lossless) Theme.accent else Theme.warning
@@ -499,13 +527,43 @@ internal fun ProofRow(loaded: Boolean, planPresent: Boolean, lossless: Boolean, 
  */
 @Composable
 private fun PlayButtons(t: Title?, lengthy: (() -> Unit)? = null, play: (Double?) -> Unit) {
-    val ready = t?.planPresent == true
+    // Ready from frame 1: a seed has no plan yet (the player asks for it itself), a press before any title is held.
+    val ready = t == null || t.seed || t.planPresent
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
         val since = t?.resumeText
         if (since != null) PlayButton(Glyph.Play, translated("Fortsetzen ab %@", since), ready, main = true, lengthy = lengthy) { play(t.resumeFrom) }
         else PlayButton(Glyph.Play, translated("Abspielen"), ready, main = true, lengthy = lengthy) { play(null) }
-        t?.remainingTime?.let { Text(it, style = Theme.small, color = Theme.fontQuiet) }
-        t?.progress?.takeIf { it > 0 }?.let { ProgressBar(it, Modifier.clip(RoundedCornerShape(2.dp))) }
+        ResumeSlot(t?.remainingTime, t?.progress)
+    }
+}
+
+/**
+ * Mirrors `ResumeSlot`: the line under Play (remaining time of a started title, else the runtime from the core) and the
+ * progress bar stand in their final height from frame 1, and the text and the bar only fade in inside it, so nothing
+ * below Play moves when the title answers.
+ */
+@Composable
+internal fun ResumeSlot(remaining: String?, progress: Double?) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // The same style with a placeholder text keeps the line's height; invisible while there is nothing to say.
+        Text(remaining ?: "0", style = Theme.small, color = Theme.fontQuiet, maxLines = 1,
+             modifier = Modifier.graphicsLayer { alpha = if (remaining == null) 0f else 1f })
+        ProgressBar(progress?.takeIf { it > 0 } ?: 0.0,
+            Modifier.clip(RoundedCornerShape(2.dp)).graphicsLayer { alpha = if ((progress ?: 0.0) > 0) 1f else 0f })
+    }
+}
+
+/** Mirrors `DescriptionSlot`: three lines of the description's height as quiet bars, while no text has arrived. */
+@Composable
+internal fun DescriptionSlot() {
+    Box(Modifier.fillMaxWidth()) {
+        Text("Zeile\nZeile\nZeile", style = Theme.body.copy(lineHeight = 21.sp), color = Color.Transparent)
+        Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            repeat(3) { line ->
+                Box(Modifier.fillMaxWidth().padding(end = if (line == 2) 120.dp else 0.dp).height(12.dp)
+                    .clip(RoundedCornerShape(4.dp)).background(Theme.fontVeryQuiet.copy(alpha = 0.15f)))
+            }
+        }
     }
 }
 
@@ -541,7 +599,8 @@ internal fun PlayButton(symbol: Glyph, text: String, an: Boolean, main: Boolean,
                 !an -> Modifier
                 lengthy != null -> Modifier.combinedClickable(source, null,
                     onLongClick = { jerk(Jerk.Medium); lengthy() }, onClick = perform)
-                else -> Modifier.clickable(source, null, onClick = perform)
+                // Nothing to choose (one version): a long press must not start playback on release, only a tap plays.
+                else -> Modifier.combinedClickable(source, null, onLongClick = {}, onClick = perform)
             }),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically) {

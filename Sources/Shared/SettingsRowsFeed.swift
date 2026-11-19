@@ -245,7 +245,7 @@ final class SettingsRowsFeed {
         put(\.watchersShown, bool("gesehenVonAn") ?? true)
         put(\.audioLanguage, text("tonSprache") ?? "")
         put(\.subtitleLanguage, text("utSprache") ?? "")
-        put(\.subtitleAutomatic, bool("utAuto") ?? false)
+        put(\.subtitleAutomatic, bool("utAuto") ?? automaticSubtitlesDefault())
         if let own = bool("naechsteAuto"), app.nextAutomatic != own { app.nextAutomatic = own }
         put(\.newAccessDisconnected, bool("neuGetrennt") ?? true)
         put(\.genreChips, bool("genreChips") ?? false)

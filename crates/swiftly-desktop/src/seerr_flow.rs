@@ -10,7 +10,6 @@ use swiftly_l10n::Locale;
 use swiftly_net::ErrorKind;
 use swiftly_seerr::models::{SeerrDetail, SeerrHit};
 use swiftly_seerr::{NoCookies, SeerrAccess, SeerrClient};
-use swiftly_settings::{KeyValueStore, Value};
 use swiftly_vm::{SeerrEffect, SeerrIntent, SeerrVm};
 
 /// The wait before a search goes out, so a word typed in a row asks Seerr once (the Mac sleeps 300 ms).
@@ -67,10 +66,7 @@ pub struct Live {
 impl Live {
     /// The backend of the stored session; `None` when Seerr is not connected.
     pub fn stored(core: &Arc<crate::live::Core>) -> Option<Arc<dyn Backend>> {
-        let Some(Value::Data(d)) = core.settings.get("seerr") else {
-            return None;
-        };
-        let access = serde_json::from_slice::<SeerrAccess>(&d).ok()?;
+        let access = core.seerr_stored()?;
         Some(Arc::new(Live {
             core: Arc::clone(core),
             access,

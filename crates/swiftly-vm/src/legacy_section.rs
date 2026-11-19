@@ -6,17 +6,21 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::Serialize;
 use swiftly_images::{ImageAddress, ImageSelection};
 use swiftly_jellyfin::ItemsQuery;
 use swiftly_library::LibraryShare;
+use swiftly_library::client_ext::{language_index, title_filter_narrowed, year_options};
 use swiftly_library::collection_directory::{CollectionDirectory, ItemCollection};
 use swiftly_library::library_filter::{LibraryFilter, SortingExt};
 use swiftly_library::library_genre::LibraryGenre;
 use swiftly_library::playlist_directory::{PlaylistDirectory, VideoPlaylist};
-use swiftly_library::{ListRules, ShelfSource, TitleFilter};
+use swiftly_library::{
+    Facet, FilterChoice, FilterFacets, FilterSheet, LanguageIndex, ListFilter, ListRules,
+    ShelfSource, TitleFilter,
+};
 use swiftly_model::{Item, ItemsResponse};
 use swiftly_net::{ErrorKind, HttpTransport};
 use swiftly_playback::media_server::MediaServer;
@@ -26,7 +30,7 @@ use swiftly_rules::natural_order::NaturalCollator;
 
 use crate::account::AccountRef;
 use crate::home::{Source, build_source};
-use crate::host::Host;
+use crate::host::{Host, age};
 use crate::legacy_library::{LegacyGridTile, grid_tile_sorted};
 use crate::tile::Words;
 
@@ -112,7 +116,8 @@ struct CollectionRail {
 struct Offered {
     shares: HashMap<String, LibraryShare>,
     directory: CollectionDirectory,
-    at: Instant,
+    /// When it was asked, on the host's clock (`Instant` does not count the time the device sleeps).
+    at: f64,
 }
 
 struct FilterState {
@@ -121,8 +126,16 @@ struct FilterState {
     offset: i64,
 }
 
+/// What the filter sheet offers for one list (years, languages), fetched once by [`LegacySection::filter_load`].
+struct SheetFacets {
+    key: String,
+    facets: FilterFacets,
+    index: Option<Arc<LanguageIndex>>,
+}
+
 #[derive(Default)]
 struct State {
+    facets: Option<SheetFacets>,
     views: Option<Vec<Item>>,
     offered: Option<Offered>,
     playlists: Option<PlaylistDirectory>,
@@ -138,6 +151,10 @@ pub struct LegacySection<T: HttpTransport + 'static> {
     addresses: ImageAddress,
     words: Words,
     collator: Option<NaturalCollator>,
+    /// The host the account's short-term memory ([`crate::offered`]) belongs to.
+    host: Host,
+    /// The key of the account ([`AccountRef::key`]), the key of that memory.
+    key: String,
     state: Mutex<State>,
 }
 
@@ -154,6 +171,8 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
             addresses,
             words: Words::new(host.locale.clone()),
             collator: NaturalCollator::new(host.locale.language()).ok(),
+            host: host.clone(),
+            key: account.key(),
             state: Mutex::new(State::default()),
         })
     }
@@ -298,12 +317,17 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
         Ok(list)
     }
 
+    /// The account's short-term memory of what it offers ([`crate::offered`]).
+    fn whose(&self) -> crate::offered::Whose {
+        crate::offered::Whose::new(&self.key, &self.host)
+    }
+
     /// `AppModel.offeringLoad()`: on demand, valid for one minute; a failed look-up leaves the state as it was.
     pub async fn offering_load(&self) {
         if self.locked(|s| {
             s.offered
                 .as_ref()
-                .is_some_and(|o| o.at.elapsed() < Duration::from_secs(60))
+                .is_some_and(|o| age(self.host.clock.now(), o.at) < Duration::from_secs(60))
         }) {
             return;
         }
@@ -317,14 +341,26 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
         };
         let shares = self.library_shares(&views);
         let directory = async {
+            // The home page and the detail pages keep the account's collections for a minute ([`crate::offered`]):
+            // what they asked a moment ago is not asked again, and what is asked here is theirs to use.
+            let who = self.whose();
+            if let Some(kept) = crate::offered::current(&who) {
+                return Some(kept);
+            }
+            let began = crate::offered::stamp(&who);
             let with_hidden = self
                 .user_views(true)
                 .await
                 .unwrap_or_else(|_| views.clone());
-            if CollectionDirectory::hidden(&views, &with_hidden) {
-                return Some(CollectionDirectory::default());
+            let found = if CollectionDirectory::hidden(&views, &with_hidden) {
+                Some(CollectionDirectory::default())
+            } else {
+                self.collection_directory(&with_hidden).await.ok()
+            };
+            if let Some(found) = &found {
+                crate::offered::remember(&who, began, found);
             }
-            self.collection_directory(&with_hidden).await.ok()
+            found
         };
         let playlists = async { self.playlist_directory().await.ok() };
         let (shares, directory, playlists) =
@@ -335,7 +371,7 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
                 s.offered = Some(Offered {
                     shares,
                     directory,
-                    at: Instant::now(),
+                    at: self.host.clock.now(),
                 });
             }
         });
@@ -381,6 +417,10 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
         s: Sorting,
         f: LibraryFilter,
     ) -> Option<Vec<Letter>> {
+        // Only "By name" has a strip: no whole-list fetch for the other orders.
+        if s != Sorting::Name {
+            return Some(Vec::new());
+        }
         let list = self
             .items(&ItemsQuery {
                 parent_id: source.parent.clone(),
@@ -478,17 +518,12 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
         })
     }
 
-    pub async fn section_page(
+    /// The list a section page reads: all libraries, one library, or none (collections, playlists).
+    async fn section_source(
         &self,
         art: &str,
         choice: &str,
-        sorting: &str,
-        filter: &str,
-        since: i64,
-        count: i64,
-    ) -> Result<String, ErrorKind> {
-        let s = Sorting::from_raw(sorting).unwrap_or(Sorting::Name);
-        let f = LibraryFilter::from_raw(filter).unwrap_or(LibraryFilter::All);
+    ) -> Result<Option<ShelfSource>, ErrorKind> {
         let views = self.view_list().await?;
         let offering = self.offering(art, &views);
         let art_opt = Some(art);
@@ -507,6 +542,155 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
             SectionSelection::Library(id) => Some(ShelfSource::new(Some(&id), art_opt, false, &[])),
             SectionSelection::Collections | SectionSelection::Playlists => None,
         };
+        Ok(source)
+    }
+
+    async fn title_filter_listed(
+        &self,
+        source: &ShelfSource,
+        filter: &ListFilter,
+        languages: Option<&LanguageIndex>,
+    ) -> Result<TitleFilter, ErrorKind> {
+        match &self.source {
+            Source::Jellyfin(c) => title_filter_narrowed(&**c, source, filter, languages).await,
+            Source::Plex(c) => {
+                MediaServer::title_filter(
+                    &**c,
+                    source,
+                    &filter.jellyfin_filter(),
+                    filter.is_watched(),
+                )
+                .await
+            }
+        }
+    }
+
+    /// Years and languages are offered for a Jellyfin or Emby library list, not for Plex, a collection or a playlist.
+    fn supports_facets(&self, source: &ShelfSource) -> bool {
+        matches!(self.source, Source::Jellyfin(_)) && !source.collection
+    }
+
+    /// The language index of this list: the one the sheet fetched, else one scan now.
+    async fn language_index_for(&self, source: &ShelfSource) -> Option<Arc<LanguageIndex>> {
+        let key = source.key();
+        if let Some(index) = self.locked(|s| {
+            s.facets
+                .as_ref()
+                .filter(|f| f.key == key)
+                .and_then(|f| f.index.clone())
+        }) {
+            return Some(index);
+        }
+        match &self.source {
+            Source::Jellyfin(c) => language_index(&**c, source).await.ok().map(Arc::new),
+            Source::Plex(_) => None,
+        }
+    }
+
+    /// The filter sheet is about to open: fetch the years and languages of this list, once per list.
+    pub async fn filter_load(&self, art: &str, choice: &str) {
+        let Ok(Some(source)) = self.section_source(art, choice).await else {
+            return;
+        };
+        let key = source.key();
+        let Source::Jellyfin(c) = &self.source else {
+            return;
+        };
+        if !self.supports_facets(&source)
+            || self.locked(|s| {
+                s.facets
+                    .as_ref()
+                    .is_some_and(|f| f.key == key && !matches!(f.facets.languages, Facet::Failed))
+            })
+        {
+            return;
+        }
+        let years = year_options(&**c, &source).await;
+        let index = language_index(&**c, &source).await;
+        let (languages, index) = match index {
+            Ok(index) => (Facet::Ready(index.languages()), Some(Arc::new(index))),
+            Err(_) => (Facet::Failed, None),
+        };
+        let facets = FilterFacets {
+            years: years.map_or(Facet::Failed, Facet::Ready),
+            languages,
+        };
+        self.locked(|s| s.facets = Some(SheetFacets { key, facets, index }));
+    }
+
+    /// The filter sheet every platform draws, for the list `art` / `choice` and the filter value `filter`
+    /// (a status, plus the narrowing: [`ListFilter::raw_value`]). `offered` are the status filters the page offers.
+    pub async fn filter_sheet(
+        &self,
+        art: &str,
+        choice: &str,
+        filter: &str,
+        offered: &[LibraryFilter],
+    ) -> FilterSheet {
+        let lf = ListFilter::from_raw(filter);
+        let facets = match self.section_source(art, choice).await {
+            Ok(Some(source)) if self.supports_facets(&source) => {
+                let key = source.key();
+                self.locked(|s| {
+                    s.facets
+                        .as_ref()
+                        .filter(|f| f.key == key)
+                        .map(|f| f.facets.clone())
+                })
+                .unwrap_or(FilterFacets {
+                    years: Facet::Loading,
+                    languages: Facet::Loading,
+                })
+            }
+            _ => FilterFacets::default(),
+        };
+        let lang = self.host.locale.language().to_owned();
+        FilterSheet::build(
+            offered,
+            lf.status,
+            &lf.narrowing,
+            &facets,
+            &|key| self.words.title(key),
+            &|code| crate::language_names::language_name(code, &lang),
+        )
+    }
+
+    /// The filter value after a row of the sheet was picked.
+    pub fn filter_pick(filter: &str, choice: &FilterChoice) -> String {
+        ListFilter::from_raw(filter).picked(choice).raw_value()
+    }
+
+    /// What the filter pill shows for the filter value.
+    pub fn filter_pill(&self, filter: &str) -> String {
+        let lf = ListFilter::from_raw(filter);
+        let lang = self.host.locale.language().to_owned();
+        swiftly_library::pill_text(
+            lf.status,
+            &lf.narrowing,
+            &|key| self.words.title(key),
+            &|code| crate::language_names::language_name(code, &lang),
+        )
+    }
+
+    /// The status part of a filter value (`LibraryFilter::raw_value`), for the page's own "offered" check.
+    pub fn filter_status(filter: &str) -> String {
+        ListFilter::from_raw(filter).status.raw_value().to_owned()
+    }
+
+    pub async fn section_page(
+        &self,
+        art: &str,
+        choice: &str,
+        sorting: &str,
+        filter: &str,
+        since: i64,
+        count: i64,
+    ) -> Result<String, ErrorKind> {
+        let s = Sorting::from_raw(sorting).unwrap_or(Sorting::Name);
+        let lf = ListFilter::from_raw(filter);
+        let f = lf.status;
+        let narrowed = !lf.narrowing.is_none();
+        let source = self.section_source(art, choice).await?;
         let Some(source) = source else {
             return json(&SectionPage {
                 title: vec![],
@@ -516,16 +700,27 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
                 letters: None,
             });
         };
+        let index = if lf.narrowing.language.is_some() {
+            self.language_index_for(&source).await
+        } else {
+            None
+        };
         let natural: Option<Vec<Item>> = if s == Sorting::Name && self.collator.is_some() {
-            Some(
-                self.natural_cached(
+            let list = self
+                .natural_cached(
                     &format!("{}|{}", source.key(), f.raw_value()),
                     since,
                     &source,
                     f,
                 )
-                .await?,
-            )
+                .await?;
+            Some(if narrowed {
+                list.into_iter()
+                    .filter(|i| lf.narrowing.keeps(i, index.as_deref()))
+                    .collect()
+            } else {
+                list
+            })
         } else {
             None
         };
@@ -533,11 +728,14 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
             None
         } else if let Some(list) = &natural {
             Some(Self::letters(list, Sorting::Name))
+        } else if narrowed {
+            None
         } else {
             self.other_letters(&source, s, f).await
         };
+        let years_wanted = lf.years();
         let page = |start: i64, amount: i64| {
-            let (source, natural) = (&source, &natural);
+            let (source, natural, years) = (&source, &natural, &years_wanted);
             async move {
                 if let Some(list) = natural {
                     return self
@@ -556,6 +754,7 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
                     sort_order: source.bearing(s).into(),
                     filters: f.jellyfin_filter(),
                     is_watched: f.is_watched(),
+                    years: years.clone(),
                     recursive: source.recursive(),
                     include_item_types: source.types().iter().map(|t| (*t).to_owned()).collect(),
                     ..ItemsQuery::default()
@@ -563,7 +762,7 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
                 .await
             }
         };
-        if !source.is_filtering() {
+        if !source.is_filtering() && !narrowed {
             let answer = page(since, count).await?;
             return json(&SectionPage {
                 title: answer.items.iter().map(|i| self.tile(i, s)).collect(),
@@ -573,7 +772,7 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
                 letters,
             });
         }
-        let key = format!("{}|{}|{}", source.key(), s.raw_value(), f.raw_value());
+        let key = format!("{}|{}|{}", source.key(), s.raw_value(), lf.raw_value());
         let before = self.locked(|st| {
             st.filter
                 .as_ref()
@@ -582,9 +781,13 @@ impl<T: HttpTransport + 'static> LegacySection<T> {
         let (mut filter_ref, mut offset, mut first);
         first = count;
         if since == 0 {
-            filter_ref = self
-                .title_filter(&source, &f.jellyfin_filter(), f.is_watched())
-                .await?;
+            filter_ref = if narrowed {
+                self.title_filter_listed(&source, &lf, index.as_deref())
+                    .await?
+            } else {
+                self.title_filter(&source, &f.jellyfin_filter(), f.is_watched())
+                    .await?
+            };
             offset = 0;
             if let Some((k, _, o)) = &before
                 && *k == key

@@ -28,6 +28,27 @@ public final class LibraryModel {
     public func load() { vm.send(intent: .load) }
     public func setSorting(_ sorting: Sorting) { vm.send(intent: .setSorting(sorting: sorting)) }
     public func setFilter(_ filter: LibraryFilter) { vm.send(intent: .setFilter(filter: filter)) }
+
+    /// The filter sheet as the core builds it (rows, picks, loading groups); `offered` are the status filters this page offers.
+    public func filterSheet(offered: [LibraryFilter]) -> FilterSheetPart { vm.filterSheet(offered: offered) }
+    /// A row of the sheet was picked: one call for every kind of row.
+    public func pick(_ pick: FilterPick) { vm.pick(pick: pick) }
+    /// What the filter pill shows ("Ungesehen · 2010–2019 · Deutsch"), as the core words it.
+    public func pillText() -> String { vm.pillText() }
+    /// The sheet is about to open: the core fetches the years and languages of this list (once).
+    public func loadFilterOptions() { vm.send(intent: .loadFilterOptions) }
+    /// The view model version, to wait for the next change with `waitForChange(after:)`.
+    public var version: UInt64 { vm.version() }
+    /// Returns when the core changed after `seen`, or when the calling Task is cancelled.
+    public func waitForChange(after seen: UInt64) async { _ = try? await vm.changed(seen: seen) }
+    /// The years and language the core narrows the list to, as one text (empty: nothing narrowed).
+    public var narrowingKey: String {
+        let s = vm.status()
+        let years = s.years.map { "\($0.from)-\($0.to)" } ?? ""
+        return years + "|" + (s.language ?? "")
+    }
+    /// Returns when a load the core started itself (after `pick`) has settled.
+    public func settled() async { await settle() }
     /// The next page now; also the retry after a failure.
     public func loadMore() { vm.send(intent: .loadMore) }
     /// A tile came into view (`columns` tiles per row).

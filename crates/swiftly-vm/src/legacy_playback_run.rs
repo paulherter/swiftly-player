@@ -16,11 +16,11 @@ use swiftly_playback::offering_layer::{OfferingLayer, OfferingPresentation, Open
 use swiftly_playback::pause_jump_back;
 use swiftly_playback::prebuffer;
 use swiftly_playback::sections::{ButtonOffering, SectionLogic, Segment};
-use swiftly_rules::episodes_card::REMAINING_WINDOW;
 use swiftly_rules::episodes_end;
 use swiftly_rules::episodes_switch::{EpisodeSwitch, Outcome, Phase, Steps, StopLock};
 use swiftly_rules::playback_tick::{self, Reading, Snapshot, TICK_LENGTH};
 
+use crate::core_words;
 use crate::legacy_playback::{LegacyPlayback, State};
 use crate::play_display::PlayDisplay;
 use crate::player_report::{ReportDesk, ReportKind, ReportMessage, ReportOutcome};
@@ -29,12 +29,56 @@ use crate::player_start::ReadyStart;
 /// What the open title keeps while it runs (`Playback` of the Swift core besides the plan).
 pub(crate) struct Live {
     pub(crate) snap: Snapshot,
+    /// Wall-clock spacing of the progress reports (the tick count alone falls behind when ticks run late).
+    pub(crate) beat: crate::progress_beat::ProgressBeat,
     pub(crate) layer: OfferingLayer,
     /// Since when it has been paused, seconds on the core's clock (`pausedSince`).
     pub(crate) paused_since: Option<f64>,
     /// Sections already skipped on their own, by start second (bits).
     /// When it opened, seconds on the core's clock.
     pub(crate) start: f64,
+    /// Whether the tick may ask the host to advance to the next episode (see [`Advance`]).
+    pub(crate) advance: Advance,
+}
+
+/// A seek back by at least this many seconds from the furthest point reached after a failed switch is a new run up to
+/// the end of the title (a skip of ten seconds is not).
+const SEEK_BACK: f64 = 30.0;
+
+/// The tick's permission to ask the host to advance to the next episode.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Advance {
+    /// The card countdown and the end of the file ask.
+    Open,
+    /// The switch to the next episode failed (no plan): the tick stops asking, or the host would repeat the failed
+    /// switch (plan request, stop report, hint) on every tick. The user can still press Next. Asking resumes when the
+    /// user seeks back well before the end (playing to the end again is a new attempt), when the link to the server
+    /// comes back after a real outage (the failure may have been the outage's), and with a new title (`install`
+    /// starts with a fresh `Live`).
+    Failed {
+        /// The furthest position seen since the failure.
+        furthest: f64,
+        /// [`crate::ViewCache::links_back`] when it failed.
+        links_back: u64,
+    },
+}
+
+/// Whether the open title is the one with this [`StopLock::key`] (a title opened again is a new session).
+fn is_open(s: &State, key: &str) -> bool {
+    s.ready
+        .as_ref()
+        .is_some_and(|r| StopLock::key(&r.item.id, r.plan.play_session_id.as_deref()) == key)
+}
+
+/// What a switch is for: only the one to the queued next episode is what the tick asks the host for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Switch {
+    /// Same title, replanned at the same position (the bitrate limit changed).
+    Quality,
+    /// The next episode the plan noted (`id` empty): the card countdown and the end of the file ask for it.
+    Queued,
+    /// An episode the user picked.
+    Chosen,
 }
 
 impl Live {
@@ -44,10 +88,53 @@ impl Live {
         layer.card_waits_controls = true;
         Self {
             snap: Snapshot::default(),
+            beat: crate::progress_beat::ProgressBeat::Idle,
             layer,
             paused_since: None,
             start: 0.0,
+            advance: Advance::Open,
         }
+    }
+}
+
+impl Live {
+    /// The switch to the next episode failed with the player at `position`.
+    pub(crate) fn advance_failed(&mut self, position: f64, links_back: u64) {
+        self.advance = Advance::Failed {
+            furthest: position,
+            links_back,
+        };
+    }
+
+    /// Once per tick: whether the host may be asked to advance. A failed attempt is forgotten when the user seeks back
+    /// well before the end or the server link came back.
+    pub(crate) fn advance_allowed(
+        &mut self,
+        spot: f64,
+        shows_image: bool,
+        links_back: u64,
+    ) -> bool {
+        if let Advance::Failed {
+            furthest,
+            links_back: then,
+        } = &mut self.advance
+        {
+            if links_back != *then || (shows_image && spot < *furthest - SEEK_BACK) {
+                self.advance = Advance::Open;
+            } else {
+                *furthest = furthest.max(spot);
+            }
+        }
+        self.advance == Advance::Open
+    }
+
+    /// An episode switch carried the start report on: the new title's schedule starts here, so the first beat report
+    /// comes ten seconds after the start report and only once a picture shows (the old title's last report is no
+    /// reason to send a position of zero before the first frame).
+    pub(crate) fn switched_title(&mut self, now: f64) {
+        playback_tick::new_title(&mut self.snap, true);
+        self.start = now;
+        self.beat.started(now);
     }
 }
 
@@ -225,17 +312,22 @@ struct Status {
 }
 
 fn status(live: &Live, sections: &[Segment], has_next: bool) -> Status {
-    let offering =
-        SectionLogic::offering(live.snap.position, live.snap.duration, sections, has_next);
-    let (art, to) = match offering {
-        ButtonOffering::Nobody => ("keiner", None),
-        ButtonOffering::Skip { to, .. } => ("ueberspringen", Some(to)),
-        ButtonOffering::NextEpisode => ("naechste", None),
+    let offering = SectionLogic::offering_with_tail(
+        live.snap.position,
+        live.snap.duration,
+        sections,
+        has_next,
+    );
+    let art = core_words::angebot::of(&offering);
+    let to = match offering {
+        ButtonOffering::Skip { to, .. } => Some(to),
+        ButtonOffering::Nobody | ButtonOffering::NextEpisode => None,
     };
-    let (overlay, share) = match live.layer.display() {
-        OfferingPresentation::Nothing => ("nichts", 0.0),
-        OfferingPresentation::Button(_) => ("knopf", 0.0),
-        OfferingPresentation::Card { share } => ("karte", share),
+    let presentation = live.layer.display();
+    let overlay = core_words::einblendung::of(&presentation);
+    let share = match presentation {
+        OfferingPresentation::Card { share } => share,
+        OfferingPresentation::Nothing | OfferingPresentation::Button(_) => 0.0,
     };
     Status {
         art,
@@ -256,14 +348,14 @@ fn catch_up(
     at_end: bool,
 ) -> bool {
     let (spot, duration) = (live.snap.position, live.snap.duration);
-    let offering = SectionLogic::offering(spot, duration, sections, has_next);
+    // The closing seconds of an episode no outro reaches the end of offer "Next episode" as well (`tail_due`).
+    let offering = SectionLogic::offering_with_tail(spot, duration, sections, has_next);
     // "Skip intro and outro automatically" lets the outro's card count down and advance as well.
     let auto_next = live.layer.auto_skip
         && SectionLogic::automatic(spot, duration, sections, has_next).is_some();
     let due = (automatic || auto_next)
-        && SectionLogic::card_due(spot, duration, sections, has_next, Some(REMAINING_WINDOW));
-    let countdown =
-        SectionLogic::countdown_with_sections(spot, duration, sections, Some(REMAINING_WINDOW));
+        && SectionLogic::card_due_with_tail(spot, duration, sections, has_next);
+    let countdown = SectionLogic::countdown(spot, duration);
     live.layer
         .tick(offering, due, running, elapsed, countdown, at_end)
 }
@@ -381,7 +473,7 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
     pub fn controls_changed(&self, opened: bool) -> String {
         self.locked(|s| {
             let Some(ready) = s.ready.as_ref() else {
-                return "nichts".to_owned();
+                return core_words::einblendung::NOTHING.to_owned();
             };
             let (sections, has_next) = (ready.sections.clone(), ready.next.is_some());
             s.live.layer.controls(opened, Opening::Deliberate);
@@ -582,6 +674,7 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
         }
         let now = self.run.now();
         let automatic = self.run.with(|r| r.next_automatic);
+        let links_back = self.links_back();
         let mut report: Option<(bool, f64, bool)> = None;
         let text = self.locked(|s| {
             let Some(ready) = s.ready.clone() else {
@@ -616,14 +709,18 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
                 automatic,
                 running && shows_image && !at_push,
                 TICK_LENGTH.as_secs_f64(),
-                episodes_end::at_end(spot, live.snap.duration) && !at_push,
+                (episodes_end::at_end(spot, live.snap.duration)
+                    || episodes_end::short_at_end(spot, live.snap.duration))
+                    && !at_push,
             );
             // Auto-skip: the offer was shown and its countdown ran out; the UI now presses the button.
             let auto_step = live.layer.take_auto_skip();
             if ready_countdown {
                 self.run.row("Angebot: Countdown abgelaufen".to_owned());
             }
+            let may_advance = live.advance_allowed(spot, shows_image, links_back);
             let proceed = has_next
+                && may_advance
                 && (ready_countdown
                     || (live.layer.next_at_end()
                         && episodes_end::advance(
@@ -633,8 +730,12 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
                             live.layer.card_counts(),
                         )));
             if job.start_report {
+                live.beat.started(now);
                 report = Some((true, spot, false));
-            } else if job.progress_report {
+            } else if live.beat.progress_due(&job, &mut live.snap, now) {
+                // Ten seconds of wall time (the tick count is held at zero): a late host tick must not let the
+                // server fall behind, and a faster one must not report twice.
+                live.beat.reported(now);
                 report = Some((false, spot, !live.snap.running));
             }
             let mut ready_view = ready;
@@ -791,13 +892,13 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
     }
 
     fn switch_answer(
-        result: &str,
+        result: Outcome,
         plan: Option<String>,
         error: Option<String>,
         pending: Option<String>,
     ) -> String {
         let mut o = serde_json::Map::new();
-        o.insert("ergebnis".into(), json!(result));
+        o.insert("ergebnis".into(), json!(Self::outcome_word(result)));
         if let Some(p) = plan {
             o.insert("spielplan".into(), json!(p));
         }
@@ -811,12 +912,7 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
     }
 
     fn outcome_word(o: Outcome) -> &'static str {
-        match o {
-            Outcome::Switched => "gewechselt",
-            Outcome::Locked => "gesperrt",
-            Outcome::Cancelled => "abgebrochen",
-            Outcome::Failed => "gescheitert",
-        }
+        core_words::ergebnis::of(o)
     }
 
     /// The same flow for episode and quality switch (`EpisodeSwitch.execute`): the old playback stays until the plan is there.
@@ -825,12 +921,13 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
         target: &str,
         position: f64,
         prepared: Option<(ReadyStart, PlayDisplay)>,
-        quality: bool,
+        kind: Switch,
     ) -> String {
+        let quality = kind == Switch::Quality;
         let change = self.run.switch();
         let Some((old, old_display)) = self.locked(|s| s.ready.clone().zip(s.display.clone()))
         else {
-            return Self::switch_answer("gescheitert", None, None, None);
+            return Self::switch_answer(Outcome::Failed, None, None, None);
         };
         let _ = old_display;
         let user = self.account.user_id.clone();
@@ -839,6 +936,7 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
         let plan_text = Arc::new(Mutex::new(None::<String>));
         let fetched = Arc::new(Mutex::new(None::<(ReadyStart, PlayDisplay)>));
         let stop_msg = self.locked(|s| self.stop_message(s, position));
+        let old_key = StopLock::key(&old.item.id, old.plan.play_session_id.as_deref());
         let me: &Self = self;
         let steps = Steps {
             stop_now: Box::new({
@@ -885,8 +983,7 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
                     me.install(p.0.clone(), p.1.clone());
                     let now = me.run.now();
                     me.locked(|s| {
-                        playback_tick::new_title(&mut s.live.snap, true);
-                        s.live.start = now;
+                        s.live.switched_title(now);
                         if quality && position > 0.0 {
                             playback_tick::jumped(&mut s.live.snap, position, now);
                         }
@@ -900,14 +997,10 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
                 })
             }),
             failed: Box::new({
-                let old_key = StopLock::key(&old.item.id, old.plan.play_session_id.as_deref());
+                let old_key = old_key.clone();
                 move || {
                     me.locked(|s| {
-                        if s.ready
-                            .as_ref()
-                            .map(|r| StopLock::key(&r.item.id, r.plan.play_session_id.as_deref()))
-                            == Some(old_key)
-                        {
+                        if is_open(s, &old_key) {
                             s.live.snap.start_reported = false;
                         }
                     });
@@ -937,19 +1030,38 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
                     .clone();
-                Self::switch_answer("gewechselt", plan, None, pending)
+                Self::switch_answer(Outcome::Switched, plan, None, pending)
             }
             Outcome::Failed => {
+                if kind == Switch::Queued {
+                    // One attempt per title end: the tick no longer asks the host to advance (see `Live::advance_failed`).
+                    // A quality change or a pick of the user's own is not what the tick asks for: it leaves the end alone.
+                    let links_back = self.links_back();
+                    // The answer can come late: only the title it started on takes the mark, not one opened meanwhile.
+                    self.locked(|s| {
+                        if is_open(s, &old_key) {
+                            s.live.advance_failed(position, links_back);
+                        }
+                    });
+                }
                 let e = error.lock().unwrap_or_else(PoisonError::into_inner).clone();
                 Self::switch_answer(
-                    "gescheitert",
+                    Outcome::Failed,
                     None,
                     Some(e.unwrap_or_else(|| "Nicht verf\u{fc}gbar".to_owned())),
                     pending,
                 )
             }
-            other => Self::switch_answer(Self::outcome_word(other), None, None, pending),
+            other => Self::switch_answer(other, None, None, pending),
         }
+    }
+
+    /// How often the server link came back after a real outage (0 without a cache).
+    fn links_back(&self) -> u64 {
+        self.host
+            .cache
+            .as_ref()
+            .map_or(0, crate::ViewCache::links_back)
     }
 
     /// `Kern.qualitySwitch`: same title, replanned at the same position (the bitrate limit was set beforehand).
@@ -959,9 +1071,9 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
             r.preparation = None;
         });
         let Some(id) = self.locked(|s| s.ready.as_ref().map(|r| r.item.id.clone())) else {
-            return Self::switch_answer("gescheitert", None, None, None);
+            return Self::switch_answer(Outcome::Failed, None, None, None);
         };
-        self.switch_to(&id, position, None, true).await
+        self.switch_to(&id, position, None, Switch::Quality).await
     }
 
     /// `Kern.episodeSwitch`: `id` empty means the queued next episode.
@@ -977,7 +1089,7 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
             Some(id.to_owned())
         };
         let Some(target) = target else {
-            return Self::switch_answer("gescheitert", None, None, None);
+            return Self::switch_answer(Outcome::Failed, None, None, None);
         };
         let now = self.run.now();
         let prepared = self.run.with(|r| {
@@ -989,6 +1101,45 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
             "Wechsel Beginn \u{2192} {target} \u{b7} Plan vorbereitet: {}",
             if prepared.is_some() { "ja" } else { "nein" }
         ));
-        self.switch_to(&target, position, prepared, false).await
+        let kind = if id.is_empty() {
+            Switch::Queued
+        } else {
+            Switch::Chosen
+        };
+        self.switch_to(&target, position, prepared, kind).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::progress_beat::ProgressBeat;
+    use swiftly_rules::playback_tick::WorkItem;
+
+    /// After an episode switch the new title has no picture yet: the old title's schedule must not send a position
+    /// of zero ten seconds after the old title's last report, and the new schedule counts from the switch.
+    #[test]
+    fn a_switched_title_reports_nothing_before_its_first_picture_and_counts_from_the_switch() {
+        let mut live = Live::new();
+        // The old title reported at 100 s.
+        live.beat.started(100.0);
+        live.snap.start_reported = true;
+        live.snap.first_image_present = true;
+        live.snap.duration = 3600.0;
+        // Switch at 108 s: a beat that counted on from the old title would be due at 110 s.
+        live.switched_title(108.0);
+        assert!(matches!(live.beat, ProgressBeat::Running { last } if last == 108.0));
+        let job = WorkItem::default();
+        assert!(
+            !live.beat.progress_due(&job, &mut live.snap, 111.0),
+            "nothing is due 3 s after the switch"
+        );
+        assert!(
+            !live.beat.progress_due(&job, &mut live.snap, 300.0),
+            "no position before the first picture, however late it comes"
+        );
+        live.snap.first_image_present = true;
+        live.snap.duration = 1800.0;
+        assert!(live.beat.progress_due(&job, &mut live.snap, 300.0));
     }
 }

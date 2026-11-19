@@ -17,6 +17,8 @@ public enum PlexFeatures {
     public static let capabilities: Set<ServerCapability> = [
         .trickplay, .introSegments, .chapters, .collections, .playlists, .favorites,
         .markWatched, .similar, .extras, .genres, .downloads,
+        // Seerr in Plex mode takes the plex.tv token of this account (the core's `SeerrSetupScreen`, "Mit Plex").
+        .seerr,
     ]
 
     /// The ones deliberately missing, for a test that keeps both lists complete.

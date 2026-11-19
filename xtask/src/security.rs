@@ -16,6 +16,9 @@ const UNSAFE_ALLOWED: &[&str] = &[
     "crates/swiftly-ios/src/",
     "crates/swiftly-android/src/",
     "crates/swiftly-player-surface/src/mpv.rs",
+    // The GPU way of the video: EGL, GBM and OpenGL loaded at run time, and the DMA-buf import into wgpu (each block commented).
+    "crates/swiftly-player-surface/src/mpv_gl.rs",
+    "crates/swiftly-desktop/src/dmabuf_import.rs",
     // The Windows window shell: the class brush behind the window and the shell calls (each block is commented).
     "crates/swiftly-desktop/src/win_backdrop.rs",
     "crates/swiftly-desktop/src/win_shell.rs",

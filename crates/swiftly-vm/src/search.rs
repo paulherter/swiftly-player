@@ -20,6 +20,7 @@ use swiftly_rules::natural_order::{NaturalCollator, NaturalOrder};
 
 use crate::account::AccountRef;
 use crate::bell::{Bell, Changed, part};
+use crate::cache::ViewCache;
 use crate::home::{Client, build_client};
 use crate::host::Shared;
 use crate::host::{Host, Sleeper};
@@ -436,6 +437,11 @@ impl<T: HttpTransport + 'static> Inner<T> {
         backend: &Backend<T>,
         term: &str,
     ) -> Result<Vec<SearchGroup>, LoadFailure> {
+        // The ticket is taken before the fetch: an answer that outlives a sign-out is not written back.
+        let ticket = self.host.cache.as_ref().and_then(|cache| {
+            let account = self.live().account.clone()?;
+            Some((cache.clone(), cache.ticket(&ViewCache::scope(&account))))
+        });
         let works = match backend {
             Backend::Jellyfin(client) => {
                 let main = client.search(term, MOVIE_SERIES_LIMIT).await;
@@ -453,6 +459,10 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 .await
                 .map_err(|e| LoadFailure::from_error(&e.into_kind()))?,
         };
+        // What the hits said of their titles seeds the page a hit opens.
+        if let Some((cache, ticket)) = ticket {
+            cache.note_tiles(&ticket, &works);
+        }
         let works = match &self.collator {
             Some(c) => {
                 NaturalOrder::sorted(works, c, |i| (i.name.as_str(), i.sort_name.as_deref()))

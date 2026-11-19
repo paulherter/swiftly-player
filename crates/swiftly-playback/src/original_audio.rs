@@ -100,10 +100,13 @@ pub fn canonical(raw: Option<&str>) -> Option<String> {
     if ["und", "unk", "zxx", "mul", "mis", "unknown", "undetermined"].contains(&text.as_str()) {
         return None;
     }
+    // The table of titles' languages first (names, the Norwegian and Chinese varieties); any other language by its code.
     Some(
         lookup()
             .get(text.as_str())
-            .map_or(text, |c| (*c).to_owned()),
+            .map(|c| (*c).to_owned())
+            .or_else(|| crate::iso_639::two_letter(&text).map(str::to_owned))
+            .unwrap_or(text),
     )
 }
 

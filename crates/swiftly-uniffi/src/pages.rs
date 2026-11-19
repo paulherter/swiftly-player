@@ -37,6 +37,27 @@ pub struct PersonInfo {
     pub kind: Option<String>,
     /// Tag of the portrait.
     pub image_tag: Option<String>,
+    /// Set for a cast member of a Seerr title (the TMDB person id): the page then has no library entry.
+    pub tmdb: Option<i64>,
+    /// The TMDB portrait address of such a person.
+    pub image_url: Option<String>,
+}
+
+/// The one "open person" intent of a Seerr cast tile (title page of a title that is not on the server): what the person
+/// page opens with. Every host passes the tapped tile here and opens its person page with the answer, so a Seerr cast
+/// tile and a library cast tile end on the same page.
+#[uniffi::export]
+pub fn seerr_cast_person(cast: swiftly_vm::SeerrCast) -> PersonInfo {
+    let seerr = cast.person_ref();
+    PersonInfo {
+        id: String::new(),
+        name: cast.name,
+        role: cast.role,
+        kind: Some("Actor".into()),
+        image_tag: None,
+        tmdb: Some(seerr.tmdb),
+        image_url: seerr.image,
+    }
 }
 
 /// Formats a birthday for the language ("1. Mai 1980": `date.formatted(date: .long)`).
@@ -56,6 +77,8 @@ pub struct PersonPage {
     pub name: String,
     /// "Rolle in Titel".
     pub role_line: Option<String>,
+    /// The portrait address of a Seerr person (a library person has the picture tag of the host's own address).
+    pub portrait_url: Option<String>,
     /// "Geboren ...".
     pub born_line: Option<String>,
     /// First production place.
@@ -106,6 +129,10 @@ impl PersonModel {
         origin: Option<String>,
     ) -> Result<Arc<Self>, CoreError> {
         let client = swiftly_vm::account_client(&Arc::new(transport), host, account)?;
+        let seerr = person.tmdb.map(|tmdb| swiftly_vm::SeerrPersonRef {
+            tmdb,
+            image: person.image_url.clone(),
+        });
         let person = Person {
             id: person.id,
             name: person.name,
@@ -113,8 +140,12 @@ impl PersonModel {
             type_: person.kind,
             primary_image_tag: person.image_tag,
         };
+        let vm = match seerr {
+            Some(seerr) => PersonVm::for_seerr(host.locale.clone(), person, seerr, origin),
+            None => PersonVm::new(host.locale.clone(), person, origin),
+        };
         Ok(Arc::new(Self {
-            vm: Mutex::new(PersonVm::new(host.locale.clone(), person, origin)),
+            vm: Mutex::new(vm),
             client,
             locale: host.locale.clone(),
             hits: Mutex::new(Vec::new()),
@@ -146,6 +177,7 @@ impl PersonModel {
             version: p.version,
             name: p.name.clone(),
             role_line: p.role_line.clone(),
+            portrait_url: p.portrait_url.clone(),
             born_line: p.born_line.clone(),
             place: p.place.clone(),
             biography: p.biography.clone(),
@@ -181,6 +213,10 @@ impl PersonModel {
     /// Loads the details and the first page of the filmography; returns the new page.
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn load(&self, dates: Arc<dyn DateText>) -> Result<PersonPage, CoreError> {
+        if !lock(&self.vm).in_library() {
+            lock(&self.vm).loaded_without_library();
+            return Ok(self.part_of());
+        }
         let id = lock(&self.vm).person_id().to_owned();
         let (item, page) =
             futures_util::future::join(self.client.item(&id), self.page(&id, 0)).await;
@@ -350,5 +386,27 @@ impl PlaylistModel {
         )
         .into_iter()
         .next()
+    }
+}
+
+#[cfg(test)]
+mod seerr_person_tests {
+    use super::*;
+
+    #[test]
+    fn a_seerr_cast_tile_opens_the_person_page_with_its_tmdb_id() {
+        let info = seerr_cast_person(swiftly_vm::SeerrCast {
+            person: 1234,
+            name: "Anna Test".into(),
+            role: Some("Mara".into()),
+            image: Some("https://image.example/185/a.jpg".into()),
+        });
+        assert_eq!(info.tmdb, Some(1234));
+        assert!(info.id.is_empty());
+        assert_eq!(info.role.as_deref(), Some("Mara"));
+        assert_eq!(
+            info.image_url.as_deref(),
+            Some("https://image.example/185/a.jpg")
+        );
     }
 }

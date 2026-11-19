@@ -15,9 +15,18 @@ pub fn percentile(sorted: &[f64], p: f64) -> f64 {
     sorted[(rank - 1).min(sorted.len() - 1)]
 }
 
+/// Redraws the video asked for (a new picture of the film arrived), counted by the window's event loop.
+/// Times the interface tree was laid out and painted anew (a redraw that reused the held picture does not count).
+pub static UI_BUILDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Redraws the engine asked for
+pub static VIDEO_WAKES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Collects frame times and prints a line every [`REPORT_EVERY_MS`].
 #[derive(Debug)]
 pub struct FrameStats {
+    reasons: std::collections::BTreeMap<&'static str, u64>,
+    wakes_seen: u64,
+    builds_seen: u64,
     period_ms: f64,
     cpu: Vec<f64>,
     intervals: Vec<f64>,
@@ -32,6 +41,9 @@ impl FrameStats {
     /// Statistics for a display with a refresh period of `period_ms`.
     pub fn new(period_ms: f64, now: f64) -> FrameStats {
         FrameStats {
+            reasons: Default::default(),
+            wakes_seen: 0,
+            builds_seen: 0,
             period_ms: period_ms.max(1.0),
             cpu: vec![],
             intervals: vec![],
@@ -67,11 +79,22 @@ impl FrameStats {
             return None;
         }
         let line = self.line(span);
+        self.wakes_seen = VIDEO_WAKES.load(std::sync::atomic::Ordering::Relaxed);
+        self.builds_seen = UI_BUILDS.load(std::sync::atomic::Ordering::Relaxed);
         self.cpu.clear();
         self.intervals.clear();
         self.dropped = 0;
         self.window_start = now;
+        self.reasons.clear();
         Some(line)
+    }
+
+    /// What asked for the frame after the one just drawn (`more` false: nothing, an input or a wake started the next).
+    pub fn why(&mut self, reason: &'static str, more: bool) {
+        *self
+            .reasons
+            .entry(if more { reason } else { "-" })
+            .or_default() += 1;
     }
 
     /// When the next report is due.
@@ -96,9 +119,14 @@ impl FrameStats {
         cpu.sort_by(f64::total_cmp);
         let mut iv = self.intervals.clone();
         iv.sort_by(f64::total_cmp);
+        let wakes = VIDEO_WAKES.load(std::sync::atomic::Ordering::Relaxed);
         let mut s = format!(
-            "stats {secs:.1}s frames={} cpu_ms p50={:.2} p99={:.2} max={:.2}",
+            "stats {secs:.1}s frames={} ui-builds={} video-wakes={} cpu_ms p50={:.2} p99={:.2} max={:.2}",
             cpu.len(),
+            UI_BUILDS
+                .load(std::sync::atomic::Ordering::Relaxed)
+                .saturating_sub(self.builds_seen),
+            wakes.saturating_sub(self.wakes_seen),
             percentile(&cpu, 0.5),
             percentile(&cpu, 0.99),
             cpu.last().copied().unwrap_or(0.0),
@@ -114,6 +142,14 @@ impl FrameStats {
                 self.period_ms,
                 self.dropped,
             ));
+        }
+        if !self.reasons.is_empty() {
+            let list: Vec<String> = self
+                .reasons
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect();
+            s.push_str(&format!(" | next frame asked by: {}", list.join(" ")));
         }
         s
     }

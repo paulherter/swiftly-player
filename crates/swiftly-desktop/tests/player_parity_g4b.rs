@@ -181,6 +181,7 @@ fn edge_width(img: &RgbaImage, x: usize, y: usize) -> usize {
 
 /// A layer lies on the blurred picture (`.ultraThinMaterial` + 0.72): the hard edge of the colour bars goes soft.
 #[test]
+#[ignore = "the Folgen/Kapitel layer is now a box anchored under the capsule with no scrim; pick a full-panel layer (subtitle search) when the search column moves into the box"]
 fn a_layer_blurs_the_picture_under_it() {
     let mut s = screen();
     run(&mut s, 0, 150);
@@ -189,7 +190,7 @@ fn a_layer_blurs_the_picture_under_it() {
     let (list, _) = s.frame(150.0 * 16.0);
     let sharp = edge_width(&s.render_software(&list), edge, 300);
     s.send_intent(
-        swiftly_vm::PlayerIntent::Layer(Some(swiftly_vm::PlayerLayer::Settings)),
+        swiftly_vm::PlayerIntent::Layer(Some(swiftly_vm::PlayerLayer::Chapters)),
         151.0 * 16.0,
     );
     run(&mut s, 152, 260);
@@ -250,11 +251,11 @@ fn all_labels(n: &[swiftly_ui::a11y::A11yNode], out: &mut Vec<(String, Option<[f
 fn the_episodes_layer_lists_the_sources_episodes_and_switches() {
     let mut s = screen();
     run(&mut s, 0, 150);
-    s.send_intent(
-        swiftly_vm::PlayerIntent::Layer(Some(swiftly_vm::PlayerLayer::Episodes)),
-        151.0 * 16.0,
-    );
-    run(&mut s, 152, 300);
+    // The capsule's Folgen key opens the box (the controls are up after the start).
+    let [x, y, w, h] = s.frame_of("folgen").expect("the capsule's Folgen key");
+    s.touch_down(x + w / 2.0, y + h / 2.0, 151.0 * 16.0);
+    s.touch_up(x + w / 2.0, y + h / 2.0, 152.0 * 16.0);
+    run(&mut s, 153, 300);
     let mut labels = Vec::new();
     all_labels(&s.a11y_nodes(), &mut labels);
     let card = labels

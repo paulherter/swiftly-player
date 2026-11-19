@@ -39,7 +39,12 @@ fn episode(season: i64, n: usize, played: bool) -> serde_json::Value {
 
 /// Two seasons, 100 episodes in the first, 3 in the second. The viewer is at S2 E2 (started).
 fn server() -> Arc<Script> {
-    Script::new(|r| {
+    server_with(2)
+}
+
+/// The same server with `seasons` seasons in its list.
+fn server_with(seasons: i64) -> Arc<Script> {
+    Script::new(move |r| {
         let p = r.url.path();
         if p.ends_with("/Items/ser") {
             return Some(
@@ -55,7 +60,8 @@ fn server() -> Arc<Script> {
             return Some(list(&[e], 1));
         }
         if p.ends_with("Shows/ser/Seasons") {
-            return Some(list(&[season(1), season(2)], 2));
+            let all: Vec<_> = (1..=seasons).map(season).collect();
+            return Some(list(&all, all.len()));
         }
         if p.ends_with("Shows/ser/Episodes") {
             let n = match param(r, "seasonId").as_deref() {
@@ -286,10 +292,10 @@ fn series_page_takes_rating_age_rating_and_overview_from_the_full_series() {
     assert_eq!(vm.button().overview.as_deref(), Some("Full text."));
 }
 
-/// #33: an episode with several versions asks; one whose sources are not known yet is gray while the
-/// list loads, and a picked version starts at once.
+/// An episode with several versions starts the default on a tap and offers the others to the long press; one whose
+/// sources are not known yet is gray while the list loads, and a picked version starts at once.
 #[test]
-fn an_episode_with_two_versions_asks_which() {
+fn an_episode_with_two_versions_starts_the_default_and_offers_the_others() {
     let net = server();
     let vm = vm(&net, SeriesSpec::default());
     vm.send(SeriesIntent::Load);
@@ -298,8 +304,15 @@ fn an_episode_with_two_versions_asks_which() {
     wait_for("season 1", || vm.episodes().total == 100);
     assert!(matches!(
         vm.play_episode("e1-5", None),
-        PlayAction::Choose { ref versions, .. } if versions.len() == 2
+        PlayAction::Start {
+            source_id: None,
+            ..
+        }
     ));
+    let versions = vm.versions_of("e1-5");
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions.iter().filter(|v| v.is_default).count(), 1);
+    assert!(vm.versions_of("nope").is_empty());
     assert!(matches!(
         vm.play_episode("e1-5", Some("uhd")),
         PlayAction::Start { source_id: Some(ref id), .. } if id == "uhd"
@@ -307,11 +320,59 @@ fn an_episode_with_two_versions_asks_which() {
     assert!(matches!(vm.play_episode("nope", None), PlayAction::Wait));
 }
 
-/// One rule for every press on Play: several versions ask, every time. A pick starts that version for that press
-/// only; the next press on the same or another episode asks again (the player's own next episode keeps the version,
-/// in the player).
+/// The mark on the main button's episode follows the plan fetched for it (what a tap starts), not the top version: the
+/// server's answer to the device profile transcodes the 4K file and plays the 1080p one as it is.
 #[test]
-fn every_press_on_an_episode_with_several_versions_asks() {
+fn the_mark_on_the_next_episode_follows_its_plan() {
+    let net = Script::new(|r| {
+        let p = r.url.path();
+        if p.ends_with("Shows/NextUp") {
+            return Some(list(&[episode(1, 1, false)], 1));
+        }
+        if p.ends_with("Shows/ser/Seasons") {
+            return Some(list(&[season(1)], 1));
+        }
+        if p.ends_with("Shows/ser/Episodes") {
+            let mut e = episode(1, 1, false);
+            e["MediaSources"] = serde_json::json!([
+                {"Id": "uhd", "Name": "4K", "SupportsDirectPlay": true},
+                {"Id": "hd", "Name": "1080p", "SupportsDirectPlay": true}]);
+            return Some(list(&[e], 1));
+        }
+        if p.ends_with("/Items/e1-1/PlaybackInfo") {
+            return Some(
+                serde_json::json!({"PlaySessionId": "ps", "MediaSources": [
+                    {"Id": "uhd", "Container": "mkv", "SupportsDirectPlay": false,
+                     "SupportsDirectStream": false, "SupportsTranscoding": true,
+                     "TranscodingUrl": "/videos/e1-1/master.m3u8?MediaSourceId=uhd"},
+                    {"Id": "hd", "Container": "mp4", "SupportsDirectPlay": true}]})
+                .to_string(),
+            );
+        }
+        if p.ends_with("/Similar") || p.ends_with("/SpecialFeatures") {
+            return Some("{\"Items\":[]}".into());
+        }
+        Some("{}".into())
+    });
+    let vm = vm(&net, SeriesSpec::default());
+    vm.send(SeriesIntent::Load);
+    wait_for("page and plan", || {
+        ready(&vm) && vm.plan().is_some() && vm.episodes().total == 1
+    });
+    assert_eq!(vm.plan().unwrap().media_source_id.as_deref(), Some("hd"));
+    let marked: Vec<_> = vm
+        .versions_next()
+        .iter()
+        .map(|v| (v.id.clone(), v.is_default))
+        .collect();
+    assert_eq!(marked, [("uhd".to_owned(), false), ("hd".to_owned(), true)]);
+}
+
+/// One rule for every press on Play: it starts the default version, every time. A pick starts that version for that
+/// press only; the next press on the same or another episode starts the default again (the player's own next episode
+/// keeps the version, in the player).
+#[test]
+fn every_press_on_an_episode_with_several_versions_starts_the_default() {
     let net = server();
     let vm = vm(&net, SeriesSpec::default());
     vm.send(SeriesIntent::Load);
@@ -320,17 +381,26 @@ fn every_press_on_an_episode_with_several_versions_asks() {
     wait_for("season 1", || vm.episodes().total == 100);
     assert!(matches!(
         vm.play_episode("e1-6", None),
-        PlayAction::Choose { ref versions, .. } if versions.len() == 2
+        PlayAction::Start {
+            source_id: None,
+            ..
+        }
     ));
     // The pick starts exactly that version ...
     assert!(matches!(
         vm.play_episode("e1-5", Some("uhd")),
         PlayAction::Start { source_id: Some(ref id), .. } if id == "uhd"
     ));
-    // ... and nothing is remembered: the next episode, and the same one again, ask.
+    // ... and nothing is remembered: the next episode, and the same one again, start the default.
     for id in ["e1-6", "e1-7", "e1-5"] {
         assert!(
-            matches!(vm.play_episode(id, None), PlayAction::Choose { ref versions, .. } if versions.len() == 2),
+            matches!(
+                vm.play_episode(id, None),
+                PlayAction::Start {
+                    source_id: None,
+                    ..
+                }
+            ),
             "{id}"
         );
     }
@@ -352,4 +422,73 @@ fn the_series_page_asks_for_no_missing_episodes() {
     for url in &asked {
         assert!(url.to_lowercase().contains("ismissing=false"), "{url}");
     }
+}
+
+/// A press on Play before the next episode is known is held by the core and starts it once.
+#[test]
+fn a_press_before_the_next_episode_is_known_is_held_and_sent_once() {
+    let net = server();
+    let vm = vm(&net, SeriesSpec::default());
+    assert_eq!(vm.play_next(None), PlayAction::Wait);
+    assert_eq!(
+        vm.play_next(None),
+        PlayAction::Wait,
+        "a second press queues nothing more"
+    );
+    assert!(vm.take_effects().is_empty());
+    vm.send(SeriesIntent::Load);
+    wait_for("page", || ready(&vm));
+    let effects = vm.take_effects();
+    assert!(
+        matches!(
+            effects.as_slice(),
+            [swiftly_vm::SeriesEffect::Play(PlayAction::Resolve { item_id, .. })] if item_id == "e2-2"
+        ),
+        "{effects:?}"
+    );
+    assert!(vm.take_effects().is_empty(), "once");
+}
+
+/// A series tile that carries a count of one season.
+fn one_season_entry() -> Item {
+    serde_json::from_value(serde_json::json!({
+        "Id": "ser", "Name": "Serie", "Type": "Series", "ChildCount": 1,
+        "UserData": {"Played": false, "IsFavorite": false}
+    }))
+    .unwrap()
+}
+
+#[test]
+fn the_season_chevron_stands_in_the_first_part_and_never_changes() {
+    for seasons in [1, 2] {
+        let net = server_with(seasons);
+        let vm = SeriesVm::new(
+            net.clone(),
+            host(),
+            one_season_entry(),
+            SeriesSpec::default(),
+            Some(account("TOKEN-A")),
+        )
+        .unwrap();
+        // Frame 1: before any answer.
+        assert!(vm.seasons().chevron, "chevron missing in frame 1");
+        vm.send(SeriesIntent::Load);
+        wait_for("page", || ready(&vm));
+        let done = vm.seasons();
+        assert_eq!(done.seasons.len(), seasons as usize);
+        assert!(done.chevron, "an answer toggled the chevron");
+    }
+}
+
+#[test]
+fn the_chevron_stands_while_the_count_is_unknown_and_for_a_failed_load() {
+    let vm = SeriesVm::new(
+        server_with(1),
+        host(),
+        entry(),
+        SeriesSpec::default(),
+        Some(account("TOKEN-A")),
+    )
+    .unwrap();
+    assert!(vm.seasons().chevron);
 }

@@ -74,6 +74,9 @@ pub(crate) struct State {
     /// The Jelly Twiggy plugin answered "not here" (JellyfinClient.swift:151).
     pub(crate) watchers_absent: bool,
     pub(crate) watchers_not_found: std::collections::HashSet<String>,
+    /// The administrator's page asked the Jelly Twiggy plugin for the load and got "no such route"; it asks every
+    /// second, and a missing plugin does not appear by itself.
+    pub(crate) twiggy_absent: bool,
 }
 
 /// The client for one server. Cheap to share by reference; the session sits behind a lock

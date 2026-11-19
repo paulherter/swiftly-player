@@ -72,6 +72,13 @@ pub trait AudioTrackRules {
         streams: &[AudioStream],
         preferred_language: &str,
     ) -> Option<i64>;
+    /// Which of `keys` (the language keys of the options of a selection of files) the start rule wants first: the audio
+    /// language of the settings, then the language of the device. The default knows the settings alone.
+    fn preferred_language_key(&self, keys: &[String], preferred_language: &str) -> Option<String> {
+        keys.iter()
+            .find(|k| !preferred_language.is_empty() && k.as_str() == preferred_language)
+            .cloned()
+    }
     /// `translated("Alle Tonspuren")`.
     fn all_label(&self) -> String;
     /// `translated("Tonspur")`.
@@ -165,17 +172,14 @@ pub fn language_options(
     options
 }
 
-/// What the choice starts on: the track of the audio language from the settings if there is
-/// one, otherwise all tracks. (`DownloadAudio.swift:91-103`)
+/// What the choice starts on: the track the start rule would play (the audio language from the settings, else the language
+/// of the device), otherwise all tracks. (`DownloadAudio.swift:91-103`, with the device language added)
 pub fn preselected(
     rules: &dyn AudioTrackRules,
     options: &[DownloadAudioOption],
     streams: &[AudioStream],
     preferred_language: &str,
 ) -> DownloadAudioChoice {
-    if preferred_language.is_empty() {
-        return DownloadAudioChoice::All;
-    }
     if let Some(index) = rules.preferred_audio_index(streams, preferred_language)
         && options
             .iter()
@@ -183,12 +187,24 @@ pub fn preselected(
     {
         return DownloadAudioChoice::Track(index);
     }
-    let language = DownloadAudioChoice::Language(preferred_language.to_owned());
-    if options.iter().any(|o| o.choice == language) {
-        language
-    } else {
-        DownloadAudioChoice::All
-    }
+    wished_language(rules, options, preferred_language)
+        .map_or(DownloadAudioChoice::All, DownloadAudioChoice::Language)
+}
+
+/// The language option the start rule wants first among the options, if the options hold one.
+pub fn wished_language(
+    rules: &dyn AudioTrackRules,
+    options: &[DownloadAudioOption],
+    preferred_language: &str,
+) -> Option<String> {
+    let keys: Vec<String> = options
+        .iter()
+        .filter_map(|o| match &o.choice {
+            DownloadAudioChoice::Language(key) => Some(key.clone()),
+            _ => None,
+        })
+        .collect();
+    rules.preferred_language_key(&keys, preferred_language)
 }
 
 /// The stream index a choice means in this file; `None` for "all tracks", and for a language

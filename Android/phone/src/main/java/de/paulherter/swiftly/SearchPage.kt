@@ -6,6 +6,7 @@ import de.paulherter.swiftly.shared.Strength
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -60,6 +61,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import kotlinx.coroutines.launch
+import de.paulherter.swiftly.rustcore.ListLoad
+import de.paulherter.swiftly.rustcore.SearchGroupKind
+import de.paulherter.swiftly.rustcore.SeerrDiscoverRails
+import de.paulherter.swiftly.rustcore.SeerrSearchInfo
+import de.paulherter.swiftly.rustcore.SeerrTileCard
 
 /**
  * **Search state lives in the app**, not in the page: leaving the section and coming back
@@ -68,8 +75,14 @@ import org.json.JSONArray
 class SearchState {
     var term by mutableStateOf("")
     var hit by mutableStateOf<List<GridTile>>(emptyList())
-    /** What Seerr knows and the own server does not, only once the own server has answered. */
-    var seerr by mutableStateOf<List<SeerrTile>>(emptyList())
+    /** What Seerr knows and the own server does not, only once the own server has answered (the core's search block). */
+    var seerrInfo by mutableStateOf<SeerrSearchInfo?>(null)
+    /** The titles of that block the own server does not have (movies and series); the library results carry the rest. */
+    val seerr: List<SeerrTileCard>
+        get() = seerrInfo?.takeIf { it.load == ListLoad.CONTENT }?.groups?.filter { it.kind == SearchGroupKind.MOVIES || it.kind == SearchGroupKind.SERIES }
+            ?.flatMap { it.tiles }?.filter { !it.onServer }.orEmpty()
+    /** The empty page's rails (trending, popular, upcoming). */
+    var discover by mutableStateOf<SeerrDiscoverRails?>(null)
     var hunts by mutableStateOf(false)
     /**
      * **The server did not answer.** The error was swallowed and the empty result list then said
@@ -88,7 +101,7 @@ class SearchState {
 
     /** Term, results and failure belong to the account that was switched (`SearchView`, `onChange(of: accountSwitch)`). */
     fun forget() {
-        term = ""; hit = emptyList(); seerr = emptyList()
+        term = ""; hit = emptyList(); seerrInfo = null
         hunts = false; disrupted = false; searchMode = false; searched = ""
         lastHit = null
     }
@@ -114,7 +127,7 @@ class SearchState {
      * goes out (phone 300 ms; the TV debounces on its own and passes 0).
      */
     suspend fun searching(app: SwiftlyApplication, clean: String, pause: Long = 300) {
-            if (!KernRules.searchTermFits(clean)) { hit = emptyList(); seerr = emptyList(); disrupted = false; hunts = false; searched = clean; return }
+            if (!KernRules.searchTermFits(clean)) { hit = emptyList(); seerrInfo = null; disrupted = false; hunts = false; searched = clean; return }
             hunts = true
             disrupted = false
             if (pause > 0) delay(pause)
@@ -125,13 +138,13 @@ class SearchState {
                 // **Side by side, not one after the other** for the user: the own results are already there.
                 // **Seerr is a bonus:** if it fails, the own results stay; before, a Seerr error threw them
                 // away too and showed the whole failure state.
-                seerr = if (!app.seerrConnected.value) emptyList() else try {
-                    seerrTilesRead(withContext(Dispatchers.IO) { app.rk.seerrSearch(clean).await() })
-                } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
+                seerrInfo = if (!app.seerrConnected.value) null else try {
+                    withContext(Dispatchers.IO) { app.seerr.lists().search(clean) }
+                } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
             } catch (e: CancellationException) { throw e } catch (_: Exception) {
                 disrupted = true
                 hit = emptyList()
-                seerr = emptyList()
+                seerrInfo = null
             }
             hunts = false
     }
@@ -174,6 +187,22 @@ fun SuchPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
         st.searching(app, clean)
     }
 
+    val run = rememberCoroutineScope()
+    // The empty page's Seerr rails; without Seerr nothing is loaded and nothing drawn.
+    val seerrOn = app.seerrConnected.value
+    LaunchedEffect(seerrOn, redo) {
+        // The rails of the last visit are there at once (the core's stash, no call); the live read below replaces them.
+        if (seerrOn && st.discover == null) {
+            val stale = try { withContext(Dispatchers.IO) { app.seerr.lists().restoreDiscover() } }
+                        catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+            if (stale != null && st.discover == null) st.discover = stale
+        }
+        val live = if (!seerrOn) null else try { withContext(Dispatchers.IO) { app.seerr.lists().loadDiscover() } }
+                   catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+        // A failed live read keeps the stored rails on screen (as on Apple); without Seerr nothing is drawn.
+        if (live != null || !seerrOn) st.discover = live
+    }
+
     // Ticks and bars of the results: search again after a watch-state change; the results stay until the new ones arrive.
     WatchStateChange(app) {
         val clean = st.term.trim()
@@ -192,6 +221,8 @@ fun SuchPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
     LaunchedEffect(st.searchMode) { headerDistance.animateTo(if (st.searchMode) 1f else 0f, Motion.sheet()) }
     val headerPresent by remember { derivedStateOf { headerDistance.value < 1f } }
     var headerHeight by remember { mutableIntStateOf(0) }
+    // The field's top gap changes with the mode on the same spring as the header, so the content below never steps on focus.
+    val fieldTop by animateDpAsState(if (st.searchMode) 8.dp else 4.dp, Motion.sheet(), label = "fieldTop")
     Column(Modifier.fillMaxSize().background(Theme.reason).statusBarsPadding()) {
         if (headerPresent) {
             // `BlurHeader` without offset: search does not scroll under it. Title and symbol centred.
@@ -212,7 +243,7 @@ fun SuchPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
             .graphicsLayer { translationY = if (headerPresent) -headerHeight * headerDistance.value else 0f }) {
 
         Row(Modifier.fillMaxWidth().padding(horizontal = Theme.edgeSpacing)
-                .padding(top = if (st.searchMode) 8.dp else 4.dp, bottom = 16.dp),
+                .padding(top = fieldTop, bottom = 16.dp),
             verticalAlignment = Alignment.CenterVertically) {
             SearchField(st.term, { st.term = it }, focus, Modifier.weight(1f),
                      atTap = { inside -> if (inside) st.searchMode = true }, submit = ::remember)
@@ -241,13 +272,19 @@ fun SuchPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(Theme.tileSpacing),
                 modifier = Modifier.fillMaxSize().areaContent()) {
                 when {
-                    clean.isEmpty() && history.isEmpty() -> whole("hinweis") { EmptyHint() }
-                    clean.isEmpty() -> whole("verlauf") {
-                        History(history, erase = { historyRaw = ""; SearchState.historyWrite(app, "") }) { word ->
-                            // Fills the field and searches; the keyboard stays closed.
-                            st.term = word
-                            focusManager.clearFocus()
+                    clean.isEmpty() && history.isEmpty() -> {
+                        whole("hinweis") { EmptyHint() }
+                        whole("entdecken") { SeerrDiscoverBlock(app, st.discover, open) }
+                    }
+                    clean.isEmpty() -> {
+                        whole("verlauf") {
+                            History(history, erase = { historyRaw = ""; SearchState.historyWrite(app, "") }) { word ->
+                                // Fills the field and searches; the keyboard stays closed.
+                                st.term = word
+                                focusManager.clearFocus()
+                            }
                         }
+                        whole("entdecken") { SeerrDiscoverBlock(app, st.discover, open) }
                     }
                     // **No ring:** if results are already there, they stay until new ones arrive.
                     st.hunts && st.hit.isEmpty() && st.seerr.isEmpty() -> {
@@ -269,9 +306,12 @@ fun SuchPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                         whole("keine") {
                             Box(Modifier.fillMaxWidth().padding(top = 24.dp).height(300.dp)) {
                                 EmptyState(Glyph.Magnifier, translated("Nichts gefunden zu „%@“", clean),
-                                    translated("Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe."))
+                                    // "Auch nicht bei Seerr." is the core's line, only when Seerr really answered with nothing.
+                                    st.seerrInfo?.takeIf { it.load == ListLoad.EMPTY }?.nothingLine?.let { it + " " + translated("Manchmal ist es nur ein Buchstabe.") }
+                                        ?: translated("Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe."))
                             }
                         }
+                        if (st.seerrInfo?.load == ListLoad.OFFLINE) whole("seerr-aus-leer") { SeerrOfflineBox { st.searched = ""; redo++ } }
                         if (history.isNotEmpty()) whole("verlauf-leer") {
                             History(history, erase = { historyRaw = ""; SearchState.historyWrite(app, "") }) { word ->
                                 st.term = word
@@ -307,12 +347,13 @@ fun SuchPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                         }
                     }
                     if (st.seerr.isNotEmpty()) {
-                        whole("block-seerr") { BlockTitle(translated("Über Seerr anfragen"), st.seerr.size, Modifier.padding(top = 8.dp)) }
+                        whole("block-seerr") { BlockTitle(st.seerrInfo?.blockTitle ?: translated("Noch nicht auf deinem Server"), st.seerr.size, Modifier.padding(top = 8.dp)) }
                         items(st.seerr, key = { "seerr-" + it.key }) { t ->
-                            SeerrTileView(t, Modifier.padding(bottom = Theme.gridRow)) {
-                                app.seerrHit[t.key] = t
-                                open(Destination(t.key, t.title, "Seerrtitel"))
-                            }
+                            SeerrCardTile(t, Modifier.padding(bottom = Theme.gridRow)) { run.launch { openSeerrCard(app, t, open) } }
+                        }
+                    } else if (st.seerrInfo?.load == ListLoad.OFFLINE) {
+                        whole("block-seerr-aus") {
+                            Column(Modifier.padding(top = 8.dp)) { BlockTitle(translated("Noch nicht auf deinem Server"), 0); SeerrOfflineBox { st.searched = ""; redo++ } }
                         }
                     }
                     }

@@ -37,26 +37,28 @@ use swiftly_playback::trickplay::{Tile, Trickplay};
 use swiftly_playback::{pause_jump_back, prebuffer};
 use swiftly_rules::chapter::{Chapter, ChapterBar};
 use swiftly_rules::delay::Delay;
+use swiftly_rules::episodes_end;
 use swiftly_rules::playback_tick::{self as tick, Reading, Snapshot};
-use swiftly_rules::{episodes_card, episodes_end};
 
 use crate::bell::{Bell, Changed};
 use crate::next_card::{NextCard, NextCardEvent};
 use crate::player_controls::{ChainEvent, Controls, ControlsEvent, SeekChain, Side};
 use crate::player_extra::{
-    AfterPlay, Failure, Nudge, ORIGINAL_QUALITY_HINT, Quality, TrackMemoryStore,
+    AfterPlay, Failure, HINT_SECONDS, Nudge, ORIGINAL_QUALITY_HINT, Quality, RELOAD_FAILED_HINT,
+    SWITCH_FAILED_HINT, TrackMemoryStore,
 };
+use crate::player_menu::{self, PlayerMenu};
 use crate::player_more::{PlayerExtra, SMALL_WINDOW_TEXT, StreamReading};
 use crate::player_report::{ReportKind, ReportMessage, Reporter};
 use crate::player_stage::{PlayerStage, StageEvent, Surface, SurfaceEvent};
+use crate::player_switch::{Back, Switch, SwitchEvent};
+use crate::progress_beat::ProgressBeat;
 use swiftly_playback::stream_watch::Rebuild;
 
 /// Seconds the controls stay up while playing (PlayerScreen.swift:736).
 pub const CONTROLS_HIDE: f64 = 4.0;
 /// Seconds the "+10 s" indicator of repeated skips stays (PlayerScreen.swift:1603).
 pub const JUMP_DISPLAY: f64 = 0.7;
-/// Seconds without a move after which a stuck scrubber lets go (PlayerScreen.swift:2071).
-pub const PUSH_SAFETY: f64 = 3.0;
 const FULL_TICK: f64 = 0.5;
 
 /// Settings the player reads.
@@ -140,6 +142,8 @@ pub enum PlayerLayer {
     Episodes,
     /// Settings.
     Settings,
+    /// The chapters of the title: [`PlayerVm::chapters`].
+    Chapters,
 }
 
 /// What the user or the host wants.
@@ -167,6 +171,9 @@ pub enum PlayerIntent {
     WakeControlsBeside,
     /// Opens or closes a panel.
     Layer(Option<PlayerLayer>),
+    /// A row of the chapter list was chosen (`ChapterRow::index`): seek to the start of that chapter and close the
+    /// panel. An index past the list does nothing.
+    JumpToChapter(usize),
     /// Audio track by server index.
     SelectAudio(i64),
     /// Subtitle track by server index, `-1` off.
@@ -175,6 +182,11 @@ pub enum PlayerIntent {
     SubtitleDelay(Delay),
     /// Audio delay.
     AudioDelay(Delay),
+    /// One press of a subtitle offset button: add this many milliseconds to the current offset
+    /// (`PlayerMenu::offset_steps`); the core clamps and remembers it for the title.
+    SubtitleOffsetStep(i32),
+    /// The reset button of the subtitle offset.
+    SubtitleOffsetReset,
     /// Playback speed.
     Tempo(f32),
     /// Volume 0...100. A value above zero ends a mute.
@@ -187,6 +199,8 @@ pub enum PlayerIntent {
     Fill(bool),
     /// Sleep timer in minutes; `None` off.
     Sleep(Option<u32>),
+    /// Sleep timer "Ende dieser Folge": pauses when the running episode ends (at the current speed).
+    SleepEndOfEpisode,
     /// The press on the skip button / next-episode card.
     PressOffering,
     /// The click on the next-episode card: starts the next episode from the card (it zooms over the switch).
@@ -217,6 +231,15 @@ pub enum PlayerIntent {
     /// A rebuild after a network change is in progress (`onRestoration`): the last good position
     /// applies, not the engine's clock (which sits at the end of the file on a dead stream).
     Restoring(bool),
+    /// The app goes to the background or is about to quit: the position goes to the server now (a frozen app
+    /// never reaches the next beat). `paused` is what the host knows at this moment: it already paused or suspended
+    /// its engine as part of leaving the foreground, and the engine's own report has not reached the core yet (a
+    /// backgrounded app draws no frames, so it would come on the way back). The report carries that state, not the
+    /// last one the core heard. A scrub in progress ends: the touch is gone with the foreground.
+    Background {
+        /// The host paused playback itself while leaving the foreground.
+        paused: bool,
+    },
     /// The machine is going to sleep (`idleStateStart`): pause so the position is reported.
     Sleeping,
     /// The machine woke (`woke`): re-sync, reopen the stream and the audio output at the same
@@ -386,6 +409,35 @@ pub struct TracksPart {
     pub subtitle_delay_ms: i64,
 }
 
+/// One row of the chapter list.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChapterRow {
+    /// Place in the list, sent back as `PlayerIntent::JumpToChapter(index)`.
+    pub index: usize,
+    /// The name as the server gives it (shown as it is, never translated); `None` when the file names none, then
+    /// the host shows `ChaptersPart::number_title` with `number`.
+    pub name: Option<String>,
+    /// 1-based number, for the fallback title.
+    pub number: i64,
+    /// Start in seconds (the chapter runs to the next one).
+    pub start: f64,
+    /// The preview image at the start when the title has trickplay (the same tile the scrubber shows).
+    pub preview: Option<Tile>,
+    /// The chapter that plays now.
+    pub current: bool,
+}
+
+/// The chapter panel: one model for every host.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChaptersPart {
+    /// Panel title (catalog key).
+    pub title: &'static str,
+    /// Catalog key of the fallback title of a chapter without a name; one `%lld` for its number.
+    pub number_title: &'static str,
+    /// The chapters in order of their start; empty when the title has none (no button then).
+    pub rows: Vec<ChapterRow>,
+}
+
 /// What the bottom-right button or the card shows.
 #[derive(Debug, Clone, PartialEq)]
 pub enum OfferView {
@@ -436,7 +488,8 @@ struct Live {
     stage: PlayerStage,
     next_card: NextCard,
     surface: Surface,
-    last_pushed: f64,
+    /// Wall-clock spacing of the progress reports (the tick count alone falls behind when ticks run late).
+    beat: ProgressBeat,
     preview: Option<Tile>,
     controls: bool,
     hide_at: Option<f64>,
@@ -444,14 +497,17 @@ struct Live {
     chain: SeekChain,
     controls_state: Controls,
     sleep: Option<(u32, f64)>,
+    /// The timer was set to the end of the episode (`sleep` then holds the minutes left at that moment).
+    sleep_end: bool,
     watchdog: Option<(u32, f64)>,
     paused_since: Option<f64>,
     reported_paused: bool,
     tracks: TrackIndices,
-    hint: Option<String>,
+    /// The line over the picture and the player-clock second it goes at (one rule for every hint: [`Live::say`]).
+    hint: Option<(String, f64)>,
     error: Option<String>,
     prepared: bool,
-    switching: bool,
+    switch: Switch,
     closed: bool,
     effects: Vec<PlayerEffect>,
     parts: Option<Parts>,
@@ -743,6 +799,79 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
         self.parts().tracks
     }
 
+    /// The chapter list (title, start, preview, current marked). `rows` is empty for a title without usable
+    /// chapters: the host shows no chapter button then.
+    pub fn chapters(&self) -> ChaptersPart {
+        let l = self.lock();
+        Self::chapter_list(&l)
+    }
+
+    fn chapter_list(l: &Live) -> ChaptersPart {
+        let now = ChapterBar::chapter_at(l.snap.position, &l.chapters).map(|c| c.from);
+        let rows = l
+            .chapters
+            .iter()
+            .enumerate()
+            .map(|(i, c)| ChapterRow {
+                index: i,
+                name: Some(c.name.clone()).filter(|n| !n.is_empty()),
+                number: i as i64 + 1,
+                start: c.from,
+                preview: l.trickplay.as_ref().and_then(|tp| tp.tile(c.from)),
+                current: now == Some(c.from),
+            })
+            .collect();
+        ChaptersPart {
+            title: "Kapitel",
+            number_title: "Kapitel %lld",
+            rows,
+        }
+    }
+
+    /// The speed and subtitle-offset rows of the player menu (the same rows on every platform).
+    /// `decimal_separator` is the host locale's ("," or ".").
+    pub fn menu(&self, decimal_separator: &str) -> PlayerMenu {
+        let parts = self.parts();
+        player_menu::build(
+            parts.transport.tempo,
+            parts.tracks.subtitle_delay_ms,
+            decimal_separator,
+        )
+    }
+
+    /// Every menu of the player (options, tracks, timing, episodes, handoff ...): ONE structure for every host.
+    /// `inputs` carries what only the host knows (group, subtitle look, seasons, device list).
+    pub fn menus(&self, inputs: &player_menu::MenuInputs) -> player_menu::PlayerMenus {
+        let (tempo, fill, sleep_end, has_chapters, series) = {
+            let l = self.lock();
+            (
+                l.state.tempo(),
+                l.state.fill_on(),
+                l.sleep_end,
+                !l.chapters.is_empty(),
+                l.spec.series_id.is_some(),
+            )
+        };
+        let parts = self.parts();
+        let sleep = match (parts.controls.sleep_minutes, sleep_end) {
+            (None, _) => player_menu::SleepState::Off,
+            (Some(_), true) => player_menu::SleepState::EndOfEpisode,
+            (Some(m), false) => player_menu::SleepState::Minutes(m),
+        };
+        player_menu::build_menus(
+            &player_menu::MenuState {
+                tempo,
+                sleep,
+                fill,
+                quality: parts.controls.quality,
+                series,
+                has_chapters,
+                tracks: parts.tracks,
+            },
+            inputs,
+        )
+    }
+
     /// Skip button / card.
     pub fn offer(&self) -> OfferPart {
         self.parts().offer
@@ -795,7 +924,41 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
 
     /// Where hand-chosen tracks are remembered (`TrackMemory`).
     pub fn set_memory(&self, memory: Option<Arc<dyn TrackMemoryStore>>) {
-        self.update(|_, l| l.memory = memory);
+        self.update(|vm, l| {
+            l.memory = memory;
+            // The first title opened before the store was there: its remembered offset applies now.
+            if let Some(d) = Self::remembered_offset(l)
+                && d != l.sub_delay
+            {
+                vm.set_subtitle_offset(l, d, 0.0);
+            }
+        });
+    }
+
+    /// The offset remembered for the title on screen (the store is a plain dictionary read once per title).
+    fn remembered_offset(l: &Live) -> Option<Delay> {
+        let store = l.memory.as_ref()?;
+        player_menu::remembered(&store.load(player_menu::OFFSET_KEY), &l.spec.item_id)
+    }
+
+    /// Sets the subtitle offset: the engine command once per change, and the title remembers it.
+    fn set_subtitle_offset(&self, l: &mut Live, d: Delay, now: f64) {
+        if d == l.sub_delay {
+            return;
+        }
+        let cmds = l.state.intent(Intent::SetSubtitleDelay(d));
+        self.run(l, cmds, now);
+        l.sub_delay = d;
+        let (Some(store), title) = (&l.memory, l.spec.item_id.clone()) else {
+            return;
+        };
+        let store = Arc::clone(store);
+        // The store is foreign code: it is written after the lock is released.
+        self.engine.push(Op::Later(Box::new(move || {
+            let mut all = store.load(player_menu::OFFSET_KEY);
+            player_menu::write(&mut all, &title, d);
+            store.save(player_menu::OFFSET_KEY, &all);
+        })));
     }
 
     /// Counts finished titles for the rating and Discord prompts (`AppModel.doneWatch`).
@@ -809,18 +972,23 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
             let start = l.spec.start_at;
             let cmds = l.state.intent(Intent::Start(start));
             vm.run(l, cmds, now);
+            // An offset remembered for this title (set with the memory, before the start) goes to the engine now.
+            if l.sub_delay != Delay::NULL {
+                let cmds = l.state.intent(Intent::SetSubtitleDelay(l.sub_delay));
+                vm.run(l, cmds, now);
+            }
             l.hide_at = Some(now + CONTROLS_HIDE);
             l.controls_state = l.controls_state.reduce(ControlsEvent::Activity { now });
         });
     }
 
     /// A limit was chosen but the original plays: say so instead of staying silent.
-    fn original_quality_hint(l: &mut Live) {
+    fn original_quality_hint(l: &mut Live, now: f64) {
         if l.quality_switched
             && !l.prefs.direct_play
             && l.spec.plan.method == PlayMethod::DirectPlay
         {
-            l.hint = Some(ORIGINAL_QUALITY_HINT.to_owned());
+            l.say(ORIGINAL_QUALITY_HINT, now);
         }
     }
 
@@ -829,69 +997,142 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
     pub fn after_quality_switch(&self) {
         self.update(|_, l| {
             l.quality_switched = true;
-            Self::original_quality_hint(l);
+            // Before `start`: the clock of this model begins where it was built.
+            let now = l.opened;
+            Self::original_quality_hint(l, now);
         });
+    }
+
+    /// The host got no plan for what [`PlayerEffect::StartEpisode`] or [`PlayerEffect::ReloadForSubtitle`] asked
+    /// for. The old title comes back as it was (playing or paused at the same position, or over), with one
+    /// line saying so; nothing asks again by itself, Next (or the choice again) is the retry. Without a plan
+    /// request in flight this does nothing, so a second answer cannot restart the old title twice.
+    pub fn switch_failed(&self, now: f64) {
+        self.update(|vm, l| vm.fail_switch(l, now));
+    }
+
+    /// The only place a failed switch goes back (see [`Self::switch_failed`]).
+    fn fail_switch(&self, l: &mut Live, now: f64) {
+        // The user closed the player while the plan was fetched: the stop already went out with the switch, and
+        // the old title must not come back in a closed player.
+        if l.closed {
+            return;
+        }
+        let Some((back, reload)) = l.switch.planning() else {
+            return;
+        };
+        let failed = l.switch.reduce(SwitchEvent::PlanFailed);
+        let line = if reload {
+            RELOAD_FAILED_HINT
+        } else {
+            SWITCH_FAILED_HINT
+        };
+        if back != Back::Ended {
+            // The old title's state machine stopped for good with the switch: it comes back as a new load of the
+            // same title at the same position (a new start report follows its first picture, as in the old apps,
+            // so the later stop is not swallowed by the stop lock). What the host fed in stays.
+            let mut spec = l.spec.clone();
+            spec.start_at = l.snap.position;
+            let kept = (
+                std::mem::take(&mut l.sections),
+                std::mem::take(&mut l.chapters),
+                l.trickplay.take(),
+                l.extra.original_language.take(),
+                l.prepared,
+            );
+            self.install_title(l, spec, now);
+            (l.sections, l.chapters, l.trickplay) = (kept.0, kept.1, kept.2);
+            l.extra.original_language = kept.3;
+            l.prepared = kept.4;
+            l.extra.pause_after_load = back == Back::Paused;
+        } else {
+            // An ended title stays over (the stage never left `Ended`); the Next button offers the retry. The switch
+            // stopped its state machine, which would make a replay or a seek load nothing: take that stop back.
+            l.state.reopen();
+            // The server heard this title's stop with the switch: its replay is a new start for it.
+            l.snap.start_reported = false;
+        }
+        l.switch = failed;
+        l.say(line, now);
     }
 
     /// Replaces the title by the next episode (after [`PlayerEffect::StartEpisode`]); everything
     /// of the old one is forgotten, as `episodeApply` does.
     pub fn load_title(&self, spec: PlayerSpec, now: f64) {
+        // A plan that arrives after the player was closed does not open it again.
         self.update(|vm, l| {
-            let prefs = l.prefs.clone();
-            let group = l.group.clone();
-            let controls = (l.controls, l.hide_at);
-            let layer_card_waits = l.layer.card_waits_controls;
-            let (memory, after, switched) = (l.memory.clone(), l.after.clone(), l.quality_switched);
-            // `delayForNewTitle`: the same title and the same series keep the delay.
-            let (old_id, old_series) = (l.spec.item_id.clone(), l.spec.series_id.clone());
-            let (sub_delay, audio_delay) = (l.sub_delay, l.audio_delay);
-            let volume = l.extra.volume;
-            *l = Live::new(spec, prefs, now);
-            l.extra.volume = volume;
-            l.memory = memory;
-            l.after = after;
-            let (id, series) = (l.spec.item_id.clone(), l.spec.series_id.clone());
-            l.sub_delay = Delay::for_new_title(
-                sub_delay,
-                &old_id,
-                old_series.as_deref(),
-                &id,
-                series.as_deref(),
-            );
-            l.audio_delay = Delay::for_new_title(
-                audio_delay,
-                &old_id,
-                old_series.as_deref(),
-                &id,
-                series.as_deref(),
-            );
-            l.quality_switched = switched;
-            Self::original_quality_hint(l);
-            l.group = group;
-            l.controls = controls.0;
-            l.hide_at = controls.1;
-            l.layer.card_waits_controls = layer_card_waits;
-            tick::new_title(&mut l.snap, false);
-            let start = l.spec.start_at;
-            if start > tick::DISPLAY_TICK.as_secs_f64() {
-                l.snap.after_change = false;
-                l.snap.position = start;
-                l.snap.leap = Some(tick::Jump {
-                    target: start,
-                    since: now,
-                });
-            }
-            let cmds = l.state.intent(Intent::Start(start));
-            vm.run(l, cmds, now);
-            if l.sub_delay != Delay::from_milliseconds(0) {
-                let cmds = l.state.intent(Intent::SetSubtitleDelay(l.sub_delay));
-                vm.run(l, cmds, now);
-            }
-            if l.audio_delay != Delay::from_milliseconds(0) {
-                let cmds = l.state.intent(Intent::SetAudioDelay(l.audio_delay));
-                vm.run(l, cmds, now);
+            if !l.closed {
+                vm.install_title(l, spec, now);
             }
         });
+    }
+
+    /// Puts a new title in place of the old one and starts its load (everything of the old one is forgotten).
+    fn install_title(&self, l: &mut Live, spec: PlayerSpec, now: f64) {
+        let prefs = l.prefs.clone();
+        let group = l.group.clone();
+        let controls = (l.controls, l.hide_at);
+        let layer_card_waits = l.layer.card_waits_controls;
+        let (memory, after, switched) = (l.memory.clone(), l.after.clone(), l.quality_switched);
+        // `delayForNewTitle`: the same title and the same series keep the delay.
+        let (old_id, old_series) = (l.spec.item_id.clone(), l.spec.series_id.clone());
+        let (sub_delay, audio_delay) = (l.sub_delay, l.audio_delay);
+        let volume = l.extra.volume;
+        let old_tempo = l.state.tempo();
+        *l = Live::new(spec, prefs, now);
+        l.extra.volume = volume;
+        l.memory = memory;
+        l.after = after;
+        let (id, series) = (l.spec.item_id.clone(), l.spec.series_id.clone());
+        l.sub_delay = Delay::for_new_title(
+            sub_delay,
+            &old_id,
+            old_series.as_deref(),
+            &id,
+            series.as_deref(),
+        );
+        l.audio_delay = Delay::for_new_title(
+            audio_delay,
+            &old_id,
+            old_series.as_deref(),
+            &id,
+            series.as_deref(),
+        );
+        // A title with its own remembered offset starts with it; otherwise the carry-over rule above stands.
+        if let Some(d) = Self::remembered_offset(l) {
+            l.sub_delay = d;
+        }
+        l.quality_switched = switched;
+        Self::original_quality_hint(l, now);
+        l.group = group;
+        l.controls = controls.0;
+        l.hide_at = controls.1;
+        l.layer.card_waits_controls = layer_card_waits;
+        tick::new_title(&mut l.snap, false);
+        let start = l.spec.start_at;
+        if start > tick::DISPLAY_TICK.as_secs_f64() {
+            l.snap.after_change = false;
+            l.snap.position = start;
+            l.snap.leap = Some(tick::Jump {
+                target: start,
+                since: now,
+            });
+        }
+        let cmds = l.state.intent(Intent::Start(start));
+        self.run(l, cmds, now);
+        // The speed is not remembered per title: a new title plays at normal speed, and the engine
+        // (which keeps its rate across files) is told so once, for every platform.
+        if (old_tempo - 1.0).abs() > f32::EPSILON {
+            self.engine.set_rate(1.0);
+        }
+        if l.sub_delay != Delay::from_milliseconds(0) {
+            let cmds = l.state.intent(Intent::SetSubtitleDelay(l.sub_delay));
+            self.run(l, cmds, now);
+        }
+        if l.audio_delay != Delay::from_milliseconds(0) {
+            let cmds = l.state.intent(Intent::SetAudioDelay(l.audio_delay));
+            self.run(l, cmds, now);
+        }
     }
 
     /// An event from the engine.
@@ -926,7 +1167,7 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
     /// The half tick (250 ms): only the shown time moves.
     pub fn display_tick(&self, now: f64) {
         self.update(|_, l| {
-            if l.switching || l.closed {
+            if l.switch.busy() || l.closed {
                 return;
             }
             l.expire(now);
@@ -996,6 +1237,14 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
 
     fn run(&self, l: &mut Live, cmds: Vec<Command>, now: f64) {
         for c in cmds {
+            // A title that was over opens again (replay, or a seek on its last frame): it is no longer over, and its
+            // stage starts again, or the screen would keep saying "ended" over a playing film.
+            if matches!(c, Command::Load(_)) && l.ended {
+                l.ended = false;
+                l.stage = l.stage.reduce(StageEvent::Begin);
+                let reported = l.snap.start_reported;
+                tick::new_title(&mut l.snap, reported);
+            }
             if c.run(&self.engine) {
                 continue;
             }
@@ -1016,6 +1265,7 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
                     if l.snap.start_reported && l.reported_paused == go {
                         l.reported_paused = !go;
                         self.report(l, ReportKind::Progress { paused: !go }, l.snap.position);
+                        l.beat.reported(now);
                     }
                 }
                 Command::Failed(text) => {
@@ -1059,6 +1309,10 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
         if l.closed {
             return;
         }
+        // Every hint goes after the same time, whatever set it (`notify`: the line stays 3 s, then it goes).
+        if l.hint.as_ref().is_some_and(|(_, until)| now >= *until) {
+            l.hint = None;
+        }
         if let Some((attempt, at)) = l.watchdog
             && now >= at
         {
@@ -1066,14 +1320,13 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
             let cmds = l.state.apply(EngineEvent::StartWatchdog { attempt });
             self.run(l, cmds, now);
         }
-        if l.switching {
+        if l.switch.busy() {
             return;
         }
         l.expire(now);
-        if l.at_push && now - l.last_pushed > PUSH_SAFETY {
-            l.at_push = false;
-            l.chain = l.chain.reduce(ChainEvent::ScrubEnded);
-        }
+        // No time limit on a scrub: a finger that rests keeps the bar for as long as it rests. A scrub ends by the
+        // release, by the host reporting the lost touch (a cancel arrives as `ScrubEnd`), or when the app leaves the
+        // foreground (`scrub_lost`).
         let reading = Reading {
             duration: l.state.duration_seconds(),
             position: l.state.position(),
@@ -1098,8 +1351,11 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
         if job.start_report {
             l.reported_paused = false;
             self.report(l, ReportKind::Start, l.snap.position);
+            l.beat.started(now);
         }
-        if job.progress_report {
+        // One source for the spacing: the beat counts seconds, the tick rules' own count is held at zero.
+        if l.beat.progress_due(&job, &mut l.snap, now) {
+            l.beat.reported(now);
             self.report(
                 l,
                 ReportKind::Progress {
@@ -1155,11 +1411,12 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
             && now >= at
         {
             l.sleep = None;
+            l.sleep_end = false;
             let cmds = l.state.intent(Intent::Pause);
             self.run(l, cmds, now);
             l.controls = true;
             l.controls_state = l.controls_state.reduce(ControlsEvent::Show { now });
-            l.hint = Some("Schlafzeit abgelaufen.".to_owned());
+            l.say("Schlafzeit abgelaufen.", now);
         }
         if matches!(
             l.controls_state,
@@ -1191,10 +1448,10 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
     }
 
     fn offering(l: &Live) -> ButtonOffering {
-        if l.switching {
+        if l.switch.busy() {
             return ButtonOffering::Nobody;
         }
-        SectionLogic::offering(
+        SectionLogic::offering_with_tail(
             l.snap.position,
             l.snap.duration,
             &l.sections,
@@ -1203,21 +1460,20 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
     }
 
     fn offering_catch_up(&self, l: &mut Live, elapsed: f64) -> bool {
-        if l.switching {
+        if l.switch.busy() {
             return false;
         }
         let (p, d) = (l.snap.position, l.snap.duration);
         let has_next = l.spec.next.is_some();
-        let window = Some(episodes_card::REMAINING_WINDOW);
         // "Skip intro and outro automatically" also lets the outro's card count down and
         // advance, but only inside the outro section.
         l.layer.auto_skip = l.prefs.auto_skip;
         let auto_next =
             l.prefs.auto_skip && SectionLogic::automatic(p, d, &l.sections, has_next).is_some();
         let card_due = (l.prefs.next_automatic || auto_next)
-            && SectionLogic::card_due(p, d, &l.sections, has_next, window);
+            && SectionLogic::card_due_with_tail(p, d, &l.sections, has_next);
         let running = l.snap.running && l.snap.first_image_present && !l.at_push;
-        let countdown = SectionLogic::countdown_with_sections(p, d, &l.sections, window);
+        let countdown = SectionLogic::countdown(p, d);
         // A clip under a minute is no "end of file" for the long-file rules, but once the engine reports the end
         // the card must finish its countdown all the same, or it would stay on screen forever.
         let ended_short = l.ended && d > 0.0 && p >= d - 1.0;
@@ -1248,7 +1504,8 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
         let Some(next) = l.spec.next.clone() else {
             return;
         };
-        if l.switching || l.group.is_some() {
+        // After a failed switch only the user asks again (`SwitchEvent::Asked` on the intents below).
+        if !l.switch.allows_automatic() || l.group.is_some() {
             return;
         }
         self.switch_to(l, next.id, from_card, 0.0, now);
@@ -1257,15 +1514,31 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
     /// Stops the running title and asks the host for the plan of `id` (next episode, or the same
     /// title again for a quality switch, then with `since`).
     fn switch_to(&self, l: &mut Live, id: String, from_card: bool, since: f64, now: f64) {
-        if l.switching || l.group.is_some() {
+        if l.switch.busy() || l.group.is_some() {
             return;
         }
-        l.switching = true;
+        let back = if l.ended {
+            Back::Ended
+        } else if l.snap.running {
+            Back::Playing
+        } else {
+            Back::Paused
+        };
+        let reload = l.spec.item_id == id;
+        l.switch = l.switch.reduce(SwitchEvent::Begin { back, reload });
+        // A new try takes the line of the last failure away.
+        if matches!(
+            l.hint.as_ref().map(|(text, _)| text.as_str()),
+            Some(SWITCH_FAILED_HINT | RELOAD_FAILED_HINT)
+        ) {
+            l.hint = None;
+        }
         l.stage = l.stage.reduce(StageEvent::SwitchBegan);
         self.count_finished(l);
         // The old title's end goes out now, exactly once (`StopLock` in the reporter).
         let seconds = l.snap.position;
         self.report(l, ReportKind::Stop, seconds);
+        l.beat.stopped();
         let cmds = l.state.intent(Intent::Stop {
             reset_display: false,
         });
@@ -1282,7 +1555,7 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
     fn subtitle_needs_reload(l: &Live, i: i64) -> bool {
         !l.spec.downloaded
             && l.group.is_none()
-            && !l.switching
+            && !l.switch.busy()
             && swiftly_playback::transcode_subtitle::delivery(
                 l.spec.plan.method == PlayMethod::Transcode,
                 &l.spec.request.url,
@@ -1364,6 +1637,7 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
         if l.snap.start_reported {
             let paused = l.reported_paused;
             self.report(l, ReportKind::Progress { paused }, l.snap.position);
+            l.beat.reported(now);
         }
     }
 
@@ -1383,6 +1657,25 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
         if l.controls {
             l.hide_at = Some(now + CONTROLS_HIDE);
             l.controls_state = l.controls_state.reduce(ControlsEvent::Activity { now });
+        }
+    }
+
+    /// The scrub is over (release, or the safety let go): the bar stays four more seconds, counted from here.
+    fn scrub_released(l: &mut Live, now: f64) {
+        if l.controls {
+            l.hide_at = Some(now + CONTROLS_HIDE);
+        }
+        l.controls_state = l.controls_state.reduce(ControlsEvent::Activity { now });
+    }
+
+    /// The touch is gone without a release (the app left the foreground): the scrub ends where it stands, nothing
+    /// seeks, and the bar's four seconds count from here.
+    fn scrub_lost(l: &mut Live, now: f64) {
+        if l.at_push {
+            l.at_push = false;
+            l.chain = l.chain.reduce(ChainEvent::ScrubEnded);
+            l.preview = None;
+            Self::scrub_released(l, now);
         }
     }
 
@@ -1449,24 +1742,27 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
                 let s = l.prefs.back_seconds;
                 self.scrub(l, -s, now);
             }
+            // While a scrub is in progress there is no hide timer at all (`hide_at` is empty): it starts when the
+            // finger, the key or the swipe lets go (`scrub_released`), never in the middle of the movement.
             PlayerIntent::ScrubStart => {
                 l.at_push = true;
                 l.chain = l.chain.reduce(ChainEvent::ScrubBegan);
-                l.last_pushed = now;
+                l.hide_at = None;
+                l.controls_state = l.controls_state.reduce(ControlsEvent::Activity { now });
             }
             PlayerIntent::ScrubMove(t) => {
                 l.at_push = true;
                 l.chain = l.chain.reduce(ChainEvent::ScrubBegan);
-                l.last_pushed = now;
                 l.snap.position = t;
                 l.preview = l.trickplay.as_ref().and_then(|tp| tp.tile(t));
-                l.hide_at = Some(now + CONTROLS_HIDE);
+                l.hide_at = None;
                 l.controls_state = l.controls_state.reduce(ControlsEvent::Activity { now });
             }
             PlayerIntent::ScrubEnd(t) => {
                 l.at_push = false;
                 l.chain = l.chain.reduce(ChainEvent::ScrubEnded);
                 l.preview = None;
+                Self::scrub_released(l, now);
                 self.seek(l, t, now);
             }
             PlayerIntent::ToggleControls => {
@@ -1481,6 +1777,16 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
                     l.hide_at = Some(now + CONTROLS_HIDE);
                     l.controls_state = l.controls_state.reduce(ControlsEvent::Activity { now });
                 }
+            }
+            PlayerIntent::JumpToChapter(i) => {
+                let Some(start) = l.chapters.get(i).map(|c| c.from) else {
+                    return;
+                };
+                self.seek(l, start, now);
+                // The choice is made: the panel goes, the controls stay up for the usual time.
+                l.open_layer = None;
+                l.hide_at = Some(now + CONTROLS_HIDE);
+                l.controls_state = l.controls_state.reduce(ControlsEvent::Activity { now });
             }
             PlayerIntent::SelectAudio(i) => {
                 let cmds = l.state.intent(Intent::SwitchAudio(i));
@@ -1541,11 +1847,12 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
                 let (id, since) = (l.spec.item_id.clone(), l.snap.position);
                 self.switch_to(l, id, false, since, now);
             }
-            PlayerIntent::SubtitleDelay(d) => {
-                let cmds = l.state.intent(Intent::SetSubtitleDelay(d));
-                self.run(l, cmds, now);
-                l.sub_delay = d;
+            PlayerIntent::SubtitleDelay(d) => self.set_subtitle_offset(l, d, now),
+            PlayerIntent::SubtitleOffsetStep(step) => {
+                let next = player_menu::stepped(l.sub_delay.milliseconds(), step);
+                self.set_subtitle_offset(l, next, now);
             }
+            PlayerIntent::SubtitleOffsetReset => self.set_subtitle_offset(l, Delay::NULL, now),
             PlayerIntent::AudioDelay(d) => {
                 let cmds = l.state.intent(Intent::SetAudioDelay(d));
                 self.run(l, cmds, now);
@@ -1593,6 +1900,17 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
                 l.restoring = on;
                 l.stage = l.stage.reduce(StageEvent::Restore(on));
             }
+            PlayerIntent::Background {
+                paused: host_paused,
+            } => {
+                Self::scrub_lost(l, now);
+                if l.snap.start_reported && !l.switch.busy() && !l.closed {
+                    let paused = host_paused || !l.snap.running;
+                    l.reported_paused = paused;
+                    self.report(l, ReportKind::Progress { paused }, l.snap.position);
+                    l.beat.reported(now);
+                }
+            }
             PlayerIntent::Sleeping => {
                 if l.state.is_playing() {
                     let cmds = l.state.intent(Intent::Pause);
@@ -1611,9 +1929,20 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
             }
             PlayerIntent::Sleep(m) => {
                 l.sleep = m.map(|m| (m, now + f64::from(m) * 60.0));
+                l.sleep_end = false;
             }
-            PlayerIntent::PressOffering => self.press_offering(l, now),
+            PlayerIntent::SleepEndOfEpisode => {
+                let left = (l.snap.duration - l.snap.position).max(0.0)
+                    / f64::from(l.state.tempo().max(0.1));
+                l.sleep = Some(((left / 60.0).ceil() as u32, now + left));
+                l.sleep_end = true;
+            }
+            PlayerIntent::PressOffering => {
+                l.switch = l.switch.reduce(SwitchEvent::Asked);
+                self.press_offering(l, now);
+            }
             PlayerIntent::PressCard => {
+                l.switch = l.switch.reduce(SwitchEvent::Asked);
                 l.layer.pressed();
                 if l.group.is_none() && l.spec.next.is_some() {
                     self.start_episode(l, true, now);
@@ -1630,6 +1959,7 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
                 }
             }
             PlayerIntent::NextEpisode => {
+                l.switch = l.switch.reduce(SwitchEvent::Asked);
                 if l.group.is_none() {
                     self.start_episode(l, false, now);
                 }
@@ -1670,9 +2000,10 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
         l.stage = l.stage.reduce(StageEvent::Closed);
         l.surface = l.surface.reduce(SurfaceEvent::Closed);
         self.count_finished(l);
-        if !l.switching {
+        if !l.switch.busy() {
             let seconds = l.snap.position;
             self.report(l, ReportKind::Stop, seconds);
+            l.beat.stopped();
             let cmds = l.state.intent(Intent::Stop {
                 reset_display: true,
             });
@@ -1706,7 +2037,7 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
             tempo: l.state.tempo(),
             picture_shown: l.snap.first_image_present,
             chapter: ChapterBar::chapter_at(l.snap.position, &l.chapters).map(|c| c.name.clone()),
-            hint: l.hint.clone(),
+            hint: l.hint.as_ref().map(|(text, _)| text.clone()),
             error: l.error.clone(),
             failure: l.error.is_some().then_some(Failure::START),
             subtitle: cues.text,
@@ -1807,6 +2138,20 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
 impl Live {
     fn new(spec: PlayerSpec, prefs: PlayerPrefs, now: f64) -> Self {
         let state = new_state(&spec);
+        // The shown time starts at the resume point, as the Mac and iPhone screens seed theirs: before the first
+        // picture the tick adopts no engine time, so a zero here would show 0:00 until the picture is up and then jump.
+        // Same reading of the start as the state machine (a damaged or tiny start means the beginning). The length
+        // is the source's runtime until the engine knows better, so the remaining time is right from the first frame
+        // too (the first tick would only set it half a second later).
+        let mut snap = Snapshot {
+            duration: state.duration_seconds(),
+            ..Snapshot::default()
+        };
+        if spec.start_at.is_finite()
+            && spec.start_at > swiftly_playback::player_state::START_THRESHOLD
+        {
+            snap.position = spec.start_at;
+        }
         Self {
             tracks: TrackIndices {
                 audio: spec.audio_index,
@@ -1814,7 +2159,7 @@ impl Live {
             },
             spec,
             state,
-            snap: Snapshot::default(),
+            snap,
             layer: OfferingLayer::new(),
             prefs,
             sections: Vec::new(),
@@ -1829,7 +2174,7 @@ impl Live {
             stage: PlayerStage::Opening,
             next_card: NextCard::Hidden,
             surface: Surface::Inline,
-            last_pushed: 0.0,
+            beat: ProgressBeat::Idle,
             preview: None,
             controls: true,
             hide_at: None,
@@ -1837,13 +2182,14 @@ impl Live {
             chain: SeekChain::None,
             controls_state: Controls::Hidden,
             sleep: None,
+            sleep_end: false,
             watchdog: None,
             paused_since: None,
             reported_paused: false,
             hint: None,
             error: None,
             prepared: false,
-            switching: false,
+            switch: Switch::Idle,
             closed: false,
             effects: Vec::new(),
             parts: None,
@@ -1858,5 +2204,10 @@ impl Live {
 
     fn expire(&mut self, now: f64) {
         self.chain = self.chain.reduce(ChainEvent::Tick { now });
+    }
+
+    /// Puts a line over the picture for [`HINT_SECONDS`] (the only place a hint is set; the full tick clears it).
+    fn say(&mut self, text: &str, now: f64) {
+        self.hint = Some((text.to_owned(), now + HINT_SECONDS));
     }
 }

@@ -189,7 +189,7 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
     val dv7 = remember { listOf(Choice("auto", translated("Automatisch")), Choice("off", translated("Aus (spielt als HDR10)"))) }
     val buffer = remember { JSONArray(KernRules.bufferLevels()).let { a -> (0 until a.length()).map { a.getJSONObject(it).let { o -> Choice(o.getString("wert"), o.getString("text")) } } } }
     val seconds = remember { JSONArray(KernRules.span()).let { a -> (0 until a.length()).map { a.getInt(it) } } }
-    val audioChoice = remember { selectionRead(KernRules.languages("")) }
+    val audioChoice = remember { selectionRead(KernRules.audioLanguages()) }
     val subtitleSelection = remember { selectionRead(KernRules.languages(translated("Aus"))) }
     fun secondsSelection() = seconds.map { Choice(it.toString(), translated("%lld s", it)) }
 
@@ -265,6 +265,16 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                                      }
                                  })
                 }
+                }
+                // **One entry for requests, reports and the server** (core `profileEntry`): its own row, not an area; OK opens the page.
+                val management by produceState(ManagementEntry.last(app), app.accountSwitch.intValue, app.seerrConnected.value) {
+                    value = ManagementEntry.load(app)
+                }
+                management?.let { entry ->
+                    Spacer(Modifier.height(SettingsLook.sectionGap))
+                    SectionRow(if (ManagementEntry.mark(entry) > 0) "${entry.title} ${ManagementEntry.mark(entry)}" else entry.title,
+                               if (entry.kind == de.paulherter.swiftly.rustcore.ProfileEntryKind.ADMIN) Glyph.Gauge else Glyph.ArrowDown,
+                               selected = false, rests = false) { open(ManagementEntry.destination) }
                 }
             }
             // Not active yet means switched off, so that no step to the right leads in, only OK does (tvOS: `.disabled(!inside)`).
@@ -376,34 +386,33 @@ fun TvProfile(app: SwiftlyApplication, open: (Destination) -> Unit) {
                             }
                             }
                             TvGroup(translated("Startseite")) {
-                            val rails = remember(e.startRails, e.newAccessDisconnected) { selectionRead(KernRules.startRails(e.startRails.toTypedArray(), e.newAccessDisconnected)) }
-                            fun move(r: Choice, step: Int) {
-                                e.startRails = JSONArray(KernRules.startRailShifted(r.value, step.toLong(), e.startRails.toTypedArray(), e.newAccessDisconnected))
-                                    .let { a -> (0 until a.length()).map { a.getString(it) } }
+                            val names = remember(e.startRails, e.newAccessDisconnected) {
+                                selectionRead(KernRules.startRails(e.startRails.toTypedArray(), e.newAccessDisconnected)).associate { it.value to it.text }
                             }
-                            rails.forEachIndexed { index, r ->
-                                TvRailsRow(translated(r.text), an = r.value !in e.startOut,
-                                              canHigh = index != 0, canGoDown = index != rails.lastIndex,
-                                              toggle = { e.startOut = if (r.value in e.startOut) e.startOut - r.value else e.startOut + r.value },
-                                              shove = { step -> move(r, step) })
+                            var arrivalOn by remember { mutableStateOf(de.paulherter.swiftly.seerrArrivalOn(app)) }
+                            var requestsOn by remember { mutableStateOf(de.paulherter.swiftly.seerrRequestsOn(app)) }
+                            val order = de.paulherter.swiftly.startOrderEffective(app)
+                            order.forEachIndexed { index, id ->
+                                val up = index != 0
+                                val down = index != order.lastIndex
+                                val shove = { step: Int -> de.paulherter.swiftly.startOrderShift(app, id, step) }
+                                when {
+                                    id == de.paulherter.swiftly.SEERR_ARRIVAL_ROW -> TvRailsRow(translated("Anfrage ist da"), an = arrivalOn, canHigh = up, canGoDown = down,
+                                        toggle = { arrivalOn = !arrivalOn; de.paulherter.swiftly.seerrArrivalSet(app, arrivalOn) }, shove = shove)
+                                    id == de.paulherter.swiftly.SEERR_REQUESTS_ROW -> TvRailsRow(translated("Meine Anfragen"), an = requestsOn, canHigh = up, canGoDown = down,
+                                        toggle = { requestsOn = !requestsOn; app.store.remember("seerrRequestsRail", if (requestsOn) "1" else "0") }, shove = shove)
+                                    id.startsWith("library:") -> e.startLibraries.firstOrNull { "library:" + it.id == id }?.let { b ->
+                                        TvLibraryRow(b.name, canHigh = up, canGoDown = down,
+                                            remove = { e.startLibraries = e.startLibraries.filter { it.id != b.id } }, shove = shove)
+                                    }
+                                    else -> TvRailsRow(translated(names[id] ?: id), an = id !in e.startOut, canHigh = up, canGoDown = down,
+                                        toggle = { e.startOut = if (id in e.startOut) e.startOut - id else e.startOut + id }, shove = shove)
+                                }
                                 SeparatorLine()
                             }
                             TvToggleRow(translated("Neuzugänge getrennt"), e.newAccessDisconnected, Glyph.Shared) { e.newAccessDisconnected = !e.newAccessDisconnected }
                             }
                             TvGroup(translated("Bibliotheken und Sammlungen")) {
-                            // Own rows from the server, after the fixed ones (as in `ProfileView` on tvOS).
-                            val libraries = e.startLibraries
-                            libraries.forEachIndexed { index, b ->
-                                TvLibraryRow(b.name, canHigh = index != 0, canGoDown = index != libraries.lastIndex,
-                                    remove = { e.startLibraries = e.startLibraries.filter { it.id != b.id } },
-                                    shove = { step ->
-                                        val list = e.startLibraries.toMutableList()
-                                        val from = list.indexOfFirst { it.id == b.id }
-                                        val to = from + step
-                                        if (from >= 0 && to in list.indices) { list.removeAt(from); list.add(to, b); e.startLibraries = list }
-                                    })
-                                SeparatorLine()
-                            }
                             TvValueRow(translated("Bibliothek hinzufügen"), Glyph.Plus, if (freeLibraries.isEmpty()) translated("Keins offen") else "",
                                        opened, setOpened, reportRow, freeLibraries.map { Choice(it.id, it.name) }, "") { id ->
                                 freeLibraries.firstOrNull { it.id == id }?.let { e.startLibraries = e.startLibraries + it }

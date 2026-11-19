@@ -29,6 +29,22 @@ pub fn reveal_alpha(age_ms: f64) -> f32 {
         .clamp(0.0, 1.0) as f32
 }
 
+/// How long the sharp head picture of a title page takes to replace the tile's picture under it (poster to backdrop).
+pub const HERO_SWAP_MS: f64 = 150.0;
+
+/// Whether `a` and `b` are one picture at two sizes: the same path and tag (a poster and a backdrop never are).
+fn same_source(a: &ImageRef, b: &ImageRef) -> bool {
+    let key = |r: &ImageRef| {
+        let u = Url::parse(&r.address).ok()?;
+        let tag = u
+            .query_pairs()
+            .find(|(k, _)| k == "tag")
+            .map(|(_, v)| v.into_owned());
+        Some((u.path().to_owned(), tag))
+    };
+    matches!((key(a), key(b)), (Some(x), Some(y)) if x == y)
+}
+
 /// What a view draws for one picture.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RemoteSlot {
@@ -265,6 +281,11 @@ struct State {
     building_hidden: bool,
     /// Pictures cut to a tile and uploaded so far (each is a copy and a downscale of the decoded picture).
     cuts: u64,
+    /// For each unsized address a tile drew: the sized address, the device size it was cut to and its decode border. A
+    /// page that opens from that tile finds the same picture again by the address (`ImageHub::peek`).
+    shown: HashMap<String, (Url, u32, u32, u32)>,
+    /// BlurHash pictures already uploaded, by hash.
+    blurs: HashMap<String, ImageId>,
 }
 
 /// The screen a build belongs to: its [`HubSlot`], held weakly so a closed screen does not keep anything alive.
@@ -413,6 +434,8 @@ impl ImageHub {
                 hidden: None,
                 building_hidden: false,
                 cuts: 0,
+                shown: HashMap::new(),
+                blurs: HashMap::new(),
             }),
         })
     }
@@ -660,6 +683,19 @@ impl ImageHub {
 
     /// The slot for `image` shown at `w x h` points. Starts the load on first sight, uploads on arrival.
     pub fn slot(&self, image: Option<&ImageRef>, w: f32, h: f32, priority: Priority) -> RemoteSlot {
+        self.slot_with(image, w, h, priority, REVEAL_MS)
+    }
+
+    /// [`ImageHub::slot`] whose fade-in lasts `fade_ms` (0: the picture is there at full opacity when it arrives, for a
+    /// picture that replaces its own earlier version).
+    pub fn slot_with(
+        &self,
+        image: Option<&ImageRef>,
+        w: f32,
+        h: f32,
+        priority: Priority,
+        fade_ms: f64,
+    ) -> RemoteSlot {
         let Some(image) = image else {
             return RemoteSlot::Failed;
         };
@@ -708,13 +744,153 @@ impl ImageHub {
                     let now = s.now;
                     s.born.insert(key.clone(), now);
                 }
-                let alpha = s.born.get(&key).map_or(1.0, |t| reveal_alpha(s.now - t));
+                let alpha = if fade_ms <= 0.0 {
+                    1.0
+                } else {
+                    s.born.get(&key).map_or(1.0, |t| {
+                        reveal_alpha((s.now - t) * REVEAL_MS / fade_ms.min(REVEAL_MS))
+                    })
+                };
+                if s.shown.len() >= 2000 {
+                    s.shown.clear();
+                }
+                s.shown
+                    .insert(image.address.clone(), (url.clone(), tw, th, border));
                 RemoteSlot::Ready {
                     image: ImageId { uv },
                     alpha,
                 }
             }
         }
+    }
+
+    /// The picture a tile drew for `image` (the same unsized address), as the tile cut it: its rectangle and the device
+    /// size it was cut to. `None` when no tile drew it or it has left the memory. Nothing is asked of the server.
+    pub fn peek(&self, image: &ImageRef) -> Option<(ImageId, u32, u32)> {
+        let mut guard = self.state.borrow_mut();
+        let s = &mut *guard;
+        let (url, tw, th, border) = s.shown.get(&image.address)?.clone();
+        let key = image_key(&url);
+        s.touched.push((key.clone(), url.clone()));
+        let slot = self
+            .backend
+            .borrow()
+            .request(&url, border, Priority::Visible);
+        let Slot::Ready(img) = slot else {
+            return None;
+        };
+        let may_evict = !s.building_hidden;
+        let uv = self.entry_uv(s, &format!("{key}@{tw}x{th}"), &img, tw, th, may_evict)?;
+        Some((ImageId { uv }, tw, th))
+    }
+
+    /// The BlurHash `hash` as a picture (32 x 18, uploaded once); the picture is soft, so any size can stretch it.
+    fn blur_image(&self, hash: &str) -> Option<ImageId> {
+        if let Some(id) = self.state.borrow().blurs.get(hash) {
+            return Some(*id);
+        }
+        let d = swiftly_images::blurhash::decode(hash, 32, 18)?;
+        let id = self.cx.add_image(d.width, d.height, &d.rgba)?;
+        self.state.borrow_mut().blurs.insert(hash.to_owned(), id);
+        Some(id)
+    }
+
+    /// What stands for a picture that is not there yet, `w x h` points: the picture a tile showed for one of `stand`
+    /// (filled to the box like `.fill`, cropped), else the BlurHash, else nothing.
+    fn stand_node(&self, stand: &[ImageRef], blur: Option<&str>, w: f32, h: f32) -> Option<Node> {
+        for image in stand {
+            if let Some((id, tw, th)) = self.peek(image) {
+                let aspect = tw as f32 / th.max(1) as f32;
+                let (cw, ch) = if w / h.max(1.0) > aspect {
+                    (w, w / aspect)
+                } else {
+                    (h * aspect, h)
+                };
+                return Some(
+                    Node::image(id, cw, ch, 0.0)
+                        .frame(Some(w), Some(h), Alignment::CENTER)
+                        .clipped(),
+                );
+            }
+        }
+        blur.and_then(|hash| self.blur_image(hash))
+            .map(|id| Node::image(id, w, h, 0.0))
+    }
+
+    /// The head picture of a title page: the tile's picture (or the BlurHash) at once, the sharp `image` over it. A sharp
+    /// picture of the same source as the tile's replaces it without a fade; another one cross-fades in `HERO_SWAP_MS`.
+    pub fn hero_node(
+        &self,
+        image: Option<&ImageRef>,
+        stand: &[ImageRef],
+        blur: Option<&str>,
+        w: f32,
+        h: f32,
+    ) -> Node {
+        use swiftly_design::tokens::colour;
+        use swiftly_ui::components::color;
+        let ground = Node::rect(color(colour::AREA), 0.0).pixel_snapped().frame(
+            Some(w),
+            Some(h),
+            Alignment::CENTER,
+        );
+        let same = image.is_some_and(|i| stand.iter().any(|s| same_source(s, i)));
+        let fade = if same { 0.0 } else { HERO_SWAP_MS };
+        let slot = image.map(|i| self.slot_with(Some(i), w, h, Priority::Visible, fade));
+        let done = matches!(slot, Some(RemoteSlot::Ready { alpha, .. }) if alpha >= 1.0);
+        let mut n = ground;
+        if !done && let Some(under) = self.stand_node(stand, blur, w, h) {
+            n = n.overlay(under, Alignment::CENTER);
+        }
+        if let Some(slot) = slot {
+            n = n.overlay(
+                remote_node(slot, w, h, 0.0, || {
+                    self.icons
+                        .node("film-strip", 22.0, true, color(colour::FONT))
+                }),
+                Alignment::CENTER,
+            );
+        }
+        n.pixel_snapped()
+    }
+
+    /// [`ImageHub::node`] with the BlurHash of the picture under it while it loads (a still of an episode row).
+    pub fn node_blur(
+        &self,
+        image: Option<&ImageRef>,
+        blur: Option<&str>,
+        w: f32,
+        h: f32,
+        radius: f32,
+    ) -> Node {
+        use swiftly_design::tokens::colour;
+        use swiftly_ui::components::color;
+        let ground = Node::rect(color(colour::AREA), radius)
+            .pixel_snapped()
+            .frame(Some(w), Some(h), Alignment::CENTER);
+        let slot = self.slot(image, w, h, Priority::Visible);
+        // The BlurHash stays under the sharp picture until its fade has finished (as in `hero_node`), so the fade runs over
+        // the placeholder, never over the bare ground.
+        let under = match slot {
+            RemoteSlot::Loading => true,
+            RemoteSlot::Ready { alpha, .. } => alpha < 1.0,
+            RemoteSlot::Failed => false,
+        }
+        .then(|| blur.and_then(|hash| self.blur_image(hash)))
+        .flatten()
+        .map(|id| Node::image(id, w, h, radius));
+        let mut n = ground;
+        if let Some(under) = under {
+            n = n.overlay(under, Alignment::CENTER);
+        }
+        n.overlay(
+            remote_node(slot, w, h, radius, || {
+                self.icons
+                    .node("film-strip", 22.0, true, color(colour::FONT))
+            }),
+            Alignment::CENTER,
+        )
+        .pixel_snapped()
     }
 
     /// The rectangle of `entry_key`, uploading (and evicting older entries) when it is not there yet.

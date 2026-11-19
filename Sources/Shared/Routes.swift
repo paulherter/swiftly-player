@@ -68,12 +68,32 @@ struct SubtitleLookRoute: Hashable {}
 /// a second place, because a built-in link belongs to the row it sits in.
 struct SeerrRoute: Hashable {}
 
+/// Profile > "Meine Anfragen": what the account asked Seerr for.
+struct SeerrRequestsRoute: Hashable {}
+
+/// Profile > "Meine Meldungen": the problems the account reported (the page comes with the administration slice).
+struct SeerrIssuesRoute: Hashable {}
+
+/// Profile > "Verwaltung" and the Home line "Wartet auf dich": requests and problems for those who may decide.
+struct SeerrAdminRoute: Hashable {}
+
+/// The server's log files, one level below its page.
+struct ServerLogsRoute: Hashable {}
+
 
 /// A person's page. `origin` is the title you came through, where it
 /// says "Patrick Jane in The Lighthouse".
 struct PersonRoute: Hashable {
     let person: Person
     let origin: String?
+    /// Set when the tap came from a cast tile of a Seerr title: the person has no library entry then.
+    var seerr: SeerrPersonRef? = nil
+}
+
+/// A person met on a Seerr title page: only TMDB's side is known (the id and the portrait), `Person.id` stays empty.
+struct SeerrPersonRef: Hashable {
+    let tmdb: Int64
+    let portrait: URL?
 }
 
 /// All titles of a genre, from the chips on the home page.

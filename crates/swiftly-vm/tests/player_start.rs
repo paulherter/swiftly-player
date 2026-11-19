@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use common::account;
-use common::script::{Script, host};
+use common::script::{Script, host, param};
 use futures_executor::block_on;
 use swiftly_jellyfin::TrackIndices;
 use swiftly_playback::device_profile::Flavour;
@@ -57,21 +57,23 @@ fn title(versions: usize, position_ticks: i64) -> serde_json::Value {
 fn server(versions: usize, position_ticks: i64) -> Arc<Script> {
     Script::new(move |r| {
         let p = r.url.path().to_owned();
-        let q = r.url.query().unwrap_or("").to_owned();
+        // Like the server: `Fields` is a comma separated list.
+        let fields = param(r, "Fields").unwrap_or_default();
+        let asked = |name: &str| fields.split(',').any(|f| f == name);
         if p.contains("/Items/s") {
             // A version is not a title of its own on this server: the title itself answers.
             return None;
         }
         if p.ends_with("/Items/f1") {
             let mut v = title(versions, position_ticks);
-            if q.contains("Fields=Chapters") {
+            if asked("Chapters") {
                 v["Chapters"] = serde_json::json!([
                     {"Name": "Anfang", "StartPositionTicks": 0},
                     {"Name": " Mitte\n", "StartPositionTicks": 10_000_000_000_i64},
                     {"Name": "Ende", "StartPositionTicks": 50_000_000_000_i64}
                 ]);
             }
-            if q.contains("Fields=Trickplay") {
+            if asked("Trickplay") {
                 v["Trickplay"] = serde_json::json!({"s0": {
                     "160": {"Width": 160, "Height": 90, "TileWidth": 10, "TileHeight": 10, "ThumbnailCount": 720, "Interval": 10000},
                     "320": {"Width": 320, "Height": 180, "TileWidth": 10, "TileHeight": 10, "ThumbnailCount": 720, "Interval": 10000}
@@ -113,6 +115,7 @@ fn settings() -> StartSettings {
         audio_language: String::new(),
         subtitle_language: "ger".into(),
         automatic_subtitles: false,
+        device_language: None,
         max_bitrate: 120_000_000,
         buffer_level: BufferLevel::Normal,
         frame_rate_match: false,
@@ -239,9 +242,13 @@ fn the_plan_names_the_next_episode_like_the_old_rule() {
     assert_eq!(shuffled.next.as_ref().map(|i| i.id.as_str()), Some("x9"));
 }
 
+/// One account per script. The short-term memory of the pages (the title, its plan, the chapters request on its way)
+/// is shared by the whole process and keyed by server, user and title, and these tests run in parallel: with one
+/// account for all of them, a test could join the chapters request another test's script is still answering.
 fn ask(net: &Arc<Script>, r: &StartRequest, memory: Option<&MemoryDictionaries>) -> StartAnswer {
     let m = memory.map(|m| m as &dyn swiftly_vm::TrackMemoryStore);
-    block_on(play_start(net.clone(), &host(), &account("TOKEN-A"), r, m)).unwrap()
+    let who = account(&format!("TOKEN-{:p}", Arc::as_ptr(net)));
+    block_on(play_start(net.clone(), &host(), &who, r, m)).unwrap()
 }
 
 fn ready(a: StartAnswer) -> Box<swiftly_vm::ReadyStart> {
@@ -295,9 +302,10 @@ fn the_plan_carries_session_streams_and_the_default_tracks() {
     assert_eq!(r.plan.play_session_id.as_deref(), Some("ps1"));
     assert_eq!(r.plan.media_source_id.as_deref(), Some("s0"));
     assert_eq!(r.streams.len(), 7);
-    // Server default audio (truehd), subtitles: the forced German file (forced track wins when
-    // automatic subtitles are off and the server default is "off").
-    assert_eq!(r.audio, Some(1));
+    // No setting, no device language: the title's original-language track (the Japanese one, flagged
+    // `IsOriginal`) comes before the server default (truehd). Subtitles: the forced German file (forced
+    // track wins when automatic subtitles are off and the server default is "off").
+    assert_eq!(r.audio, Some(3));
     assert_eq!(r.subtitle, 6);
     // No series: the memory key is the account and the film's own id.
     assert_eq!(r.track_title, "acct|f1");
@@ -429,6 +437,52 @@ fn the_starting_tracks_follow_memory_then_default_and_an_order_beats_both() {
     let r = ready(ask(&net, &german, None));
     assert_eq!(r.audio, Some(2));
     let _ = AUDIO_KEY;
+}
+
+#[test]
+fn a_new_title_starts_in_the_language_of_the_device() {
+    let net = server(1, 0);
+    // The file's default is English (truehd, track 1), the original is Japanese (track 3).
+    let on = |device: Option<&str>, audio_setting: &str| {
+        let mut r = request(Flavour::Aether);
+        r.settings.device_language = device.map(str::to_owned);
+        r.settings.audio_language = audio_setting.into();
+        ready(ask(&net, &r, None))
+    };
+    // A German device with no audio setting: German, not the English default.
+    assert_eq!(on(Some("de-DE"), "").audio, Some(2));
+    assert_eq!(on(Some("de"), "").audio, Some(2));
+    // An English device: English.
+    assert_eq!(on(Some("en-US"), "").audio, Some(1));
+    // The setting wins over the device.
+    assert_eq!(on(Some("de-DE"), "English").audio, Some(1));
+    // A device language the file does not have: the original-language track.
+    assert_eq!(on(Some("fr-FR"), "").audio, Some(3));
+    // The host knows no language: the original, then the server's default.
+    assert_eq!(on(None, "").audio, Some(3));
+}
+
+#[test]
+fn a_hand_choice_for_the_series_beats_the_device_language_in_the_next_episode() {
+    let net = server(1, 0);
+    // English was picked by hand on an earlier title of this key.
+    let streams: Vec<swiftly_model::MediaStream> =
+        serde_json::from_value(sources(1)[0]["MediaStreams"].clone()).unwrap();
+    let mut all = HashMap::new();
+    swiftly_playback::track_rule::write_choice(
+        &mut all,
+        "acct|f1",
+        &swiftly_playback::track_rule::Choice::Track(
+            swiftly_playback::track_mapping::TrackImprint::from_feed(&streams[0], &streams, None),
+        ),
+    );
+    let mut memory = MemoryDictionaries::default();
+    memory.0.insert(AUDIO_KEY.into(), all);
+    let mut r = request(Flavour::Aether);
+    r.settings.device_language = Some("de-DE".into());
+    assert_eq!(ready(ask(&net, &r, Some(&memory))).audio, Some(1));
+    // Without the memory the same request starts German.
+    assert_eq!(ready(ask(&net, &r, None)).audio, Some(2));
 }
 
 #[test]

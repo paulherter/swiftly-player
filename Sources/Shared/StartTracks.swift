@@ -21,14 +21,22 @@ enum StartTracks {
         var subtitle: Int
     }
 
+    /// **The language of the device** as the system lists it first (`de-DE`), not the language of the app: a
+    /// French iPhone has an English app and wants French audio. The core's start rule takes it after the settings.
+    static var deviceLanguage: String? { Locale.preferredLanguages.first }
+
     /// - Parameters:
     ///   - audioFallback: the audio track the engine already plays; it stands in when no rule names
     ///     one, and then also feeds the subtitle rule (what `avTracksApply` always did).
     ///   - title: the memory key (`account|series`); `nil` = nothing remembered.
+    ///   - deviceLanguage: ``deviceLanguage``; `nil` = the rule without a device step (the parity tests).
+    ///   - originalLanguage: the title's `OriginalLanguage`; the rule takes its original-language track after
+    ///     the device language.
     static func choose(
         streams: [MediaStream], defaultAudio: Int?, defaultSubtitle: Int?, audioLanguage: String,
         subtitleLanguage: String, automatic: Bool, title: String?, ordered: TrackIndices?,
-        audioFallback: Int? = nil, defaults: UserDefaults = .standard
+        audioFallback: Int? = nil, deviceLanguage: String? = nil, originalLanguage: String? = nil,
+        defaults: UserDefaults = .standard
     ) -> Choice {
         let rows = Self.rows(streams)
         // Nothing remembered without a title: the key is empty and matches no entry.
@@ -42,7 +50,8 @@ enum StartTracks {
             ordered: ordered.map {
                 PlayOrderedTracks(audio: $0.audio.map(Int64.init), subtitle: $0.subtitle.map(Int64.init))
             },
-            audioFallback: audioFallback.map(Int64.init))
+            audioFallback: audioFallback.map(Int64.init), deviceLanguage: deviceLanguage,
+            originalLanguage: originalLanguage)
         return Choice(audio: answer.audio.map(Int.init), subtitle: Int(answer.subtitle))
     }
 
@@ -60,7 +69,8 @@ enum StartTracks {
                 index: Int64(index), kind: stream.type ?? "", language: stream.language, codec: stream.codec,
                 channels: stream.channels.map(Int64.init), title: stream.title,
                 isDefault: stream.isDefault ?? false, isForced: stream.isForced ?? false,
-                isExternal: transcoded ? stream.isDeliveredFile : (stream.isExternal ?? false), isHearingImpaired: stream.isHearingImpaired ?? false)
+                isExternal: transcoded ? stream.isDeliveredFile : (stream.isExternal ?? false), isHearingImpaired: stream.isHearingImpaired ?? false,
+                isOriginal: stream.isOriginal ?? false)
         }
     }
 

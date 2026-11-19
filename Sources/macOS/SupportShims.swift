@@ -13,6 +13,9 @@ extension View {
 }
 
 extension Theme {
+    /// The shared views ask for a side margin per width class; the Mac has one.
+    static func margin(wide: Bool) -> CGFloat { edgeSpacing }
+
     enum JerkKind { case lightweight, medium }
 
     /// No haptics on the Mac.
@@ -79,5 +82,40 @@ extension Theme {
                 .background(Theme.font.opacity(!active && configuration.isPressed ? 0.06 : 0))
                 .opacity(active && configuration.isPressed ? 0.6 : 1)
         }
+    }
+}
+
+// MARK: - Sheet parts for the shared sheets
+
+/// The heading of a shared sheet (`Sources/Shared/Style.swift` draws it on iPhone): left-aligned, section font.
+struct SheetCategory: View {
+    let text: Text
+
+    var body: some View {
+        text
+            .font(Theme.section)
+            .tracking(Theme.lockSection)
+            .foregroundStyle(Theme.font)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Theme.edgeSpacing)
+            .padding(.top, 18)
+            .padding(.bottom, 14)
+    }
+}
+
+/// The sheet's last row. On the Mac it also answers Escape, like every system sheet.
+struct SheetCancel: View {
+    let perform: () -> Void
+
+    var body: some View {
+        Button(action: perform) {
+            Text("Abbrechen")
+                .font(.app(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.fontQuiet)
+                .frame(maxWidth: .infinity, minHeight: Theme.rowHeight)
+        }
+        .buttonStyle(Theme.PressRow())
+        .keyboardShortcut(.cancelAction)
     }
 }

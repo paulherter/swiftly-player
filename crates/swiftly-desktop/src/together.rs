@@ -29,9 +29,6 @@ use crate::live::Core;
 use crate::net::AppTransport;
 use crate::together_socket::Link;
 
-/// Seconds without a frame after which a link counts as dead (the Mac's channel does the same).
-const SILENCE: Duration = Duration::from_secs(90);
-
 /// What the UI thread has to act on.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HubEvent {
@@ -820,9 +817,10 @@ impl Inner {
         }
     }
 
-    /// Reads one link until it ends; sends the keep-alive; a silent link is dead.
+    /// Reads one link until it ends; sends the keep-alive. Silence from the server is no sign of a dead link
+    /// (a Jellyfin server stays quiet while the client reports); only a failed read or write ends it.
     fn read(&self, ctl: &mut RemoteControl, link: &mut Link) -> LinkError {
-        let mut heard = Instant::now();
+        let mut keep_every = Duration::from_secs_f64(KEEP_ALIVE_INTERVAL);
         let mut kept = Instant::now();
         loop {
             if self.stopped.load(Ordering::SeqCst) {
@@ -830,7 +828,10 @@ impl Inner {
             }
             match link.read() {
                 Ok(Some(text)) => {
-                    heard = Instant::now();
+                    if let Some(secs) = RemoteControl::force_keep_alive_interval(&text) {
+                        keep_every = Duration::from_secs_f64(secs).min(keep_every);
+                        kept = Instant::now();
+                    }
                     for out in ctl.process(&text) {
                         if let RemoteOutput::Send(reply) = &out {
                             if let Err(e) = link.send(reply) {
@@ -844,15 +845,10 @@ impl Inner {
                         self.output(again, "");
                     }
                 }
-                Ok(None) => {
-                    heard = heard.max(Instant::now().checked_sub(SILENCE).unwrap_or(heard));
-                }
+                Ok(None) => {}
                 Err(e) => return e,
             }
-            if heard.elapsed() >= SILENCE {
-                return LinkError::Other("silent link".into());
-            }
-            if kept.elapsed() >= Duration::from_secs_f64(KEEP_ALIVE_INTERVAL) {
+            if kept.elapsed() >= keep_every {
                 kept = Instant::now();
                 if let Err(e) = link.send(KEEP_ALIVE) {
                     return e;

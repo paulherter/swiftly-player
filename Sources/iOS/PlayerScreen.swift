@@ -24,6 +24,8 @@ struct PlayerScreen: View {
 
     // Current title; changes when switching to the next episode.
     @State private var item: Item
+    /// The sheet behind "Problem melden" in the settings layer.
+    @State private var seerrMenu = SeerrTitleMenu()
     @State private var plan: PlaybackPlan
 
     @State private var surface: VLCPlayerView?
@@ -96,6 +98,16 @@ struct PlayerScreen: View {
         scrimPresent && !layerOpen
     }
 
+    /// **The top bar (title, context line, capsule, X) is one thing from the first frame to playback.**
+    /// Everything in it is known before the stream answers, so it is already up over the start veil and simply stays
+    /// when the picture arrives: no fade out and in, no move. Only the centre (loader, then play/pause) and the footer
+    /// wait for the picture (`controlsPresent`). While the rotation to landscape is still running it waits too, the
+    /// same rule the veil's X had, so it never sits at the portrait position first.
+    private var topBarPresent: Bool {
+        guard controlsVisible, !smallWindow, airplayPlan == nil, !layerOpen else { return false }
+        return imageFree || (cardsSwitch == nil && (!rotationWaits || rotationReady))
+    }
+
     /// One of the three layers: audio & subtitles, episodes, settings.
     private var layerOpen: Bool { openLayer != nil }
 
@@ -114,7 +126,8 @@ struct PlayerScreen: View {
         // Yields to the preview above the bar while scrubbing.
         guard offering.visible, imageFree, !layerOpen, !smallWindow, !atPush,
               airplayPlan == nil, !switches else { return false }
-        return layer.display.visible || (controlsPresent && offering == .nextEpisode)
+        // A menu counts like open controls: the card steps aside, the button stays (dimmed) and the countdown waits (design frame 16).
+        return layer.display.visible || ((controlsPresent || menu.isOpen) && offering == .nextEpisode)
     }
 
     /// The scrim sits on the picture: with the controls open, and while the
@@ -196,9 +209,25 @@ struct PlayerScreen: View {
     @State private var leap: PlaybackTick.Jump?
     /// The card's fill as a continuous motion (`FillClock`).
     @State private var fillClock = FillClock()
-    @State private var lastPushed: Date?
 
     @State private var openLayer: PlayerLayer?
+    /// The boxes behind "Ton & Untertitel" and "Optionen" (the other layers stay as they are).
+    @State private var menu = PlayerMenuSession()
+    @State private var menuAnchors = PlayerMenuAnchors()
+    /// The season list that hangs from the season button of the open Folgen box: a second box over the first (the Folgen box
+    /// itself is a kind of `menu`, so one menu turns into it like into any other).
+    @State private var seasonMenu = PlayerMenuSession()
+    private var folgenOpen: Bool { menu.isOpen && menu.kind == .folgen }
+    /// The seasons of the running series: the episodes panel fills it, the season box reads it.
+    @State private var seasonPicker = SeasonPicker()
+    /// "Bildschirm sperren": every touch is swallowed until it is held.
+    @State private var screenLocked = false
+    /// Counts up to open the system AirPlay list (the menu's AirPlay row).
+    @State private var airPlayShow = 0
+    /// "Ende dieser Folge" sets the timer itself; the sleep minutes going to nil must not cancel it.
+    @State private var sleepSkipCancel = false
+    /// The subtitle search opens from the menu's magnifier.
+    @State private var searchFirst = false
     /// The most recently opened layer; stays on close so the title also lies above
     /// the episodes during their fade-out.
     @State private var lastOpened: PlayerLayer?
@@ -290,6 +319,8 @@ struct PlayerScreen: View {
 
     /// Tracks sent by another device with the first title, see ``PlayRequest/tracks``.
     private let ordered: (itemID: String, tracks: TrackIndices)?
+    /// The subtitle the search added to this title: the core names its stream index, the reload starts with it switched on.
+    @State private var searchedSubtitle: (itemID: String, index: Int)?
 
     init(model: AppModel, item: Item, plan: PlaybackPlan, startAt: Double,
          tracks: TrackIndices? = nil) {
@@ -336,37 +367,9 @@ struct PlayerScreen: View {
                     .transition(.opacity)
             }
 
-            // **Closing works before the picture is there.** The controls only appear with
-            // the first frame; until then only the scrim was here, and whoever changed their
-            // mind had to wait for the stream. Reported by a tester.
-            //
-            // Same button in the same place as in the controls' header: same margin, same
-            // distance from the top, horizontally inside the safe area. When the controls
-            // appear, theirs sits exactly above it.
-            // **Only once the orientation is settled.** The rotation to landscape is still
-            // running on open; before, the button sat at the top left in portrait, by the
-            // clock, and then jumped into place. Now it fades in where it stays.
-            if !rotationWaits || rotationReady {
-                VStack(spacing: 0) {
-                    HStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        IconButton(symbol: "xmark", label: "Player schließen",
-                                    mass: mass) { close() }
-                    }
-                    .padding(.horizontal, mass.page)
-                    // The glyph, not the 44 button, ends where the time label ends.
-                    .padding(.trailing, -(mass.button - mass.symbol) / 2)
-                    .padding(.top, mass.top)
-                    Spacer(minLength: 0)
-                }
-                .ignoresSafeArea(edges: mass.topSkip)
-                .transition(.opacity)
-            }
+            // **Closing works before the picture is there**: the real top bar (with its X) is up over this
+            // veil, see `topBarPresent`; the veil carries no buttons of its own.
         }
-        // The same tempo at which every other view swaps its area. Before,
-        // a hand-written easeOut 0.2: same duration, but a private number for a role that
-        // already has a token.
-        .animation(Theme.sectionSwitch, value: rotationReady)
         .transition(.opacity)
     }
 
@@ -546,7 +549,9 @@ struct PlayerScreen: View {
                 // center.
                 // While scrubbing only the bar counts; the center yields.
                 centerControls
-                    .opacity(atPush ? 0 : 1)
+                    .opacity(controlsPresent ? (atPush ? 0 : (menu.isOpen ? 0.3 : 1)) : 0)
+                    .allowsHitTesting(controlsGripBar)
+                    .animation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.2), value: menu.isOpen)
                     .allowsHitTesting(!atPush)
                     // **Center of the screen, not of the safe area.**
                     // In landscape the safe area is 21 pt taller at the bottom than at the top, so
@@ -554,9 +559,16 @@ struct PlayerScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .ignoresSafeArea()
                 VStack(spacing: 0) {
+                    // The top bar has its own presence (`topBarPresent`): it is up during loading already.
                     header
+                        .opacity(topBarPresent ? 1 : 0)
+                        .allowsHitTesting(topBarPresent || controlsGripBar)
+                        .animation(Self.curve(present: topBarPresent, layer: layerOpen), value: topBarPresent)
                     Spacer(minLength: 0)
                     footer
+                        .opacity(controlsPresent ? (menu.isOpen ? 0.3 : 1) : 0)
+                        .allowsHitTesting(controlsGripBar)
+                        .animation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.2), value: menu.isOpen)
                 }
                 // **At the bottom inside the safe area, at the top not.**
                 //
@@ -573,11 +585,10 @@ struct PlayerScreen: View {
             // visibly hard; exactly what AVPlayerViewController avoids: there the controls
             // stay and only fade their opacity. Fade in fast, fade out leisurely: appearing
             // should answer the finger, disappearing may take its time.
-            .opacity(controlsPresent ? 1 : 0)
+            // (Opacity and hit testing sit on the single parts: header on `topBarPresent`, centre and footer on `controlsPresent`.)
             // **Hittable as long as visible.** Before, the controls were deaf from the first
             // frame of the fade-out: whoever still saw the button and hit it landed in the tap
             // area underneath.
-            .allowsHitTesting(controlsGripBar)
             .task(id: controlsPresent) { await controlsGripBarCatchUp() }
             // **Springs so a second tap does not have to wait.** The asymmetry stays (fast
             // in, leisurely out), but a fixed duration cannot be redirected: whoever taps
@@ -609,7 +620,8 @@ struct PlayerScreen: View {
                         OfferingButton(offering: shownOffering,
                                       fillContent: layer.skipShare != nil ? fillClock : nil,
                                       rest: Int(((1 - (layer.skipShare ?? 1)) * OfferingLayer.buttonDuration).rounded(.up)),
-                                      action: offeringRun)
+                                      action: offeringRun,
+                                      dismiss: offeringDismiss)
                             // VoiceOver: a two-finger scrub (Z) dismisses.
                             .accessibilityAction(.escape) { if layer.close() { surface?.coreDismissOffer() } }
                     }
@@ -618,12 +630,14 @@ struct PlayerScreen: View {
                 .padding(.bottom, mass.bottom + mass.bar + mass.overBar)
                 .ignoresSafeArea(edges: mass.topSkip)
                 .offset(y: buttonPresent || Theme.motionReduced ? 0 : 6)
-                .opacity(buttonPresent ? 1 : 0)
+                // With a menu open the button steps back to 0.3 with the bar (design: "Intro überspringen / Nächste Folge, Menü offen").
+                .opacity(buttonPresent ? (menu.isOpen ? 0.3 : 1) : 0)
                 .allowsHitTesting(buttonPresent)
                 .accessibilityHidden(!buttonPresent)
                 .animation(Theme.motionReduced ? Theme.fadeReduced
                            : buttonPresent ? .smooth(duration: 0.3) : .smooth(duration: 0.34),
                            value: buttonPresent)
+                .animation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.2), value: menu.isOpen)
             }
 
             if let jumpDisplay { jumpBackMessage(jumpDisplay) }
@@ -655,6 +669,20 @@ struct PlayerScreen: View {
                 layersView(openLayer)
                     .transition(.opacity)
                     .zIndex(5)
+            }
+
+            // **The menu boxes** grow from their button; the picture and the other buttons stay where they are. The Folgen box is
+            // one of them (same container, same motion when a menu turns into it); the season list hangs over it.
+            PlayerMenuLayer(session: menu, anchors: menuAnchors, host: menuHost, canReport: reportProblem != nil,
+                            folgen: { tab in AnyView(episodesPanel(startTab: tab, boxed: true)) })
+                .zIndex(5)
+            PlayerMenuLayer(session: seasonMenu, anchors: menuAnchors, host: menuHost, canReport: false)
+                .zIndex(6)
+            AirPlayPickerTrigger(show: airPlayShow).frame(width: 1, height: 1).allowsHitTesting(false)
+            if screenLocked {
+                ScreenLockOverlay { screenLocked = false }
+                    .transition(.opacity)
+                    .zIndex(30)
             }
 
             // Above the layers only for the episodes, where it stays. Otherwise below
@@ -719,6 +747,7 @@ struct PlayerScreen: View {
         }
         #if DEBUG
         .onReceive(NotificationCenter.default.publisher(for: LiveRun.hideControls)) { _ in controlsVisible = false }
+        .onReceive(NotificationCenter.default.publisher(for: LiveRun.openTracks)) { _ in unfoldLayer(.tracks) }
         .onReceive(NotificationCenter.default.publisher(for: LiveRun.chooseQuality)) { note in
             surface?.coreChooseQuality(note.object as? Int)
             pollCoreSwitch()
@@ -753,11 +782,12 @@ struct PlayerScreen: View {
 
     var body: some View {
         reasonArea
+        .overlay { SeerrTitleMenuSheets(menu: seerrMenu, model: model, deleted: {}) }
         .task(id: fadeOutMark) {
             // Remove nothing while standing: whoever paused is not looking at the picture but wants to see the controls.
             guard controlsVisible, running, !voiceOverAn, !toggleAn else { return }
             try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled, !atPush, !layerOpen else { return }
+            guard !Task.isCancelled, !atPush, !layerOpen, !menu.isOpen else { return }
             controlsVisible = false
         }
         // Before: easeInOut 0.15, which sits between two steps. The badge shows only 700 ms, hence the shorter toggle 0.10.
@@ -775,6 +805,7 @@ struct PlayerScreen: View {
         // anything, and without a new mark no second one starts: the controls would have
         // stayed up permanently after closing.
         .onChange(of: layerOpen) { _, opened in if !opened { fadeOutMark += 1 } }
+        .onChange(of: menu.isOpen) { _, opened in if !opened { fadeOutMark += 1 } }
         // The overlay listens to the wanted controls, not the visible ones: on open
         // they are already "on" before the picture is there, and their first fade-out is
         // not a look at the controls that would be allowed to send "skip recap" away.
@@ -787,11 +818,47 @@ struct PlayerScreen: View {
                                  : "[Karte] geht (abgesagt oder Steuerung)")
         }
         .onChange(of: controlsVisible, initial: true) { _, opened in
-            layer.controls(opened: opened)
+            layer.controls(opened: opened || menu.isOpen)
+            fillSet()
+        }
+        // A menu opened without the controls (or kept open while they hide) still covers the card: countdown pauses, resumes on close.
+        .onChange(of: menu.isOpen) { _, open in
+            layer.controls(opened: open || controlsVisible)
             fillSet()
         }
         .onChange(of: tempo) { _, new in surface?.tempo = new }
-        .onChange(of: sleepMinutes) { _, new in sleepTimeSet(new) }
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: LiveRun.openLayer)) { note in
+            switch note.object as? String {
+            case "settings": openMenu(.settings)
+            case "tracks": openMenu(.tracks)
+            case "chapters": openMenu(.folgen, panel: .chapters)
+            case "time": menu.press(.open(level: .timeAdjust(tab: .subtitles)))
+            case "episodes": openMenu(.folgen, panel: .episodes)
+            case "pill": toggleFolgen()
+            case "seasons": openMenu(.seasons)
+            case "sleep": menu.press(.open(level: .sleep))
+            case "quality": menu.press(.open(level: .quality))
+            case "look": menu.press(.open(level: .subtitleLook))
+            case "audio":
+                // What a finger does: open "Ton & Untertitel" (root level), then the "Ton" segment.
+                if !(menu.isOpen && menu.kind == .tracks) { openMenu(.tracks) }
+                withAnimation(Motion.menuOpen) { menu.tab = .audio }
+            case "handoffbusy": menu.handoffBusy = LiveRun.demoDeviceIDs.first
+            case "together": menu.press(.open(level: .together))
+            case "kapitel": menu.press(.open(level: .episodes(tab: .chapters)))
+            case "scroll": NotificationCenter.default.post(name: Notification.Name("swiftly.debug.menuScrollEnd"), object: nil)
+            case "season2":
+                if seasonPicker.seasons.count > 1 { performMenu(.selectSeason(id: seasonPicker.seasons[1].id)) }
+            case "handoff": openLayer = nil; openMenu(.handoff)
+            default: menu.close(); seasonMenu.close(); openLayer = nil
+            }
+        }
+        #endif
+        .onChange(of: sleepMinutes) { _, new in
+            if sleepSkipCancel { sleepSkipCancel = false; return }
+            sleepTimeSet(new)
+        }
         .onChange(of: landscapeFixed) { _, fixed in
             Orientierung.shared.playerOpened(landscapeFixed: fixed)
         }
@@ -832,28 +899,20 @@ struct PlayerScreen: View {
         )
         // Set up the remembered state on open and on episode change.
         .onChange(of: surface == nil) { _, _ in surface?.fillFrame(fillFrame) }
-        // **Playback continues in the background.** This is a decision, not an omission.
+        // **Leaving the foreground, as three different things.** The engine glue (`AetherPlayerEngine.enteredBackground`,
+        // `becameActive`, state `LifecyclePause`) owns the rule; this screen only logs and reports:
+        // - inactive (`willResignActive`: Notification Center, Control Center, an alert): nothing is touched;
+        // - background (`didEnterBackground`): a playing title is paused unless Picture in Picture or AirPlay carry it;
+        // - active again: what the app paused itself plays again; what the user paused stays paused.
+        // Why the return must resume: a Notification Center pulled down can arrive as a real background transition
+        // (`willResignActive` -> `didEnterBackground`, log 17.11.), so a plain "pause in the background" left the film
+        // stopped after the glance (jellyfin/Swiftfin#871 against #2175: a swiped-away episode must not run on and count as watched).
         //
-        // There used to be a rule that paused on moving to the background, against the
-        // case of a swiped-away episode silently running on and then showing as watched
-        // (jellyfin/Swiftfin#871, regression #2175). It caused a real bug: iOS also sends
-        // the app to the background when only Notification Center is pulled down, through
-        // **exactly the same** sequence of notifications as a swipe to the home screen
-        // (willResignActive -> scenePhase inactive -> didEnterBackground). No signal
-        // separates the two cases. Every glance at a notification paused the film, and it
-        // did not resume by itself.
-        //
-        // Other clients simply allow background playback, and the app declares
-        // `UIBackgroundModes: audio` anyway; without it there would be no
-        // picture-in-picture and no lock screen. So it keeps playing, and progress is
-        // reported on the tick as usual.
-        //
-        // The lifecycle is still logged: that costs nothing in the shipped build
-        // (`AppLog.write` is compiled out there) and found exactly this bug.
+        // The lifecycle is still logged: that costs nothing in the shipped build (`AppLog.write` is compiled out there).
         .onReceive(NotificationCenter.default.publisher(
             for: UIApplication.didEnterBackgroundNotification)) { _ in
             AppLog.writeOut("[Lebenslage] didEnterBackground · Zustand \(StatusWord.now)"
-                + " · PiP \(smallWindow) · laeuft \(running) → weiterlaufen lassen")
+                + " · PiP \(smallWindow) · laeuft \(running)")
             // Report the position now: if the app gets frozen anyway, the server would otherwise hold a position up to ten seconds old.
             if startReported, !switches {
                 model.backgroundReport(item: item, plan: plan, seconds: position, paused: !running)
@@ -1152,29 +1211,37 @@ struct PlayerScreen: View {
     /// The buttons at the top right, also as an invisible placeholder in
     /// `stateTitle` so the title gets the same width there.
     private var iconRail: some View {
-        HStack(spacing: mass.pad ? 6 : 2) {
-            IconButton(symbol: "captions.bubble", label: "Audio & Untertitel",
-                        mass: mass) { unfoldLayer(.tracks) }
-            if hasEpisodes {
-                IconButton(symbol: "rectangle.stack", label: "Folgen",
-                            mass: mass) { unfoldLayer(.episodes) }
-            }
-            IconButton(symbol: "slider.horizontal.3", label: "Einstellungen",
-                        mass: mass) { unfoldLayer(.settings) }
-            handOverMenu
-            IconButton(symbol: "xmark", label: "Player schließen",
-                        mass: mass) { close() }
-        }
-        // The glyph, not the 44 button, ends where the time label ends.
-        .padding(.trailing, -(mass.button - mass.symbol) / 2)
+        BarRail(mass: mass,
+                showFolgen: hasEpisodes || !chapter.isEmpty,
+                folgenOpen: folgenOpen,
+                tracksOpen: menu.isOpen && menu.kind == .tracks,
+                settingsOpen: menu.isOpen && menu.kind == .settings,
+                folgen: { toggleFolgen() },
+                tracks: { openMenu(.tracks) },
+                settings: { openMenu(.settings) },
+                close: { close() },
+                anchors: $menuAnchors) { handOverMenu }
     }
 
     /// **"Übergeben an …"**: the TVs a film can be sent to, see ``PlayOutputs``.
     /// Not in a group: the group watches here, and handing over would leave it
     /// without a word.
     @ViewBuilder private var handOverMenu: some View {
+        if !inGroup {
+            if surface?.playerModel != nil {
+                BarGlyphButton(symbol: "display", label: "Übergeben an …", form: .half, mass: mass,
+                               open: menu.isOpen && menu.kind == .handoff) { openMenu(.handoff) }
+                    .menuAnchor(.handoff, into: $menuAnchors)
+            } else {
+                oldHandOverMenu
+            }
+        }
+    }
+
+    /// Without the core (the old way plays): the system menu of the TVs.
+    @ViewBuilder private var oldHandOverMenu: some View {
         let targets = PlayOutputs.shared.targets.compactMap(PlayOutput.init(session:))
-        if !inGroup, !targets.isEmpty {
+        if !targets.isEmpty {
             Menu {
                 Section {
                     ForEach(targets, id: \.deviceID) { target in
@@ -1186,11 +1253,12 @@ struct PlayerScreen: View {
                     Text("Übergeben an …")
                 }
             } label: {
-                Image(icon: "tv", size: mass.symbol)
-                    .font(.app(size: mass.symbol, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(width: mass.button, height: mass.button)
-                    .contentShape(Rectangle())
+                Image(icon: "display", size: 19)
+                    .font(.app(size: 19, weight: Theme.overlayWeight))
+                    .foregroundStyle(Theme.font)
+                    .scaleEffect(0.92)
+                    .frame(width: 44, height: 40)
+                    .contentShape(Rectangle().inset(by: -2))
             }
             .buttonStyle(Theme.PressButton())
             .accessibilityLabel(Text("Übergeben an …"))
@@ -1201,8 +1269,8 @@ struct PlayerScreen: View {
     /// tracks. Paused at once so the TV does not start behind where this device has
     /// got to; if the TV does not take it, it plays on here. The exit is the
     /// takeover's (``HandoffExit``).
-    private func handOver(to target: PlayOutput) {
-        guard !handoverRuns, let area = surface else { return }
+    private func handOver(to target: PlayOutput, done: @escaping () -> Void = {}) {
+        guard !handoverRuns, let area = surface else { done(); return }
         let spot = position
         let wasRunning = running
         area.pause()
@@ -1212,8 +1280,10 @@ struct PlayerScreen: View {
                                                           to: target, model: model)
             guard taken else {
                 if wasRunning { resume() }
+                done()
                 return
             }
+            done()
             handIn(an: target.name, area: area)
         }
     }
@@ -1222,8 +1292,8 @@ struct PlayerScreen: View {
     /// open it stays exactly here; if it lived in the header it would fade out with the
     /// controls and back in within the layer, flickering.
     private var stateTitle: some View {
-        let present = controlsPresent || openLayer == .episodes
-        return HStack(alignment: .top, spacing: 12) {
+        let present = topBarPresent || openLayer == .episodes
+        return HStack(alignment: .top, spacing: 16) {
             Text(verbatim: titleLine)
                 // 20 Semibold, the row heading from the ladder. Before: 19 (iPhone) and 22 (iPad)
                 // in Bold, a size on no ladder, and Bold appears exactly once, at the page title.
@@ -1234,6 +1304,7 @@ struct PlayerScreen: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
             iconRail
+                .offset(y: -8)
                 .hidden()
                 .accessibilityHidden(true)
         }
@@ -1246,30 +1317,56 @@ struct PlayerScreen: View {
         .animation(Self.curve(present: present, layer: layerOpen), value: present)
     }
 
+    /// **What sits under the title** (design "Weg C"), 26 high in every case so the title never jumps: the pill for a
+    /// series (opens Folgen) or a film with chapters (opens Kapitel); a quiet line for a film without; in a group the
+    /// group.
+    private var barLine: some View {
+        HStack(spacing: 6) {
+            if inGroup, let group = gemeinsam.group {
+                GroupsRow(name: group.name, withWhom: gemeinsam.withWhom, size: mass.meta)
+            } else if hasEpisodes {
+                // The quiet context line ("S1 · F3 · Episode name"); the episode list lives behind the Folgen symbol.
+                Text(verbatim: pillText)
+                    .font(.app(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.fontQuiet)
+            } else if let metaText {
+                Text(verbatim: metaText)
+                    .font(.app(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.fontQuiet)
+            }
+            if !plan.isLossless {
+                Label(plan.method.rawValue, icon: "exclamationmark.triangle.fill")
+                    .font(.app(size: mass.meta))
+                    .foregroundStyle(Theme.warning)
+            }
+        }
+        .lineLimit(1)
+        .frame(height: 26, alignment: .leading)
+    }
+
+    /// The Folgen symbol opens its box at its own tab: Folgen for a series, Kapitel for a film (the tab bar of the box itself
+    /// comes from the core's `menus.episodes.tabs`). Pressed again it closes. With a menu open one tap turns that menu into the
+    /// box, the same motion as one menu into the next (the box is a menu of the same session).
+    private func toggleFolgen() {
+        openMenu(.folgen, panel: hasEpisodes ? .episodes : .chapters)
+    }
+
+    /// "S1 · F3 · Episode name"; the "S1 · F3" part is the same text the meta line had.
+    private var pillText: String {
+        guard let metaText else { return item.name }
+        return metaText + " · " + item.name
+    }
+
     private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 5) {
                 // Placeholder only: what shows is the title from `stateTitle`, which stays while the episode layer is open.
                 Text(verbatim: titleLine)
                     .font(.app(size: mass.title, weight: .semibold))
                     .lineLimit(1)
                     .opacity(0)
                     .accessibilityHidden(true)
-                HStack(spacing: 6) {
-                    // **In a group, the group shows here**, where year and runtime
-                    // otherwise sit. That is state, so accent.
-                    if inGroup, let group = gemeinsam.group {
-                        GroupsRow(name: group.name, withWhom: gemeinsam.withWhom,
-                                     size: mass.meta)
-                    } else if let metaText { Text(verbatim: metaText) }
-                    if !plan.isLossless {
-                        Label(plan.method.rawValue, icon: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Theme.warning)
-                    }
-                }
-                .font(.app(size: mass.meta))
-                .foregroundStyle(Theme.fontQuiet)
-                .lineLimit(1)
+                barLine
             }
             // Before: raw `.white`; `font` is read. The meta line below sets its own `schriftLeise`.
             .foregroundStyle(Theme.font)
@@ -1277,6 +1374,8 @@ struct PlayerScreen: View {
             Spacer(minLength: 0)
 
             iconRail
+            // Glass top at 8, the title's line (16 to 40) centered on the glass.
+            .offset(y: -8)
             .opacity(atPush ? 0 : 1)
             .allowsHitTesting(!atPush)
         }
@@ -1299,6 +1398,95 @@ struct PlayerScreen: View {
         }
     }
 
+    /// The button again closes its box; another button swaps it.
+    private func openMenu(_ kind: PlayerMenuKind, panel: PlayerMenuPanelTab = .episodes) {
+        // The season list is a second box over the Folgen box; every other button takes the place of what is open.
+        let session = kind == .seasons ? seasonMenu : menu
+        if kind != .seasons { seasonMenu.close() }
+        if session.isOpen, session.kind == kind { session.close(); fadeOutMark += 1; return }
+        fadeOutMark += 1
+        // Without the core (the old way plays) the old layers stay.
+        guard let core = surface?.playerModel else {
+            if kind == .tracks { unfoldLayer(.tracks) } else if kind == .settings { unfoldLayer(.settings) }
+            return
+        }
+        if kind == .handoff { Task { await PlayOutputs.shared.refresh(model) } }
+        session.open(kind, player: core, panel: panel)
+    }
+
+    // MARK: Menu host
+
+    /// What the menus need from the screen: the inputs only it knows and the host actions.
+    private var menuHost: PlayerMenuHost {
+        var host = PlayerMenuHost()
+        host.inputs = { menuInputs() }
+        host.perform = { performMenu($0) }
+        host.quality = { limit in qualitySelection?.select(limit.map(Int.init)) }
+        host.sleep = { sleepMinutes = $0.map(Int.init) }
+        host.sleepEndOfEpisode = {
+            let left = max(1, (duration - position) / Double(max(surface?.tempo ?? 1, 0.1)))
+            if sleepMinutes != nil { sleepSkipCancel = true; sleepMinutes = nil }
+            sleepTimerStart(seconds: left)
+        }
+        host.fill = { UserDefaults.standard.set($0, forKey: "bildfuellend") }
+        host.afterPlayerAction = { pollCoreSwitch() }
+        return host
+    }
+
+    private func menuInputs() -> PlayerMenusInputs {
+        let group = inGroup ? gemeinsam.group.map { current in
+            PlayerMenuGroup(name: current.name,
+                            members: gemeinsam.participants.map { PlayerMenuGroupMember(name: $0, me: false, status: .watching) })
+        } : nil
+        var devices = PlayOutputs.shared.targets.map {
+            PlayerMenuHandoffDevice(id: $0.id, name: PlayTargets.name(of: $0), kind: .tv, detail: nil)
+        }
+        #if DEBUG
+        // Live run only (`-SwiftlyLiveDemoDevices`): the fixture server has no takeover devices, so the box would only show its empty text.
+        if LiveRun.demoDevices {
+            devices = zip(LiveRun.demoDeviceIDs, ["Wohnzimmer", "Schlafzimmer"]).map { PlayerMenuHandoffDevice(id: $0, name: $1, kind: .tv, detail: "Apple TV") }
+        }
+        #endif
+        let seasons = seasonPicker.seasons.map { SeasonRow(id: $0.id, name: $0.name, number: $0.indexNumber.map(Int64.init)) }
+        return PlayerMenusInputs(decimalSeparator: Locale.current.decimalSeparator ?? ".",
+                                 techBadge: UserDefaults.standard.bool(forKey: "technikschild"), group: group,
+                                 look: model.subtitleLook.info, seasons: seasons, shownSeason: seasonPicker.selected?.id,
+                                 handoff: menu.handoffBusy.map { .handing(devices: devices, busy: $0) } ?? .devices(devices: devices),
+                                 airplay: true)
+    }
+
+    /// The actions the core hands back: only the screen can do them.
+    private func performMenu(_ action: PlayerMenuAction) {
+        switch action {
+        case let .look(info): model.subtitleLook = SubtitleLook(info)
+        case let .techBadge(on): UserDefaults.standard.set(on, forKey: "technikschild")
+        case .leaveGroup: menu.close(); close()
+        case .startTogether: menu.close(); SharedModel.shared.createFor = item
+        case .lockScreen:
+            menu.close()
+            withTransaction(Transaction(animation: nil)) { controlsVisible = false }
+            withAnimation(.easeOut(duration: 0.2)) { screenLocked = true }
+        case .reportProblem: menu.close(); reportProblem?()
+        case .searchSubtitles: menu.close(); searchFirst = true; unfoldLayer(.tracks)
+        case let .selectSeason(id): AppLog.writeOut("[Staffel] perform selectSeason \(id)"); seasonPicker.chosen = id; seasonMenu.close()
+        case let .handoff(sessionId):
+            guard let session = PlayOutputs.shared.targets.first(where: { $0.id == sessionId }),
+                  let target = PlayOutput(session: session) else { return }
+            menu.handoffBusy = sessionId
+            handOver(to: target) { menu.handoffBusy = nil }
+        case .airPlay: menu.close(); airPlayShow += 1
+        default: break
+        }
+    }
+
+    /// The core's season button of the episodes panel (the open season); `nil` for a film or without the core.
+    private var seasonButton: PlayerMenuValueRow? {
+        guard let core = surface?.playerModel else { return nil }
+        menu.prepare(player: core)
+        menu.host = menuHost
+        return menu.model?.menus.episodes.seasonButton
+    }
+
     private func unfoldLayer(_ target: PlayerLayer) {
         fadeOutMark += 1
         lastOpened = target
@@ -1309,28 +1497,74 @@ struct PlayerScreen: View {
         openLayer = nil
     }
 
+    /// "Problem melden": only for an account that may report to Seerr. The layer closes, the sheet opens with the
+    /// season, episode and the position the player is at now.
+    private var reportProblem: (() -> Void)? {
+        guard model.seerr.connected,
+              model.seerr.hub.titleMenu().contains(where: { $0.kind == .reportProblem }) else { return nil }
+        return {
+            layerClose()
+            let now = surface?.positionSeconds
+            Task { await seerrMenu.start(.reportProblem, model: model, item: item, seconds: now) }
+        }
+    }
+
+    /// The server has a new subtitle track for this title: reload it at the position (the same path as a quality
+    /// change), so the track list and the picture pick it up.
+    private func subtitleAdded(_ index: Int?) {
+        AppLog.writeOut("[Untertitel] Suche: neuer Titel-Stand (Spur \(index.map(String.init) ?? "-")), neu laden bei \(Int(position)) s")
+        if let index { searchedSubtitle = (item.id, index) }
+        layerClose()
+        preparation.forget()
+        toNextEpisode(item, since: position)
+    }
+
     @ViewBuilder
     private func layersView(_ which: PlayerLayer) -> some View {
         switch which {
         case .tracks:
-            TracksLayer(surface: surface, mass: mass, close: layerClose)
+            TracksLayer(surface: surface, mass: mass,
+                        search: model.session.flatMap { session in
+                            AppCore.shared.subtitleSearch(session: session, itemID: item.id, language: model.subtitleLanguage) == nil
+                                ? nil
+                                : SubtitleSearchLink(
+                                    make: { AppCore.shared.subtitleSearch(session: session, itemID: item.id, language: model.subtitleLanguage) },
+                                    added: subtitleAdded)
+                        },
+                        startsInSearch: searchFirst,
+                        close: { searchFirst = false; layerClose() })
         case .settings:
             SettingLayer(surface: surface, mass: mass, sleepMinutes: $sleepMinutes,
                               quality: qualitySelection,
                               gemeinsam: inGroup ? gemeinsam : nil,
                               groupLeave: { close() },
+                              report: reportProblem,
                               close: layerClose)
+        case .chapters:
+            episodesPanel(startTab: .chapters)
         case .episodes:
-            EpisodesLayer(model: model, item: item, title: titleLine, mass: mass,
-                        close: layerClose) { episode in
-                layerClose()
+            episodesPanel(startTab: .episodes)
+        }
+    }
+
+    private func episodesPanel(startTab: PlayerMenuPanelTab, boxed: Bool = false) -> some View {
+        let given = menu.model?.menus.episodes.tabs ?? []
+        let tabs = !given.isEmpty ? given : (hasEpisodes ? (chapter.isEmpty ? [.episodes] : [.episodes, .chapters]) : [.chapters])
+        return EpisodesLayer(model: model, item: item, title: titleLine, mass: mass, picker: seasonPicker,
+                          seasonButton: seasonButton, anchors: $menuAnchors,
+                          openSeasons: { openMenu(.seasons) },
+                          tabs: tabs, startTab: startTab, chapters: surface?.coreChapters,
+                          chapterPreview: { trickplay.image(at: $0, model: model, core: .some($1)) },
+                          jumpToChapter: { surface?.coreJump(toChapter: $0) },
+                          boxed: boxed,
+                          close: { boxed ? menu.close() : layerClose() }) { episode in
+                if boxed { menu.close() } else { layerClose() }
                 // Tapping the running episode means: keep watching.
                 guard episode.id != item.id else { return }
                 // In a group nobody switches alone: the choice sets the queue, and everyone loads the episode.
                 if inGroup { gemeinsam.bitTitle(episode.id); return }
                 toNextEpisode(episode, since: episode.resumeFrom ?? 0)
             }
-        }
     }
 
     /// Centered in the picture, not at the bottom edge, so the thumb is near in both orientations and the symbols do not sit in the subtitles.
@@ -1369,7 +1603,6 @@ struct PlayerScreen: View {
                 // `Theme.jerk` follows `motionReduced` itself.
                 Theme.jerk(.lightweight)
                 atPush = true
-                lastPushed = Date()
                 fadeOutMark += 1
                 surface?.scrubStart()
             } else {
@@ -1391,6 +1624,8 @@ struct PlayerScreen: View {
     /// "gobackward.10" -> ("gobackward", "10"), when our icons replace SF's.
     private static func skipParts(_ symbol: String) -> (base: String, seconds: String)? {
         let parts = symbol.split(separator: ".", maxSplits: 1).map(String.init)
+        // The 10 s icons have the number drawn in: no overlay.
+        if AppIcon.asset(for: symbol) != nil { return nil }
         guard parts.count == 2, ["gobackward", "goforward"].contains(parts[0]),
               Int(parts[1]) != nil, AppIcon.asset(for: parts[0]) != nil else { return nil }
         return (parts[0], parts[1])
@@ -1494,6 +1729,7 @@ struct PlayerScreen: View {
         case let .skip(to, _):
             // Medium, like releasing the scrubber: skipping a segment moves the film by minutes, not seconds.
             Theme.jerk(.medium)
+            AppLog.writeOut("[Angebot] Überspringen auf \(String(format: "%.1f", to)) von \(String(format: "%.1f", position)) · Auto-Überspringen \(autoSkip ? "an" : "aus")")
             // Like a manual seek: set the position, jump, and briefly keep the display from being overwritten.
             if inGroup { gemeinsam.bitJump(on: to) }
             else if surface?.coreDecides == true { surface?.corePressOffer() }
@@ -1506,6 +1742,19 @@ struct PlayerScreen: View {
             if surface?.coreDecides == true { surface?.corePressOffer(); pollCoreSwitch() }
             else if let nextEpisode { toNextEpisode(nextEpisode) }
         }
+    }
+
+    /// **The X on the skip button**: the offer goes away and nothing is skipped, not even by "Skip intro and outro
+    /// automatically" (`OfferingLayer.close` ends the countdown, `takeAutoSkip` answers no afterwards). The same step as
+    /// Back / the VoiceOver escape; the desktop pill's X does the same.
+    private func offeringDismiss() {
+        let share = layer.skipShare
+        let closed = layer.close()
+        if closed { surface?.coreDismissOffer() }
+        // A DEBUG/DEVLOG line, so a run can prove the X ended the countdown and no jump follows.
+        AppLog.writeOut("[Angebot] X: \(closed ? "abgebrochen" : "nichts zu schließen") · Auto-Überspringen \(autoSkip ? "an" : "aus")"
+            + " · Füllung \(share.map { String(format: "%.2f", $0) } ?? "-") · Position \(String(format: "%.1f", position))")
+        fillSet()
     }
 
     /// The core decided to switch (press, auto skip, card countdown out, end of file): the screen runs the switch.
@@ -1689,14 +1938,17 @@ struct PlayerScreen: View {
         let autoNext = autoSkip && SectionLogic.automatic(position: position, duration: duration,
                                                           sections: sections,
                                                           hasNextEpisode: nextEpisode != nil) != nil
-        let done = new.tick(offering: offering,
-                                cardDue: (model.nextAutomatic || autoNext) && SectionLogic.cardDue(position: position, duration: duration,
+        // **The core decides the card** (its offer is the card; the screen only draws it with its layer). The old
+        // rule below plays only when the old way plays (`coreOfferFeed` is `nil` then).
+        let fed = surface?.coreOfferFeed(base: offering, position: position, duration: duration)
+        let done = new.tick(offering: fed?.offering ?? offering,
+                                cardDue: fed?.cardDue ?? ((model.nextAutomatic || autoNext) && SectionLogic.cardDue(position: position, duration: duration,
                                                                            sections: sections,
                                                                            hasNextEpisode: nextEpisode != nil,
-                                                                           remainingWindow: EpisodeCard.remainingWindow),
-                                running: running && imageFree && !atPush,
+                                                                           remainingWindow: EpisodeCard.remainingWindow)),
+                                running: OfferingLayer.clocksRun(playing: running && imageFree && !atPush, menuOpen: menu.isOpen),
                                 elapsed: elapsed,
-                                countdown: SectionLogic.countdown(position: position, duration: duration,
+                                countdown: fed?.countdown ?? SectionLogic.countdown(position: position, duration: duration,
                                                                      sections: sections,
                                                                      remainingWindow: EpisodeCard.remainingWindow),
                                 // At the end of the file the countdown keeps running.
@@ -1716,8 +1968,14 @@ struct PlayerScreen: View {
     }
 
     private func fillSet() {
+        defer {
+            #if DEBUG
+            LiveRun.fillClockProbe = fillClock
+            LiveRun.countdownRunProbe = layer.countdownRun
+            #endif
+        }
         // The card's countdown, or the skip button's with automatic skipping.
-        fillClock.set(share: countdownShare ?? layer.skipShare, running: running && imageFree && !atPush,
+        fillClock.set(share: countdownShare ?? layer.skipShare, running: OfferingLayer.clocksRun(playing: running && imageFree && !atPush, menuOpen: menu.isOpen),
                              length: countdownShare != nil ? layer.countdownLength : OfferingLayer.buttonDuration)
     }
 
@@ -1808,6 +2066,8 @@ struct PlayerScreen: View {
                                                            seconds: since) },
                 failed: {
                     hint = String(localized: "Nächste Folge konnte nicht geladen werden.")
+                    // The core asked for this switch and stopped the old title: it puts it back at its position.
+                    surface?.coreSwitchFailed()
                     // The old episode keeps running, but the server already knows it as finished. The loop reports it anew.
                     startReported = false
                 }))
@@ -1903,6 +2163,9 @@ struct PlayerScreen: View {
                     if layer.close() { surface?.coreDismissOffer() }
                     fillSet()
                 })
+            // With a menu open the card (if it is up) steps back to 0.3 like the intro button; its countdown waits.
+            .opacity(menu.isOpen ? 0.3 : 1)
+            .animation(.timingCurve(0.23, 1, 0.32, 1, duration: 0.2), value: menu.isOpen)
             .allowsHitTesting(cardPresent && cardsSwitch == nil)
             .animation(cardPresent ? Self.spring(EpisodeCard.appearOmega)
                                 .delay(cardsSwitch == nil ? EpisodeCard.appearLag : 0)
@@ -1919,11 +2182,20 @@ struct PlayerScreen: View {
     /// here: before it the old picture still shows, with `play` the new one begins.
     /// The track choice for opening: same inputs as `wendeLanguagesAn`, only already
     /// before `play`, so VLC starts with the right track.
+    /// What another device ordered for this title, with the subtitle the search added on top (it names the one track to show).
+    private func orderedTracks(for title: Item) -> TrackIndices? {
+        var tracks = ordered?.itemID == title.id ? ordered?.tracks : nil
+        if let chosen = searchedSubtitle, chosen.itemID == title.id {
+            tracks = TrackIndices(audio: tracks?.audio, subtitle: chosen.index)
+        }
+        return tracks
+    }
+
     private func trackRequest(_ title: Item, _ plan: PlaybackPlan) -> VLCPlayerView.TrackRequest {
         VLCPlayerView.TrackRequest(audio: model.audioLanguage, subtitle: model.subtitleLanguage,
                                  automatic: model.subtitleAutomatic, source: plan.source,
                                  title: StartTracks.key(for: title, account: model.session?.storageAccount),
-                                 ordered: ordered?.itemID == title.id ? ordered?.tracks : nil,
+                                 ordered: orderedTracks(for: title),
                                  engine: model.engineRequest(for: title.id, plan: plan),
                                  coreStart: .init(item: title, plan: plan, model: model))
     }
@@ -2086,8 +2358,13 @@ struct PlayerScreen: View {
     private func sleepTimeSet(_ minutes: Int?) {
         sleepTask?.cancel()
         guard let minutes else { return }
+        sleepTimerStart(seconds: Double(minutes * 60))
+    }
+
+    private func sleepTimerStart(seconds: Double) {
+        sleepTask?.cancel()
         sleepTask = Task {
-            try? await Task.sleep(for: .seconds(minutes * 60))
+            try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }
             surface?.pause()
             running = false
@@ -2128,6 +2405,8 @@ struct PlayerScreen: View {
         while !Task.isCancelled {
             try? await Task.sleep(for: PlaybackTick.displayTick)
             guard let surface else { continue }
+            // A closed player reports nothing more (no Start after the Stop).
+            guard !surface.finallyStopped else { break }
             if sharedAn { bridgeCatchUp() }
 
             // **In between, only the time**: on the half-second tick it started late after
@@ -2165,11 +2444,9 @@ struct PlayerScreen: View {
                 continue
             }
 
-            // Safety: if scrubbing gets stuck anyway, reset itself after three seconds without movement.
-            if atPush, let recent = lastPushed,
-               Date().timeIntervalSince(recent) > 3 {
-                atPush = false
-            }
+            // No time limit on a scrub: a finger that rests keeps the bar for as long as it rests (a safety that let go after three
+            // seconds, counted from the grab, made the bar vanish under a resting finger). The slider reports a touch the system
+            // cancels itself (`touched` in `TimeSlider`), and that ends the scrub like a release.
 
             // Take over the view's state: it changes `position` while the finger is on the slider.
             state.position = position
@@ -2661,50 +2938,94 @@ private struct OfferingButton: View {
     /// Seconds until the switch, for VoiceOver.
     var rest: Int = 0
     let action: () -> Void
+    /// The X at the right end of the pill: closes the offer, skips nothing. Only the skip offers have it (the next-episode
+    /// button is the card's fallback and has its own way out).
+    var dismiss: (() -> Void)? = nil
+
+    /// The X has a 44 pt target (the pill itself is 40 pt high, so the target overlaps it by 2 pt above and below).
+    private static let xTarget: CGFloat = 44
+
+    private var hasX: Bool { dismiss != nil && offering != .nextEpisode }
+    /// Press feedback for the whole pill, whichever of its two buttons is down (two separate `PressButton`s would
+    /// each scale only their own half and leave the white shape standing).
+    @State private var pressed = false
+
+    /// Reports the press to the pill and draws nothing itself.
+    private struct Report: ButtonStyle {
+        let pressed: Binding<Bool>
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .onChange(of: configuration.isPressed) { _, down in pressed.wrappedValue = down }
+        }
+    }
 
     var body: some View {
         if offering.visible {
-            Button(action: action) {
-                // No server data is involved, but the label is built as a `String` in the
-                // package, hence `Text(verbatim:)` instead of `Label(_:)`, otherwise it would be
-                // looked up a second time.
-                // **White pill with the skip symbol** (triangle and bar), for both offers, as in
-                // the draft.
-                HStack(spacing: 8) {
-                    Image(icon: "forward.end.fill")
-                    Text(verbatim: offering.label)
+            HStack(spacing: 0) {
+                Button(action: action) {
+                    // No server data is involved, but the label is built as a `String` in the
+                    // package, hence `Text(verbatim:)` instead of `Label(_:)`, otherwise it would be
+                    // looked up a second time.
+                    // **White pill with the skip symbol** (triangle and bar), for both offers, as in
+                    // the draft.
+                    HStack(spacing: 8) {
+                        Image(icon: "forward.end.fill")
+                        Text(verbatim: offering.label)
+                    }
+                    // Before: 15 Bold. Bold appears exactly once, at the page title. The step below is 15 Semibold.
+                    .font(Theme.listTitle)
+                    .padding(.leading, 18)
+                    .padding(.trailing, hasX ? 6 : 18)
+                    .frame(height: 40)
+                    .contentShape(Rectangle())
                 }
-                // Before: 15 Bold. Bold appears exactly once, at the page title. The step below is 15 Semibold.
-                .font(Theme.listTitle)
-                .padding(.horizontal, 18)
-                .frame(height: 40)
-                .background {
-                    ZStack(alignment: .leading) {
-                        // The one filled surface in the picture is the main button, and its color is `font`. Before: raw `.white`.
-                        RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous).fill(Theme.font)
-                        if let fillContent {
-                            // **Continuous instead of on the tick**: updated on the half-second tick it
-                            // stuttered at the start and near the end. **Dark on white**, not in accent
-                            // color, which in the player belongs to the scrubber handle while seeking.
-                            TimelineView(.animation(minimumInterval: 1.0 / 30)) { time in
-                                GeometryReader { g in
-                                    Rectangle()
-                                        .fill(Self.dark.opacity(0.16))
-                                        .frame(width: g.size.width * fillContent.share(now: time.date))
-                                }
+                .buttonStyle(Report(pressed: $pressed))
+                .accessibilityLabel(Text(verbatim: offering.label))
+                .accessibilityValue(fillContent.map {
+                    _ in Text("Startet in \(rest) Sekunden")
+                } ?? Text(verbatim: ""))
+
+                if hasX, let dismiss {
+                    Button(action: dismiss) {
+                        Image(icon: "xmark", size: 11)
+                            .font(.app(size: 11, weight: .bold))
+                            .frame(width: 24, height: 24)
+                            .background(Circle().fill(Self.dark.opacity(0.10)))
+                            .frame(width: Self.xTarget, height: Self.xTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(Report(pressed: $pressed))
+                    .padding(.vertical, -(Self.xTarget - 40) / 2)
+                    .accessibilityLabel(Text("Nicht überspringen"))
+                }
+            }
+            .foregroundStyle(Self.dark)
+            .fixedSize()
+            .background {
+                ZStack(alignment: .leading) {
+                    // The one filled surface in the picture is the main button, and its color is `font`. Before: raw `.white`.
+                    RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous).fill(Theme.font)
+                    if let fillContent {
+                        // **On the display clock** (`.animation`, every frame the screen shows, 120 Hz on ProMotion),
+                        // not on the half-second tick and not on a 30 fps timer: both stuttered at the start and near the
+                        // end. **Dark on white**, not in accent color, which in the player belongs to the scrubber handle
+                        // while seeking. The fill lies behind the whole pill, X column included, and the clip below
+                        // gives it the pill's rounded corners.
+                        TimelineView(.animation) { time in
+                            GeometryReader { g in
+                                Rectangle()
+                                    .fill(Self.dark.opacity(0.16))
+                                    .frame(width: g.size.width * fillContent.share(now: time.date))
                             }
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
                 }
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerField, style: .continuous))
             }
-            .buttonStyle(Theme.PressButton())
-            .foregroundStyle(Self.dark)
-            .fixedSize()
-            .accessibilityLabel(Text(verbatim: offering.label))
-            .accessibilityValue(fillContent.map {
-                _ in Text("Startet in \(rest) Sekunden")
-            } ?? Text(verbatim: ""))
+            .scaleEffect(pressed && !Theme.motionReduced ? 0.97 : 1)
+            .opacity(pressed ? 0.85 : 1)
+            .animation(Theme.pressCurve(pressed), value: pressed)
         }
     }
 }
+

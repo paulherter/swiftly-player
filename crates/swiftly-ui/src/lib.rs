@@ -19,18 +19,13 @@ pub mod feel;
 pub mod field;
 pub mod focus;
 pub mod harness;
-mod icon_data;
-mod icon_data_audit;
-mod icon_data_forms;
-mod icon_data_keys;
 mod icon_data_kinds;
-mod icon_data_more;
-mod icon_data_phos;
-mod icon_data_rest;
+mod icon_data_lucide;
 pub mod icons;
 pub mod interact;
 pub mod nav;
 pub mod popover;
+pub mod reorder;
 pub mod scrollbar;
 pub mod shortcuts;
 mod tree;
@@ -40,7 +35,8 @@ pub mod view;
 
 pub use anim::{Animated, Ease, Motion};
 pub use cx::{
-    Cx, GpuVideo, ImageId, ImageSlot, ImageStore, TextSystem, VIDEO_MAX, VideoFrame, VideoHandoff,
+    Cx, GpuVideo, ImageId, ImageSlot, ImageStore, SharedFrame, TextSystem, VIDEO_MAX, VideoFrame,
+    VideoHandoff,
 };
 pub use env::{Env, Idiom, InputMode, Insets, SizeClass, classes};
 pub use focus::{

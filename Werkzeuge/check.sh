@@ -23,6 +23,46 @@ green=$'\033[32m'; red=$'\033[31m'; yellow=$'\033[33m'; reset=$'\033[0m'
 
 report() { printf '%-34s %s\n' "$1" "$2"; }
 
+# One picture view for every Apple platform: `Picture` and `BlurFill` live in `Sources/Shared/Picture.swift` only
+# (tvOS used to carry its own copy of `Picture`, so its detail pages never got the tile picture or the BlurHash).
+if copies=$(git grep -n -E "^(struct|final class|class) (Picture|BlurFill)\b" -- 'Sources/*.swift' ':!Sources/Shared/Picture.swift' 2>/dev/null | head -3) && [ -n "$copies" ]; then
+    report "Eine Picture-Ansicht" "${red}KOPIE GEFUNDEN${reset}"; echo "$copies" | cut -c1-120 | sed 's/^/      /'; error=1
+fi
+
+# Every TV text field is `TvField` (TvStyle.kt): it keeps the system keyboard closed until OK and lets the arrows leave the
+# field. A raw `BasicTextField` on a TV page opens the keyboard on focus, which then takes every D-pad key, so the remote
+# could not leave the field (address / e-mail / password). Only `TvField` itself and the PIN field (`TvPlexSignIn.kt`, whose
+# page is nothing but the keyboard) may use it.
+if rawFields=$(git grep -n "BasicTextField(" -- 'Android/phone/src/main/java/de/paulherter/swiftly/tv/*.kt' ':!Android/phone/src/main/java/de/paulherter/swiftly/tv/TvStyle.kt' ':!Android/phone/src/main/java/de/paulherter/swiftly/tv/TvPlexSignIn.kt' 2>/dev/null | head -3) && [ -n "$rawFields" ]; then
+    report "TV-Textfeld nur ueber TvField" "${red}BasicTextField GEFUNDEN${reset}"; echo "$rawFields" | cut -c1-140 | sed 's/^/      /'; error=1
+fi
+
+# **No focus ring on tvOS** (Paul, 17.11.): focus is lift + growth + the picture brightening (`View.pictureFocus`, TVComponents.swift),
+# never an outline that appears with focus. A stroke within six lines of `if focus` / `focus ? 1` / `on ? 1 : 0` is such a ring.
+if rings=$(python3 -I - <<'PY'
+import glob, re
+hit = re.compile(r"if\s+(focus|isFocused)\b|\b(focus|isFocused|on)\s*\?\s*1\s*:\s*0")
+for f in sorted(glob.glob("Sources/tvOS/*.swift")):
+    if f.endswith(("PlayerLayers.swift", "PlayerScreen.swift")): continue
+    lines = open(f).read().splitlines()
+    for i, l in enumerate(lines):
+        if re.search(r"\.strokeBorder\(|\.stroke\(|\.border\(", l) and any(hit.search(x) for x in lines[max(0, i - 6):i + 7]):
+            print(f"{f}:{i + 1}: {l.strip()[:90]}")
+PY
+) && [ -n "$rings" ]; then
+    report "tvOS ohne Fokusrand" "${red}FOKUS-RING GEFUNDEN${reset}"; echo "$rings" | sed 's/^/      /' | head -8; error=1
+else
+    report "tvOS ohne Fokusrand" "${green}ok${reset}"
+fi
+
+# The live harness' panel notification (`LiveRun.openLayer`: the chapters/menu scenarios) must be observed by every phone/TV player; tvOS did not
+# observe it and the chapter-list proof silently showed no list.
+for player in Sources/iOS/PlayerScreen.swift Sources/tvOS/PlayerScreen.swift; do
+    if ! grep -q "LiveRun.openLayer" "$player"; then
+        report "Live-Hook openLayer" "${red}fehlt in $player${reset}"; error=1
+    fi
+done
+
 # The repository is public: nothing that issues supporter keys or talks to the
 # shop may ever land in it (public verification key only).
 if leaked=$(git grep -n -I -E "sk_live|rk_live|whsec_|BEGIN ([A-Z]+ )?PRIVATE KEY|KASSE_SS2_SEED" -- . ':!Werkzeuge/check.sh' 2>/dev/null | head -3) && [ -n "$leaked" ]; then
@@ -34,6 +74,24 @@ if tvspec=$(Werkzeuge/gen-tv-spec.sh --check 2>&1); then
     report "TV-Maße" "${green}ok${reset}"
 else
     report "TV-Maße" "${red}weichen ab${reset}"; echo "$tvspec" | head -8 | sed 's/^/      /'; error=1
+fi
+# A closure kept inside a generic lock is re-wrapped in two reabstraction thunks on every `withLock`, so the call
+# chain grows by two frames per call and the main stack overflows after a few thousand calls (the build 48 crash,
+# `PlayerEngineDriver`). Keep closures in a main-actor class property, or in a final class that holds them.
+# Caught: the closure type in the generics (also over several lines) and a typealias of a closure type.
+if closures=$(git ls-files -z '*.swift' | xargs -0 perl Werkzeuge/lock-closures.pl 2>&1 | head -3) && [ -n "$closures" ]; then
+    report "Closure im generischen Lock" "${red}GEFUNDEN${reset}"; echo "$closures" | cut -c1-140 | sed 's/^/      /'; error=1
+fi
+# A closed player reports nothing more: a tick loop that runs one more tick after `VLCPlayerView.stop()` found no core
+# and sent a Start for the closed title. Each of the three screens' tick loops must end on `finallyStopped`, and the final
+# stop must tell the core first (`close()` before the engine goes).
+closeGuard=""
+for screen in Sources/iOS/PlayerScreen.swift Sources/macOS/PlayerScreen.swift Sources/tvOS/PlayerScreen.swift; do
+    grep -qE "guard !(surface|area)\.finallyStopped else \{ break \}" "$screen" || closeGuard="$closeGuard $screen"
+done
+grep -q "as? CorePlaybackBackend)?.close()" Sources/Shared/VLCPlayer.swift || closeGuard="$closeGuard Sources/Shared/VLCPlayer.swift"
+if [ -n "$closeGuard" ]; then
+    report "Start nach Stopp" "${red}Schutz fehlt:$closeGuard${reset}"; error=1
 fi
 echo "── Pakettests ─────────────────────────────────────────"
 # GitHub builds the package on Linux, where Apple-only modules do not exist.
@@ -55,6 +113,27 @@ if output=$(cd Packages/JellyfinKit && xcrun swift test 2>&1); then
 else
     report "JellyfinKit" "${red}FEHLGESCHLAGEN${reset}"
     echo "$output" | grep -E "error:|failed" | head -10
+    error=1
+fi
+
+# The committed Swift bindings (`Generated.swift`) must equal a fresh generation from the Rust exports. A merge once
+# left the regenerated file out: the Rust side had `SeerrEpisodeInfo`, the shared Swift views used it, and the tip did
+# not compile for Apple while every Rust gate was green. (The Kotlin bindings are not committed; Android generates them
+# at build time. `Tokens.swift` has its own `gen_tokens --check`, the TV measures their check above.)
+if bindings=$(CARGO_BUILD_JOBS=6 cargo run -q -p xtask -- apple --check-bindings 2>&1); then
+    report "Swift-Bindings" "${green}aktuell${reset}"
+else
+    report "Swift-Bindings" "${red}VERALTET${reset}"; echo "$bindings" | grep -E "stale|error" | head -3 | cut -c1-200 | sed 's/^/      /'; error=1
+fi
+# The core's Swift tests read the records generated from `crates/swiftly-uniffi` (`Generated.swift`). A record change
+# (`PlayButton.enabled` became `ready: PlayReadiness`) leaves them uncompilable, and no Rust gate builds Swift, so the
+# SwiftlyCore test target sat broken for a day. Compile and run it here: the macOS slice of the framework is enough.
+[ -d Packages/SwiftlyCore/SwiftlyCoreFFI.xcframework ] || Werkzeuge/rust-kern.sh --framework >/dev/null 2>&1
+if output=$(cd Packages/SwiftlyCore && xcrun swift test 2>&1); then
+    report "SwiftlyCore" "${green}$(echo "$output" | grep -oE 'Test run with [0-9]+ tests' | tail -1)${reset}"
+else
+    report "SwiftlyCore" "${red}FEHLGESCHLAGEN${reset}"
+    echo "$output" | grep -E "error:|recorded an issue" | sort -u | head -10 | cut -c1-200
     error=1
 fi
 
@@ -116,6 +195,16 @@ else
 fi
 
 echo
+echo "── Detailseiten-Waechter ──────────────────────────────"
+# Inside a detail page nothing animates in (chips, Play label, rails, images); only the page itself slides in.
+if python3 "$(dirname "$0")/detail-still-guard.py"; then
+    report "Detailseiten" "${green}nichts blendet ein${reset}"
+else
+    report "Detailseiten" "${red}Inhalt animiert ein${reset}"
+    error=1
+fi
+
+echo
 echo "── Liegt noch etwas auf einem Zweig? ──────────────────"
 # Remote branches too. linux and windows exist ONLY there; a loop over local
 # branches alone would skip both silently -- exactly the two platforms that
@@ -154,11 +243,17 @@ echo "── Katalog ───────────────────�
 python3 "$(dirname "$0")/catalog-check.py" || error=1
 echo
 
+echo "── Async-Exporte des Kerns ────────────────────────────"
+# An exported `async fn` without `async_runtime = "tokio"` runs outside the runtime: its tokio timers/sockets panic and the host sees a thrown error.
+python3 "$(dirname "$0")/uniffi-async-check.py" || error=1
+echo
+
 echo "── Gespeicherte Schluessel ────────────────────────────"
 # A renamed property renames its JSON key, a renamed enum case its raw value.
 # Nothing else notices: builds and tests stay green while devices lose their
 # stored data. See the script for what it compares.
 python3 "$(dirname "$0")/codable-keys-check.py" || error=1
+bash "$(dirname "$0")/page-arrival-check.sh" || error=1
 echo
 
 # **The license list has one source** (`LICENSES/components.json`); the readable
@@ -173,8 +268,13 @@ echo
 # no build fails because of it. Hence here, instead of only on the device.
 echo "── Android-Texte ──────────────────────────────────────"
 if [ -d Android/phone ]; then
-    absent=$(grep -rhoE 'uebersetzt\("[^"]+"' Android/phone/src/main/java Android/shared/src/main/java 2>/dev/null \
-        | sed 's/uebersetzt("//; s/"$//' | sort -u \
+    # The call is `translated("…")` (it was `uebersetzt(` once; grepping the old name matched nothing and the check
+    # passed on an empty list). All source sets count: main, tv, the direct flavor, shared. The thorough version
+    # (en + ru present, `if`/`when` branches inside the call) is the Rust guard
+    # `crates/swiftly-vm/tests/catalog_guard.rs`; this is the quick check for the key itself.
+    absent=$(grep -rhoE 'translated\("[^"]+"' --include='*.kt' --exclude-dir=build --exclude-dir=test \
+            Android/phone/src Android/shared/src 2>/dev/null \
+        | sed 's/translated("//; s/"$//' | sort -u \
         | while IFS= read -r k; do
             # Kotlin writes %d/%s, the catalog %lld/%@ -- texts-to-android.py
             # converts that when generating. Both spellings count.

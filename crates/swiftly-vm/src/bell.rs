@@ -17,6 +17,8 @@ pub mod part {
     pub const RAILS: u32 = 1;
     /// The status part.
     pub const STATUS: u32 = 2;
+    /// The hint part of the home page (a refused removal).
+    pub const NOTICE: u32 = 4;
     /// The grid part of a library view model (same bit as [`RAILS`]).
     pub const GRID: u32 = 1;
     /// The result groups of a search view model (same bit as [`RAILS`]).

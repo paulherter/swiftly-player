@@ -28,6 +28,9 @@ struct PresentationView: View {
 
     /// What the dragged row is currently hovering over; the line goes there.
     @State private var over: String?
+    /// The Seerr sections of the Startseite list: the same keys the core and the Start page read.
+    @AppStorage(SeerrArrival.hintKey) private var arrivalOn = true
+    @AppStorage(SeerrArrival.requestsKey) private var requestsOn = false
     /// Rows, titles, second lines and the genre form come from the Rust core; symbols, groups and
     /// the Mac wording (`SettingsWording`) stay here.
     private let feed = SettingsRowsFeed.shared
@@ -112,6 +115,8 @@ struct PresentationView: View {
 
     private var visibleRows: [String] {
         model.rowOrder.filter { id in
+            // The core lists the Seerr sections only while Seerr is connected; each has its own switch.
+            if id == HomeRowOrder.seerrArrival || id == HomeRowOrder.seerrRequests { return true }
             guard let rail = StartRail(rawValue: id) else { return true }
             return rail.fits(disconnected: model.newAccessDisconnected)
         }
@@ -169,6 +174,10 @@ struct PresentationView: View {
             GenreRow(name: entry?.name ?? "", symbol: entry?.collection == true ? "square.stack" : "rectangle.stack") {
                 withAnimation(Theme.reveal) { model.startLibraries.removeAll { $0.id == library } }
             }
+        } else if id == HomeRowOrder.seerrArrival {
+            ChoiceRow(symbol: "arrow.down.circle", title: Text("Anfrage ist da"), an: $arrivalOn)
+        } else if id == HomeRowOrder.seerrRequests {
+            ChoiceRow(symbol: "tray.and.arrow.down", title: Text("Meine Anfragen"), an: $requestsOn)
         } else if let rail = StartRail(rawValue: id) {
             ChoiceRow(symbol: rail.symbol, title: Text(rail.name),
                       an: Binding(get: { !model.startOut.contains(rail) },

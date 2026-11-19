@@ -13,7 +13,7 @@ use swiftly_support::support::{
 use swiftly_support::time::{Calendar, Timestamp};
 
 /// The page "Unterstützen" opens.
-pub const SUPPORTER_PAGE: &str = "https://swiftlyplayer.com/supporter";
+pub const SUPPORTER_PAGE: &str = crate::effects::SUPPORT_URL;
 
 /// The settings file as the core's store.
 #[derive(Clone)]

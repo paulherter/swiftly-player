@@ -216,6 +216,10 @@ let playerPrefs = PlayerPrefs(
         #expect(host.log.contains { $0.hasPrefix("start m1") })
         try model.send(
             .transferFinished(id: "m1", generation: generation, file: host.file("m1") ?? "m1.mkv", worked: true, realSize: 1000))
+        // The title counts as finished only after the host wrote its subtitle files and answered.
+        #expect(host.log.contains("subtitles m1"), "host log: \(host.log)")
+        #expect(model.list.rows.first?.state != .done)
+        try model.send(.subtitlesFetched(id: "m1", ok: true))
         #expect(await eventuallyOnMain { model.list.rows.first?.state == .done })
         // The list file reached the host's store.
         #expect(store.get(key: "downloads.list") != nil)

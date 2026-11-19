@@ -122,6 +122,44 @@ pub struct HomeState {
     loaded_server: bool,
     change: bool,
     pending: Option<Home>,
+    removals: Vec<Removal>,
+}
+
+/// Which rows a title was taken out of by [`HomeState::remove_from_continue`], with the place it had.
+#[derive(Debug, Clone)]
+struct Removal {
+    id: String,
+    /// The rows it left (continue watching, and next episode where the server drops it there too), with its place.
+    taken: Vec<Taken>,
+    /// `None`: the request is still out, every run that lands hides the title. `Some(n)`: the server said yes after
+    /// run `n` had started, so runs up to `n` (started before it knew) still hide the title and later ones show the truth.
+    confirmed_after: Option<u64>,
+}
+
+/// One row a removed title left, and where it sat in it.
+#[derive(Debug, Clone)]
+struct Taken {
+    row: RemovedFrom,
+    /// Its index in the row when it went (the fallback place when the title it followed is gone).
+    index: usize,
+    /// The title that preceded it in the row as the user saw it, counting the titles still waiting for the server's
+    /// answer (`None`: it was first). A refusal puts the title back right behind that one, so several refusals in any
+    /// order give back the order the row had, and a refresh that landed in between moves the place with the row.
+    anchor: Option<String>,
+    item: Item,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RemovedFrom {
+    Continue,
+    NextEpisode,
+}
+
+impl Removal {
+    /// Does a run numbered `run` still have to leave the title out?
+    fn hides_for(&self, run: u64) -> bool {
+        self.confirmed_after.is_none_or(|n| run <= n)
+    }
 }
 
 impl HomeState {
@@ -188,6 +226,182 @@ impl HomeState {
         self.failure = None;
         self.last_loaded = None;
         self.loaded_server = false;
+        self.removals.clear();
+    }
+
+    /// **Takes a title out of "Continue watching" at once**, before the server is asked (the one place of this
+    /// transition). With `also_next_episode` it leaves the next-episode row too (a server that drops it there as well,
+    /// like Plex's On Deck). Returns `false` when the title is not in the row (a second tap, a row that already moved
+    /// on): nothing changed and no request is due. Until [`HomeState::removal_confirmed`] or
+    /// [`HomeState::removal_failed`], every source of the rows (server run, stored preview) leaves the title out, so a
+    /// run that was already in flight cannot bring it back.
+    pub fn remove_from_continue(&mut self, id: &str, also_next_episode: bool) -> bool {
+        let Some(at) = self.continue_watching.iter().position(|i| i.id == id) else {
+            return false;
+        };
+        let anchor = self.anchor_before(RemovedFrom::Continue, at);
+        let mut taken = vec![Taken {
+            row: RemovedFrom::Continue,
+            index: at,
+            anchor,
+            item: self.continue_watching.remove(at),
+        }];
+        if also_next_episode && let Some(at) = self.next_episode.iter().position(|i| i.id == id) {
+            let anchor = self.anchor_before(RemovedFrom::NextEpisode, at);
+            taken.push(Taken {
+                row: RemovedFrom::NextEpisode,
+                index: at,
+                anchor,
+                item: self.next_episode.remove(at),
+            });
+        }
+        self.removals.push(Removal {
+            id: id.to_owned(),
+            taken,
+            confirmed_after: None,
+        });
+        true
+    }
+
+    /// The server refused: the title goes back behind the title it followed (see [`Taken::anchor`]), or at the place
+    /// it had, clamped to the row as it is now, when that title is gone. `false` when there was no such removal (the
+    /// account changed and the page was wiped, or it was already settled).
+    pub fn removal_failed(&mut self, id: &str) -> bool {
+        let Some(at) = self
+            .removals
+            .iter()
+            .position(|r| r.id == id && r.confirmed_after.is_none())
+        else {
+            return false;
+        };
+        let removal = self.removals.remove(at);
+        for taken in removal.taken {
+            let row = taken.row;
+            let list = match row {
+                RemovedFrom::Continue => &self.continue_watching,
+                RemovedFrom::NextEpisode => &self.next_episode,
+            };
+            if list.iter().any(|i| i.id == taken.item.id) {
+                continue;
+            }
+            let at = self.restore_place(row, list, &taken);
+            let list = match row {
+                RemovedFrom::Continue => &mut self.continue_watching,
+                RemovedFrom::NextEpisode => &mut self.next_episode,
+            };
+            list.insert(at, taken.item);
+        }
+        true
+    }
+
+    /// The title that precedes index `at` of `row` as the user saw it: the row's own neighbour, then on past every
+    /// title that is waiting for the server's answer right behind that neighbour (the row as it was before those
+    /// removals).
+    fn anchor_before(&self, row: RemovedFrom, at: usize) -> Option<String> {
+        let list = match row {
+            RemovedFrom::Continue => &self.continue_watching,
+            RemovedFrom::NextEpisode => &self.next_episode,
+        };
+        let mut anchor = at.checked_sub(1).map(|i| list[i].id.clone());
+        for _ in 0..=self.removals.len() {
+            let next = self
+                .pending_taken(row)
+                .find(|(_, t)| t.anchor == anchor)
+                .map(|(r, _)| r.id.clone());
+            match next {
+                Some(id) => anchor = Some(id),
+                None => break,
+            }
+        }
+        anchor
+    }
+
+    /// The removals of `row` that wait for the server's answer.
+    fn pending_taken(&self, row: RemovedFrom) -> impl Iterator<Item = (&Removal, &Taken)> {
+        self.removals
+            .iter()
+            .filter(|r| r.confirmed_after.is_none())
+            .filter_map(move |r| r.taken.iter().find(|t| t.row == row).map(|t| (r, t)))
+    }
+
+    /// Where a refused title goes back into `list`: right behind its anchor; when the anchor is itself still waiting
+    /// for its answer, behind the anchor's anchor; when the chain leaves the row, at the old index.
+    fn restore_place(&self, row: RemovedFrom, list: &[Item], taken: &Taken) -> usize {
+        let mut anchor = taken.anchor.clone();
+        for _ in 0..=self.removals.len() {
+            let Some(id) = anchor else {
+                return 0;
+            };
+            if let Some(at) = list.iter().position(|i| i.id == id) {
+                return at + 1;
+            }
+            match self.pending_taken(row).find(|(r, _)| r.id == id) {
+                Some((_, t)) => anchor = t.anchor.clone(),
+                None => break,
+            }
+        }
+        taken.index.min(list.len())
+    }
+
+    /// Whether a removal still waits for the server's answer (yes or refusal).
+    pub fn removal_pending(&self) -> bool {
+        self.removals.iter().any(|r| r.confirmed_after.is_none())
+    }
+
+    /// The server said yes. Runs that started before this moment may still carry the title and keep leaving it out;
+    /// the first run that starts afterwards shows what the server says.
+    pub fn removal_confirmed(&mut self, id: &str) {
+        let started = self.run;
+        if let Some(r) = self
+            .removals
+            .iter_mut()
+            .find(|r| r.id == id && r.confirmed_after.is_none())
+        {
+            r.confirmed_after = Some(started);
+        }
+    }
+
+    /// `list` without the titles the user took out of `row` that run `run` must still leave out. A title that is
+    /// dropped here replaces the copy kept for a rollback (the server's copy is the fresher one) and takes the place
+    /// the server's row gives it: behind its new neighbour, so a refusal later lands where the row has it now.
+    fn without_removed(&mut self, row: RemovedFrom, list: &[Item], run: u64) -> Vec<Item> {
+        if self.removals.is_empty() {
+            return list.to_vec();
+        }
+        // Which removal hides which title of `list` (a title that a settled removal hides cannot be an anchor).
+        let hidden: Vec<Option<usize>> = list
+            .iter()
+            .map(|item| {
+                self.removals.iter().position(|r| {
+                    r.hides_for(run) && r.id == item.id && r.taken.iter().any(|t| t.row == row)
+                })
+            })
+            .collect();
+        let mut kept = Vec::with_capacity(list.len());
+        for (at, item) in list.iter().enumerate() {
+            let Some(removal) = hidden[at] else {
+                kept.push(item.clone());
+                continue;
+            };
+            let anchor = (0..at).rev().find_map(|before| {
+                let settled =
+                    hidden[before].is_some_and(|r| self.removals[r].confirmed_after.is_some());
+                (!settled).then(|| list[before].id.clone())
+            });
+            let pending = self.removals[removal].confirmed_after.is_none();
+            if let Some(slot) = self.removals[removal]
+                .taken
+                .iter_mut()
+                .find(|t| t.row == row)
+            {
+                slot.item = item.clone();
+                if pending {
+                    slot.index = at;
+                    slot.anchor = anchor;
+                }
+            }
+        }
+        kept
     }
 
     /// Starts a run (`load`, :84-104). Empty immediately after an account switch; then asks for the
@@ -233,16 +447,18 @@ impl HomeState {
         let mut commands = Vec::new();
         if self.all_empty() {
             commands.push(HomeCommand::AdoptLibraries(store.libraries.clone()));
-            self.preview_show(store, prefs);
+            self.preview_show(store, prefs, run.run);
         }
         self.for_account = run.account;
         Step::Continue(commands)
     }
 
     /// `previewShow` (:241-261): only genres that are still chosen, in the chosen order.
-    fn preview_show(&mut self, store: &HomeStore, prefs: &HomePrefs) {
-        self.continue_watching = store.continue_watching.clone();
-        self.next_episode = store.next_episode.clone();
+    fn preview_show(&mut self, store: &HomeStore, prefs: &HomePrefs, run: u64) {
+        self.continue_watching =
+            self.without_removed(RemovedFrom::Continue, &store.continue_watching, run);
+        self.next_episode =
+            self.without_removed(RemovedFrom::NextEpisode, &store.next_episode, run);
         self.recent = if prefs.disconnected {
             Vec::new()
         } else {
@@ -352,8 +568,14 @@ impl HomeState {
                 None => alt.clone(),
             }
         };
-        self.continue_watching = adopt(&home.continue_watching, &self.continue_watching);
-        self.next_episode = adopt(&home.next_episode, &self.next_episode);
+        let continue_now = adopt(&home.continue_watching, &self.continue_watching);
+        let next_now = adopt(&home.next_episode, &self.next_episode);
+        // A title the user took out never comes back from a run that started before the server knew.
+        self.continue_watching =
+            self.without_removed(RemovedFrom::Continue, &continue_now, run.run);
+        self.next_episode = self.without_removed(RemovedFrom::NextEpisode, &next_now, run.run);
+        // A run that started after the confirmation has the server's truth: the filter is done.
+        self.removals.retain(|r| r.hides_for(run.run));
         if disconnected {
             self.recent = Vec::new();
             self.new_movies = adopt(&home.new_movies, &self.new_movies);
@@ -865,5 +1087,275 @@ mod tests {
             Fixed::Stop
         );
         assert!(!s.loaded && !s.disrupted);
+    }
+
+    /// A standing page whose continue row is a, b, c.
+    fn standing() -> HomeState {
+        let mut s = HomeState::new();
+        let h = home(
+            Some(vec![t("a"), t("b"), t("c")]),
+            Some(vec![t("n")]),
+            Some(vec![t("r")]),
+        );
+        first_run(&mut s, 0, h, 100.0);
+        s
+    }
+
+    /// A run that has started and not yet delivered its rows.
+    fn started(s: &mut HomeState) -> HomeRun {
+        let (run, _) = s.begin(0, Some("acc"));
+        assert!(matches!(
+            s.views_ready(run, 0, true, false),
+            Step::Continue(_)
+        ));
+        run
+    }
+
+    /// The server's rows reach the page (the end of a standing run).
+    fn lands(s: &mut HomeState, run: HomeRun, cw: &[&str]) {
+        let h = home(
+            Some(cw.iter().map(|id| t(id)).collect()),
+            Some(vec![t("n")]),
+            Some(vec![t("r")]),
+        );
+        assert_eq!(
+            s.fixed_rows_arrived(run, 0, false, false, h, 200.0),
+            Fixed::AwaitLater
+        );
+        s.genres_ready(run, 0, vec![], false);
+        s.libraries_ready(run, 0, vec![], true, &finish());
+    }
+
+    #[test]
+    fn a_removal_takes_the_title_out_at_once_and_a_refusal_puts_it_back_in_place() {
+        let mut s = standing();
+        assert!(s.remove_from_continue("b", false));
+        assert_eq!(ids(&s.continue_watching), ["a", "c"]);
+        assert!(s.removal_failed("b"));
+        assert_eq!(ids(&s.continue_watching), ["a", "b", "c"]);
+        // Nothing left to settle: a late second answer changes nothing.
+        assert!(!s.removal_failed("b"));
+        assert_eq!(ids(&s.continue_watching), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_removal_is_pending_until_the_server_answers() {
+        let mut s = standing();
+        assert!(!s.removal_pending());
+        assert!(s.remove_from_continue("b", false));
+        assert!(s.removal_pending());
+        s.removal_confirmed("b");
+        assert!(!s.removal_pending(), "answered yes");
+        assert!(s.remove_from_continue("c", false));
+        assert!(s.removal_pending());
+        assert!(s.removal_failed("c"));
+        assert!(!s.removal_pending(), "answered no");
+    }
+
+    #[test]
+    fn a_second_removal_of_the_same_title_does_nothing() {
+        let mut s = standing();
+        assert!(s.remove_from_continue("b", false));
+        assert!(!s.remove_from_continue("b", false), "no second request");
+        assert!(!s.remove_from_continue("zzz", false), "not in the row");
+        assert_eq!(ids(&s.continue_watching), ["a", "c"]);
+        // The refusal of the one request restores it exactly once.
+        assert!(s.removal_failed("b"));
+        assert_eq!(ids(&s.continue_watching), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_run_that_started_before_the_removal_cannot_bring_the_title_back() {
+        let mut s = standing();
+        let in_flight = started(&mut s);
+        assert!(s.remove_from_continue("b", false));
+        // The answer was fetched before the server knew: it still has b.
+        lands(&mut s, in_flight, &["a", "b", "c"]);
+        assert_eq!(ids(&s.continue_watching), ["a", "c"]);
+        // Confirmed: runs that started earlier still leave it out ...
+        let other = started(&mut s);
+        s.removal_confirmed("b");
+        lands(&mut s, other, &["a", "b", "c"]);
+        assert_eq!(ids(&s.continue_watching), ["a", "c"]);
+        // ... and the first run after the confirmation shows what the server says.
+        let after = started(&mut s);
+        lands(&mut s, after, &["a", "b", "c"]);
+        assert_eq!(ids(&s.continue_watching), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_refusal_after_a_refresh_landed_restores_the_fresh_copy_at_the_old_place() {
+        let mut s = standing();
+        let in_flight = started(&mut s);
+        assert!(s.remove_from_continue("c", false));
+        // The refresh lands with a new first title and a newer copy of c.
+        let mut newer = t("c");
+        newer.name = "c, newer".into();
+        let h = home(
+            Some(vec![t("new"), t("a"), newer]),
+            Some(vec![t("n")]),
+            Some(vec![t("r")]),
+        );
+        assert_eq!(
+            s.fixed_rows_arrived(in_flight, 0, false, false, h, 200.0),
+            Fixed::AwaitLater
+        );
+        s.genres_ready(in_flight, 0, vec![], false);
+        s.libraries_ready(in_flight, 0, vec![], true, &finish());
+        assert_eq!(ids(&s.continue_watching), ["new", "a"]);
+        assert!(s.removal_failed("c"));
+        assert_eq!(ids(&s.continue_watching), ["new", "a", "c"]);
+        assert_eq!(s.continue_watching[2].name, "c, newer");
+    }
+
+    /// A page that shows `a b c d` in "Continue watching".
+    fn standing_four() -> HomeState {
+        let mut s = HomeState::new();
+        let h = home(
+            Some(vec![t("a"), t("b"), t("c"), t("d")]),
+            Some(vec![t("n")]),
+            Some(vec![t("r")]),
+        );
+        first_run(&mut s, 0, h, 100.0);
+        s
+    }
+
+    #[test]
+    fn two_refused_removals_give_the_row_back_in_its_order_whichever_answer_comes_first() {
+        // b then c are taken out, both are refused: in either order of the refusals the row is whole again.
+        for refusals in [["b", "c"], ["c", "b"]] {
+            let mut s = standing_four();
+            assert!(s.remove_from_continue("b", false));
+            assert!(s.remove_from_continue("c", false));
+            assert_eq!(ids(&s.continue_watching), ["a", "d"]);
+            for id in refusals {
+                assert!(s.removal_failed(id));
+            }
+            assert_eq!(
+                ids(&s.continue_watching),
+                ["a", "b", "c", "d"],
+                "{refusals:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn three_refused_removals_in_a_row_come_back_in_order_in_every_sequence() {
+        let orders = [
+            ["b", "c", "d"],
+            ["b", "d", "c"],
+            ["c", "b", "d"],
+            ["c", "d", "b"],
+            ["d", "b", "c"],
+            ["d", "c", "b"],
+        ];
+        for refusals in orders {
+            // Taken out in two different orders: the way back must not depend on it.
+            for removal_order in [["b", "c", "d"], ["d", "c", "b"], ["c", "d", "b"]] {
+                let mut s = standing_four();
+                s.continue_watching.push(t("e"));
+                for id in removal_order {
+                    assert!(s.remove_from_continue(id, false));
+                }
+                assert_eq!(ids(&s.continue_watching), ["a", "e"]);
+                for id in refusals {
+                    assert!(s.removal_failed(id));
+                }
+                assert_eq!(
+                    ids(&s.continue_watching),
+                    ["a", "b", "c", "d", "e"],
+                    "taken {removal_order:?}, refused {refusals:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_confirmed_removal_does_not_hold_a_place_for_a_later_refusal() {
+        let mut s = standing_four();
+        assert!(s.remove_from_continue("b", false));
+        s.removal_confirmed("b");
+        assert!(s.remove_from_continue("c", false));
+        assert!(s.removal_failed("c"));
+        assert_eq!(ids(&s.continue_watching), ["a", "c", "d"]);
+    }
+
+    #[test]
+    fn a_refusal_after_a_refresh_put_a_new_title_in_front_keeps_the_place_in_the_new_row() {
+        // a was first; the refresh lands with a new title in front of it.
+        let mut s = standing();
+        let in_flight = started(&mut s);
+        assert!(s.remove_from_continue("a", false));
+        lands(&mut s, in_flight, &["n", "a", "b", "c"]);
+        assert_eq!(ids(&s.continue_watching), ["n", "b", "c"]);
+        assert!(s.removal_failed("a"));
+        assert_eq!(ids(&s.continue_watching), ["n", "a", "b", "c"]);
+    }
+
+    #[test]
+    fn two_refused_removals_after_a_refresh_follow_the_new_row() {
+        let mut s = standing();
+        let in_flight = started(&mut s);
+        assert!(s.remove_from_continue("a", false));
+        assert!(s.remove_from_continue("b", false));
+        lands(&mut s, in_flight, &["n", "a", "b", "c"]);
+        assert_eq!(ids(&s.continue_watching), ["n", "c"]);
+        assert!(s.removal_failed("b"));
+        assert!(s.removal_failed("a"));
+        assert_eq!(ids(&s.continue_watching), ["n", "a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_refusal_after_the_neighbour_left_the_row_goes_behind_the_new_neighbour() {
+        let mut s = standing_four();
+        let in_flight = started(&mut s);
+        assert!(s.remove_from_continue("c", false));
+        // The refresh no longer has b (it was finished elsewhere).
+        lands(&mut s, in_flight, &["a", "c", "d"]);
+        assert_eq!(ids(&s.continue_watching), ["a", "d"]);
+        assert!(s.removal_failed("c"));
+        assert_eq!(ids(&s.continue_watching), ["a", "c", "d"]);
+    }
+
+    #[test]
+    fn a_refusal_whose_neighbour_and_title_both_left_the_row_uses_the_old_index_clamped() {
+        let mut s = standing_four();
+        let in_flight = started(&mut s);
+        assert!(s.remove_from_continue("d", false));
+        // The refresh has neither c nor d any more: nothing to follow, the old index (3) is clamped to the row.
+        lands(&mut s, in_flight, &["a"]);
+        assert_eq!(ids(&s.continue_watching), ["a"]);
+        assert!(s.removal_failed("d"));
+        assert_eq!(ids(&s.continue_watching), ["a", "d"]);
+    }
+
+    #[test]
+    fn the_next_episode_row_loses_the_title_only_where_the_server_drops_it_there_too() {
+        let mut s = standing();
+        s.next_episode = vec![t("x"), t("b")];
+        assert!(s.remove_from_continue("b", false));
+        assert_eq!(ids(&s.next_episode), ["x", "b"]);
+        assert!(s.removal_failed("b"));
+        assert!(s.remove_from_continue("b", true));
+        assert_eq!(ids(&s.next_episode), ["x"]);
+        assert!(s.removal_failed("b"));
+        assert_eq!(ids(&s.next_episode), ["x", "b"]);
+    }
+
+    #[test]
+    fn an_emptied_row_is_empty_and_a_switch_of_account_forgets_the_removal() {
+        let mut s = HomeState::new();
+        first_run(
+            &mut s,
+            0,
+            home(Some(vec![t("a")]), Some(vec![]), Some(vec![t("r")])),
+            100.0,
+        );
+        assert!(s.remove_from_continue("a", false));
+        assert!(s.continue_watching.is_empty());
+        // A new account: the page is wiped, the old removal is no longer anyone's to settle.
+        let (_run, _) = s.begin(1, Some("other"));
+        assert!(!s.removal_failed("a"));
+        assert!(s.continue_watching.is_empty());
     }
 }

@@ -25,11 +25,11 @@ use swiftly_playback::playback_plan::PlaybackPlan;
 
 use crate::account::AccountRef;
 use crate::bell::{Bell, Changed, part};
-use crate::detail::{CastTile, PlayAction, play_action};
+use crate::detail::{CastTile, PlayAction, VersionOption, play_action};
 use crate::detail::{Server, clients, watcher_tile};
 use crate::detail_more::WatcherTile;
 use crate::detail_more::{
-    MenuEntry, MenuKind, ProofPart, TrailerCandidate, age_rating_text, rating_text,
+    MenuEntry, MenuKind, ProofPart, ProofPhase, TrailerCandidate, age_rating_text, rating_text,
     trailer_candidates,
 };
 use crate::home::Client;
@@ -39,9 +39,18 @@ use crate::parts::{ImageKind, ImageRef, Tile};
 use crate::plex::Plex;
 use crate::tile::Words;
 use crate::title_text::{
-    TitleText, header_image, logo_image, person_image, progress, resume_from, similar_cleaned,
-    without_double,
+    TitleText, header_blur_hash, header_image_waiting, logo_image, person_image, progress,
+    resume_from, similar_cleaned, still_blur_hash, without_double,
 };
+
+/// The TMDB id of an item (`ProviderIds.Tmdb`).
+pub fn tmdb_of(item: &Item) -> Option<i64> {
+    item.provider_ids
+        .as_ref()
+        .and_then(|m| m.get("Tmdb"))
+        .and_then(|t| t.trim().parse().ok())
+        .filter(|id| *id > 0)
+}
 
 /// How many episode rows the list grows by (`EpisodesSection.step`).
 pub const EPISODES_STEP: usize = 40;
@@ -71,6 +80,10 @@ pub struct SeasonRow {
     pub number: Option<i64>,
 }
 
+/// The season button always shows its chevron (see `SeasonsPart::chevron`); one value for the view model and the JSON
+/// answers the Android pages read.
+pub(crate) const SEASON_CHEVRON: bool = true;
+
 /// The season picker.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeasonsPart {
@@ -82,6 +95,18 @@ pub struct SeasonsPart {
     pub selected: Option<String>,
     /// The server did not answer and no seasons are known (retry offered).
     pub disturbed: bool,
+    /// How many seasons the page expects: the loaded list's length, and until it arrives the count the tile or the
+    /// stored copy carries. It decides the picker's chevron in frame 1, so the chevron stands from the first frame
+    /// instead of appearing with the season list.
+    pub expected: u32,
+    /// The number of seasons is not known yet: no list, no count from the tile or the stored copy, and the page still
+    /// loads. The host shows the picker's chevron anyway (most series have several seasons) with its width reserved,
+    /// and takes it away without moving anything when the answer says one season.
+    pub count_pending: bool,
+    /// The season button shows its chevron. **Always**: the button is always a menu (a one-season series can still
+    /// offer seasons to request, and every platform draws it the same), so the chevron stands from frame 1 and no
+    /// answer (list, count, Seerr) ever toggles it.
+    pub chevron: bool,
 }
 
 /// One episode row.
@@ -107,6 +132,8 @@ pub struct EpisodeRow {
     pub watched: bool,
     /// The still image.
     pub image: Option<ImageRef>,
+    /// The BlurHash of the still, painted in the row's final size until the still is there.
+    pub image_blur_hash: Option<String>,
 }
 
 /// Where the episode list stands.
@@ -161,6 +188,12 @@ pub struct SeriesButtonPart {
     pub image: Option<ImageRef>,
     /// The title as a logo.
     pub logo: Option<ImageRef>,
+    /// The BlurHash of the head image, for the blurred stand-in until the image itself is there.
+    pub image_blur_hash: Option<String>,
+    /// The pictures the tiles of this series showed so far (the landscape one first), for frame 1 of the page.
+    pub tile_images: Vec<ImageRef>,
+    /// Where the viewer is in the series could not be read: the button shows the last known state, the page offers a retry.
+    pub state_failed: bool,
     /// The description.
     pub overview: Option<String>,
     /// "Abspielen S1 · F3", "Fortsetzen S1 · F3", "Lädt…" or "Keine Folgen".
@@ -315,16 +348,38 @@ pub enum SeriesIntent {
     },
 }
 
+/// What a visit to the page learned of the series' structure, stored for the account so the next open shows the season
+/// picker, the resume episode and the episodes of the shown season in its first frame instead of loading them again.
+/// The fresh answer replaces it in the background; parts that come out equal are not redrawn.
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Shape {
+    pub(crate) seasons: Vec<Item>,
+    pub(crate) state: Option<Item>,
+    /// Season id and its episodes, for every season the page has seen.
+    pub(crate) episodes: Vec<(String, Vec<Item>)>,
+}
+
+/// The kind the shape is stored under.
+pub(crate) const SHAPE: &str = "series-shape";
+
 struct Live<T: HttpTransport + 'static> {
     switch: u64,
     client: Option<Arc<Client<T>>>,
     /// A Plex account: the page asks Plex for seasons, episodes and lists.
     plex: Option<Arc<Plex<T>>>,
     state: Option<Item>,
+    /// A press on the main button that came before the episode (or its versions) was known: the next publish that
+    /// can decide turns it into a [`SeriesEffect::Play`], once.
+    queued: bool,
     state_resolved: bool,
     seasons: Vec<Item>,
     seasons_disturbed: bool,
     selected: Option<Item>,
+    /// How often the viewer picked a season in this visit; zero: the season shown is the core's own choice (the seed's
+    /// or the resume rule's) and the fresh state may move it.
+    picks: u64,
+    /// The fresh playback state could not be read: the seed's state stays, the page says so.
+    state_failed: bool,
     episodes: Vec<Item>,
     episodes_disturbed: bool,
     episodes_loads: bool,
@@ -343,6 +398,10 @@ struct Live<T: HttpTransport + 'static> {
     /// The playback plan of the state episode (the proof row's, and the host's start).
     plan: Option<Arc<PlaybackPlan>>,
     plan_present: bool,
+    /// The proof line's answer of an earlier visit for the state episode, shown until the fresh plan answers.
+    mark: Option<crate::proof_mark::ProofMark>,
+    /// The series' own answer arrived (or failed): until then the head picture is only one the seed names.
+    item_answered: bool,
     options: SeriesOptions,
     effects: Vec<SeriesEffect>,
     effect_seq: u64,
@@ -408,8 +467,16 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
         account: Option<AccountRef>,
     ) -> Result<Self, ErrorKind> {
         let (client, plex) = clients(&transport, &host, account.as_ref())?;
+        // The page opens complete from what the list answer and an earlier visit stored (see `crate::seed`).
+        let scope = account.as_ref().map(crate::cache::ViewCache::scope);
+        let series = crate::seed::from_store(series, host.cache.as_ref(), scope.as_ref());
+        let shape: Option<Shape> = host
+            .cache
+            .as_ref()
+            .zip(scope.as_ref())
+            .and_then(|(cache, scope)| cache.read_json(scope, SHAPE, &series.id));
         let data = series.user_data.clone();
-        let live = Live {
+        let mut live = Live {
             switch: 1,
             client,
             plex,
@@ -418,6 +485,9 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
             seasons: Vec::new(),
             seasons_disturbed: false,
             selected: None,
+            picks: 0,
+            state_failed: false,
+            queued: false,
             episodes: Vec::new(),
             episodes_disturbed: false,
             episodes_loads: true,
@@ -425,12 +495,14 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
             cache: HashMap::new(),
             loads: true,
             fresh_year: None,
-            scope: account.as_ref().map(crate::cache::ViewCache::scope),
+            scope,
             fresh_facts: None,
             fresh: None,
             next_item: None,
             plan: None,
             plan_present: false,
+            mark: None,
+            item_answered: false,
             options: SeriesOptions::default(),
             effects: Vec::new(),
             effect_seq: 0,
@@ -448,6 +520,9 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
                 seasons: Vec::new(),
                 selected: None,
                 disturbed: false,
+                expected: u32::try_from(series.child_count.unwrap_or(0).max(0)).unwrap_or(0),
+                count_pending: series.child_count.unwrap_or(0) <= 0,
+                chevron: SEASON_CHEVRON,
             }),
             episodes_part: Arc::new(EpisodesPart {
                 version: 1,
@@ -463,6 +538,9 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
                 secondary_line: String::new(),
                 image: None,
                 logo: None,
+                image_blur_hash: None,
+                tile_images: Vec::new(),
+                state_failed: false,
                 overview: None,
                 label: String::new(),
                 label_ready: false,
@@ -476,6 +554,7 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
                 toggle_error: None,
                 message: None,
                 proof: ProofPart {
+                    phase: ProofPhase::Waiting,
                     visible: false,
                     direct_play: false,
                     hint: None,
@@ -494,6 +573,38 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
                 similar_failed: false,
             }),
         };
+        if let Some(shape) = shape {
+            // Seasons, the resume episode and the shown season's episodes stand in frame 1.
+            live.seasons = shape.seasons;
+            live.state = shape.state;
+            let mark = live
+                .state
+                .as_ref()
+                .zip(host.cache.as_ref().zip(live.scope.as_ref()))
+                .and_then(|(state, (cache, scope))| {
+                    crate::proof_mark::read(cache, scope, &state.id)
+                });
+            live.mark = mark;
+            live.state_resolved = true;
+            live.cache = shape.episodes.into_iter().collect();
+            live.selected = SeasonSelectionRule::choose(
+                &live.seasons,
+                spec.start_season_id.as_deref(),
+                spec.start_season_number,
+                live.state.as_ref(),
+            )
+            .cloned();
+            if let Some(list) = live
+                .selected
+                .as_ref()
+                .and_then(|season| live.cache.get(&season.id))
+                .cloned()
+            {
+                live.episodes = list;
+                live.episodes_loads = false;
+                live.loads = false;
+            }
+        }
         let inner = Arc::new(Inner {
             words: Words::new(host.locale.clone()),
             text: TitleText::new(host.locale.clone()),
@@ -586,12 +697,19 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
 
     /// What the main button does: the episode the server sees the viewer at, from its resume
     /// point. `Wait` while that episode is not known or its versions are not known yet.
+    ///
+    /// A press that gets `Wait` is held (one flag, no second start): the core sends it back as a
+    /// [`SeriesEffect::Play`] when the episode and its versions are known, so no host drops it or keeps its own.
     pub fn play_next(&self, pick: Option<&str>) -> PlayAction {
         let mut live = self.inner.live();
-        match live.state.clone() {
-            Some(episode) => Self::action(&self.inner, &mut live, &episode, pick),
+        let action = match live.state.clone() {
+            Some(episode) => Self::action(&live, &episode, pick),
             None => PlayAction::Wait,
+        };
+        if action == PlayAction::Wait && pick.is_none() {
+            live.queued = true;
         }
+        action
     }
 
     /// Stars and age rating of the series page, from the full series item (list entries often carry
@@ -622,6 +740,16 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
     /// answered or when there is none. Starting with it saves the request on press.
     pub fn plan(&self) -> Option<Arc<PlaybackPlan>> {
         self.inner.live().plan.clone()
+    }
+
+    /// The TMDB id of the series (the fresh item's, else the opened entry's): what Seerr needs for
+    /// season states, similar titles, problems and deleting.
+    pub fn tmdb_id(&self) -> Option<i64> {
+        let live = self.inner.live();
+        live.fresh
+            .as_ref()
+            .and_then(tmdb_of)
+            .or_else(|| tmdb_of(&self.inner.series))
     }
 
     /// The host's work queued since the last call.
@@ -694,14 +822,7 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
             }
         }
         push(&mut list, MenuKind::Shuffle, "Zufällig abspielen");
-        if let Some(season) = &live.selected {
-            list.push(MenuEntry {
-                kind: MenuKind::MarkSeasonWatched {
-                    name: season.name.clone(),
-                },
-                text: text.with("%@ als gesehen", &[Arg::Str(season.name.clone())]),
-            });
-        }
+        // No "<season> als gesehen" row: the Watched button on top of the page already does it.
         push(
             &mut list,
             MenuKind::RefreshMetadata,
@@ -712,30 +833,62 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
 
     /// What a tap on an episode row does.
     pub fn play_episode(&self, id: &str, pick: Option<&str>) -> PlayAction {
-        let mut live = self.inner.live();
+        let live = self.inner.live();
         match live.episodes.iter().find(|e| e.id == id).cloned() {
-            Some(episode) => Self::action(&self.inner, &mut live, &episode, pick),
+            Some(episode) => Self::action(&live, &episode, pick),
             None => PlayAction::Wait,
         }
     }
 
-    /// Several versions are asked for episodes too (#33): an episode known only from a list that
-    /// carries no `MediaSources` (the next-up entry) takes its sources from the episode list when that
-    /// has it; while the list still loads the button is gray (`Wait`), and only a failed list lets a
-    /// press resolve the episode (`Resolve`), as `DetailVm` does for a movie.
-    fn action(
-        inner: &Inner<T>,
-        live: &mut Live<T>,
-        episode: &Item,
-        pick: Option<&str>,
-    ) -> PlayAction {
-        let since = resume_from(episode).unwrap_or(0.0);
-        let full = live
-            .episodes
+    /// The versions of the main button's episode for the long press on it (see
+    /// [`crate::detail::DetailVm::versions`]): empty with one version or while its versions are not known.
+    pub fn versions_next(&self) -> Vec<VersionOption> {
+        let live = self.inner.live();
+        live.state
+            .as_ref()
+            .map(|episode| self.versions_for(&live, episode))
+            .unwrap_or_default()
+    }
+
+    /// The versions of one episode row, for the long press on it.
+    pub fn versions_of(&self, id: &str) -> Vec<VersionOption> {
+        let live = self.inner.live();
+        live.episodes
+            .iter()
+            .find(|e| e.id == id)
+            .map(|episode| self.versions_for(&live, episode))
+            .unwrap_or_default()
+    }
+
+    fn versions_for(&self, live: &Live<T>, episode: &Item) -> Vec<VersionOption> {
+        let full = Self::full_episode(live, episode);
+        VersionOption::list(
+            full.media_sources.as_deref().unwrap_or_default(),
+            &self.inner.words,
+            self.inner.text.locale().language(),
+            // Only the state episode has a plan; the other rows are marked by the sources' own rule.
+            live.plan
+                .as_deref()
+                .filter(|p| p.item_id.as_deref() == Some(episode.id.as_str()))
+                .and_then(|p| p.media_source_id.as_deref()),
+        )
+    }
+
+    /// The episode with its sources: a neighbour entry carries none, the episode list may.
+    fn full_episode<'a>(live: &'a Live<T>, episode: &'a Item) -> &'a Item {
+        live.episodes
             .iter()
             .find(|e| e.id == episode.id && e.media_sources.is_some())
             .unwrap_or(episode)
-            .clone();
+    }
+
+    /// An episode known only from a list that carries no `MediaSources` (the next-up entry) takes its
+    /// sources from the episode list when that has it; while the list still loads the button is gray
+    /// (`Wait`), and only a failed list lets a press resolve the episode (`Resolve`), as `DetailVm`
+    /// does for a movie.
+    fn action(live: &Live<T>, episode: &Item, pick: Option<&str>) -> PlayAction {
+        let since = resume_from(episode).unwrap_or(0.0);
+        let full = Self::full_episode(live, episode).clone();
         if let Some(source) = pick {
             return PlayAction::Start {
                 item_id: episode.id.clone(),
@@ -746,15 +899,10 @@ impl<T: HttpTransport + 'static> SeriesVm<T> {
         if full.media_sources.is_none() && live.episodes_loads {
             return PlayAction::Wait;
         }
-        // One rule for every press: several versions ask, one version starts. Nothing is remembered between
-        // presses (the player's own next episode keeps the version that plays, in the player).
-        play_action(
-            &full,
-            false,
-            since,
-            &inner.words,
-            inner.text.locale().language(),
-        )
+        // One rule for every press: it starts the default version (the others are `versions_next` and
+        // `versions_of`). Nothing is remembered between presses (the player's own next episode keeps the
+        // version that plays, in the player).
+        play_action(&full, false, since)
     }
 
     /// An intent from the view. Never blocks.
@@ -879,6 +1027,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
             remaining: self.text.remaining(episode),
             progress: progress(episode),
             watched: episode.is_watched(),
+            image_blur_hash: still_blur_hash(episode),
             image: addr.and_then(|a| {
                 // An episode row shows the episode's OWN picture (Swift: `imageURL(for: episode)`);
                 // the landscape chain would give the series backdrop for every row. Plex keeps the
@@ -916,6 +1065,17 @@ impl<T: HttpTransport + 'static> Inner<T> {
 
     /// Rebuilds the parts and moves the version for the ones that differ.
     fn publish(&self, live: &mut Live<T>, first: bool) {
+        // A press that waited for the episode starts it now, once (the host sees it as an effect).
+        if live.queued
+            && let Some(episode) = live.state.clone()
+        {
+            let action = SeriesVm::<T>::action(live, &episode, None);
+            if action != PlayAction::Wait {
+                live.queued = false;
+                live.effects.push(SeriesEffect::Play(action));
+                live.effect_seq += 1;
+            }
+        }
         let server = live.server();
         let addr = server.as_ref().and_then(Server::addresses);
         let seasons = SeasonsPart {
@@ -931,6 +1091,16 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 .collect(),
             selected: live.selected.as_ref().map(|s| s.id.clone()),
             disturbed: live.seasons_disturbed && live.seasons.is_empty(),
+            expected: if live.seasons.is_empty() {
+                u32::try_from(self.series.child_count.unwrap_or(0).max(0)).unwrap_or(0)
+            } else {
+                u32::try_from(live.seasons.len()).unwrap_or(u32::MAX)
+            },
+            count_pending: live.seasons.is_empty()
+                && self.series.child_count.unwrap_or(0) <= 0
+                && live.loads
+                && !live.seasons_disturbed,
+            chevron: SEASON_CHEVRON,
         };
         let load = Self::load_of(live);
         let status = match load {
@@ -954,16 +1124,33 @@ impl<T: HttpTransport + 'static> Inner<T> {
         };
         let loading_label = live.loads || !live.state_resolved;
         let state = live.state.as_ref();
+        let mark = live
+            .mark
+            .as_ref()
+            .filter(|m| state.is_some_and(|s| m.usable(&s.id, live.options.max_bitrate, None)));
+        let shown = crate::proof_mark::shown(live.plan.as_deref(), live.plan_present, mark);
         let rating = self.rating_of(live);
         let button = SeriesButtonPart {
             version: live.button.version,
             id: self.series.id.clone(),
             title: self.series.name.clone(),
             secondary_line: self.secondary_line(live),
-            image: addr
+            // The fresh title knows the head picture's marks (a list entry from a tile often does not), so the page
+            // asks for the picture its next visit will already find in the picture memory, not the poster of the tile.
+            image: addr.as_ref().and_then(|a| {
+                header_image_waiting(
+                    live.fresh.as_ref().unwrap_or(&self.series),
+                    state,
+                    a,
+                    live.item_answered,
+                )
+            }),
+            logo: addr
                 .as_ref()
-                .and_then(|a| header_image(&self.series, state, a)),
-            logo: addr.as_ref().and_then(|a| logo_image(&self.series, a)),
+                .and_then(|a| logo_image(live.fresh.as_ref().unwrap_or(&self.series), a)),
+            image_blur_hash: header_blur_hash(live.fresh.as_ref().unwrap_or(&self.series)),
+            tile_images: crate::seed::head_stand_ins(&self.series.id),
+            state_failed: live.state_failed,
             overview: self
                 .series
                 .overview
@@ -974,7 +1161,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
             label_ready: live.state_resolved && (state.is_some() || !live.loads),
             enabled: server.is_some() && !(state.is_none() && live.state_resolved && !live.loads),
             next_episode: state.map(|s| s.id.clone()),
-            remaining: state.and_then(|s| self.text.remaining(s)),
+            remaining: state.and_then(|s| self.text.resume_slot(s)),
             progress: state.and_then(progress),
             watched: live.watched,
             favorite: live.favorite,
@@ -984,13 +1171,15 @@ impl<T: HttpTransport + 'static> Inner<T> {
             toggle_error: live.toggle_error.clone(),
             message: live.message.clone(),
             proof: ProofPart {
-                visible: live.plan_present,
-                direct_play: live.plan.as_ref().is_some_and(|p| p.is_lossless()),
-                hint: live
-                    .plan
-                    .as_ref()
-                    .filter(|p| !p.is_lossless())
-                    .map(|p| p.method.raw_value().to_owned()),
+                // The answer of an earlier visit stands in for the plan from frame 1.
+                phase: if live.plan_present || mark.is_some() {
+                    ProofPhase::Settled
+                } else {
+                    ProofPhase::Waiting
+                },
+                visible: live.plan_present || mark.is_some(),
+                direct_play: shown.0,
+                hint: shown.1,
                 rating: rating.community_rating.map(rating_text),
                 age_rating: age_rating_text(&self.text, rating.age_rating),
             },
@@ -1114,7 +1303,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
         self.host.spawner.spawn(Box::pin(async move {
             let id = inner.series.id.clone();
             let (state, seasons, fresh) = join3(
-                c.state_in_series(&id),
+                c.state_in_series_checked(&id),
                 async {
                     if post {
                         None
@@ -1125,30 +1314,46 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 c.item(&id),
             )
             .await;
-            let (seasons_now, seasons_failed) = {
+            let (seasons_now, seasons_failed, state_now, state_failed, kept, picks) = {
                 let live = inner.live();
                 if live.switch != switch {
                     return;
                 }
-                match seasons {
+                let (seasons_now, seasons_failed) = match seasons {
                     Some(Some(list)) => (list, false),
                     Some(None) => (live.seasons.clone(), true),
                     None => (live.seasons.clone(), live.seasons_disturbed),
-                }
+                };
+                // A failed answer is no answer: the seed's state stays (it would read as "no episodes" otherwise).
+                let (state_now, state_failed) = match state {
+                    Ok(state) => (state, false),
+                    Err(_) => (live.state.clone(), true),
+                };
+                // The season the viewer picked in this visit, or the one a refresh after playback shows, stays while
+                // it exists. Otherwise (the seed's season included) the resume rule picks from the fresh facts, so
+                // progress made on another device and a deleted season are followed.
+                let kept = (post || live.picks > 0)
+                    .then(|| live.selected.clone())
+                    .flatten()
+                    .filter(|s| seasons_now.iter().any(|n| n.id == s.id));
+                (
+                    seasons_now,
+                    seasons_failed,
+                    state_now,
+                    state_failed,
+                    kept,
+                    live.picks,
+                )
             };
-            // On a refresh the choice already made stays.
-            let choice = {
-                let live = inner.live();
-                live.selected.clone().or_else(|| {
-                    SeasonSelectionRule::choose(
-                        &seasons_now,
-                        inner.spec.start_season_id.as_deref(),
-                        inner.spec.start_season_number,
-                        state.as_ref(),
-                    )
-                    .cloned()
-                })
-            };
+            let choice = kept.or_else(|| {
+                SeasonSelectionRule::choose(
+                    &seasons_now,
+                    inner.spec.start_season_id.as_deref(),
+                    inner.spec.start_season_number,
+                    state_now.as_ref(),
+                )
+                .cloned()
+            });
             let fetched = c
                 .episodes(&id, choice.as_ref().map(|s| s.id.as_str()))
                 .await
@@ -1158,18 +1363,30 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 if live.switch != switch {
                     return;
                 }
-                live.state = state;
+                live.state = state_now;
+                live.state_failed = state_failed;
                 live.seasons_disturbed = seasons_failed;
                 live.seasons = seasons_now;
                 live.state_resolved = true;
                 // Someone who picked a season meanwhile keeps that list.
-                if live.selected.is_none()
-                    || live.selected.as_ref().map(|s| &s.id) == choice.as_ref().map(|s| &s.id)
-                {
+                if live.picks == picks {
+                    let moved =
+                        live.selected.as_ref().map(|s| &s.id) != choice.as_ref().map(|s| &s.id);
+                    if moved {
+                        // The seed's season was not the one to show: its rows go, the new season's remembered rows
+                        // (or nothing until they arrive) take their place.
+                        live.episodes = choice
+                            .as_ref()
+                            .and_then(|s| live.cache.get(&s.id))
+                            .cloned()
+                            .unwrap_or_default();
+                        live.shown = EPISODES_STEP;
+                    }
                     live.selected = choice;
                     Self::accept(&mut live, fetched);
                 }
                 live.loads = false;
+                live.item_answered = true;
                 // No state episode, no plan: the proof row shows at once, without the badge.
                 if live.state.is_none() {
                     live.plan = None;
@@ -1191,6 +1408,12 @@ impl<T: HttpTransport + 'static> Inner<T> {
                     live.watched = data.as_ref().and_then(|d| d.played).unwrap_or(false);
                 }
                 inner.publish(&mut live, false);
+                // A failed state answer is never stored: the next visit's first frame must not be built from it.
+                if let Some((cache, _, ticket)) = &remembered
+                    && !live.state_failed
+                {
+                    cache.write_json(ticket, SHAPE, &inner.series.id, &Self::shape_of(&live));
+                }
                 // The plan of the state episode runs after the page is shown (`fetchPlan`); the row
                 // fades in once it answered, with or without a result.
                 live.state
@@ -1207,6 +1430,13 @@ impl<T: HttpTransport + 'static> Inner<T> {
             }
             live.plan = planned.map(Arc::new);
             live.plan_present = true;
+            if let (Some((cache, scope)), Some(plan)) = (
+                inner.host.cache.as_ref().zip(live.scope.as_ref()),
+                live.plan.as_deref(),
+            ) {
+                let ticket = cache.ticket(scope);
+                crate::proof_mark::write(cache, &ticket, &episode, bitrate, plan, String::new());
+            }
             inner.publish(&mut live, false);
         }));
         if !post {
@@ -1244,6 +1474,19 @@ impl<T: HttpTransport + 'static> Inner<T> {
         }
     }
 
+    /// What the page knows of the series' structure, for the next visit's first frame.
+    fn shape_of(live: &Live<T>) -> Shape {
+        Shape {
+            seasons: live.seasons.clone(),
+            state: live.state.clone(),
+            episodes: live
+                .cache
+                .iter()
+                .map(|(id, list)| (id.clone(), list.clone()))
+                .collect(),
+        }
+    }
+
     /// `episodesAccept`: a failure keeps the list; only an empty page shows it.
     fn accept(live: &mut Live<T>, fetched: Option<Vec<Item>>) {
         live.episodes_loads = false;
@@ -1267,6 +1510,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
         live.episodes_loads = remembered.is_none();
         live.episodes = remembered.unwrap_or_default();
         live.selected = Some(season);
+        live.picks += 1;
         live.shown = EPISODES_STEP;
         live.episodes_disturbed = false;
         self.publish(&mut live, false);
@@ -1283,6 +1527,15 @@ impl<T: HttpTransport + 'static> Inner<T> {
         };
         let switch = live.switch;
         let of = live.selected.as_ref().map(|s| s.id.clone());
+        let remembered = self
+            .host
+            .cache
+            .clone()
+            .zip(live.scope.clone())
+            .map(|(cache, scope)| {
+                let ticket = cache.ticket(&scope);
+                (cache, ticket)
+            });
         drop(live);
         let inner = Arc::clone(self);
         self.host.spawner.spawn(Box::pin(async move {
@@ -1293,6 +1546,9 @@ impl<T: HttpTransport + 'static> Inner<T> {
             }
             Self::accept(&mut live, fetched);
             inner.publish(&mut live, false);
+            if let Some((cache, ticket)) = &remembered {
+                cache.write_json(ticket, SHAPE, &inner.series.id, &Self::shape_of(&live));
+            }
         }));
     }
 
@@ -1421,7 +1677,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 let mut live = self.live();
                 let action = match live.state.clone() {
                     Some(episode) => {
-                        let action = SeriesVm::<T>::action(self, &mut live, &episode, None);
+                        let action = SeriesVm::<T>::action(&live, &episode, None);
                         if kind == MenuKind::Play {
                             action
                         } else {
@@ -1472,13 +1728,7 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 .iter()
                 .find(|e| e.id == next.id && e.media_sources.is_some())
                 .unwrap_or(&next);
-            let action = crate::detail::play_action(
-                full,
-                false,
-                0.0,
-                &inner.words,
-                inner.text.locale().language(),
-            );
+            let action = crate::detail::play_action(full, false, 0.0);
             live.next_item = Some(next);
             inner.queue(&mut live, SeriesEffect::Play(action));
         }));
@@ -1584,10 +1834,13 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 .and_then(|a| clients(&self.transport, &self.host, Some(a)).ok())
                 .unwrap_or((None, None));
             live.state = None;
+            live.queued = false;
             live.state_resolved = false;
             live.seasons.clear();
             live.seasons_disturbed = false;
             live.selected = None;
+            live.picks = 0;
+            live.state_failed = false;
             live.episodes.clear();
             live.episodes_disturbed = false;
             live.episodes_loads = true;
@@ -1595,9 +1848,11 @@ impl<T: HttpTransport + 'static> Inner<T> {
             live.cache.clear();
             live.loads = true;
             live.fresh = None;
+            live.item_answered = false;
             live.next_item = None;
             live.plan = None;
             live.plan_present = false;
+            live.mark = None;
             live.effects.clear();
             live.toggle_error = None;
             live.message = None;
@@ -1615,16 +1870,116 @@ impl<T: HttpTransport + 'static> Inner<T> {
     }
 }
 
+/// Series warmed at once from one list answer.
+const WARM_LIMIT: usize = 6;
+
+/// Series being warmed right now, `account scope|series id`, so a second list answer does not ask twice.
+fn warming() -> &'static Mutex<std::collections::HashSet<String>> {
+    static SET: std::sync::OnceLock<Mutex<std::collections::HashSet<String>>> =
+        std::sync::OnceLock::new();
+    SET.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
+}
+
+/// Asks what a series page asks first (its seasons, where the viewer is, the episodes of the season it opens on) for the
+/// series among `items` that have no stored shape yet, and stores the answer as the shape. A page of a series nobody
+/// opened before then stands complete in frame 1 (season picker, resume episode, episode rows), like a second visit.
+/// Called with the titles a list on screen shows (the Home rows); at most [`WARM_LIMIT`] per call, never one already
+/// stored or on its way, and a visit that stored its own shape meanwhile is not overwritten.
+pub(crate) fn warm<T: HttpTransport + 'static>(
+    transport: &Arc<T>,
+    host: &Host,
+    account: &AccountRef,
+    items: &[Item],
+) {
+    let mut seen = std::collections::HashSet::new();
+    let ids: Vec<String> = items
+        .iter()
+        .filter(|i| i.type_.as_deref() == Some("Series") && seen.insert(i.id.clone()))
+        .map(|i| i.id.clone())
+        .collect();
+    warm_ids(transport, host, account, &ids);
+}
+
+/// [`warm`] for series known by id: the series of a tile that is being pressed (a series tile itself, or an episode
+/// tile, which names its series), so the page that opens a moment later finds its seasons and episodes stored. Ids
+/// that are stored or already on their way are skipped, so pressing a warmed tile costs nothing.
+pub fn warm_ids<T: HttpTransport + 'static>(
+    transport: &Arc<T>,
+    host: &Host,
+    account: &AccountRef,
+    ids: &[String],
+) {
+    let Some(cache) = host.cache.clone() else {
+        return;
+    };
+    let scope = crate::cache::ViewCache::scope(account);
+    let Ok((jelly, plex)) = clients(transport, host, Some(account)) else {
+        return;
+    };
+    let Some(server) = plex.map(Server::Plex).or_else(|| jelly.map(Server::Jelly)) else {
+        return;
+    };
+    let wanted: Vec<String> = ids
+        .iter()
+        .filter(|id| !id.is_empty() && cache.read_json::<Shape>(&scope, SHAPE, id).is_none())
+        .take(WARM_LIMIT)
+        .cloned()
+        .collect();
+    for id in wanted {
+        let key = format!("{}|{id}", scope.0);
+        if !warming()
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.clone())
+        {
+            continue;
+        }
+        let (cache, scope, server) = (cache.clone(), scope.clone(), server.clone());
+        host.spawner.spawn(Box::pin(async move {
+            let ticket = cache.ticket(&scope);
+            let (state, seasons) = futures_util::future::join(
+                server.state_in_series_checked(&id),
+                server.seasons(&id),
+            )
+            .await;
+            if let (Ok(state), Ok(seasons)) = (state, seasons) {
+                let choice =
+                    SeasonSelectionRule::choose(&seasons, None, None, state.as_ref()).cloned();
+                if let Ok(episodes) = server
+                    .episodes(&id, choice.as_ref().map(|s| s.id.as_str()))
+                    .await
+                    && cache.read_json::<Shape>(&scope, SHAPE, &id).is_none()
+                {
+                    let shape = Shape {
+                        seasons,
+                        state,
+                        episodes: choice.map(|s| (s.id, episodes)).into_iter().collect(),
+                    };
+                    cache.write_json(&ticket, SHAPE, &id, &shape);
+                    // The proof line of the episode the page will offer, so the first open has it too.
+                    if let Some(state) = &shape.state {
+                        crate::proof_mark::remember(
+                            &server,
+                            &cache,
+                            &ticket,
+                            &state.id,
+                            crate::detail::DetailOptions::default().max_bitrate,
+                        )
+                        .await;
+                    }
+                }
+            }
+            warming()
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&key);
+        }));
+    }
+}
+
 /// The same action, from the beginning.
 fn from_start(action: PlayAction) -> PlayAction {
     match action {
-        PlayAction::Choose {
-            item_id, versions, ..
-        } => PlayAction::Choose {
-            item_id,
-            since: 0.0,
-            versions,
-        },
         PlayAction::Start {
             item_id, source_id, ..
         } => PlayAction::Start {
@@ -1637,5 +1992,25 @@ fn from_start(action: PlayAction) -> PlayAction {
             since: 0.0,
         },
         PlayAction::Wait => PlayAction::Wait,
+    }
+}
+
+#[cfg(test)]
+mod tmdb_tests {
+    use super::*;
+
+    #[test]
+    fn the_tmdb_id_comes_from_the_provider_ids() {
+        let item: Item = serde_json::from_str(
+            r#"{"Id":"rs1","Name":"K","ProviderIds":{"Tmdb":"7777","Imdb":"tt1"}}"#,
+        )
+        .expect("item");
+        assert_eq!(tmdb_of(&item), Some(7777));
+        let none: Item = serde_json::from_str(r#"{"Id":"x","Name":"X"}"#).expect("item");
+        assert_eq!(tmdb_of(&none), None);
+        let bad: Item =
+            serde_json::from_str(r#"{"Id":"x","Name":"X","ProviderIds":{"Tmdb":"abc"}}"#)
+                .expect("item");
+        assert_eq!(tmdb_of(&bad), None);
     }
 }

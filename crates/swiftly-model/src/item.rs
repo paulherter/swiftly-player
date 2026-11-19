@@ -82,6 +82,13 @@ pub struct Item {
         skip_serializing_if = "Option::is_none"
     )]
     pub child_count: Option<i64>,
+    /// Episodes under a series, all seasons together (Jellyfin `RecursiveItemCount`); only present when the server sent it.
+    #[serde(
+        default,
+        deserialize_with = "crate::lenient::whole_number",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub recursive_item_count: Option<i64>,
     /// Trailers stored as a file on the server.
     #[serde(
         default,
@@ -113,6 +120,10 @@ pub struct Item {
     /// Image type to tag.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_tags: Option<HashMap<String, String>>,
+    /// BlurHash of each picture: image type, then image tag, then the hash (`ImageBlurHashes`). A page paints the blurred
+    /// stand-in of a picture from it before the picture itself has arrived.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_blur_hashes: Option<HashMap<String, HashMap<String, String>>>,
     /// Per-user state.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_data: Option<UserItemData>,
@@ -268,10 +279,16 @@ impl Item {
         }
     }
 
-    /// A series the server still lists but that has no seasons left (its files were deleted).
-    /// Only a stated count of 0 counts: a missing count means "not asked", never "empty".
+    /// A series the server still lists but that has no seasons or no episodes left (its files were deleted, or the
+    /// series manager added it before any file arrived), or that is only a placeholder without a file
+    /// (`LocationType: Virtual`). Only a stated count of 0 counts: a missing count means "not asked", never "empty".
+    /// `RecursiveItemCount` is Jellyfin's episode count (Plex: `leafCount`); the server leaves placeholder episodes
+    /// ("missing") out of it unless the user asked to see them.
     pub fn is_hollow_series(&self) -> bool {
-        self.type_.as_deref() == Some("Series") && self.child_count == Some(0)
+        self.type_.as_deref() == Some("Series")
+            && (self.child_count == Some(0)
+                || self.recursive_item_count == Some(0)
+                || self.location_type.as_deref() == Some("Virtual"))
     }
 
     /// "S1 • F3 • 21 Jump Street"; for a film the year (Models.swift:310),

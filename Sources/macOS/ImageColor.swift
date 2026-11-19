@@ -35,6 +35,9 @@ final class ImageColor {
             Self.audioValues(from: data)
         }.value
         guard let values = computed else { return }
+        // The tint colours a screen-tall gradient: it lands once the page has stopped sliding (`InTravel`).
+        await InTravel.waitFor()
+        guard !Task.isCancelled else { return }
         // Darken and desaturate: the tint should color the base tone, not replace it.
         //
         // **The tint is never lighter than `Theme.area`.** At 26 % it was lighter than

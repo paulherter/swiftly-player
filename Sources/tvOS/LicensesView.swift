@@ -57,7 +57,6 @@ struct TVLicensesView: View {
                 .font(Theme.titleLarge)
                 .foregroundStyle(Theme.font)
                 .padding(.leading, 26)
-                .padding(.bottom, 24)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if let inventory {
@@ -74,6 +73,8 @@ struct TVLicensesView: View {
             }
             .scrollIndicators(.hidden)
             .scrollClipDisabled()
+            // The list starts below the title and fades out in that strip, so a scrolled row never runs over it.
+            .fadesUnderHeader(24)
         }
     }
 

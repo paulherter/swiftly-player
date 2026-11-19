@@ -153,18 +153,25 @@ struct FilmView: View {
                     // they come after the header in the stack, so they draw later and on top of it.
                     .zIndex(1)
 
-                // Everything below the header appears at once, as on iPhone (`bottomPresent` in
-                // `BrowseViews.swift`). Extras, similar titles and the collection row used to fade
-                // in separately and each pushed the rest down. Now the page waits for all of them
-                // and fades them in together, with no placeholder or empty hint while loading.
-                if bottom?.ready == true {
-                    VStack(alignment: .leading, spacing: 26) {
-                        // The description is in the header, as on Apple TV; showing it here would
-                        // duplicate it.
+                // As on iPhone (`bottomPresent` in `BrowseViews.swift`): the cast (from the seed) and the viewers stand
+                // in frame 1, as the real row or as a placeholder of final height, in place; extras, similar titles
+                // and the collection rows arrive together once everything is known.
+                VStack(alignment: .leading, spacing: 26) {
+                    let ready = bottom?.ready == true
+                    // The description is in the header, as on Apple TV; showing it here would duplicate it.
+                    if bottom?.cast.isEmpty == false || ready {
+                        CastRail(model: model, folks: (bottom?.cast ?? []).map(Person.init(core:)),
+                                 origin: film.name)
+                    } else if bottom?.castPending == true {
+                        RowSlot(title: "Besetzung", size: 84, labelHeight: 44)
+                    }
+                    if !ready && bottom?.watchersPending == true {
+                        RowSlot(title: "Gesehen von", size: 60, labelHeight: 0)
+                    } else {
                         WatchersRow(model: model, item: film,
                                     fromCore: (bottom?.watchers ?? []).map(Watcher.init(core:)))
-                        CastRail(model: model, folks: (bottom?.cast ?? []).map(Person.init(core:)),
-                                        origin: film.name)
+                    }
+                    if ready {
                         // Extras and similar titles. Order as on iOS.
                         TitleRail(title: "Extras", entries: (bottom?.extras ?? []).map(Item.init(rust:)), model: model,
                                   play: true, looks: looks)
@@ -181,10 +188,9 @@ struct FilmView: View {
                             FileRow(source: source)
                         }
                     }
-                    .padding(.horizontal, DetailPageMetric.left)
-                    .padding(.top, 36)
-                    .transition(.opacity)
                 }
+                .padding(.horizontal, DetailPageMetric.left)
+                .padding(.top, 36)
             }
             .padding(.bottom, 40)
             // The header image color under the page, as on iPhone (`MoodReason`): the same
@@ -255,7 +261,7 @@ struct FilmView: View {
 ///
 /// The mood is a background of the scroll content, so when the page is pulled past the top
 /// it moves down with the content and the plain page colour shows above it as a hard line.
-/// The hero image avoids that by scaling up from its bottom edge (`DetailHero`, `pull`).
+/// The hero image avoids that by scaling up from its bottom edge (`detailHeadFrame`).
 /// This does the same: it scales around the hero's bottom line by the same factor, so its
 /// top stays glued to the image top. Only this small view observes the offset.
 struct StretchedMood: View {
@@ -354,29 +360,23 @@ struct DetailHero: View {
     /// More button next to it.
     var selectionOpen: Bool = false
 
-    /// How far the content was pulled past the top edge.
-    ///
-    /// Pulling further up than there is content makes the offset negative. All content
-    /// then moves down by that amount, which opens the gap the header image has to
-    /// fill.
-    ///
-    /// Capped: it must stop growing at some point. Up to 200 pt it follows, beyond that
-    /// it stays. Nobody pulls that far by accident, and the scroll view's spring is
-    /// already taut there.
-    private var pull: CGFloat { min(max(0, -state.offset), 200) }
-
     /// The title's own plan, if the core holds one (the download sheet reads its source and audio streams).
     private var plan: PlaybackPlan? { film?.plan(app: model) }
     @State private var moreOpen = false
+    @State private var versionListOpen = false
+    /// What Seerr adds to the More list ("Problem melden", "Vom Server löschen") and the two window sheets behind it.
+    @State private var seerrMenu = SeerrTitleMenu()
+    @Environment(Navigator.self) private var navigator
+    @Environment(\.section) private var pageSection
+    /// Only the page in front answers the menu bar; the ones beneath it stay quiet.
+    @Environment(\.pageOnTop) private var pageOnTop
     @State private var loadPanelOpen = false
     @State private var message: String?
-    @State private var overviewOpen = false
     /// Film and series both show the description under the buttons (the series page had none).
     var showsOverview: Bool = true
     /// The movie page's data owner (`DetailCore`): when set, label, chips, toggles, menu and what a press on
     /// Play does come from the core.
     var film: DetailCore? = nil
-    @State private var versionPick: VersionPick?
     @State private var resolving = false
     private var actions: ActionsPart? { film?.model.actions }
     private var favoriteNow: Bool { actions?.favorite ?? seriesButton?.favorite ?? false }
@@ -428,27 +428,13 @@ struct DetailHero: View {
         // row below. Rows now stack with the gaps from the design, and the one thing that must
         // not move (the chips row, which fills in late) keeps a fixed height instead.
         block
-            .padding(.leading, DetailPageMetric.left)
-            .padding(.top, DetailPageMetric.top)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            // **The image is a background, so it takes no room.** It is 402 high plus the 52
-            // of the title bar and fades out on its own mask (bottom and left); the content
-            // flows over it and sets the header's height.
-            .background(alignment: .top) {
-                // On the right, not full width, as on Apple TV. Always some image, never none:
-                // `headerImageURL` falls back to the next episode's still for a series without
-                // a backdrop, and to the poster for everything else.
+            .detailHeadFrame(state: state) {
                 Backdrop(url: model.landscapeImageURL(for: title, width: 1600)
                              ?? model.headerImageURL(for: title),
-                         height: DetailPageMetric.heroImage)
-                    // Anchor at the bottom edge, not the top.
-                    //
-                    // The content moves down when overscrolling. If the image grew top to
-                    // bottom, its top edge would move with it and the gap above would stay as a
-                    // hard edge. Anchored at the bottom it grows upward by exactly the amount the
-                    // content moved down. The scale factor is computed against the full image
-                    // height so it does not grow by a multiple of what is needed.
-                    .scaleEffect(1 + pull / DetailPageMetric.heroImage, anchor: .bottom)
+                         height: DetailPageMetric.heroImage,
+                         blur: film?.model.hero.imageBlurHash ?? seriesButton?.imageBlurHash,
+                         stand: (film?.model.hero.tileImages ?? seriesButton?.tileImages ?? [])
+                             .compactMap { URL(string: $0.address) })
             }
         .onChange(of: actions?.effectSeq) { _, _ in drain() }
         .onChange(of: actions?.message) { _, new in if let new { notify(new) } }
@@ -456,42 +442,16 @@ struct DetailHero: View {
         .onChange(of: seriesButton?.effectSeq) { _, _ in drainSeries() }
         .onChange(of: seriesButton?.message) { _, new in if let new { notify(new) } }
         .onChange(of: seriesButton?.toggleError) { _, new in if let new { notify(new) } }
-        .versionPick($versionPick) { choice, version in
-            if let seriesPage {
-                seriesPage.launch(seriesPage.episodeAction(choice.itemId, pick: version.id), since: choice.since,
-                                  controls: controls) { versionPick = $0 }
-                return
-            }
-            launch(film?.pressPlay(pick: version.id), since: choice.since, picked: version.id)
-        }
     }
 
     /// Title, details, chips, buttons, progress, description. No logo image: the title
     /// is text in the design font, 44 heavy, so every page has the same head.
     private var block: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(verbatim: title.name)
-                .font(.app(size: 44, weight: .heavy))
-                .tracking(-1.2)
-                .foregroundStyle(Theme.font)
-                // A long title shrinks instead of wrapping into the meta line.
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-                .frame(height: 44, alignment: .leading)
-
-            Text(verbatim: detailsRow)
-                .font(.app(size: 14))
-                // A full value: opacity would change its effect over the hero image.
-                .foregroundStyle(Theme.fontQuiet)
-                .lineLimit(1)
-                .padding(.top, 12)
-
+        DetailHeadBlock(title: title.name, details: detailsRow) {
             chipRail
-                .padding(.top, 14)
-
+        } buttons: {
             buttonRail
-                .padding(.top, 20)
-
+        } below: {
             if let share = progressShare, let rest = actions?.play.remaining ?? seriesButton?.remaining {
                 VStack(alignment: .leading, spacing: 6) {
                     ZStack(alignment: .leading) {
@@ -509,7 +469,6 @@ struct DetailHero: View {
 
             if showsOverview { overview.padding(.top, 36) }
         }
-        .frame(width: 700, alignment: .topLeading)
     }
 
     /// How far into the film: the server's percentage, else computed from the resume point.
@@ -520,46 +479,10 @@ struct DetailHero: View {
         return nil
     }
 
-    /// The description at 620 wide, 14 quiet, two lines with an accent "Mehr" inline; one tap
-    /// opens it in full. The cut is by characters because a button cannot sit inside running
-    /// text, and a 620 pt line holds about 85 characters at this size.
     private var overview: some View {
         // A series: the core's description of the series (not the episode the button plays).
-        let text = film?.model.hero.overview ?? seriesButton?.overview ?? title.description ?? ""
-        let directors = film?.model.hero.directors ?? title.direction
-        let cut = 150
-        let long = text.count > cut + 20
-        return VStack(alignment: .leading, spacing: 8) {
-            if !text.isEmpty {
-                Group {
-                    if long && !overviewOpen {
-                        let head = String(text.prefix(cut))
-                        let clean = head.lastIndex(of: " ").map { String(head[..<$0]) } ?? head
-                        Text(verbatim: clean + "… ")
-                            .foregroundStyle(Theme.fontQuiet)
-                        + Text("Mehr").foregroundStyle(Theme.accent).fontWeight(.semibold)
-                    } else {
-                        Text(verbatim: text).foregroundStyle(Theme.fontQuiet)
-                    }
-                }
-                .font(.app(size: 14))
-                // 1.55 line height: Inter's own is about 1.21 at this size.
-                .lineSpacing(4.5)
-                .multilineTextAlignment(.leading)
-                .frame(width: 620, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture { if long { withAnimation(Theme.leap) { overviewOpen.toggle() } } }
-                .accessibilityAddTraits(long ? .isButton : [])
-            }
-            if !directors.isEmpty {
-                HStack(spacing: 8) {
-                    Text("Regie").foregroundStyle(Theme.fontVeryQuiet)
-                    Text(verbatim: directors.joined(separator: ", ")).foregroundStyle(Theme.font)
-                }
-                .font(.app(size: 13))
-                .lineLimit(1)
-            }
-        }
+        DetailOverview(text: film?.model.hero.overview ?? seriesButton?.overview ?? title.description ?? "",
+                       directors: film?.model.hero.directors ?? title.direction)
     }
 
     /// Meta line: year, runtime, genres. A series has no runtime but a season count, so
@@ -576,25 +499,28 @@ struct DetailHero: View {
             // The evidence is the one chip in accent: quiet surface, accent text. The warning
             // keeps its own color when the server transcodes.
             if let proof = actions?.proof ?? seriesButton?.proof {
-                // The core's proof row: the Direct Play mark only once the plan is there (`visible`).
-                if proof.visible, proof.directPlay {
-                    chip(symbol: "checkmark", text: String(localized: "Direct Play"),
-                         color: Theme.accent, fill: Theme.accentQuiet)
-                        .transition(.opacity)
-                } else if proof.visible, let hint = proof.hint {
-                    chip(symbol: "exclamationmark.triangle.fill", text: hint,
-                         color: Theme.warning, fill: Theme.warning.opacity(0.15))
-                        .transition(.opacity)
-                }
+                // Stars and age rating come with the tile and the stored copy: real chips in frame 1, in their final
+                // place. The playback mark comes with the plan and stands last (its width is the only unknown): a
+                // skeleton of its size until the core says the row is final (`phase`), then the real mark in the same
+                // frame, in place. No fade, no slide, nothing next to it moves.
                 if let rating = proof.rating {
                     chip(symbol: "star.fill", text: rating, color: Theme.font, fill: Color.white.opacity(0.08))
                 }
                 if let age = proof.ageRating {
                     chip(symbol: nil, text: ageText(age), color: Theme.font, fill: Color.white.opacity(0.08))
                 }
+                if proof.phase != .settled {
+                    LoadField(corner: 13).frame(width: 104, height: 26)
+                } else if proof.visible, proof.directPlay {
+                    chip(symbol: "checkmark", text: String(localized: "Direct Play"),
+                         color: Theme.accent, fill: Theme.accentQuiet)
+                } else if proof.visible, let hint = proof.hint {
+                    chip(symbol: "exclamationmark.triangle.fill", text: hint,
+                         color: Theme.warning, fill: Theme.warning.opacity(0.15))
+                }
             }
         }
-        .animation(Theme.reveal, value: (actions?.proof ?? seriesButton?.proof)?.visible == true)
+        .transaction { $0.animation = nil }
         .frame(height: 26, alignment: .leading)
     }
 
@@ -605,17 +531,7 @@ struct DetailHero: View {
     }
 
     private func chip(symbol: String?, text: String, color: Color, fill: Color) -> some View {
-        HStack(spacing: 5) {
-            if let symbol {
-                Image(icon: symbol, size: 12).font(.app(size: 12, weight: .semibold))
-                    .accessibilityHidden(true)
-            }
-            Text(verbatim: text).font(.app(size: 12, weight: .semibold))
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 9)
-        .frame(height: 26)
-        .background(fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        DetailChip(symbol: symbol, text: text, color: color, fill: fill)
     }
 
     /// The label of the main button. A series continues with the episode the server names
@@ -634,11 +550,12 @@ struct DetailHero: View {
             DetailPlayButton(label: playLabel) {
                 if let film { launch(film.pressPlay(), since: nil, picked: nil) }
                 else if let seriesPage {
-                    seriesPage.launch(seriesPage.model.playNext(), controls: controls) { versionPick = $0 }
+                    seriesPage.launch(seriesPage.model.playNext(), controls: controls)
                 }
             }
-                // Right click: the title's tile menu, as on its tile.
-                .tileMenu(title, model: model)
+                // Right click: the versions, nothing else, the default checked; a click starts the default.
+                // One version (or none known): no menu.
+                .versionMenu(versionList) { pickVersion($0) }
             Color.clear.frame(width: 8, height: 1)
 
             if watchlistShown {
@@ -709,13 +626,63 @@ struct DetailHero: View {
             Spacer(minLength: 0)
         }
         .frame(height: DetailPageMetric.buttonHeight, alignment: .leading)
+        // **The keyboard route to the right-click list.** The menu bar's "Fassung wählen…" (Option-Return)
+        // opens the same versions as a dialog; a pick runs the same `pickVersion`. Only the page in front
+        // answers, and it tells the menu bar whether there is anything to choose (`VersionCommand`).
+        .focusedSceneValue(\.versionsOffered, pageOnTop ? !versionList.isEmpty : nil)
+        .onReceive(NotificationCenter.default.publisher(for: CommandPost.moreName)) { post in
+            guard CommandPost.receiveMore(post) == .pickVersion,
+                  VersionCommand.isEnabled(offered: pageOnTop && !versionList.isEmpty, playerOpen: controls.wish != nil)
+            else { return }
+            versionListOpen = true
+        }
+        .background {
+            SeerrTitleMenuSheets(menu: seerrMenu, model: model) { navigator.back(in: pageSection) }
+        }
+        #if DEBUG
+        // Proof only: `-SwiftlyProofMore` opens the More list, `-SwiftlyProofReport` / `-SwiftlyProofDelete` start the flow
+        // the matching row starts (the same `SeerrTitleMenu.start`).
+        .task {
+            let args = ProcessInfo.processInfo.arguments
+            guard args.contains("-SwiftlyProofMore") || args.contains("-SwiftlyProofReport") || args.contains("-SwiftlyProofDelete") else { return }
+            try? await Task.sleep(for: .seconds(5))
+            if args.contains("-SwiftlyProofMore") { withAnimation(Theme.leap) { moreOpen = true } }
+            if args.contains("-SwiftlyProofReport") { await seerrMenu.start(.reportProblem, model: model, item: seriesPage?.next ?? title, seconds: nil) }
+            if args.contains("-SwiftlyProofDelete") { await seerrMenu.start(.deleteFromServer, model: model, item: seriesPage?.next ?? title, seconds: nil) }
+        }
+        #endif
+        .onChange(of: seerrMenu.message) { _, text in
+            guard let text else { return }
+            notify(text)
+            seerrMenu.message = nil
+        }
+        .confirmationDialog("Fassung wählen", isPresented: $versionListOpen, titleVisibility: .visible) {
+            ForEach(versionList, id: \.id) { version in
+                Button(version.isDefault ? "\u{2713} \(version.label)" : version.label) { pickVersion(version) }
+            }
+        }
+    }
+
+    /// The versions the core offers for Play: the list of the right-click menu and of the dialog. Empty
+    /// without a choice (one version, a copy on the device, versions not known yet).
+    private var versionList: [SwiftlyCore.VersionOption] {
+        film?.versions() ?? seriesPage?.model.versionsNext() ?? []
+    }
+
+    /// Start the picked version; the one action behind both the right-click list and the dialog.
+    private func pickVersion(_ version: SwiftlyCore.VersionOption) {
+        if let film {
+            launch(film.pressPlay(pick: version.id), since: nil, picked: version.id)
+        } else if let seriesPage {
+            seriesPage.launch(seriesPage.model.playNext(pick: version.id), controls: controls)
+        }
     }
 
     /// The More list: the core names the entries, the host runs what only it can.
     private var moreActions: [TitleAction] {
-        if let film { return coreMenu(film) }
-        if let seriesPage { return seriesMenu(seriesPage) }
-        return []
+        let core: [TitleAction]
+        if let film { core = coreMenu(film) } else if let seriesPage { core = seriesMenu(seriesPage) } else { core = [] }
+        return core + seerrMenu.actions(model: model, item: seriesPage?.next ?? title)
     }
 
     // MARK: The movie page on the core
@@ -772,7 +739,7 @@ struct DetailHero: View {
         for effect in page.model.takeEffects() {
             switch effect {
             case .play(let action):
-                page.launch(action, controls: controls) { versionPick = $0 }
+                page.launch(action, controls: controls)
             case .playTrailer(let id):
                 controls.launch(Item(id: id, name: title.name), since: 0)
             case .openWeb(let address):
@@ -851,9 +818,6 @@ struct DetailHero: View {
         switch action {
         case .wait:
             return
-        case .choose(_, let at, let versions):
-            versionPick = VersionPick(
-                heading: film.model.actions.play.versionTitle, options: versions, since: since ?? at)
         case .resolve(_, let at):
             // The fresh title never came: fetch it once more and decide again; say so if that fails too.
             guard !resolving else { return }
@@ -886,6 +850,27 @@ struct DetailHero: View {
 // `Description` was a text block nobody called. The description has been in the
 // header since the rework, as on Apple TV; the component was left over and still
 // read on every change.
+
+/// A rail of its final height (title, round pictures, name lines) while the core has not answered with its rows: the
+/// real row replaces it in place and nothing above or below moves.
+struct RowSlot: View {
+    let title: LocalizedStringKey
+    let size: CGFloat
+    let labelHeight: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            RailTitle(text: title)
+            HStack(alignment: .top, spacing: 22) {
+                ForEach(0..<6, id: \.self) { _ in
+                    Circle().fill(Theme.raised).frame(width: size, height: size)
+                }
+            }
+            .frame(height: size + labelHeight, alignment: .top)
+        }
+        .accessibilityHidden(true)
+    }
+}
 
 struct CastRail: View {
     @Environment(Navigator.self) private var navigator
@@ -1011,15 +996,16 @@ enum DetailPageMetric {
 }
 
 /// The white main button: 280 x 56, radius 10, 17 semibold, play icon 18.
-fileprivate struct DetailPlayButton: View {
+struct DetailPlayButton: View {
     let label: String
+    var symbol = "play.fill"
     let action: () -> Void
     @State private var hovers = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(icon: "play.fill", size: 18).font(.app(size: 18))
+                Image(icon: symbol, size: 18).font(.app(size: 18))
                     .accessibilityHidden(true)
                 Text(verbatim: label).font(.app(size: 17, weight: .semibold))
             }
@@ -1055,5 +1041,125 @@ fileprivate struct DetailIconButton: View {
         .onHover { hovers = $0 }
         .help(Text(title))
         .accessibilityLabel(Text(title))
+    }
+}
+
+/// The head every detail page shares (library film, series, Seerr title): title 44 heavy, the details line, a chip row
+/// of fixed height, the button row, then whatever stands below the buttons. Rows stack with the design's gaps in a
+/// normal flow, so a long title or a late line never overlaps the row beneath.
+struct DetailHeadBlock<Chips: View, Buttons: View, Below: View>: View {
+    let title: String
+    let details: String
+    @ViewBuilder var chips: Chips
+    @ViewBuilder var buttons: Buttons
+    @ViewBuilder var below: Below
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(verbatim: title)
+                .font(.app(size: 44, weight: .heavy))
+                .tracking(-1.2)
+                .foregroundStyle(Theme.font)
+                // A long title shrinks instead of wrapping into the meta line.
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .frame(height: 44, alignment: .leading)
+
+            Text(verbatim: details)
+                .font(.app(size: 14))
+                // A full value: opacity would change its effect over the hero image.
+                .foregroundStyle(Theme.fontQuiet)
+                .lineLimit(1)
+                .padding(.top, 12)
+
+            chips.padding(.top, 14)
+            buttons.padding(.top, 20)
+            below
+        }
+        .frame(width: 700, alignment: .topLeading)
+    }
+}
+
+extension View {
+    /// Places a `DetailHeadBlock` in the hero: the left edge and top of the design, the backdrop as a background (it
+    /// takes no room, the content sets the head's height) and pulled along when the page is pulled past the top.
+    func detailHeadFrame<Image: View>(state: HeaderState, @ViewBuilder image: () -> Image) -> some View {
+        let pull = min(max(0, -state.offset), 200)
+        return self
+            .padding(.leading, DetailPageMetric.left)
+            .padding(.top, DetailPageMetric.top)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(alignment: .top) {
+                image()
+                    // Anchored at the bottom edge: it grows upward by exactly what the content moved down.
+                    .scaleEffect(1 + pull / DetailPageMetric.heroImage, anchor: .bottom)
+            }
+    }
+}
+
+/// A 26 high chip of the head (rating, age, status).
+struct DetailChip: View {
+    let symbol: String?
+    let text: String
+    let color: Color
+    let fill: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if let symbol {
+                Image(icon: symbol, size: 12).font(.app(size: 12, weight: .semibold))
+                    .accessibilityHidden(true)
+            }
+            Text(verbatim: text).font(.app(size: 12, weight: .semibold))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 9)
+        .frame(height: 26)
+        .background(fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+/// The description under the buttons at 620 wide, 14 quiet, two lines with an accent "Mehr" inline; one tap
+/// opens it in full. The cut is by characters because a button cannot sit inside running text, and a 620 pt
+/// line holds about 85 characters at this size. Then the directors, when there are any.
+struct DetailOverview: View {
+    let text: String
+    var directors: [String] = []
+    @State private var open = false
+
+    var body: some View {
+        let cut = 150
+        let long = text.count > cut + 20
+        VStack(alignment: .leading, spacing: 8) {
+            if !text.isEmpty {
+                Group {
+                    if long && !open {
+                        let head = String(text.prefix(cut))
+                        let clean = head.lastIndex(of: " ").map { String(head[..<$0]) } ?? head
+                        Text(verbatim: clean + "… ")
+                            .foregroundStyle(Theme.fontQuiet)
+                        + Text("Mehr").foregroundStyle(Theme.accent).fontWeight(.semibold)
+                    } else {
+                        Text(verbatim: text).foregroundStyle(Theme.fontQuiet)
+                    }
+                }
+                .font(.app(size: 14))
+                // 1.55 line height: Inter's own is about 1.21 at this size.
+                .lineSpacing(4.5)
+                .multilineTextAlignment(.leading)
+                .frame(width: 620, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { if long { withAnimation(Theme.leap) { open.toggle() } } }
+                .accessibilityAddTraits(long ? .isButton : [])
+            }
+            if !directors.isEmpty {
+                HStack(spacing: 8) {
+                    Text("Regie").foregroundStyle(Theme.fontVeryQuiet)
+                    Text(verbatim: directors.joined(separator: ", ")).foregroundStyle(Theme.font)
+                }
+                .font(.app(size: 13))
+                .lineLimit(1)
+            }
+        }
     }
 }

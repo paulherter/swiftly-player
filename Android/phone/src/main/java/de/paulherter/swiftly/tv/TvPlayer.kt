@@ -1,5 +1,11 @@
 package de.paulherter.swiftly.tv
 
+import de.paulherter.swiftly.rustcore.host.CoreWords
+import de.paulherter.swiftly.rustcore.SubtitleSearchIntent
+import de.paulherter.swiftly.rustcore.SubtitleSearchPhase
+import de.paulherter.swiftly.rustcore.SubtitleSearchVm
+import de.paulherter.swiftly.rustcore.subtitleSearchOffered
+import de.paulherter.swiftly.rememberSubtitleSearch
 import de.paulherter.swiftly.shared.Glyph
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
@@ -19,6 +25,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -205,11 +214,20 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
     fun asEndSet(an: Boolean) { asEnd = an; app.store.remember("restzeitAlsEnde", if (an) "1" else "0") }
     /** `tracks`, `episodes` or `settings`. */
     var openLayer by remember { mutableStateOf<String?>(null) }
-    val layerOpen = openLayer != null
+    // The core's menus (box in the capsule's place, and the season box under the "Staffel N" pill of the Folgen panel).
+    val menuSession = remember { de.paulherter.swiftly.PlayerMenuSession() }
+    // The season list is a second box that hangs from the Folgen panel; it has its own session, so opening it does not swap the Folgen box out.
+    val seasonSession = remember { de.paulherter.swiftly.PlayerMenuSession() }
+    var seasonList by remember { mutableStateOf<List<Season>>(emptyList()) }
+    var seasonShown by remember { mutableStateOf<String?>(null) }
+    var seasonChosen by remember { mutableStateOf<String?>(null) }
+    // **Folgen is a box of the menu session** (like Einstellungen), not a layer of its own; only the subtitle search is still a layer.
+    val folgenShown = menuSession.isOpen && menuSession.kind == de.paulherter.swiftly.MenuKind.Folgen
+    val layerOpen = openLayer != null || folgenShown
 
     LaunchedEffect(visible) { mediaWork.controlsChanged(visible) }
-    LaunchedEffect(visible, mediaWork.running, openLayer, touched) {
-        if (visible && mediaWork.running && openLayer == null) { delay(4000); visible = false }
+    LaunchedEffect(visible, mediaWork.running, openLayer, touched, menuSession.kind) {
+        if (visible && mediaWork.running && openLayer == null && menuSession.kind == null) { delay(4000); visible = false }
     }
     LaunchedEffect(mediaWork.hint) { if (mediaWork.hint != null) { delay(5000); mediaWork.hint = null } }
 
@@ -313,6 +331,8 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
 
     val plan = mediaWork.plan
     val hasEpisodes = plan?.episode == true && plan.seriesIdentifier != null
+    // **The first stop of the capsule is Folgen** (when the series or chapters have it), else Untertitel.
+    val barFirst = if (hasEpisodes || mediaWork.chapterCount > 0) buttonEpisodes else buttonTracks
     val title = plan?.headerLine?.takeIf { it.isNotEmpty() } ?: plan?.title.orEmpty()
     val meta = plan?.let {
         if (it.episode && it.seasonNr != null && it.episodeNr != null) "S${it.seasonNr} · F${it.episodeNr} · ${it.subtitle}" // 1.1: "S1 · F3 · Name", not in the catalog on tvOS either
@@ -332,18 +352,19 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
     // Without `controlsTarget` the controls dropped out for that one frame, the focused button went with
     // them, and focus landed on the bar instead of the button.
     val itemWitnessPresent = coverage > 0.01f || layerOpen || controlsTarget
-    val titleTarget = controlsTarget || openLayer == "folgen"
+    val titleTarget = controlsTarget || folgenShown
     val titleCoverage by animateFloatAsState(if (titleTarget) 1f else 0f, tween(200), label = "titel")
 
     fun toTop() {
         val alreadyPresent = coverage > 0.01f
         showItem()
-        if (alreadyPresent) runCatching { buttonTracks.requestFocus() } else topRequest[0] = true
+        if (alreadyPresent) runCatching { barFirst.requestFocus() } else topRequest[0] = true
     }
 
     fun unfoldLayer(which: String) {
         AppLog.writeOut("[Ebene] auf $which")
         layersOutput[0] = false
+        seasonChosen = null
         openLayer = which
         touched++
     }
@@ -352,7 +373,8 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
         val was = openLayer ?: return
         AppLog.writeOut("[Ebene] zu $was")
         layersOutput[0] = true
-        val target = when (was) { "spuren" -> buttonTracks; "folgen" -> if (hasEpisodes) buttonEpisodes else remoteHandset; else -> buttonSettings }
+        seasonChosen = null
+        val target = when (was) { "suche" -> buttonTracks; else -> buttonSettings }
         if (runCatching { target.requestFocus() }.isFailure) runCatching { remoteHandset.requestFocus() }
         openLayer = null
         showItem()
@@ -367,10 +389,10 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
     // **The overlay** without controls (mirrors `cardPresent`/`offeringLayer`): while shown, it holds focus.
     // Afterwards focus goes to the remote surface, not to a button, also when "Skip intro" hides
     // itself after six seconds.
-    val cardPresent = mediaWork.overlay != "nichts" && mediaWork.imageFree && !controlsTarget && !layerOpen && !mediaWork.switches
+    val cardPresent = mediaWork.overlay != CoreWords.Einblendung.NOTHING && mediaWork.imageFree && !controlsTarget && !layerOpen && !mediaWork.switches
     // **The next-episode card** (`TVEpisodesCard`): the overlay's countdown case, or while it zooms.
     // With controls open it waits (`OfferingLayer.cardWaitsControls`).
-    val episodesCardPresent = mediaWork.cardsSwitch != null || (cardPresent && mediaWork.overlay == "karte")
+    val episodesCardPresent = mediaWork.cardsSwitch != null || (cardPresent && mediaWork.overlay == CoreWords.Einblendung.CARD)
     LaunchedEffect(episodesCardPresent) {
         if (mediaWork.cardsSwitch == null) AppLog.writeOut(if (episodesCardPresent) "[Karte] erscheint bei ${mediaWork.position.toInt()} s von ${mediaWork.duration.toInt()} s"
                                                          else "[Karte] geht (Zurück oder Steuerung)")
@@ -394,9 +416,9 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
     }
 
     // While seeking, the pill makes way for the preview above the bar.
-    val offeringPresent = mediaWork.offeringArt != "keiner" && mediaWork.offerText.isNotEmpty() && mediaWork.imageFree && !layerOpen
+    val offeringPresent = mediaWork.offeringArt != CoreWords.Angebot.NOBODY && mediaWork.offerText.isNotEmpty() && mediaWork.imageFree && !layerOpen
         && !mediaWork.switches && seekTarget == null
-        && (mediaWork.overlay != "nichts" || (controlsTarget && mediaWork.offeringArt == "naechste"))
+        && (mediaWork.overlay != CoreWords.Einblendung.NOTHING || (controlsTarget && mediaWork.offeringArt == CoreWords.Angebot.NEXT))
 
     // If the pill disappears under focus (pressed, section over, seeking), focus moves to the surface,
     // otherwise it would be left on nothing.
@@ -407,6 +429,9 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
     // later and therefore goes first.
     BackHandler {
         when {
+            // The season list hangs under the Folgen box and answers first, then the box: one level back, then closed (focus returns to its button).
+            seasonSession.isOpen -> seasonSession.backOrClose()
+            menuSession.isOpen -> menuSession.backOrClose()
             // The layer lies on top, so it answers first; a stale marker must not swallow the press.
             openLayer != null -> { if (seekTarget != null) markDiscard(); layerClose() }
             // One press clears marker and bar together, otherwise Back seems dead until the bar times out.
@@ -447,7 +472,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
             // **Up goes straight to the icons**, also on the first press while the controls are still hidden.
             // If the pill sits above the bar, it comes in between.
             Key.DirectionUp -> if (visible && offeringPresent) runCatching { offeringFocus.requestFocus() } else toTop()
-            Key.Menu -> if (mediaWork.imageFree && e.nativeKeyEvent.repeatCount == 0) unfoldLayer("einstellungen")
+            Key.Menu -> if (mediaWork.imageFree && e.nativeKeyEvent.repeatCount == 0) { showItem(); menuSession.open(de.paulherter.swiftly.MenuKind.Settings) }
             // **Down toggles time left** (mirrors `TimeBar.onMoveCommand`): "-12:34" or "Ends at 22:41".
             // Without controls, Down first brings them up, like every direction on tvOS.
             Key.DirectionDown -> if (controlsTarget) { asEndSet(!asEnd); showItem() } else showItem()
@@ -547,13 +572,13 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
                                 }
                             },
                         horizontalArrangement = Arrangement.spacedBy(TvPlayerMetric.buttonSpacing)) {
-                        TvIconButton(Glyph.Subtitle, translated("Audio & Untertitel"), !seeks, buttonTracks) { unfoldLayer("spuren") }
-                        if (hasEpisodes) TvIconButton(Glyph.Pile, translated("Folgen"), !seeks, buttonEpisodes) { unfoldLayer("folgen") }
-                        TvIconButton(Glyph.SliderControl, translated("Einstellungen"), !seeks, buttonSettings) { unfoldLayer("einstellungen") }
+                        TvBarCapsule(hasEpisodes || mediaWork.chapterCount > 0, folgenShown, menuSession, buttonEpisodes, buttonTracks, buttonSettings,
+                            folgen = { menuSession.open(de.paulherter.swiftly.MenuKind.Folgen) },
+                            modifier = Modifier.alpha(if (menuSession.isOpen) 0f else 1f))
                         LaunchedEffect(Unit) {
                             if (topRequest[0]) {
                                 topRequest[0] = false
-                                repeat(5) { if (runCatching { buttonTracks.requestFocus() }.isSuccess) return@LaunchedEffect; delay(TvTheme.focusDeadline) }
+                                repeat(5) { if (runCatching { barFirst.requestFocus() }.isSuccess) return@LaunchedEffect; delay(TvTheme.focusDeadline) }
                             }
                         }
                     }
@@ -572,7 +597,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
 
         // **The offer button**, right above the bar, in the same place with and without controls.
         // Not while the card is there.
-        AnimatedVisibility(visible = offeringPresent && mediaWork.overlay != "karte" && mediaWork.cardsSwitch == null, modifier = Modifier.align(Alignment.BottomEnd),
+        AnimatedVisibility(visible = offeringPresent && mediaWork.overlay != CoreWords.Einblendung.CARD && mediaWork.cardsSwitch == null, modifier = Modifier.align(Alignment.BottomEnd),
             enter = fadeIn(tween(180, easing = Motion.soft)),
             exit = fadeOut(tween(340, easing = Motion.soft))) {
             Box(Modifier.padding(end = TvTheme.edgePage, bottom = TvPlayerMetric.bottom + TvPlayerMetric.bar + TvPlayerMetric.overBar)
@@ -587,7 +612,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
                             AppLog.writeOut("Angebot: Richtungstaste holt die Steuerung")
                             showItem()
                         } else when (e.key) {
-                            Key.DirectionUp -> runCatching { buttonTracks.requestFocus() }
+                            Key.DirectionUp -> runCatching { barFirst.requestFocus() }
                             Key.DirectionDown -> runCatching { remoteHandset.requestFocus() }
                             else -> {}
                         }
@@ -638,27 +663,62 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
                     .offset { IntOffset(0, -(up * distance).roundToInt()) })
         }
 
-        // **The three layers**: full screen over the picture, closed focus group: focus stays inside until
+        // **The menus**: the core builds every level; the box takes the capsule's place (the season box hangs under the pill).
+        TvPlayerMenuLayer(menuSession, { de.paulherter.swiftly.playerMenus(app, mediaWork, menuSession, emptyList(), seasonList, seasonShown) },
+            press = { a -> de.paulherter.swiftly.playerMenuPress(app, mediaWork, menuSession, run, close, emptyList(), { seasonChosen = it },
+                { unfoldLayer("suche") }, a) })
+        TvPlayerMenuLayer(seasonSession, { de.paulherter.swiftly.playerMenus(app, mediaWork, seasonSession, emptyList(), seasonList, seasonShown) },
+            press = { a -> de.paulherter.swiftly.playerMenuPress(app, mediaWork, seasonSession, run, close, emptyList(), { seasonChosen = it },
+                { unfoldLayer("suche") }, a) })
+        val lastKind = remember { arrayOfNulls<de.paulherter.swiftly.MenuKind>(1) }
+        LaunchedEffect(menuSession.isOpen, menuSession.kind) {
+            val k = menuSession.kind
+            if (menuSession.isOpen && k != null) {
+                lastKind[0] = k
+                if (k == de.paulherter.swiftly.MenuKind.Folgen) { layersOutput[0] = false; seasonChosen = null }
+                menuSession.audioSelected = mediaWork.player.audioTrack; menuSession.subtitleSelected = mediaWork.player.spuTrack
+            } else if (!menuSession.isOpen) {
+                // **Closing a menu returns focus to the capsule button that opened it**, never to the timeline.
+                val target = when (lastKind[0]) {
+                    de.paulherter.swiftly.MenuKind.Tracks -> buttonTracks; de.paulherter.swiftly.MenuKind.Settings -> buttonSettings
+                    de.paulherter.swiftly.MenuKind.Folgen -> buttonEpisodes; else -> null }
+                // The Folgen box lies in a closed focus group; it lets focus out now.
+                if (lastKind[0] == de.paulherter.swiftly.MenuKind.Folgen) layersOutput[0] = true
+                // **Focus goes back to the capsule button twice**: once as the box closes, and again when the box has left the
+                // composition (`kind` null): its focused row disappearing used to drop focus to the idle surface, so the
+                // next Left + OK did nothing.
+                if (k == null) lastKind[0] = null
+                if (target != null) { showItem(); focusPut(target) }
+            }
+        }
+
+        // **The layers**: full screen over the picture, closed focus group: focus stays inside until
         // Back closes it.
-        var lastLayer by remember { mutableStateOf("spuren") }
-        LaunchedEffect(openLayer) { openLayer?.let { lastLayer = it } }
-        AnimatedVisibility(visible = layerOpen, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
+        var lastLayer by remember { mutableStateOf("folgen") }
+        LaunchedEffect(openLayer, folgenShown) { if (openLayer != null) lastLayer = openLayer!! else if (folgenShown) lastLayer = "folgen" }
+        // The Folgen box opens and closes with the motion of the other menu boxes; the search layer keeps its plain fade.
+        AnimatedVisibility(visible = layerOpen,
+                enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.98f, transformOrigin = TransformOrigin(0f, 0f), animationSpec = menuOpenSpring),
+                exit = fadeOut(tween(140, easing = menuCloseCurve)) + scaleOut(targetScale = 0.98f, transformOrigin = TransformOrigin(0f, 0f), animationSpec = tween(140, easing = menuCloseCurve))) {
             @OptIn(ExperimentalComposeUiApi::class)
             Box(Modifier.fillMaxSize()
                     // **Open for a panel above** (tile menu of an episode): otherwise `Cancel` would lock its
                     // `requestFocus` too, it would show without focus, and OK would go to the tile below.
-                    .focusProperties { exit = { if (layersOutput[0] || app.sheet.value != null) FocusRequester.Default else FocusRequester.Cancel } }
+                    // **Open for the season box too** (it is drawn outside this group): `Cancel` made its first-row `requestFocus`
+                    // fail, so the box showed but focus stayed on the Staffel button and DOWN went to the Folge 1 card.
+                    .focusProperties { exit = { if (layersOutput[0] || app.sheet.value != null || seasonSession.isOpen) FocusRequester.Default else FocusRequester.Cancel } }
                     .focusGroup()) {
                 // **No blur:** VLC draws into a `SurfaceView`, which the system composites separately, so a
                 // `RenderEffect` does not reach it (same as on the phone, `Ebenengrund` in PlayerPage.kt).
                 // Substitute: pure black, 80 %.
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.8f)))
-                when (openLayer ?: lastLayer) {
-                    "spuren" -> TvTracksLayer(mediaWork)
-                    "einstellungen" -> TvSettingLayer(mediaWork, app, layerClose = { layerClose() }) { mediaWork.finish(close) }
-                    "folgen" -> plan?.takeIf { hasEpisodes }?.let { p ->
-                        TvEpisodesLayer(app, p, title) { f ->
-                            layerClose()
+                when (openLayer ?: if (folgenShown) "folgen" else lastLayer) {
+                    "suche" -> TvSearchLayer(mediaWork) { layerClose() }
+                    "folgen" -> plan?.takeIf { hasEpisodes || mediaWork.chapterCount > 0 }?.let { p ->
+                        val chapterList = remember(mediaWork.chapterCount) { de.paulherter.swiftly.chapterListRead(app.rk.chapterList(mediaWork.position)) }
+                        TvEpisodesLayer(app, p, hasEpisodes, title, seasonSession, seasonChosen, { l, sel -> seasonList = l; seasonShown = sel },
+                                chapterList, { mediaWork.trickplayImage(it) }, { at -> menuSession.close(); mediaWork.vault(at) }) { f ->
+                            menuSession.close()
                             // Choosing the running episode means: keep watching.
                             if (f.id != p.itemId) run.launch { mediaWork.episodeSelect(f.id) }
                         }
@@ -673,7 +733,7 @@ fun TvPlayer(app: SwiftlyApplication, wish: PlayRequest, close: () -> Unit) {
                     .padding(horizontal = TvTheme.edgePage).padding(top = TvTheme.edgeTop)) {
                 Text(title, style = TvPlayerMetric.title, color = Theme.font, maxLines = 1, overflow = TextOverflow.Ellipsis,
                      modifier = Modifier.weight(1f))
-                Spacer(Modifier.width(24.dp + TvPlayerMetric.iconRail(if (hasEpisodes) 3 else 2)))
+                Spacer(Modifier.width(24.dp + 56.dp * (if (hasEpisodes || mediaWork.chapterCount > 0) 3 else 2) + 8.dp))
             }
         }
     }
@@ -718,19 +778,6 @@ private object TvPlayerMetric {
 @Composable
 private fun TvLoader(size: androidx.compose.ui.unit.Dp) {
     de.paulherter.swiftly.Spinner(size, Theme.font)
-}
-
-/** One of the icon buttons top right: at rest only the glyph, focused the white surface (`IconButtonStyle`). */
-@Composable
-private fun TvIconButton(symbol: Glyph, description: String, active: Boolean, focus: FocusRequester, perform: () -> Unit) {
-    FocusArea(Modifier.focusRequester(focus).focusProperties { canFocus = active }
-            .semantics { contentDescription = description }, magnifier = TvTheme.focusMagnifierSmall, perform = perform) { has ->
-        Box(Modifier.size(TvPlayerMetric.button).clip(RoundedCornerShape(TvTheme.corner))
-                .background(if (has) Color.White else Color.Transparent), contentAlignment = Alignment.Center) {
-            // tvOS 44 pt Medium (1.1), halved.
-            Symbol(symbol, 22.dp, color = if (has) Theme.reason else Theme.font, strength = Strength.Medium)
-        }
-    }
 }
 
 /**
@@ -940,207 +987,6 @@ private fun LayersRow(text: String, selected: Boolean, modifier: Modifier = Modi
 }
 
 /**
- * **Delay: last row of the audio and subtitle columns.** Mirrors `Verzoegerungszeile` in
- * `Sources/tvOS/PlayerLayers.swift`: three focus targets (-, +, reset) instead of one row catching
- * left/right, since left and right switch columns here. Held, the remote repeats the key; each press
- * goes through the `Haltezaehler` in the package and gets faster. After reset the reset arrow
- * disappears and focus goes to +.
- */
-@Composable
-private fun TvDelayRow(milliseconds: Int, shove: (Int) -> Unit, reset: () -> Unit) {
-    val a = remember(milliseconds) { de.paulherter.swiftly.delayDisplay(milliseconds) }
-    val plus = remember { FocusRequester() }
-    // The design shows one decimal ("0,0 s", "+0,5 s"); the step logic stays 50 ms (tvOS `delayLabel`).
-    val label = remember(milliseconds) {
-        val tenths = Math.round(Math.abs(milliseconds) / 100.0) * (if (milliseconds < 0) -1 else 1)
-        val sign = if (tenths > 0) "+" else if (tenths < 0) "−" else ""
-        "$sign${Math.abs(tenths) / 10},${Math.abs(tenths) % 10} s"
-    }
-    Column(Modifier.fillMaxWidth().padding(top = TvPlayerMetric.delayTop), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(translated("Verzögerung"), style = TvTheme.small, color = Theme.fontVeryQuiet, modifier = Modifier.padding(horizontal = TvPlayerMetric.inset))
-        // Four items, equal gaps (design: space-between); the hidden reset keeps its place.
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            TvDelayKey(Glyph.Minus, translated("Früher"), a.atStart, true) { shove(-1) }
-            Text(label, style = TvTheme.body.copy(fontSize = 13.sp, fontFeatureSettings = "tnum"), maxLines = 1,
-                 color = if (a.isNull) Theme.fontQuiet else Theme.font,
-                 modifier = Modifier.semantics { stateDescription = label })
-            TvDelayKey(Glyph.Plus, translated("Später"), a.atEnd, true, Modifier.focusRequester(plus)) { shove(1) }
-            TvDelayKey(Glyph.Ruecksetzen, translated("Zurücksetzen"), false, false,
-                                 Modifier.focusProperties { canFocus = !a.isNull }.alpha(if (a.isNull) 0f else 1f)) {
-                if (!a.isNull) { reset(); runCatching { plus.requestFocus() } }
-            }
-        }
-    }
-}
-
-/**
- * One key of the delay row: white when focused like `TvIconButton`. **At the limit it stays focusable**
- * (just dimmed): if focus vanished mid-hold, it would jump to another column. `redo`: every
- * KeyDown of the center key counts, including repeats while held; `clickable` fires only on release,
- * once.
- */
-@Composable
-private fun TvDelayKey(symbol: Glyph, description: String, locked: Boolean, redo: Boolean,
-                                 modifier: Modifier = Modifier, perform: () -> Unit) {
-    val center = setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter)
-    FocusArea(modifier.semantics { contentDescription = description }
-            .onPreviewKeyEvent { e ->
-                if (!redo || e.key !in center) false
-                else { if (e.type == KeyEventType.KeyDown) perform(); true }
-            }, magnifier = TvTheme.focusMagnifierSmall, perform = perform) { has ->
-        Box(Modifier.size(TvPlayerMetric.button).clip(RoundedCornerShape(TvTheme.corner))
-                .background(if (has) Color.White else Color.Transparent), contentAlignment = Alignment.Center) {
-            Symbol(symbol, 16.dp, Modifier.alpha(if (locked) 0.4f else 1f),
-                   color = if (has) Theme.reason else Theme.font, strength = Strength.Semibold)
-        }
-    }
-}
-
-/**
- * Audio & subtitles: two columns, each scrolls on its own. The own choice shows immediately,
- * independent of VLC, which applies the selection one tick later. On open, focus is on the chosen audio track.
- */
-@Composable
-private fun TvTracksLayer(mediaWork: PlayItem) {
-    val audio = remember { mediaWork.trackList(audio = true) }
-    val subtitle = remember { mediaWork.trackList(audio = false) }
-    var audioSelection by remember { mutableIntStateOf(mediaWork.player.audioTrack) }
-    var utSelection by remember { mutableIntStateOf(mediaWork.player.spuTrack) }
-    val audioStart = remember { audio.indexOfFirst { it.first == audioSelection } }
-    // Row 0 is "Off".
-    val utStart = remember { subtitle.indexOfFirst { it.first == utSelection } + 1 }
-    val start = remember { FocusRequester() }
-    val audioList = rememberLazyListState((audioStart - 2).coerceAtLeast(0))
-    val utList = rememberLazyListState((utStart - 2).coerceAtLeast(0))
-    LaunchedEffect(Unit) { focusPut(start) }
-
-    ColumnsRail(2) {
-        SelectionColumn(translated("Audio"), audioList) {
-            itemsIndexed(audio, key = { _, s -> "t${s.first}" }) { i, (id, name) ->
-                LayersRow(name, audioSelection == id, if (i == audioStart) Modifier.focusRequester(start) else Modifier) {
-                    audioSelection = id; mediaWork.audioFromHand(id)
-                }
-            }
-            item(key = "vt") {
-                TvDelayRow(mediaWork.audioDelay, { mediaWork.delayPush(true, it) }) { mediaWork.delaySet(true, 0) }
-            }
-        }
-        SelectionColumn(translated("Untertitel"), utList) {
-            item(key = "aus") {
-                LayersRow(translated("Aus"), utSelection == -1, if (audioStart < 0 && utStart == 0) Modifier.focusRequester(start) else Modifier) {
-                    utSelection = -1; mediaWork.subtitleFromHand(-1)
-                }
-            }
-            itemsIndexed(subtitle, key = { _, s -> "u${s.first}" }) { i, (id, name) ->
-                LayersRow(name, utSelection == id, if (audioStart < 0 && utStart == i + 1) Modifier.focusRequester(start) else Modifier) {
-                    utSelection = id; mediaWork.subtitleFromHand(id)
-                }
-            }
-            item(key = "vu") {
-                TvDelayRow(mediaWork.subtitleDelay, { mediaWork.delayPush(false, it) }) { mediaWork.delaySet(false, 0) }
-            }
-        }
-    }
-}
-
-/**
- * Settings: picture, sleep timer, tech badge, quality (mirrors `SettingLayer`). Focus on the chosen picture mode.
- * **Time left is not here**: as on tvOS, Down on the bar toggles it (`keyButton`).
- */
-@Composable
-private fun TvSettingLayer(mediaWork: PlayItem, app: SwiftlyApplication,
-                                layerClose: () -> Unit, groupLeave: () -> Unit) {
-    val e = app.settings
-    val start = remember { FocusRequester() }
-    val fillingAtStart = remember { mediaWork.fillFrame }
-    LaunchedEffect(Unit) { focusPut(start) }
-    // Only when playing from the server and the account may transcode, **not in a group**: reloading
-    // would bypass the group and playback would continue alone (iOS `qualitySelection`).
-    val qualityShow = e.convertAllowed && mediaWork.plan?.url?.startsWith("file") != true && !mediaWork.inGroup
-    val group = if (mediaWork.inGroup) app.gemeinsam.value.group else null
-    val run = rememberCoroutineScope()
-    // Order as on Apple TV: (group), picture, sleep timer, tech badge, (quality).
-    ColumnsRail(3 + (if (group != null) 1 else 0) + (if (qualityShow) 1 else 0)) {
-        // **Group first**: who is in it (information, no buttons), below that the exit.
-        if (group != null) SelectionColumn(translated("Gemeinsam · %@", group.name), rememberLazyListState()) {
-            group.participant.forEachIndexed { i, name ->
-                item(key = "t$i") {
-                    Row(Modifier.fillMaxWidth().height(TvPlayerMetric.rowHeight).padding(horizontal = TvPlayerMetric.inset),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.width(16.dp), contentAlignment = Alignment.Center) {
-                            Symbol(Glyph.PersonFilled, 13.dp, color = Theme.fontVeryQuiet)
-                        }
-                        Text(name, style = TvTheme.body, color = Theme.fontQuiet, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
-            item(key = "verlassen") {
-                FocusArea(Modifier.fillMaxWidth(), magnifier = TvTheme.focusMagnifierWide, lift = true, liftCorner = TvTheme.corner,
-                          perform = groupLeave) { focus ->
-                    Row(Modifier.fillMaxWidth().height(TvPlayerMetric.rowHeight)
-                            .background(if (focus) Color.White else Color.Transparent, RoundedCornerShape(TvTheme.corner))
-                            .padding(horizontal = TvPlayerMetric.inset),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.width(16.dp), contentAlignment = Alignment.Center) {
-                            Symbol(Glyph.SignOut, 15.dp, color = Theme.accent, strength = Strength.Semibold)
-                        }
-                        Text(translated("Gruppe verlassen"), style = TvTheme.body.copy(fontWeight = FontWeight.SemiBold), color = Theme.accent, maxLines = 1)
-                    }
-                }
-            }
-        }
-        // Two picture formats as on iPhone: whole picture and fill.
-        SelectionColumn(translated("Bild"), rememberLazyListState()) {
-            item(key = "b0") {
-                LayersRow(translated("Original"), !mediaWork.fillFrame, if (!fillingAtStart) Modifier.focusRequester(start) else Modifier) {
-                    mediaWork.imageFillingSet(false)
-                }
-            }
-            item(key = "b1") {
-                LayersRow(translated("Füllen"), mediaWork.fillFrame, if (fillingAtStart) Modifier.focusRequester(start) else Modifier) {
-                    mediaWork.imageFillingSet(true)
-                }
-            }
-        }
-        SelectionColumn(translated("Schlafzeit"), rememberLazyListState()) {
-            item(key = "aus") { LayersRow(translated("Aus"), mediaWork.sleepTime == 0) { mediaWork.sleepTimeSet(0) } }
-            // `SleepTimes.values` in the package.
-            listOf(15, 30, 45, 60, 90).forEach { m ->
-                item(key = "m$m") { LayersRow(translated("%lld Min.", m), mediaWork.sleepTime == m) { mediaWork.sleepTimeSet(m) } }
-            }
-        }
-        SelectionColumn(translated("Technikschild"), rememberLazyListState()) {
-            item(key = "aus") { LayersRow(translated("Aus"), !app.settings.techBadge) { app.settings.techBadge = false } }
-            item(key = "an") { LayersRow(translated("An"), app.settings.techBadge) { app.settings.techBadge = true } }
-        }
-        // **Quality: Direct Play or a ceiling.** A ceiling means the server may transcode, so Direct Play
-        // is off. Works like the setting in the app and reloads the film at the same position.
-        if (qualityShow) {
-            val bitrates = remember { selectionRead(KernRules.bitrateLevels()) }
-            // `-1`: Direct Play. Otherwise a bitrate limit, `0` means unlimited.
-            fun select(megabit: Int) {
-                val before = e.alwaysDirectPlay to e.bitratesLimit
-                if (megabit < 0) e.alwaysDirectPlay = true
-                else { e.alwaysDirectPlay = false; e.bitratesLimit = megabit }
-                if (before == (e.alwaysDirectPlay to e.bitratesLimit)) return
-                app.qualityReport()
-                layerClose()
-                run.launch { mediaWork.qualitySwitch() }
-            }
-            SelectionColumn(translated("Qualität"), rememberLazyListState()) {
-                item(key = "direct") { LayersRow(translated("Direct Play"), e.alwaysDirectPlay) { select(-1) } }
-                bitrates.forEach { b ->
-                    val value = b.value.toIntOrNull() ?: 0
-                    item(key = "b$value") {
-                        LayersRow(b.text, !e.alwaysDirectPlay && e.bitratesLimit == value) { select(value) }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
  * The series' episodes: the same tile row as on the series page (`TvEpisodesTile`). The title sits
  * exactly where it was in the picture (placeholder here, the player draws the title); the season
  * pill takes the place of the meta line, the tiles follow with clear spacing. **On open the row is
@@ -1148,8 +994,14 @@ private fun TvSettingLayer(mediaWork: PlayItem, app: SwiftlyApplication,
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
-private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, title: String, start: (Episode) -> Unit) {
-    val seriesIdentifier = plan.seriesIdentifier ?: return
+private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, hasEpisodes: Boolean, title: String, session: de.paulherter.swiftly.PlayerMenuSession, chosen: String?,
+                            onSeasons: (List<Season>, String?) -> Unit, chapters: de.paulherter.swiftly.ChapterList, preview: (Double) -> android.graphics.Bitmap?,
+                            jump: (Double) -> Unit, start: (Episode) -> Unit) {
+    // Series: Folgen (+ Kapitel when the file has chapters); film: Kapitel only (the core's `PanelTab` rule).
+    val seriesIdentifier = plan.seriesIdentifier.takeIf { hasEpisodes }.orEmpty()
+    var tab by remember { mutableStateOf(if (hasEpisodes) de.paulherter.swiftly.FolgenTab.Episodes else de.paulherter.swiftly.FolgenTab.Chapters) }
+    val chapterFocus = remember { FocusRequester() }
+    val chapterTab = remember { FocusRequester() }
     val runningId = plan.itemId
     // Mirrors `passendeStaffel(toward:)`: the season of the running episode.
     fun matching(list: List<Season>, remembered: String?) =
@@ -1172,10 +1024,8 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, title: Stri
 
     // **The season picker, entries built once on open**: rebuilt from the tick, the rows were replaced
     // and focus jumped.
-    var choice by remember { mutableStateOf<List<Season>?>(null) }
-    val selectionOutput = remember { booleanArrayOf(false) }
-    fun choiceTo() { selectionOutput[0] = true; runCatching { pill.requestFocus() }; choice = null }
-    BackHandler(enabled = choice != null) { choiceTo() }
+    // The season box is the core's menu (`PlayerMenuLevel.Seasons`); this layer tells the player which seasons exist.
+    val seasonMenuWas = remember { booleanArrayOf(false) }
 
     // **After a change to the watch state** (tile menu) refetch, same follow-up as in the phone's
     // episode layer (`EpisodesLayer.episodesRefresh`).
@@ -1188,6 +1038,7 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, title: Stri
     }
 
     LaunchedEffect(seriesIdentifier) {
+        if (!hasEpisodes) return@LaunchedEffect
         try {
             val s = seriesRead(withContext(Dispatchers.IO) { app.rk.series(seriesIdentifier).await() })
             app.seriesCache[seriesIdentifier] = s
@@ -1202,8 +1053,8 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, title: Stri
     }
 
     // Focus on the running episode once the row is there, but not if it is already on the pill.
-    LaunchedEffect(episodes.isNotEmpty()) {
-        if (episodes.isEmpty() || focusLaid[0] || pillFocus[0]) return@LaunchedEffect
+    LaunchedEffect(episodes.isNotEmpty(), tab) {
+        if (tab != de.paulherter.swiftly.FolgenTab.Episodes || episodes.isEmpty() || focusLaid[0] || pillFocus[0]) return@LaunchedEffect
         focusLaid[0] = true
         val i = episodes.indexOfFirst { it.id == runningId }
         if (i >= 0 && strip.layoutInfo.visibleItemsInfo.none { it.index == i }) strip.scrollToItem(i)
@@ -1215,11 +1066,12 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, title: Stri
     // Without episodes the pill keeps focus, otherwise it would stay on the invisible button behind it.
     LaunchedEffect(Unit) {
         delay(300)
-        if (!focusLaid[0] && !pillFocus[0]) runCatching { pill.requestFocus() }
+        if (tab == de.paulherter.swiftly.FolgenTab.Episodes && !focusLaid[0] && !pillFocus[0]) runCatching { pill.requestFocus() }
     }
+    // Chapters: focus on the running chapter's tile once the tab shows (also for a film, where it is the only tab).
+    LaunchedEffect(tab) { if (tab == de.paulherter.swiftly.FolgenTab.Chapters) { delay(120); focusPut(chapterFocus) } }
 
     fun seasonSelect(s: Season) {
-        choiceTo()
         if (s.id == selected) return
         selected = s.id
         run.launch {
@@ -1240,36 +1092,45 @@ private fun TvEpisodesLayer(app: SwiftlyApplication, plan: PlayPlan, title: Stri
         }
     }
 
+    LaunchedEffect(seasons, selected) { onSeasons(seasons, selected) }
+    LaunchedEffect(chosen) { chosen?.let { id -> seasons.firstOrNull { it.id == id }?.let { seasonSelect(it) } } }
+    LaunchedEffect(session.isOpen, session.kind) {
+        if (session.isOpen && session.kind == de.paulherter.swiftly.MenuKind.Seasons) seasonMenuWas[0] = true
+        // **Back to the button once the box has left the composition** (`kind` null): while its focused row is still there,
+        // its own `Cancel` exit refuses the request, and the first 180 ms of retries ran out before the 140 ms close motion ended.
+        else if (!session.isOpen && session.kind == null && seasonMenuWas[0]) { seasonMenuWas[0] = false; focusPut(pill) }
+    }
+
     Column(Modifier.fillMaxSize().padding(top = TvTheme.edgeTop)) {
         Column(Modifier.padding(horizontal = TvTheme.edgePage).zIndex(1f), verticalArrangement = Arrangement.spacedBy(TvPlayerMetric.titleSpacing)) {
             // Placeholder: the title itself is in the player and does not fade with it.
             Text(title, style = TvPlayerMetric.title, maxLines = 1, modifier = Modifier.alpha(0f))
-            if (seasons.isNotEmpty()) Box {
-                TvButton(seasons.firstOrNull { it.id == selected }?.name ?: translated("Staffel"), Glyph.AngleDown,
-                        Modifier.focusRequester(pill), height = 30.dp, focusChanged = { pillFocus[0] = it }) {
-                    if (choice != null) choiceTo() else { selectionOutput[0] = false; choice = seasons }
-                }
-                choice?.let { entries ->
-                    val first = remember { FocusRequester() }
-                    LaunchedEffect(Unit) { focusPut(first) }
-                    // Under the pill, without shifting the row below.
-                    Column(Modifier.layout { m, c ->
-                                val p = m.measure(c.copy(minWidth = 0, minHeight = 0, maxHeight = Constraints.Infinity, maxWidth = Constraints.Infinity))
-                                layout(0, 0) { p.place(0, 36.dp.roundToPx()) }
-                            }
-                            .width(260.dp).heightIn(max = 330.dp).clip(RoundedCornerShape(TvTheme.cornerArea)).background(Theme.area)
-                            .verticalScroll(rememberScrollState()).padding(vertical = 6.dp)
-                            .focusProperties { exit = { if (selectionOutput[0]) FocusRequester.Default else FocusRequester.Cancel } }
-                            .focusGroup()) {
-                        val start = entries.indexOfFirst { it.id == selected }.coerceAtLeast(0)
-                        entries.forEachIndexed { i, s ->
-                            TvRow(s.name, if (s.id == selected) Glyph.CheckmarkCircleFilled else Glyph.Ring,
-                                    modifier = if (i == start) Modifier.focusRequester(first) else Modifier) { seasonSelect(s) }
-                        }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (hasEpisodes && tab == de.paulherter.swiftly.FolgenTab.Episodes) {
+                    if (seasons.isNotEmpty()) TvButton(seasons.firstOrNull { it.id == selected }?.name ?: translated("Staffel"), Glyph.AngleDown,
+                            Modifier.focusRequester(pill), height = 30.dp, focusChanged = { pillFocus[0] = it }) {
+                        AppLog.writeOut("[Ebene] Staffel-Knopf")
+                        session.open(de.paulherter.swiftly.MenuKind.Seasons)
                     }
+                } else if (hasEpisodes) TvButton(translated("Folgen"), null, Modifier.focusRequester(pill), height = 30.dp, focusChanged = { pillFocus[0] = it }) {
+                    tab = de.paulherter.swiftly.FolgenTab.Episodes
                 }
+                // A film has this one tab only: a plain word, no button.
+                if (chapters.rows.isNotEmpty() && hasEpisodes) TvButton(translated("Kapitel"), null, Modifier.focusRequester(chapterTab), height = 30.dp,
+                        active = tab == de.paulherter.swiftly.FolgenTab.Chapters) { tab = de.paulherter.swiftly.FolgenTab.Chapters }
+                else if (chapters.rows.isNotEmpty()) Text(translated("Kapitel"), style = TvTheme.body, color = Theme.font)
             }
         }
+        if (tab == de.paulherter.swiftly.FolgenTab.Chapters) {
+            val now = chapters.rows.indexOfFirst { it.current }.coerceAtLeast(0)
+            LazyRow(Modifier.padding(top = 22.dp), state = rememberLazyListState(now),
+                    contentPadding = PaddingValues(horizontal = TvTheme.edgePage, vertical = TvTheme.railsPadding),
+                    horizontalArrangement = Arrangement.spacedBy(TvTheme.tileSpacing)) {
+                itemsIndexed(chapters.rows, key = { _, c -> c.index }) { i, c ->
+                    de.paulherter.swiftly.TvChapterTile(c, chapters.numberTitle, preview(c.start), if (i == now) Modifier.focusRequester(chapterFocus) else Modifier) { jump(c.start) }
+                }
+            }
+        } else
         // Clear space below the season pill, otherwise the row would stick to it.
         if (episodes.isNotEmpty()) CompositionLocalProvider(LocalBringIntoViewSpec provides if (immediate) TvRailWithoutMotion else TvRailsBringIntoView) {
             val start = episodes.indexOfFirst { it.id == runningId }.coerceAtLeast(0)
@@ -1304,3 +1165,39 @@ private object TvRailWithoutMotion : BringIntoViewSpec {
 /** `scrim` on tvOS 1.1: one gradient, .65 > 0 at .32 > 0 at .62 > .8. */
 private val PlayerScrim = androidx.compose.ui.graphics.Brush.verticalGradient(
     0.00f to Color.Black.copy(alpha = 0.65f), 0.32f to Color.Transparent, 0.62f to Color.Transparent, 1.00f to Color.Black.copy(alpha = 0.8f))
+
+/** The core's subtitle search in place of the layer (opened by the menu's "Untertitel suchen …"). */
+@Composable
+private fun TvSearchLayer(mediaWork: PlayItem, close: () -> Unit) {
+    val vm = remember { mediaWork.subtitleSearchVm() } ?: return
+    TvSubtitleSearch(vm) { index -> mediaWork.subtitleAdded(index); close() }
+}
+
+/** The core's `SubtitleSearchPart` drawn as it is, in the focusable rows of the TV layers. */
+@Composable
+private fun TvSubtitleSearch(vm: SubtitleSearchVm, added: (Long?) -> Unit) {
+    val part = rememberSubtitleSearch(vm, added)
+    val first = remember { FocusRequester() }
+    val list = rememberLazyListState()
+    LaunchedEffect(Unit) { focusPut(first) }
+    ColumnsRail(1) {
+        SelectionColumn(part.title, list) {
+            itemsIndexed(part.languages, key = { _, l -> "l${l.value}" }) { i, l ->
+                LayersRow(l.label, l.selected, if (i == 0) Modifier.focusRequester(first) else Modifier) { vm.send(SubtitleSearchIntent.Search(l.value)) }
+            }
+            when (part.phase) {
+                SubtitleSearchPhase.IDLE, SubtitleSearchPhase.LOADING -> {}
+                SubtitleSearchPhase.RESULTS, SubtitleSearchPhase.DOWNLOADING ->
+                    itemsIndexed(part.rows, key = { _, r -> "r${r.id}" }) { _, r ->
+                        LayersRow(listOf(r.title, r.sourceLine).filter { it.isNotEmpty() }.joinToString(" · "), false) {
+                            if (part.phase != SubtitleSearchPhase.DOWNLOADING) vm.send(SubtitleSearchIntent.Download(r.id))
+                        }
+                    }
+                else -> item(key = "message") {
+                    Text(part.message.orEmpty(), style = TvTheme.body, color = Theme.fontQuiet,
+                         modifier = Modifier.padding(horizontal = TvPlayerMetric.inset, vertical = 12.dp))
+                }
+            }
+        }
+    }
+}

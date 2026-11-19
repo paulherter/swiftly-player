@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use swiftly_downloads::AudioStream;
 use swiftly_downloads::load_selection::{CheckboxState, LoadSelection, SeasonRight};
 use swiftly_downloads::rules::FootSpace;
 use swiftly_model::Item;
@@ -14,6 +15,7 @@ use swiftly_rules::download_quality::DownloadQuality;
 
 use crate::downloads::TrackNames;
 use crate::error::CoreError;
+use crate::player::PlayerStream;
 
 /// A season's episodes, the server's `Items` array as JSON.
 #[derive(uniffi::Record, Clone, Debug)]
@@ -140,6 +142,33 @@ fn audio_in(c: LoadAudio) -> DownloadAudioChoice {
     }
 }
 
+/// **The sound the download sheet of ONE title (a film) starts on**: the track the start rule would play, the audio language of
+/// the settings first, then the language of the device (`Locale.preferredLanguages.first`, empty when unknown); all tracks when
+/// neither names one the file holds. The season sheet reads the same rule through `LoadSelectionModel`, so both sheets agree.
+/// `streams` are the streams of the source the file is loaded from; the track's own title stands in for the display title.
+#[uniffi::export]
+pub fn download_audio_start(
+    streams: Vec<PlayerStream>,
+    audio_language: String,
+    locale: String,
+    device_language: String,
+) -> LoadAudio {
+    let streams: Vec<AudioStream> = streams
+        .into_iter()
+        .map(|s| AudioStream {
+            codec: s.codec,
+            kind: s.kind,
+            language: s.language,
+            display_title: s.title,
+            channels: s.channels,
+            is_default: Some(s.is_default),
+            index: Some(s.index),
+        })
+        .collect();
+    let rules = TrackNames::new(&locale).with_device_language(Some(device_language));
+    audio_out(rules.film_start(&streams, &audio_language))
+}
+
 /// The series download sheet.
 #[derive(uniffi::Object)]
 pub struct LoadSelectionModel {
@@ -160,7 +189,9 @@ impl LoadSelectionModel {
 impl LoadSelectionModel {
     /// `season_ids` in display order; `preloaded` holds the episodes the page already has.
     /// `audio_language` is the settings' language key, `select_quality` whether the picker
-    /// offers transcoded qualities.
+    /// offers transcoded qualities, `device_language` the language of the device as a tag
+    /// (`Locale.preferredLanguages.first`; empty when unknown): the sound a download starts on
+    /// follows the start language rule, which takes it after the settings.
     #[uniffi::constructor]
     pub fn new(
         season_ids: Vec<String>,
@@ -168,6 +199,7 @@ impl LoadSelectionModel {
         locale: String,
         audio_language: String,
         select_quality: bool,
+        device_language: String,
     ) -> Result<Arc<Self>, CoreError> {
         let mut map = HashMap::new();
         for p in preloaded {
@@ -179,7 +211,7 @@ impl LoadSelectionModel {
         }
         Ok(Arc::new(Self {
             sel: Mutex::new(sel),
-            rules: TrackNames::new(&locale),
+            rules: TrackNames::new(&locale).with_device_language(Some(device_language)),
             audio_language,
             select_quality,
         }))
@@ -354,6 +386,7 @@ mod tests {
             "en".into(),
             "".into(),
             false,
+            "".into(),
         )
         .unwrap()
     }
@@ -379,6 +412,108 @@ mod tests {
         m.set_present(vec!["e1".into()]);
         assert!(m.state(0).selected_ids.is_empty());
         assert!(m.state(0).seasons[0].episodes[0].present);
+    }
+
+    /// Two episodes that both hold an English and a German track.
+    const DUAL: &str = r#"[{"Id":"e1","Name":"One","IndexNumber":1,"ParentIndexNumber":1,"MediaSources":[{"Id":"m","Size":1000,"MediaStreams":[
+        {"Type":"Audio","Index":1,"Language":"eng","IsDefault":true,"Codec":"eac3","Channels":6},
+        {"Type":"Audio","Index":2,"Language":"ger","Codec":"eac3","Channels":6}]}]},
+        {"Id":"e2","Name":"Two","IndexNumber":2,"ParentIndexNumber":1,"MediaSources":[{"Id":"m","Size":1000,"MediaStreams":[
+        {"Type":"Audio","Index":1,"Language":"eng","IsDefault":true,"Codec":"eac3","Channels":6},
+        {"Type":"Audio","Index":2,"Language":"ger","Codec":"eac3","Channels":6}]}]}]"#;
+
+    fn dual(audio_language: &str, device_language: &str) -> LoadAudio {
+        let m = LoadSelectionModel::new(
+            vec!["s1".into()],
+            vec![LoadSeasonEpisodes {
+                season_id: "s1".into(),
+                episodes_json: DUAL.into(),
+            }],
+            "en".into(),
+            audio_language.into(),
+            false,
+            device_language.into(),
+        )
+        .unwrap();
+        m.toggle_season("s1".into());
+        let st = m.state(10_000_000_000);
+        assert!(st.audio_offered);
+        st.audio
+    }
+
+    #[test]
+    fn the_sound_a_season_download_starts_on_follows_the_device_language() {
+        let german = LoadAudio::Language {
+            key: "Deutsch".into(),
+        };
+        let english = LoadAudio::Language {
+            key: "English".into(),
+        };
+        assert_eq!(dual("", "de-DE"), german);
+        assert_eq!(dual("", "en-US"), english);
+        // Nothing named and no device language: all tracks stay the start.
+        assert_eq!(dual("", ""), LoadAudio::All);
+        // The language of the settings comes first.
+        assert_eq!(dual("English", "de-DE"), english);
+    }
+
+    fn audio_row(
+        index: i64,
+        language: &str,
+        is_default: bool,
+        title: Option<&str>,
+    ) -> PlayerStream {
+        PlayerStream {
+            index,
+            kind: "Audio".into(),
+            language: Some(language.into()),
+            codec: Some("eac3".into()),
+            channels: Some(6),
+            title: title.map(str::to_owned),
+            is_default,
+            is_forced: false,
+            is_external: false,
+            is_hearing_impaired: false,
+            is_original: false,
+        }
+    }
+
+    /// The film sheet of the Apple hosts asked the settings language alone, so a German iPhone with default settings started
+    /// the download of an English film with a German dub on all tracks while the season sheet started on the German one.
+    #[test]
+    fn the_sound_a_film_download_starts_on_follows_the_device_language() {
+        let film = || {
+            vec![
+                audio_row(1, "eng", true, None),
+                audio_row(2, "ger", false, None),
+            ]
+        };
+        let start = |streams, setting: &str, device: &str| {
+            download_audio_start(streams, setting.into(), "en".into(), device.into())
+        };
+        assert_eq!(start(film(), "", "de-DE"), LoadAudio::Track { index: 2 });
+        assert_eq!(start(film(), "", "en-US"), LoadAudio::Track { index: 1 });
+        // Nothing named, or a language the file does not hold: all tracks stay the start.
+        assert_eq!(start(film(), "", ""), LoadAudio::All);
+        assert_eq!(start(film(), "", "fr-FR"), LoadAudio::All);
+        // The settings come first.
+        assert_eq!(
+            start(film(), "English", "de-DE"),
+            LoadAudio::Track { index: 1 }
+        );
+    }
+
+    #[test]
+    fn a_commentary_is_not_the_track_a_film_download_starts_on() {
+        let streams = vec![
+            audio_row(1, "eng", true, None),
+            audio_row(2, "ger", false, Some("Commentary")),
+            audio_row(3, "ger", false, None),
+        ];
+        assert_eq!(
+            download_audio_start(streams, "".into(), "en".into(), "de-DE".into()),
+            LoadAudio::Track { index: 3 }
+        );
     }
 
     #[test]

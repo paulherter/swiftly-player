@@ -80,6 +80,22 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
     private var running = false
     private var tempoValue: Float = 1
     private var fillOn = false
+    #if canImport(UIKit)
+    /// The app came back to the front: a video pipeline the engine released in the background is rebuilt (see `restoreAfterBackground`).
+    private var foregroundObserver: NSObjectProtocol?
+    /// The rebuild after the background as one state (idle, or running and how it ends); a press of Play during the rebuild
+    /// is kept in it, and a second request does not start another rebuild.
+    private var restore = ForegroundRestore()
+    /// Whether the pipeline can still be trusted after the background, and the one automatic rebuild after a failure.
+    /// The engine's own flag misses a producer that iOS closed under a paused title (a long background, also with Picture in Picture).
+    private var health = PipelineHealth()
+    /// The pause the app puts on a playing title when it leaves the foreground (iOS only), and its end on the return.
+    /// Only ONE state: inactive does nothing, the background pauses what plays unless PiP or AirPlay carry it, the return
+    /// plays again what the app paused itself, a press of the user cancels it.
+    private var lifecycle = LifecyclePause()
+    private var backgroundObserver: NSObjectProtocol?
+    private var inactiveObserver: NSObjectProtocol?
+    #endif
 
     var subtitleDelay = Delay.null {
         didSet {
@@ -114,6 +130,7 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
         // load that hangs shows nothing.
         EngineLog.handler = { line in AppLog.writeOut("[AetherEngine] \(line)") }
         super.init()
+        if Self.silent { engine.volume = 0 }
         #if canImport(UIKit)
         // iOS needs the category before the first sound; tvOS negotiates its route itself
         // (the engine documents that it must not activate the session there).
@@ -140,7 +157,157 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
         place(in: host.bounds)
         engine.bind(view: surface)
         watch()
+        #if canImport(UIKit)
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.becameActive() }
+        }
+        #if os(tvOS)
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.stopped else { return }
+                self.health.enteredBackground(at: Date(), playing: self.engine.state == .playing, pictureInPicture: false, externalPlayback: false)
+            }
+        }
+        #endif
+        #if os(iOS)
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.enteredBackground() }
+        }
+        inactiveObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                // Notification Center, Control Center, a system alert: the app is only inactive. Nothing is paused, nothing rebuilt.
+                guard let self, self.lifecycle.becameInactive() == .nothing else { return }
+                AppLog.writeOut("[Lebenslage] inaktiv · nichts angefasst · Engine \(self.engine.state) · PiP \(self.engine.pictureInPictureActive)")
+            }
+        }
+        #endif
+        #endif
     }
+
+    #if canImport(UIKit)
+    #if os(iOS)
+    /// The app entered the background. A playing title is paused here (the system would stop its picture anyway), except
+    /// while Picture in Picture or AirPlay carry it. What this pauses is played again by `becameActive`.
+    private func enteredBackground() {
+        guard !stopped else { return }
+        let route = AVAudioSession.sharedInstance().currentRoute.outputs.contains { $0.portType == .airPlay }
+        let action = lifecycle.enteredBackground(playing: engine.state == .playing,
+                                                 pictureInPicture: engine.pictureInPictureActive, externalPlayback: route)
+        health.enteredBackground(at: Date(), playing: engine.state == .playing,
+                                 pictureInPicture: engine.pictureInPictureActive, externalPlayback: route)
+        AppLog.writeOut("[Lebenslage] Hintergrund · Engine \(engine.state) · PiP \(engine.pictureInPictureActive) · AirPlay \(route) → \(action)")
+        if action == .pause { engine.pause() }
+    }
+    #endif
+
+    /// Whether the engine sits in its error state.
+    private var engineFailed: Bool { if case .error = engine.state { return true } else { return false } }
+
+    /// The pipeline must be rebuilt before it can play: the engine says so, a long background left it stale, or it failed.
+    private var needsRebuild: Bool {
+        PipelineHealth.needsRebuild(engineFlag: engine.needsForegroundVideoRestore, stale: health.stale, errored: engineFailed || failureReported)
+    }
+
+    /// The app is active again: play what the app paused itself on leaving, else rebuild a released pipeline paused.
+    /// A title that was only inactive (Notification Center) never reaches the rebuild: the engine did not release anything,
+    /// and `restoreAfterBackground` asks the engine's own flag first.
+    private func becameActive() {
+        let action = lifecycle.becameActive()
+        health.returned(at: Date())
+        AppLog.writeOut("[Lebenslage] aktiv · Engine \(engine.state) · PiP \(engine.pictureInPictureActive) · Wiederaufnahme \(action) · Neuaufbau nötig \(needsRebuild) (Engine \(engine.needsForegroundVideoRestore) · veraltet \(health.stale))")
+        if action == .resume { resume() } else { restoreAfterBackground(thenPlay: false) }
+    }
+
+    /// **Back from the background: rebuild the picture the engine let go of.**
+    ///
+    /// A paused title that stays in the background longer than the engine's grace window (15 s; always on tvOS) has its
+    /// video pipeline released so the decoder does not ride the suspension; the engine keeps the source and the position
+    /// and says so through `needsForegroundVideoRestore`: "a foreground host must rebuild before sending play()". Nobody did.
+    /// The engine then showed a black picture, and Play went to a session that was not there until the app was restarted.
+    /// Here the rebuild runs once the app is active again (or at the Play press, whichever comes first), at the same
+    /// position, and the title comes back paused unless the press asked for play.
+    func restoreAfterBackground(thenPlay: Bool, force: Bool = false) {
+        guard !stopped else { return }
+        // Picture in Picture keeps the picture; it is not rebuilt under the window (a rebuild there showed grey). A stale or
+        // failed pipeline waits for the Play press (which rebuilds first) or the end of the window.
+        #if os(iOS)
+        if engine.pictureInPictureActive && !thenPlay && !force { return }
+        #endif
+        #if DEBUG
+        // The live run compares with and without the rebuild (`Werkzeuge/live-lauf.py --scenario background --arg=-SwiftlyLiveNoRestore`).
+        if ProcessInfo.processInfo.arguments.contains("-SwiftlyLiveNoRestore") {
+            AppLog.writeOut("[Lebenslage] Bild zurück ausgeschaltet (-SwiftlyLiveNoRestore): Engine verlangt Neuaufbau, keiner läuft")
+            return
+        }
+        #endif
+        // Asked of the state first: the engine clears its flag when the rebuild begins, so a Play press that comes during the
+        // rebuild would see "nothing to do" there and be lost (the rebuild then ended in pause).
+        guard restore.ask(engineNeedsRestore: needsRebuild, thenPlay: thenPlay) == .start else { return }
+        let began = Date()
+        let position = lastPosition
+        AppLog.writeOut("[Lebenslage] Bild zurück: Pipeline neu aufbauen ab \(Int(position)) s (Engine \(engine.needsForegroundVideoRestore) · veraltet \(health.stale) · Fehler \(engineFailed || failureReported))")
+        health.rebuilt(at: position)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                // The rebuild starts on the mount flag, which is "play": without a word from us the title would run for a blink
+                // (and the core would report "resumed", then "paused"). A pause that arrives while the rebuild runs is the
+                // transport it comes back in, so it is asked for as soon as the rebuild has begun.
+                let rebuild = Task { @MainActor in try await self.engine.reloadAtCurrentPosition() }
+                await Task.yield()
+                if !self.restore.playsAfter { self.engine.pause() }
+                try await rebuild.value
+                // The engine's reload returns quietly when it has nothing to reopen (a torn-down session): that is not a rebuild.
+                if case .error = self.engine.state { throw RebuildError.stillFailed }
+                if case .idle = self.engine.state { throw RebuildError.stillFailed }
+                self.failureReported = false
+                // What was asked while the rebuild ran decides how it ends (a Play press during it plays).
+                if self.restore.finished() { self.engine.play() } else { self.engine.pause() }
+                AppLog.writeOut("[Lebenslage] Bild zurück nach \(Int(Date().timeIntervalSince(began) * 1000)) ms · Zustand \(self.engine.state)")
+            } catch is CancellationError {
+                self.restore.finished()
+            } catch {
+                // The engine's reload could not bring it back: load the title anew at the same position (our own full load).
+                self.restore.finished()
+                AppLog.writeOut("[Lebenslage] Bild zurück gescheitert: \(error) · lade neu ab \(Int(position)) s")
+                self.failureReported = false
+                self.reload(at: position)
+            }
+        }
+    }
+    private enum RebuildError: Error { case stillFailed }
+
+    /// An error arrived after the title was loaded: one automatic rebuild at the current position (a new producer) before
+    /// anyone hears of it. Returns whether that took over. A failure of the rebuild itself is not rebuilt again.
+    private func recoverFromError(_ message: String) -> Bool {
+        guard !stopped, !ended, durationSeconds > 0 else { return false }
+        if restore.isRestoring { return true }   // the running rebuild decides how it ends
+        guard health.errorArrived() else { return false }
+        AppLog.writeOut("[Lebenslage] Fehler nach dem Laden (\(message)) · ein Neuaufbau ab \(Int(lastPosition)) s, bevor jemand es sieht")
+        restoreAfterBackground(thenPlay: running || lifecycle.phase == .autoPaused, force: true)
+        return restore.isRestoring
+    }
+
+    #if os(iOS) && DEBUG
+    /// Live run only: the producer iOS closes under a paused title in the background cannot be closed from outside in the
+    /// simulator; this leaves the glue in the state the device log shows (stale pipeline, the engine's failure on the next Play).
+    /// `silent`: only the stale pipeline and the reported failure remain (what the screen is left with when nothing rebuilt
+    /// on the return), so the next Play must rebuild; otherwise the failure arrives as an engine error (the automatic rebuild).
+    func debugForceProducerTeardown(silent: Bool) {
+        AppLog.writeOut("[Lebenslage] TEST: Erzeuger erzwungen abgebaut (still \(silent))")
+        health.markStale()
+        if silent { failureReported = true } else { stateSwitched(.error("forced producer teardown (NSURLErrorDomain -1004)")) }
+    }
+    #endif
+    #endif
 
     // MARK: Loading
 
@@ -296,7 +463,12 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
         }.store(in: &bag)
         engine.clock.$currentTime.sink { [weak self] seconds in
             guard let self, !self.stopped else { return }
-            if seconds.isFinite, seconds >= 0, self.seekTarget == nil, !self.ended { self.lastPosition = seconds }
+            if seconds.isFinite, seconds >= 0, self.seekTarget == nil, !self.ended {
+                self.lastPosition = seconds
+                #if canImport(UIKit)
+                self.health.progressed(to: seconds)
+                #endif
+            }
             self.refreshSubtitle()
             // Four times a second is plenty: the core ticks on its own clock.
             if self.events != nil, Date().timeIntervalSince(self.lastClockEvent) >= 0.25 {
@@ -306,7 +478,8 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
         }.store(in: &bag)
         engine.$audioTracks.sink { [weak self] _ in self?.checkTracks() }.store(in: &bag)
         engine.$subtitleTracks.sink { [weak self] _ in self?.checkTracks() }.store(in: &bag)
-        engine.$subtitleCues.sink { [weak self] _ in
+        engine.$subtitleCues.sink { [weak self] cues in
+            self?.chainEnds = Self.shownEnds(ids: cues.map(\.id), starts: cues.map(\.startTime), ends: cues.map(\.endTime))
             self?.refreshSubtitle()
             self?.emitCues()
         }.store(in: &bag)
@@ -330,6 +503,9 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
         guard !stopped else { return }
         // The internal play/pause of a paused-seek frame (`PausedSeekFrame`) is not the user's: the screen stays paused.
         if nudge != nil { return }
+        #if canImport(UIKit)
+        if case .error(let message) = state, recoverFromError(message) { return }
+        #endif
         emitState(state)
         switch state {
         case .playing:
@@ -576,11 +752,30 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
 
     func pause() {
         endNudge()
+        #if canImport(UIKit)
+        restore.pausePressed()
+        lifecycle.userChose()
+        #endif
         engine.pause()
     }
 
     func resume() {
+        #if canImport(UIKit)
+        lifecycle.userChose()
+        #endif
         if ended { reload(at: 0); return }
+        #if canImport(UIKit)
+        // A press that comes before the rebuild is through: the rebuild plays when it is done.
+        if needsRebuild || restore.isRestoring {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-SwiftlyLiveNoRestore") {
+                AppLog.writeOut("[Lebenslage] Play bei freigegebener Pipeline (needsForegroundVideoRestore) ohne Neuaufbau")
+                engine.play(); return
+            }
+            #endif
+            restoreAfterBackground(thenPlay: true); return
+        }
+        #endif
         nudgeBecamePlay()
         engine.play()
     }
@@ -595,8 +790,15 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
         }
     }
 
+    /// Test runs against the fixture server (simulator, Mac app) play without sound: they share the Mac with
+    /// whatever the person at it is listening to. `SWIFTLY_MUTE` does the same for other runs.
+    private static let silent: Bool = {
+        let info = ProcessInfo.processInfo
+        return info.arguments.contains("-SwiftlyFixture") || info.environment["SWIFTLY_MUTE"] != nil
+    }()
+
     func volume(_ percent: Int) {
-        let level = Float(min(max(percent, 0), 100)) / 100
+        let level = Self.silent ? 0 : Float(min(max(percent, 0), 100)) / 100
         // During a frame step the engine is muted; the new level is what comes back.
         if let step = nudge { nudge = Nudge(task: step.task, volume: level); return }
         engine.volume = level
@@ -682,15 +884,26 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
         }
         guard !subtitles.isEmpty || engine.state != .loading else { return }
         if subtitleIndex >= 0 {
-            guard subtitleApplied != subtitleIndex else { return }
-            subtitleApplied = subtitleIndex
             let wanted = engineTrackID(forServerIndex: subtitleIndex)
-            // The engine's own stream table next to the server number: a wrong place shows here (Plex counts by id).
-            AppLog.writeOut("[Spuren] Untertitel Server \(subtitleIndex) -> Engine \(wanted); Engine kennt "
-                + subtitles.map { "\($0.id):\($0.codec)\($0.isForced ? ":forced" : "")" }.joined(separator: " "))
             if subtitles.contains(where: { $0.id == wanted }) {
-                engine.selectSubtitleTrack(index: wanted)
-            } else {
+                // **What counts is what the engine plays, not that the call was made once.** A selection handed over while the
+                // engine was still loading (its list is there before the load ends) can be dropped by the engine at the end of
+                // the load, and the memo `subtitleApplied` then said "done" for a track that never drew a cue: the chosen
+                // subtitle showed only after switching to another track and back (which resets the memo). Every tracks change,
+                // the end of the load and the first picture ask again, and the call is made whenever the engine's active track
+                // is not the wanted one.
+                if engine.activeSubtitleTrackIndex != wanted {
+                    // The engine's own stream table next to the server number: a wrong place shows here (Plex counts by id).
+                    AppLog.writeOut("[Spuren] Untertitel Server \(subtitleIndex) -> Engine \(wanted) (aktiv: \(engine.activeSubtitleTrackIndex.map(String.init) ?? "keiner")); Engine kennt "
+                        + subtitles.map { "\($0.id):\($0.codec)\($0.isForced ? ":forced" : "")" }.joined(separator: " "))
+                    engine.selectSubtitleTrack(index: wanted)
+                }
+                subtitleApplied = subtitleIndex
+            } else if subtitleApplied != subtitleIndex {
+                // Not listed (yet): the hand-over is told once; a later tracks change selects it when the track shows up.
+                subtitleApplied = subtitleIndex
+                AppLog.writeOut("[Spuren] Untertitel Server \(subtitleIndex) -> Engine \(wanted) fehlt; Engine kennt "
+                    + subtitles.map { "\($0.id):\($0.codec)\($0.isForced ? ":forced" : "")" }.joined(separator: " "))
                 host?.avHandOver(audio: nil, subtitle: subtitleIndex, reason: "Untertitel \(subtitleIndex) nicht in der Engine")
             }
         } else if subtitleApplied != -1 {
@@ -731,6 +944,10 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
     /// look (size, colour, outline) applies to all of it, as with the other engines. With it on, ASS / SSA
     /// cues keep the file's style (colours with opacity, outline, shadow, bold, italic, override tags) and
     /// SRT keeps its colour and italic tags; the saved look fills the rest.
+    ///
+    /// **Back-to-back cues chain** (the core decides, `subtitle_chain_ends`): a cue that is followed by another one
+    /// within the core's chain gap (500 ms) stays until that one starts, so the text swaps at once, with no blank
+    /// frame between them and no fade. A longer pause keeps the fade of the overlay.
     private func refreshSubtitle() {
         guard !stopped else { return }
         var line: String?
@@ -741,7 +958,7 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
             let keep = overlay.keepsFileStyle
             let sheet = keep ? activeStyleSheet() : nil
             var pieces: [ASSRun] = []
-            for cue in engine.subtitleCues where cue.startTime <= time && time < cue.endTime {
+            for cue in engine.subtitleCues where cue.startTime <= time && time < (chainEnds[cue.id] ?? cue.endTime) {
                 var runs: [ASSRun]
                 switch cue.body {
                 case .text(let text):
@@ -777,8 +994,22 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
         overlay.show(line, styled: styled, in: surface.bounds, picture: pictureRect)
         #if DEBUG
         overlayLine = line
+        Self.subtitleProbe?(engine.clock.sourceTime, line)
         #endif
     }
+
+    /// The end each cue is shown until, by cue id: the core's answer for the whole list, made when the list changes.
+    private var chainEnds: [Int: Double] = [:]
+
+    private static func shownEnds(ids: [Int], starts: [Double], ends: [Double]) -> [Int: Double] {
+        let shown = subtitleChainEnds(starts: starts, ends: ends)
+        return Dictionary(zip(ids, shown), uniquingKeysWith: { first, _ in first })
+    }
+
+    #if DEBUG
+    /// The live run's window into the subtitle: called on every refresh with the media time and the line on screen.
+    nonisolated(unsafe) static var subtitleProbe: ((Double, String?) -> Void)?
+    #endif
 
     #if DEBUG
     /// For the running-app matrix (`LiveRun`): the text on screen and the engine's active subtitle track.
@@ -892,6 +1123,11 @@ final class AetherPlayerEngine: NSObject, PlaybackBackend {
         sentry?.cancel()
         loadTask?.cancel()
         bag.removeAll()
+        #if canImport(UIKit)
+        if let o = foregroundObserver { NotificationCenter.default.removeObserver(o); foregroundObserver = nil }
+        if let o = backgroundObserver { NotificationCenter.default.removeObserver(o); backgroundObserver = nil }
+        if let o = inactiveObserver { NotificationCenter.default.removeObserver(o); inactiveObserver = nil }
+        #endif
         #if os(iOS)
         pipWatch = nil
         pip?.delegate = nil
@@ -930,6 +1166,8 @@ extension AetherPlayerEngine: @MainActor AVPictureInPictureControllerDelegate {
     func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
         // Keeps the engine's pipeline alive while the app is in the background.
         pictureInPictureSubtitles(true)
+        // The system may open the window only after the app left: a pause made on leaving ends, the title plays on in it.
+        if lifecycle.pictureStarted() == .resume { engine.play() }
         host?.onPiPStateChanged?(true)
         emit(.pipActive(on: true))
     }
@@ -938,6 +1176,8 @@ extension AetherPlayerEngine: @MainActor AVPictureInPictureControllerDelegate {
         pictureInPictureSubtitles(false)
         host?.onPiPStateChanged?(false)
         emit(.pipActive(on: false))
+        // A stale pipeline waited for the end of the window (it is never rebuilt under it): the app is in front again, so now.
+        if health.stale, UIApplication.shared.applicationState == .active { restoreAfterBackground(thenPlay: false) }
     }
 
     func pictureInPictureController(_ controller: AVPictureInPictureController,

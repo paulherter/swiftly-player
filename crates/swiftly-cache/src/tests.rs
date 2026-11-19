@@ -329,3 +329,23 @@ fn blob_store_is_the_library_store_and_keeps_the_preview_offline() {
     s.remove("home-acc1.json");
     assert!(s.read("home-acc1.json").is_none());
 }
+
+#[test]
+fn quiet_list_change_marks_stale_but_tells_nobody() {
+    let c = mem();
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let h = Arc::clone(&heard);
+    c.subscribe(move |ch| h.lock().expect("lock").push(ch.clone()));
+    let t = c.ticket(&scope());
+    c.put_list(&t, "k", &ids(&["a"]), Some(1)).expect("list");
+    c.lists_changed_quietly(&scope());
+    assert!(c.get_list(&scope(), "k").expect("l").stale);
+    assert!(heard.lock().expect("lock").is_empty(), "a screen was told");
+    // A fetch that started before is still stored stale, like after a loud change.
+    let t2 = c.ticket(&scope());
+    c.lists_changed_quietly(&scope());
+    c.put_list(&t2, "k", &ids(&["a"]), Some(1)).expect("list");
+    assert!(c.get_list(&scope(), "k").expect("l").stale);
+    c.lists_changed(&scope());
+    assert_eq!(heard.lock().expect("lock").len(), 1);
+}

@@ -96,7 +96,8 @@ class Settings(store: Store) {
     var audioLanguage by RememberValue(a, "tonSprache", a.rememberValue("tonSprache").orEmpty()) { it }
     /** Empty means: off. */
     var subtitleLanguage by RememberValue(a, "utSprache", a.rememberValue("utSprache").orEmpty()) { it }
-    var subtitleAutomatic by RememberValue(a, "utAuto", bool("utAuto", false), yesNo)
+    /** On until the user turns it off (the core's default, `AUTOMATIC_SUBTITLES_DEFAULT`). */
+    var subtitleAutomatic by RememberValue(a, "utAuto", bool("utAuto", true), yesNo)
     /**
      * **How text subtitles look**, as the package's JSON (`SubtitleLook`, sync key `utAussehen`): seven
      * steps and switches. Empty is the default. Every rule, table and default is in the package
@@ -480,10 +481,13 @@ enum class Trailing { Chevron, None, External }
  */
 @Composable
 fun ProfileRow(symbol: Glyph, title: String, under: String? = null, characterAccent: Boolean = false,
-                 trailing: Trailing = Trailing.Chevron, perform: () -> Unit) {
+                 trailing: Trailing = Trailing.Chevron, count: Int = 0, perform: () -> Unit) {
     // `PressRow`: the row is edge to edge, so it colors the surface instead of shrinking.
     RowsLayout(symbol, title, under, Theme.font, Modifier.pressRow(perform),
                  drawColor = if (characterAccent) Theme.accent else Theme.font) {
+        // The count mark (`SeerrCountMark`): what waits for a manager, in the warning color.
+        if (count > 0) Text(count.toString(), style = Theme.small.copy(fontWeight = FontWeight.SemiBold), color = Theme.reason,
+                            modifier = Modifier.clip(CircleShape).background(Theme.warning).padding(horizontal = 8.dp, vertical = 2.dp))
         if (trailing != Trailing.None) Arrow(external = trailing == Trailing.External)
     }
 }

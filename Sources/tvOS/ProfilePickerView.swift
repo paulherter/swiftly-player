@@ -25,8 +25,8 @@ enum ProfilePickerRule {
     static func opensAtLaunch(ready: Bool, accounts: Int) -> Bool {
         guard ready, accounts >= minimum else { return false }
         #if DEBUG
+        if forced { return true }  // asked for by name: also in the in-memory live runs (the UI-test driver's picker proof)
         if LiveRun.inMemory { return false }  // the live matrix on a real device must not stop at the picker
-        if forced { return true }
         #endif
         return UserDefaults.standard.object(forKey: key) as? Bool ?? true
     }
@@ -159,6 +159,8 @@ struct ProfilePicker: View {
             if entered { shown = true }
         }
         .onChange(of: entered) { _, now in if now { shown = true } }
+        // The picker may come up while the curtain still holds tvOS's first focus pass; see `TVFocusGuard`.
+        .tvFocusGuard("picker", key: entered)
         .onChange(of: focus) { old, new in
             guard case let .profile(key)? = new else { return }
             // Coming up from the switch: back to the avatar we left, not to whichever lies

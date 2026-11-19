@@ -20,6 +20,13 @@ struct OfferingLayerTests {
         return triggered
     }
 
+    @Test("Eine offene Menüleiste hält die Uhren an")
+    func menuHoldsClocks() {
+        #expect(OfferingLayer.clocksRun(playing: true, menuOpen: false))
+        #expect(!OfferingLayer.clocksRun(playing: true, menuOpen: true))
+        #expect(!OfferingLayer.clocksRun(playing: false, menuOpen: false))
+    }
+
     @Test("Überspringen steht ab Beginn sechs Sekunden über dem Bild und blendet dann aus")
     func skipFadeOut() {
         var e = OfferingLayer()

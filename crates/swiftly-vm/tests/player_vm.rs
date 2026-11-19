@@ -19,7 +19,7 @@ use swiftly_vm::{
     AfterPlay, CloseStep, Failure, GroupHook, MemoryTrackStore, NextEpisode, Nudge,
     ORIGINAL_QUALITY_HINT, OfferView, Phase, PlayerEffect, PlayerIntent, PlayerLayer, PlayerPrefs,
     PlayerSpec, PlayerVm, Quality, RemoteOrders, ReplaceRunning, ReportKind, ReportMessage,
-    Reporter, SMALL_WINDOW_TEXT, StreamReading, TrackMemoryStore,
+    Reporter, SMALL_WINDOW_TEXT, SWITCH_FAILED_HINT, StreamReading, TrackMemoryStore,
 };
 
 #[derive(Default)]
@@ -1058,6 +1058,146 @@ fn the_subtitle_delay_survives_an_episode_of_the_same_series_only() {
 }
 
 #[test]
+fn the_menu_speed_row_sends_one_rate_command_and_marks_the_running_speed() {
+    let r = rig();
+    r.picture(101.0, 0.0, 3600.0);
+    assert!(
+        r.vm.menu(",")
+            .speeds
+            .iter()
+            .find(|s| s.value == 1.0)
+            .unwrap()
+            .selected
+    );
+    r.vm.send(PlayerIntent::Tempo(1.5), 102.0);
+    assert!(r.engine.has("rate 1.5"));
+    let menu = r.vm.menu(",");
+    assert_eq!(menu.speeds.iter().filter(|s| s.selected).count(), 1);
+    assert!(
+        menu.speeds
+            .iter()
+            .find(|s| s.value == 1.5)
+            .unwrap()
+            .selected
+    );
+    assert_eq!(r.vm.transport().tempo, 1.5);
+}
+
+#[test]
+fn the_menu_offset_buttons_step_clamp_and_reset_through_the_engine() {
+    let r = rig();
+    r.picture(101.0, 0.0, 3600.0);
+    assert_eq!(r.vm.menu(",").offset_text, "0 s");
+    assert!(!r.vm.menu(",").can_reset);
+    for step in [500, 500, 100] {
+        r.vm.send(PlayerIntent::SubtitleOffsetStep(step), 102.0);
+    }
+    assert_eq!(r.vm.tracks().subtitle_delay_ms, 1100);
+    let menu = r.vm.menu(",");
+    assert_eq!(menu.offset_text, "+1,1 s");
+    assert!(menu.can_reset);
+    let calls = r.engine.calls();
+    let delays: Vec<&String> = calls
+        .iter()
+        .filter(|c| c.starts_with("subtitle-delay"))
+        .collect();
+    assert_eq!(
+        delays,
+        [
+            "subtitle-delay 500",
+            "subtitle-delay 1000",
+            "subtitle-delay 1100"
+        ]
+    );
+    r.vm.send(PlayerIntent::SubtitleOffsetStep(-500), 103.0);
+    assert_eq!(r.vm.tracks().subtitle_delay_ms, 600);
+    r.vm.send(PlayerIntent::SubtitleOffsetReset, 104.0);
+    assert_eq!(r.vm.tracks().subtitle_delay_ms, 0);
+    assert!(r.engine.has("subtitle-delay 0"));
+    // Past the limit the offset stops, no command for a press that changes nothing.
+    r.vm.send(
+        PlayerIntent::SubtitleDelay(Delay::from_milliseconds(10_000)),
+        105.0,
+    );
+    let before = r.engine.calls().len();
+    r.vm.send(PlayerIntent::SubtitleOffsetStep(500), 106.0);
+    assert_eq!(r.vm.tracks().subtitle_delay_ms, 10_000);
+    assert_eq!(r.engine.calls().len(), before);
+}
+
+#[test]
+fn a_remembered_offset_reaches_the_engine_when_the_memory_comes_before_the_start() {
+    let store = Arc::new(MemoryTrackStore::default());
+    let mut all = std::collections::HashMap::new();
+    all.insert("ep1".to_owned(), "1500".to_owned());
+    store.save(swiftly_vm::OFFSET_KEY, &all);
+    let engine = Arc::new(Fake::default());
+    let vm = PlayerVm::new(
+        engine.clone(),
+        Arc::new(Reports::default()),
+        Arc::new(Words),
+        PlayerPrefs::default(),
+        spec(0.0, false),
+        100.0,
+    );
+    vm.set_memory(Some(store as Arc<dyn TrackMemoryStore>));
+    vm.start(100.0);
+    assert_eq!(vm.tracks().subtitle_delay_ms, 1500);
+    assert_eq!(vm.menu(",").offset_text, "+1,5 s");
+    assert_eq!(
+        engine
+            .calls()
+            .iter()
+            .filter(|c| *c == "subtitle-delay 1500")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn the_offset_is_remembered_per_title_and_the_speed_is_not() {
+    let r = rig();
+    let store = Arc::new(MemoryTrackStore::default());
+    r.vm.set_memory(Some(store.clone() as Arc<dyn TrackMemoryStore>));
+    r.picture(101.0, 0.0, 3600.0);
+    r.vm.send(PlayerIntent::SubtitleOffsetStep(500), 102.0);
+    r.vm.send(PlayerIntent::SubtitleOffsetStep(500), 102.5);
+    r.vm.send(PlayerIntent::Tempo(2.0), 103.0);
+    assert_eq!(
+        store
+            .load(swiftly_vm::OFFSET_KEY)
+            .get("ep1")
+            .map(String::as_str),
+        Some("1000")
+    );
+    // Another film (no series): the offset does not come along, the speed starts at normal.
+    let mut other = spec(0.0, false);
+    other.item_id = "film".into();
+    other.series_id = None;
+    r.vm.load_title(other, 110.0);
+    assert_eq!(r.vm.tracks().subtitle_delay_ms, 0);
+    assert_eq!(r.vm.transport().tempo, 1.0);
+    assert!(r.engine.calls().iter().rev().take(6).any(|c| c == "rate 1"));
+    // Back to the first title: its own offset is there again, sent to the engine.
+    let mut again = spec(0.0, false);
+    again.series_id = None;
+    r.vm.load_title(again, 120.0);
+    assert_eq!(r.vm.tracks().subtitle_delay_ms, 1000);
+    assert!(
+        r.engine
+            .calls()
+            .iter()
+            .filter(|c| *c == "subtitle-delay 1000")
+            .count()
+            >= 2
+    );
+    assert_eq!(r.vm.menu(",").offset_text, "+1 s");
+    // A reset forgets it.
+    r.vm.send(PlayerIntent::SubtitleOffsetReset, 121.0);
+    assert!(!store.load(swiftly_vm::OFFSET_KEY).contains_key("ep1"));
+}
+
+#[test]
 fn a_quality_switch_reloads_at_the_position_and_says_when_the_original_plays() {
     let r = rig();
     r.picture(101.0, 600.0, 3600.0);
@@ -1956,4 +2096,934 @@ fn auto_skip_does_not_act_at_frame_zero_and_the_ring_survives_a_seek_inside() {
         2,
         "one for the user's seek, one for the skip"
     );
+}
+
+// MARK: Resume position from the first frame
+
+/// The shown time of a resumed title before the engine reported anything.
+fn shown(r: &Rig) -> f64 {
+    r.vm.transport().position
+}
+
+/// A title that resumes at 80 s shows 80 s from the first frame, not 0:00 until the engine's picture is up
+/// (the Mac and iPhone screens seed their display with the start position the same way).
+#[test]
+fn resume_position_shows_from_the_first_frame() {
+    let r = rig_with(80.0, false, PlayerPrefs::default());
+    assert_eq!(shown(&r), 80.0, "straight after the start");
+    assert_eq!(r.vm.transport().phase, Phase::Loading);
+    // The remaining time is right from the first frame too: the source's runtime stands in for the engine's length.
+    assert_eq!(r.vm.transport().duration, 3600.0);
+    // Nothing the engine says before its picture moves it: ticks, duration, the load finishing.
+    r.vm.display_tick(100.25);
+    r.vm.tick(100.5);
+    assert_eq!(shown(&r), 80.0, "after the first ticks");
+    r.vm.engine_event(EngineEvent::Duration(150.0), 100.6);
+    r.vm.engine_event(EngineEvent::LoadFinished { attempt: 1 }, 100.7);
+    r.vm.display_tick(100.75);
+    r.vm.tick(101.0);
+    assert_eq!(
+        shown(&r),
+        80.0,
+        "with duration and load known, picture not yet"
+    );
+    assert_eq!(r.vm.transport().duration, 150.0, "the engine's length wins");
+    // The picture is up and the clock stands at the resume point: no step back, no jump.
+    r.picture(101.1, 80.4, 150.0);
+    r.vm.display_tick(101.25);
+    r.vm.tick(101.5);
+    assert_eq!(shown(&r), 80.4);
+    assert!(r.vm.transport().picture_shown);
+}
+
+/// No resume (or one the server rounds to the beginning) keeps the clock at 0, as before.
+#[test]
+fn no_resume_position_starts_at_zero() {
+    for start in [0.0, 0.3] {
+        let r = rig_with(start, false, PlayerPrefs::default());
+        assert_eq!(shown(&r), 0.0, "start {start}");
+    }
+    // A damaged resume point means the beginning, as the state machine reads it.
+    for start in [f64::NAN, -5.0] {
+        let r = rig_with(start, false, PlayerPrefs::default());
+        assert_eq!(shown(&r), 0.0, "start {start}");
+    }
+}
+
+/// A start that fails shows the resume point on the failure card (the point a fallback stream takes over at), not 0.
+#[test]
+fn failed_start_keeps_the_resume_point() {
+    let r = rig_with(80.0, false, PlayerPrefs::default());
+    r.vm.engine_event(
+        EngineEvent::LoadFailed {
+            attempt: 1,
+            message: "timeout".into(),
+            kind: None,
+        },
+        101.0,
+    );
+    r.vm.display_tick(101.25);
+    r.vm.tick(101.5);
+    assert!(r.vm.transport().failure.is_some());
+    assert_eq!(shown(&r), 80.0);
+}
+
+/// The engine did not honour the start (the stream plays from the beginning): the seeded time does not stay for good.
+/// The display follows the engine's real time once the start window (25 s) is over.
+#[test]
+fn declined_start_seek_does_not_leave_the_resume_time_for_good() {
+    let r = rig_with(80.0, false, PlayerPrefs::default());
+    r.picture(101.0, 0.2, 150.0);
+    r.vm.display_tick(101.25);
+    r.vm.tick(101.5);
+    // Inside the start window the engine's low clock is held back (issue #43), the display stays at the resume point.
+    assert_eq!(shown(&r), 80.0);
+    // Past it the engine's own time wins.
+    let end = r.run(101.5, 130.0, 1.0);
+    let p = shown(&r);
+    assert!(
+        (p - (1.0 + (end - 101.5))).abs() < 1.0,
+        "the display still shows {p} while the engine plays near {}",
+        1.0 + (end - 101.5)
+    );
+}
+
+// ---- Progress schedule and scrub/hide rules (item: progress every ten seconds, no hide during a scrub) ----
+
+/// Ticks of `step` seconds from `from` to `to`, the engine clock following real time (position = t - from + at).
+fn ticks_every(r: &Rig, step: f64, from: f64, to: f64, position_at_from: f64) {
+    let mut t = from;
+    while t < to - 1e-9 {
+        t += step;
+        let p = position_at_from + (t - from);
+        r.vm.engine_event(
+            EngineEvent::Clock {
+                position: p,
+                source_time: p,
+            },
+            t,
+        );
+        r.vm.tick(t);
+    }
+}
+
+/// The positions of the progress reports of a film that plays in real time from 0: each is the time it went out.
+fn progress_times(r: &Rig) -> Vec<f64> {
+    r.reports
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|m| matches!(m.kind, ReportKind::Progress { .. }))
+        .map(|m| m.seconds)
+        .collect()
+}
+
+/// The server must never be more than about ten seconds behind, for a whole film and also when the host's tick
+/// loop runs late (twenty late ticks used to be the only spacing: a 2 s loop reported every 40 s).
+#[test]
+fn progress_goes_out_every_ten_seconds_for_a_whole_film_also_with_late_ticks() {
+    // 0.6 s is the rate where the rules' own count of twenty ticks (12 s) and the wall-clock beat (10.2 s) disagree:
+    // both used to report, 1.8 s apart. The same holds for 0.3, 0.9 and 1.3.
+    for step in [0.3, 0.5, 0.6, 0.9, 1.0, 1.3, 2.0, 4.0] {
+        let r = rig();
+        r.picture(101.0, 0.0, 7200.0);
+        r.vm.tick(101.5);
+        assert_eq!(r.reports.kinds(), vec![ReportKind::Start]);
+        // 35 minutes: the length of the film in which the server once held minute 9.
+        ticks_every(&r, step, 101.5, 101.5 + 35.0 * 60.0, 0.5);
+        let at = progress_times(&r);
+        let slack = 10.0 + step;
+        assert!(
+            at.len() as f64 >= 35.0 * 60.0 / slack - 1.0,
+            "step {step}: only {} progress reports in 35 min",
+            at.len()
+        );
+        let mut last = 0.5;
+        for t in &at {
+            assert!(
+                t - last <= slack + 1e-6,
+                "step {step}: gap {} s between reports",
+                t - last
+            );
+            // One beat, one source: never a second report soon after one (a double report is not a late one).
+            assert!(
+                t - last >= 10.0 - 1e-6,
+                "step {step}: only {} s between two reports",
+                t - last
+            );
+            last = *t;
+        }
+        assert!(
+            35.0 * 60.0 - last <= slack,
+            "step {step}: the tail is unreported"
+        );
+    }
+}
+
+#[test]
+fn background_reports_the_position_at_once_playing_or_paused() {
+    let r = rig();
+    r.picture(101.0, 100.0, 3600.0);
+    r.vm.tick(101.5);
+    ticks_every(&r, 0.5, 101.5, 104.0, 100.5);
+    let before = progress_times(&r).len();
+    r.vm.send(PlayerIntent::Background { paused: false }, 104.0);
+    assert_eq!(progress_times(&r).len(), before + 1, "one report at once");
+    assert_eq!(
+        r.reports.last().kind,
+        ReportKind::Progress { paused: false },
+        "still playing"
+    );
+    // Playing on: the next beat still comes within ten seconds of the background report.
+    ticks_every(&r, 0.5, 104.0, 114.5, 103.0);
+    assert!(progress_times(&r).len() > before + 1);
+    // Paused: the report says so.
+    r.vm.send(PlayerIntent::TogglePlay, 115.0);
+    r.vm.engine_event(EngineEvent::State(EngineState::Paused), 115.0);
+    r.vm.send(PlayerIntent::Background { paused: false }, 116.0);
+    assert_eq!(r.reports.last().kind, ReportKind::Progress { paused: true });
+    // Before the first picture there is nothing to report; after the close nothing goes out.
+    let fresh = rig();
+    fresh
+        .vm
+        .send(PlayerIntent::Background { paused: false }, 101.0);
+    assert!(fresh.reports.kinds().is_empty());
+    r.vm.send(PlayerIntent::Close, 117.0);
+    let n = r.reports.kinds().len();
+    r.vm.send(PlayerIntent::Background { paused: false }, 118.0);
+    assert_eq!(r.reports.kinds().len(), n);
+}
+
+/// No auto-hide during a scrub, however long: touch drag with a rest in the middle (longer than the safety that lets
+/// go of a stuck scrubber), and the hide timer starts only after the release.
+#[test]
+fn the_bar_stays_for_a_scrub_longer_than_the_hide_delay_and_hides_four_seconds_after_the_release() {
+    let r = rig();
+    r.picture(101.0, 0.0, 7200.0);
+    r.vm.send(PlayerIntent::WakeControls, 102.0);
+    r.vm.send(PlayerIntent::ScrubStart, 102.0);
+    // Twelve seconds of dragging: three times the hide delay.
+    let mut t = 102.0;
+    while t < 114.0 {
+        t += 0.5;
+        r.vm.send(PlayerIntent::ScrubMove(1000.0 + t), t);
+        r.vm.tick(t);
+        assert!(r.vm.controls().visible, "hidden while dragging at {t}");
+    }
+    // The finger rests for six seconds without a move (the stuck-scrubber safety lets go after three).
+    while t < 120.0 {
+        t += 0.5;
+        r.vm.tick(t);
+        assert!(
+            r.vm.controls().visible,
+            "hidden under a resting finger at {t}"
+        );
+    }
+    // Release: the timer starts here, so the bar is there for the next 3.5 s and gone after 4.5 s.
+    r.vm.send(PlayerIntent::ScrubEnd(1100.0), t);
+    let released = t;
+    while t < released + 3.5 {
+        t += 0.5;
+        r.vm.engine_event(
+            EngineEvent::Clock {
+                position: 1100.0 + (t - released),
+                source_time: 1100.0 + (t - released),
+            },
+            t,
+        );
+        r.vm.tick(t);
+        assert!(
+            r.vm.controls().visible,
+            "hidden {} s after the release",
+            t - released
+        );
+    }
+    while t < released + 4.6 {
+        t += 0.5;
+        r.vm.tick(t);
+    }
+    assert!(!r.vm.controls().visible, "still up 4.6 s after the release");
+}
+
+/// The host paused its engine on the way out and the engine's own report has not reached the core (a backgrounded app
+/// draws no frames): the report carries what the host says, not the last state the core heard.
+#[test]
+fn background_report_carries_the_state_the_host_declares() {
+    let r = rig();
+    r.picture(101.0, 100.0, 3600.0);
+    r.vm.tick(101.5);
+    ticks_every(&r, 0.5, 101.5, 104.0, 100.5);
+    // No engine event: the core still believes it plays.
+    r.vm.send(PlayerIntent::Background { paused: true }, 104.0);
+    assert_eq!(
+        r.reports.last().kind,
+        ReportKind::Progress { paused: true },
+        "the host had paused"
+    );
+    // The late engine report does not send the same state twice.
+    let n = r.reports.kinds().len();
+    r.vm.engine_event(EngineEvent::State(EngineState::Paused), 104.1);
+    assert_eq!(r.reports.kinds().len(), n, "one report for one pause");
+}
+
+/// Regression: the bar hid under a resting finger. A thumb that stays on the slider for half a minute keeps the
+/// bar the whole time; only the release (or a cancel the host reports as the end) starts the four seconds.
+#[test]
+fn a_finger_resting_for_thirty_seconds_keeps_the_bar_and_the_scrub() {
+    let r = rig();
+    r.picture(101.0, 0.0, 7200.0);
+    r.vm.send(PlayerIntent::WakeControls, 102.0);
+    r.vm.send(PlayerIntent::ScrubStart, 102.0);
+    r.vm.send(PlayerIntent::ScrubMove(1000.0), 102.5);
+    let mut t = 102.5;
+    while t < 102.5 + 30.0 {
+        t += 0.5;
+        r.vm.tick(t);
+        assert!(
+            r.vm.controls().visible,
+            "bar hidden {} s into the rest",
+            t - 102.5
+        );
+        assert!(
+            r.vm.controls().scrubbing,
+            "scrub let go {} s into the rest",
+            t - 102.5
+        );
+    }
+    // The finger lets go: nothing was decided in between, so the bar is still up and then counts four seconds.
+    r.vm.send(PlayerIntent::ScrubEnd(1000.0), t);
+    let released = t;
+    while t < released + 3.5 {
+        t += 0.5;
+        r.vm.tick(t);
+        assert!(
+            r.vm.controls().visible,
+            "hidden {} s after the release",
+            t - released
+        );
+    }
+    while t < released + 4.6 {
+        t += 0.5;
+        r.vm.tick(t);
+    }
+    assert!(!r.vm.controls().visible, "still up 4.6 s after the release");
+}
+
+/// The app leaving the foreground takes the touch with it: the scrub ends there (no seek), instead of hanging for
+/// ever now that no timer lets go of it.
+#[test]
+fn leaving_the_foreground_ends_a_scrub_in_progress() {
+    let r = rig();
+    r.picture(101.0, 0.0, 7200.0);
+    r.vm.send(PlayerIntent::ScrubStart, 102.0);
+    r.vm.send(PlayerIntent::ScrubMove(1000.0), 102.5);
+    assert!(r.vm.controls().scrubbing);
+    r.vm.send(PlayerIntent::Background { paused: true }, 103.0);
+    assert!(!r.vm.controls().scrubbing, "the scrub is over");
+}
+
+// MARK: A failed plan for the next episode
+
+/// A host whose plan call always fails: it counts every `StartEpisode` it is asked for and answers with
+/// [`PlayerVm::switch_failed`], once per request. Everything a tick hands out passes through here.
+#[derive(Default)]
+struct FailingHost {
+    plan_requests: usize,
+    /// The hint right after the last failure answer.
+    hint_after: Option<String>,
+}
+
+impl FailingHost {
+    fn serve(&mut self, r: &Rig, now: f64) {
+        for e in r.vm.take_effects() {
+            if matches!(e, PlayerEffect::StartEpisode { .. }) {
+                self.plan_requests += 1;
+                r.vm.switch_failed(now);
+                self.hint_after = r.vm.transport().hint;
+            }
+        }
+    }
+
+    /// 500 ms ticks with the clock running, the host serving what comes out; returns the clock position.
+    fn ticks(&mut self, r: &Rig, from: f64, n: usize, position_at_from: f64) -> f64 {
+        let mut t = from;
+        for _ in 0..n {
+            t += 0.5;
+            let p = position_at_from + (t - from);
+            r.vm.engine_event(
+                EngineEvent::Clock {
+                    position: p,
+                    source_time: p,
+                },
+                t,
+            );
+            r.vm.display_tick(t - 0.25);
+            r.vm.tick(t);
+            self.serve(r, t);
+        }
+        t
+    }
+}
+
+fn loads(r: &Rig) -> usize {
+    r.engine
+        .calls()
+        .iter()
+        .filter(|c| c.starts_with("load"))
+        .count()
+}
+
+/// The old title is back in `Playing` after the engine delivered its picture again.
+fn old_title_picture_again(r: &Rig, now: f64, position: f64) {
+    r.picture(now, position, 3600.0);
+    r.vm.tick(now + 0.1);
+}
+
+#[test]
+fn a_failed_plan_brings_the_old_title_back_with_one_hint_and_no_automatic_retry() {
+    let r = rig_with(0.0, true, PlayerPrefs::default());
+    r.vm.set_sections(vec![Segment::new(Art::Credits, 3500.0, 3600.0)]);
+    r.picture(101.0, 3499.0, 3600.0);
+    r.run(101.0, 103.0, 3499.0);
+    // The countdown runs out: the core asks for the plan of ep2, and the host's plan call fails.
+    r.run(103.0, 113.0, 3501.0);
+    let mut host = FailingHost::default();
+    host.serve(&r, 113.0);
+    assert_eq!(host.plan_requests, 1);
+    assert_eq!(
+        r.vm.transport().hint.as_deref(),
+        Some(SWITCH_FAILED_HINT),
+        "one German line says why"
+    );
+    // Not stuck in `Switching`: the old title is loading again at its position, not failed, not closed.
+    assert_eq!(r.vm.stage(), swiftly_vm::PlayerStage::Opening);
+    assert_ne!(r.vm.transport().phase, Phase::Failed);
+    assert_eq!(loads(&r), 2, "the old title is reopened once");
+    old_title_picture_again(&r, 113.2, 3511.0);
+    assert_eq!(r.vm.stage(), swiftly_vm::PlayerStage::Playing);
+
+    // 20 ticks later (the card still counting, the end near): still one plan request, the same single hint.
+    let t = host.ticks(&r, 113.3, 20, 3511.0);
+    assert_eq!(host.plan_requests, 1, "a retry loop asks again every tick");
+    assert_eq!(
+        r.vm.transport().hint,
+        None,
+        "the single hint went after its time"
+    );
+    assert_eq!(loads(&r), 2);
+    assert_eq!(
+        r.reports
+            .kinds()
+            .iter()
+            .filter(|k| **k == ReportKind::Stop)
+            .count(),
+        1,
+        "the stop went out once"
+    );
+    assert_eq!(
+        r.reports
+            .kinds()
+            .iter()
+            .filter(|k| **k == ReportKind::Start)
+            .count(),
+        2,
+        "the server hears exactly one new start for the old title that goes on"
+    );
+
+    // A second failure answer without a request changes nothing.
+    r.vm.switch_failed(t);
+    assert_eq!(loads(&r), 2);
+
+    // The user's Next is the retry: it asks again (and the hint goes while the plan is asked for).
+    r.vm.send(PlayerIntent::NextEpisode, t + 0.1);
+    assert_eq!(r.vm.transport().hint, None);
+    host.serve(&r, t + 0.1);
+    assert_eq!(host.plan_requests, 2, "the manual retry asks the host once");
+    assert_eq!(r.vm.transport().hint.as_deref(), Some(SWITCH_FAILED_HINT));
+    host.ticks(&r, t + 0.2, 20, 3531.0);
+    assert_eq!(host.plan_requests, 2, "and again no automatic loop");
+}
+
+#[test]
+fn a_failed_plan_after_the_end_leaves_the_title_over_and_next_is_the_retry() {
+    let r = rig_with(0.0, true, PlayerPrefs::default());
+    r.vm.set_sections(vec![Segment::new(Art::Credits, 3500.0, 3600.0)]);
+    r.picture(101.0, 3590.0, 3600.0);
+    r.run(101.0, 103.0, 3590.0);
+    r.vm.engine_event(EngineEvent::State(EngineState::Ended), 104.0);
+    let mut host = FailingHost::default();
+    let t = host.ticks(&r, 104.0, 40, 3600.0);
+    assert_eq!(host.plan_requests, 1, "the end advanced once");
+    assert_eq!(r.vm.stage(), swiftly_vm::PlayerStage::Ended);
+    assert_eq!(r.vm.transport().phase, Phase::Ended);
+    assert_eq!(host.hint_after.as_deref(), Some(SWITCH_FAILED_HINT));
+    assert_eq!(
+        r.vm.transport().hint,
+        None,
+        "and the hint went after its time"
+    );
+    assert_eq!(loads(&r), 1, "an ended title is not reopened");
+    host.ticks(&r, t, 20, 3600.0);
+    assert_eq!(host.plan_requests, 1);
+    r.vm.send(PlayerIntent::NextEpisode, t + 20.0);
+    host.serve(&r, t + 20.0);
+    assert_eq!(host.plan_requests, 2);
+}
+
+#[test]
+fn a_failed_plan_for_a_paused_title_brings_it_back_paused() {
+    let r = rig_with(0.0, true, PlayerPrefs::default());
+    r.picture(101.0, 600.0, 3600.0);
+    r.run(101.0, 103.0, 600.0);
+    r.vm.send(PlayerIntent::TogglePlay, 103.0);
+    r.vm.engine_event(EngineEvent::State(EngineState::Paused), 103.0);
+    r.run(103.0, 104.0, 602.0);
+    r.vm.send(PlayerIntent::NextEpisode, 104.0);
+    let mut host = FailingHost::default();
+    host.serve(&r, 104.0);
+    assert_eq!(host.plan_requests, 1);
+    assert_eq!(loads(&r), 2);
+    old_title_picture_again(&r, 104.2, 602.0);
+    r.vm.engine_event(EngineEvent::State(EngineState::Paused), 104.3);
+    r.vm.tick(104.5);
+    assert_eq!(r.vm.stage(), swiftly_vm::PlayerStage::Paused);
+    assert_eq!(r.vm.transport().hint.as_deref(), Some(SWITCH_FAILED_HINT));
+}
+
+/// A title that ended, whose next-episode plan failed: the old title is still over on its last frame.
+fn ended_after_a_failed_plan() -> (Rig, f64) {
+    let r = rig_with(0.0, true, PlayerPrefs::default());
+    r.vm.set_sections(vec![Segment::new(Art::Credits, 3500.0, 3600.0)]);
+    r.picture(101.0, 3590.0, 3600.0);
+    r.run(101.0, 103.0, 3590.0);
+    r.vm.engine_event(EngineEvent::State(EngineState::Ended), 104.0);
+    let mut host = FailingHost::default();
+    let t = host.ticks(&r, 104.0, 40, 3600.0);
+    assert_eq!(host.plan_requests, 1, "the end asked for the plan once");
+    assert_eq!(r.vm.stage(), swiftly_vm::PlayerStage::Ended);
+    assert_eq!(
+        loads(&r),
+        1,
+        "an ended title is not reopened by the failure"
+    );
+    (r, t)
+}
+
+#[test]
+fn replay_after_a_failed_plan_from_an_ended_title_loads_it_again() {
+    let (r, t) = ended_after_a_failed_plan();
+    // The switch stopped the engine; the title is over, so the play button replays it from the start.
+    r.vm.send(PlayerIntent::TogglePlay, t + 1.0);
+    assert_eq!(
+        loads(&r),
+        2,
+        "replay opens the title again, not a dead still frame"
+    );
+    assert_eq!(
+        r.engine.calls().last().map(String::as_str),
+        Some("load None"),
+        "from the start"
+    );
+    // Its picture comes back and it plays again: no longer over.
+    let e = |ev| r.vm.engine_event(ev, t + 2.0);
+    e(EngineEvent::LoadFinished { attempt: 2 });
+    e(EngineEvent::State(EngineState::Playing));
+    e(EngineEvent::FirstFrame);
+    e(EngineEvent::Clock {
+        position: 1.0,
+        source_time: 1.0,
+    });
+    r.vm.tick(t + 2.5);
+    assert_ne!(r.vm.transport().phase, Phase::Ended);
+    assert_eq!(r.vm.stage(), swiftly_vm::PlayerStage::Playing);
+    let kinds = r.reports.kinds();
+    let count = |k: ReportKind| kinds.iter().filter(|x| **x == k).count();
+    assert_eq!(
+        count(ReportKind::Stop),
+        1,
+        "the switch's stop went out once"
+    );
+    assert_eq!(
+        count(ReportKind::Start),
+        2,
+        "the replay reports a new start"
+    );
+}
+
+#[test]
+fn a_timeline_seek_after_a_failed_plan_from_an_ended_title_loads_it_again() {
+    let (r, t) = ended_after_a_failed_plan();
+    r.vm.send(PlayerIntent::SeekTo(1800.0), t + 1.0);
+    assert_eq!(loads(&r), 2, "the seek reopens the title at the target");
+    assert!(
+        r.engine.has("load Some(1800.0)"),
+        "at the target: {:?}",
+        r.engine.calls()
+    );
+}
+
+#[test]
+fn a_failed_plan_that_arrives_after_the_player_was_closed_does_nothing() {
+    let r = rig_with(0.0, true, PlayerPrefs::default());
+    r.picture(101.0, 600.0, 3600.0);
+    r.run(101.0, 103.0, 600.0);
+    r.vm.send(PlayerIntent::NextEpisode, 103.0);
+    assert!(
+        r.vm.take_effects()
+            .iter()
+            .any(|e| matches!(e, PlayerEffect::StartEpisode { .. })),
+        "the plan is asked for"
+    );
+    // The user closes the player while the plan is fetched.
+    r.vm.send(PlayerIntent::Close, 103.5);
+    assert_eq!(r.vm.stage(), swiftly_vm::PlayerStage::Closed);
+    let stops = |r: &Rig| {
+        r.reports
+            .kinds()
+            .iter()
+            .filter(|k| **k == ReportKind::Stop)
+            .count()
+    };
+    assert_eq!(stops(&r), 1, "the switch already sent the one stop");
+    assert!(r.engine.has("stop false"));
+    let before = r.engine.calls();
+    let effects = r.vm.take_effects();
+    assert!(
+        effects.iter().any(|e| matches!(e, PlayerEffect::Close)),
+        "{effects:?}"
+    );
+
+    // The plan call then fails: nothing comes back to life.
+    r.vm.switch_failed(104.0);
+    assert_eq!(r.engine.calls(), before, "no load, no second stop");
+    assert_eq!(r.vm.stage(), swiftly_vm::PlayerStage::Closed);
+    assert_eq!(r.vm.transport().hint, None, "no line over a closed player");
+    assert_eq!(stops(&r), 1);
+    assert!(
+        !r.reports.kinds().contains(&ReportKind::Start)
+            || r.reports
+                .kinds()
+                .iter()
+                .filter(|k| **k == ReportKind::Start)
+                .count()
+                == 1,
+        "no new start report for the old title"
+    );
+    r.vm.tick(105.0);
+    assert_eq!(r.engine.calls(), before);
+}
+
+#[test]
+fn a_plan_that_arrives_after_the_player_was_closed_does_not_reopen_it() {
+    let r = rig_with(0.0, true, PlayerPrefs::default());
+    r.picture(101.0, 600.0, 3600.0);
+    r.run(101.0, 103.0, 600.0);
+    r.vm.send(PlayerIntent::NextEpisode, 103.0);
+    let spec = r.vm.spec();
+    r.vm.send(PlayerIntent::Close, 103.5);
+    let before = r.engine.calls();
+    r.vm.load_title(spec, 104.0);
+    assert_eq!(r.engine.calls(), before, "a closed player loads nothing");
+    assert_eq!(r.vm.stage(), swiftly_vm::PlayerStage::Closed);
+}
+
+#[test]
+fn replay_of_an_ended_film_leaves_the_ended_phase_once_its_picture_is_back() {
+    let r = rig();
+    r.picture(101.0, 3590.0, 3600.0);
+    r.run(101.0, 105.0, 3590.0);
+    r.vm.engine_event(EngineEvent::State(EngineState::Ended), 106.0);
+    r.run(106.0, 110.0, 3600.0);
+    assert_eq!(r.vm.transport().phase, Phase::Ended);
+    r.vm.send(PlayerIntent::TogglePlay, 111.0);
+    assert_eq!(loads(&r), 2, "replay opens the film again");
+    let e = |ev| r.vm.engine_event(ev, 112.0);
+    e(EngineEvent::LoadFinished { attempt: 2 });
+    e(EngineEvent::State(EngineState::Playing));
+    e(EngineEvent::FirstFrame);
+    e(EngineEvent::Clock {
+        position: 1.0,
+        source_time: 1.0,
+    });
+    r.vm.tick(112.5);
+    assert_ne!(r.vm.transport().phase, Phase::Ended);
+    assert_eq!(r.vm.stage(), swiftly_vm::PlayerStage::Playing);
+}
+
+#[test]
+fn every_hint_goes_after_the_same_time_on_the_player_clock() {
+    use swiftly_vm::HINT_SECONDS;
+    // A failed plan: the line stays for HINT_SECONDS, whatever the clock does in between, then it goes.
+    let r = rig_with(0.0, true, PlayerPrefs::default());
+    r.picture(101.0, 600.0, 3600.0);
+    r.run(101.0, 103.0, 600.0);
+    r.vm.send(PlayerIntent::TogglePlay, 103.0);
+    r.vm.send(PlayerIntent::NextEpisode, 104.0);
+    let mut host = FailingHost::default();
+    host.serve(&r, 104.0);
+    assert_eq!(r.vm.transport().hint.as_deref(), Some(SWITCH_FAILED_HINT));
+    r.vm.tick(104.0 + HINT_SECONDS - 0.5);
+    assert_eq!(
+        r.vm.transport().hint.as_deref(),
+        Some(SWITCH_FAILED_HINT),
+        "still there just before its time"
+    );
+    r.vm.tick(104.0 + HINT_SECONDS);
+    assert_eq!(r.vm.transport().hint, None, "gone at its time");
+
+    // The sleep timer's line goes the same way.
+    let r = rig();
+    r.picture(101.0, 0.0, 3600.0);
+    r.vm.send(PlayerIntent::Sleep(Some(1)), 101.0);
+    r.vm.tick(162.0);
+    assert_eq!(
+        r.vm.transport().hint.as_deref(),
+        Some("Schlafzeit abgelaufen.")
+    );
+    r.vm.tick(162.0 + HINT_SECONDS - 0.5);
+    assert!(r.vm.transport().hint.is_some());
+    r.vm.tick(162.0 + HINT_SECONDS);
+    assert_eq!(r.vm.transport().hint, None);
+
+    // The original-quality line (set when the new plan arrives) goes the same way.
+    let prefs = PlayerPrefs {
+        direct_play: false,
+        bitrate_limit: 8,
+        ..PlayerPrefs::default()
+    };
+    let r = rig_with(0.0, false, prefs);
+    r.vm.after_quality_switch();
+    assert_eq!(
+        r.vm.transport().hint.as_deref(),
+        Some(ORIGINAL_QUALITY_HINT)
+    );
+    r.picture(101.0, 0.0, 3600.0);
+    r.vm.tick(100.0 + HINT_SECONDS + 0.5);
+    assert_eq!(r.vm.transport().hint, None, "no hint stays for good");
+}
+
+// MARK: The end of an episode that no outro reaches the end of the file of (17.11.).
+
+/// Runs 500 ms ticks from `from` (clock at `position`) until the file's end, where the engine reports the end, and on
+/// for `after` seconds. Returns the time reached.
+fn play_to_the_end(r: &Rig, from: f64, position: f64, duration: f64, after: f64) -> f64 {
+    let (mut t, mut p, mut ended) = (from, position, false);
+    let stop = from + (duration - position) + after;
+    while t < stop - 1e-9 {
+        t += 0.5;
+        p = (p + 0.5).min(duration);
+        if p >= duration && !ended {
+            r.vm.engine_event(EngineEvent::State(EngineState::Ended), t);
+            ended = true;
+        }
+        r.vm.engine_event(
+            EngineEvent::Clock {
+                position: p,
+                source_time: p,
+            },
+            t,
+        );
+        r.vm.display_tick(t - 0.25);
+        r.vm.tick(t);
+    }
+    t
+}
+
+fn episodes_started(r: &Rig) -> usize {
+    r.vm.take_effects()
+        .iter()
+        .filter(|e| matches!(e, PlayerEffect::StartEpisode { .. }))
+        .count()
+}
+
+fn is_card(r: &Rig) -> bool {
+    matches!(r.vm.offer().view, OfferView::Card { .. })
+}
+
+#[test]
+fn a_short_episode_without_markers_shows_the_card_in_its_last_seconds_and_then_starts_the_next() {
+    let r = rig_with(0.0, true, PlayerPrefs::default());
+    r.picture(101.0, 100.0, 120.0);
+    let t = r.run(101.0, 109.0, 100.0);
+    assert!(!is_card(&r), "the card came 11 s before the end");
+    // 113 s of 120: the last seven seconds.
+    let t = r.run(t, t + 5.0, 108.0);
+    assert!(is_card(&r), "no card in the last seconds");
+    assert_eq!(episodes_started(&r), 0, "the fill has not run out");
+    play_to_the_end(&r, t, 113.0, 120.0, 6.0);
+    assert_eq!(
+        episodes_started(&r),
+        1,
+        "the next episode starts once, at the end"
+    );
+}
+
+#[test]
+fn a_long_episode_without_any_marker_shows_the_short_card_and_not_the_thirty_second_one() {
+    let r = rig_with(0.0, true, PlayerPrefs::default());
+    r.picture(101.0, 1450.0, 1500.0);
+    // From 1470 s on (30 s left) the old card showed: nothing shows there any more.
+    let t = r.run(101.0, 126.0, 1450.0);
+    assert!(!is_card(&r), "the old thirty second card came back");
+    let t = r.run(t, t + 19.0, 1475.0);
+    assert!(is_card(&r), "no card in the last seven seconds");
+    assert_eq!(episodes_started(&r), 0, "the fill has not run out");
+    play_to_the_end(&r, t, 1494.0, 1500.0, 6.0);
+    assert_eq!(episodes_started(&r), 1, "the next episode starts once");
+}
+
+#[test]
+fn an_outro_that_ends_early_shows_the_card_in_the_last_seconds_and_then_starts_the_next() {
+    let r = rig_with(0.0, true, PlayerPrefs::default());
+    r.vm.set_sections(vec![Segment::new(Art::Credits, 1300.0, 1440.0)]);
+    r.picture(101.0, 1480.0, 1500.0);
+    let t = r.run(101.0, 111.0, 1480.0);
+    assert!(!is_card(&r), "the card came 10 s before the end");
+    let t = r.run(t, t + 4.0, 1490.0);
+    assert!(is_card(&r), "no card in the last seconds");
+    assert_eq!(episodes_started(&r), 0);
+    play_to_the_end(&r, t, 1494.0, 1500.0, 6.0);
+    assert_eq!(episodes_started(&r), 1);
+}
+
+#[test]
+fn cancelling_the_closing_card_keeps_the_player_on_the_last_frame() {
+    let r = rig_with(0.0, true, PlayerPrefs::default());
+    r.picture(101.0, 100.0, 120.0);
+    let t = r.run(101.0, 119.0, 100.0);
+    assert!(is_card(&r));
+    r.vm.send(PlayerIntent::Back2, t);
+    assert_eq!(r.vm.offer().view, OfferView::Hidden);
+    play_to_the_end(&r, t, 118.0, 120.0, 30.0);
+    assert_eq!(episodes_started(&r), 0, "a cancelled card still advanced");
+}
+
+#[test]
+fn autoplay_off_gives_no_closing_card_and_no_advance() {
+    let prefs = PlayerPrefs {
+        next_automatic: false,
+        auto_skip: false,
+        ..PlayerPrefs::default()
+    };
+    let r = rig_with(0.0, true, prefs);
+    r.picture(101.0, 100.0, 120.0);
+    let t = r.run(101.0, 115.0, 100.0);
+    assert!(!is_card(&r));
+    play_to_the_end(&r, t, 114.0, 120.0, 30.0);
+    assert_eq!(episodes_started(&r), 0);
+}
+
+#[test]
+fn a_movie_or_the_last_episode_gets_no_closing_card() {
+    let r = rig_with(0.0, false, PlayerPrefs::default());
+    r.picture(101.0, 100.0, 120.0);
+    let t = r.run(101.0, 115.0, 100.0);
+    assert!(!is_card(&r));
+    play_to_the_end(&r, t, 114.0, 120.0, 30.0);
+    assert_eq!(episodes_started(&r), 0);
+}
+
+// MARK: Chapter list
+
+fn chapter_list() -> Vec<swiftly_rules::chapter::Chapter> {
+    use swiftly_rules::chapter::Chapter;
+    vec![
+        Chapter::new("Anfang", 0.0),
+        Chapter::new("Die Reise", 600.0),
+        Chapter::new("", 1500.0),
+        Chapter::new("Finale", 2700.0),
+    ]
+}
+
+#[test]
+fn the_chapter_list_has_one_row_per_chapter_with_the_running_one_marked() {
+    let r = rig();
+    r.picture(101.0, 1600.0, 3600.0);
+    r.vm.tick(101.5);
+    assert!(r.vm.chapters().rows.is_empty(), "no chapters, no rows");
+    r.vm.set_chapters(chapter_list());
+    let part = r.vm.chapters();
+    assert_eq!((part.title, part.number_title), ("Kapitel", "Kapitel %lld"));
+    let shown: Vec<(usize, Option<&str>, i64, f64, bool)> = part
+        .rows
+        .iter()
+        .map(|c| (c.index, c.name.as_deref(), c.number, c.start, c.current))
+        .collect();
+    assert_eq!(
+        shown,
+        vec![
+            (0, Some("Anfang"), 1, 0.0, false),
+            (1, Some("Die Reise"), 2, 600.0, false),
+            // A chapter the file does not name: the host writes "Kapitel 3" from the number.
+            (2, None, 3, 1500.0, true),
+            (3, Some("Finale"), 4, 2700.0, false),
+        ]
+    );
+    assert!(
+        part.rows.iter().all(|c| c.preview.is_none()),
+        "no trickplay, no picture"
+    );
+}
+
+#[test]
+fn a_chapter_row_carries_the_trickplay_tile_of_its_start() {
+    use swiftly_playback::trickplay::Trickplay;
+    let r = rig();
+    r.picture(101.0, 10.0, 3600.0);
+    r.vm.set_chapters(chapter_list());
+    let tp = Trickplay {
+        width: 320,
+        height: 180,
+        tiles_wide: 10,
+        tiles_up: 10,
+        count: 360,
+        interval: 10_000,
+    };
+    r.vm.set_trickplay(Some(tp));
+    let rows = r.vm.chapters().rows;
+    assert_eq!(rows[1].preview, tp.tile(600.0));
+    assert_eq!(
+        rows[1].preview.map(|t| (t.sheet, t.x, t.y)),
+        Some((0, 0, 180 * 6))
+    );
+}
+
+#[test]
+fn choosing_a_chapter_seeks_to_its_start_and_closes_the_panel() {
+    let r = rig();
+    r.picture(101.0, 50.0, 3600.0);
+    r.vm.set_chapters(chapter_list());
+    r.vm.send(PlayerIntent::Layer(Some(PlayerLayer::Chapters)), 102.0);
+    assert_eq!(r.vm.controls().layer, Some(PlayerLayer::Chapters));
+    r.vm.send(PlayerIntent::JumpToChapter(2), 103.0);
+    assert!(
+        r.engine.has("seek 1500"),
+        "the engine was told to seek to the start of chapter 3: {:?}",
+        r.engine.calls()
+    );
+    assert_eq!(r.vm.transport().position, 1500.0);
+    assert_eq!(r.vm.controls().layer, None, "the choice closes the panel");
+    // The clock reaches the start: the running chapter is the chosen one.
+    r.vm.engine_event(
+        EngineEvent::Clock {
+            position: 1500.0,
+            source_time: 1500.0,
+        },
+        103.5,
+    );
+    let rows = r.vm.chapters().rows;
+    assert!(rows[2].current && rows.iter().filter(|c| c.current).count() == 1);
+}
+
+#[test]
+fn a_chapter_index_past_the_list_does_nothing() {
+    let r = rig();
+    r.picture(101.0, 50.0, 3600.0);
+    r.vm.set_chapters(chapter_list());
+    r.vm.send(PlayerIntent::Layer(Some(PlayerLayer::Chapters)), 102.0);
+    let before = r.engine.calls().len();
+    r.vm.send(PlayerIntent::JumpToChapter(9), 103.0);
+    assert_eq!(r.engine.calls().len(), before);
+    assert_eq!(r.vm.controls().layer, Some(PlayerLayer::Chapters));
 }

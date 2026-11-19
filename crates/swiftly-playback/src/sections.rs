@@ -378,6 +378,68 @@ impl SectionLogic {
             == ButtonOffering::NextEpisode
     }
 
+    /// The closing seconds of an episode that no outro section reaches the end of: no marker at
+    /// all, or an outro that ends earlier (a scene after the credits), or a file too short for the
+    /// long-file rules. The last [`COUNTDOWN`] seconds (or what is left of a shorter file) then
+    /// offer "Next episode" so the file never ends on its last frame. Not part of the Swift
+    /// reference: it adds to [`Self::offering`] and [`Self::card_due`], which stay as they were.
+    /// An outro that reaches the end of the file keeps its own rule (the card from its start).
+    pub fn tail_due(
+        position: f64,
+        duration: f64,
+        sections: &[Segment],
+        has_next_episode: bool,
+    ) -> bool {
+        if !has_next_episode
+            || duration.is_nan()
+            || duration <= 0.0
+            || position.is_nan()
+            || position < 0.0
+        {
+            return false;
+        }
+        let covered = Self::valid(sections)
+            .iter()
+            .any(|s| s.art == Art::Credits && Self::suffices_end(s, duration));
+        !covered && duration - position <= COUNTDOWN
+    }
+
+    /// [`Self::offering`], and "Next episode" in the closing seconds ([`Self::tail_due`]) unless a
+    /// skip button applies there.
+    pub fn offering_with_tail(
+        position: f64,
+        duration: f64,
+        sections: &[Segment],
+        has_next_episode: bool,
+    ) -> ButtonOffering {
+        let base = Self::offering(position, duration, sections, has_next_episode);
+        if base == ButtonOffering::Nobody
+            && Self::tail_due(position, duration, sections, has_next_episode)
+        {
+            return ButtonOffering::NextEpisode;
+        }
+        base
+    }
+
+    /// What the players use: [`Self::card_due`] for an outro that reaches the end of the file
+    /// (without a remaining window: the old 30 s card of a long file without any marker is gone),
+    /// and the short card in the closing seconds ([`Self::tail_due`]) for every episode no outro
+    /// reaches the end of, long or short. The fill of either card is [`Self::countdown`] taken
+    /// when it opens: [`COUNTDOWN`] or what is left of the file.
+    pub fn card_due_with_tail(
+        position: f64,
+        duration: f64,
+        sections: &[Segment],
+        has_next_episode: bool,
+    ) -> bool {
+        if Self::card_due(position, duration, sections, has_next_episode, None) {
+            return true;
+        }
+        Self::tail_due(position, duration, sections, has_next_episode)
+            && Self::offering_with_tail(position, duration, sections, has_next_episode)
+                == ButtonOffering::NextEpisode
+    }
+
     /// How long the card's fill runs when it opens at this position: [`COUNTDOWN`], but never
     /// beyond the end of the file (Sections.swift:277-280).
     pub fn countdown(position: f64, duration: f64) -> f64 {
@@ -825,6 +887,133 @@ mod tests {
             true,
             Some(30.0)
         ));
+    }
+
+    // MARK: The closing seconds (17.11., not in Swift): no outro reaches the end of the file.
+
+    #[test]
+    fn tail_without_markers_is_the_last_countdown() {
+        assert!(!SectionLogic::tail_due(1492.0, 1500.0, &[], true));
+        assert!(SectionLogic::tail_due(1493.0, 1500.0, &[], true));
+        assert!(SectionLogic::tail_due(1500.0, 1500.0, &[], true));
+        // A short episode, which the long-file rules never offer anything for.
+        assert_eq!(
+            SectionLogic::offering(115.0, 120.0, &[], true),
+            ButtonOffering::Nobody
+        );
+        assert_eq!(
+            SectionLogic::offering_with_tail(115.0, 120.0, &[], true),
+            ButtonOffering::NextEpisode
+        );
+        assert_eq!(
+            SectionLogic::offering_with_tail(100.0, 120.0, &[], true),
+            ButtonOffering::Nobody
+        );
+        assert!(SectionLogic::card_due_with_tail(115.0, 120.0, &[], true));
+        assert!(!SectionLogic::card_due_with_tail(100.0, 120.0, &[], true));
+    }
+
+    #[test]
+    fn a_long_episode_without_any_marker_gets_the_short_card_not_the_thirty_second_one() {
+        // Swift-parity `card_due` with the old remaining window opens at 30 s left ...
+        assert!(SectionLogic::card_due(
+            1471.0,
+            1500.0,
+            &[],
+            true,
+            Some(30.0)
+        ));
+        // ... the players' rule does not: the card opens with the last seven seconds.
+        assert!(!SectionLogic::card_due_with_tail(1400.0, 1500.0, &[], true));
+        assert!(!SectionLogic::card_due_with_tail(1471.0, 1500.0, &[], true));
+        assert!(!SectionLogic::card_due_with_tail(1492.9, 1500.0, &[], true));
+        assert!(SectionLogic::card_due_with_tail(1493.0, 1500.0, &[], true));
+        assert_eq!(SectionLogic::countdown(1493.0, 1500.0), 7.0);
+        // The 5-minute boundary of the old long-file rules changes nothing.
+        assert!(!SectionLogic::card_due_with_tail(280.0, 300.0, &[], true));
+        assert!(SectionLogic::card_due_with_tail(293.0, 300.0, &[], true));
+        assert!(!SectionLogic::card_due_with_tail(2000.0, 4000.0, &[], true));
+        assert!(SectionLogic::card_due_with_tail(3995.0, 4000.0, &[], true));
+    }
+
+    #[test]
+    fn tail_of_an_episode_shorter_than_the_countdown_is_what_is_left() {
+        assert!(SectionLogic::card_due_with_tail(0.5, 5.0, &[], true));
+        assert_eq!(SectionLogic::countdown(0.5, 5.0), 4.5);
+    }
+
+    #[test]
+    fn tail_after_an_outro_that_ends_early() {
+        // Credits end a minute before the end of the file (a scene follows).
+        let early = Segment::new(Art::Credits, 1300.0, 1440.0);
+        assert!(!SectionLogic::card_due(
+            1494.0,
+            1500.0,
+            &[early],
+            true,
+            Some(30.0)
+        ));
+        assert!(!SectionLogic::card_due_with_tail(
+            1450.0,
+            1500.0,
+            &[early],
+            true
+        ));
+        assert!(SectionLogic::card_due_with_tail(
+            1494.0,
+            1500.0,
+            &[early],
+            true
+        ));
+        assert_eq!(SectionLogic::countdown(1493.5, 1500.0), 6.5);
+        // A skip button inside the outro wins over the closing card.
+        let late = Segment::new(Art::Credits, 1400.0, 1495.0);
+        assert!(!SectionLogic::card_due_with_tail(
+            1493.0,
+            1500.0,
+            &[late],
+            true
+        ));
+        assert_eq!(
+            SectionLogic::offering_with_tail(1493.0, 1500.0, &[late], true),
+            SectionLogic::offering(1493.0, 1500.0, &[late], true)
+        );
+    }
+
+    #[test]
+    fn tail_leaves_an_outro_to_the_end_of_the_file_alone() {
+        let credits = Segment::new(Art::Credits, 1320.0, 1500.0);
+        assert!(!SectionLogic::tail_due(1495.0, 1500.0, &[credits], true));
+        assert!(!SectionLogic::card_due_with_tail(
+            1319.0,
+            1500.0,
+            &[credits],
+            true
+        ));
+        assert!(SectionLogic::card_due_with_tail(
+            1320.0,
+            1500.0,
+            &[credits],
+            true
+        ));
+        // Its fill stays seven seconds.
+        assert_eq!(SectionLogic::countdown(1320.0, 1500.0), 7.0);
+    }
+
+    #[test]
+    fn tail_needs_a_next_episode_and_a_duration() {
+        assert!(!SectionLogic::tail_due(1495.0, 1500.0, &[], false));
+        assert!(!SectionLogic::card_due_with_tail(
+            1495.0,
+            1500.0,
+            &[],
+            false
+        ));
+        assert!(
+            !SectionLogic::tail_due(0.0, 0.0, &[], true),
+            "no duration yet"
+        );
+        assert!(!SectionLogic::tail_due(1.0, f64::NAN, &[], true));
     }
 
     // Extra (not in Swift): wire names, labels and the tick round trip.

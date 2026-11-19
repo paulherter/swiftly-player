@@ -10,7 +10,9 @@ use std::sync::atomic::Ordering;
 use common::account;
 use common::script::{Script, host, list, movie, param, wait_for};
 use swiftly_library::library_filter::Sorting;
-use swiftly_library::{KeyValue, LibraryFilter, MemoryKeyValue, RememberGenre, ShelfSource};
+use swiftly_library::{
+    FilterChoice, KeyValue, LibraryFilter, MemoryKeyValue, RememberGenre, ShelfSource, YearSpan,
+};
 use swiftly_vm::{
     Badge, FailKind, ImageKind, LibraryIntent, LibrarySpec, LibraryStatus, LibraryVm, Load, part,
 };
@@ -223,7 +225,7 @@ fn filter_reloads_and_choices_are_remembered_per_place() {
         (Sorting::Rating, LibraryFilter::Unwatched)
     );
     let other = vm(&net, &kv, spec(Some("serien"), None));
-    assert_eq!(other.status().sorting, Sorting::Name);
+    assert_eq!(other.status().sorting, Sorting::Latest);
 }
 
 #[test]
@@ -468,7 +470,7 @@ fn the_letter_strip_finds_keys_and_jump_targets() {
 }
 
 #[test]
-fn the_strip_of_another_order_covers_the_whole_list() {
+fn the_strip_of_another_order_is_empty_and_fetches_nothing() {
     let net = server();
     let vm = vm(&net, &Arc::new(MemoryKeyValue::new()), spec(None, None));
     vm.send(LibraryIntent::Load);
@@ -479,11 +481,15 @@ fn the_strip_of_another_order_covers_the_whole_list() {
     wait_for("ready", || {
         ready(&vm) && vm.status().sorting == Sorting::Erscheinung
     });
-    // Only the first page is loaded, but the strip is built from the whole list.
+    let before = net.urls().len();
     futures_executor::block_on(vm.load_alphabet());
+    assert_eq!(
+        net.urls().len(),
+        before,
+        "no whole-list fetch for a strip nobody draws"
+    );
     let strip = vm.alphabet();
-    assert_eq!(strip.count, N);
-    assert!(vm.grid().tiles.len() < N);
+    assert!(strip.entries.is_empty() && !strip.is_useful());
 }
 
 /// Merkliste edge: the last remembered title is removed; the server answers the reload with an empty list, and the view
@@ -719,10 +725,10 @@ fn the_merkliste_shows_each_work_once() {
     );
 }
 
-/// Line 8 (#25/#37/#28): in every sort order (name, recently added, rating, release date) the strip covers the whole
-/// list and each of its letters jumps to the first title that carries it.
+/// Only the name order has a strip (the whole list, each letter jumps to its first title); recently added, rating and
+/// release date return none.
 #[test]
-fn the_strip_works_in_all_four_sort_orders() {
+fn only_the_name_order_has_a_strip() {
     let net = server();
     let vm = vm(&net, &Arc::new(MemoryKeyValue::new()), spec(None, None));
     vm.send(LibraryIntent::Load);
@@ -737,21 +743,27 @@ fn the_strip_works_in_all_four_sort_orders() {
         wait_for("sorted", || ready(&vm) && vm.status().sorting == sorting);
         futures_executor::block_on(vm.load_alphabet());
         let strip = vm.alphabet();
+        if sorting != Sorting::Name {
+            assert!(strip.entries.is_empty(), "{sorting:?}: no strip");
+            assert!(!strip.is_useful(), "{sorting:?}: no strip");
+            continue;
+        }
         assert_eq!(
             strip.count, N,
             "{sorting:?}: the strip must cover the whole list"
         );
         assert!(!strip.entries.is_empty(), "{sorting:?}: no letters");
-        // The mock server ignores the sort order of the loaded page, so only "a loaded title carries the letter" is certain:
-        // every letter the page can reach jumps to a loaded title, and the page's first title has a letter in the strip.
-        let loaded = vm.grid().tiles.len();
-        let reachable = strip
-            .entries
-            .iter()
-            .filter_map(|e| vm.jump_target(&e.letter, &strip))
-            .inspect(|i| assert!(*i < loaded, "{sorting:?}: jump past the loaded titles"))
-            .count();
-        assert!(reachable >= 1, "{sorting:?}: no letter jumps anywhere");
+        // The target is the strip's own position in the whole list (it may lie past the loaded page), and every
+        // letter of the strip has one, each its own entry's.
+        for e in &strip.entries {
+            assert_eq!(
+                vm.jump_target(&e.letter, &strip),
+                Some(e.first),
+                "{sorting:?}: {} jumps elsewhere",
+                e.letter
+            );
+            assert!(e.first < N, "{sorting:?}: jump past the whole list");
+        }
     }
 }
 
@@ -814,4 +826,156 @@ fn the_offer_of_libraries_turns_the_bare_section_into_all_libraries_each_work_on
     let titles: Vec<_> = grid.tiles.iter().map(|t| t.title.as_str()).collect();
     assert_eq!(titles, ["Titel 000", "Titel 001", "Titel 002", "Titel 003"]);
     assert_eq!(grid.total, 4);
+}
+
+/// Years 2000..2019 (`n % 20`), audio German for every third title and English for the rest, every 10th watched.
+fn filter_server() -> Arc<Script> {
+    Script::new(|r| {
+        if r.url.path().ends_with("/Items/Filters") {
+            let years: Vec<_> = (2000..2020).collect();
+            return Some(serde_json::json!({ "Years": years }).to_string());
+        }
+        if !r.url.path().ends_with("/Items") {
+            return Some("{}".into());
+        }
+        let unwatched = param(r, "IsPlayed").as_deref() == Some("false");
+        let all: Vec<_> = (0..N)
+            .filter(|n| !unwatched || n % 10 != 0)
+            .map(|n| {
+                let mut m = movie(n);
+                m["UserData"] = serde_json::json!({"Played": n % 10 == 0});
+                let language = if n % 3 == 0 { "deu" } else { "eng" };
+                m["MediaSources"] = serde_json::json!([{"MediaStreams": [{"Type": "Audio", "Language": language}]}]);
+                m
+            })
+            .collect();
+        if let Some(ids) = param(r, "Ids") {
+            let ids: Vec<_> = ids.split(',').map(String::from).collect();
+            let found: Vec<_> = all
+                .iter()
+                .filter(|m| ids.contains(&m["Id"].as_str().unwrap().to_owned()))
+                .cloned()
+                .collect();
+            return Some(list(&found, found.len()));
+        }
+        // The whole list in one answer (the natural order, the title ids, the audio scan).
+        let total = all.len();
+        if param(r, "EnableImages").is_some() {
+            return Some(list(&all, total));
+        }
+        let since: usize = param(r, "StartIndex")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let limit: usize = param(r, "Limit")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(100);
+        let page: Vec<_> = all.into_iter().skip(since).take(limit).collect();
+        Some(list(&page, total))
+    })
+}
+
+/// How many of the `N` titles are in the 2010s, German, unwatched.
+fn expected(decade: bool, german: bool, unwatched: bool) -> i64 {
+    (0..N)
+        .filter(|n| !decade || n % 20 >= 10)
+        .filter(|n| !german || n % 3 == 0)
+        .filter(|n| !unwatched || n % 10 != 0)
+        .count() as i64
+}
+
+#[test]
+fn the_filter_sheet_picks_combine_remember_and_name_the_pill() {
+    let net = filter_server();
+    let kv = Arc::new(MemoryKeyValue::new());
+    // The mock narrows by the whole list in name order, so this visitor picked "By name" earlier.
+    kv.set("sortierung.filme", "name");
+    let first = vm(&net, &kv, spec(Some("filme"), None));
+    first.send(LibraryIntent::Load);
+    wait_for("ready", || ready(&first));
+    assert_eq!(first.grid().total, N as i64);
+    assert_eq!(first.pill_text(), "Alle");
+
+    // Opening the sheet fetches the decades and the languages; every platform draws these lines.
+    first.send(LibraryIntent::LoadFilterOptions);
+    wait_for("facets", || {
+        let sheet = first.filter_sheet(&LibraryFilter::ALL);
+        sheet.groups.len() == 3 && sheet.groups.iter().all(|g| !g.loading)
+    });
+    let lines = first.filter_sheet(&LibraryFilter::ALL).flat_rows();
+    let text: Vec<_> = lines
+        .iter()
+        .map(|l| (l.heading.as_deref(), l.label.as_str()))
+        .collect();
+    // The most titles first: English (100) before German (50), named in the interface language.
+    let english = swiftly_vm::language_name("eng", "de").unwrap_or_else(|| "ENG".into());
+    assert_eq!(
+        text,
+        [
+            (None, "Alle"),
+            (None, "Angefangen"),
+            (None, "Merkliste"),
+            (None, "Ungesehen"),
+            (Some("Erscheinungsjahr"), "Alle Jahre"),
+            (None, "2010\u{2013}2019"),
+            (None, "2000\u{2013}2009"),
+            (Some("Sprache"), "Alle Sprachen"),
+            (None, english.as_str()),
+            (None, "Deutsch"),
+        ],
+        "{text:?}"
+    );
+    let choice_of = |label: &str| {
+        lines
+            .iter()
+            .find(|l| l.label == label)
+            .and_then(|l| l.choice.clone())
+            .unwrap()
+    };
+
+    // Decade, then language, then status: each pick narrows the previous one.
+    first.pick(choice_of("2010\u{2013}2019"));
+    wait_for("decade", || {
+        first.grid().total == expected(true, false, false) && ready(&first)
+    });
+    assert_eq!(first.pill_text(), "Alle \u{b7} 2010\u{2013}2019");
+    first.pick(choice_of("Deutsch"));
+    wait_for("language", || {
+        first.grid().total == expected(true, true, false) && ready(&first)
+    });
+    first.pick(FilterChoice::Status(LibraryFilter::Unwatched));
+    wait_for("unwatched", || {
+        first.grid().total == expected(true, true, true) && ready(&first)
+    });
+    assert_eq!(
+        first.pill_text(),
+        "Ungesehen \u{b7} 2010\u{2013}2019 \u{b7} Deutsch"
+    );
+    let sheet = first.filter_sheet(&LibraryFilter::ALL);
+    assert_eq!(sheet.pill, first.pill_text());
+    let picked: Vec<_> = sheet
+        .flat_rows()
+        .into_iter()
+        .filter(|l| l.selected)
+        .map(|l| l.label)
+        .collect();
+    assert_eq!(picked, ["Ungesehen", "2010\u{2013}2019", "Deutsch"]);
+
+    // The next visit of the same place starts narrowed; another place does not.
+    let again = vm(&net, &kv, spec(Some("filme"), None));
+    assert_eq!(again.pill_text(), first.pill_text());
+    let status = again.status();
+    assert_eq!(status.years, Some(YearSpan::decade(2010)));
+    assert_eq!(status.language.as_deref(), Some("deu"));
+    assert_eq!(
+        vm(&net, &kv, spec(Some("serien"), None)).pill_text(),
+        "Alle"
+    );
+
+    // "All years" and "all languages" lift the narrowing again, the status stays.
+    first.pick(FilterChoice::Years(None));
+    first.pick(FilterChoice::Language(None));
+    wait_for("lifted", || {
+        first.grid().total == expected(false, false, true) && ready(&first)
+    });
+    assert_eq!(first.pill_text(), "Ungesehen");
 }

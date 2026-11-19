@@ -1,6 +1,7 @@
 import AppKit
 import JellyfinKit
 import SwiftUI
+import enum SwiftlyCore.HomeRowOrder
 
 /// The home page: Continue Watching, Next Up, Recently Added.
 ///
@@ -52,7 +53,7 @@ struct HomeView: View {
     @State private var structure = false
     /// The rows are shown and no switch is in progress. On click in the profile
     /// page they disappear immediately, before the account changes.
-    private var showItem: Bool { !change && !AccountSwitchTransition.shared.waits && !outdated }
+    private var showItem: Bool { !change && !AccountSwitchTransition.shared.waits && !outdated && !seerr.holdsPage(model) }
     /// **The switch happened while the home page was not in the view tree** (the
     /// user was on Movies or Series). Its `onChange` did not see it, so it came back
     /// with the old account's rows, which then gave way to placeholders and the new
@@ -69,6 +70,39 @@ struct HomeView: View {
 
     private var libraries: [Home.LibraryRail] {
         state.libraryRails(for: model.startLibraries)
+    }
+
+    /// Seerr's two sections, read next to the rows (`refresh()`), and their switches (Settings > Appearance > Home).
+    @State private var seerr = SeerrHomeFlow()
+    @AppStorage(SeerrArrival.hintKey) private var arrivalOn = true
+    @AppStorage(SeerrArrival.requestsKey) private var requestsOn = false
+
+    private enum OrderedRow: Identifiable {
+        case fixed(StartRail)
+        case seerrArrival
+        case seerrRequests
+        case library(Home.LibraryRail)
+        var id: String {
+            switch self {
+            case .fixed(let rail): rail.rawValue
+            case .seerrArrival: HomeRowOrder.seerrArrival
+            case .seerrRequests: HomeRowOrder.seerrRequests
+            case .library(let r): HomeRowOrder.libraryId(r.id)
+            }
+        }
+    }
+
+    /// The visible rows in the combined order (the core heals the stored list): hidden or non-fitting fixed rows and
+    /// libraries without content drop out; each Seerr section has its own switch.
+    private var orderedRows: [OrderedRow] {
+        let fixed = Set(fixedRails)
+        let byId = Dictionary(libraries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return model.rowOrder.compactMap { id in
+            if id == HomeRowOrder.seerrArrival { return arrivalOn ? OrderedRow.seerrArrival : nil }
+            if id == HomeRowOrder.seerrRequests { return requestsOn ? OrderedRow.seerrRequests : nil }
+            if let lib = HomeRowOrder.library(of: id) { return byId[lib].map(OrderedRow.library) }
+            return StartRail(rawValue: id).flatMap { fixed.contains($0) ? OrderedRow.fixed($0) : nil }
+        }
     }
 
     /// The posters of a row from a genre or library.
@@ -128,27 +162,37 @@ struct HomeView: View {
                     genreChips.railEntrance(0, present: showItem)
                 }
 
-                // **The fixed rows in the configured order**, without the hidden ones
-                // (Settings > Appearance > Home).
-                ForEach(Array(fixedRails.enumerated()), id: \.element) { i, rail in
-                    pinned(rail).railEntrance(i + 1, present: showItem)
+                // **The fixed rows, Seerr's two sections and the chosen libraries and collections in ONE configured
+                // order** (Settings > Appearance > Home). A library row has its name as the title; the header opens it.
+                ForEach(Array(orderedRows.enumerated()), id: \.element.id) { i, row in
+                    switch row {
+                    case .fixed(let rail):
+                        pinned(rail).railEntrance(i + 1, present: showItem)
+                    case .seerrArrival:
+                        if loaded {
+                            MacSeerrHomeSection(part: .arrival, flow: seerr, model: model)
+                                .railEntrance(i + 1, present: showItem)
+                        }
+                    case .seerrRequests:
+                        if loaded {
+                            MacSeerrHomeSection(part: .requests, flow: seerr, model: model)
+                                .railEntrance(i + 1, present: showItem)
+                        }
+                    case .library(let r):
+                        Rail(name: r.name, header: {
+                            let entryRecord = model.startLibraries.first { $0.id == r.id }?.item
+                                ?? Item(id: r.id, name: r.name)
+                            navigator.openIt(.collection(entryRecord, art: nil), in: section)
+                        }) { postern(r.items) }
+                        .railEntrance(i + 1, present: showItem)
+                    }
                 }
-
-                // **The chosen libraries and collections** (Appearance > Home > "+"): the title is
-                // their name, the header opens them. After that the genres as rows of their own.
-                ForEach(Array(libraries.enumerated()), id: \.element.id) { j, r in
-                    Rail(name: r.name, header: {
-                        let entryRecord = model.startLibraries.first { $0.id == r.id }?.item
-                            ?? Item(id: r.id, name: r.name)
-                        navigator.openIt(.collection(entryRecord, art: nil), in: section)
-                    }) { postern(r.items) }
-                    .railEntrance(fixedRails.count + 1 + j, present: showItem)
-                }
+                // After that the genres as rows of their own.
                 ForEach(Array(state.genreRails.enumerated()), id: \.element.id) { j, genre in
                     Rail(name: genre.name) {
                         postern(genre.items, rail: "genre:\(genre.name)")
                     }
-                    .railEntrance(fixedRails.count + libraries.count + 1 + j, present: showItem)
+                    .railEntrance(orderedRows.count + 1 + j, present: showItem)
                 }
                 // **At the very end, after the last row.** Never above content: whoever
                 // came to watch sees the rows first. Rules in `SupportPrompt`.
@@ -225,6 +269,8 @@ struct HomeView: View {
             }
         }
         .animation(Theme.reveal, value: loaded)
+        // Seerr signs in after the first rows: read again when the connection comes or a switch changes.
+        .seerrHomeReload(seerr, model: model)
         .task { await load() }
         .onAppear { returned() }
         .onChange(of: shown) { _, now in
@@ -321,6 +367,12 @@ struct HomeView: View {
         }
     }
 
+    /// **"Aus Weiterschauen entfernen"**: the same shared step as on iPhone (`HomeModel.takeOutOfContinue`); the row loses
+    /// the title in the first frame with the page's change motion, the core sends the request and rolls back on a refusal.
+    private func removeFromContinue(_ item: Item) {
+        withAnimation(Theme.reveal) { state.takeOutOfContinue(item, model: model) }
+    }
+
     /// A fixed row: the same layout as before, but retrievable individually so
     /// the order from the settings applies.
     @ViewBuilder
@@ -349,6 +401,7 @@ struct HomeView: View {
             })
                             // A click starts playback; the detail page is in the menu.
                             .tileMenu(title, model: model, continueWatching: true,
+                                         onRemove: removeFromContinue,
                                          overview: { navigator.openIt(.title(title), in: section) })
                     }
                 }
@@ -500,6 +553,8 @@ struct HomeView: View {
     /// Fetches anew without clearing the rows first: the old state stays until the
     /// new one arrives.
     private func refresh() async {
+        // The Seerr sections are read next to the rows, so both are there at the same moment.
+        async let seerrLoad: Void = seerr.load(model)
         // Prefetching the series happens in `HomeModel.load`, where the rows
         // are built, so every platform gets it instead of three having to implement it
         // separately. `recent` is included; without that line the normal case fell
@@ -509,6 +564,7 @@ struct HomeView: View {
         } else {
             await state.load(model)
         }
+        await seerrLoad
     }
 
 }

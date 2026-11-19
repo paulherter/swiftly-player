@@ -1,7 +1,8 @@
-//! The app's own icons (Phosphor-style outlines drawn by the Swift app from `Icons.xcassets`), shared by every target.
+//! The app's own icons (Lucide outlines, generated into `Icons.xcassets` and `icon_data_lucide.rs` by
+//! `Werkzeuge/icons-lucide.py`), shared by every target.
 //! The outline path data is rasterised here into white-on-alpha pictures on the image page and tinted at draw time,
-//! so a symbol has the same shape and stroke on every OS. The stroke weight follows the point size like
-//! `AppIcon.suffix` (one stroke look at every size).
+//! so a symbol has the same shape and stroke on every OS. The stroke class follows the point size like
+//! `AppIcon.suffix`.
 
 use crate::cx::{Cx, ImageId};
 use crate::view::{Node, Paint};
@@ -9,30 +10,11 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use swiftly_render::Color;
 
-/// Path data of an asset (`house`, `house.fill`, `film-strip.w28`), template space.
+/// Path data of an asset (`house`, `house.fill`, `film.w28`), template space.
 pub fn path_data(asset: &str) -> Option<&'static str> {
-    find(asset).or_else(|| {
-        // The drawn-in Phosphor icons come in two weights only: the heavier strokes use the plain one.
-        let base = asset
-            .strip_suffix(".w28")
-            .or_else(|| asset.strip_suffix(".w32"))?;
-        crate::icon_data_phos::ICONS_PHOS
-            .iter()
-            .find(|(n, _)| *n == base)
-            .map(|(_, d)| *d)
-    })
-}
-
-fn find(asset: &str) -> Option<&'static str> {
-    crate::icon_data::ICONS
+    crate::icon_data_lucide::ICONS_LUCIDE
         .iter()
-        .chain(crate::icon_data_more::ICONS_MORE.iter())
-        .chain(crate::icon_data_forms::ICONS_FORMS.iter())
-        .chain(crate::icon_data_audit::ICONS_AUDIT.iter())
-        .chain(crate::icon_data_keys::ICONS_KEYS.iter())
-        .chain(crate::icon_data_rest::ICONS_REST.iter())
         .chain(crate::icon_data_kinds::ICONS_KINDS.iter())
-        .chain(crate::icon_data_phos::ICONS_PHOS.iter())
         .find(|(n, _)| *n == asset)
         .map(|(_, d)| *d)
 }
@@ -52,24 +34,18 @@ fn note_missing(asset: &str) {
     }
 }
 
-/// The stroke suffix for an icon drawn at `size` pt (`AppIcon.suffix`): strokes 16, 24, 28, 32 on the 256 grid; the one
-/// closest to 24 at 20 pt. `tv` draws at double size, so pass half.
+/// The stroke class for an icon drawn at `size` pt (`AppIcon.suffix`). The icons are Lucide outlines with the stroke
+/// converted to a filled shape (`Werkzeuge/icons-lucide.py`); the weight follows SF Symbols' regular weight, a touch
+/// heavier: 1.9 on Lucide's 24 grid for the usual 17 to 33 pt, 2.05 (`.w28`) at 16 pt and below, 1.75 (`.light`) from
+/// 34 pt. `tv` draws at double size, so pass half.
 pub fn stroke_suffix(size: f32) -> &'static str {
-    let wanted = 24.0 * 20.0 / size.max(1.0);
-    [
-        (16.0_f32, ".light"),
-        (24.0, ""),
-        (28.0, ".w28"),
-        (32.0, ".w32"),
-    ]
-    .iter()
-    .min_by(|a, b| {
-        (a.0 - wanted)
-            .abs()
-            .partial_cmp(&(b.0 - wanted).abs())
-            .unwrap_or(std::cmp::Ordering::Equal)
-    })
-    .map_or("", |s| s.1)
+    if size <= 16.0 {
+        ".w28"
+    } else if size >= 34.0 {
+        ".light"
+    } else {
+        ""
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -680,7 +656,8 @@ mod tests {
 
     #[test]
     fn stroke_follows_the_swift_rule() {
-        assert_eq!(stroke_suffix(18.0), ".w28");
+        assert_eq!(stroke_suffix(15.0), ".w28");
+        assert_eq!(stroke_suffix(18.0), "");
         assert_eq!(stroke_suffix(20.0), "");
         assert_eq!(stroke_suffix(52.0), ".light");
     }
@@ -692,12 +669,17 @@ mod tests {
         let ink = img.chunks(4).filter(|p| p[3] > 128).count();
         assert!(ink > 600 && ink < 64 * 64 - 600, "ink {ink}");
         assert!(path_data("hard-drive-x.light").is_some());
+        assert!(
+            path_data("film.w28").is_none(),
+            "names are ours, not Lucide's"
+        );
     }
 
     #[test]
-    fn a_template_placed_ring_keeps_its_ring_on_the_box_centre() {
-        // arrow-clockwise: ring centre (1650, 1090), outer radius 43.75, the arrow head sticks out to the right.
-        let d = path_data("arrow-clockwise").expect("asset");
+    fn a_template_placed_shape_keeps_its_place_on_the_box_centre() {
+        // A body 1630..1680 wide with a bump to 1690: the bounding box centre (1660) sits 10 units right of the template
+        // centre (1650), so placing by box moves the shape left by 10 units (40 px at 400 px).
+        let d = "M 1630 1060 H 1680 V 1080 H 1690 V 1100 H 1680 V 1120 H 1630 Z";
         let px = 400_u32;
         let first_column = |img: &[u8]| {
             let row = (px / 2) as usize;
@@ -707,11 +689,11 @@ mod tests {
         };
         let placed = first_column(&rasterize_template(d, px));
         let by_box = first_column(&rasterize(d, px, true));
-        // Left edge of the ring at 50 - 43.75 = 6.25 units = 25 px; the bounding box centre sits 6 units further right.
-        assert!((placed as i32 - 25).abs() <= 3, "template placed: {placed}");
+        // Left edge at 50 - 20 = 30 units = 120 px on the template centre, 80 px by the bounding box.
         assert!(
-            by_box + 8 < placed,
-            "bounding-box placed (old look): {by_box}"
+            (placed as i32 - 120).abs() <= 3,
+            "template placed: {placed}"
         );
+        assert!(by_box + 20 < placed, "bounding-box placed: {by_box}");
     }
 }

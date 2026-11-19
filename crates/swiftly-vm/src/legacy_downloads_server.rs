@@ -399,12 +399,10 @@ impl<S: DetailServer> DetailOf<S> {
             return out(audio::offered_for_streams(streams), &options, &preset);
         }
         let options = audio::language_options(rules, &all);
-        let wished = DownloadAudioChoice::Language(preferred.to_owned());
         let offered = audio::offered_for_selection(rules, &all);
-        let preset = if offered && options.iter().any(|o| o.choice == wished) {
-            wished
-        } else {
-            DownloadAudioChoice::All
+        let preset = match audio::wished_language(rules, &options, preferred) {
+            Some(key) if offered => DownloadAudioChoice::Language(key),
+            _ => DownloadAudioChoice::All,
         };
         out(offered, &options, &preset)
     }

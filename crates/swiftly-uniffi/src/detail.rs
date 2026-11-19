@@ -2,11 +2,11 @@
 
 use std::sync::Arc;
 
-use swiftly_model::{Item, UserItemData};
+use swiftly_model::Item;
 use swiftly_vm::{
-    AccountRef, ActionsPart, Badge, BottomPart, CastTile, Change, CollectionRailPart,
-    DownloadField, DownloadState, EpisodeRow, EpisodesStatus, FailKind, FileExcerpt, FileRow,
-    HeroPart, ImageRef, LoadFailure, MenuEntry, MenuKind, PlayAction, PlayButton, ProofPart,
+    AccountRef, ActionsPart, BottomPart, CastTile, Change, CollectionRailPart, DownloadField,
+    DownloadState, EpisodeRow, EpisodesStatus, FailKind, FileExcerpt, FileRow, HeroPart, ImageRef,
+    LoadFailure, MenuEntry, MenuKind, PlayAction, PlayButton, PlayReadiness, ProofPart, ProofPhase,
     SeasonRow, SeasonsPart, SeriesButtonPart, SeriesSpec, Tile, VersionOption, WatcherTile,
 };
 
@@ -22,6 +22,8 @@ pub struct HeroPart {
     pub secondary_line: String,
     pub image: Option<ImageRef>,
     pub logo: Option<ImageRef>,
+    pub image_blur_hash: Option<String>,
+    pub tile_images: Vec<ImageRef>,
     pub overview: Option<String>,
     pub directors: Vec<String>,
     pub community_rating: Option<f64>,
@@ -47,19 +49,33 @@ pub struct VersionOption {
     pub id: String,
     pub name: String,
     pub label: String,
+    pub is_default: bool,
+}
+
+#[uniffi::remote(Enum)]
+pub enum PlayReadiness {
+    Ready,
+    Waiting { queued: bool },
 }
 
 #[uniffi::remote(Record)]
 pub struct PlayButton {
     pub label: String,
-    pub enabled: bool,
+    pub ready: PlayReadiness,
     pub remaining: Option<String>,
     pub progress: Option<f32>,
     pub version_title: String,
 }
 
+#[uniffi::remote(Enum)]
+pub enum ProofPhase {
+    Waiting,
+    Settled,
+}
+
 #[uniffi::remote(Record)]
 pub struct ProofPart {
+    pub phase: ProofPhase,
     pub visible: bool,
     pub direct_play: bool,
     pub hint: Option<String>,
@@ -142,6 +158,8 @@ pub struct BottomPart {
     pub version: u64,
     pub ready: bool,
     pub cast: Vec<CastTile>,
+    pub cast_pending: bool,
+    pub watchers_pending: bool,
     pub extras: Vec<Tile>,
     pub similar: Vec<Tile>,
     pub similar_failed: bool,
@@ -182,11 +200,6 @@ pub enum PlayAction {
     Resolve {
         item_id: String,
         since: f64,
-    },
-    Choose {
-        item_id: String,
-        since: f64,
-        versions: Vec<VersionOption>,
     },
     Start {
         item_id: String,
@@ -368,101 +381,34 @@ impl From<swiftly_vm::DetailEffect> for DetailEffect {
     }
 }
 
-/// The list entry the page starts from: what a tile knows. The fresh title completes it.
-///
-/// The tile's marks carry over into `user_data` (watched, favourite, unseen count, progress) so
-/// the page shows the right checkmark and bookmark from the first frame (`Item(rust:)`).
-pub(crate) fn item_of(tile: &Tile) -> Item {
-    let mut watched = false;
-    let mut favorite = false;
-    let mut unplayed = None;
-    for badge in &tile.badges {
-        match badge {
-            Badge::Watched => watched = true,
-            Badge::Favorite => favorite = true,
-            Badge::Unplayed { count } => unplayed = Some(i64::from(*count)),
-            Badge::Seasons { .. } => {}
-        }
-    }
-    let user_data =
-        (watched || favorite || unplayed.is_some() || tile.progress.is_some()).then(|| {
-            UserItemData {
-                played: Some(watched),
-                is_favorite: Some(favorite),
-                played_percentage: tile.progress.map(|p| f64::from(p) * 100.0),
-                unplayed_item_count: unplayed,
-                ..UserItemData::default()
-            }
-        });
-    Item {
-        id: tile.id.clone(),
-        name: tile.facts.name.clone(),
-        type_: tile.facts.kind.clone(),
-        production_year: tile.facts.year.map(i64::from),
-        series_id: tile.facts.series_id.clone(),
-        season_id: tile.facts.season_id.clone(),
-        parent_index_number: tile.facts.season_number.map(i64::from),
-        index_number: tile.facts.episode_number.map(i64::from),
-        child_count: tile.facts.child_count.map(i64::from),
-        user_data,
-        ..Item::default()
-    }
+/// A BlurHash decoded to a small opaque picture (`width * height * 4` RGBA bytes) a page draws, scaled up, in place of a
+/// picture that has not arrived. `None` for a hash that is not valid.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BlurPixels {
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+    /// RGBA, row by row.
+    pub rgba: Vec<u8>,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use swiftly_vm::{Badge, TileFacts};
+/// The blurred stand-in of a picture from its BlurHash (`HeroPart.image_blur_hash`, `EpisodeRow.image_blur_hash`),
+/// `width` x `height` pixels (32 x 18 is plenty for a 16:9 picture).
+#[uniffi::export]
+pub fn blur_pixels(hash: String, width: u32, height: u32) -> Option<BlurPixels> {
+    let decoded = swiftly_images::blurhash::decode(&hash, width, height)?;
+    Some(BlurPixels {
+        width: decoded.width,
+        height: decoded.height,
+        rgba: decoded.rgba,
+    })
+}
 
-    fn tile(badges: Vec<Badge>, progress: Option<f32>) -> Tile {
-        Tile {
-            id: "e1".into(),
-            title: "Folge".into(),
-            subtitle: None,
-            progress,
-            image: None,
-            badges,
-            remaining: None,
-            facts: TileFacts {
-                kind: Some("Episode".into()),
-                name: "Folge".into(),
-                year: None,
-                series_id: Some("s1".into()),
-                season_id: None,
-                season_number: Some(1),
-                episode_number: Some(2),
-                child_count: Some(3),
-            },
-        }
-    }
-
-    #[test]
-    fn the_tile_state_reaches_the_item() {
-        let item = item_of(&tile(
-            vec![
-                Badge::Watched,
-                Badge::Favorite,
-                Badge::Unplayed { count: 4 },
-            ],
-            Some(0.25),
-        ));
-        let data = item.user_data.expect("user data");
-        assert_eq!(data.played, Some(true));
-        assert_eq!(data.is_favorite, Some(true));
-        assert_eq!(data.unplayed_item_count, Some(4));
-        assert!((data.played_percentage.unwrap() - 25.0).abs() < 1e-6);
-        assert_eq!(item.child_count, Some(3));
-    }
-
-    #[test]
-    fn a_plain_tile_has_no_user_data() {
-        assert!(item_of(&tile(Vec::new(), None)).user_data.is_none());
-        let begun = item_of(&tile(Vec::new(), Some(0.5)))
-            .user_data
-            .expect("progress");
-        assert_eq!(begun.played, Some(false));
-        assert_eq!(begun.is_favorite, Some(false));
-    }
+/// The list entry the page starts from: what a tile knows. The fresh title completes it. The one rule for every host
+/// lives in the core (`swiftly_vm::tile_item`).
+pub(crate) fn item_of(tile: &Tile) -> Item {
+    swiftly_vm::tile_item(tile)
 }
 
 /// Bit of `Change.parts`: the hero.
@@ -527,6 +473,11 @@ impl DetailVm {
         self.vm.play_from_start(pick.as_deref())
     }
 
+    /// The versions for a long press on Play (empty: nothing to choose, the press does nothing).
+    pub fn versions(&self) -> Vec<VersionOption> {
+        self.vm.versions()
+    }
+
     /// The long-press menu of the page.
     pub fn tile_menu(&self) -> Vec<MenuEntry> {
         self.vm.tile_menu()
@@ -548,6 +499,11 @@ impl DetailVm {
         self.vm
             .plan()
             .map(|plan| crate::play_start::plan_ready(&plan))
+    }
+
+    /// The TMDB id of the title (for the Seerr screens); `None` when the server has none.
+    pub fn tmdb_id(&self) -> Option<i64> {
+        self.vm.tmdb_id()
     }
 
     /// Work for the host; empties the queue.
@@ -593,6 +549,9 @@ pub struct SeasonsPart {
     pub seasons: Vec<SeasonRow>,
     pub selected: Option<String>,
     pub disturbed: bool,
+    pub expected: u32,
+    pub count_pending: bool,
+    pub chevron: bool,
 }
 
 #[uniffi::remote(Record)]
@@ -607,6 +566,7 @@ pub struct EpisodeRow {
     pub progress: Option<f32>,
     pub watched: bool,
     pub image: Option<ImageRef>,
+    pub image_blur_hash: Option<String>,
 }
 
 #[uniffi::remote(Enum)]
@@ -640,6 +600,9 @@ pub struct SeriesButtonPart {
     pub secondary_line: String,
     pub image: Option<ImageRef>,
     pub logo: Option<ImageRef>,
+    pub image_blur_hash: Option<String>,
+    pub tile_images: Vec<ImageRef>,
+    pub state_failed: bool,
     pub overview: Option<String>,
     pub label: String,
     pub label_ready: bool,
@@ -922,9 +885,24 @@ impl SeriesVm {
         self.vm.play_episode(&id, pick.as_deref())
     }
 
+    /// The versions of the main button's episode, for a long press on it (empty: nothing to choose).
+    pub fn versions_next(&self) -> Vec<VersionOption> {
+        self.vm.versions_next()
+    }
+
+    /// The versions of one episode row, for a long press on it (empty: nothing to choose).
+    pub fn versions_of(&self, id: String) -> Vec<VersionOption> {
+        self.vm.versions_of(&id)
+    }
+
     /// The entries of the "More" panel.
     pub fn more_menu(&self) -> Vec<MenuEntry> {
         self.vm.more_menu()
+    }
+
+    /// The TMDB id of the series (for the Seerr screens); `None` when the server has none.
+    pub fn tmdb_id(&self) -> Option<i64> {
+        self.vm.tmdb_id()
     }
 
     /// Work for the host; empties the queue.

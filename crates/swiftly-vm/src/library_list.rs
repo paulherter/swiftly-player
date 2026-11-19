@@ -100,6 +100,9 @@ pub fn source_for(offering: &SectionOffering, choice: &SectionSelection) -> Opti
 }
 
 /// The strip of a list in the server's order (`LibraryModel.alphabet`).
+///
+/// Only the name order has a strip (A-Z). Every other order (recently added, rating, release) returns an
+/// index without entries, so no platform draws one.
 pub fn alphabet(items: &[Item], sorting: Sorting) -> AlphabetIndex {
     let rows: Vec<IndexItem> = items.iter().map(index_item).collect();
     let sorting = match sorting {
@@ -108,6 +111,14 @@ pub fn alphabet(items: &[Item], sorting: Sorting) -> AlphabetIndex {
         Sorting::Rating => IndexSorting::Rating,
         Sorting::Erscheinung => IndexSorting::Erscheinung,
     };
+    if sorting != IndexSorting::Name {
+        return AlphabetIndex {
+            entries: Vec::new(),
+            count: rows.len(),
+            sorting,
+            monthly: false,
+        };
+    }
     AlphabetIndex::from_items(&rows, sorting, &SHORT_MONTHS)
 }
 
@@ -370,76 +381,22 @@ mod tests {
     }
 
     #[test]
-    fn the_rating_strip_truncates_and_marks_unrated_titles() {
-        let rated = |r: Option<f64>| Item {
-            name: "x".into(),
-            community_rating: r,
+    fn only_the_name_order_has_a_strip() {
+        let item = |name: &str| Item {
+            name: name.into(),
+            community_rating: Some(7.5),
+            premiere_date: Some("2020-01-01T00:00:00Z".into()),
+            date_created: Some("2025-03-02T10:00:00Z".into()),
             ..Item::default()
         };
-        let index = alphabet(
-            &[
-                rated(Some(8.7)),
-                rated(Some(8.1)),
-                rated(Some(6.0)),
-                rated(None),
-            ],
-            Sorting::Rating,
-        );
-        let keys: Vec<&str> = index.entries.iter().map(|e| e.letter.as_str()).collect();
-        assert_eq!(keys, ["r8", "r6", "\u{2014}"]);
-        assert_eq!(index.entries[0].label, "8");
-        assert_eq!(index.entries[1].first, 2);
-        assert!(index.entries[1].gap && !index.entries[0].gap);
-    }
-
-    #[test]
-    fn the_release_strip_uses_the_premiere_date_before_the_production_year() {
-        let film = |premiere: Option<&str>, year: Option<i64>| Item {
-            name: "x".into(),
-            premiere_date: premiere.map(Into::into),
-            production_year: year,
-            ..Item::default()
-        };
-        let index = alphabet(
-            &[
-                film(Some("2024-05-01T00:00:00Z"), Some(1999)),
-                film(None, Some(2020)),
-                film(None, None),
-            ],
-            Sorting::Erscheinung,
-        );
-        let keys: Vec<&str> = index.entries.iter().map(|e| e.letter.as_str()).collect();
-        assert_eq!(keys, ["2024", "2020", "\u{2014}"]);
-        assert_eq!(index.entries[0].label, "24");
-    }
-
-    #[test]
-    fn the_latest_strip_switches_to_german_months_within_a_single_year() {
-        let added = |d: &str| Item {
-            name: "x".into(),
-            date_created: Some(d.into()),
-            ..Item::default()
-        };
-        let one_year = alphabet(
-            &[added("2025-03-02T10:00:00Z"), added("2025-01-15T10:00:00Z")],
-            Sorting::Latest,
-        );
-        assert!(one_year.monthly);
-        let keys: Vec<&str> = one_year.entries.iter().map(|e| e.letter.as_str()).collect();
-        assert_eq!(keys, ["2025-03", "2025-01"]);
-        assert_eq!(one_year.entries[0].label, "M\u{E4}rz 25");
-        assert_eq!(one_year.entries[1].label, "Jan 25");
-        let two_years = alphabet(
-            &[added("2025-03-02T10:00:00Z"), added("2024-01-15T10:00:00Z")],
-            Sorting::Latest,
-        );
-        assert!(!two_years.monthly);
-        let keys: Vec<&str> = two_years
-            .entries
-            .iter()
-            .map(|e| e.letter.as_str())
-            .collect();
-        assert_eq!(keys, ["2025", "2024"]);
+        let items = [item("Alpha"), item("Berta"), item("Zed")];
+        assert!(alphabet(&items, Sorting::Name).is_useful());
+        for sorting in [Sorting::Latest, Sorting::Rating, Sorting::Erscheinung] {
+            let index = alphabet(&items, sorting);
+            assert!(index.entries.is_empty(), "{sorting:?}");
+            assert!(!index.is_useful(), "{sorting:?}");
+            assert_eq!(index.count, 3);
+        }
     }
 
     #[test]

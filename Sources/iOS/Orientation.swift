@@ -182,6 +182,14 @@ final class SwiftlyAppDelegate: NSObject, UIApplicationDelegate {
         #if DEBUG
         if CardsRun.an { CardsRun.start() }
         if BatteryRun.an { BatteryRun.start() }
+        // Proof hook: `-SwiftlyLiveLandscape` turns the iPad simulator to landscape (simctl cannot rotate a device).
+        if ProcessInfo.processInfo.arguments.contains("-SwiftlyLiveLandscape") {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1.5))
+                (UIApplication.shared.connectedScenes.first as? UIWindowScene)?
+                    .requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
+            }
+        }
         #endif
 
         let session = AVAudioSession.sharedInstance()

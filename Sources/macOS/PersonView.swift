@@ -20,6 +20,8 @@ struct PersonView: View {
     let person: Person
     /// The title the user came from; shown above the role.
     let origin: String?
+    /// Set when the tap came from a cast tile of a Seerr title (no library entry).
+    var seerr: SeerrPersonRef? = nil
     let back: () -> Void
 
     @Environment(Navigator.self) private var navigator
@@ -161,7 +163,7 @@ struct PersonView: View {
         HStack(alignment: .bottom, spacing: 16) {
             // Round because it is a picture, like the cast heads.
             ProfileCharacter(name: person.name,
-                          image: model.personImage(person, maxHeight: 300),
+                          image: seerr?.portrait ?? model.personImage(person, maxHeight: 300),
                           size: blockHeight)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -235,7 +237,7 @@ struct PersonView: View {
                 PagingRail(margin: 0) {
                     ForEach(requestable) { hit in
                         Button { navigator.openIt(.seerrTitle(hit), in: section) } label: {
-                            SeerrTile(hit: hit)
+                            SeerrTile(hit: hit, width: Theme.tileWidth)
                         }
                         .buttonStyle(Theme.PressButton())
                     }
@@ -248,7 +250,7 @@ struct PersonView: View {
     // MARK: Loading
 
     private func load() async {
-        if core == nil { core = try? AppCore.shared.person(session: model.session, person: person, origin: origin) }
+        if core == nil { core = try? AppCore.shared.person(session: model.session, person: person, origin: origin, seerr: seerr) }
         await core?.run(app: model)
     }
 }

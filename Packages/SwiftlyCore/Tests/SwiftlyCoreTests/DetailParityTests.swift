@@ -128,7 +128,7 @@ import Testing
         #expect(model.actions.play.label == oldLabel(item))
         #expect(model.actions.play.remaining == item.remainingTimeText)
         #expect(model.actions.play.progress.map { Double($0) } ?? 0 > 0)
-        #expect(model.actions.play.enabled)
+        #expect(model.actions.play.ready == .ready)
         #expect(model.actions.watched == (item.userData?.played ?? false))
         #expect(model.actions.favorite == (item.userData?.isFavorite ?? false))
         // What a press does
@@ -143,7 +143,8 @@ import Testing
         #expect(model.actions.play.progress == nil)
     }
 
-    @Test @MainActor func severalVersionsAreAskedWithTheOldLabels() async throws {
+    /// A tap starts the default version at once (the core never asks); the long press lists the versions with the old labels.
+    @Test @MainActor func severalVersionsStartTheDefaultAndListTheOldLabels() async throws {
         let (model, item) = try await page(Self.movie(progress: nil, sources: 2))
         let oldList: [(String, String)]
         switch MediaVersions.start(item.mediaSources, downloaded: false) {
@@ -151,13 +152,16 @@ import Testing
         default: oldList = []
         }
         #expect(oldList.count == 2)
-        guard case .choose(_, _, let versions) = model.play() else {
-            Issue.record("the core did not ask for the version")
+        guard case .start(_, _, let started) = model.play() else {
+            Issue.record("a press on Play must start, not ask")
             return
         }
+        #expect(started == nil, "no pick: the plan takes the default version")
+        let versions = model.versions()
         #expect(versions.map(\.id) == oldList.map(\.0))
         // Apple's byte formatter writes a no-break space before the unit, the core a plain one (same look).
         #expect(versions.map(\.label) == oldList.map { $0.1.replacingOccurrences(of: "\u{00A0}", with: " ") })
+        #expect(versions.filter(\.isDefault).count == 1, "exactly one version is marked as the default")
         // A picked version starts that one.
         #expect(model.play(pick: "src-b") == .start(itemId: "m1", since: 0, sourceId: "src-b"))
     }

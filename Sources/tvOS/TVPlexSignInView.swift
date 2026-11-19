@@ -288,6 +288,7 @@ struct TVPlexSignInView: View {
                 }
             }
             .scrollClipDisabled()
+            .fadesUnderHeader(20)
             .frame(maxHeight: TVSpec.plexServerListHeight)
             .focusSection()
 

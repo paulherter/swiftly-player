@@ -289,6 +289,33 @@ impl AlphabetIndex {
         loaded.iter().position(|i| self.key(i) == key)
     }
 
+    /// Where a key starts in the whole list the strip was made from: the `first` of its entry, so it
+    /// does not matter which titles are loaded. Never reads the titles' own fields (a loaded tile may
+    /// lack the sort name the strip was made with).
+    ///
+    /// "By name": a key that is not an entry is first normalised like a title (`"\u{C4}"` is "A", a digit
+    /// or a symbol is "#"); a letter with no title takes the next letter that has one, and `None` is only
+    /// returned past the last letter. Other orders have no such neighbour: `None` for an unknown key.
+    pub fn first_for_key(&self, key: &str) -> Option<usize> {
+        let find = |k: &str| self.entries.iter().find(|e| e.letter == k).map(|e| e.first);
+        if let Some(first) = find(key) {
+            return Some(first);
+        }
+        if self.sorting != Sorting::Name {
+            return None;
+        }
+        let letter = Self::letter_for(key);
+        if let Some(first) = find(&letter) {
+            return Some(first);
+        }
+        let wanted = Self::order(&letter);
+        self.entries
+            .iter()
+            .filter(|e| Self::order(&e.letter) > wanted)
+            .min_by_key(|e| Self::order(&e.letter))
+            .map(|e| e.first)
+    }
+
     /// What the strip shows for a key ("25" for "2025"), for VoiceOver and the like.
     pub fn label_of(&self, key: Option<&str>) -> Option<String> {
         let key = key?;
@@ -505,6 +532,115 @@ mod tests {
         assert_eq!(index.count, 8);
         assert!(index.is_useful());
         assert!(!AlphabetIndex::from_titles(&[("Alpha", None), ("Avatar", None)]).is_useful());
+    }
+
+    fn name_strip(titles: &[(&str, Option<&str>)]) -> AlphabetIndex {
+        AlphabetIndex::from_titles(titles)
+    }
+
+    // The jump asks the strip's own entries, so titles without a sort name (loaded tiles) or not loaded at all
+    // cannot misdirect it.
+    #[test]
+    fn first_for_key_uses_the_strip_not_the_tiles() {
+        // The whole list carries sort names: "The Adam Project" stands under A, at position 1.
+        let index = name_strip(&[
+            ("2 Guns", Some("2 guns")),
+            ("The Adam Project", Some("adam project")),
+            ("Alvin", Some("alvin")),
+            ("The Tree", Some("tree")),
+        ]);
+        assert_eq!(index.first_for_key("A"), Some(1));
+        assert_eq!(index.first_for_key("T"), Some(3));
+        assert_eq!(index.first_for_key("#"), Some(0));
+        // The loaded tiles have no sort name: their keys are "#", "T", "A", "T", and T is not where A is.
+        let tiles: Vec<IndexItem> = ["2 Guns", "The Adam Project", "Alvin", "The Tree"]
+            .iter()
+            .map(|n| IndexItem {
+                name: (*n).into(),
+                ..IndexItem::default()
+            })
+            .collect();
+        assert_eq!(index.target_for_key("A", &tiles), Some(2));
+        assert_ne!(index.target_for_key("A", &tiles), index.first_for_key("A"));
+    }
+
+    #[test]
+    fn first_for_key_letters_without_titles_take_the_next_letter() {
+        let index = name_strip(&[
+            ("Alpha", None),
+            ("Berta", None),
+            ("Fox", None),
+            ("Zulu", None),
+        ]);
+        assert_eq!(index.first_for_key("A"), Some(0));
+        assert_eq!(index.first_for_key("C"), Some(2));
+        assert_eq!(index.first_for_key("G"), Some(3));
+        // Past the last letter nothing follows.
+        let short = name_strip(&[("Alpha", None), ("Berta", None)]);
+        assert_eq!(short.first_for_key("Z"), None);
+        // The next letter among scripts, by code point, as the strip orders them.
+        assert_eq!(index.first_for_key("\u{0411}"), None);
+    }
+
+    #[test]
+    fn first_for_key_digits_symbols_and_umlauts() {
+        let index = name_strip(&[
+            ("007", None),
+            ("\u{C4}rzte", None),
+            ("Berta", None),
+            ("\u{DC}ber", None),
+        ]);
+        // Digits and symbols share "#".
+        assert_eq!(index.first_for_key("#"), Some(0));
+        assert_eq!(index.first_for_key("7"), Some(0));
+        assert_eq!(index.first_for_key("!"), Some(0));
+        // Umlauts belong to their base letter.
+        assert_eq!(index.first_for_key("A"), Some(1));
+        assert_eq!(index.first_for_key("\u{C4}"), Some(1));
+        assert_eq!(index.first_for_key("\u{DC}"), Some(3));
+        // "#" with no digit title: the first letter that exists.
+        let letters = name_strip(&[("Alpha", None), ("Berta", None)]);
+        assert_eq!(letters.first_for_key("#"), Some(0));
+    }
+
+    #[test]
+    fn first_for_key_is_a_position_in_the_whole_list_even_when_only_a_page_is_loaded() {
+        // 300 titles, 50 of each of A..F; the strip comes from the whole list, a page holds 60.
+        let names: Vec<String> = (0..300)
+            .map(|i| format!("{}{i:03}", (b'A' + (i / 50) as u8) as char))
+            .collect();
+        let titles: Vec<(&str, Option<&str>)> = names.iter().map(|n| (n.as_str(), None)).collect();
+        let index = name_strip(&titles);
+        let loaded: Vec<IndexItem> = names[..60]
+            .iter()
+            .map(|n| IndexItem {
+                name: n.clone(),
+                ..IndexItem::default()
+            })
+            .collect();
+        assert_eq!(index.target_for_key("E", &loaded), None);
+        assert_eq!(index.first_for_key("E"), Some(200));
+        assert_eq!(index.first_for_key("B"), Some(50));
+        assert_eq!(index.first_for_key("F"), Some(250));
+    }
+
+    #[test]
+    fn first_for_key_other_orders_know_only_their_keys() {
+        let items = vec![
+            IndexItem {
+                name: "a".into(),
+                production_year: Some(2020),
+                ..IndexItem::default()
+            },
+            IndexItem {
+                name: "b".into(),
+                production_year: Some(2018),
+                ..IndexItem::default()
+            },
+        ];
+        let index = AlphabetIndex::from_items(&items, Sorting::Erscheinung, &[]);
+        assert_eq!(index.first_for_key("2018"), Some(1));
+        assert_eq!(index.first_for_key("2019"), None);
     }
 
     // Swift: target()

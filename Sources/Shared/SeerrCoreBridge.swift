@@ -14,11 +14,6 @@ enum SeerrCore {
     }
 
     typealias Client = SwiftlyCore.SeerrModel
-    /// The detail page's controller and the types it hands the views (the views do not import the core).
-    typealias Flow = SwiftlyCore.SeerrScreenController
-    typealias Page = SwiftlyCore.SeerrPageInfo
-    typealias SeasonRow = SwiftlyCore.SeerrSeasonInfo
-    typealias CastEntry = SwiftlyCore.SeerrCastInfo
 
     /// Requests a title; throws the core's German text.
     static func askFor(_ client: Client, art: String, id: Int, seasons: [Int]?) async throws {
@@ -53,6 +48,21 @@ enum SeerrCore {
             throw Failure(text: message)
         }
         guard let url = URL(string: made.address) else { throw Failure(text: "") }
+        return JellyfinKit.SeerrAccess(
+            address: url, cookie: made.cookie,
+            headers: made.headers.map { JellyfinKit.OwnHeader(name: $0.name, value: $0.value) })
+    }
+
+    /// The core's sign-in and setup screen (`SeerrSetupFlow` drives it): one state, three ways in, the address asked
+    /// once per server of the admin only, every sentence worded by the core.
+    @MainActor
+    static func setup() -> SwiftlyCore.SeerrSetupScreen {
+        AppCore.shared.raw.seerrSetup(locale: AppCore.language, jar: HTTPCookieSeerrJar())
+    }
+
+    /// The session the core hands back after a sign-in, as the stored connection.
+    static func access(_ made: SwiftlyCore.SeerrConnection) -> JellyfinKit.SeerrAccess? {
+        guard let url = URL(string: made.address) else { return nil }
         return JellyfinKit.SeerrAccess(
             address: url, cookie: made.cookie,
             headers: made.headers.map { JellyfinKit.OwnHeader(name: $0.name, value: $0.value) })
@@ -114,6 +124,7 @@ enum SeerrCore {
         case .loads: .loads
         case .partWayPresent: .partWayPresent
         case .present: .present
+        case .blocklisted: .blocklisted
         case .deleted: .deleted
         }
     }
@@ -122,28 +133,6 @@ enum SeerrCore {
         JellyfinKit.SeerrHit(
             id: Int(h.id), art: h.art, title: h.title, year: h.year.map(Int.init),
             posterPath: h.posterPath, backdropPath: h.backdropPath, state: state(h.state))
-    }
-
-    static func coreState(_ s: JellyfinKit.SeerrState) -> SwiftlyCore.SeerrState {
-        switch s {
-        case .opened: return SwiftlyCore.SeerrState.opened
-        case .waitsSharing: return SwiftlyCore.SeerrState.waitsSharing
-        case .loads: return SwiftlyCore.SeerrState.loads
-        case .partWayPresent: return SwiftlyCore.SeerrState.partWayPresent
-        case .present: return SwiftlyCore.SeerrState.present
-        case .deleted: return SwiftlyCore.SeerrState.deleted
-        }
-    }
-
-    static func coreHit(_ h: JellyfinKit.SeerrHit) -> SwiftlyCore.SeerrHit {
-        SwiftlyCore.SeerrHit(
-            id: Int64(h.id), art: h.art, title: h.title, year: h.year.map(Int64.init),
-            posterPath: h.posterPath, backdropPath: h.backdropPath, state: coreState(h.state))
-    }
-
-    /// The core screen's cast entry as the views' person (id is not needed to draw it).
-    static func person(_ c: SwiftlyCore.SeerrCastInfo) -> JellyfinKit.SeerrPerson {
-        JellyfinKit.SeerrPerson(id: 0, name: c.name, role: c.role, imagePath: c.image)
     }
 
     static func detail(_ d: SwiftlyCore.SeerrDetail) -> JellyfinKit.SeerrDetail {

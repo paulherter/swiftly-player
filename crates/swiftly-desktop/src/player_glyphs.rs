@@ -178,6 +178,9 @@ fn asset_of(name: &str) -> Option<(&'static str, bool)> {
     match name {
         "check" => Some(("check", true)),
         "x" => Some(("x", true)),
+        "caret-down" => Some(("caret-down", true)),
+        "caret-left" => Some(("caret-left", true)),
+        "caret-right" => Some(("caret-right", true)),
         "play" => Some(("play.fill", false)),
         "pause" => Some(("pause.fill", false)),
         "skip-end" => Some(("skip-forward.fill", false)),
@@ -185,6 +188,7 @@ fn asset_of(name: &str) -> Option<(&'static str, bool)> {
         "speaker" => Some(("speaker-high", false)),
         "sliders" => Some(("sliders-horizontal", true)),
         "stack" => Some(("stack", true)),
+        "list" => Some(("list", true)),
         "pip" => Some(("picture-in-picture.fill", false)),
         "television" => Some(("television", true)),
         "users" => Some(("users", true)),

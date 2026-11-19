@@ -3,6 +3,7 @@ import OSLog
 import JellyfinKit
 import enum SwiftlyCore.PendingProgress
 import enum SwiftlyCore.HomeRowOrder
+import func SwiftlyCore.automaticSubtitlesDefault
 import struct SwiftlyCore.HomeLibraryChoice
 import class SwiftlyCore.PlayReporter
 import struct SwiftlyCore.AccountRef
@@ -190,7 +191,8 @@ final class AppModel {
     var rowOrder: [String] {
         HomeRowOrder.effective(
             stored: startOrder, fallbackFixed: startRails.map(\.rawValue), disconnected: newAccessDisconnected,
-            libraries: startLibraries.map { HomeLibraryChoice(id: $0.id, name: $0.name, collection: $0.collection) })
+            libraries: startLibraries.map { HomeLibraryChoice(id: $0.id, name: $0.name, collection: $0.collection) },
+            seerr: seerr.connected)
     }
     /// A drag in the combined list: stores the order and keeps the fixed rows' own list (`startReihen`) in step.
     func moveRows(from source: IndexSet, to destination: Int) {
@@ -638,6 +640,13 @@ final class AppModel {
             // Seerr is tied to a server: on switching to another, its access applies.
             // Within one server nothing changes.
             seerr.userName = { [weak self] in self?.session?.userName }
+            seerr.mediaServer = { [weak self] in self?.client }
+            seerr.serverSuffix = { [weak self] in self?.session?.serverSuffix }
+            seerr.plexToken = { [weak self] in
+                guard let session = self?.session, session.kind == .plex else { return nil }
+                return session.plex?.accountToken
+            }
+            seerr.isAdmin = { [weak self] in await self?.isMediaServerAdmin() ?? true }
             seerr.serverSwitched(session?.serverIdentity)
             profileImagePrefetch()
         }
@@ -745,7 +754,7 @@ final class AppModel {
         audioLanguage = store.string(forKey: "tonSprache") ?? ""
         let languageStored = store.string(forKey: "utSprache") ?? ""
         subtitleLanguage = languageStored
-        var automaticStored = store.object(forKey: "utAuto") as? Bool ?? false
+        var automaticStored = store.object(forKey: "utAuto") as? Bool ?? automaticSubtitlesDefault()
         // **Once:** a language chosen before the language started to switch "automatic" on never took effect. Set it now.
         if !store.bool(forKey: "utAutoNachgezogen") {
             store.set(true, forKey: "utAutoNachgezogen")
@@ -827,12 +836,53 @@ final class AppModel {
             only.switchTo(live.kind)
             restoreSession(from: only)
             AppLog.writeOut("[Livelauf] Fixture-Sitzung nur im Speicher an \(live.serverURL.absoluteString)")
+            liveSeerr()
             return
         }
         setTestSession()
+        liveSeerr()
         #endif
         restoreSession()
     }
+
+    /// Is the signed-in Jellyfin account an administrator (`Policy.IsAdministrator` of `/Users/Me`)? Only an admin types
+    /// the Seerr address. Unknown (Plex, no answer, no policy block) counts as yes: the old way (everyone types it) is
+    /// better than leaving a user with no way in.
+    func isMediaServerAdmin() async -> Bool {
+        guard let session, session.kind != .plex else { return true }
+        var request = URLRequest(url: session.serverURL.appendingPathComponent("Users/Me"))
+        request.setValue(session.accessToken, forHTTPHeaderField: "X-Emby-Token")
+        request.timeoutInterval = 10
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let policy = object["Policy"] as? [String: Any] else { return true }
+        return policy["IsAdministrator"] as? Bool ?? false
+    }
+
+    #if DEBUG
+    /// `-SwiftlyFixtureSeerr`: the fixture server's Seerr is connected (see `LiveRun`).
+    private func liveSeerr() {
+        guard let access = LiveRun.seerrAccess() else { return }
+        // Connected in the same turn, as a stored Keychain connection is: the Start page reserves the Seerr block
+        // (skeleton) from its first frame and shows it blank while the fixture answers late.
+        seerr.adoptFixture(access, lookUp: false)
+        Task { [seerr] in
+            await LiveRun.seerrRole(for: access)
+            await seerr.lookUp()
+            // Proof for the harness (`events.jsonl`): the hub reads its state over the stored connection and the
+            // library side finds the fixture's series by its TMDB id (Küstenwache, 7777) and fails on an unknown one.
+            let hub = seerr.hub
+            let info = try? await hub.refresh()
+            let state = info.map { String(describing: $0.state) } ?? "failed"
+            let library = JellyfinSeerrLibrary(server: { [weak self] in self?.client })
+            let found = try? await library.find(art: "tv", tmdb: 7777)
+            let absent = try? await library.find(art: "tv", tmdb: 424242)
+            LiveRun.note(["kind": "seerr-hub", "state": state, "available": hub.available(),
+                          "admin": info?.isAdmin ?? false,
+                          "find-7777": found ?? "nil", "find-424242": absent ?? "nil"])
+        }
+    }
+    #endif
 
     #if DEBUG
     /// **Self-test without a sign-in form.** Creates an account at a test address
@@ -1435,6 +1485,8 @@ final class AppModel {
         defer { isWorking = false }
         // On the side and without an error message: if nothing comes, it stays as it
         // was.
+        // The server page's row on Profile is complete in its first frame: the administrator answer is asked now.
+        Task { [session] in await ServerAdminAccess.shared.resolve(session) }
         Task {
             let guidelines = await client.accountDefaults()
             guard applies() else { return }
@@ -1462,6 +1514,14 @@ final class AppModel {
     func item(id: String) async -> Item? {
         guard let client else { return nil }
         return try? await client.item(id: id)
+    }
+
+    /// What "Abspielen" starts on a series' card: the next episode up, else the first one (the series page's main button
+    /// resolves the same way). `nil` when the server has none.
+    func episodeToPlay(series: Item) async -> Item? {
+        guard let client else { return nil }
+        if let next = try? await client.nextEpisodeSeries(seriesID: series.id) { return next }
+        return try? await client.episodes(seriesID: series.id).first
     }
 
     /// Everything that can play as this title's trailer, in the order to try it
@@ -1853,6 +1913,11 @@ final class AppModel {
     /// every spot, and `ImageCache` decodes it down to its own size anyway.
     static let userImageEdge = 480
 
+    /// The picture of any user of the connected server (who is watching, on the server page), `edge` pixels wide.
+    func userImageURL(userID: String, edge: Int) -> URL? {
+        images?.user(userID, border: edge)
+    }
+
     func userImageURL() -> URL? {
         guard let session else { return nil }
         // Plex keeps the picture's address from plex.tv in the session.
@@ -1993,7 +2058,7 @@ final class AppModel {
     /// were fetched blindly and the rest was unreachable through the UI.
     func items(in parentID: String,
                art: String? = nil,
-               sorting: Sorting = .name,
+               sorting: Sorting = .pageDefault,
                filter: LibraryFilter = .all,
                since startIndex: Int = 0,
                count: Int = AppModel.pagesSize) async -> (title: [Item], total: Int)? {
@@ -2004,7 +2069,7 @@ final class AppModel {
     /// One page from a library, from all, or from a collection; the differences
     /// are in ``ShelfSource``.
     func items(from source: ShelfSource,
-               sorting: Sorting = .name,
+               sorting: Sorting = .pageDefault,
                filter: LibraryFilter = .all,
                since startIndex: Int = 0,
                count: Int = AppModel.pagesSize) async -> (title: [Item], total: Int)? {
@@ -2161,6 +2226,14 @@ final class AppModel {
     /// `still`: an error lands only in the log, not as a message; for the background
     /// preparation (``EpisodePreparation``) nobody asked for.
     func plan(for itemID: String, still: Bool = false, sourceID: String? = nil) async -> PlaybackPlan? {
+        #if DEBUG
+        // The running-app check `switchfail` makes the next plan a screen asked for come back empty.
+        if !still, LiveRun.failPlans > 0 {
+            LiveRun.failPlans -= 1
+            AppLog.writeOut("[Livelauf] plan for \(itemID) refused (debug hook)")
+            return nil
+        }
+        #endif
         // A title that starts now draws its subtitles in the look the other devices saved: let a settings run that is
         // under way (launch, new account) finish first, for two seconds at most.
         if !still { await settingsSync.settled() }

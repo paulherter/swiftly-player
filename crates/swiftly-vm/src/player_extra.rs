@@ -33,8 +33,18 @@ impl Failure {
     };
 }
 
+/// Seconds a hint line stays over the picture before the player clock clears it (`PlayerScreen.notify`, macOS: 3 s);
+/// one rule for every hint of the core.
+pub const HINT_SECONDS: f64 = 3.0;
+
 /// Hint after a quality switch that plays the original anyway.
 pub const ORIGINAL_QUALITY_HINT: &str = "Läuft in Originalqualität. Der Server wandelt nichts um.";
+
+/// Hint when the plan of the next episode could not be fetched; the old title is back (catalog key of the old apps).
+pub const SWITCH_FAILED_HINT: &str = "Nächste Folge konnte nicht geladen werden.";
+
+/// Hint when the plan of the same title (quality or subtitle choice) could not be fetched; the old stream is back.
+pub const RELOAD_FAILED_HINT: &str = "Die Folge konnte nicht geladen werden.";
 
 /// The quality choice as the layer shows it (`QualitySelection`): Direct Play or a cap in Mbit/s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

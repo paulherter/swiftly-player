@@ -71,12 +71,15 @@ public enum SettingsSync {
         .init(name: "merklisteAn", kind: .bool, perServer: false),
         .init(name: "alphabetAn", kind: .bool, perServer: false),
         .init(name: "neuGetrennt", kind: .bool, perServer: false),
+        .init(name: "seerrArrivalHint", kind: .bool, perServer: false),
         // Home page
         .init(name: "startReihen", kind: .list, perServer: false),
         .init(name: "startAus", kind: .list, perServer: false),
         .init(name: "genreChips", kind: .bool, perServer: false),
         .init(name: "startGenres", kind: .list, perServer: false),
         .init(name: "startBibliotheken", kind: .json, perServer: true),
+        // Seerr: where it is (address, gateway headers; no session). Set up once by the admin of a server.
+        .init(name: "seerrServer", kind: .json, perServer: true),
     ]
 
     /// The entry for a name as `UserDefaults` knows it. A server suffix is ignored.

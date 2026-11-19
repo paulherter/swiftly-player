@@ -97,6 +97,7 @@ struct TitleMark: View {
 
     @AppStorage("titelAlsLogo") private var asLogo = false
     @ScaledMetric private var row: CGFloat
+    @Environment(\.arrivalFades) private var arrivalFades
     @State private var mark: TitleLogo?
     @State private var width: CGFloat = 0
 
@@ -121,7 +122,7 @@ struct TitleMark: View {
                     if let present = TitleLogoCache.shared.available(logo) { mark = present; return }
                     mark = nil
                     let loaded = await TitleLogoCache.shared.load(logo)
-                    withAnimation(Theme.reveal) { mark = loaded }
+                    withAnimation(.arrival(arrivalFades)) { mark = loaded }
                 }
         }
     }

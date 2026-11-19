@@ -215,9 +215,23 @@ impl Shell {
         self.suite.as_ref().is_some_and(|s| s.player_open())
     }
 
+    /// A redraw that reuses the last built interface: the player brings only its video picture up to date.
+    pub fn player_video_step(&mut self) {
+        if let Some(s) = self.suite.as_mut() {
+            s.player_video_step();
+        }
+    }
+
     /// A key of the player (Space, arrows, letters); `false` when no player is open or the key is not used.
     pub fn player_key(&mut self, key: crate::player_screen::PlayerKey, now: f64) -> bool {
         self.suite.as_mut().is_some_and(|s| s.player_key(key, now))
+    }
+
+    /// The app goes to the background (a phone or TV host): a running player reports its position now.
+    pub fn app_backgrounded(&mut self, now: f64, paused: bool) {
+        if let Some(s) = self.suite.as_mut() {
+            s.player_app_backgrounded(now, paused);
+        }
     }
 
     /// The window is closing: a running player pauses and reports position and stop first. Whether one was open.
@@ -697,6 +711,13 @@ impl Shell {
             || self.notch.0.is_active()
             || self.notch.1.is_active();
         (list, more)
+    }
+
+    /// Why the next frame is wanted (see `Suite::frame_reason`).
+    pub fn frame_reason(&self) -> &'static str {
+        self.suite
+            .as_ref()
+            .map_or("home", crate::suite::Suite::frame_reason)
     }
 
     /// The real app is idle: it polls a few times a second instead of every vsync.

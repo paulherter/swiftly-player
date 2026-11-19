@@ -24,7 +24,8 @@ extension VLCPlayerView {
             streams: streams, defaultAudio: request.source.defaultAudioStreamIndex,
             defaultSubtitle: request.source.defaultSubtitleStreamIndex, audioLanguage: wish?.audio ?? "",
             subtitleLanguage: wish?.subtitle ?? "", automatic: wish?.automatic ?? false, title: wish?.title,
-            ordered: wish?.ordered)
+            ordered: wish?.ordered, deviceLanguage: StartTracks.deviceLanguage,
+            originalLanguage: wish?.coreStart?.item.originalLanguage)
         let audio = chosen.audio
         let subtitleIndex = chosen.subtitle
 
@@ -158,7 +159,8 @@ extension VLCPlayerView {
         let chosen = StartTracks.choose(
             streams: streams, defaultAudio: source?.defaultAudioStreamIndex,
             defaultSubtitle: source?.defaultSubtitleStreamIndex, audioLanguage: audio, subtitleLanguage: subtitle,
-            automatic: automatic, title: title, ordered: trackRequest?.ordered, audioFallback: engine.audioIndex)
+            automatic: automatic, title: title, ordered: trackRequest?.ordered, audioFallback: engine.audioIndex,
+            deviceLanguage: StartTracks.deviceLanguage, originalLanguage: originalLanguage)
         let audioIndex = chosen.audio
         let wantedSubtitle = chosen.subtitle
         AppLog.writeOut("[Spuren] \(engine.label): Ton \(audioIndex.map(String.init) ?? "Datei") · Untertitel "

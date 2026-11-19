@@ -239,8 +239,11 @@ impl<T: HttpTransport + 'static> PlexClient<T> {
             .find(|(k, _)| k == "sort")
             .map(|(_, v)| v.as_str());
         let page = merge::page(&runs, skipped, order, start, size);
+        // The total stays the server's (paging offsets count its entries); hollow shows only leave the page.
         Ok(ItemsResponse::new(
-            page.iter().map(|m| self.mapper.item(m)).collect(),
+            swiftly_model::switches::without_hollow_series(
+                page.iter().map(|m| self.mapper.item(m)).collect(),
+            ),
             totals.iter().sum(),
         ))
     }
@@ -354,12 +357,12 @@ impl<T: HttpTransport + 'static> PlexClient<T> {
         for run in answers {
             rows.push(run?);
         }
-        Some(
+        Some(swiftly_model::switches::without_hollow_series(
             merge::newest(&rows, usize::try_from(size).unwrap_or(0))
                 .iter()
                 .map(|m| self.mapper.item(m))
                 .collect(),
-        )
+        ))
     }
 
     fn slice(all: &[Item], start: i64, size: i64, types: &[String]) -> ItemsResponse {
@@ -462,12 +465,12 @@ impl<T: HttpTransport + 'static> PlexClient<T> {
         }))
         .await;
         let rows: Vec<Vec<PlexMetadata>> = answers.into_iter().collect::<Option<_>>()?;
-        Some(
+        Some(swiftly_model::switches::without_hollow_series(
             merge::newest(&rows, usize::try_from(show_item).unwrap_or(0))
                 .iter()
                 .map(|m| self.mapper.item(m))
                 .collect(),
-        )
+        ))
     }
 
     /// The titles of a person or genre with the total (:265-283).

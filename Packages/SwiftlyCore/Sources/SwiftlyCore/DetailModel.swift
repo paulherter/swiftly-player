@@ -37,6 +37,9 @@ public final class DetailModel {
 
     /// What a press on Play does now; `pick` is the chosen version.
     public func play(pick: String? = nil) -> PlayAction { vm.play(pick: pick) }
+
+    /// The versions a long press on Play lists, the default marked; empty when there is nothing to choose.
+    public func versions() -> [VersionOption] { vm.versions() }
     public func playFromStart(pick: String? = nil) -> PlayAction { vm.playFromStart(pick: pick) }
     public func tileMenu() -> [MenuEntry] { vm.tileMenu() }
     public func moreMenu() -> [MenuEntry] { vm.moreMenu() }
@@ -60,7 +63,7 @@ public final class DetailModel {
             bottom = vm.bottom()
             switch vm.play(pick: nil) {
             case .wait, .resolve: return false
-            case .choose, .start: return true
+            case .start: return true
             }
         } changed: { [vm] in try await vm.changed(seen: $0).version } version: { [vm] in vm.version() }
     }

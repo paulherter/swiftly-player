@@ -7,7 +7,7 @@ import SwiftUI
 /// go to the overview, mark watched/unwatched, watch together, and for
 /// "Weiterschauen" remove from the row. The actions are the existing ones:
 /// `PlayControls.starte`, `AppModel.setWatched`,
-/// `AppModel.fromContinueWatchingTake`, `SharedModel.createFor`.
+/// `HomeModel.takeOutOfContinue`, `SharedModel.createFor`.
 ///
 /// **Two deviations, both due to mouse and window:**
 /// - **No preview.** A context menu on the Mac is an AppKit menu at the pointer;
@@ -22,6 +22,9 @@ struct TileMenu: ViewModifier {
     /// The tile is in "Weiterschauen": then "To overview" (a click starts playback
     /// there directly) and "Remove from Weiterschauen" are offered.
     var continueWatching = false
+    /// "Remove from Weiterschauen": the page takes the title out through the shared home model and the core sends the
+    /// request (`HomeModel.takeOutOfContinue`); `nil`: no such entry.
+    var onRemove: ((Item) -> Void)?
     /// The way to the overview, only for "Weiterschauen"; elsewhere the click itself
     /// is that way.
     var overview: (() -> Void)?
@@ -123,6 +126,17 @@ struct TileMenu: ViewModifier {
                 Label("Gemeinsam schauen", systemImage: "person.2")
             }
         }
+        // What Seerr adds for an account that may use it (the core decides which entries): report a problem, delete
+        // from the server. Same words and flow as the detail page's More list.
+        if !inPlayer {
+            let seerr = SeerrTitleMenu.tiles.actions(model: model, item: item)
+            if !seerr.isEmpty { Divider() }
+            ForEach(Array(seerr.enumerated()), id: \.offset) { _, action in
+                Button(role: action.cautionary ? .destructive : nil, action: action.perform) {
+                    Label { action.label } icon: { Image(systemName: action.symbol) }
+                }
+            }
+        }
         // The pages: an episode's series, and the title's own page.
         if !inPlayer {
             if item.type == "Episode", let seriesID = item.seriesId {
@@ -135,8 +149,9 @@ struct TileMenu: ViewModifier {
             }
             .keyboardShortcut("i", modifiers: .command)
         }
-        if continueWatching {
-            Button { remove() } label: {
+        // The page owns the row and removes through the shared model (`HomeModel.takeOutOfContinue`); no handler, no entry.
+        if continueWatching, let onRemove {
+            Button { onRemove(item) } label: {
                 Label("Aus Weiterschauen entfernen", systemImage: "minus.circle")
             }
         }
@@ -200,26 +215,22 @@ struct TileMenu: ViewModifier {
         }
     }
 
-    private func remove() {
-        let model = model, item = item, afterwards = afterwards
-        Task {
-            if let error = await model.fromContinueWatchingTake(item) {
-                TileMessage.shared.text = error
-                return
-            }
-            await afterwards?()
-        }
-    }
 }
 
 extension View {
     /// The tile menu, see ``TileMenu``.
     func tileMenu(_ item: Item, model: AppModel, continueWatching: Bool = false,
+                     onRemove: ((Item) -> Void)? = nil,
                      overview: (() -> Void)? = nil, inPlayer: Bool = false,
                      afterwards: (() async -> Void)? = nil) -> some View {
-        modifier(TileMenu(item: item, model: model, continueWatching: continueWatching,
+        modifier(TileMenu(item: item, model: model, continueWatching: continueWatching, onRemove: onRemove,
                              overview: overview, afterwards: afterwards, inPlayer: inPlayer))
     }
+}
+
+extension SeerrTitleMenu {
+    /// The tile menus share one: its two sheets hang once on the window (`MainView`), not on every tile.
+    static let tiles = SeerrTitleMenu()
 }
 
 /// What a tile menu reports when something fails: one for the whole app, shown by

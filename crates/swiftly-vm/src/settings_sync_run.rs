@@ -281,6 +281,47 @@ pub fn stamp_change(store: &dyn KeyValueStore, now_seconds: f64) {
     let _ = store.set(keys::TIME, swiftly_settings::Value::Double(stamp * 1000.0));
 }
 
+/// The store key of a server's Seerr session (`seerr|<server>`; the suffix is the account's per-server suffix).
+pub fn seerr_key(suffix: &str) -> String {
+    format!("seerr{suffix}")
+}
+
+/// The store key of the time (ms since 1970) the server's Seerr session last changed on this device.
+fn seerr_time_key(suffix: &str) -> String {
+    format!("seerrSyncTime{suffix}")
+}
+
+/// The Seerr session this device keeps for a server, if any.
+pub fn stored_seerr(store: &dyn KeyValueStore, suffix: &str) -> Option<swiftly_seerr::SeerrAccess> {
+    match store.get(&seerr_key(suffix))? {
+        swiftly_settings::Value::Data(d) => serde_json::from_slice(&d).ok(),
+        _ => None,
+    }
+}
+
+/// Keeps (or, with `None`, drops) a server's Seerr session and stamps the change, so the next sync run carries it to the
+/// server's other devices (or takes the disconnect there). Every write of the session goes through here.
+pub fn store_seerr(
+    store: &dyn KeyValueStore,
+    suffix: &str,
+    access: Option<&swiftly_seerr::SeerrAccess>,
+    now_seconds: f64,
+) {
+    let key = seerr_key(suffix);
+    match access.and_then(|a| serde_json::to_vec(a).ok()) {
+        Some(data) => {
+            let _ = store.set(&key, swiftly_settings::Value::Data(data));
+        }
+        None => {
+            let _ = store.remove(&key);
+        }
+    }
+    let _ = store.set(
+        &seerr_time_key(suffix),
+        swiftly_settings::Value::Double((now_seconds * 1000.0).round()),
+    );
+}
+
 /// The settings sync of one account over a [`KeyValueStore`].
 pub struct StoreSync<T: HttpTransport> {
     core: SettingsSyncCore<T>,
@@ -322,6 +363,13 @@ impl<T: HttpTransport + 'static> StoreSync<T> {
         }
         let started = millis(store, keys::TIME);
         let other = store.get_string(keys::ACCOUNT).as_deref() != Some(self.account_key.as_str());
+        // The Seerr session of this server travels with the settings: taken over from the server's other devices,
+        // written when this one connected last.
+        let seerr_before = stored_seerr(store, &self.suffix);
+        let seerr_json = seerr_before
+            .as_ref()
+            .and_then(|a| serde_json::to_string(a).ok());
+        let seerr_changed = millis(store, &seerr_time_key(&self.suffix)).map(|ms| ms / 1000.0);
         let round = self
             .core
             .round(
@@ -330,10 +378,26 @@ impl<T: HttpTransport + 'static> StoreSync<T> {
                 millis(store, keys::REMOTE).map(|ms| ms / 1000.0),
                 other,
                 now,
-                None,
-                None,
+                seerr_json.as_deref(),
+                seerr_changed,
             )
             .await;
+        // Not when the user connected or disconnected while the answer was on its way.
+        if stored_seerr(store, &self.suffix) == seerr_before {
+            match &round.seerr {
+                SeerrOutcome::Adopt { access, changed } => {
+                    let adopted = serde_json::from_str(access).ok();
+                    store_seerr(store, &self.suffix, adopted.as_ref(), *changed);
+                }
+                SeerrOutcome::Pushed { changed } => {
+                    let _ = store.set(
+                        &seerr_time_key(&self.suffix),
+                        swiftly_settings::Value::Double((changed * 1000.0).round()),
+                    );
+                }
+                SeerrOutcome::Nothing => {}
+            }
+        }
         if round.remote_changed > 0.0 {
             let _ = store.set(
                 keys::REMOTE,
@@ -489,6 +553,69 @@ mod tests {
         assert_eq!(
             server.0.lock().unwrap().as_slice(),
             br#"{"CustomPrefs":{}}"#
+        );
+    }
+
+    fn session(address: &str) -> swiftly_seerr::SeerrAccess {
+        swiftly_seerr::SeerrAccess::new(address, "connect.sid=abc", &[])
+    }
+
+    #[test]
+    fn a_seerr_session_of_the_phone_is_taken_over_without_a_sign_in() {
+        let server = Arc::new(Server(Mutex::new(br#"{"CustomPrefs":{}}"#.to_vec())));
+        let (phone, phone_run) = device(&server);
+        let (desktop, desktop_run) = device(&server);
+        let suffix = "https://server.test";
+
+        // Nothing anywhere: nothing is stored, nothing is written.
+        futures_executor::block_on(desktop_run.run(500.0));
+        assert!(stored_seerr(&*desktop, suffix).is_none());
+
+        store_seerr(
+            &*phone,
+            suffix,
+            Some(&session("https://seerr.test")),
+            1000.0,
+        );
+        futures_executor::block_on(phone_run.run(1001.0));
+        futures_executor::block_on(desktop_run.run(1100.0));
+        assert_eq!(
+            stored_seerr(&*desktop, suffix),
+            Some(session("https://seerr.test"))
+        );
+
+        // Disconnected on the desktop later: the phone drops it on its next run.
+        store_seerr(&*desktop, suffix, None, 2000.0);
+        futures_executor::block_on(desktop_run.run(2001.0));
+        futures_executor::block_on(phone_run.run(2100.0));
+        assert!(stored_seerr(&*phone, suffix).is_none());
+    }
+
+    #[test]
+    fn the_newer_seerr_connection_wins_on_both_devices() {
+        let server = Arc::new(Server(Mutex::new(br#"{"CustomPrefs":{}}"#.to_vec())));
+        let (phone, phone_run) = device(&server);
+        let (desktop, desktop_run) = device(&server);
+        let suffix = "https://server.test";
+        store_seerr(
+            &*phone,
+            suffix,
+            Some(&session("https://seerr.test")),
+            1000.0,
+        );
+        futures_executor::block_on(phone_run.run(1001.0));
+        // The desktop already holds its own, newer connection: it wins and goes to the server.
+        store_seerr(
+            &*desktop,
+            suffix,
+            Some(&session("https://other.test")),
+            3000.0,
+        );
+        futures_executor::block_on(desktop_run.run(3001.0));
+        futures_executor::block_on(phone_run.run(3100.0));
+        assert_eq!(
+            stored_seerr(&*phone, suffix),
+            Some(session("https://other.test"))
         );
     }
 }

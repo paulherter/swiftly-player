@@ -146,8 +146,85 @@ pub enum RemoteOutput {
 
 /// The keep-alive message.
 pub const KEEP_ALIVE: &str = r#"{"MessageType":"KeepAlive"}"#;
-/// Seconds between keep-alives.
+/// Seconds between keep-alives (half of the 60 s a Jellyfin server waits before it drops a socket).
 pub const KEEP_ALIVE_INTERVAL: f64 = 30.0;
+/// The shortest keep-alive interval a `ForceKeepAlive` may ask for.
+pub const KEEP_ALIVE_FLOOR: f64 = 5.0;
+/// Silence after which a socket is asked for a sign of life (a WebSocket Ping), in seconds.
+pub const PING_AFTER: f64 = 15.0;
+/// How long the answer (any frame, normally the Pong) may take before the link counts as dead, in seconds.
+pub const PONG_WITHIN: f64 = 10.0;
+
+/// What a socket owner does next ([`LinkPulse::step`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PulseStep {
+    /// Nothing.
+    Wait,
+    /// Send a WebSocket Ping now.
+    SendPing,
+    /// The peer never answered the Ping in time: the link is dead (half-open after sleep or a Wi-Fi switch).
+    Dead,
+}
+
+/// The sign-of-life rule of a control socket. A server that is quiet is normal (Jellyfin never talks to a client
+/// that reports on time), and a vanished peer sends no close either: after sleep or a Wi-Fi change the TCP
+/// connection stays "open" for good and writes just fill a buffer. So: after [`PING_AFTER`] of silence a Ping goes
+/// out, and a link that has heard nothing [`PONG_WITHIN`] later is dead. Any frame counts as an answer; a healthy
+/// link costs one tiny frame per quiet quarter minute. Pure (the caller passes the time), so it is testable.
+#[derive(Debug, Clone, Copy)]
+pub struct LinkPulse {
+    ping_after: std::time::Duration,
+    pong_within: std::time::Duration,
+    heard: std::time::Instant,
+    pinged: Option<std::time::Instant>,
+}
+
+impl LinkPulse {
+    /// The shipping limits, starting at `now`.
+    #[must_use]
+    pub fn new(now: std::time::Instant) -> Self {
+        Self::with_limits(
+            std::time::Duration::from_secs_f64(PING_AFTER),
+            std::time::Duration::from_secs_f64(PONG_WITHIN),
+            now,
+        )
+    }
+
+    /// Other limits (tests, tight networks).
+    #[must_use]
+    pub fn with_limits(
+        ping_after: std::time::Duration,
+        pong_within: std::time::Duration,
+        now: std::time::Instant,
+    ) -> Self {
+        Self {
+            ping_after,
+            pong_within,
+            heard: now,
+            pinged: None,
+        }
+    }
+
+    /// Any frame arrived (text, binary, ping, pong): the peer is there.
+    pub fn heard(&mut self, now: std::time::Instant) {
+        self.heard = now;
+        self.pinged = None;
+    }
+
+    /// What to do at `now`; call it on every slice of the owner loop.
+    pub fn step(&mut self, now: std::time::Instant) -> PulseStep {
+        match self.pinged {
+            Some(at) if now.saturating_duration_since(at) >= self.pong_within => PulseStep::Dead,
+            Some(_) => PulseStep::Wait,
+            None if now.saturating_duration_since(self.heard) >= self.ping_after => {
+                self.pinged = Some(now);
+                PulseStep::SendPing
+            }
+            None => PulseStep::Wait,
+        }
+    }
+}
+
 /// The header of a takeover hint (`Takeover.hintHeader`).
 pub const HINT_HEADER: &str = "Swiftly-Uebernahme";
 /// libcurl setup failures before the URLSession fallback.
@@ -270,6 +347,23 @@ impl RemoteControl {
             "NextTrack" => RemoteCommand::Next,
             "PreviousTrack" => RemoteCommand::Previous,
             _ => return None,
+        })
+    }
+
+    /// The keep-alive interval a `ForceKeepAlive` message asks for, `None` for any other message.
+    /// The server sends its limit as `Data` (60 s on Jellyfin); the client reports at half of it, never
+    /// slower than `KEEP_ALIVE_INTERVAL`. A server that only talks when a client is idle (Jellyfin sends a
+    /// `ForceKeepAlive` on connect and after 45 s without a client frame) gives no other sign of life, so
+    /// silence from the server is not a reason to drop a link.
+    pub fn force_keep_alive_interval(text: &str) -> Option<f64> {
+        let raw: Value = serde_json::from_str(text).ok()?;
+        if raw.get("MessageType")?.as_str()? != "ForceKeepAlive" {
+            return None;
+        }
+        let half = raw.get("Data").and_then(Value::as_f64).map(|s| s / 2.0);
+        Some(match half {
+            Some(h) if h.is_finite() && h > 0.0 => h.clamp(KEEP_ALIVE_FLOOR, KEEP_ALIVE_INTERVAL),
+            _ => KEEP_ALIVE_INTERVAL,
         })
     }
 

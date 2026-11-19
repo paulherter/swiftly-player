@@ -398,7 +398,7 @@ impl DownloadServices for Services {
                 id.clone(),
                 *generation,
                 source.clone(),
-                format!("{quality:?}"),
+                quality.raw_value().to_owned(),
                 *audio_index,
             ),
             Effect::DeleteFile { kind, name } => self.host.delete_file(

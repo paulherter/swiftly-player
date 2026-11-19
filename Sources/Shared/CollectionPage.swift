@@ -35,6 +35,8 @@ struct CollectionView: View {
     @State private var jump: ScrollJump?
     @State private var onScreen = OnScreenTiles()
     @State private var topLetter: String?
+    /// Parts of this collection the own server does not have, from Seerr (empty without Seerr).
+    @State private var seerrCards: [SeerrCard] = []
 
     init(model: AppModel, collection: Item, art: String?) {
         self.model = model
@@ -86,10 +88,21 @@ struct CollectionView: View {
         .background(SwipeBack())
         #endif
         .task(id: "\(state.identifier)|\(model.accountSwitch)") { await state.load(model, from: source) }
+        .task(id: "\(collection.id)|\(model.seerr.connected)") { await loadSeerrCards() }
         .task(id: "\(state.identifier)|\(model.accountSwitch)|\(model.alphabetShown)") {
             guard model.alphabetShown else { return }
             await state.loadAlphabet(model, from: source)
         }
+    }
+
+    /// The collection's TMDB id is on the own server's entry; Seerr lists the parts that are not on the server.
+    private func loadSeerrCards() async {
+        guard model.seerr.connected else { seerrCards = []; return }
+        var tmdb = collection.providerIds?["Tmdb"].flatMap(Int64.init)
+        if tmdb == nil { tmdb = (try? await model.client?.item(id: collection.id))?.providerIds?["Tmdb"].flatMap(Int64.init) }
+        guard let tmdb else { return }
+        let cards = await model.seerr.collectionCards(tmdb: tmdb)
+        withAnimation(Theme.reveal) { seerrCards = cards }
     }
 
     // MARK: Letter strip
@@ -158,6 +171,13 @@ struct CollectionView: View {
                     .onDisappear {
                         onScreen.ids.remove(item.id)
                         updateTopLetter()
+                    }
+                }
+                // **After the own parts**, dimmed with the calm capsule; a tap opens the Seerr page.
+                if state.filter == .all {
+                    ForEach(seerrCards) { card in
+                        NavigationLink(value: card.route) { SeerrTile(card: card) }
+                            .buttonStyle(Theme.PressButton())
                     }
                 }
             }
@@ -323,7 +343,7 @@ struct ShelfControls: View {
                 if !wide { CountMark(count: onlyCount) }
             } else {
                 ValuePill(symbol: "line.3.horizontal.decrease",
-                          text: state.filter.label) { filterOpen = true }
+                          text: state.pillText) { filterOpen = true }
                 ValuePill(symbol: "arrow.up.arrow.down",
                           text: state.sorting.label) { sortingOpen = true }
                 Spacer(minLength: 8)
@@ -350,10 +370,14 @@ extension View {
             .overlay(alignment: .topTrailing) {
                 SelectionSheet(opened: filterOpen,
                              title: "Filtern",
-                             entries: filter,
+                             entries: state.sheetRows(offered: filter),
                              label: { $0.label },
-                             isSelected: { $0 == state.filter },
-                             select: { state.filter = $0 })
+                             isSelected: { $0.selected },
+                             select: { state.choose($0) },
+                             category: { $0.heading.map { LocalizedStringKey($0) } })
+            }
+            .onChange(of: filterOpen.wrappedValue) { _, open in
+                if open { state.sheetOpened(offered: filter) } else { state.sheetClosed() }
             }
             .overlay(alignment: .topTrailing) {
                 SelectionSheet(opened: sortingOpen,

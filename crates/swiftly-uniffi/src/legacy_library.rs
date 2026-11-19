@@ -58,6 +58,43 @@ impl LegacyLibrary {
     }
     /// `Kern.collections`.
     #[uniffi::method(async_runtime = "tokio")]
+    /// The filter sheet of a library page is about to open: the core fetches the years and languages (once per list).
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn filter_load(&self, art: String, choice: String) {
+        self.inner.filter_load(&art, &choice).await;
+    }
+
+    /// The filter sheet (status, years, language rows, the pill) for the page's filter value (`"alle|j2010-2019|sdeu"`).
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn filter_sheet(
+        &self,
+        art: String,
+        choice: String,
+        filter: String,
+        offered: Vec<swiftly_library::LibraryFilter>,
+    ) -> crate::library::FilterSheetPart {
+        self.inner
+            .filter_sheet(&art, &choice, &filter, &offered)
+            .await
+            .into()
+    }
+
+    /// The page's filter value after a row of the sheet was picked.
+    pub fn filter_pick(&self, filter: String, pick: crate::library::FilterPick) -> String {
+        swiftly_vm::LegacySection::<CoreTransport>::filter_pick(&filter, &pick.into())
+    }
+
+    /// What the filter pill shows for the page's filter value.
+    pub fn filter_pill(&self, filter: String) -> String {
+        self.inner.filter_pill(&filter)
+    }
+
+    /// The status part of the page's filter value (`"alle"`, `"ungesehen"`, ...).
+    pub fn filter_status(&self, filter: String) -> String {
+        swiftly_vm::LegacySection::<CoreTransport>::filter_status(&filter)
+    }
+
+    #[uniffi::method(async_runtime = "tokio")]
     pub async fn collections(&self, art: String) -> Result<String, CoreError> {
         Ok(self.inner.collections(&art).await?)
     }
@@ -121,4 +158,13 @@ impl LegacyLibrary {
 #[uniffi::export]
 pub fn legacy_collection_count_text(art: String, count: i64, locale: String) -> String {
     swiftly_vm::legacy_count_text(swiftly_l10n::Locale::parse(&locale), &art, count)
+}
+
+/// The order a library page starts on until the viewer picked another (the core's rule, raw value).
+#[uniffi::export]
+pub fn legacy_default_page_sorting() -> String {
+    use swiftly_library::SortingExt;
+    swiftly_library::LibraryState::DEFAULT_PAGE_SORTING
+        .raw_value()
+        .to_owned()
 }

@@ -44,7 +44,7 @@ settings:
     # The counter applies per version, so it restarts at 1 for a new version.
     # Before resetting it, check the highest build number already uploaded for
     # that version on all platforms in App Store Connect.
-    CURRENT_PROJECT_VERSION: "48"
+    CURRENT_PROJECT_VERSION: "49"
     # Same identifier as in the free-account days: Apple converted the personal
     # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9
@@ -248,6 +248,10 @@ targets:
       # (`Sources/tvOS/TVLooks.swift`).
       - path: Sources/Shared/LookGiftSheet.swift
       - path: Sources/Shared/Motion.swift
+      # The player menus: data, session and the conversion of the core's pages; Apple TV draws them in `Sources/tvOS/TVPlayerMenus.swift`.
+      - path: Sources/Shared/MenuSpec.swift
+      - path: Sources/Shared/PlayerMenuSession.swift
+      - path: Sources/Shared/PlayerMenuWords+Text.swift
       # Name, sentence and mark of each server kind, and the state of the Plex/Emby sign-in;
       # the views on top are per platform.
       - path: Sources/Shared/ServerKindLook.swift
@@ -258,6 +262,7 @@ targets:
       - path: Sources/Shared/Keychain.swift
       - path: Sources/Shared/Marks.swift
       - path: Sources/Shared/Routes.swift
+      - path: Sources/Shared/PersonRoute+Seerr.swift
       - path: Sources/Shared/TitleAction.swift
       - path: Sources/Shared/TitleMark.swift
       # Container, codec, subtitles in the file excerpt - same info everywhere.
@@ -271,6 +276,7 @@ targets:
       # image appears in the first pass instead of after a gradient flash. tvOS
       # keeps its own `Bild` building block for tiles.
       - path: Sources/Shared/NetworkImage.swift
+      - path: Sources/Shared/Picture.swift
       # VLC's counters and the tech badge above them - shared by all platforms
       # since the badge exists everywhere.
       - path: Sources/Shared/PlayValues.swift
@@ -300,12 +306,14 @@ targets:
       - path: Sources/Shared/HomePageModel.swift
       - path: Sources/Shared/AppCore.swift
       - path: Sources/Shared/AccountsHost.swift
+      - path: Sources/Shared/ServerAdminHost.swift
       - path: Sources/Shared/ServerSearchHost.swift
       - path: Sources/Shared/ShuffleRunCore.swift
       - path: Sources/Shared/LoadSelectionState.swift
       - path: Sources/Shared/PlexSignInRun.swift
       - path: Sources/Shared/CoreErrorText.swift
       - path: Sources/Shared/SeerrCoreBridge.swift
+      - path: Sources/Shared/SeerrBridge+Library.swift
       - path: Sources/Shared/WhatsNewPage.swift
       - path: Sources/Shared/SettingsRowsFeed.swift
       - path: Sources/Shared/RustHome.swift
@@ -314,6 +322,17 @@ targets:
       # Seerr - the integration itself; views stay platform-specific.
       - path: Sources/Shared/SeerrModel.swift
       - path: Sources/Shared/SeerrMark.swift
+      - path: Sources/Shared/SeerrBridge+Search.swift
+      - path: Sources/Shared/SeerrBridge+Title.swift
+      - path: Sources/Shared/SeerrEpisodes.swift
+      - path: Sources/Shared/SeerrSeasonAdmin.swift
+      - path: Sources/Shared/RequestDetailView.swift
+      - path: Sources/Shared/DesktopArrivalStack.swift
+      - path: Sources/Shared/SeerrBridge+Home.swift
+      - path: Sources/Shared/ArrivalMotion.swift
+      - path: Sources/Shared/SeerrTile.swift
+      - path: Sources/Shared/SeerrBridge+Admin.swift
+      - path: Sources/Shared/SeerrSetupFlow.swift
       # The version string for the profile page - one computation, three views.
       - path: Sources/Shared/Version.swift
       # "Support Swiftly": StoreKit, watch time and when to ask; views per platform.
@@ -357,6 +376,8 @@ targets:
       # The timeline in pieces, one per chapter - same mask as on iPhone and
       # Mac.
       - path: Sources/Shared/ChapterMask.swift
+      # The chapter list's rows (text, tile, sizes) - one source for iPhone, Mac and TV.
+      - path: Sources/Shared/ChapterList.swift
       # Handover between devices: polling interval and state.
       - path: Sources/Shared/TakeoverModel.swift
       # "Continue watching here" as a card: stage above everything and the exit
@@ -642,12 +663,14 @@ targets:
       - path: Sources/Shared/HomePageModel.swift
       - path: Sources/Shared/AppCore.swift
       - path: Sources/Shared/AccountsHost.swift
+      - path: Sources/Shared/ServerAdminHost.swift
       - path: Sources/Shared/ServerSearchHost.swift
       - path: Sources/Shared/ShuffleRunCore.swift
       - path: Sources/Shared/LoadSelectionState.swift
       - path: Sources/Shared/PlexSignInRun.swift
       - path: Sources/Shared/CoreErrorText.swift
       - path: Sources/Shared/SeerrCoreBridge.swift
+      - path: Sources/Shared/SeerrBridge+Library.swift
       - path: Sources/Shared/WhatsNewPage.swift
       - path: Sources/Shared/SettingsRowsFeed.swift
       - path: Sources/Shared/RustHome.swift
@@ -657,6 +680,23 @@ targets:
       # Seerr - the integration itself; views stay platform-specific.
       - path: Sources/Shared/SeerrModel.swift
       - path: Sources/Shared/SeerrMark.swift
+      - path: Sources/Shared/SeerrBridge+Search.swift
+      - path: Sources/Shared/SeerrBridge+Title.swift
+      - path: Sources/Shared/SeerrEpisodes.swift
+      - path: Sources/Shared/SeerrSeasonAdmin.swift
+      - path: Sources/Shared/ArrivalMotion.swift
+      - path: Sources/Shared/SeerrBridge+Home.swift
+      - path: Sources/Shared/DesktopArrivalStack.swift
+      - path: Sources/Shared/SeerrBridge+Admin.swift
+      - path: Sources/Shared/ProgressBar.swift
+      - path: Sources/Shared/SeerrTile.swift
+      - path: Sources/Shared/SeerrSetupFlow.swift
+      # "Problem melden" / "Vom Server löschen": the core's entries and the two sheets, shared with iPhone.
+      - path: Sources/Shared/SeerrTitleMenu.swift
+      - path: Sources/Shared/ReportIssueSheet.swift
+      - path: Sources/Shared/DeclineSheet.swift
+      - path: Sources/Shared/RequestDetailView.swift
+      - path: Sources/Shared/DeleteFlowSheet.swift
       # The version string for the profile page - one computation, three views.
       - path: Sources/Shared/Version.swift
       # "Support Swiftly": StoreKit, watch time and when to ask; views per platform.
@@ -670,10 +710,13 @@ targets:
       - path: Sources/Shared/TrickplayImages.swift
       # The timeline in pieces, one per chapter - as on iPhone and TV.
       - path: Sources/Shared/ChapterMask.swift
+      # The chapter list's rows (text, tile, sizes) - one source for iPhone, Mac and TV.
+      - path: Sources/Shared/ChapterList.swift
       # Image loader with its own cache - decodes off the main thread.
       - path: Sources/Shared/PlayValues.swift
       - path: Sources/Shared/TechBadge.swift
       - path: Sources/Shared/NetworkImage.swift
+      - path: Sources/Shared/Picture.swift
       - path: Sources/Shared/LibraryModel.swift
       - path: Sources/Shared/WatchlistModel.swift
       - path: Sources/Shared/Colors.swift
@@ -697,6 +740,15 @@ targets:
       - path: Sources/Shared/PlayButton.swift
       - path: Sources/Shared/LookAccentDots.swift
       - path: Sources/Shared/Motion.swift
+      # The player's menu box and rows, the core-driven menu session and the glass of the top bar: the same files as iPhone.
+      - path: Sources/Shared/MenuBox.swift
+      - path: Sources/Shared/MenuRows.swift
+      - path: Sources/Shared/MenuSpec.swift
+      - path: Sources/Shared/PlayerMenuSession.swift
+      - path: Sources/Shared/EpisodesBox.swift
+      - path: Sources/Shared/PlayerMenuLayer.swift
+      - path: Sources/Shared/PlayerMenuWords+Text.swift
+      - path: Sources/Shared/PlayerGlass.swift
       # Name, sentence and mark of each server kind, and the state of the Plex/Emby sign-in;
       # the views on top are per platform.
       - path: Sources/Shared/ServerKindLook.swift
@@ -713,6 +765,7 @@ targets:
       - path: Sources/Shared/Keychain.swift
       - path: Sources/Shared/Marks.swift
       - path: Sources/Shared/Routes.swift
+      - path: Sources/Shared/PersonRoute+Seerr.swift
       - path: Sources/Shared/SVGPath.swift
       # What the More sheet offers - the content is identical on all platforms,
       # only the presentation is specific.
@@ -955,6 +1008,21 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly.livetests
         GENERATE_INFOPLIST_FILE: YES
 
+  # The tvOS running-app driver (`Werkzeuge/live-lauf.py tv-ui`): a script of remote presses through XCUIRemote, own folder because
+  # the shared LiveTests/ use iPhone/Mac-only calls.
+  SwiftlyLiveTests-tvOS:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources:
+      - path: LiveTests-tvOS
+        optional: true # the running-app tests are not part of the public tree
+    dependencies:
+      - target: Swiftly-tvOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.paulherter.swiftly.livetests
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   # The app schemes are spelled out: once a shared scheme exists, Xcode stops making the automatic ones that
   # Werkzeuge/to-iphone.sh and the release scripts build.
@@ -970,6 +1038,14 @@ schemes:
     build:
       targets:
         Swiftly-macOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  Swiftly-tvOS:
+    build:
+      targets:
+        Swiftly-tvOS: all
     run:
       config: Debug
     archive:
@@ -992,3 +1068,12 @@ schemes:
       config: Debug
       targets:
         - SwiftlyLiveTests-macOS
+  SwiftlyLive-tvOS:
+    build:
+      targets:
+        Swiftly-tvOS: all
+        SwiftlyLiveTests-tvOS: [test]
+    test:
+      config: Debug
+      targets:
+        - SwiftlyLiveTests-tvOS

@@ -14,6 +14,10 @@ import SwiftUI
 struct Backdrop: View {
     let url: URL?
     var height: CGFloat
+    /// The BlurHash and the tile pictures of a detail page's head: frame 1 shows the first tile picture the picture
+    /// memory holds, else the blurred hash, in the head's final size; the sharp picture replaces it in place.
+    var blur: String? = nil
+    var stand: [URL] = []
 
     /// **What is showing, not what is being requested.** After the entry animation
     /// (`InTravel`) the full title arrives, sometimes with a different image URL.
@@ -26,7 +30,8 @@ struct Backdrop: View {
         GeometryReader { space in
             let width = max(space.size.width * 0.62, 520)
             ZStack {
-                NetworkImage(url: shown ?? url)
+                Picture(url: shown ?? url, width: width, height: height, corner: 0, blur: blur, stand: stand)
+                    .urgent()
                     .id(shown ?? url)
                     .transition(.opacity)
             }

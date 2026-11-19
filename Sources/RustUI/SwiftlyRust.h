@@ -41,8 +41,8 @@ typedef struct {
 
 // Once, before swiftly_rust_create: switches the app from the demo suite to the real app.
 void swiftly_rust_init_live(const SwiftlyPlatform *platform, const char *config_dir, const char *cache_dir, const char *device_name);
-// 0 = background (nothing is drawn), 1 = active.
-int32_t swiftly_rust_set_active(SwiftlyRustHandle *h, int32_t active);
+// 0 = background (nothing is drawn), 1 = active. `paused` (leaving only): the shell's player stands paused after its suspension.
+int32_t swiftly_rust_set_active(SwiftlyRustHandle *h, int32_t active, int32_t paused);
 // Player engine, JSON lines (crates/swiftly-player-surface/src/wire.rs). Free the commands with swiftly_rust_free_string.
 int32_t swiftly_rust_engine_event(const char *line);
 char *swiftly_rust_engine_commands(void);

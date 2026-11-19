@@ -390,14 +390,14 @@ struct PlexPlaybackTests {
 
 @Suite("Plex: Fähigkeiten")
 struct PlexFeaturesTests {
-    @Test("Kein SyncPlay, Quick Connect, Fernsteuerung, Einstellungsabgleich, Seerr")
+    @Test("Kein SyncPlay, Quick Connect, Fernsteuerung, Einstellungsabgleich; Seerr ja (Anmeldung mit dem Plex-Token)")
     func list() {
         let can = PlexFeatures.capabilities
         for no in [ServerCapability.syncPlay, .quickConnect, .remoteControl, .settingsSync,
-                   .playOnOtherDevice, .publicUsers, .seerr] {
+                   .playOnOtherDevice, .publicUsers] {
             #expect(!can.contains(no))
         }
-        for yes in [ServerCapability.introSegments, .chapters, .downloads, .favorites,
+        for yes in [ServerCapability.introSegments, .chapters, .downloads, .favorites, .seerr,
                     .markWatched, .collections, .playlists, .trickplay] {
             #expect(can.contains(yes))
         }

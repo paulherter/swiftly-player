@@ -521,62 +521,14 @@ extension Theme {
 
 // MARK: - Image
 
-/// Image at a fixed size, with placeholder.
-///
-/// Same approach as on iOS: the size comes from the frame, the image only lies
-/// over it. `aspectRatio(.fill)` directly on the image makes it wider than its
-/// frame; `clipped()` then trims the rendering, not the layout size, and
-/// everything around shifts.
-struct Picture: View {
-    let url: URL?
-    var width: CGFloat?
-    var height: CGFloat?
-    var corner: CGFloat = Theme.cornerTile
-    /// Progress along the bottom edge, inside the mask.
-    var progress: Double? = nil
-    /// **What to show when no image arrives**: a system symbol instead of an empty
-    /// surface, as on iPhone and Mac. Only once it is certain (no URL, or the fetch
-    /// has finally failed), not while loading: otherwise it would flash on every
-    /// tile.
-    var symbolText: String? = nil
+// `Picture` (the image of a tile or a page head) is the shared view in `Sources/Shared/Picture.swift`; it used to be
+// copied here. It reads `Theme.corner`, `LoadField` and `TileProgress` from this target.
 
-    /// Profile → Appearance. See `EnvironmentValues.progressOnTiles`.
-    @Environment(\.progressOnTiles) private var barShow
+/// The progress bar of a tile, as the shared `Picture` draws it (the setting "Progress on tiles" is checked there).
+struct TileProgress: View {
+    let share: Double
 
-    var body: some View {
-        Color.clear
-            .frame(width: width, height: height)
-            .frame(maxWidth: width == nil ? .infinity : nil)
-            .overlay {
-                // **Via the `ImageCache`, not `AsyncImage`**, as on iPhone and Mac.
-                // `AsyncImage` decodes on the main thread, remembers nothing but the network
-                // response, and cancels as soon as the tile leaves the screen. `NetworkImage`
-                // decodes off the main thread at tile size and stores the file on disk
-                // (`ImageStore`).
-                //
-                // The surface stays underneath so a loading tile looks as before.
-                Theme.area
-                    .overlay {
-                        NetworkImage(url: url, symbolText: symbolText, displayEdge: displayEdge,
-                                 characterSize: 44)
-                    }
-            }
-            .overlay(alignment: .bottom) {
-                if let progress, progress > 0, barShow {
-                    ProgressBar(share: progress)
-                }
-            }
-            .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-    }
-
-    /// The edge length the image is fetched for, only when both dimensions are known.
-    /// Without a width the tile spans the full row, and any estimate is too small.
-    private var displayEdge: CGFloat? {
-        guard let width, let height else { return nil }
-        return max(width, height)
-    }
-
+    var body: some View { ProgressBar(share: share) }
 }
 
 /// Thin bar at the bottom of a tile. 6 pt on the TV; at 2, as on the iPhone, it

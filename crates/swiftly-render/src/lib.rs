@@ -25,6 +25,6 @@ pub use atlas::{Atlas, AtlasFormat, DirtyRect, PixelPage};
 pub use draw_list::{Border, DrawList, DrawQuad, QuadKind, ShadowStyle};
 pub use geometry::{Color, Corners, Fill, LinearGradient, Rect};
 pub use image::RgbaImage;
-pub use software::{SoftwareRenderer, Sources};
+pub use software::{SoftwareRenderer, Sources, VideoBase};
 pub use video_layer::VideoFit;
-pub use wgpu_renderer::{GpuContext, RenderError, WgpuRenderer};
+pub use wgpu_renderer::{GpuContext, RenderError, WgpuRenderer, gpu_video_requested, vulkan_first};

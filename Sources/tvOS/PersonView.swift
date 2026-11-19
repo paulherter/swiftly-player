@@ -61,7 +61,7 @@ struct PersonView: View {
                     } content: {
                         strip {
                             ForEach(requestable) { t in
-                                NavigationLink(value: t) { SeerrTile(hit: t) }
+                                NavigationLink(value: t) { SeerrTile(hit: t, width: Theme.posterWidth) }
                                     .buttonStyle(TileStyle())
                             }
                         }
@@ -118,7 +118,7 @@ struct PersonView: View {
     private var block: some View {
         HStack(alignment: .top, spacing: 40) {
             // Round because it is a picture, like the cast tiles. Half the edge length is not a corner-ladder step, it is the circle itself.
-            Picture(url: model.personImage(person, maxHeight: 600),
+            Picture(url: route.seerr?.portrait ?? model.personImage(person, maxHeight: 600),
                  width: 208, height: 208, corner: 208 / 2)
 
             VStack(alignment: .leading, spacing: 0) {
@@ -169,7 +169,7 @@ struct PersonView: View {
     // MARK: Loading
 
     private func load() async {
-        if core == nil { core = try? AppCore.shared.person(session: model.session, person: person, origin: route.origin) }
+        if core == nil { core = try? AppCore.shared.person(session: model.session, person: person, origin: route.origin, seerr: route.seerr) }
         await core?.run(app: model)
     }
 }

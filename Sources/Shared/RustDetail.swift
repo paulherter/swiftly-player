@@ -13,4 +13,6 @@ struct RustEpisodeLook: Equatable {
     /// 0 to 1.
     let progress: Double?
     let watched: Bool
+    /// The BlurHash of the still, painted in the row's final size until the still is there.
+    var blur: String? = nil
 }

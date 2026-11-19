@@ -1,10 +1,17 @@
 import JellyfinKit
 import SwiftUI
+import SwiftlyCore
 
 /// Search. No `.searchable`: on the Mac it brings its own bar, corners and
 /// material. Same field as the sign-in screen, just wider.
 struct SearchView: View {
     let model: AppModel
+
+    init(model: AppModel) {
+        self.model = model
+        _seerr = State(initialValue: SeerrSearchFlow(model: model))
+    }
+
     @Environment(Navigator.self) private var navigator
     @Environment(\.section) private var section
 
@@ -17,8 +24,9 @@ struct SearchView: View {
     /// An account switch is in progress: content holds still, then appears staggered.
     @State private var change = false
     @State private var hit: [Item] = []
-    /// What Seerr knows and the own server does not; empty if nothing is connected.
-    @State private var seerrHit: [SeerrHit] = []
+    /// What Seerr adds: rails on the empty page, the merged block, the offline box. Its own object and task, so
+    /// what the own server has shows at once even if Seerr answers late or not at all.
+    @State private var seerr: SeerrSearchFlow
     @State private var searched = false
     /// What the Rust core says for the tiles of this search (`AppModel.coreServes`), by title id.
     @State private var looks: [String: RustTileLook] = [:]
@@ -37,25 +45,20 @@ struct SearchView: View {
     ///
     /// Recorded on submit, not while typing: typing "Ga", "Gam", "Game" is one search,
     /// not three. The rule lives in `SearchHistory`; TV and iPhone show the same list.
-    @AppStorage(SearchHistory.key) private var lastRaw = ""
+    ///
+    /// **Per account**, like iPhone and Apple TV (`SearchHistoryStore`): the first read of an account takes over
+    /// the old shared list once, so nothing is lost.
+    @State private var lastRaw = ""
 
     private var last: [String] { SearchHistory.list(lastRaw) }
 
-    /// **What there is to search.** Shown only while the field is empty and there is
-    /// no history, otherwise a hint would sit above the thing it explains.
-    ///
-    /// Centered under the field, not in the window: the field is left-aligned at its
-    /// own width, and a hint centered in the whole area would float away from what it
-    /// refers to.
-    private var emptyHint: some View {
-        // **Use the shared component, not a second variant.** This used to be a glyph at
-        // size 30 `.light`, a weight that is not on the scale, with no circle and its own
-        // layout. The same file uses the component two lines further down.
-        EmptyState(symbol: "magnifyingglass",
-                    headerLine: "Filme, Serien und Folgen durchsuchen")
-        .frame(maxWidth: Theme.formWidth)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 70)
+    private func historyLoad() {
+        lastRaw = SearchHistoryStore.load(account: model.session?.accountKey)
+    }
+
+    private func historySet(_ new: String) {
+        lastRaw = new
+        SearchHistoryStore.save(new, account: model.session?.accountKey)
     }
 
     /// "Zuletzt gesucht": the iPhone list. Plain rows under the heading, no card: the
@@ -65,7 +68,7 @@ struct SearchView: View {
             HStack(alignment: .firstTextBaseline) {
                 category("Zuletzt gesucht")
                 Spacer(minLength: 8)
-                Button { lastRaw = "" } label: {
+                Button { historySet("") } label: {
                     Text("Löschen")
                         .growing(13, .medium)
                         .foregroundStyle(Theme.fontVeryQuiet)
@@ -105,6 +108,13 @@ struct SearchView: View {
     /// The heading of every search block, the iPhone's level: section size, white.
     private func category(_ text: LocalizedStringKey) -> some View {
         Text(text)
+            .font(Theme.section)
+            .tracking(Theme.lockSection)
+            .foregroundStyle(Theme.font)
+    }
+
+    private func category(verbatim text: String) -> some View {
+        Text(verbatim: text)
             .font(Theme.section)
             .tracking(Theme.lockSection)
             .foregroundStyle(Theme.font)
@@ -166,7 +176,7 @@ struct SearchView: View {
                 .font(.app(size: 15))
                 .foregroundStyle(Theme.font)
                 .focused($inField)
-                .onSubmit { lastRaw = SearchHistory.remember(term, in: lastRaw) }
+                .onSubmit { historySet(SearchHistory.remember(term, in: lastRaw)) }
             if !term.isEmpty {
                 Button { term = ""; inField = true } label: {
                     Image(icon: "xmark.circle.fill", size: 16)
@@ -197,6 +207,64 @@ struct SearchView: View {
         .animation(Theme.timeFloat, value: inField)
     }
 
+    // MARK: Seerr part of the results
+
+    /// What the library found by TMDB id is not drawn twice among the Seerr tiles.
+    private var knownTmdb: Set<String> { Set(hit.compactMap { $0.providerIds?["Tmdb"] }) }
+    private var seerrTiles: [SeerrCard] { seerr.tiles(known: knownTmdb) }
+    private var seerrShows: Bool { seerr.shows(known: knownTmdb) }
+
+    /// "Auch nicht bei Seerr." (the core's line) only when Seerr really answered with nothing.
+    private var nothingText: LocalizedStringKey {
+        if let line = seerr.nothingLine { return "\(line) Manchmal ist es nur ein Buchstabe." }
+        return "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe."
+    }
+
+    /// People and collections of the own library that Seerr found: they open the library's own page.
+    @ViewBuilder
+    private var ownPeopleAndCollections: some View {
+        let people = seerr.ownPeople
+        if !people.isEmpty {
+            category(verbatim: seerr.groupTitle(.people)).padding(.top, 30).padding(.bottom, 12)
+            PagingRail(margin: 0, widthJePiece: 84 + 18, imageHeight: 84) {
+                ForEach(people, id: \.card.id) { pair in
+                    Button { navigator.openIt(.person(pair.person, origin: nil), in: section) } label: {
+                        HeaderImage(name: pair.card.title, role: nil, image: pair.card.poster.flatMap { URL(string: $0) })
+                    }
+                    .buttonStyle(Theme.PressButton())
+                }
+            }
+        }
+        let collections = seerr.ownCollections
+        if !collections.isEmpty {
+            category(verbatim: seerr.groupTitle(.collections)).padding(.top, 30).padding(.bottom, 12)
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 20) {
+                ForEach(collections, id: \.id) { item in
+                    Button { navigator.openIt(.title(item), in: section) } label: {
+                        SearchPoster(model: model, entry: item, look: nil)
+                    }
+                    .buttonStyle(Theme.PressButton())
+                }
+            }
+        }
+    }
+
+    /// **One calm box, one way out.** The library results are fine, so the box says so; the button asks Seerr again.
+    private var offlineBox: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Seerr antwortet gerade nicht. Deine Bibliothek läuft normal.")
+                .font(Theme.body)
+                .foregroundStyle(Theme.fontQuiet)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, 13).padding(.horizontal, 14)
+                .frame(maxWidth: Theme.formWidth, alignment: .leading)
+                .background(Theme.area, in: RoundedRectangle(cornerRadius: Theme.cornerArea, style: .continuous))
+            Button("Erneut versuchen") { stillInTimes() }
+                .buttonStyle(SecondaryButtonStyle())
+        }
+        .padding(.top, 30)
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -206,10 +274,13 @@ struct SearchView: View {
 
                 // With nothing in the field: where the user left off. A click searches it again.
                 if term.isEmpty {
-                    if last.isEmpty { emptyHint } else { recent }
+                    // No hint line when there is no history: the field says what it is for.
+                    if !last.isEmpty { recent }
+                    // Rails only when Seerr works; without it the page is what it always was.
+                    MacSeerrRails(model: model, flow: seerr)
                 }
 
-                if loads, hit.isEmpty, seerrHit.isEmpty {
+                if loads, hit.isEmpty, !seerrShows {
                     // **No spinner.** The grid is already shown in its final shape and is cross-faded
                     // as soon as the results arrive, as on iPhone and TV.
                     GridPlaceholder(columns: 6, rails: 2)
@@ -225,7 +296,7 @@ struct SearchView: View {
                             !["Series", "Movie", "Episode"].contains($0.type ?? "")
                         })
                     }
-                } else if searched, disrupted, !term.isEmpty, seerrHit.isEmpty {
+                } else if searched, disrupted, !term.isEmpty, !seerrShows {
                     // Same text as in the library, including the server address: one cause, one
                     // diagnosis.
                     let words = model.rustScreens.searchTrouble.copy(server: model.serverAddress ?? String(localized: "Der Server"))
@@ -235,7 +306,7 @@ struct SearchView: View {
                         text: words.text,
                         primaryButton: ("Erneut versuchen", { stillInTimes() }))
                         .padding(.top, 120)
-                } else if searched, !term.isEmpty, seerrHit.isEmpty {
+                } else if searched, !term.isEmpty, !seerrShows {
                     // **Both empty, not just the library.** With `hit.isEmpty` here, this branch
                     // would win as soon as the own server has nothing, and the Seerr block below would
                     // never be reached, which is exactly the case the integration exists for.
@@ -243,23 +314,29 @@ struct SearchView: View {
                     // the second sentence softens it.
                     EmptyState(symbol: "magnifyingglass",
                                 headerLine: "Nichts gefunden zu \u{201E}\(searchedHandle)\u{201C}",
-                                text: "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe.")
+                                text: nothingText)
                         .padding(.top, 120)
+                    if seerr.offline { offlineBox }
                 }
 
-                if !seerrHit.isEmpty {
+                ownPeopleAndCollections
+
+                if seerr.offline, seerrShows || !hit.isEmpty { offlineBox }
+
+                let outside = seerrTiles
+                if !outside.isEmpty {
                     HStack(alignment: .firstTextBaseline) {
-                        // The iPhone wording: it says which way the request goes.
-                        category("Über Seerr anfragen")
+                        // The core's wording: it says which way the request goes.
+                        category(verbatim: seerr.found?.blockTitle ?? "")
                         Spacer(minLength: 8)
-                        CountMark(count: seerrHit.count)
+                        CountMark(count: outside.count)
                     }
                     .padding(.top, hit.isEmpty ? 30 : 40)
 
                     LazyVGrid(columns: seerrColumns, alignment: .leading, spacing: 20) {
-                        ForEach(seerrHit) { t in
-                            Button { navigator.openIt(.seerrTitle(t), in: section) } label: {
-                                SeerrTile(hit: t)
+                        ForEach(outside) { card in
+                            Button { navigator.openIt(.seerrTitle(card.route), in: section) } label: {
+                                SeerrTile(card: card, width: Theme.tileWidth)
                             }
                             .buttonStyle(Theme.PressButton())
                         }
@@ -284,7 +361,8 @@ struct SearchView: View {
         .accountSwitchFade(model: model, ready: true, change: $change)
         // Term and results belong to the previous account.
         .onChange(of: model.accountSwitch) { _, _ in
-            term = ""; hit = []; seerrHit = []
+            term = ""; hit = []; seerr.reset()
+            historyLoad()
             searched = false; disrupted = false; loads = false
         }
         // **The milky bar at the top edge.** macOS 26 adds it over every scroll view by
@@ -292,14 +370,16 @@ struct SearchView: View {
         // background to the left it showed as a bar. Anything the framework adds unasked
         // has to be switched off just like anything we add ourselves.
         .pagesScroll()
-        .onAppear { inField = true }
+        .onAppear { inField = true; historyLoad() }
+        // The rails of the empty page: read when the page opens and when Seerr is connected or removed.
+        .task(id: model.seerr.connected) { await seerr.loadDiscover() }
         .task(id: "\(term)|\(model.listenRefresh)") {
             // **The rule comes from the package, not from here.** This used to be
             // `term.count > 1`: same result but without trimming, so a space plus one letter
             // triggered a request on the Mac but not on iPhone, and the threshold would have
             // been changed in one place only.
             guard DisplayRules.searchTermFits(term) else {
-                hit = []; seerrHit = []; searched = false
+                hit = []; seerr.reset(); searched = false
                 disrupted = false; loads = false; return
             }
             #if canImport(SwiftlyCore)
@@ -308,10 +388,10 @@ struct SearchView: View {
             if model.coreServes {
                 loads = true
                 let clean = term.trimmingCharacters(in: .whitespacesAndNewlines)
-                async let foreignRust: [SeerrHit] = {
+                async let foreignRust: Void = {
                     try? await Task.sleep(for: .milliseconds(300))
-                    guard !Task.isCancelled else { return [] }
-                    return await model.seerr.searching(clean)
+                    guard !Task.isCancelled else { return }
+                    await seerr.search(clean)
                 }()
                 var found: [String: RustTileLook] = [:]
                 let rustHits = await model.rustScreens.hits(clean, session: model.session, looks: &found)
@@ -322,9 +402,8 @@ struct SearchView: View {
                 hit = ListRules.withoutDouble(rustHits ?? [])
                 searchedHandle = clean
                 if !hit.isEmpty { searched = true }
-                let b = await foreignRust
+                await foreignRust
                 guard !Task.isCancelled else { return }
-                seerrHit = b.filter { !$0.state.alreadyPresent }
                 searched = true
                 loads = false
                 return
@@ -337,7 +416,7 @@ struct SearchView: View {
             // **Own server first, Seerr after.** Seerr is an extra; whatever the own server
             // has appears immediately. The term is sent trimmed.
             let clean = term.trimmingCharacters(in: .whitespacesAndNewlines)
-            async let foreignOnes = model.seerr.searching(clean)
+            async let foreignOnes: Void = seerr.search(clean)
             let a = await model.search(clean)
             // A cancelled run writes nothing, otherwise "server unreachable" or an empty area
             // would flash up for a moment.
@@ -347,10 +426,8 @@ struct SearchView: View {
             hit = ListRules.withoutDouble(a ?? [])
             searchedHandle = clean
             if !hit.isEmpty { searched = true }
-            let b = await foreignOnes
+            await foreignOnes
             guard !Task.isCancelled else { return }
-            // Anything already on the server belongs in the upper block.
-            seerrHit = b.filter { !$0.state.alreadyPresent }
             searched = true
             loads = false
         }

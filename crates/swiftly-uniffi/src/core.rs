@@ -14,7 +14,9 @@ use crate::home::HomeVm;
 use crate::library::{LibraryVm, TextKeys};
 use crate::probe::{EngineProbe, PlayerProbe};
 use crate::search::{SearchVm, TokioSleeper};
+use crate::server_admin::{ServerAdminVm, ServerLogsVm};
 use crate::stores::{Blobs, KeyValueStore, SecretStore};
+use crate::subtitle_search::SubtitleSearchVm;
 use crate::transport::{CoreTransport, HttpClient};
 
 mod runtime;
@@ -266,7 +268,28 @@ impl Core {
         connection: crate::seerr::SeerrConnection,
         jar: Option<Arc<dyn crate::seerr::SeerrCookieJar>>,
     ) -> Arc<crate::seerr::SeerrModel> {
-        crate::seerr::SeerrModel::build(self.transport.clone(), connection, jar)
+        let stash = self.cache.clone().map(|cache| {
+            swiftly_vm::SeerrStash::for_connection(cache, &connection.address, &connection.cookie)
+        });
+        let platform = Arc::clone(&self.platform);
+        let log: swiftly_seerr::SeerrLog =
+            Arc::new(move |line: &str| platform.log(line.to_owned()));
+        crate::seerr::SeerrModel::build_stashed(
+            self.transport.clone(),
+            connection,
+            jar,
+            stash,
+            Some(log),
+        )
+    }
+
+    /// The Seerr sign-in and setup screen (three ways in, the address asked once per server of the admin only).
+    pub fn seerr_setup(
+        &self,
+        locale: String,
+        jar: Option<Arc<dyn crate::seerr::SeerrCookieJar>>,
+    ) -> Arc<crate::seerr_setup_screen::SeerrSetupScreen> {
+        crate::seerr_setup_screen::SeerrSetupScreen::build(self.transport.clone(), jar, &locale)
     }
 
     /// Signs in to a Seerr with the Jellyfin user and returns the connection to store
@@ -289,37 +312,6 @@ impl Core {
             &headers,
         )
         .await
-    }
-
-    /// The old facade's Seerr calls over a stored access (`{"adresse","keks","koepfe"}`); `None` when it does not read.
-    pub fn legacy_seerr(&self, access: String) -> Option<Arc<crate::legacy_seerr::LegacySeerr>> {
-        let c = crate::legacy_seerr::connection_of(&access)?;
-        Some(crate::legacy_seerr::LegacySeerr::new(
-            crate::seerr::SeerrModel::build(self.transport.clone(), c, None),
-        ))
-    }
-
-    /// `Kern.seerrConnect`: signs in with the Jellyfin name and password and returns the access JSON to store.
-    #[uniffi::method(async_runtime = "tokio")]
-    pub async fn legacy_seerr_connect(
-        &self,
-        address: String,
-        user: String,
-        password: String,
-        headers: String,
-    ) -> Result<String, CoreError> {
-        let headers: Vec<swiftly_jellyfin::OwnHeader> =
-            serde_json::from_str(&headers).unwrap_or_default();
-        let c = crate::seerr::SeerrModel::sign_in(
-            self.transport.clone(),
-            None,
-            &address,
-            &user,
-            &password,
-            &headers,
-        )
-        .await?;
-        Ok(crate::legacy_seerr::access_json(&c))
     }
 
     /// Automatic Seerr sign-in with the Jellyfin account's own credentials: keeps a valid stored
@@ -500,6 +492,58 @@ impl Core {
             Some(account),
         )?;
         Ok(SearchVm::wrap(vm))
+    }
+
+    /// The subtitle search of one title (`subtitle_language`: the settings value `utSprache`). Asks the server's
+    /// subtitle providers and lets the server download a hit; nothing is sent before the first `Search` intent.
+    /// A Plex account is refused (check `subtitle_search_offered` first and hide the entry).
+    pub fn subtitle_search_vm(
+        &self,
+        account: AccountRef,
+        locale: String,
+        item_id: String,
+        subtitle_language: String,
+    ) -> Result<Arc<SubtitleSearchVm>, CoreError> {
+        let vm = swiftly_vm::SubtitleSearchVm::new(
+            Arc::new(self.transport.clone()),
+            self.host(&locale)?,
+            Arc::new(TokioSleeper),
+            &account,
+            &item_id,
+            &subtitle_language,
+        )?;
+        Ok(SubtitleSearchVm::wrap(vm))
+    }
+
+    /// The server page of a Jellyfin account (counts, running tasks, streams, load, drives, scan and restart). Send
+    /// `Start` when the page is on screen and `Stop` when it left; nothing is read before. Other accounts are refused
+    /// (check `SeerrHub::profile_entry` first and show no row).
+    pub fn server_admin_vm(
+        &self,
+        account: AccountRef,
+        locale: String,
+    ) -> Result<Arc<ServerAdminVm>, CoreError> {
+        let vm = swiftly_vm::ServerAdminVm::new(
+            Arc::new(self.transport.clone()),
+            self.host(&locale)?,
+            Arc::new(TokioSleeper),
+            &account,
+        )?;
+        Ok(ServerAdminVm::wrap(vm))
+    }
+
+    /// The log files of a Jellyfin account's server. Nothing is read before the first `Load`.
+    pub fn server_logs_vm(
+        &self,
+        account: AccountRef,
+        locale: String,
+    ) -> Result<Arc<ServerLogsVm>, CoreError> {
+        let vm = swiftly_vm::ServerLogsVm::new(
+            Arc::new(self.transport.clone()),
+            self.host(&locale)?,
+            &account,
+        )?;
+        Ok(ServerLogsVm::wrap(vm))
     }
 
     /// A movie or episode page, started from the tile that was tapped.
@@ -781,6 +825,24 @@ impl Core {
         ))
     }
 
+    /// `Policy.IsAdministrator` of the signed-in account (`GET Users/{id}`), the input of `SeerrHub::profile_entry`.
+    /// False without an answer and for Plex, so the Profile entry then shows no server section.
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn is_administrator(&self, account: AccountRef) -> Result<bool, CoreError> {
+        let Ok(client) = swiftly_vm::make_client(
+            &Arc::new(self.transport.clone()),
+            &self.host("en")?,
+            &account,
+        ) else {
+            return Ok(false);
+        };
+        Ok(client
+            .account_defaults()
+            .await
+            .and_then(|g| g.is_administrator)
+            .unwrap_or(false))
+    }
+
     /// The genre names as the old `Kern.genres` answered it.
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn legacy_genres(
@@ -1036,6 +1098,39 @@ impl Core {
         )
     }
 
+    /// The series behind a tile that is being pressed (a series tile: its own id; an episode tile: its series' id) is
+    /// asked ahead (seasons, where the viewer is, the first episodes), so the page that opens a moment later has its
+    /// season picker and episode rows in frame 1. Nothing happens for a series that is already stored or on its way.
+    pub fn warm_series(&self, account: AccountRef, locale: String, series_id: String) {
+        if let Ok(host) = self.host(&locale) {
+            swiftly_vm::warm_series_ids(
+                &Arc::new(self.transport.clone()),
+                &host,
+                &account,
+                &[series_id],
+            );
+        }
+    }
+
+    /// The address of the head picture the page of a tile will ask for (same size and quality as the page itself), known
+    /// from the tile's marks and the stored copy of the title. The host starts that download on finger-down, so the
+    /// picture is on its way and the server has resized it by the time the page is there. `None` when nothing names a
+    /// head picture yet.
+    pub fn head_picture_ahead(
+        &self,
+        account: AccountRef,
+        locale: String,
+        tile: Tile,
+    ) -> Option<String> {
+        let host = self.host(&locale).ok()?;
+        swiftly_vm::head_picture_ahead(
+            &Arc::new(self.transport.clone()),
+            &host,
+            &account,
+            item_of(&tile),
+        )
+    }
+
     /// A series page, started from the tile that was tapped.
     pub fn series_vm(
         &self,
@@ -1060,9 +1155,7 @@ impl Core {
     /// Anything else is ignored.
     pub fn cache_event(&self, account: AccountRef, message: String) {
         if let (Some(cache), Some(event)) = (&self.cache, swiftly_cache::parse_ws(&message)) {
-            cache
-                .entity_cache()
-                .apply_event(&swiftly_vm::ViewCache::scope(&account), &event);
+            cache.apply_event(&account, &event);
         }
     }
 
@@ -1071,9 +1164,7 @@ impl Core {
     /// open screens refresh.
     pub fn cache_lists_changed(&self, account: AccountRef) {
         if let Some(cache) = &self.cache {
-            cache
-                .entity_cache()
-                .lists_changed(&swiftly_vm::ViewCache::scope(&account));
+            cache.lists_changed(&account);
         }
     }
 
@@ -1081,9 +1172,7 @@ impl Core {
     /// answers that were still on their way.
     pub fn cache_forget(&self, account: AccountRef) {
         if let Some(cache) = &self.cache {
-            cache
-                .entity_cache()
-                .drop_scope(&swiftly_vm::ViewCache::scope(&account));
+            cache.drop_account(&account);
         }
     }
 
@@ -1219,23 +1308,8 @@ fn dir_size(dir: &std::path::Path) -> u64 {
 /// Opens `core-cache.sqlite` in the platform's cache directory. A file that cannot be opened is
 /// replaced by the cache itself; if even that fails (read-only disk) the cache lives in memory.
 fn open_cache(platform: &dyn Platform) -> Option<swiftly_vm::ViewCache> {
-    use swiftly_cache::{CacheConfig, EntityCache};
-    let on_disk = platform.cache_dir().and_then(|dir| {
-        let dir = std::path::PathBuf::from(dir);
-        std::fs::create_dir_all(&dir).ok()?;
-        match EntityCache::open(&dir.join("core-cache.sqlite"), CacheConfig::default()) {
-            Ok(c) => Some(c),
-            Err(e) => {
-                platform.log(format!(
-                    "core: cache file unusable ({e:?}), keeping it in memory"
-                ));
-                None
-            }
-        }
-    });
-    on_disk
-        .or_else(|| EntityCache::in_memory(CacheConfig::default()).ok())
-        .map(swiftly_vm::ViewCache::new)
+    let dir = platform.cache_dir().map(std::path::PathBuf::from);
+    swiftly_vm::ViewCache::open_in(dir.as_deref(), |why| platform.log(why))
 }
 
 #[cfg(test)]

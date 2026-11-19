@@ -251,6 +251,9 @@ struct LibraryView: View {
         .onChange(of: openPanel) { alt, new in
             panelOpen.wrappedValue = new != nil
             if new == nil, let alt { atTrigger = alt }
+            // The core fetches the years and languages when the sheet opens, and stops watching when it closes.
+            if new == .filter { state.sheetOpened(offered: offeredFilter) }
+            if alt == .filter, new != .filter { state.sheetClosed() }
         }
         // Leaving the page with a panel open would leave the bar dead.
         .onDisappear { panelOpen.wrappedValue = false; LibraryScroll.shared.scrolled = false }
@@ -322,7 +325,7 @@ struct LibraryView: View {
     private var panelContent: (actions: [TitleAction], selected: Int?) {
         switch openPanel {
         case .filter:
-            (filterActions, offeredFilter.firstIndex(of: state.filter))
+            (filterActions, filterRows.firstIndex { $0.selected })
         case .sorting:
             (sortActions, Sorting.allCases.firstIndex(of: state.sorting))
         case .library, nil:
@@ -330,11 +333,16 @@ struct LibraryView: View {
         }
     }
 
-    /// The filters as a panel: same icons as sorting and library choice, same entries as on the iPhone.
+    /// The rows of the core's filter sheet (status, years, language), the same lines every platform draws.
+    private var filterRows: [LibraryModel.SheetRow] { state.sheetRows(offered: offeredFilter) }
+
+    /// The filters as a panel: same icons as sorting and library choice, the rows come from the core.
     private var filterActions: [TitleAction] {
-        offeredFilter.map { f in
-            TitleAction(symbol: state.filter == f ? "checkmark.circle.fill" : "circle",
-                          text: "\(f.label)") { state.filter = f }
+        filterRows.map { row in
+            var action = TitleAction(symbol: row.selected ? "checkmark.circle.fill" : "circle",
+                                     text: "") { state.choose(row) }
+            action.wording = row.label
+            return action
         }
     }
 
@@ -362,6 +370,11 @@ struct LibraryView: View {
 
     /// Where in the panel the "Libraries" section is.
     private func panelCategory(_ row: Int) -> LocalizedStringKey? {
+        if openPanel == .filter {
+            let rows = filterRows
+            guard rows.indices.contains(row), let heading = rows[row].heading else { return nil }
+            return LocalizedStringKey(heading)
+        }
         guard openPanel == .library,
               offering.entries.indices.contains(row),
               offering.entries[row] == offering.firstLibrary else { return nil }
@@ -403,12 +416,12 @@ struct LibraryView: View {
             // needs neither filtering nor sorting (`ShelfControls.onlyCount`). The row keeps its height, see below.
             if !listChoice {
                 Button { openPanel = .filter } label: {
-                    Text(verbatim: state.filter.label)
+                    Text(verbatim: state.pillText)
                 }
                 .buttonStyle(CapsuleStyle(symbol: "line.3.horizontal.decrease", active: openPanel == .filter))
                 .focused($atTrigger, equals: .filter)
                 .panelTrigger(Panel.filter.firer)
-                .accessibilityLabel(Text("Filter, \(state.filter.label)"))
+                .accessibilityLabel(Text("Filter, \(state.pillText)"))
 
                 Button { openPanel = .sorting } label: {
                     Text(verbatim: state.sorting.label)
@@ -675,7 +688,18 @@ struct LibraryView: View {
             guard let source, let id = await state.jumpTarget(letter, model: model, from: source),
                   !Task.isCancelled else { return }
             jump = ScrollJump(id: id, serial: (jump?.serial ?? 0) + 1)
-            if focus { atTitle = id }
+            if focus {
+                // The tile may not exist yet (a lazy grid that was just scrolled): a focus assigned to it fizzles and
+                // the system picks its own tile. So the remembered title (`defaultFocus`) is the target already, and
+                // the assignment follows once the scroll has made the tile (again if the first one fizzled).
+                lastAtTitle = id
+                for wait in [80, 200, 400] {
+                    try? await Task.sleep(for: .milliseconds(wait))
+                    guard !Task.isCancelled else { return }
+                    atTitle = id
+                    if atTitle == id { break }
+                }
+            }
         }
     }
 

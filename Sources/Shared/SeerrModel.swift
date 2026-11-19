@@ -53,7 +53,39 @@ final class SeerrModel {
 
     /// The media server's signed-in user name (set by the app model); Seerr signs in with the same account.
     @ObservationIgnored var userName: (() -> String?)?
+    /// The signed-in media server's client (set by the app model); the Seerr screens ask it which library
+    /// item has a TMDB id and for a new scan (``JellyfinSeerrLibrary``).
+    @ObservationIgnored var mediaServer: (@MainActor @Sendable () -> (any MediaServer)?)?
+
+    /// The Seerr screens' shared connection, one per stored connection: a disconnect, a new sign-in or a
+    /// server switch gives the next call a fresh one. Without a connection it is an empty hub
+    /// (`available()` is false), so a view may always ask it.
+    var hub: SeerrCore.Hub {
+        if let made = hubMade, made.access == access { return made.hub }
+        let library = JellyfinSeerrLibrary(server: { [weak self] in self?.mediaServer?() })
+        let hub = SeerrCore.hub(access: access, library: library)
+        hubMade = (access, hub)
+        return hub
+    }
+    @ObservationIgnored private var hubMade: (access: SeerrAccess?, hub: SeerrCore.Hub)?
     private var passwordKey: String { key + "|passwort" }
+    /// The media server account's password for the automatic sign-in, read from the Keychain only when one is needed.
+    var passwordSource: KeychainSeerrPassword { KeychainSeerrPassword(key: passwordKey) }
+
+    /// Is the signed-in media server account an administrator? Only an admin types the Seerr address (once per server).
+    @ObservationIgnored var isAdmin: (@MainActor () async -> Bool)?
+    /// The plex.tv token of a Plex media server account (the "Mit Plex" way); `nil` for Jellyfin and Emby.
+    @ObservationIgnored var plexToken: (() -> String?)?
+    /// The suffix of this server's settings (`Session.serverSuffix`): the key `seerrServer` + suffix holds where Seerr is.
+    @ObservationIgnored var serverSuffix: (() -> String?)?
+
+    /// Where Seerr is for this server (address and gateway headers as the core's JSON; no session). Set up once by the
+    /// admin; every profile of the server only signs in. Synced per server (`SettingsSync`, key `seerrServer`).
+    var serverConfig: String? {
+        guard let suffix = serverSuffix?(),
+              let data = UserDefaults.standard.data(forKey: "seerrServer" + suffix) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
 
     init() { access = loaded() }
 
@@ -69,6 +101,18 @@ final class SeerrModel {
         if new != nil { Task { await lookUp() } }
     }
 
+    #if DEBUG
+    /// `-SwiftlyFixtureSeerr` (`LiveRun`): the fixture server's Seerr, in memory only (no Keychain, no
+    /// settings sync). The session is checked like a stored one. `lookUp: false` only sets the connection, the way the
+    /// Keychain does it at launch (the caller checks the session later), so the Start page sees "connected" at once.
+    func adoptFixture(_ new: SeerrAccess, lookUp check: Bool = true) {
+        access = new
+        sessionState = .invalid
+        error = nil
+        if check { Task { await lookUp() } }
+    }
+    #endif
+
     /// When switching to an account on another server, that server's credentials
     /// apply.
     ///
@@ -78,6 +122,14 @@ final class SeerrModel {
         let new = identity
         guard new != server else { return }
         server = new
+        #if DEBUG
+        // `-SwiftlySeerrReset` (the sign-in live tests): every run starts without a session, password or stored address.
+        if ProcessInfo.processInfo.arguments.contains("-SwiftlySeerrReset"), let new {
+            Keychain.delete(key: Self.key + "|" + new)
+            Keychain.delete(key: Self.key + "|" + new + "|passwort")
+            if let suffix = serverSuffix?() { UserDefaults.standard.removeObject(forKey: "seerrServer" + suffix) }
+        }
+        #endif
         if let new, Keychain.load(key: Self.key + "|" + new) == nil,
            let alt = Keychain.load(key: Self.key) {
             try? Keychain.save(alt, key: Self.key + "|" + new)
@@ -129,6 +181,21 @@ final class SeerrModel {
         } catch {
             self.error = readableError(error)
         }
+    }
+
+    /// The core's sign-in screen ended in a session: keep it (Keychain), store the per-server configuration it hands
+    /// back (the admin's first sign-in) and tell the settings sync. `password` is kept only for the media server
+    /// account, so it can sign in again by itself when the session expires.
+    func signedIn(_ new: SeerrAccess, serverConfig: String?, password: String?) {
+        secure(new)
+        if let password { try? Keychain.save(Data(password.utf8), key: passwordKey) }
+        if let serverConfig, let suffix = serverSuffix?() {
+            UserDefaults.standard.set(Data(serverConfig.utf8), forKey: "seerrServer" + suffix)
+        }
+        access = new
+        sessionState = .valid
+        error = nil
+        changed?()
     }
 
     /// Disconnect. Our side only; everything stays as it is at Seerr itself.

@@ -30,7 +30,10 @@ fn percentile(v: &mut [f64], p: f64) -> f64 {
 
 /// The wgpu side: device, renderer and an offscreen target of the window's pixel size.
 struct Gpu {
+    #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+    ctx: swiftly_render::GpuContext,
     renderer: swiftly_render::WgpuRenderer,
+    texture: wgpu::Texture,
     view: wgpu::TextureView,
     size: (u32, u32),
     adapter: String,
@@ -54,12 +57,14 @@ impl Gpu {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         Ok(Gpu {
+            ctx,
             renderer,
+            texture,
             view,
             size,
             adapter: format!("{} ({:?})", info.name, info.backend),
@@ -101,9 +106,17 @@ pub fn run(opts: &Options) -> Result<String, String> {
     };
     let mut screen = PlayerScreen::with_surface(env, cx, PlayerScenario::Playing, 0.0, surface);
     screen.use_external_clock();
-    let engine = MpvEngine::new()?;
-    engine.load(EngineLoad {
-        url: file.to_string_lossy().into_owned(),
+    // The GPU way (shared DMA-bufs) when the headless device can import them; `SWIFTLY_VIDEO_PATH=cpu` forces CPU frames.
+    #[cfg(any(target_os = "linux", windows))]
+    if let Some(g) = gpu.as_ref() {
+        crate::dmabuf_import::announce(&g.ctx);
+    }
+    let want_gpu = gpu.is_some() && crate::frame_surface::dmabuf_wanted();
+    let mut engine = MpvEngine::new_with(want_gpu)?;
+    #[cfg(any(target_os = "linux", windows))]
+    let mut importer = crate::dmabuf_import::Importer::default();
+    let load_of = |path: &std::path::Path| EngineLoad {
+        url: path.to_string_lossy().into_owned(),
         headers: vec![],
         start: None,
         audio_server_index: None,
@@ -112,7 +125,12 @@ pub fn run(opts: &Options) -> Result<String, String> {
         software_decode: false,
         buffer_level: BufferLevel::Normal,
         frame_rate_match: false,
-    });
+    };
+    engine.load(load_of(&file));
+    // `SWIFTLY_DEMO_THEN=<file>`: halfway through, the first engine ends and a new one plays this file (title B after
+    // title A), the way leaving a player and opening the next title does.
+    let then_file = std::env::var_os("SWIFTLY_DEMO_THEN").map(std::path::PathBuf::from);
+    let mut switched = false;
     // The CPU path rewrites into the 2048 px image page, so it stays at 720p; the GPU path takes the window size.
     let (max_w, max_h) = opts.video_px.unwrap_or(if gpu.is_some() {
         px
@@ -128,9 +146,21 @@ pub fn run(opts: &Options) -> Result<String, String> {
         Vec::<f64>::new(),
     );
     let (mut video_new, mut ticks) = (0_u64, 0_u32);
+    #[allow(unused_assignments, unused_mut)]
+    let mut shared_size = (0_u32, 0_u32);
     let (mut first, mut late) = (None, 0_u32);
     let (t0, tick) = (Instant::now(), Duration::from_micros(16_667));
     while t0.elapsed().as_secs_f64() < secs {
+        if let Some(next) = then_file
+            .as_ref()
+            .filter(|_| !switched && t0.elapsed().as_secs_f64() > secs / 2.0)
+        {
+            switched = true;
+            engine = MpvEngine::new_with(want_gpu)?;
+            #[cfg(any(target_os = "linux", windows))]
+            importer.clear();
+            engine.load(load_of(next));
+        }
         let target = t0 + tick * ticks;
         let now_ms = t0.elapsed().as_secs_f64() * 1000.0;
         let began = Instant::now();
@@ -141,7 +171,32 @@ pub fn run(opts: &Options) -> Result<String, String> {
             screen.engine_event(ev, now_ms);
         }
         let t = Instant::now();
-        let got = engine.acquire_frame(max_w, max_h, &mut buf) == FrameStatus::New;
+        // The GPU way: the newest finished shared buffer, if any (the call never waits). Else CPU frames.
+        #[allow(unused_mut)]
+        let mut shared_new = false;
+        #[cfg(any(target_os = "linux", windows))]
+        if let Some(g) = gpu.as_mut() {
+            match engine.acquire_shared(max_w, max_h) {
+                swiftly_player_surface::SharedStatus::New(frame) => {
+                    if let Some(tex) = importer.texture(g.ctx.device(), &frame) {
+                        g.renderer
+                            .show_video_texture(tex, swiftly_render::VideoFit::Fit);
+                        #[cfg(target_os = "linux")]
+                        let size = (frame.images[0].width, frame.images[0].height);
+                        #[cfg(windows)]
+                        let size = frame.size;
+                        (shared_size, shared_new) = (size, true);
+                    }
+                }
+                swiftly_player_surface::SharedStatus::Unsupported => {}
+                _ => {}
+            }
+        }
+        let got = !shared_new && engine.acquire_frame(max_w, max_h, &mut buf) == FrameStatus::New;
+        if shared_new {
+            acq.push(t.elapsed().as_secs_f64() * 1000.0);
+            video_new += 1;
+        }
         if got {
             acq.push(t.elapsed().as_secs_f64() * 1000.0);
             let t = Instant::now();
@@ -197,21 +252,39 @@ pub fn run(opts: &Options) -> Result<String, String> {
         }
     }
     let wall = t0.elapsed().as_secs_f64();
+    // `SWIFTLY_DEMO_FRAME=<file.png>` saves the last drawn picture (a colour check of the GPU path).
+    if let (Some(g), Some(path)) = (gpu.as_ref(), std::env::var_os("SWIFTLY_DEMO_FRAME")) {
+        crate::dump::dump_texture(
+            &g.ctx,
+            &g.texture,
+            wgpu::TextureFormat::Rgba8Unorm,
+            std::path::Path::new(&path),
+        )?;
+    }
     let st = engine.stats();
     let hints = engine.display_hints();
     let p = |v: &[f64], q: f64| percentile(&mut v.to_vec(), q);
     Ok(format!(
-        "player+video [{}]: {wall:.1}s, ticks {ticks} ({late} late), tick work p50 {:.2} ms p99 {:.2} ms max {:.2} ms (frame build p50 {:.2}, draw+gpu p50 {:.2} p99 {:.2}); video {}x{} px, delivered {video_new} ({:.1}/s), mpv render+copy p50 {:.2} p99 {:.2} ms, upload p50 {:.2} p99 {:.2} ms, decoder drops {}, output drops {}, mpv avg render {:.2} ms, hwdec {}, first frame {:?}, source {:?} {:?}",
+        "player+video [{}] path {}: {wall:.1}s, ticks {ticks} ({late} late), tick work p50 {:.2} ms p99 {:.2} ms max {:.2} ms (frame build p50 {:.2}, draw+gpu p50 {:.2} p99 {:.2}); video {}x{} px, delivered {video_new} ({:.1}/s), mpv render+copy p50 {:.2} p99 {:.2} ms, upload p50 {:.2} p99 {:.2} ms, decoder drops {}, output drops {}, mpv avg render {:.2} ms (render thread p50 {:.2} p99 {:.2} ms, {} frames replaced before the UI took them, drawn at {:?}), hwdec {}, first frame {:?}, source {:?} {:?}",
         gpu.as_ref()
             .map_or("software".to_string(), |g| g.adapter.clone()),
+        st.path,
         p(&total, 0.5),
         p(&total, 0.99),
         p(&total, 1.0),
         p(&ui, 0.5),
         p(&draw, 0.5),
         p(&draw, 0.99),
-        buf.width,
-        buf.height,
+        if shared_size.0 > 0 {
+            shared_size.0
+        } else {
+            buf.width
+        },
+        if shared_size.0 > 0 {
+            shared_size.1
+        } else {
+            buf.height
+        },
         video_new as f64 / wall,
         p(&acq, 0.5),
         p(&acq, 0.99),
@@ -220,6 +293,10 @@ pub fn run(opts: &Options) -> Result<String, String> {
         st.decoder_drops,
         st.output_drops,
         st.avg_render_ms,
+        st.render_p50_ms,
+        st.render_p99_ms,
+        st.frames_superseded,
+        st.render_size,
         st.hwdec,
         first,
         hints.size,

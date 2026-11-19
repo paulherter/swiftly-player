@@ -109,12 +109,12 @@ func librarySpec(remember: String? = nil) -> LibrarySpec {
         let vm = try makeCore().detailVm(
             account: account(server), locale: "de", tile: tile("m1", "Nordlicht", kind: "Movie", year: 2021))
         let model = DetailModel(vm: vm)
-        #expect(model.actions.play.enabled == false)
+        #expect(model.actions.play.ready == .waiting(queued: false))
         #expect(model.play() == .wait)
         let observing = Task { @MainActor in await model.observe() }
 
         model.load()
-        #expect(await eventuallyOnMain { model.actions.play.enabled })
+        #expect(await eventuallyOnMain { model.actions.play.ready == .ready })
         #expect(model.hero.id == "m1")
         #expect(model.hero.title == "Nordlicht")
         #expect(model.hero.overview == "Eine Geschichte.")

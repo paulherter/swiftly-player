@@ -1,4 +1,5 @@
 #![cfg(feature = "supporter-key")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Test vectors copied by script from the Swift package tests (the Kotlin test reads the same files).
 pub const V1: &[(&str, &str)] = &[
     (
@@ -140,8 +141,7 @@ fn app_test_and_malformed_rules() {
 fn forgiving_paste() {
     let key = v1("swiftlyNamed");
     let expected = check(key, 1, false).unwrap();
-    let groups: Vec<String> = key[4..]
-        .as_bytes()
+    let groups: Vec<String> = key.as_bytes()[4..]
         .chunks(5)
         .map(|c| String::from_utf8(c.to_vec()).unwrap())
         .collect();

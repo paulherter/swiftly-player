@@ -521,9 +521,25 @@ fn line(cx: &Cx, ctx: &Ctx, f: &Fm, env: &Env, l: &Line) -> Node {
                 feel::HOVER_SURFACE_RADIUS,
             );
     }
+    // In edit mode the row is the selection control (its circle is drawn only): it says whether it is chosen.
+    let value = match l.picked {
+        Some(on) => {
+            let state = if on {
+                "Ausgewählt"
+            } else {
+                "Nicht ausgewählt"
+            };
+            if l.sub.is_empty() {
+                state.to_owned()
+            } else {
+                format!("{}, {state}", l.sub)
+            }
+        }
+        None => l.sub.clone(),
+    };
     let main = main.a11y(
         A11yNode::new("", Role::Button, l.title.clone())
-            .with_value(l.sub.clone())
+            .with_value(value)
             .with_selected(l.picked == Some(true)),
     );
     let mut parts = vec![main];
@@ -744,9 +760,19 @@ fn body(cx: &Cx, env: &Env, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
         .filter_map(|i| find(&i.id))
         .collect();
     if !running.is_empty() {
+        // Only failed titles in the group: it must not say they are loading.
+        let all_failed = p
+            .list
+            .rows
+            .iter()
+            .flat_map(|r| r.items.iter())
+            .filter(|i| i.state != RowState::Done)
+            .all(|i| i.state == RowState::Failed);
         out.push(heading(
             cx,
-            if s.offline {
+            if all_failed {
+                "Fehlgeschlagen"
+            } else if s.offline {
                 "Wartet auf Netz"
             } else {
                 "L\u{00E4}dt gerade"
@@ -1189,6 +1215,10 @@ pub struct DownloadsScreen {
     last_tick: f64,
     counting: bool,
     sheet: Option<Sheet>,
+    /// The language of the device for the sheets' preselected sound (the real app only: a scripted page names none).
+    device_language: Option<String>,
+    /// The settings file (the real app only): the sheets read `tonSprache` from it when they open.
+    settings: Option<Arc<swiftly_settings::JsonFileStore>>,
     sheet_rev: u64,
     sheet_dirty: bool,
     settled: bool,
@@ -1288,6 +1318,10 @@ impl DownloadsScreen {
             last_tick: f64::NEG_INFINITY,
             counting: false,
             sheet: None,
+            device_language: covers
+                .then(crate::device_language::device_language)
+                .flatten(),
+            settings: None,
             sheet_rev: 0,
             sheet_dirty: false,
             settled: false,
@@ -1296,6 +1330,22 @@ impl DownloadsScreen {
         s.clock(0.0);
         s.sync();
         s
+    }
+
+    /// The page with the settings file, so the download sheets start the sound on the audio language of the settings
+    /// (`tonSprache`) before the language of the device, as the player does.
+    #[must_use]
+    pub fn with_settings(mut self, settings: Arc<swiftly_settings::JsonFileStore>) -> Self {
+        self.settings = Some(settings);
+        self
+    }
+
+    /// The audio language of the settings (`tonSprache`), empty for none or without a settings file.
+    fn audio_language(&self) -> String {
+        self.settings
+            .as_deref()
+            .map(|store| crate::live_play::text(store, "tonSprache"))
+            .unwrap_or_default()
     }
 
     /// The view model.
@@ -1418,6 +1468,7 @@ impl DownloadsScreen {
     /// build a [`LoadRequest`] and the host hands it to the Downloads page in front (the page opens first if it is not).
     pub fn request_load(&mut self, request: LoadRequest) {
         self.menu.close();
+        let audio_language = self.audio_language();
         self.sheet = Some(match request {
             LoadRequest::Add {
                 title,
@@ -1426,14 +1477,18 @@ impl DownloadsScreen {
                 quality_select,
                 streams,
                 anchor,
-            } => Sheet::Add(Box::new(AddSheet::new(
-                title,
-                items,
-                images,
-                quality_select,
-                streams,
-                anchor,
-            ))),
+            } => Sheet::Add(Box::new(
+                AddSheet::new(
+                    title,
+                    items,
+                    images,
+                    quality_select,
+                    streams,
+                    anchor,
+                    self.device_language.clone(),
+                )
+                .with_audio_language(&audio_language),
+            )),
             LoadRequest::Season {
                 account,
                 series,
@@ -1442,15 +1497,19 @@ impl DownloadsScreen {
                 quality_select,
                 anchor,
                 pictures,
-            } => Sheet::Season(Box::new(SeasonSheet::new(
-                account,
-                *series,
-                seasons,
-                episodes,
-                quality_select,
-                anchor,
-                pictures,
-            ))),
+            } => Sheet::Season(Box::new(
+                SeasonSheet::new(
+                    account,
+                    *series,
+                    seasons,
+                    episodes,
+                    quality_select,
+                    anchor,
+                    pictures,
+                )
+                .with_device_language(self.device_language.clone())
+                .with_audio_language(&audio_language),
+            )),
         });
         self.sheet_dirty = true;
         self.sync();

@@ -172,7 +172,9 @@ impl ImageSelection {
         {
             return Some(hit.url);
         }
-        Self::portrait(item, addresses, width)
+        // Only a poster the server is known to have (a tag names it): a head image built from a guess would be a
+        // broken picture for a title with no image at all, where the page shows its placeholder instead.
+        Self::portrait_of(item, addresses, width, false)
     }
 
     /// The logo of a title; for episodes, the series'. `None` if the server has none.
@@ -196,20 +198,49 @@ impl ImageSelection {
 
     /// The portrait poster of a 2:3 tile. For an episode, the series poster (its own image is
     /// a 16:9 still and would be cropped beyond recognition).
+    ///
+    /// A poster-bearing title (film, series, season; a box set without a poster gets the mosaic of its
+    /// first titles instead) that names no `Primary` tag still gets the
+    /// untagged address: titles that a catalog plugin fills in, or an endpoint that leaves `ImageTags` out,
+    /// have an image the server serves without a tag (the tag only keeps caches honest). Every grid, row and
+    /// card asks this one function, so a title never shows in the library and lacks its poster on home.
     pub fn portrait(item: &Item, addresses: &ImageAddress, max_height: i64) -> Option<Url> {
-        let (id, mark) = if let (Some(series), Some(mark)) = (
-            item.series_id.as_deref(),
-            item.series_primary_image_tag.as_deref(),
-        ) {
-            (series, mark)
+        Self::portrait_of(item, addresses, max_height, true)
+    }
+
+    /// [`portrait`](Self::portrait); with `guess` off only an image the item names by a tag (so the server has it).
+    fn portrait_of(
+        item: &Item,
+        addresses: &ImageAddress,
+        max_height: i64,
+        guess: bool,
+    ) -> Option<Url> {
+        let series = item.series_id.as_deref();
+        let jellyfin_like = addresses.kind != ServerKind::Plex;
+        let (id, mark) = if let (Some(series), Some(mark)) =
+            (series, item.series_primary_image_tag.as_deref())
+        {
+            (series, Some(mark))
+        } else if let (true, true, Some(series), Some("Episode")) =
+            (guess, jellyfin_like, series, item.type_.as_deref())
+        {
+            // An episode that names its series but not the series' poster tag (a catalog plugin, an endpoint that
+            // leaves the field out): the series poster, untagged. Its own image is a 16:9 still.
+            (series, None)
+        } else if let Some(mark) = item.image_tags.as_ref().and_then(|t| t.get("Primary")) {
+            (item.id.as_str(), Some(mark.as_str()))
+        } else if guess
+            && jellyfin_like
+            && matches!(item.type_.as_deref(), Some("Movie" | "Series" | "Season"))
+        {
+            (item.id.as_str(), None)
         } else {
-            let mark = item.image_tags.as_ref()?.get("Primary")?;
-            (item.id.as_str(), mark.as_str())
+            return None;
         };
         addresses.construct(
             id,
             ImageKind::Poster,
-            Some(mark),
+            mark,
             ImageMetric::AtMostHigh(max_height),
         )
     }

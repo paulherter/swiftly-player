@@ -29,7 +29,21 @@ public final class PlayerModel {
     public func loadTitle(_ start: PlayerStart) { vm.loadTitle(start: start) }
     /// This model replaces one that reloaded the title after a quality choice.
     public func afterQualitySwitch() { vm.afterQualitySwitch() }
+    /// The host got no plan for a `startEpisode` / `reloadForSubtitle` effect: the old title comes back (playing or
+    /// paused at its position, or still over) with one hint, and nothing asks again by itself.
+    public func switchFailed() { vm.switchFailed() }
     public func send(_ intent: PlayerIntent) { vm.send(intent: intent) }
+    /// The speed and subtitle-offset rows of the player menu (one model for every platform).
+    public func menu(decimalSeparator: String) -> PlayerMenu { vm.menu(decimalSeparator: decimalSeparator) }
+    /// Every menu of the player in one read (options, speed, sleep, picture, quality, group, tracks, subtitle look,
+    /// timing, episodes, handoff): the core builds all levels, texts are catalogue keys. Views read it through
+    /// `PlayerMenusModel`.
+    public func menus(_ inputs: PlayerMenusInputs) -> PlayerMenus { vm.menus(inputs: inputs) }
+    /// A press in a menu: a player action is carried out by the core (`nil` back); any other action is returned for the
+    /// host to carry out (see `PlayerMenusModel.press`).
+    public func pressMenu(_ action: PlayerMenuAction) -> PlayerMenuAction? { vm.pressMenu(action: action) }
+    /// The chapter list (title, start, preview tile, running chapter marked); no rows: no chapter button.
+    public func chapters() -> PlayerChapters { vm.chapters() }
     /// What the engine reported.
     public func engineEvent(_ event: PlayerEngineEvent) { vm.engineEvent(event: event) }
     public func setPrefs(_ prefs: PlayerPrefs) { vm.setPrefs(prefs: prefs) }

@@ -20,7 +20,9 @@ mod query;
 mod quick_phase;
 mod quick_share;
 mod quick_wait;
+mod remote_subtitles;
 mod reporting;
+mod server_admin;
 mod server_url;
 mod session;
 mod sessions;
@@ -42,7 +44,13 @@ pub use pending::{PendingReport, PostReportOutput, PostReportRules};
 pub use query::{encode_query_value, image_key, without_secret};
 pub use quick_phase::{QuickEvent, QuickPhase};
 pub use quick_wait::{QuickConnectWait, WaitClock, WaitEvent, WaitStep};
+pub use remote_subtitles::RemoteSubtitle;
 pub use reporting::{PlayMethod, ReportPlan, TrackIndices, seconds_from_ticks, ticks_from_seconds};
+pub use server_admin::{
+    ACTIVE_WITHIN_SECONDS, DiskUse, LOG_LIMIT, PlayingItem, ResolutionCounts, ResolutionFilter,
+    ServerCounts, ServerDisk, ServerLoad, ServerLogFile, ServerStream, ServerSystem, ServerTask,
+    StreamTrack, StreamTranscoding, TitleAddition,
+};
 pub use server_url::{
     ZonedAddress, is_home_network, is_ipv6, normalize as normalize_server_url,
     normalize_string as normalize_server_url_string, normalize_zoned as normalize_server_url_zoned,

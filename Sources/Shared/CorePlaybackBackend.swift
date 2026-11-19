@@ -62,10 +62,11 @@ final class CorePlaybackBackend: PlaybackBackend {
         // What the screen asked for before the engine exists goes to the port, which hands it over at load.
         port.setFill(fill)
         if let volume { port.setVolume(UInt8(clamping: max(0, min(100, volume)))) }
-        if tempo != 1 { port.setRate(tempo) }
+        // The speed is not carried from title to title: every title starts at normal speed (the core's rule).
         port.setSubtitleDelay(milliseconds: Int32(subtitleDelay.milliseconds))
         port.setAudioDelay(milliseconds: Int32(audioDelay.milliseconds))
-        tempoValue = tempo
+        tempoValue = 1
+        host.tempoWish = 1
         subtitleDelayValue = subtitleDelay
         audioDelayValue = audioDelay
 
@@ -90,12 +91,24 @@ final class CorePlaybackBackend: PlaybackBackend {
         self.port = port
         self.driver = driver
         self.model = vm
-        driver.connect { [weak vm] event in vm?.engineEvent(event) }
+        driver.connect { [weak vm] event in
+            #if DEBUG
+            if case .clock = event { LiveRun.noteClock() }
+            #endif
+            vm?.engineEvent(event)
+        }
         port.tap = { [weak self] event in self?.tapped(event) }
         app.coreOwns(ownedKey)
         vm.start()
         // The core learns the delays too (its state is what it reports and persists).
-        if subtitleDelay != .null { vm.send(.subtitleDelay(milliseconds: Int64(subtitleDelay.milliseconds))) }
+        // An offset remembered for this title (in the core's memory) wins over the one carried from the last episode.
+        let remembered = vm.tracks.subtitleDelayMs
+        if remembered != 0 {
+            subtitleDelayValue = Delay(milliseconds: Int(remembered))
+            host.subtitleDelay = subtitleDelayValue
+        } else if subtitleDelay != .null {
+            vm.send(.subtitleDelay(milliseconds: Int64(subtitleDelay.milliseconds)))
+        }
         if audioDelay != .null { vm.send(.audioDelay(milliseconds: Int64(audioDelay.milliseconds))) }
         observing = Task { @MainActor [weak self] in
             guard let model = self?.model else { return }
@@ -106,10 +119,17 @@ final class CorePlaybackBackend: PlaybackBackend {
 
     /// The settings the core decides by: "skip intro and outro automatically" and "next episode automatically".
     static func prefs(_ app: AppModel, networkFavorable: Bool = false) -> PlayerPrefs {
-        PlayerPrefs(
+        #if DEBUG
+        // A live run pins the choice (`-SwiftlyLiveNextAutomatic YES|NO`): a title's end is then judged the same on every device,
+        // whatever its owner chose or synced. The stored choice is never written.
+        let nextAutomatic = LiveRun.pinnedNextAutomatic ?? app.nextAutomatic
+        #else
+        let nextAutomatic = app.nextAutomatic
+        #endif
+        return PlayerPrefs(
             backSeconds: Int64(app.backSeconds), forwardSeconds: Int64(app.forwardSeconds),
             autoSkip: UserDefaults.standard.bool(forKey: "introAbspannAuto"),
-            nextAutomatic: app.nextAutomatic, networkFavorable: networkFavorable, directPlay: app.alwaysDirectPlay,
+            nextAutomatic: nextAutomatic, networkFavorable: networkFavorable, directPlay: app.alwaysDirectPlay,
             bitrateLimit: Int64(app.bitratesLimit), convertAllowed: app.convertAllowed)
     }
 
@@ -178,7 +198,20 @@ final class CorePlaybackBackend: PlaybackBackend {
     /// The model of a title reloaded after a quality choice says when the original plays.
     func afterQualitySwitch() { model.afterQualitySwitch() }
 
+    /// The screen got no plan for the switch the core asked for: the core puts the old title back (a no-op when it
+    /// asked for nothing, so a switch the screen started on its own is not touched).
+    func switchFailed() { model.switchFailed() }
+
     /// The press on the offer and the dismissal (Back on the card/button) as core intents, so its countdown stops too.
+    /// The core's chapter list. Reading the position here ties a view's body to the clock, so the running chapter follows.
+    var chapterList: PlayerChapters { _ = model.transport.position; return model.chapters() }
+    /// A chapter row was chosen: the core seeks to its start and closes the panel.
+    func jumpToChapter(_ index: Int) {
+        model.send(.jumpToChapter(index: UInt32(index)))
+        let rows = model.chapters().rows
+        let now = rows.first(where: \.current)
+        AppLog.writeOut("[Player] Kapitel-Sprung: Zeile \(index + 1) Start \(rows.indices.contains(index) ? rows[index].start : -1) s, läuft nun Kapitel \((now?.index).map { $0 + 1 } ?? 0) ab \(now?.start ?? -1) s")
+    }
     func pressOffer() { model.send(.pressOffering) }
     func dismissOffer() { model.send(.dismiss) }
 
@@ -243,6 +276,7 @@ final class CorePlaybackBackend: PlaybackBackend {
     #if DEBUG
     /// For the running-app matrix (`LiveRun`).
     var liveSubtitleState: [String: Any]? { engine?.liveSubtitleState }
+    func debugClockBurst(_ count: Int) { port.debugClockBurst(count) }
     #endif
 
     var audioIndex: Int? { engine?.audioIndex ?? firstAudio }
@@ -265,6 +299,29 @@ final class CorePlaybackBackend: PlaybackBackend {
     var subtitleDelay: Delay {
         get { subtitleDelayValue }
         set { subtitleDelayValue = newValue; model.send(.subtitleDelay(milliseconds: Int64(newValue.milliseconds))) }
+    }
+
+    /// The speed and subtitle-offset rows, all from the core (`PlayerVm.menu`).
+    /// The core's player, for the menus' model.
+    var playerModel: PlayerModel { model }
+    func playerMenu() -> PlayerMenu { model.menu(decimalSeparator: Locale.current.decimalSeparator ?? ".") }
+
+    /// A press on an offset button of the menu: the core adds the step, clamps it, remembers it for the title and
+    /// tells the engine; the host only keeps its copy (carried to the next episode) in step.
+    func offsetStep(_ stepMs: Int32) {
+        model.send(.subtitleOffsetStep(stepMs: stepMs))
+        followCoreOffset()
+    }
+
+    func offsetReset() {
+        model.send(.subtitleOffsetReset)
+        followCoreOffset()
+    }
+
+    private func followCoreOffset() {
+        // Read from the core itself: `model.tracks` is a mirror that follows the core a moment later.
+        subtitleDelayValue = Delay(milliseconds: Int(playerMenu().offsetMs))
+        host?.subtitleDelay = subtitleDelayValue
     }
 
     var audioDelay: Delay {
@@ -295,6 +352,10 @@ final class CorePlaybackBackend: PlaybackBackend {
         return true
     }
 
+    /// The screen is closing for good: the core learns it before the engine goes (it reports the one stop and ends
+    /// every later report). Not part of an episode switch, which stops the old backend with `stop(resetDisplay:)` only.
+    func close() { model.send(.close) }
+
     func stop(resetDisplay: Bool) {
         observing?.cancel()
         port.tap = nil
@@ -321,7 +382,26 @@ extension VLCPlayerView {
     }
 }
 
+extension CorePlaybackBackend {
+    /// What the core offers now (nothing, a button, the "Next episode" card with its fill).
+    var offerNow: PlayerOffer { model.offer }
+}
+
 extension VLCPlayerView {
+    /// **The one place the screens take the card from.** What the screen's `OfferingLayer` is fed with while the core
+    /// plays the title: the card is open exactly when the core's offer is the card (the core's rule: an outro to the end
+    /// of the file opens it with the outro; every other episode, long or short, shows it for the last seven seconds),
+    /// with the fill the core runs (`SectionLogic.countdown(position:duration:)`, the same seven seconds or what is left of
+    /// the file). The skip buttons stay the sections' rule (`base`). `nil` when the old way plays: the screen then keeps its
+    /// own rule.
+    func coreOfferFeed(base: ButtonOffering, position: Double, duration: Double)
+        -> (offering: ButtonOffering, cardDue: Bool, countdown: Double)? {
+        guard let core = avEngine as? CorePlaybackBackend else { return nil }
+        let countdown = SectionLogic.countdown(position: position, duration: duration)
+        guard case .card = core.offerNow else { return (base, false, countdown) }
+        return (.nextEpisode, true, countdown)
+    }
+
     /// `true` when the core decides auto skip and the next episode for this title (so the screen must not).
     var coreDecides: Bool { avEngine is CorePlaybackBackend }
     func coreAdopt(next: Item?, sections: [JellyfinKit.Segment]?) {
@@ -333,6 +413,8 @@ extension VLCPlayerView {
     func coreForgetLookup() { corePendingNext = nil; corePendingSections = nil; corePendingChapters = nil; corePendingTrickplay = nil }
     func coreNetworkChanged(_ favorable: Bool) { (avEngine as? CorePlaybackBackend)?.networkChanged(favorable) }
     func coreTakeCalls() -> CorePlaybackBackend.Calls? { (avEngine as? CorePlaybackBackend)?.takeCalls() }
+    /// The plan for the switch the core asked for did not come: the old title plays on (see `CorePlaybackBackend.switchFailed`).
+    func coreSwitchFailed() { (avEngine as? CorePlaybackBackend)?.switchFailed() }
     func coreChooseQuality(_ limit: Int?) { (avEngine as? CorePlaybackBackend)?.chooseQuality(limit) }
     func coreAdopt(chapters: [Chapter]) {
         corePendingChapters = chapters
@@ -344,6 +426,8 @@ extension VLCPlayerView {
     }
     /// The core's scrub preview tile: `nil` when the old way plays (the screen then computes it), `.some(nil)` for none.
     var corePreview: PlayerPreview?? { (avEngine as? CorePlaybackBackend).map { $0.previewNow } }
+    var coreChapters: PlayerChapters? { (avEngine as? CorePlaybackBackend)?.chapterList }
+    func coreJump(toChapter index: Int) { (avEngine as? CorePlaybackBackend)?.jumpToChapter(index) }
     func corePressOffer() { (avEngine as? CorePlaybackBackend)?.pressOffer() }
     func coreDismissOffer() { (avEngine as? CorePlaybackBackend)?.dismissOffer() }
     func coreRemoteToggle() { (avEngine as? CorePlaybackBackend)?.remoteToggle() }

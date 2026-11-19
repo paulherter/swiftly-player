@@ -129,6 +129,55 @@ final class SubtitleRenderTests: XCTestCase {
         }
     }
 
+    /// **Right-to-left lines are shaped and ordered by the text engine, not drawn as boxes or left to right.**
+    /// The app's face (Inter) has no Arabic or Hebrew glyphs: CoreText must fall back to a system face for those runs,
+    /// shape them (diacritics and joining letters give fewer glyphs than characters, no `.notdef` glyph 0), and set the
+    /// paragraph from the first strong character (a right-to-left line starts with a right-to-left run; digits and Latin
+    /// inside it stay left-to-right runs). Looks at the very attributed strings the overlay draws, so it holds on iOS and macOS.
+    func testRightToLeftLinesAreShapedAndOrdered() {
+        let lines: [(name: String, text: String, latin: String?)] = [
+            ("arabic-diacritics", "لَا يُمْكِنُكَ الهَرَبُ مِنَ الماضِي، مَهْمَا حَاوَلْتَ", nil),
+            ("arabic-mixed", "الحلقة 12: مرحبًا بك في Netflix عام 2024!", "Netflix"),
+            ("hebrew-points", "אֵין אֶפְשָׁר לִבְרֹחַ מֵהֶעָבָר, לֹא מְשַׁנֶּה כַּמָּה תְּנַסֶּה", nil),
+            ("hebrew-mixed", "בשנת 2024 נפגש ב-Tel Aviv בשעה 17:30.", "Tel"),
+        ]
+        for (name, text, latin) in lines {
+            let (outline, _) = SubtitleOverlay.strings(text, runs: SubtitleScript.runs(in: text), look: .standard, size: 60)
+            let setter = CTFramesetterCreateWithAttributedString(outline)
+            let frame = CTFramesetterCreateFrame(setter, CFRangeMake(0, 0), CGPath(rect: CGRect(x: 0, y: 0, width: 4000, height: 400), transform: nil), nil)
+            let ctLines = CTFrameGetLines(frame) as! [CTLine]
+            XCTAssertEqual(ctLines.count, 1, "\(name): one line expected at this width")
+            guard let first = ctLines.first else { continue }
+            let runs = CTLineGetGlyphRuns(first) as! [CTRun]
+            var glyphs = 0, notdef = 0, fellBack = false, sawLatinLTR = false
+            for run in runs {
+                let count = CTRunGetGlyphCount(run)
+                var ids = [CGGlyph](repeating: 0, count: count)
+                CTRunGetGlyphs(run, CFRangeMake(0, 0), &ids)
+                glyphs += count
+                notdef += ids.filter { $0 == 0 }.count
+                let attrs = CTRunGetAttributes(run) as NSDictionary
+                let font = attrs[kCTFontAttributeName] as! CTFont
+                let face = CTFontCopyPostScriptName(font) as String
+                let range = CTRunGetStringRange(run)
+                let piece = (text as NSString).substring(with: NSRange(location: range.location, length: range.length))
+                let rtl = CTRunGetStatus(run).contains(.rightToLeft)
+                if piece.unicodeScalars.contains(where: { (0x0590...0x08FF).contains($0.value) }) {
+                    XCTAssertTrue(rtl, "\(name): a right-to-left run was laid out left to right: \(piece)")
+                    if !face.hasPrefix("Inter") { fellBack = true }
+                }
+                if let latin, piece.contains(latin) { sawLatinLTR = !rtl }
+            }
+            XCTAssertEqual(notdef, 0, "\(name): missing glyphs (boxes)")
+            XCTAssertTrue(fellBack, "\(name): the script was drawn with the app face, which has no glyphs for it")
+            // Only the lines with marks (the unmixed ones): marks combine with their letter, so fewer glyphs than code points.
+            if latin == nil { XCTAssertLessThan(glyphs, text.unicodeScalars.count, "\(name): marks were not combined or letters not joined (\(glyphs) glyphs for \(text.unicodeScalars.count) code points)") }
+            if latin != nil { XCTAssertTrue(sawLatinLTR, "\(name): the Latin word inside was not kept left to right") }
+            // The first run on screen (leftmost) of a right-to-left line is its last words, so its status is right-to-left too.
+            XCTAssertTrue(CTRunGetStatus(runs[0]).contains(.rightToLeft) || latin != nil, "\(name): paragraph direction is not right-to-left")
+        }
+    }
+
     /// **The overlay follows a change of the saved look at once** (the settings arrive from the server late,
     /// or the look is changed while a title plays), not only at the next title.
     func testOverlayFollowsTheStore() async throws {

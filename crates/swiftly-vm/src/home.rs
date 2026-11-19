@@ -26,10 +26,12 @@ use swiftly_net::{ErrorKind, HttpTransport};
 
 use crate::account::AccountRef;
 use crate::bell::{Bell, Changed, part};
+use crate::home_views::ViewsOnce;
 use crate::host::{Host, Shared};
 use crate::load_state::{Load, LoadFailure};
 use crate::parts::{
-    HomeIntent, ImageKind, ImageRef, Rail, RailKind, RailsPart, Status, StatusPart, Tile,
+    HomeIntent, ImageKind, ImageRef, NoticePart, Rail, RailKind, RailsPart, Status, StatusPart,
+    Tile,
 };
 use crate::plex::{Plex, build_plex_client, is_plex};
 use crate::tile::{Words, kind_of, tile_at};
@@ -99,6 +101,10 @@ struct Live<T: HttpTransport + 'static> {
     windows: HashMap<String, usize>,
     rails: Arc<RailsPart>,
     status: Arc<StatusPart>,
+    /// The hint part as published, and the hint as it stands now (`publish` makes the one the other).
+    notice: Arc<NoticePart>,
+    notice_seq: u64,
+    notice_message: Option<String>,
     abort: Option<AbortHandle>,
     /// The chosen libraries and collections (`startBibliotheken`), set by the host; empty: no library rows.
     libraries: Vec<swiftly_library::start_libraries::StartLibrary>,
@@ -184,6 +190,26 @@ impl<T: HttpTransport + 'static> HomeVm<T> {
         self.inner.publish(&mut live);
     }
 
+    /// Where the Seerr sections stand among the rails of the last `rails()` part, for hosts that draw their rails
+    /// from the list: `(section, index to insert it at)`, in the order of the user's Home list (Settings >
+    /// Darstellung > Startseite; new sections on top). Whether a section has anything to draw is the Seerr block's
+    /// business (`SeerrHomeInfo`: the "Meine Anfragen" rail and the arrivals are empty while their switch is off).
+    pub fn seerr_places(
+        &self,
+        form: swiftly_library::HomeForm,
+    ) -> Vec<(swiftly_library::SeerrSection, usize)> {
+        let live = self.inner.live();
+        let order = swiftly_library::StartOrder::applicable_for(
+            &live.row_order,
+            self.inner.prefs.disconnected,
+            &live.libraries,
+            true,
+            form,
+        );
+        let ids: Vec<&str> = live.rails.rails.iter().map(|r| r.id.as_str()).collect();
+        swiftly_library::StartOrder::seerr_places(&order, &ids)
+    }
+
     /// Sets the stored combined row order (`startReihenfolge`: fixed raw values and `library:<id>`) before a load, or
     /// after the user moved a row; the rails part updates at once. Empty: the old order.
     pub fn set_row_order(&self, order: Vec<String>) {
@@ -236,6 +262,13 @@ impl<T: HttpTransport + 'static> HomeVm<T> {
                 preview: false,
                 refreshing: false,
             }),
+            notice: Arc::new(NoticePart {
+                version: 1,
+                seq: 0,
+                message: None,
+            }),
+            notice_seq: 0,
+            notice_message: None,
             abort: None,
             libraries: Vec::new(),
             row_order: Vec::new(),
@@ -316,6 +349,18 @@ impl<T: HttpTransport + 'static> HomeVm<T> {
         Arc::clone(&self.inner.live().rails)
     }
 
+    /// The hint part: a refused removal raises one (see [`HomeIntent::RemoveFromContinue`]).
+    pub fn notice(&self) -> Arc<NoticePart> {
+        Arc::clone(&self.inner.live().notice)
+    }
+
+    /// Whether a removal from "Continue watching" still waits for the server's answer. The answer shows as a hint
+    /// (refusal) or lets the rows follow the server (yes); a host that sleeps between frames keeps frames coming
+    /// meanwhile.
+    pub fn removal_pending(&self) -> bool {
+        self.inner.live().state.removal_pending()
+    }
+
     /// Display data for `count` titles of a rail from `start` on (beyond the window).
     pub fn tiles(&self, rail: &str, start: usize, count: usize) -> Vec<Tile> {
         let live = self.inner.live();
@@ -375,6 +420,10 @@ impl<T: HttpTransport + 'static> HomeVm<T> {
             HomeIntent::Refresh => Inner::start(inner, false),
             HomeIntent::AccountSwitched { account } => Inner::switch_account(inner, account),
             HomeIntent::Visible { rail } => inner.visible(&rail),
+            HomeIntent::RemoveFromContinue { item_id } => {
+                Inner::remove_from_continue(inner, item_id);
+            }
+            HomeIntent::DismissNotice => inner.dismiss_notice(),
         }
     }
 }
@@ -507,10 +556,20 @@ impl<T: HttpTransport + 'static> Inner<T> {
         {
             changed.push(1);
         }
+        if (live.notice.seq, &live.notice.message) != (live.notice_seq, &live.notice_message) {
+            changed.push(2);
+        }
         if changed.is_empty() {
             return;
         }
         let version = self.bell.bump(&changed);
+        if changed.contains(&2) {
+            live.notice = Arc::new(NoticePart {
+                version,
+                seq: live.notice_seq,
+                message: live.notice_message.clone(),
+            });
+        }
         if changed.contains(&0) {
             live.rails = Arc::new(RailsPart { version, rails });
         }
@@ -522,7 +581,9 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 refreshing,
             });
         }
-        const { assert!(part::RAILS == 1 << 0 && part::STATUS == 1 << 1) };
+        const {
+            assert!(part::RAILS == 1 << 0 && part::STATUS == 1 << 1 && part::NOTICE == 1 << 2);
+        };
     }
 
     /// A run is in flight (`runningRuns > 0`).
@@ -570,6 +631,65 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 self.publish(&mut live);
             }
         }
+    }
+
+    /// **"Remove from Continue Watching".** The title leaves the row in the one state transition
+    /// (`HomeState::remove_from_continue`) and the rails part is published before anything is asked of the server; the
+    /// request then runs on the host's spawner. A refusal puts the title back at its old place and raises one hint in
+    /// the same update; an answer for an account that is no longer on screen is dropped. A success changes no row:
+    /// the lists of the account are marked stale (the cache tells every screen, this page included) so what the
+    /// server now says shows up, for example the title in the next-episode row.
+    fn remove_from_continue(self: &Arc<Self>, id: String) {
+        let mut live = self.live();
+        let Some(client) = live.client.clone() else {
+            return;
+        };
+        // Plex's "remove from continue watching" also takes the title out of On Deck, the next-episode row.
+        let also_next = matches!(client, Source::Plex(_));
+        if !live.state.remove_from_continue(&id, also_next) {
+            return;
+        }
+        let switch = live.switch;
+        let account = live.account.clone();
+        self.publish(&mut live);
+        drop(live);
+        let inner = Arc::clone(self);
+        self.host.spawner.spawn(Box::pin(async move {
+            let answer = match &client {
+                Source::Jellyfin(c) => c.point_back_set(&id).await,
+                Source::Plex(c) => {
+                    swiftly_playback::media_server::MediaServer::point_back_set(&**c, &id).await
+                }
+            };
+            let mut live = inner.live();
+            if live.switch != switch {
+                return;
+            }
+            match answer {
+                Ok(()) => {
+                    live.state.removal_confirmed(&id);
+                    drop(live);
+                    // Outside the lock: the cache calls the watchers, this page's included.
+                    if let (Some(cache), Some(account)) = (inner.host.cache.as_ref(), account) {
+                        cache.lists_changed(&account);
+                    }
+                }
+                Err(_) => {
+                    live.state.removal_failed(&id);
+                    live.notice_seq += 1;
+                    live.notice_message =
+                        Some(inner.words.title("Das Entfernen hat nicht geklappt."));
+                    inner.publish(&mut live);
+                }
+            }
+        }));
+    }
+
+    /// The host showed the hint.
+    fn dismiss_notice(&self) {
+        let mut live = self.live();
+        live.notice_message = None;
+        self.publish(&mut live);
     }
 
     /// `Load` forces a run, `Refresh` only starts one when the rows are 30 s old (`needsRefresh`).
@@ -635,11 +755,20 @@ impl<T: HttpTransport + 'static> Inner<T> {
                 client,
                 key,
             };
+            let source = ctx.client.clone();
+            let offering = crate::offered::Whose::new(&ctx.key, &ctx.inner.host);
             if Abortable::new(ctx.drive(commands), registration)
                 .await
                 .is_ok()
             {
                 guard.armed = false;
+                // The rows are up: ask what the account offers around its titles (its collections) while nobody
+                // waits, so the first detail page finds it ready (`HomePageModel` -> `offeringLoad`).
+                let server = match source {
+                    Source::Jellyfin(c) => crate::detail::Server::Jelly(c),
+                    Source::Plex(c) => crate::detail::Server::Plex(c),
+                };
+                server.refresh_offering(&offering).await;
             }
         }));
     }
@@ -732,24 +861,22 @@ impl<T: HttpTransport + 'static> RunCtx<T> {
             let live = inner.live();
             live.state.views_command(live.views.is_empty())
         };
-        match views_command {
-            Some(HomeCommand::LoadViews { wait: true }) => self.load_views(client).await,
-            Some(HomeCommand::LoadViews { wait: false }) => {
-                let again = RunCtx {
-                    inner: Arc::clone(&self.inner),
-                    run,
-                    switch: self.switch,
-                    client: self.client.clone(),
-                    key: String::new(),
-                };
-                inner.host.spawner.spawn(Box::pin(async move {
-                    match again.client.clone() {
-                        Source::Jellyfin(c) => again.load_views(&*c).await,
-                        Source::Plex(c) => again.load_views(&*c).await,
-                    }
-                }));
-            }
-            _ => {}
+        // With none known the request goes out together with the rows (step 3), not ahead of them.
+        let wait_views = matches!(views_command, Some(HomeCommand::LoadViews { wait: true }));
+        if let Some(HomeCommand::LoadViews { wait: false }) = views_command {
+            let again = RunCtx {
+                inner: Arc::clone(&self.inner),
+                run,
+                switch: self.switch,
+                client: self.client.clone(),
+                key: String::new(),
+            };
+            inner.host.spawner.spawn(Box::pin(async move {
+                match again.client.clone() {
+                    Source::Jellyfin(c) => again.load_views(&*c).await,
+                    Source::Plex(c) => again.load_views(&*c).await,
+                }
+            }));
         }
         {
             let mut live = inner.live();
@@ -760,6 +887,17 @@ impl<T: HttpTransport + 'static> RunCtx<T> {
         }
 
         // 3. Fixed rows, with the genre rows fetched alongside (`async let genres`).
+        // The ticket is taken before the fetch: an answer that outlives a sign-out is not written back.
+        let ticket = {
+            let live = inner.live();
+            match (inner.host.cache.as_ref(), live.account.as_ref()) {
+                (Some(cache), Some(account)) => Some((
+                    cache.clone(),
+                    cache.ticket(&crate::cache::ViewCache::scope(account)),
+                )),
+                _ => None,
+            }
+        };
         let (wish, names) = {
             let live = inner.live();
             let mut wish = LoadRequest::new(prefs.disconnected);
@@ -782,13 +920,23 @@ impl<T: HttpTransport + 'static> RunCtx<T> {
                 HomeLoader::genre_rails(client, &names).await
             }
         }));
-        let mut load = pin!(HomeLoader::load(client, &wish));
+        // The libraries are asked once: from the snapshot when it had them, else in the same wave as the rows.
+        let known_views = inner.live().views.clone();
+        let views = ViewsOnce::new(client, known_views);
+        let mut views_load = pin!(maybe_done(async {
+            if wait_views {
+                self.load_views(&views).await;
+            }
+        }));
+        let mut load = pin!(HomeLoader::load(&views, &wish));
         let home = std::future::poll_fn(|cx| {
             let _ = genres.as_mut().poll(cx);
             let _ = library_rows.as_mut().poll(cx);
+            let _ = views_load.as_mut().poll(cx);
             load.as_mut().poll(cx)
         })
         .await;
+        views_load.as_mut().await;
         let fixed = {
             let mut live = inner.live();
             let (switch, now) = (live.switch, inner.host.clock.now());
@@ -847,11 +995,31 @@ impl<T: HttpTransport + 'static> RunCtx<T> {
                 live.preview = false;
             }
         }
+        // What the rows said of their titles is the seed of a page opened from one of their tiles (description, genres,
+        // picture tags and BlurHashes in its first frame). Not what a page without a server shows.
+        let noted: Vec<Item> = if live.state.disrupted {
+            Vec::new()
+        } else {
+            all_rails(live, &inner.prefs)
+                .into_iter()
+                .flat_map(|rail| rail.4.iter().cloned())
+                .collect()
+        };
         inner.publish(live);
         drop(guard);
         // The snapshot goes to the host's store (foreign code) after the lock is released.
         for (account, store) in writes {
             store.save(&*inner.host.preview_store(&account), &account);
+        }
+        if let Some((cache, ticket)) = ticket {
+            cache.note_tiles(&ticket, &noted);
+            // The series the rows show are asked ahead (seasons, state, first episodes): a page opened from one of
+            // their tiles has its season picker and episode rows in frame 1 (recipe step 5, "tile visible").
+            let account = inner.live().account.clone();
+            if let Some(account) = account {
+                crate::series::warm(&inner.transport, &inner.host, &account, &noted);
+                crate::proof_mark::warm(&inner.transport, &inner.host, &account, &noted);
+            }
         }
     }
 

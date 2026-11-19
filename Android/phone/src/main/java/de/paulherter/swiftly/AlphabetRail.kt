@@ -102,8 +102,11 @@ private fun thinned(letters: List<LetterEntry>, slots: Int): List<LetterEntry> {
 }
 
 /**
- * Mirrors `LibraryModel.jumpTarget`: the index of the first title of a letter, loading up to it in
- * steps sized by where the letter starts in the list. Shared by the library and the collection.
+ * The index of the first title of a letter, loading up to it in steps sized by where the letter starts in the list.
+ * The target is the strip's own position (`ab`, where the letter starts in the whole ordered list), not a search over
+ * the loaded tiles: a tile's own letter is made without the sort name, so it can differ from the strip's ("The Adam
+ * Project" is an A in the strip), and a letter no tile carries used to end on the last loaded title.
+ * Shared by the library and the collection, phone and TV.
  */
 suspend fun alphabetJumpTarget(letter: String, letters: List<LetterEntry>, items: () -> List<GridTile>,
                                stillMore: () -> Boolean, busy: () -> Boolean,
@@ -111,14 +114,15 @@ suspend fun alphabetJumpTarget(letter: String, letters: List<LetterEntry>, items
     val start = letters.firstOrNull { it.letter == letter }?.first ?: return null
     repeat(20) {
         val now = items()
-        now.indexOfFirst { it.letter == letter }.takeIf { it >= 0 }?.let { return it }
+        if (start < now.size) return start
         if (!stillMore()) return now.lastIndex.takeIf { it >= 0 }
         // A page being appended right now blocks loading more; wait for it.
         if (busy()) { kotlinx.coroutines.delay(100); return@repeat }
         loadMore(maxOf(60L, (start - now.size).toLong() + 60L))
         if (items().size == now.size) return now.lastIndex.takeIf { it >= 0 }
     }
-    return items().lastIndex.takeIf { it >= 0 }
+    val now = items()
+    return if (start < now.size) start else now.lastIndex.takeIf { it >= 0 }
 }
 
 /** Mirrors `AlphabetRail.width`. */

@@ -15,11 +15,35 @@ use crate::query::build_url;
 use crate::session::{ServerKind, Session};
 
 const LIST_FIELDS: &str = "Overview,PrimaryImageAspectRatio,ProviderIds";
-/// [`LIST_FIELDS`] without the description, for tiles (`ClientConfig::lean_tiles`).
-const TILE_FIELDS: &str = "PrimaryImageAspectRatio,ProviderIds";
-/// The page fields of `items` without the description.
+/// The fields of a tile (`ClientConfig::lean_tiles`). The description and the genres stay in: a detail page opened from
+/// the tile seeds its text from this answer and shows it in its first frame.
+const TILE_FIELDS: &str = "Overview,Genres,PrimaryImageAspectRatio,ProviderIds,ChildCount";
+/// The page fields of `items` for tiles.
 const TILE_FIELDS_SORTED: &str =
-    "PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,ChildCount";
+    "Overview,Genres,PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,ChildCount";
+/// The picture types a tile carries tags and BlurHashes for: the poster and what its detail page's head shows (the
+/// backdrop and the title logo), so the page's head picture and blurred stand-in are known from the tile.
+const TILE_IMAGE_TYPES: &str = "Primary,Backdrop,Logo";
+
+/// What the core needs to tell an empty series from a full one (Jellyfin `ChildCount`: seasons, `RecursiveItemCount`:
+/// episodes the server shows this user; placeholder "missing" episodes only count when the user asked for them).
+/// Asked only while "Leere Serien ausblenden" is on; the list decode drops the series that answer 0
+/// ([`swiftly_model::switches::without_hollow_series`]).
+fn with_counts(fields: &str) -> String {
+    if !swiftly_model::switches::hides_empty_series() {
+        return fields.to_owned();
+    }
+    let mut out = fields.to_owned();
+    for name in ["ChildCount", "RecursiveItemCount"] {
+        if !out.split(',').any(|f| f == name) {
+            if !out.is_empty() {
+                out.push(',');
+            }
+            out.push_str(name);
+        }
+    }
+    out
+}
 
 fn types(list: &[String]) -> String {
     list.join(",")
@@ -54,6 +78,8 @@ pub struct ItemsQuery {
     pub person_ids: Vec<String>,
     /// `Genres`, joined with a pipe because a genre may contain a comma.
     pub genres: Vec<String>,
+    /// `Years`: only titles produced in these years.
+    pub years: Vec<i32>,
     /// Only id, name and sort name, all of them (alphabet index): `Limit`, `StartIndex` and
     /// the list fields are dropped.
     pub slim: bool,
@@ -74,6 +100,7 @@ impl Default for ItemsQuery {
             ids: Vec::new(),
             person_ids: Vec::new(),
             genres: Vec::new(),
+            years: Vec::new(),
             slim: false,
         }
     }
@@ -192,11 +219,11 @@ impl<T: HttpTransport> JellyfinClient<T> {
             .add("SortOrder", &a.sort_order)
             .add(
                 "Fields",
-                if self.config.lean_tiles {
+                with_counts(if self.config.lean_tiles {
                     TILE_FIELDS_SORTED
                 } else {
                     "Overview,PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,ChildCount"
-                },
+                }),
             )
             .add("Recursive", if a.recursive { "true" } else { "false" });
         if let Some(p) = &a.parent_id {
@@ -217,17 +244,21 @@ impl<T: HttpTransport> JellyfinClient<T> {
         if !a.genres.is_empty() {
             q.push("Genres", a.genres.join("|"));
         }
+        if !a.years.is_empty() {
+            let years: Vec<String> = a.years.iter().map(i32::to_string).collect();
+            q.push("Years", years.join(","));
+        }
         if let Some(w) = a.is_watched {
             q.push("IsPlayed", w);
         }
         if self.config.lean_tiles && !a.slim {
-            // Grids show posters: one primary picture per item, no description.
-            q.push("EnableImageTypes", "Primary");
+            // Grids show posters; the detail page opened from a tile also seeds from its backdrop and logo tags.
+            q.push("EnableImageTypes", TILE_IMAGE_TYPES);
             q.push("ImageTypeLimit", 1);
         }
         if a.slim {
             q.0.retain(|(n, _)| !matches!(n.as_str(), "Limit" | "StartIndex" | "Fields"));
-            q.push("Fields", "SortName,DateCreated");
+            q.push("Fields", with_counts("SortName,DateCreated"));
             q.push("EnableImages", "false");
             q.push("EnableUserData", "false");
         }
@@ -252,6 +283,66 @@ impl<T: HttpTransport> JellyfinClient<T> {
             .total_record_count)
     }
 
+    /// The production years that exist among the titles of these kinds, newest first
+    /// (`Items/Filters`, the same list the web client's year filter reads). `parent_id` `None`
+    /// asks across all libraries.
+    pub async fn years_in(
+        &self,
+        parent_id: Option<&str>,
+        kinds: &[String],
+    ) -> Result<Vec<i32>, ErrorKind> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "PascalCase")]
+        struct Facets {
+            #[serde(default)]
+            years: Vec<i64>,
+        }
+        let s = self.require_session()?;
+        let mut q = Query::new()
+            .add("userId", &s.user_id)
+            .add("IncludeItemTypes", types(kinds))
+            .add("Recursive", "true");
+        if let Some(p) = parent_id {
+            q.push("ParentId", p);
+        }
+        let facets: Facets = self.send(self.get("Items/Filters", &q)?).await?;
+        let mut years: Vec<i32> = facets
+            .years
+            .into_iter()
+            .filter_map(|y| i32::try_from(y).ok())
+            .collect();
+        years.sort_unstable_by(|a, b| b.cmp(a));
+        years.dedup();
+        Ok(years)
+    }
+
+    /// One page of the audio tracks of every title of these kinds, for the language index:
+    /// id, kind, series, year and the tracks of each version (`MediaSources`). Episodes are
+    /// asked for too, because a series has no tracks of its own.
+    pub async fn media_scan(
+        &self,
+        parent_id: Option<&str>,
+        kinds: &[String],
+        start: usize,
+        limit: usize,
+    ) -> Result<ItemsResponse, ErrorKind> {
+        let s = self.require_session()?;
+        let mut q = Query::new()
+            .add("userId", &s.user_id)
+            .add("IncludeItemTypes", types(kinds))
+            .add("Recursive", "true")
+            .add("Fields", "MediaSources")
+            .add("SortBy", "SortName")
+            .add("StartIndex", start)
+            .add("Limit", limit)
+            .add("EnableImages", "false")
+            .add("EnableUserData", "false");
+        if let Some(p) = parent_id {
+            q.push("ParentId", p);
+        }
+        self.send(self.get("Items", &q)?).await
+    }
+
     /// Everything of one kind from a library, slim: id, name, year, provider ids (:553).
     pub async fn title_ids(
         &self,
@@ -260,10 +351,24 @@ impl<T: HttpTransport> JellyfinClient<T> {
         filters: &[String],
         is_watched: Option<bool>,
     ) -> Result<Vec<Item>, ErrorKind> {
+        self.title_ids_in(Some(parent_id), kinds, filters, is_watched)
+            .await
+    }
+
+    /// [`JellyfinClient::title_ids`] where the parent may be missing: then across all libraries.
+    pub async fn title_ids_in(
+        &self,
+        parent_id: Option<&str>,
+        kinds: &[String],
+        filters: &[String],
+        is_watched: Option<bool>,
+    ) -> Result<Vec<Item>, ErrorKind> {
         let s = self.require_session()?;
-        let mut q = Query::new()
-            .add("userId", &s.user_id)
-            .add("ParentId", parent_id)
+        let mut q = Query::new().add("userId", &s.user_id);
+        if let Some(p) = parent_id {
+            q.push("ParentId", p);
+        }
+        let mut q = q
             .add("IncludeItemTypes", types(kinds))
             .add("Recursive", "true")
             .add("Fields", "ProviderIds")
@@ -334,13 +439,16 @@ impl<T: HttpTransport> JellyfinClient<T> {
     /// Members of a collection, not recursive (:619).
     pub async fn collection_members(&self, collection: &str) -> Result<Vec<Item>, ErrorKind> {
         let s = self.require_session()?;
-        let q = Query::new()
+        let mut q = Query::new()
             .add("userId", &s.user_id)
             .add("ParentId", collection)
             .add("IncludeItemTypes", "Movie,Series")
             .add("Limit", 2000)
             .add("EnableImages", "false")
             .add("EnableUserData", "false");
+        if swiftly_model::switches::hides_empty_series() {
+            q.push("Fields", with_counts(""));
+        }
         Ok(self
             .send::<ItemsResponse>(self.get("Items", &q)?)
             .await?
@@ -481,7 +589,7 @@ impl<T: HttpTransport> JellyfinClient<T> {
         let q = Query::new()
             .add("userId", &s.user_id)
             .add("limit", limit * 2)
-            .add("Fields", "ProviderIds");
+            .add("Fields", with_counts("ProviderIds"));
         Ok(self
             .send::<ItemsResponse>(self.get(&format!("Items/{item_id}/Similar"), &q)?)
             .await?
@@ -520,12 +628,42 @@ impl<T: HttpTransport> JellyfinClient<T> {
             .add("Limit", limit)
             .add(
                 "Fields",
-                "Overview,PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,ChildCount",
+                // A hit opens its detail page from this answer, so lean mode carries the genres too.
+                with_counts(if self.config.lean_tiles {
+                    TILE_FIELDS_SORTED
+                } else {
+                    "Overview,PrimaryImageAspectRatio,ProviderIds,SortName,DateCreated,ChildCount"
+                }),
             );
         Ok(self
             .send::<ItemsResponse>(self.get("Items", &q)?)
             .await?
             .items)
+    }
+
+    /// The library item of a title by its TMDB id (`kind` is `Movie` or `Series`): `GET Items?AnyProviderIdEquals=tmdb.N`
+    /// (the Swift `JellyfinClient.itemID(tmdb:kind:)`). `None` when the server has no such title. The server may ignore
+    /// the filter, so the answer is checked against the id itself.
+    pub async fn item_id_by_tmdb(
+        &self,
+        tmdb: i64,
+        kind: &str,
+    ) -> Result<Option<String>, ErrorKind> {
+        let s = self.require_session()?;
+        let q = Query::new()
+            .add("userId", &s.user_id)
+            .add("Recursive", "true")
+            .add("IncludeItemTypes", kind)
+            .add("AnyProviderIdEquals", format!("tmdb.{tmdb}"))
+            .add("Fields", "ProviderIds")
+            .add("EnableImages", "false")
+            .add("EnableUserData", "false")
+            .add("Limit", 200);
+        let items = self
+            .send::<ItemsResponse>(self.get("Items", &q)?)
+            .await?
+            .items;
+        Ok(pick_tmdb(&items, tmdb, kind))
     }
 
     // ---- User data ------------------------------------------------------------------------
@@ -736,7 +874,7 @@ impl<T: HttpTransport> JellyfinClient<T> {
             return;
         }
         if posters_only {
-            q.push("EnableImageTypes", "Primary");
+            q.push("EnableImageTypes", TILE_IMAGE_TYPES);
         }
         q.push("ImageTypeLimit", 1);
         q.push("EnableTotalRecordCount", "false");
@@ -893,5 +1031,45 @@ impl<T: HttpTransport> JellyfinClient<T> {
             &q,
         )
         .ok()
+    }
+}
+
+/// The first item of `kind` whose TMDB id is `tmdb`.
+fn pick_tmdb(items: &[Item], tmdb: i64, kind: &str) -> Option<String> {
+    let want = tmdb.to_string();
+    items
+        .iter()
+        .find(|i| {
+            i.type_.as_deref().is_none_or(|t| t == kind)
+                && i.provider_ids
+                    .as_ref()
+                    .is_some_and(|ids| ids.get("Tmdb").or_else(|| ids.get("tmdb")) == Some(&want))
+        })
+        .map(|i| i.id.clone())
+}
+
+#[cfg(test)]
+mod tmdb_tests {
+    use super::*;
+
+    fn item(id: &str, kind: &str, tmdb: &str) -> Item {
+        Item {
+            id: id.into(),
+            type_: Some(kind.into()),
+            provider_ids: Some([("Tmdb".to_string(), tmdb.to_string())].into()),
+            ..Item::default()
+        }
+    }
+
+    #[test]
+    fn the_item_is_found_by_its_own_tmdb_id_and_kind() {
+        let items = vec![
+            item("a", "Movie", "1000"),
+            item("b", "Series", "1001"),
+            item("c", "Movie", "1001"),
+        ];
+        assert_eq!(pick_tmdb(&items, 1001, "Movie").as_deref(), Some("c"));
+        assert_eq!(pick_tmdb(&items, 1001, "Series").as_deref(), Some("b"));
+        assert_eq!(pick_tmdb(&items, 7, "Movie"), None);
     }
 }

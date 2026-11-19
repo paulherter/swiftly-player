@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use swiftly_library::library_filter::Sorting;
-use swiftly_library::{KeyValue, LibraryFilter, ShelfSource};
+use swiftly_library::{
+    FilterChoice, FilterGroupKind, KeyValue, LibraryFilter, ShelfSource, YearSpan,
+};
 use swiftly_vm::{
     AccountRef, Change, GridPart, LibraryIntent, LibraryStatus, LibraryStatusPart, Tile,
 };
@@ -26,6 +28,145 @@ pub enum LibraryFilter {
     Begun,
     Watchlist,
     Unwatched,
+}
+
+#[uniffi::remote(Record)]
+pub struct YearSpan {
+    pub from: i32,
+    pub to: i32,
+}
+
+#[uniffi::remote(Enum)]
+pub enum FilterGroupKind {
+    Status,
+    Years,
+    Language,
+}
+
+/// What picking a row of the filter sheet does; hand it to `LibraryVm::pick`.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum FilterPick {
+    /// The status filter.
+    Status { filter: LibraryFilter },
+    /// The year span, `None` for all years.
+    Years { years: Option<YearSpan> },
+    /// The audio language, `None` for any.
+    Language { language: Option<String> },
+}
+
+impl From<FilterChoice> for FilterPick {
+    fn from(choice: FilterChoice) -> Self {
+        match choice {
+            FilterChoice::Status(filter) => Self::Status { filter },
+            FilterChoice::Years(years) => Self::Years { years },
+            FilterChoice::Language(language) => Self::Language { language },
+        }
+    }
+}
+
+impl From<FilterPick> for FilterChoice {
+    fn from(pick: FilterPick) -> Self {
+        match pick {
+            FilterPick::Status { filter } => Self::Status(filter),
+            FilterPick::Years { years } => Self::Years(years),
+            FilterPick::Language { language } => Self::Language(language),
+        }
+    }
+}
+
+/// One line of the sheet drawn as one list (the core's `flat_rows`): the group heading sits on the first line of its
+/// group; a group still loading is one line without a `pick`.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FilterLinePart {
+    /// Hand to `LibraryVm::pick` when the line is tapped; `None` for the "loading" line.
+    pub pick: Option<FilterPick>,
+    /// The text in the interface language.
+    pub label: String,
+    /// It is the current pick of its group.
+    pub selected: bool,
+    /// How many titles it covers, where the server said.
+    pub count: Option<u64>,
+    /// The heading of the group this line opens.
+    pub heading: Option<String>,
+}
+
+/// One row of the filter sheet, ready to draw.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FilterRowPart {
+    /// Hand to `LibraryVm::pick` when the row is tapped.
+    pub pick: FilterPick,
+    /// The text in the interface language.
+    pub label: String,
+    /// It is the current pick of its group.
+    pub selected: bool,
+    /// How many titles it covers, where the server said.
+    pub count: Option<u64>,
+}
+
+/// A group of rows with its heading (empty for the first group).
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FilterGroupPart {
+    /// Which group.
+    pub kind: FilterGroupKind,
+    /// The heading.
+    pub title: String,
+    /// The rows; empty while `loading`.
+    pub rows: Vec<FilterRowPart>,
+    /// The choices are on their way: draw the heading with a quiet progress mark.
+    pub loading: bool,
+}
+
+/// The whole filter sheet: every platform draws exactly these groups and rows.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FilterSheetPart {
+    /// The sheet's title.
+    pub title: String,
+    /// Status, years, language (a group the server cannot do is not there).
+    pub groups: Vec<FilterGroupPart>,
+    /// The same rows as one list with the headings on their first line: draw this, do not rebuild it from `groups`.
+    pub lines: Vec<FilterLinePart>,
+    /// What the filter pill shows for the current picks ("Ungesehen \u{b7} 2010\u{2013}2019 \u{b7} Deutsch").
+    pub pill: String,
+}
+
+impl From<swiftly_library::FilterSheet> for FilterSheetPart {
+    fn from(sheet: swiftly_library::FilterSheet) -> Self {
+        let lines = sheet
+            .flat_rows()
+            .into_iter()
+            .map(|l| FilterLinePart {
+                pick: l.choice.map(Into::into),
+                label: l.label,
+                selected: l.selected,
+                count: l.count,
+                heading: l.heading,
+            })
+            .collect();
+        Self {
+            lines,
+            pill: sheet.pill,
+            title: sheet.title,
+            groups: sheet
+                .groups
+                .into_iter()
+                .map(|g| FilterGroupPart {
+                    kind: g.kind,
+                    title: g.title,
+                    loading: g.loading,
+                    rows: g
+                        .rows
+                        .into_iter()
+                        .map(|r| FilterRowPart {
+                            pick: r.choice.into(),
+                            label: r.label,
+                            selected: r.selected,
+                            count: r.count,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
 }
 
 #[uniffi::remote(Record)]
@@ -70,6 +211,9 @@ pub struct LibraryStatusPart {
     pub status: LibraryStatus,
     pub sorting: Sorting,
     pub filter: LibraryFilter,
+    pub years: Option<YearSpan>,
+    pub language: Option<String>,
+    pub sheet_stamp: u64,
     pub more_available: bool,
     pub loading_more: bool,
     pub refreshing: bool,
@@ -82,6 +226,9 @@ pub enum LibraryIntent {
     Load,
     SetSorting { sorting: Sorting },
     SetFilter { filter: LibraryFilter },
+    SetYears { years: Option<YearSpan> },
+    SetLanguage { language: Option<String> },
+    LoadFilterOptions,
     LoadMore,
     Visible { id: String, columns: u32 },
     SetWatched { id: String, on: bool },
@@ -218,6 +365,22 @@ impl LibraryVm {
         self.vm.send(intent);
     }
 
+    /// The filter sheet. `offered` are the status filters this page offers. Re-read it when
+    /// `status.sheet_stamp` or `status.filter` changed; send `LoadFilterOptions` when it opens.
+    pub fn filter_sheet(&self, offered: Vec<LibraryFilter>) -> FilterSheetPart {
+        self.vm.filter_sheet(&offered).into()
+    }
+
+    /// A row of the filter sheet was tapped: one call for every kind of row.
+    pub fn pick(&self, pick: FilterPick) {
+        self.vm.pick(pick.into());
+    }
+
+    /// What the filter pill shows now (status, year span, language), also before the sheet was ever opened.
+    pub fn pill_text(&self) -> String {
+        self.vm.pill_text()
+    }
+
     /// The letter strip of the list on screen (the whole "By name" list when fetched, else the loaded titles).
     /// Remembered for `key_of` and `jump_target`.
     pub fn alphabet(&self) -> AlphabetPart {
@@ -241,8 +404,8 @@ impl LibraryVm {
         self.vm.key_of(&id, strip.as_ref()?)
     }
 
-    /// Position among the loaded titles of the first one under `key`; `None`: not loaded yet (load more, ask
-    /// again).
+    /// Position in the list of the first title under `key` (the strip's own position, so it may lie past the
+    /// loaded tiles: load more, ask again); a letter without titles gives the next one that has some.
     pub fn jump_target(&self, key: String) -> Option<u64> {
         let strip = self.strip();
         self.vm.jump_target(&key, strip.as_ref()?).map(|i| i as u64)

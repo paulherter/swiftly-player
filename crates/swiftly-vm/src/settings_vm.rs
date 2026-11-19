@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use swiftly_l10n::{Arg, Locale, Translator};
 use swiftly_library::StartRail;
-use swiftly_rules::playback_selection::{BITRATE_LEVELS, SPAN_LEVELS, language_selection_all};
+use swiftly_rules::playback_selection::{BITRATE_LEVELS, SPAN_LEVELS, audio_language_selection};
 use swiftly_settings::options::BufferLevel;
 use swiftly_settings::{Key, KeyValueStore, SettingValue, Settings, keys};
 
@@ -102,6 +102,19 @@ pub struct SettingsContext {
     pub checking: bool,
     /// The answer of the last check, shown as the second line.
     pub check_result: Option<String>,
+}
+
+impl SettingsContext {
+    /// The Start page form of this device, for the Home rows (`swiftly_library::HomeForm`).
+    pub fn home_form(&self) -> swiftly_library::HomeForm {
+        use swiftly_library::HomeForm;
+        match self.platform {
+            Platform::Tv => HomeForm::Tv,
+            Platform::Desktop => HomeForm::Desktop,
+            _ if self.server_rows => HomeForm::Desktop,
+            _ => HomeForm::Handheld,
+        }
+    }
 }
 
 impl Default for SettingsContext {
@@ -409,8 +422,15 @@ impl<S: KeyValueStore + 'static> SettingsVm<S> {
 
     /// The Home rows and the chosen genres of the Appearance page, as stored for the current server.
     pub fn home(&self) -> crate::home_rows::HomeView {
-        let server = self.inner.live().context.server.clone();
-        crate::home_rows::view(&self.inner.settings, &server)
+        let (server, seerr, form) = {
+            let live = self.inner.live();
+            (
+                live.context.server.clone(),
+                live.context.seerr_connected,
+                live.context.home_form(),
+            )
+        };
+        crate::home_rows::view(&self.inner.settings, &server, seerr, form)
     }
 
     /// The pending question.
@@ -542,6 +562,9 @@ impl<S: KeyValueStore + 'static> Inner<S> {
 
     /// Replaces the parts whose content changed and rings the bell once.
     fn publish(&self, live: &mut Live) {
+        // At every publish, so a value that changed in the store (sync, a host page) is picked up too. The app's start
+        // already did the same (`apply_stored_settings`), so the switches never wait for this page.
+        crate::start_settings::load_core_switches(&self.settings);
         let sections = self.build(&live.context);
         let (old_sections, old_status) = {
             let shown = self.shown();
@@ -613,6 +636,16 @@ impl<S: KeyValueStore + 'static> Inner<S> {
                 }
                 self.put(&keys::START_AUS, off, fx)
             }
+            "leereSerienAusblenden" => {
+                self.put(&keys::LEERE_SERIEN_AUSBLENDEN, on, fx)?;
+                swiftly_model::switches::set_hide_empty_series(on);
+                Ok(())
+            }
+            "loeschenSperren" => {
+                self.put(&keys::LOESCHEN_SPERREN, on, fx)?;
+                swiftly_model::switches::set_server_delete_locked(on);
+                Ok(())
+            }
             "downloadsAn" => {
                 // Turning off deletes nothing unasked; with nothing stored there is nothing to ask.
                 if !on && live.context.stored_downloads > 0 {
@@ -649,33 +682,10 @@ impl<S: KeyValueStore + 'static> Inner<S> {
         Ok(())
     }
 
-    /// The combined order of the Home rows as the core heals it: stored ids that exist (fixed rows that fit now and
-    /// `library:` rows), then every missing fixed row in basic order.
-    fn home_order(&self, server: &str) -> Vec<String> {
-        let disconnected = self.get(&keys::NEU_GETRENNT);
-        let mut order: Vec<String> = Vec::new();
-        for id in self
-            .settings
-            .get_for_server(&keys::START_REIHENFOLGE, server)
-        {
-            let known = StartRail::from_raw(&id).is_some_and(|r| r.fits(disconnected))
-                || id.starts_with("library:");
-            if known && !order.contains(&id) {
-                order.push(id);
-            }
-        }
-        for rail in StartRail::ALL.into_iter().filter(|r| r.fits(disconnected)) {
-            let raw = rail.raw_value().to_owned();
-            if !order.contains(&raw) {
-                // Missing fixed rows go before the first library row.
-                let at = order
-                    .iter()
-                    .position(|o| o.starts_with("library:"))
-                    .unwrap_or(order.len());
-                order.insert(at, raw);
-            }
-        }
-        order
+    /// The combined order of the Home rows as the core heals it (`home_rows::order`: the fixed rows that fit now, the
+    /// chosen libraries and, with Seerr connected, its two sections).
+    fn home_order(&self, c: &SettingsContext) -> Vec<String> {
+        crate::home_rows::order(&self.settings, &c.server, c.seerr_connected, c.home_form())
     }
 
     /// The edits of the Home rows and genres; each one that changes something reports the keys it wrote.
@@ -687,14 +697,18 @@ impl<S: KeyValueStore + 'static> Inner<S> {
     ) -> Result<(), Rejected> {
         use crate::home_rows as h;
         let server = live.context.server.clone();
+        let seerr = live.context.seerr_connected;
+        let form = live.context.home_form();
         let settings = &self.settings;
         let (moved, names): (bool, &[&str]) = match edit {
             HomeEdit::Shift { id, delta } => (
-                h::shift_row(settings, &server, id, *delta).map_err(|e| store_error(&e))?,
+                h::shift_row(settings, &server, seerr, form, id, *delta)
+                    .map_err(|e| store_error(&e))?,
                 &["startReihenfolge", "startReihen"],
             ),
             HomeEdit::Drop { source, onto } => (
-                h::drop_row(settings, &server, source, onto).map_err(|e| store_error(&e))?,
+                h::drop_row(settings, &server, seerr, form, source, onto)
+                    .map_err(|e| store_error(&e))?,
                 &["startReihenfolge", "startReihen"],
             ),
             HomeEdit::AddLibrary(l) => {
@@ -739,7 +753,7 @@ impl<S: KeyValueStore + 'static> Inner<S> {
     ) -> Result<(), Rejected> {
         let rail = start_rail_of(key).ok_or(Rejected::UnknownKey)?;
         let server = live.context.server.clone();
-        let mut order = self.home_order(&server);
+        let mut order = self.home_order(&live.context);
         let shown: Vec<String> = order
             .iter()
             .filter(|o| StartRail::from_raw(o).is_some())
@@ -875,8 +889,20 @@ impl<S: KeyValueStore + 'static> Inner<S> {
             .collect()
     }
 
+    /// The subtitle languages: "Aus", the short table, then every other language (`language_list`).
     fn language_options(&self, empty: &str) -> Vec<ChoiceOption> {
-        language_selection_all(&self.t(empty))
+        crate::language_list::subtitle_selection(&self.t(empty), self.translator.locale())
+            .into_iter()
+            .map(|l| ChoiceOption {
+                value: l.value,
+                label: l.name,
+            })
+            .collect()
+    }
+
+    /// The audio languages: like the file, "Original" (the title's original language), then every language.
+    fn audio_language_options(&self) -> Vec<ChoiceOption> {
+        audio_language_selection(&self.t("Wie die Datei"), &self.t("Originalsprache"))
             .into_iter()
             .map(|l| ChoiceOption {
                 value: l.value,
@@ -982,12 +1008,7 @@ impl<S: KeyValueStore + 'static> Inner<S> {
         out.push(self.section(
             "Sprache",
             vec![
-                self.choice(
-                    "tonSprache",
-                    "Ton",
-                    self.language_options("Wie die Datei"),
-                    &audio,
-                ),
+                self.choice("tonSprache", "Ton", self.audio_language_options(), &audio),
                 self.choice(
                     "utSprache",
                     "Untertitel",
@@ -1141,6 +1162,12 @@ impl<S: KeyValueStore + 'static> Inner<S> {
             }),
             self.get(&keys::TITEL_ALS_LOGO),
         ));
+        look_rows.push(self.switch(
+            "leereSerienAusblenden",
+            "Leere Serien ausblenden",
+            Some("Serien ohne Folgen bleiben weg"),
+            self.get(&keys::LEERE_SERIEN_AUSBLENDEN),
+        ));
         out.push(self.section(
             if desk {
                 "Allgemein"
@@ -1182,17 +1209,25 @@ impl<S: KeyValueStore + 'static> Inner<S> {
             let disconnected = self.get(&keys::NEU_GETRENNT);
             let off = self.get(&keys::START_AUS);
             let rows: Vec<Row> = self
-                .home_order(&c.server)
+                .home_order(c)
                 .iter()
-                .filter_map(|id| StartRail::from_raw(id))
-                .filter(|r| r.fits(disconnected))
-                .map(|r| {
-                    self.switch(
+                .filter_map(|id| {
+                    if let Some(section) = swiftly_library::SeerrSection::from_id(id) {
+                        let on = crate::home_rows::seerr_on(&self.settings, section);
+                        return Some(self.switch(
+                            section.switch_key(),
+                            section.lists_name(),
+                            None,
+                            on,
+                        ));
+                    }
+                    let r = StartRail::from_raw(id).filter(|r| r.fits(disconnected))?;
+                    Some(self.switch(
                         start_row_key(r),
                         r.lists_name(),
                         None,
                         !off.iter().any(|o| o == r.raw_value()),
-                    )
+                    ))
                 })
                 .collect();
             out.push(self.section("Startseite", rows));
@@ -1311,6 +1346,15 @@ impl<S: KeyValueStore + 'static> Inner<S> {
                 enabled: true,
             });
         }
+        if c.capabilities.seerr {
+            // The one switch every "Vom Server löschen" action reads (`swiftly_model::switches`).
+            services.push(self.switch(
+                "loeschenSperren",
+                "Löschen vom Server sperren",
+                Some("Blendet „Vom Server löschen“ aus"),
+                self.get(&keys::LOESCHEN_SPERREN),
+            ));
+        }
         if c.server_rows && c.discord_presence {
             // Offered only where presence works (`serviceRows`).
             services.push(self.switch(
@@ -1353,10 +1397,14 @@ fn bool_key(name: &str) -> Option<&'static Key<bool>> {
         "alphabetAn" => &keys::ALPHABET_AN,
         "gesehenVonAn" => &keys::GESEHEN_VON_AN,
         "neuGetrennt" => &keys::NEU_GETRENNT,
+        "seerrArrivalHint" => &keys::SEERR_ARRIVAL_HINT,
+        "seerrRequestsRail" => &keys::SEERR_REQUESTS_RAIL,
         "askProfileAtLaunch" => &keys::ASK_PROFILE_AT_LAUNCH,
         "nurUeberWLAN" => &keys::NUR_UEBER_WLAN,
         "naechsteFolgeLaden" => &keys::NAECHSTE_FOLGE_LADEN,
         "einstellungenSync" => &keys::EINSTELLUNGEN_SYNC,
+        "leereSerienAusblenden" => &keys::LEERE_SERIEN_AUSBLENDEN,
+        "loeschenSperren" => &keys::LOESCHEN_SPERREN,
         _ => return None,
     })
 }
@@ -1542,8 +1590,94 @@ mod tests {
     }
 
     #[test]
+    fn automatic_subtitles_start_on_and_agree_with_the_start_rule() {
+        let (vm, _, store) = vm_with(SettingsContext::default());
+        // The page shows the default of the start rule: on, until the user turns it off ("never").
+        assert!(on(&vm, "utAuto"));
+        assert_eq!(
+            keys::UT_AUTO.default,
+            swiftly_playback::track_rule::AUTOMATIC_SUBTITLES_DEFAULT
+        );
+        vm.send(SettingsIntent::SetSwitch {
+            key: "utAuto".into(),
+            on: false,
+        })
+        .unwrap();
+        assert!(!on(&vm, "utAuto"));
+        assert_eq!(store.get_bool("utAuto"), Some(false));
+    }
+
+    #[test]
+    fn the_audio_language_row_offers_original_after_the_file_entry() {
+        let (vm, _, store) = vm_with(SettingsContext::default());
+        let RowControl::Choice {
+            options, selected, ..
+        } = row(&vm, "tonSprache").unwrap().control
+        else {
+            panic!("tonSprache is a choice");
+        };
+        assert_eq!(selected, "");
+        let shown: Vec<(&str, &str)> = options
+            .iter()
+            .take(3)
+            .map(|o| (o.value.as_str(), o.label.as_str()))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("", "Wie die Datei"),
+                ("Original", "Originalsprache"),
+                ("Deutsch", "Deutsch")
+            ]
+        );
+        // The start rule reads the same text.
+        assert_eq!(
+            options[1].value,
+            swiftly_playback::track_rule::ORIGINAL_WISH
+        );
+        assert_eq!(options.len(), swiftly_rules::language::ALL.len() + 2);
+        vm.send(SettingsIntent::SetChoice {
+            key: "tonSprache".into(),
+            value: "Original".into(),
+        })
+        .unwrap();
+        assert_eq!(store.get_string("tonSprache").as_deref(), Some("Original"));
+        let RowControl::Choice {
+            selected, shown, ..
+        } = row(&vm, "tonSprache").unwrap().control
+        else {
+            panic!("tonSprache is a choice");
+        };
+        assert_eq!(
+            (selected.as_str(), shown.as_str()),
+            ("Original", "Originalsprache")
+        );
+        // Subtitles have no such entry.
+        let RowControl::Choice { options, .. } = row(&vm, "utSprache").unwrap().control else {
+            panic!("utSprache is a choice");
+        };
+        assert!(options.iter().all(|o| o.value != "Original"));
+    }
+
+    #[test]
+    fn the_original_label_is_translated() {
+        let tr = Translator::new(Locale::parse("en"));
+        assert_eq!(tr.t("Originalsprache"), "Original language");
+        assert_eq!(
+            Translator::new(Locale::parse("ru")).t("Originalsprache"),
+            "Язык оригинала"
+        );
+    }
+
+    #[test]
     fn choosing_a_subtitle_language_switches_automatic_on() {
         let (vm, _, store) = vm_with(SettingsContext::default());
+        // A user who turned the switch off and then picks a language gets it back on.
+        vm.send(SettingsIntent::SetSwitch {
+            key: "utAuto".into(),
+            on: false,
+        })
+        .unwrap();
         assert!(!on(&vm, "utAuto"));
         vm.send(SettingsIntent::SetChoice {
             key: "utSprache".into(),
@@ -1657,6 +1791,7 @@ mod tests {
                 "verbindungPruefen",
                 "eigeneHeader",
                 "seerr",
+                "loeschenSperren",
                 "discordAnzeigen"
             ]
         );

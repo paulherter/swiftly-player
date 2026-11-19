@@ -3,10 +3,12 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use swiftly_jellyfin::{OwnHeader, OwnHeaders};
 
-/// `MediaStatus` of the API (`SeerrState`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// `MediaStatus` of the API (`SeerrState`): 1 unknown, 2 pending, 3 processing, 4 partially
+/// available, 5 available, 6 blocklisted, 7 deleted. A number outside 1...7 reads as `Opened`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum SeerrState {
     /// 1: nothing requested yet.
+    #[default]
     Opened,
     /// 2: waits for approval.
     WaitsSharing,
@@ -16,7 +18,9 @@ pub enum SeerrState {
     PartWayPresent,
     /// 5: available.
     Present,
-    /// 6: deleted.
+    /// 6: blocklisted, cannot be requested.
+    Blocklisted,
+    /// 7: deleted (can be requested again).
     Deleted,
 }
 
@@ -29,11 +33,12 @@ impl SeerrState {
             Self::Loads => 3,
             Self::PartWayPresent => 4,
             Self::Present => 5,
-            Self::Deleted => 6,
+            Self::Blocklisted => 6,
+            Self::Deleted => 7,
         }
     }
 
-    /// `SeerrState(rawValue:)`.
+    /// `SeerrState(rawValue:)`; `None` for a number the API does not define.
     pub fn from_raw(raw: i64) -> Option<Self> {
         Some(match raw {
             1 => Self::Opened,
@@ -41,9 +46,15 @@ impl SeerrState {
             3 => Self::Loads,
             4 => Self::PartWayPresent,
             5 => Self::Present,
-            6 => Self::Deleted,
+            6 => Self::Blocklisted,
+            7 => Self::Deleted,
             _ => return None,
         })
+    }
+
+    /// Total version of [`from_raw`](Self::from_raw): an unknown number is `Opened`.
+    pub fn from_raw_or_open(raw: i64) -> Self {
+        Self::from_raw(raw).unwrap_or(Self::Opened)
     }
 
     /// Can be requested (again).
@@ -63,16 +74,63 @@ impl Serialize for SeerrState {
     }
 }
 
+/// Never fails on a value of the server: unknown numbers, `null` and non-numbers read as `Opened`.
 impl<'de> Deserialize<'de> for SeerrState {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let raw = i64::deserialize(d)?;
-        Self::from_raw(raw).ok_or_else(|| serde::de::Error::custom("unknown Seerr state"))
+        let value = Option::<serde_json::Value>::deserialize(d)?;
+        Ok(value
+            .and_then(|v| v.as_i64())
+            .map_or(Self::Opened, Self::from_raw_or_open))
     }
+}
+
+/// Where TMDB pictures come from; `SWIFTLY_TMDB_IMAGES` (a base such as `http://host/t/p`) replaces it for test runs
+/// whose fixture serves its own pictures.
+fn tmdb_base() -> String {
+    std::env::var("SWIFTLY_TMDB_IMAGES")
+        .ok()
+        .map(|b| b.trim_end_matches('/').to_string())
+        .filter(|b| !b.is_empty())
+        .unwrap_or_else(|| "https://image.tmdb.org/t/p".to_string())
 }
 
 fn tmdb(path: Option<&str>, width: u32) -> Option<String> {
     let path = path.filter(|p| !p.is_empty())?;
-    Some(format!("https://image.tmdb.org/t/p/w{width}{path}"))
+    Some(format!("{}/w{width}{path}", tmdb_base()))
+}
+
+/// The sizes the Seerr pages ask TMDB for (the one place; hosts get finished URLs, never raw paths).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TmdbSize {
+    /// A cast member or person head.
+    Profile,
+    /// A poster in a tile or on a page.
+    Poster,
+    /// The wide picture of a page head.
+    Backdrop,
+    /// The still of an episode row.
+    Still,
+}
+
+impl TmdbSize {
+    fn width(self) -> u32 {
+        match self {
+            Self::Profile => 185,
+            Self::Poster => 342,
+            Self::Backdrop => 1280,
+            Self::Still => 300,
+        }
+    }
+}
+
+/// The finished URL of a TMDB picture path (`/abc.jpg`); `None` for a missing or empty path. A path that already is a
+/// URL stays as it is.
+pub fn tmdb_image(path: Option<&str>, size: TmdbSize) -> Option<String> {
+    let path = path.filter(|p| !p.is_empty())?;
+    if path.starts_with("http://") || path.starts_with("https://") {
+        return Some(path.to_string());
+    }
+    tmdb(Some(path), size.width())
 }
 
 /// A search or suggestion hit.

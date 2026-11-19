@@ -23,7 +23,9 @@ use swiftly_downloads::{
 };
 use swiftly_layout::{Align, Alignment, Axis, Rect, Size};
 use swiftly_model::Item;
-use swiftly_rules::download_audio::{language_options, track_options};
+use swiftly_rules::download_audio::{
+    language_options, preselected, track_options, wished_language,
+};
 use swiftly_rules::download_quality::DownloadQuality;
 use swiftly_ui::a11y::{A11yNode, Role};
 use swiftly_ui::components::color;
@@ -140,6 +142,29 @@ pub(crate) enum Sheet {
 /// The rules of the track names and the preselected track: the shared core ones (what the Mac uses).
 pub(crate) type TrackNames = swiftly_vm::TrackNames;
 
+/// The rules with the language of the device, so a download's sound starts on what the player would start on.
+fn rules_for(device_language: Option<String>) -> TrackNames {
+    TrackNames::german().with_device_language(device_language)
+}
+
+/// Where the sound is a choice it starts on what the start rule would play: the audio language of the settings
+/// (`tonSprache`, empty for none), then the language of the device; else on all tracks.
+fn start_audio(
+    rules: &TrackNames,
+    streams: &[Vec<AudioStream>],
+    options: &[DownloadAudioOption],
+    audio_language: &str,
+) -> DownloadAudioChoice {
+    if options.len() <= 2 {
+        return DownloadAudioChoice::All;
+    }
+    match streams {
+        [one] => preselected(rules, options, one, audio_language),
+        _ => wished_language(rules, options, audio_language)
+            .map_or(DownloadAudioChoice::All, DownloadAudioChoice::Language),
+    }
+}
+
 fn menu_of<T>(
     list: &[T],
     prefix: &str,
@@ -196,8 +221,8 @@ impl Sheet {
                     .then(|| menu_of(&offered, "sel.q:", |q| label(*q), |q| *q == s.sel.quality))
             }
             (Sheet::Season(s), "sel.sound") => {
-                let rules = TrackNames::german();
-                let (options, chosen) = (s.sel.audio_options(&rules), s.sel.audio(&rules, ""));
+                let rules = s.rules();
+                let (options, chosen) = (s.sel.audio_options(&rules), s.sound(&rules));
                 s.sel.audio_offered(&rules).then(|| {
                     menu_of(
                         &options,
@@ -245,10 +270,7 @@ impl Sheet {
                 .map(str::to_owned)
                 .to_vec();
                 v.extend((0..s.sel.offered(s.select_quality).len()).map(|i| format!("sel.q:{i}")));
-                v.extend(
-                    (0..s.sel.audio_options(&TrackNames::german()).len())
-                        .map(|i| format!("sel.a:{i}")),
-                );
+                v.extend((0..s.sel.audio_options(&s.rules()).len()).map(|i| format!("sel.a:{i}")));
                 for season in &s.seasons {
                     v.push(format!("sel.box:{}", season.id));
                     v.push(format!("sel.open:{}", season.id));
@@ -304,6 +326,7 @@ pub(crate) struct AddSheet {
     audio_opts: Vec<DownloadAudioOption>,
     audio: DownloadAudioChoice,
     pub anchor: Option<Rect>,
+    device_language: Option<String>,
 }
 
 impl AddSheet {
@@ -314,14 +337,16 @@ impl AddSheet {
         select: bool,
         mut streams: Vec<Vec<AudioStream>>,
         anchor: Option<Rect>,
+        device_language: Option<String>,
     ) -> AddSheet {
         streams.resize(items.len(), Vec::new());
         // A film chooses one track, several titles choose a language that the files share.
-        let rules = TrackNames::german();
+        let rules = rules_for(device_language.clone());
         let audio_opts = match streams.as_slice() {
             [one] => track_options(&rules, one),
             many => language_options(&rules, many),
         };
+        let audio = start_audio(&rules, &streams, &audio_opts, "");
         let files: Vec<(i64, Option<i64>)> =
             items.iter().map(|i| (i.bytes, i.runtime_ticks)).collect();
         let offered = DownloadQuality::offered(select, DownloadQuality::source_bitrate_of(&files));
@@ -349,9 +374,19 @@ impl AddSheet {
             clean: Vec::new(),
             streams,
             audio_opts,
-            audio: DownloadAudioChoice::All,
+            audio,
             anchor,
+            device_language,
         }
+    }
+
+    /// The same sheet with the audio language of the settings (`tonSprache`): the sound starts on it before the language of
+    /// the device, as the player does.
+    #[must_use]
+    pub fn with_audio_language(mut self, audio_language: &str) -> Self {
+        let rules = rules_for(self.device_language.clone());
+        self.audio = start_audio(&rules, &self.streams, &self.audio_opts, audio_language);
+        self
     }
 
     /// Whether the sound is a choice (all tracks and at least two more).
@@ -360,7 +395,7 @@ impl AddSheet {
     }
 
     fn version(&self) -> Vec<DownloadItem> {
-        let rules = TrackNames::german();
+        let rules = rules_for(self.device_language.clone());
         self.base
             .iter()
             .zip(&self.streams)
@@ -459,6 +494,9 @@ pub(crate) struct SeasonSheet {
     select_quality: bool,
     pub anchor: Option<Rect>,
     pictures: Pictures,
+    device_language: Option<String>,
+    /// `tonSprache`: the audio language of the settings, empty for none.
+    audio_language: String,
 }
 
 impl SeasonSheet {
@@ -487,7 +525,34 @@ impl SeasonSheet {
             select_quality,
             anchor,
             pictures,
+            device_language: None,
+            audio_language: String::new(),
         }
+    }
+
+    /// The same sheet with the audio language of the settings (`tonSprache`): the sound starts on it before the language of
+    /// the device, as the player does.
+    #[must_use]
+    pub fn with_audio_language(mut self, audio_language: &str) -> Self {
+        audio_language.clone_into(&mut self.audio_language);
+        self
+    }
+
+    /// The sound the sheet starts on (the choice made in it, else the start rule's).
+    fn sound(&self, rules: &TrackNames) -> DownloadAudioChoice {
+        self.sel.audio(rules, &self.audio_language)
+    }
+
+    /// The same sheet with the language of the device (`None` when the host does not know it).
+    #[must_use]
+    pub fn with_device_language(mut self, tag: Option<String>) -> Self {
+        self.device_language = tag;
+        self
+    }
+
+    /// The track rules of this sheet (with the language of the device).
+    fn rules(&self) -> TrackNames {
+        rules_for(self.device_language.clone())
     }
 
     /// Reads which episodes are already in the list and the free space.
@@ -503,8 +568,8 @@ impl SeasonSheet {
 
     /// The titles the selection yields, in the chosen quality.
     pub fn items(&self, now: f64) -> Vec<DownloadItem> {
-        let rules = TrackNames::german();
-        let choice = self.sel.audio(&rules, "");
+        let rules = self.rules();
+        let choice = self.sound(&rules);
         self.sel
             .selected_episodes()
             .iter()
@@ -567,7 +632,7 @@ impl SeasonSheet {
                 self.sel.quality = *q;
             }
         } else if let Some(i) = k.strip_prefix("a:").and_then(|i| i.parse::<usize>().ok()) {
-            if let Some(o) = self.sel.audio_options(&TrackNames::german()).get(i) {
+            if let Some(o) = self.sel.audio_options(&self.rules()).get(i) {
                 self.sel.audio_chosen = Some(o.choice.clone());
             }
         } else if k == "retry" {
@@ -942,14 +1007,14 @@ fn footer(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
             Alignment::LEADING,
         )
     };
-    let rules = TrackNames::german();
+    let rules = s.rules();
     let sound = s.sel.audio_offered(&rules).then(|| {
         mac_pick(
             cx,
             icons,
             "speaker-high",
             "Ton",
-            &sound_label(&s.sel.audio_options(&rules), &s.sel.audio(&rules, "")),
+            &sound_label(&s.sel.audio_options(&rules), &s.sound(&rules)),
             "sel.sound",
         )
     });
@@ -1040,5 +1105,134 @@ pub(crate) fn sheet_node(cx: &Cx, icons: &Icons, env: &Env, s: &Sheet) -> Node {
             env,
         ),
         None => scrim(card),
+    }
+}
+
+#[cfg(test)]
+mod device_language_tests {
+    use super::*;
+    use swiftly_downloads::{Art, DownloadItem};
+
+    fn track(index: i64, language: &str, is_default: bool) -> AudioStream {
+        AudioStream {
+            codec: Some("eac3".into()),
+            kind: "Audio".into(),
+            language: Some(language.into()),
+            display_title: None,
+            channels: Some(6),
+            is_default: Some(is_default),
+            index: Some(index),
+        }
+    }
+
+    fn sheet(device_language: Option<&str>) -> AddSheet {
+        let film = DownloadItem::new("film", "acct", Art::Film, "Film", 1_000_000, 0.0);
+        // An English file with a German dub; the file's default is the English track.
+        let streams = vec![vec![track(1, "eng", true), track(2, "ger", false)]];
+        AddSheet::new(
+            "Film".into(),
+            vec![film],
+            HashMap::new(),
+            false,
+            streams,
+            None,
+            device_language.map(str::to_owned),
+        )
+    }
+
+    #[test]
+    fn the_sound_of_a_download_starts_on_the_device_language_like_the_player() {
+        assert_eq!(sheet(Some("de-DE")).audio, DownloadAudioChoice::Track(2));
+        assert_eq!(
+            sheet(Some("en_US.UTF-8")).audio,
+            DownloadAudioChoice::Track(1)
+        );
+    }
+
+    /// The sheets started on the language of the device alone, so a German device with "English" in the settings still
+    /// started on the German dub; the settings come first, as in the player.
+    #[test]
+    fn the_audio_language_of_the_settings_comes_before_the_device_language_in_the_sheets() {
+        assert_eq!(
+            sheet(Some("de-DE")).with_audio_language("English").audio,
+            DownloadAudioChoice::Track(1)
+        );
+        assert_eq!(
+            sheet(Some("en-US")).with_audio_language("Deutsch").audio,
+            DownloadAudioChoice::Track(2)
+        );
+        // A setting the file does not hold falls back to the device language.
+        assert_eq!(
+            sheet(Some("de-DE")).with_audio_language("Français").audio,
+            DownloadAudioChoice::Track(2)
+        );
+        // Several titles choose a language.
+        let titles = || {
+            let film = |id: &str| DownloadItem::new(id, "acct", Art::Film, id, 1_000_000, 0.0);
+            let streams = vec![
+                vec![track(1, "eng", true), track(2, "ger", false)],
+                vec![track(1, "eng", true), track(2, "ger", false)],
+            ];
+            AddSheet::new(
+                "Two".into(),
+                vec![film("a"), film("b")],
+                HashMap::new(),
+                false,
+                streams,
+                None,
+                Some("de-DE".into()),
+            )
+        };
+        let english = DownloadAudioChoice::Language("English".into());
+        assert_eq!(titles().with_audio_language("English").audio, english);
+        assert_eq!(
+            titles().audio,
+            DownloadAudioChoice::Language("Deutsch".into())
+        );
+    }
+
+    #[test]
+    fn the_season_sheet_starts_on_the_audio_language_of_the_settings_then_the_device_language() {
+        let episodes: Vec<Item> = serde_json::from_str(
+            r#"[{"Id":"e1","Name":"One","IndexNumber":1,"ParentIndexNumber":1,"MediaSources":[{"Id":"m","Size":1000,"MediaStreams":[
+                {"Type":"Audio","Index":1,"Language":"eng","IsDefault":true,"Codec":"eac3","Channels":6},
+                {"Type":"Audio","Index":2,"Language":"ger","Codec":"eac3","Channels":6}]}]}]"#,
+        )
+        .expect("episodes");
+        let season = Item {
+            id: "s1".into(),
+            ..Item::default()
+        };
+        let sheet = |setting: &str| {
+            let mut s = SeasonSheet::new(
+                "acct".into(),
+                Item::default(),
+                vec![season.clone()],
+                HashMap::from([("s1".to_owned(), episodes.clone())]),
+                false,
+                None,
+                Pictures::default(),
+            )
+            .with_device_language(Some("de-DE".into()))
+            .with_audio_language(setting);
+            let all: Vec<&Item> = episodes.iter().collect();
+            s.sel.toggle(&all);
+            s
+        };
+        let start = |s: &SeasonSheet| s.sound(&s.rules());
+        assert_eq!(
+            start(&sheet("")),
+            DownloadAudioChoice::Language("Deutsch".into())
+        );
+        assert_eq!(
+            start(&sheet("English")),
+            DownloadAudioChoice::Language("English".into())
+        );
+    }
+
+    #[test]
+    fn without_a_device_language_or_a_matching_track_all_tracks_stay_the_start() {
+        assert_eq!(sheet(None).audio, DownloadAudioChoice::All);
+        assert_eq!(sheet(Some("fr-FR")).audio, DownloadAudioChoice::All);
     }
 }

@@ -201,9 +201,9 @@ class DownloadsFlowParityTest {
             AndroidKeyValueStore(Mem), AndroidHttpClient()).legacyDetail(account, "en")
         val failures = ArrayList<String>()
         same("dl-item", det.downloadItem(listOf("m0", "m9", "e1", "nope")), failures)
-        same("dl-audio-single", det.downloadAudioOptions(listOf("m9"), "deu", "en"), failures)
-        same("dl-audio-single-none", det.downloadAudioOptions(listOf("m0"), "deu", "en"), failures)
-        same("dl-audio-selection", det.downloadAudioOptions(listOf("m0", "m9"), "eng", "en"), failures)
+        same("dl-audio-single", det.downloadAudioOptions(listOf("m9"), "deu", "en", ""), failures)
+        same("dl-audio-single-none", det.downloadAudioOptions(listOf("m0"), "deu", "en", ""), failures)
+        same("dl-audio-selection", det.downloadAudioOptions(listOf("m0", "m9"), "eng", "en", ""), failures)
         val nine = """[{"id":"m9","konto":"u1","art":"film","titel":"Papierschiffe","bytes":1500000,"geladen":0,"stand":"wartet","gesehen":false,"angelegt":1,"nochAufDemServer":true,"container":"mp4","quelle":"src9"}]"""
         same("dl-with-audio-track", det.downloadWithAudio(nine, "track:3", "en"), failures)
         same("dl-with-audio-lang", det.downloadWithAudio(nine, "lang:eng", "en"), failures)

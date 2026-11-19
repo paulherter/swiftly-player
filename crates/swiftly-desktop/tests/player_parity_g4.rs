@@ -72,13 +72,19 @@ fn the_icon_rail_sits_at_the_mac_icon_top() {
     }
     let mut all = Vec::new();
     boxes(&s.a11y_nodes(), &mut all);
+    // Volume and fullscreen are 44 pt buttons; the capsule's halves are 40 x 36 on the same centre line.
     let rail: Vec<_> = all
         .iter()
-        .filter(|b| (b[2] - 44.0).abs() < 0.1 && (b[3] - 44.0).abs() < 0.1 && b[1] < 100.0)
+        .filter(|b| {
+            b[1] < 100.0
+                && ((b[2] - 44.0).abs() < 0.1 && (b[3] - 44.0).abs() < 0.1
+                    || (b[2] - 40.0).abs() < 0.1 && (b[3] - 36.0).abs() < 0.1)
+        })
         .collect();
-    assert!(rail.len() >= 5, "the rail buttons: {rail:?}");
+    assert!(rail.len() >= 4, "the rail buttons: {rail:?}");
     for b in rail {
-        assert!((b[1] - 35.5).abs() < 0.6, "rail button top {}", b[1]);
+        let mid = b[1] + b[3] / 2.0;
+        assert!((mid - 57.5).abs() < 0.6, "rail button centre {mid}");
     }
 }
 
@@ -89,7 +95,7 @@ fn a_film_has_no_episodes_button_and_a_transcode_is_named() {
         let mut all = Vec::new();
         boxes(&s.a11y_nodes(), &mut all);
         all.iter()
-            .filter(|b| (b[2] - 44.0).abs() < 0.1 && b[1] < 100.0)
+            .filter(|b| (b[2] - 40.0).abs() < 0.1 && (b[3] - 36.0).abs() < 0.1 && b[1] < 100.0)
             .count()
     };
     let mut s = screen();
@@ -101,7 +107,8 @@ fn a_film_has_no_episodes_button_and_a_transcode_is_named() {
     for t in 120..240 {
         let _ = s.frame(f64::from(t) * 16.0);
     }
-    assert_eq!(count(&s), with - 1, "the Folgen button leaves for a film");
+    // The capsule keeps its Folgen half for a film: it opens the Kapitel level (the core decides what the box lists).
+    assert_eq!(count(&s), with, "the Folgen half stays for a film");
     let lines = |s: &PlayerScreen| {
         let mut all = Vec::new();
         boxes(&s.a11y_nodes(), &mut all);

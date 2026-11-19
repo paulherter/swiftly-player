@@ -69,10 +69,13 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import de.paulherter.swiftly.rustcore.SeerrSeasonRowInfo
+import de.paulherter.swiftly.rustcore.SeerrTileCard
+import de.paulherter.swiftly.rustcore.SeerrTitleScreen
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class Season(val id: String, val name: String)
+data class Season(val id: String, val name: String, val number: Int? = null)
 data class EpisodesState(val id: String, val resume: Boolean, val remainingTime: String?, val progress: Double?,
                        val season: Int?, val episode: Int?, val since: Double? = null)
 data class Episode(val id: String, val title: String, val subline: String?, val image: String?,
@@ -93,7 +96,20 @@ data class Series(
     val backdrop: String? = null,
     /** Title logo if the server has one, see `TitleMark`. */
     val logo: String? = null,
+    /** The core's page seed (stored copies): seasons and state may still be missing. */
+    val seed: Boolean = false,
+    /** The picture the list tile showed, the hero's placeholder (see `Hero`). */
+    val tileImage: String? = null,
+    /** The series' TMDB id (from the server's provider ids): what the Seerr screens ask for. */
+    val tmdb: Long? = null,
+    /** The core's stored proof line of the episode the page offers (`beleg`, seed only): the chip shows from frame 1. */
+    val proofStored: Boolean = false,
+    /** The season button shows its chevron: the core's rule (`SeasonsPart.chevron`), always. */
+    val seasonChevron: Boolean = true,
 ) {
+    /** The proof chip has an answer to show: the fresh plan's, or the stored one of an earlier visit. */
+    val proofShown: Boolean get() = planPresent || proofStored
+
     /**
      * Year · seasons · genres. **A single season is shown by its name**, not as "1 season"; next
      * to "Play S2 · E1" that read like a contradiction.
@@ -103,21 +119,32 @@ data class Series(
             .joinToString(" · ")
 }
 
+/** Frame 1 of a series page (see `titleSeed`): the head, the seasons and the viewer's state the core stored. */
+internal fun seriesSeed(app: SwiftlyApplication, id: String): Series? =
+    app.rk.seriesSeed(id).takeIf { it.isNotEmpty() }?.let { runCatching { seriesRead(it) }.getOrNull() }
+
+/** The stored episode rows of one season, empty when the page never saw it. */
+internal fun episodesSeed(app: SwiftlyApplication, series: String, season: String): List<Episode> =
+    app.rk.episodesSeed(series, season).takeIf { it.isNotEmpty() }?.let { runCatching { episodesRead(it) }.getOrNull() }.orEmpty()
+
 internal fun seriesRead(json: String): Series = JSONObject(json).let { o ->
     Series(o.getString("id"), o.getString("name"), o.fieldText("jahr"), o.fieldText("staffelzeile"),
           if (o.isNull("staffelzahl")) null else o.getInt("staffelzahl"),
           o.fieldText("gattungen"), o.fieldText("kopfbild"), o.fieldNumber("bewertung"), o.fieldText("freigabe"),
           o.fieldText("beschreibung"), o.optBoolean("gemerkt"), o.optBoolean("gesehen"),
-          o.optBoolean("planDa"), o.optBoolean("lossless"), o.fieldText("methode"),
+          o.optBoolean("planDa"), o.optBoolean("lossless") || o.optJSONObject("beleg")?.optBoolean("lossless") == true,
+          o.fieldText("methode") ?: o.optJSONObject("beleg")?.fieldText("methode"),
           o.optJSONObject("stand")?.let { s ->
               EpisodesState(s.getString("id"), s.optBoolean("fortsetzen"), s.fieldText("restzeit"), s.fieldNumber("fortschritt"),
                           if (s.isNull("staffel")) null else s.getInt("staffel"), if (s.isNull("folge")) null else s.getInt("folge"), s.fieldNumber("ab"))
           },
           o.optString("knopftext"),
-          o.fieldList("staffeln") { Season(it.getString("id"), it.getString("name")) },
+          o.fieldList("staffeln") { Season(it.getString("id"), it.getString("name"), if (it.isNull("nummer") || !it.has("nummer")) null else it.getInt("nummer")) },
           o.fieldText("gewaehlt"),
           o.fieldList("darsteller") { WithAct(it.getString("id"), it.getString("name"), it.fieldText("rolle"), it.fieldText("bild")) },
-          if (o.has("kulisse")) o.fieldText("kulisse") else null, o.fieldText("logo"))
+          if (o.has("kulisse")) o.fieldText("kulisse") else null, o.fieldText("logo"),
+          o.optBoolean("vorab"), o.fieldText("kachelbild"), if (o.has("tmdb") && !o.isNull("tmdb")) o.getLong("tmdb") else null,
+          o.has("beleg"), o.optBoolean("staffelpfeil", true))
 }
 
 internal fun episodesRead(json: String): List<Episode> = JSONArray(json).let { a ->
@@ -138,9 +165,11 @@ internal fun episodesRead(json: String): List<Episode> = JSONArray(json).let { a
  */
 @Composable
 fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination) -> Unit, back: () -> Unit) {
-    var series by remember(target.id) { mutableStateOf(app.seriesCache[target.id]) }
+    var series by remember(target.id) { mutableStateOf(app.seriesCache[target.id] ?: seriesSeed(app, target.id)) }
     var season by remember(target.id) { mutableStateOf(series?.selected) }
-    var episodes by remember(target.id) { mutableStateOf(season?.let { app.episodesCache[it] }.orEmpty()) }
+    var episodes by remember(target.id) { mutableStateOf(season?.let { app.episodesCache[it] ?: episodesSeed(app, series?.id ?: target.id, it) }.orEmpty()) }
+    /** Play was pressed before the episode was known: the press starts once the series answer names it. */
+    var queuedPress by remember(target.id) { mutableStateOf(false) }
     /** Chosen by hand; a reload no longer corrects the season. */
     var selfSelected by remember(target.id) { mutableStateOf(false) }
     var similar by remember(target.id) { mutableStateOf<List<GridTile>?>(null) }
@@ -205,7 +234,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
             // Keep the already known schedule until the new one arrives, or the badge row flickers.
             val alt = series
             val new = if (alt != null && alt.state?.id == hasRead.state?.id)
-                hasRead.copy(planPresent = alt.planPresent, lossless = alt.lossless, method = alt.method) else hasRead
+                hasRead.copy(planPresent = alt.planPresent, lossless = alt.lossless, method = alt.method, proofStored = alt.proofStored) else hasRead
             val choice = if (!selfSelected || season == null) new.selected else season
             // **One fade-in, not two.** If no episode is there yet, series and episodes arrive in the same
             // frame; before, the series showed first with placeholders and the list then shrank to the
@@ -215,6 +244,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
             } catch (e: CancellationException) { throw e } catch (_: Exception) { null } else null
             series = new
             app.seriesCache[target.id] = new
+            if (queuedPress) new.state?.let { st -> queuedPress = false; playDefault(app, st.id, st.since) { jerk(Jerk.Medium) } }
             // Fetch the schedule only now: `planLoad` writes into `series`. Started earlier, `series` was still
             // empty on first open (the episode fetch runs before), the result was lost and the badge missing.
             new.state?.let { st -> section.launch { planLoad(st.id) } } ?: run { planLoaded = true }
@@ -262,6 +292,25 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
     val scroll = rememberScrollState()
     val density = LocalDensity.current.density
     val s = series
+    // The Seerr side (`SeerrTitleFlow` on Apple): the core's season rows for the chooser (the server's seasons normal, the rest
+    // grey and requestable) and the similar titles that are not on the server.
+    val seerrOn = app.seerrConnected.value
+    val libraryNumbers = s?.seasons.orEmpty().mapNotNull { it.number?.toLong() }
+    var seerrScreen by remember(target.id) { mutableStateOf<SeerrTitleScreen?>(null) }
+    var picker by remember(target.id) { mutableStateOf<List<SeerrSeasonRowInfo>>(emptyList()) }
+    var seerrSimilar by remember(target.id) { mutableStateOf<List<SeerrTileCard>>(emptyList()) }
+    LaunchedEffect(s?.tmdb, libraryNumbers, seerrOn) {
+        val tmdb = s?.tmdb
+        if (!seerrOn || tmdb == null) { seerrScreen = null; picker = emptyList(); seerrSimilar = emptyList(); return@LaunchedEffect }
+        val screen = seerrScreen ?: withContext(Dispatchers.IO) { app.seerr.title("tv", tmdb) }
+        seerrScreen = screen
+        withContext(Dispatchers.IO) {
+            screen.setLibrarySeasons(libraryNumbers)
+            try { screen.load() } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+        }
+        picker = screen.seasonPicker()
+        seerrSimilar = try { withContext(Dispatchers.IO) { app.seerr.lists().similar("tv", tmdb) } } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
+    }
     val name = s?.name ?: target.name
 
     fun toggle(an: Boolean, setDown: (Boolean) -> Unit, question: suspend (String, Boolean) -> String) {
@@ -285,11 +334,11 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
         CompositionLocalProvider(LocalImageColor provides true, LocalImageAudio provides mood.tones) {
         Column(Modifier.fillMaxSize().verticalScroll(scroll).moodReason(mood, Theme.heroHeightValue)) {
             Hero(s?.headerImage, name, s?.secondaryLine.orEmpty(), mood,
-                 logo = if (app.settings.titleAsLogo) s?.logo else null)
+                 logo = if (app.settings.titleAsLogo) s?.logo else null, tile = s?.tileImage)
 
             Column(Modifier.padding(horizontal = Theme.edgeSpacing).padding(top = 14.dp),
                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                ProofRow(s != null && planLoaded, s?.planPresent == true, s?.lossless == true, s?.method, s?.rating, s?.sharing)
+                ProofRow(s != null, s?.proofShown == true, s?.lossless == true, s?.method, s?.rating, s?.sharing, planPending = s != null && !planLoaded)
 
                 // Always exactly one button. While loading it looks ready and says "Loading…"; disabled only
                 // once it is certain there is no episode. The player follows.
@@ -298,16 +347,16 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                 Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     val menu = LocalTileMenu.current
                     PlayButton(Glyph.Play, s?.buttonText ?: translated("Lädt…"),
-                               an = s == null || s.state != null, main = true,
+                               an = s == null || s.state != null || s.seed, main = true,
                                // Long press: the series' tile menu, as on its tile.
                                lengthy = menu?.let { m -> {
                                    m(TileMenuRequest(target.id, name, "Series", s?.headerImage, landscape = true,
                                                         s?.secondaryLine, afterwards = { section.launch { load() } }))
                                } }) {
-                        s?.state?.let { st -> jerk(Jerk.Medium); playAsking(app, st.id, st.since) }
+                        val st = s?.state
+                        if (st != null) { jerk(Jerk.Medium); playDefault(app, st.id, st.since) } else queuedPress = true
                     }
-                    s?.state?.remainingTime?.let { Text(it, style = Theme.small, color = Theme.fontQuiet) }
-                    s?.state?.progress?.takeIf { it > 0 }?.let { ProgressBar(it, Modifier.clip(RoundedCornerShape(2.dp))) }
+                    ResumeSlot(s?.state?.remainingTime, s?.state?.progress)
                     if (seriesDisturbed && s == null) DisturbHint(app.serverAddress(), spacingTop = 12.dp,
                         retry = { seriesDisturbed = false; section.launch { load() } })
                 }
@@ -332,7 +381,6 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                         toggle(!watched, { watched = it }) { id, an -> app.rk.watched(id, an).await() }
                     }
                     ActionButton(Glyph.More, translated("Mehr"), false, translated("Mehr")) {
-                        val selectedSeason = s?.seasons?.firstOrNull { it.id == season }
                         // `TitleActions.forSeries`.
                         val entries = buildList {
                             // The trailer, when Download has its place in the row; not twice.
@@ -346,14 +394,13 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                             }
                             if (s?.state != null) app.playOnChoices().forEach { add(Choice(it.first, it.second)) }
                             add(Choice("zufaellig", translated("Zufällig abspielen")))
-                            selectedSeason?.let { add(Choice("staffel", translated("%@ als gesehen", it.name))) }
                             add(Choice("metadaten", translated("Metadaten neu einlesen")))
                         }
                         // Translated: German "F" for Folge, English "E" for episode. This was hard-coded as "E",
                         // also in German.
                         val abbreviation = s?.state?.let { st -> if (st.season != null && st.episode != null) " · " + translated("S%d F%d", st.season, st.episode) else "" }.orEmpty()
                         app.sheet.value = SheetRequest(name + abbreviation, entries, null,
-                            mapOf("trailer" to Glyph.Film, "vonvorn" to Glyph.Rewind, "naechste" to Glyph.Skip, "zufaellig" to Glyph.Shuffle, "staffel" to Glyph.CheckmarkCircle,
+                            mapOf("trailer" to Glyph.Film, "vonvorn" to Glyph.Rewind, "naechste" to Glyph.Skip, "zufaellig" to Glyph.Shuffle,
                                   "gemeinsam" to Glyph.Cluster, "metadaten" to Glyph.Reload) +
                                 app.playOnChoices().associate { it.first to Glyph.Tv }) { choice ->
                             if (s?.state?.let { st -> app.playOnChosen(choice, st.id) } == true) return@SheetRequest
@@ -365,23 +412,18 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                             section.launch {
                                 when (choice) {
                                     "trailer" -> trailerStart()
-                                    "vonvorn" -> s?.state?.let { st -> playAsking(app, st.id, null) }
+                                    "vonvorn" -> s?.state?.let { st -> playDefault(app, st.id, null) }
                                     // Without a next episode, report it rather than silently doing nothing.
                                     "naechste" -> s?.state?.let { st ->
                                         val afterThat = withContext(Dispatchers.IO) { app.rk.episodeAfter(st.id, s.id).await() }
-                                        if (afterThat.isNotEmpty()) playAsking(app, afterThat, null)
+                                        if (afterThat.isNotEmpty()) playDefault(app, afterThat, null)
                                         else message = translated("Danach kommt nichts mehr.")
                                     }
                                     // Mixes all episodes once (`ShuffleRun` in the package); "Next episode" in the player follows it.
                                     "zufaellig" -> {
                                         val first = withContext(Dispatchers.IO) { app.rk.shuffleStart(s?.id ?: return@withContext "").await() }
-                                        if (first.isNotEmpty()) playAsking(app, first, 0.0)
+                                        if (first.isNotEmpty()) playDefault(app, first, 0.0)
                                         else message = translated("Die Folge konnte nicht geladen werden.")
-                                    }
-                                    "staffel" -> selectedSeason?.let { st ->
-                                        val reason = withContext(Dispatchers.IO) { app.rk.watched(st.id, true).await() }
-                                        if (reason.isNotEmpty()) message = errorString(reason)
-                                        else { message = translated("%@ ist als gesehen vermerkt.", st.name); load() }
                                     }
                                     "metadaten" -> {
                                         val id = s?.id ?: return@launch
@@ -394,28 +436,46 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                     }
                 }
                 }
+                if (s?.description == null && (s == null || s.seed)) DescriptionSlot()
                 s?.description?.let { CollapsibleText(it) }
             }
 
-            WatchedBy(watchers)
             Spacer(Modifier.height(22.dp))
             // The season choice lives in the first tab (selected season name + chevron); tapping the selected
             // first tab opens the "Staffel wählen" sheet (iPhone `PageTab(firstLabel:onReselect:)`).
             val seasons = s?.seasons.orEmpty()
-            fun seasonSheet() {
-                if (seasons.size < 2) return
-                app.sheet.value = SheetRequest(translated("Staffel wählen"), seasons.map { Choice(it.id, it.name) }, season, accentCheck = true) { new ->
-                    selfSelected = true
-                    if (new != season) {
-                        season = new
-                        episodes = app.episodesCache[new].orEmpty()
-                        s?.id?.let { id -> section.launch { episodesLoad(id, new) } }
-                    }
+            fun pick(new: String) {
+                selfSelected = true
+                if (new != season) {
+                    season = new
+                    episodes = app.episodesCache[new].orEmpty()
+                    s?.id?.let { id -> section.launch { episodesLoad(id, new) } }
                 }
+            }
+            fun seasonSheet() {
+                // The button is always a menu (the core's chevron rule); only without any season there is nothing to list yet.
+                if (seasons.isEmpty() && picker.isEmpty()) return
+                val screen = seerrScreen
+                if (picker.isEmpty() || screen == null) {
+                    app.sheet.value = SheetRequest(translated("Staffel wählen"), seasons.map { Choice(it.id, it.name) }, season, accentCheck = true) { new -> pick(new) }
+                    return
+                }
+                // The core's rows: seasons the server has switch the page, the others ask for a request (grey, with their state).
+                app.sheet.value = SheetRequest(translated("Staffel wählen"), emptyList(), null, content = { close ->
+                    SeerrSeasonPicker(picker, seasons, season, select = { close(); pick(it) }) { number ->
+                        close()
+                        seerrSheetShow(app, screen, number) {
+                            section.launch {
+                                withContext(Dispatchers.IO) { try { screen.refresh() } catch (e: CancellationException) { throw e } catch (_: Exception) {} }
+                                picker = screen.seasonPicker()
+                            }
+                        }
+                    }
+                }) {}
             }
             PageTab(listOfNotNull(translated("Folgen"), translated("Besetzung"), translated("Ähnliches"), if (extras.isNotEmpty()) translated("Extras") else null), tab,
                 firstLabel = if (seasons.isEmpty()) null else (seasons.firstOrNull { it.id == season }?.name ?: translated("Staffel")),
-                firstChevron = seasons.size > 1, onReselect = { seasonSheet() }) { tab = it }
+                firstChevron = s?.seasonChevron ?: true, onReselect = { seasonSheet() }) { tab = it }
 
             Crossfade(tab, animationSpec = tween(160), label = "reiter") { r ->
                 when (r) {
@@ -437,7 +497,7 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                                         m(TileMenuRequest(f.id, f.title, "Episode", f.image, landscape = true, f.subline,
                                                              afterwards = { section.launch { load() } }))
                                     } }
-                                    EpisodesRow(f, lengthy = lengthy) { playAsking(app, f.id, f.since) }
+                                    EpisodesRow(f, lengthy = lengthy) { playDefault(app, f.id, f.since) }
                                 }
                             }
                         } }
@@ -456,14 +516,20 @@ fun SeriesPage(app: SwiftlyApplication, target: Destination, open: (Destination)
                     }
                     else -> {
                         val list = similar
-                        if (similarDisturbed && list.isNullOrEmpty()) DisturbHint(app.serverAddress())
-                        else if (list != null && list.isEmpty()) EmptyHint(translated("Nichts Ähnliches gefunden."))
-                        else Grid(list.orEmpty(), columns = { Theme.columns(it) }, spacing = 12) { k ->
-                            GridTileView(k) { open(Destination(k.id, k.title, k.type)) }
+                        if (similarDisturbed && list.isNullOrEmpty() && seerrSimilar.isEmpty()) DisturbHint(app.serverAddress())
+                        else if (list != null && list.isEmpty() && seerrSimilar.isEmpty()) EmptyHint(translated("Nichts Ähnliches gefunden."))
+                        else Grid(list.orEmpty() + seerrSimilar, columns = { Theme.columns(it) }, spacing = 12) { k ->
+                            when (k) {
+                                is GridTile -> GridTileView(k) { open(Destination(k.id, k.title, k.type)) }
+                                is SeerrTileCard -> SeerrCardTile(k) { section.launch { openSeerrCard(app, k, open) } }
+                                else -> {}
+                            }
                         }
                     }
                 }
             }
+            // After the tab content: a viewers row between the buttons and the tabs pushed the episode rows down when it arrived.
+            WatchedBy(watchers)
             Spacer(Modifier.navigationBarsPadding().height(24.dp))
         }
         }

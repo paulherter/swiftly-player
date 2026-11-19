@@ -29,6 +29,8 @@ final class DetailCore {
         }
         self.model = model
         self.listItem = item
+        // The options (viewers row, download field) are known before frame 1, so the rows they decide are in place at once.
+        send(options: app)
     }
 
     // MARK: The title
@@ -91,6 +93,9 @@ final class DetailCore {
     // MARK: Intents the screens send
 
     func pressPlay(pick: String? = nil) -> PlayAction { model.play(pick: pick) }
+
+    /// What a long press on Play lists: the versions with the default marked; empty when there is nothing to choose.
+    func versions() -> [SwiftlyCore.VersionOption] { model.versions() }
 
     /// Settles after a refresh so a press on a title without known versions can decide again.
     func resolve(pick: String? = nil) async -> PlayAction {
@@ -179,7 +184,11 @@ extension SwiftlyCore.Tile {
                 seriesId: item.seriesId, seasonId: item.seasonId,
                 seasonNumber: item.parentIndexNumber.map(Int32.init),
                 episodeNumber: item.indexNumber.map(Int32.init),
-                childCount: item.childCount.map(Int32.init)))
+                childCount: item.childCount.map(Int32.init),
+                // Where the user stopped, so the Play button is worded in the first frame ("Fortsetzen ab ...")
+                // and not changed when the title arrives.
+                positionTicks: item.userData?.playbackPositionTicks,
+                runTimeTicks: item.runTimeTicks))
     }
 }
 
@@ -219,33 +228,76 @@ extension Watcher {
     }
 }
 
-/// A title with several versions, waiting for the pick ("Fassung wählen"); the options are the core's.
-struct VersionPick: Identifiable {
-    let id = UUID()
-    let heading: String
-    let options: [SwiftlyCore.VersionOption]
-    let since: Double
-    /// The episode a series page asks about; `nil` on the movie page.
-    var itemId: String? = nil
-}
-
-import SwiftUI
-
+#if !os(iOS)
 extension View {
-    /// **"Fassung wählen"** with the core's version list: one button per version, the pick goes to `pick`.
-    func versionPick(
-        _ choice: Binding<VersionPick?>, pick: @escaping (VersionPick, SwiftlyCore.VersionOption) -> Void
+    /// **Long press on Play (the remote's select held on TV, a right click on the Mac): the versions, nothing else.**
+    ///
+    /// No cover, no watched mark, no play entry: only the title's versions in the server's order, the default one
+    /// checked; a pick runs `pick` and starts that one. The core decides what is offered (`versions`); without a choice
+    /// (one version, a copy on the device, versions not known yet) the list is empty and the long press does nothing.
+    /// A tap on the button itself always starts the default (the button's own action). The iPhone's `PlayMenu` is the
+    /// same rule as a touch menu.
+    func versionMenu(
+        _ versions: [SwiftlyCore.VersionOption], pick: @escaping (SwiftlyCore.VersionOption) -> Void
     ) -> some View {
-        confirmationDialog(
-            choice.wrappedValue?.heading ?? "",
-            isPresented: Binding(
-                get: { choice.wrappedValue != nil }, set: { if !$0 { choice.wrappedValue = nil } }),
-            titleVisibility: .visible, presenting: choice.wrappedValue
-        ) { open in
-            ForEach(open.options, id: \.id) { version in
-                Button(version.label) { pick(open, version) }
+        contextMenu {
+            ForEach(versions, id: \.id) { version in
+                // A toggle shows the system check mark for the default; every row runs the pick.
+                Toggle(isOn: Binding(get: { version.isDefault }, set: { _ in pick(version) })) {
+                    Text(verbatim: version.label)
+                }
             }
         }
     }
 }
+#endif
+
+#if os(iOS)
+/// **The Play button: a tap starts the default version, a long press lists the versions.**
+///
+/// Nothing stands in front of Play any more (no page, no sheet). With several versions the button is a menu
+/// with a primary action: a tap runs `start`, a long press opens the system menu anchored to the button, with
+/// the versions in the server's order and the default one checked; a pick runs `pick` and starts that one. The
+/// core decides what is offered (`versions`); without a choice (one version, a copy on the device, versions not
+/// known yet) it is a plain button and a long press does nothing.
+struct PlayMenu<Label: View>: View {
+    let versions: [SwiftlyCore.VersionOption]
+    let start: () -> Void
+    let pick: (SwiftlyCore.VersionOption) -> Void
+    @ViewBuilder let label: () -> Label
+    /// The current touch has been held long enough to count as a long press (only the plain button reads it).
+    @State private var held = false
+
+    var body: some View {
+        if versions.isEmpty {
+            // A button fires on release however long it was held. With nothing to list, a long hold must start
+            // nothing either: a hold of half a second marks the touch, and the release of a marked touch is not a tap.
+            Button {
+                if held { held = false } else { start() }
+            } label: {
+                label()
+            }
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.5)
+                    .onChanged { _ in held = false }
+                    .onEnded { _ in held = true })
+        } else {
+            Menu {
+                ForEach(versions, id: \.id) { version in
+                    // A toggle shows the system check mark for the default; every row runs the pick.
+                    Toggle(isOn: Binding(get: { version.isDefault }, set: { _ in pick(version) })) {
+                        Text(verbatim: version.label)
+                    }
+                }
+            } label: {
+                label()
+            } primaryAction: {
+                start()
+            }
+            // No chevron next to the label: the button looks like the plain one.
+            .menuIndicator(.hidden)
+        }
+    }
+}
+#endif
 #endif

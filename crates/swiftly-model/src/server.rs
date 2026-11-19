@@ -100,14 +100,15 @@ fn read_items<E: serde::de::Error>(raw: &serde_json::value::RawValue) -> Result<
 impl<'de> Deserialize<'de> for ItemsResponse {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = RawItemsResponse::deserialize(deserializer)?;
-        let mut items = match &raw.items {
+        let items = match &raw.items {
             Some(r) => read_items::<D::Error>(r)?,
             None => Vec::new(),
         };
         // The total stays the server's: paging offsets count its entries, not ours.
         let total = raw.total_record_count.unwrap_or(items.len() as i64);
-        // A show whose files were deleted stays on the server with no seasons; it is not shown anywhere.
-        items.retain(|i| !i.is_hollow_series());
+        // A show whose files were deleted stays on the server with no seasons or no episodes; it is not shown
+        // anywhere, unless the device switched "Leere Serien ausblenden" off.
+        let items = crate::switches::without_hollow_series(items);
         Ok(Self {
             items,
             total_record_count: total,

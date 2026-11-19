@@ -27,6 +27,15 @@ pub struct PersonDetail {
     pub tmdb_id: Option<i64>,
 }
 
+/// A person met on a Seerr title page: only Seerr's (TMDB's) side is known, the server has no entry for them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeerrPersonRef {
+    /// The TMDB person id.
+    pub tmdb: i64,
+    /// The TMDB portrait address.
+    pub image: Option<String>,
+}
+
 /// A title Seerr offers to request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestableHit {
@@ -47,6 +56,8 @@ pub struct PersonPart {
     pub name: String,
     /// "Rolle in Titel", from the tap that opened the page.
     pub role_line: Option<String>,
+    /// The portrait address when the person comes from Seerr (the library persons have a picture tag instead).
+    pub portrait_url: Option<String>,
     /// "Geboren ..." (empty until loaded).
     pub born_line: Option<String>,
     /// The first production place.
@@ -80,6 +91,7 @@ pub struct PersonVm {
     translator: Translator,
     person: Person,
     origin: Option<String>,
+    seerr: Option<SeerrPersonRef>,
     detail: Option<PersonDetail>,
     retrieved: i64,
     loading_more: bool,
@@ -96,6 +108,7 @@ impl PersonVm {
                 version: 0,
                 name: person.name.clone(),
                 role_line: None,
+                portrait_url: None,
                 born_line: None,
                 place: None,
                 biography: None,
@@ -113,6 +126,7 @@ impl PersonVm {
             translator,
             person,
             origin,
+            seerr: None,
             detail: None,
             retrieved: 0,
             loading_more: false,
@@ -120,6 +134,32 @@ impl PersonVm {
         };
         vm.part.role_line = vm.role_line();
         vm
+    }
+
+    /// A page for a cast member of a Seerr title (the one "open person" intent of a Seerr cast tile): the person has no
+    /// library id, so the page has nothing to load from the server and shows what Seerr knows of them.
+    pub fn for_seerr(
+        locale: Locale,
+        person: Person,
+        seerr: SeerrPersonRef,
+        origin: Option<String>,
+    ) -> Self {
+        let mut vm = Self::new(
+            locale,
+            Person {
+                id: String::new(),
+                ..person
+            },
+            origin,
+        );
+        vm.part.portrait_url = seerr.image.clone();
+        vm.seerr = Some(seerr);
+        vm
+    }
+
+    /// The person has an entry on the server (a cast tile of a library title); `false` for a Seerr-only person.
+    pub fn in_library(&self) -> bool {
+        !self.person.id.is_empty()
     }
 
     /// What the view draws.
@@ -195,6 +235,16 @@ impl PersonVm {
         }
         self.part.loaded = true;
         self.bump();
+    }
+
+    /// A Seerr-only person has nothing on the server to load: the page is complete at once (empty own rail) and only
+    /// Seerr's filmography follows.
+    pub fn loaded_without_library(&mut self) {
+        let detail = PersonDetail {
+            tmdb_id: self.seerr.as_ref().map(|s| s.tmdb),
+            ..PersonDetail::default()
+        };
+        self.loaded(Some(detail), Some((Vec::new(), 0)));
     }
 
     /// The TMDB id for the Seerr filmography, once the details are in.
@@ -283,6 +333,33 @@ mod tests {
             person(Some("Hauptrolle")),
             Some("Der Film".into()),
         )
+    }
+
+    #[test]
+    fn a_seerr_person_is_complete_without_the_server() {
+        let mut vm = PersonVm::for_seerr(
+            Locale::parse("de"),
+            person(Some("Hauptrolle")),
+            SeerrPersonRef {
+                tmdb: 1234,
+                image: Some("https://image.example/p.jpg".into()),
+            },
+            Some("Nordmeer".into()),
+        );
+        assert!(!vm.in_library() && vm.person_id().is_empty());
+        assert_eq!(
+            vm.part().portrait_url.as_deref(),
+            Some("https://image.example/p.jpg")
+        );
+        assert_eq!(
+            vm.part().role_line.as_deref(),
+            Some("Hauptrolle in Nordmeer")
+        );
+        vm.loaded_without_library();
+        assert!(vm.part().loaded && !vm.part().disrupted);
+        assert_eq!(vm.tmdb_id(), Some(1234));
+        vm.seerr_loaded(&[]);
+        assert!(vm.part().empty_text.is_some());
     }
 
     #[test]

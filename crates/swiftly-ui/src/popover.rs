@@ -550,6 +550,18 @@ impl MenuController {
         }
         out
     }
+    /// Moves the highlight of the open menu to its first enabled checked row (the current choice), so a menu opened by
+    /// the keyboard starts on it and Enter keeps it. No checked row, or a closed menu: nothing changes.
+    pub fn highlight_checked(&mut self) {
+        if let Some(o) = self.open.as_mut()
+            && let Some(i) = o
+                .entries
+                .iter()
+                .position(|e| matches!(e, MenuEntry::Item(it) if it.checked && it.enabled))
+        {
+            o.state.highlighted = Some(i);
+        }
+    }
     /// The highlighted entry index.
     pub fn highlighted(&self) -> Option<usize> {
         self.open.as_ref().and_then(|o| o.state.highlighted)
@@ -635,6 +647,48 @@ mod tests {
             MenuOutcome::Activate(Action::from("del"))
         );
         assert_eq!(s.key(&e, MenuKey::Escape, 0.0), MenuOutcome::Close);
+    }
+
+    #[test]
+    fn a_keyboard_opened_menu_can_start_on_its_checked_row() {
+        let rows = vec![
+            MenuEntry::Item(MenuItem::new("a", "A")),
+            MenuEntry::Item(MenuItem::new("b", "B").checked(true)),
+            MenuEntry::Item(MenuItem::new("c", "C")),
+        ];
+        let mut menu = MenuController::new();
+        menu.highlight_checked();
+        assert_eq!(menu.highlighted(), None, "a closed menu stays untouched");
+        menu.open(
+            rows.clone(),
+            Anchor::Pointer(swiftly_layout::Point::new(0.0, 0.0)),
+            100.0,
+            true,
+        );
+        assert_eq!(
+            menu.highlighted(),
+            Some(0),
+            "the plain keyboard start is the first row"
+        );
+        menu.highlight_checked();
+        assert_eq!(menu.highlighted(), Some(1));
+        assert_eq!(
+            menu.key(MenuKey::Enter, 0.0),
+            MenuOutcome::Activate(Action::from("b"))
+        );
+        // No checked row: the highlight stays where it was.
+        let plain = vec![
+            MenuEntry::Item(MenuItem::new("a", "A")),
+            MenuEntry::Item(MenuItem::new("b", "B")),
+        ];
+        menu.open(
+            plain,
+            Anchor::Pointer(swiftly_layout::Point::new(0.0, 0.0)),
+            100.0,
+            true,
+        );
+        menu.highlight_checked();
+        assert_eq!(menu.highlighted(), Some(0));
     }
 
     #[test]

@@ -247,7 +247,7 @@ fun TvCast(p: WithAct, perform: () -> Unit) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -> Unit) {
-    var t by remember(target.id) { mutableStateOf(app.titleCache[target.id]) }
+    var t by remember(target.id) { mutableStateOf(app.titleCache[target.id] ?: de.paulherter.swiftly.titleSeed(app, target.id)) }
     var similar by remember(target.id) { mutableStateOf<List<GridTile>>(emptyList()) }
     var extras by remember(target.id) { mutableStateOf<List<Extra>>(emptyList()) }
     var watchers by remember(target.id) { mutableStateOf<List<de.paulherter.swiftly.Watcher>>(emptyList()) }
@@ -330,26 +330,22 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                              if (title != null) title.rating else preOff?.rating,
                              if (title != null) title.sharing else preOff?.sharing,
                              if (title != null) title.description else preOff?.description,
-                             directPlayFlag = title?.planPresent == true && title.lossless,
-                             hint = if (title?.planPresent == true && !title.lossless) title.method else null,
+                             directPlayFlag = title?.proofShown == true && title.lossless,
+                             hint = if (title?.proofShown == true && !title.lossless) title.method else null,
                              buttonAlpha = fadeInAlpha, modifier = Modifier.tvSection(a, "kopf", TvSectionKind.Header),
                              logo = if (app.settings.titleAsLogo) title?.logo else null) {
                     // Mirrors `DetailView.starte`: without a plan it reports instead of silently doing nothing.
-                    val menu = de.paulherter.swiftly.LocalTileMenu.current
                     TvButton(translated(if (title?.resumeFrom != null) "Fortsetzen" else "Abspielen"), Glyph.Play, Modifier.focusRequester(main),
-                            // Long OK or the menu key: the title's tile menu, as on its tile.
-                            lengthy = menu?.let { m -> {
-                                m(de.paulherter.swiftly.TileMenuRequest(target.id, name, title?.type?.ifEmpty { null } ?: "Movie",
-                                    title?.let { it.backdrop ?: it.headerImage }, true, title?.secondaryLine,
-                                    afterwards = { run.launch { newLoad() } }))
-                            } }) {
-                        if (title?.planPresent == true) de.paulherter.swiftly.playOrChoose(app, title, target.id, title.resumeFrom)
+                            // Long OK or the menu key: only the versions, the default checked. With one version the held OK is swallowed (a no-op),
+                            // so only a normal press plays.
+                            lengthy = de.paulherter.swiftly.versionMenu(app, title, target.id, title?.resumeFrom) ?: {}) {
+                        if (title != null && (title.planPresent || title.seed)) de.paulherter.swiftly.playDefault(app, target.id, title.resumeFrom)
                         // Without a title nobody knows whether a file exists; ask again first.
                         else if (title == null && disrupted) { disrupted = false; run.launch { load() } }
                         else message = translated("Der Server hat keine Datei zu diesem Titel.")
                     }
                     if (title?.resumeFrom != null) TvButton(null, Glyph.Rewind, description = translated("Von vorn abspielen")) {
-                        if (title.planPresent) de.paulherter.swiftly.playAsking(app, target.id, null, title)
+                        if (title.planPresent || title.seed) de.paulherter.swiftly.playDefault(app, target.id, null)
                         else message = translated("Der Server hat keine Datei zu diesem Titel.")
                     }
                     if (app.settings.watchlist) {
@@ -396,7 +392,7 @@ fun TvDetail(app: SwiftlyApplication, target: Destination, open: (Destination) -
                                   "metadaten" to Glyph.Reload)) { choice ->
                             run.launch {
                                 when (choice) {
-                                    "vonvorn" -> de.paulherter.swiftly.playAsking(app, target.id, null, title)
+                                    "vonvorn" -> de.paulherter.swiftly.playDefault(app, target.id, null)
                                     "zuruecksetzen" -> {
                                         val reason = withContext(Dispatchers.IO) { app.rk.watched(target.id, false).await() }
                                         if (reason.isNotEmpty()) message = errorString(reason)
@@ -459,18 +455,19 @@ fun TvPerson(app: SwiftlyApplication, target: Destination, open: (Destination) -
     de.paulherter.swiftly.WatchStateChange(app) { attempt++ }
     LaunchedEffect(target.id, attempt) {
         failed = false
-        try { state = personRead(withContext(Dispatchers.IO) { app.rk.person(target.id).await() }).also { app.peopleCache[target.id] = it } }
+        try { state = personLoad(app, target).also { app.peopleCache[target.id] = it } }
         catch (e: CancellationException) { throw e } catch (_: Exception) { failed = true }
     }
     val s = state
-    var requestable by remember(target.id) { mutableStateOf<List<SeerrTile>?>(null) }
+    var requestable by remember(target.id) { mutableStateOf<List<de.paulherter.swiftly.rustcore.SeerrTileCard>?>(null) }
     val tmdb = s?.tmdb
     val seerrPresent = app.seerrConnected.value
+    val seerrRun = rememberCoroutineScope()
     LaunchedEffect(tmdb, seerrPresent) {
         if (tmdb == null || !seerrPresent) return@LaunchedEffect
-        val ownOnes = s?.title.orEmpty().mapTo(HashSet()) { it.title.lowercase() }
+        // What the person did that is not on the server: the core's list (`SeerrListsScreen.person_credits`, as on the phone).
         requestable = try {
-            seerrTilesRead(withContext(Dispatchers.IO) { app.rk.seerrFilmography(tmdb.toLong()).await() }).filter { it.title.lowercase() !in ownOnes }
+            withContext(Dispatchers.IO) { app.seerr.lists().personCredits(tmdb.toLong()) }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
     }
     val seerrReady = requestable != null || !seerrPresent || (s != null && tmdb == null)
@@ -533,9 +530,8 @@ fun TvPerson(app: SwiftlyApplication, target: Destination, open: (Destination) -
                     TvStrip(translated("Kann angefragt werden"), Modifier.tvSection(a, "anfragbar",
                                if (s?.title.isNullOrEmpty()) TvSectionKind.NearHeader else TvSectionKind.Flush)) {
                         items(list, key = { it.key }) { t ->
-                            TvTile(t.poster, t.title, SeerrMark.shortWord(t.state) ?: t.year?.toString(), opacity = 0.45f) {
-                                app.seerrHit[t.key] = t
-                                open(Destination(t.key, t.title, "Seerrtitel"))
+                            TvTile(tmdbImage(t.poster, 342), t.title, t.badge?.word ?: t.year?.toString(), opacity = 0.45f) {
+                                seerrRun.launch { openSeerrCard(app, t, open) }
                             }
                         }
                     }

@@ -54,6 +54,15 @@ final class CoreAetherPort: PlayerEnginePort {
         emit?(event)
     }
 
+    #if DEBUG
+    /// For the running-app matrix (`LiveRun` scenario `exit`): `count` clock events at the engine's own position, delivered
+    /// like the engine's own (tap, driver, core). About 3 events a second arrive in a real film, so 5 000 are 28 minutes of watching.
+    func debugClockBurst(_ count: Int) {
+        let at = engine?.position ?? 0
+        for _ in 0..<count { deliver(.clock(position: at, sourceTime: at)) }
+    }
+    #endif
+
     func load(_ load: PlayerLoad) {
         guard let host, let url = URL(string: load.url) else {
             deliver(.loadFailed(attempt: 1, message: "Adresse ungültig", kind: nil))

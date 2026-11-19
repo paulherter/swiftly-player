@@ -297,11 +297,25 @@ fn shade_unmasked(q: &DrawQuad, x: f32, y: f32, s: f32, src: &Sources) -> Option
 impl SoftwareRenderer {
     /// Draws `list` onto an opaque image of the list's pixel size, cleared to `clear`.
     pub fn render(list: &DrawList, clear: Color, src: &Sources) -> RgbaImage {
+        Self::render_over_video(list, clear, src, None)
+    }
+
+    /// Like [`SoftwareRenderer::render`], with a video frame as the layer between the ground and the first quad (the
+    /// GPU renderer's bottom layer, for lists whose frosted glass must blur the film too).
+    pub fn render_over_video(
+        list: &DrawList,
+        clear: Color,
+        src: &Sources,
+        video: Option<VideoBase<'_>>,
+    ) -> RgbaImage {
         let (wpx, hpx) = list.pixel_size();
         let (width, height) = (wpx as usize, hpx as usize);
         let mut buf: Vec<f32> = (0..width * height)
             .flat_map(|_| [clear.r, clear.g, clear.b])
             .collect();
+        if let Some(v) = video {
+            draw_video(&v, &mut buf, width, height);
+        }
         let s = list.scale();
         for q in list.quads() {
             if q.kind == QuadKind::BackdropBlur {
@@ -760,5 +774,69 @@ mod tests {
         l.pop_opacity();
         let img = render(&l, Color::BLACK);
         assert_eq!(img.pixel(0, 0)[0], 128);
+    }
+}
+
+/// A video frame for [`SoftwareRenderer::render_over_video`]: `w x h` RGBA texels placed in the rectangle `rect`
+/// (left, top, right, bottom in clip space, as the GPU video layer places it).
+#[derive(Clone, Copy, Debug)]
+pub struct VideoBase<'a> {
+    pub w: u32,
+    pub h: u32,
+    pub rgba: &'a [u8],
+    pub rect: [f32; 4],
+}
+
+/// Draws the frame bilinearly (like the GPU sampler: clamped edges, texel centres at half texels) into the opaque
+/// `buf`; the frame covers `rect` only, the rest keeps the ground.
+fn draw_video(v: &VideoBase<'_>, buf: &mut [f32], width: usize, height: usize) {
+    let (fw, fh) = (v.w as usize, v.h as usize);
+    if fw == 0 || fh == 0 || v.rgba.len() < fw * fh * 4 {
+        return;
+    }
+    // Clip space to target pixels (y grows downwards on screen).
+    let to_x = |c: f32| (c + 1.0) * 0.5 * width as f32;
+    let to_y = |c: f32| (1.0 - c) * 0.5 * height as f32;
+    let (x0, x1) = (to_x(v.rect[0]), to_x(v.rect[2]));
+    let (y0, y1) = (to_y(v.rect[1]), to_y(v.rect[3]));
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
+    let texel = |x: isize, y: isize, k: usize| {
+        let (x, y) = (
+            x.clamp(0, fw as isize - 1) as usize,
+            y.clamp(0, fh as isize - 1) as usize,
+        );
+        f32::from(v.rgba[(y * fw + x) * 4 + k]) / 255.0
+    };
+    let (px0, px1) = (
+        x0.floor().max(0.0) as usize,
+        (x1.ceil() as usize).min(width),
+    );
+    let (py0, py1) = (
+        y0.floor().max(0.0) as usize,
+        (y1.ceil() as usize).min(height),
+    );
+    for py in py0..py1 {
+        let cy = py as f32 + 0.5;
+        if cy < y0 || cy > y1 {
+            continue;
+        }
+        let ty = (cy - y0) / (y1 - y0) * fh as f32 - 0.5;
+        let (iy, fy) = (ty.floor(), ty - ty.floor());
+        for px in px0..px1 {
+            let cx = px as f32 + 0.5;
+            if cx < x0 || cx > x1 {
+                continue;
+            }
+            let tx = (cx - x0) / (x1 - x0) * fw as f32 - 0.5;
+            let (ix, fx) = (tx.floor(), tx - tx.floor());
+            for k in 0..3 {
+                let (ax, ay) = (ix as isize, iy as isize);
+                let top = texel(ax, ay, k) * (1.0 - fx) + texel(ax + 1, ay, k) * fx;
+                let bottom = texel(ax, ay + 1, k) * (1.0 - fx) + texel(ax + 1, ay + 1, k) * fx;
+                buf[(py * width + px) * 3 + k] = top * (1.0 - fy) + bottom * fy;
+            }
+        }
     }
 }

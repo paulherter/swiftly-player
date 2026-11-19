@@ -27,8 +27,14 @@ impl AccountRef {
     /// The key of the stored home page preview: address and user, no token
     /// (`Session.accountKey`).
     pub fn key(&self) -> String {
-        format!("{}|{}", self.base_url, self.user_id)
+        key_of(&self.base_url, &self.user_id)
     }
+}
+
+/// The key of an account from its address as typed and its user id. Everything that is kept per account (the cache
+/// scope, the short-term memory of the pages) takes it from here, so an event for the account finds that memory.
+pub(crate) fn key_of(base_url: &str, user_id: &str) -> String {
+    format!("{base_url}|{user_id}")
 }
 
 impl fmt::Debug for AccountRef {

@@ -226,6 +226,13 @@ enum Theme {
     /// in one colour is exactly the confusion that five semantic colours are meant
     /// to avoid. Computed on `reason`: 6.30:1.
     static let error  = Color(red: 0.937, green: 0.396, blue: 0.404)   // #EF6567
+
+    /// **The badges of a stream on the server page**: one hue per kind (size, range, video, audio), so a card reads
+    /// at a glance. Dark fills under white text (all above 4.5:1); audio stays neutral.
+    static let badgeResolution = Color(red: 0.494, green: 0.231, blue: 0.718)  // #7E3BB7
+    static let badgeRange      = Color(red: 0.471, green: 0.298, blue: 0.157)  // #784C28
+    static let badgeVideo      = Color(red: 0.247, green: 0.298, blue: 0.616)  // #3F4C9D
+    static let badgeAudio      = Color(red: 0.231, green: 0.231, blue: 0.251)  // #3B3B40
 }
 
 // MARK: - Colour from the image
@@ -275,6 +282,10 @@ extension Theme {
     static let cornerWeb = Color.white.opacity(0.42)
     /// Dark round button over an image: black 40%.
     static let scrimButton = Color.black.opacity(0.4)
+    /// Quiet glass behind the player bar's buttons, over an ultra-thin material: black 18%.
+    static let scrimGlass = Color.black.opacity(0.18)
+    /// Hairline on the quiet glass: white 10%.
+    static let glassEdge = Color.white.opacity(0.10)
     // Active carries no surface of its own: the state is in the glyph
     // (accent), the surface stays like its neighbours (a full turquoise surface
     // did not fit the row).

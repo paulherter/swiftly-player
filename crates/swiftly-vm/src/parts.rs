@@ -84,6 +84,11 @@ pub struct TileFacts {
     pub episode_number: Option<i32>,
     /// How many children the title has (a series: its seasons); the "3 seasons" mark of a tile.
     pub child_count: Option<i32>,
+    /// Where the user stopped, in the server's ticks (100 ns). With the runtime it lets a detail page word its Play
+    /// button ("Fortsetzen ab 12:34") from the tile alone, so the first frame already shows the final label.
+    pub position_ticks: Option<i64>,
+    /// The runtime in the server's ticks.
+    pub run_time_ticks: Option<i64>,
 }
 
 /// What a rail is. Layouts may style by it; they never decide what is inside.
@@ -189,4 +194,25 @@ pub enum HomeIntent {
         /// The rail id.
         rail: String,
     },
+    /// "Remove from Continue Watching": the title leaves the row in the same state update (and the next-episode row
+    /// where the server drops it there too), the request runs in the background, and only a refusal puts the title
+    /// back at its old place and raises one hint ([`NoticePart`]). A title that is not in the row is ignored.
+    RemoveFromContinue {
+        /// The title id.
+        item_id: String,
+    },
+    /// The host showed the hint: clears [`NoticePart::message`].
+    DismissNotice,
+}
+
+/// A short hint the page raises by itself (a removal the server refused). The host reads it when the
+/// [`part::NOTICE`](crate::part::NOTICE) bit changes, shows `message` once and sends [`HomeIntent::DismissNotice`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoticePart {
+    /// Version of the part.
+    pub version: u64,
+    /// Counts the hints raised so far, so two equal hints in a row are two changes.
+    pub seq: u64,
+    /// The hint in the user's language; `None` once dismissed (or before the first).
+    pub message: Option<String>,
 }

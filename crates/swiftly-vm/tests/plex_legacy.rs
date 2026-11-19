@@ -6,6 +6,7 @@ mod common;
 
 use std::sync::Arc;
 
+use common::Manual;
 use common::script::{Script, host};
 use swiftly_jellyfin::ServerKind;
 use swiftly_vm::{AccountRef, LegacyPlexDetail, LegacySection};
@@ -86,5 +87,43 @@ fn plex_sections_collections_and_playlists_answer_from_the_core() {
         let o = s.section_offering("movies", "").await.unwrap();
         assert!(!o.is_empty());
         assert!(net.count("/library/sections") >= 1);
+    });
+}
+
+#[test]
+fn the_offering_is_asked_again_after_a_minute_on_the_host_clock() {
+    // The age counts on the host's clock, which keeps running while a device sleeps; the runtime's `Instant` does not.
+    futures_executor::block_on(async {
+        let net = server();
+        let clock = Manual::at(1000.0);
+        let mut host = host();
+        host.clock = clock.clone();
+        let s = LegacySection::new(&net, &host, &account()).unwrap();
+        s.offering_load().await;
+        let first = net.count("/library/sections");
+        assert!(first >= 1, "{:?}", net.urls());
+        clock.set(1059.0);
+        s.offering_load().await;
+        assert_eq!(net.count("/library/sections"), first, "59 s: still valid");
+        clock.set(1061.0);
+        s.offering_load().await;
+        assert!(
+            net.count("/library/sections") > first,
+            "61 s: the offering is asked for again"
+        );
+    });
+}
+
+#[test]
+fn a_refused_removal_from_continue_is_the_core_sentence_not_the_servers_text() {
+    futures_executor::block_on(async {
+        let net = server();
+        let d = LegacyPlexDetail::new(&net, &host(), &account()).unwrap();
+        assert_eq!(d.from_continue_watching_take("1").await, "");
+        *net.force.lock().unwrap() = Some((500, "refused".into()));
+        assert_eq!(
+            d.from_continue_watching_take("1").await,
+            "Das Entfernen hat nicht geklappt."
+        );
     });
 }
