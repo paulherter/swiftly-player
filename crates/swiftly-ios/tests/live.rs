@@ -40,8 +40,11 @@ impl Drop for Fixture {
     }
 }
 
-// The goldens come from macOS; the software renderer rounds a little differently on other systems (seen: up to 10 levels).
-const TOLERANCE: u8 = if cfg!(target_os = "macos") { 2 } else { 12 };
+// The goldens are written on Linux (CI runs Linux and macOS). The vector rasteriser rounds a few icon edge pixels
+// differently per OS, so on macOS a difference above 2 levels may touch at most 0.05 % of the pixels and none may exceed
+// 16 levels; other systems keep the 12 level tolerance (same rule as the desktop form goldens).
+const TOLERANCE: u8 = if cfg!(target_os = "macos") { 16 } else { 12 };
+const MAC_PIXEL_SHARE: f64 = 0.0005;
 
 fn golden(name: &str, img: &RgbaImage) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -64,7 +67,14 @@ fn golden(name: &str, img: &RgbaImage) {
         "golden {name}: max diff {max}, differing {:.4} %",
         share * 100.0
     );
-    assert!(max <= TOLERANCE, "golden {name} differs by {max}");
+    if let (true, Some(dir)) = (max > TOLERANCE, std::env::var_os("GOLDEN_ACTUAL_DIR")) {
+        let _ = img.write_png(&PathBuf::from(dir).join(format!("{name}.png")));
+    }
+    let share_ok = !cfg!(target_os = "macos") || max <= 2 || share <= MAC_PIXEL_SHARE;
+    assert!(
+        max <= TOLERANCE && share_ok,
+        "golden {name} differs by {max}"
+    );
 }
 
 /// Draws frames until the picture stops changing for 1.5 s (network answers and pictures arrive on their own).
