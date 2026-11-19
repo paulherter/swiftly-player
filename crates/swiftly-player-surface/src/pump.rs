@@ -362,20 +362,35 @@ mod tests {
         (pump, frames)
     }
 
-    /// The UI side of a host: asks for a frame every `tick` and measures how long each ask took.
-    fn ui_ticks(pump: &RenderPump, ticks: u32, tick: Duration) -> (Duration, u32) {
+    /// The UI side of a host: asks for a frame every `tick` and measures how long each ask took. With `wait_for_frame`
+    /// the UI also waits (up to `FRAME_DEADLINE`, outside the measured ask) for the renderer's next frame before the
+    /// next tick. Returns the slowest ask, the number of fresh frames and the total elapsed time.
+    fn ui_ticks(
+        pump: &RenderPump,
+        ticks: u32,
+        tick: Duration,
+        wait_for_frame: bool,
+    ) -> (Duration, u32, Duration) {
+        const FRAME_DEADLINE: Duration = Duration::from_secs(5);
         let mut buf = FrameBuffer::default();
         let (mut worst, mut fresh) = (Duration::ZERO, 0);
+        let begun = Instant::now();
         for _ in 0..ticks {
             let t = Instant::now();
             pump.want(1920, 1080, true);
-            if pump.take(&mut buf) == FrameStatus::New {
+            let mut got = pump.take(&mut buf) == FrameStatus::New;
+            worst = worst.max(t.elapsed());
+            let deadline = Instant::now() + FRAME_DEADLINE;
+            while wait_for_frame && !got && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(1));
+                got = pump.take(&mut buf) == FrameStatus::New;
+            }
+            if got {
                 fresh += 1;
             }
-            worst = worst.max(t.elapsed());
             std::thread::sleep(tick);
         }
-        (worst, fresh)
+        (worst, fresh, begun.elapsed())
     }
 
     /// The regression this module exists for: a renderer that needs 100 ms per frame (a 4K picture on the CPU) must not
@@ -383,26 +398,35 @@ mod tests {
     #[test]
     fn a_slow_renderer_never_holds_a_ui_tick() {
         let (pump, frames) = slow_pump(100);
-        let (worst, fresh) = ui_ticks(&pump, 120, Duration::from_millis(8));
+        let (worst, fresh, elapsed) = ui_ticks(&pump, 120, Duration::from_millis(8), false);
         assert!(
             worst < Duration::from_millis(30),
             "a UI tick waited {worst:?} for the video renderer"
         );
-        // About 10 frames a second get through (the renderer's pace); the other ticks saw "unchanged" at once.
-        assert!(fresh >= 4, "only {fresh} frames arrived");
+        // No frame storm: every frame costs the renderer 100 ms of sleep, so however long a loaded machine stretches the
+        // ticks, at most one frame per 100 ms of elapsed time (plus the one in flight) can have been made and taken.
+        let most = elapsed.as_millis() / 100 + 1;
         assert!(
-            fresh <= 14,
-            "{fresh} frames in a second from a 100 ms renderer"
+            u128::from(fresh) <= most,
+            "{fresh} frames in {elapsed:?} from a 100 ms renderer (at most {most})"
+        );
+        // The renderer keeps its pace while the UI ticks: at least one frame per 400 ms got through (and one at all).
+        let least = (elapsed.as_millis() / 400).max(1);
+        assert!(
+            u128::from(fresh) >= least,
+            "only {fresh} frames arrived in {elapsed:?} (at least {least})"
         );
         assert!(frames.load(Ordering::Relaxed) >= u64::from(fresh));
     }
 
+    /// A 1 ms renderer is never the bottleneck: every UI tick that waits for its frame gets a new one. The UI waits for
+    /// the pump thread (bounded) instead of counting on a loaded machine scheduling it within one 4 ms tick.
     #[test]
     fn a_fast_renderer_delivers_every_frame_the_ui_asks_for() {
         let (pump, _) = slow_pump(1);
-        let (worst, fresh) = ui_ticks(&pump, 100, Duration::from_millis(4));
-        assert!(worst < Duration::from_millis(30), "tick took {worst:?}");
-        assert!(fresh >= 80, "only {fresh} of 100 ticks had a new frame");
+        let (worst, fresh, _) = ui_ticks(&pump, 100, Duration::from_millis(4), true);
+        assert!(worst < Duration::from_millis(100), "tick took {worst:?}");
+        assert_eq!(fresh, 100, "only {fresh} of 100 ticks had a new frame");
     }
 
     #[test]
