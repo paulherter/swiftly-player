@@ -152,7 +152,7 @@ fi
 # The committed Swift bindings (`Generated.swift`) must equal a fresh generation from the Rust exports. A merge once
 # left the regenerated file out: the Rust side had `SeerrEpisodeInfo`, the shared Swift views used it, and the tip did
 # not compile for Apple while every Rust gate was green. (The Kotlin bindings are not committed; Android generates them
-# at build time. `Tokens.swift` has its own `gen_tokens --check`, the TV measures their check above.)
+# at build time. the TV measures their check above.)
 if bindings=$(CARGO_BUILD_JOBS=6 cargo run -q -p xtask -- apple --check-bindings 2>&1); then
     report "Swift-Bindings" "${green}aktuell${reset}"
 else

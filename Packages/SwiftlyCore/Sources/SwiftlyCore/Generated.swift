@@ -16272,6 +16272,12 @@ public protocol PlayerVmProtocol: AnyObject, Sendable {
     func start() 
     
     /**
+     * This model replaces one whose stream was paused when `StartEpisode` / `ReloadForSubtitle` reloaded it (their
+     * `paused`): the title pauses once it is loaded. Call before the engine's load finishes.
+     */
+    func startPaused() 
+    
+    /**
      * Where the picture goes: this screen, the small window, AirPlay.
      */
     func surface()  -> PlayerSurface
@@ -16677,6 +16683,18 @@ open func stage() -> PlayerStageState  {
 open func start()  {try! rustCall() {
         uniffiCallStatus in
     uniffi_swiftly_uniffi_fn_method_playervm_start(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * This model replaces one whose stream was paused when `StartEpisode` / `ReloadForSubtitle` reloaded it (their
+     * `paused`): the title pauses once it is loaded. Call before the engine's load finishes.
+     */
+open func startPaused()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_swiftly_uniffi_fn_method_playervm_start_paused(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -59262,13 +59280,20 @@ public enum PlayerEffectOut: Equatable, Hashable {
     /**
      * Fetch the plan of this episode, then `load_title`. The old stop is reported already.
      */
-    case startEpisode(id: String, fromCard: Bool, since: Double
+    case startEpisode(id: String, fromCard: Bool, since: Double, 
+        /**
+         * A reload of the same title (a quality choice) whose old stream was paused: the host that builds a new model
+         * for the new plan calls `start_paused` on it. Always `false` for another episode.
+         */paused: Bool
     )
     /**
      * A subtitle on a transcoded stream: `playPlanOnly(..., subtitle)`, then `loadTitle` at `since`, starting on
      * `subtitle` (`-1` off). The old stop is reported already.
      */
-    case reloadForSubtitle(id: String, subtitle: Int64, since: Double
+    case reloadForSubtitle(id: String, subtitle: Int64, since: Double, 
+        /**
+         * The old stream was paused: see `StartEpisode`.
+         */paused: Bool
     )
     /**
      * Write `alwaysDirectPlay` / `bitratesLimit`.
@@ -59313,10 +59338,10 @@ public struct FfiConverterTypePlayerEffectOut: FfiConverterRustBuffer {
         
         case 1: return .close
         
-        case 2: return .startEpisode(id: try FfiConverterString.read(from: &buf), fromCard: try FfiConverterBool.read(from: &buf), since: try FfiConverterDouble.read(from: &buf)
+        case 2: return .startEpisode(id: try FfiConverterString.read(from: &buf), fromCard: try FfiConverterBool.read(from: &buf), since: try FfiConverterDouble.read(from: &buf), paused: try FfiConverterBool.read(from: &buf)
         )
         
-        case 3: return .reloadForSubtitle(id: try FfiConverterString.read(from: &buf), subtitle: try FfiConverterInt64.read(from: &buf), since: try FfiConverterDouble.read(from: &buf)
+        case 3: return .reloadForSubtitle(id: try FfiConverterString.read(from: &buf), subtitle: try FfiConverterInt64.read(from: &buf), since: try FfiConverterDouble.read(from: &buf), paused: try FfiConverterBool.read(from: &buf)
         )
         
         case 4: return .qualityChosen(directPlay: try FfiConverterBool.read(from: &buf), limit: try FfiConverterInt64.read(from: &buf)
@@ -59348,18 +59373,20 @@ public struct FfiConverterTypePlayerEffectOut: FfiConverterRustBuffer {
             writeInt(&buf, Int32(1))
         
         
-        case let .startEpisode(id,fromCard,since):
+        case let .startEpisode(id,fromCard,since,paused):
             writeInt(&buf, Int32(2))
             FfiConverterString.write(id, into: &buf)
             FfiConverterBool.write(fromCard, into: &buf)
             FfiConverterDouble.write(since, into: &buf)
+            FfiConverterBool.write(paused, into: &buf)
             
         
-        case let .reloadForSubtitle(id,subtitle,since):
+        case let .reloadForSubtitle(id,subtitle,since,paused):
             writeInt(&buf, Int32(3))
             FfiConverterString.write(id, into: &buf)
             FfiConverterInt64.write(subtitle, into: &buf)
             FfiConverterDouble.write(since, into: &buf)
+            FfiConverterBool.write(paused, into: &buf)
             
         
         case let .qualityChosen(directPlay,limit):
@@ -81329,6 +81356,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_playervm_start() != 14859) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_swiftly_uniffi_checksum_method_playervm_start_paused() != 7832) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_swiftly_uniffi_checksum_method_playervm_surface() != 42833) {

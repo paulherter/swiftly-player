@@ -28,11 +28,16 @@ extension AppModel {
         return try? JSONDecoder().decode(ServerReminder.self, from: raw)
     }
 
-    /// Only the host name, without scheme, the way you would tell someone.
+    /// Only the host name, without scheme, the way you would tell someone: the server of
+    /// the **active session**, since the error texts say who did not answer.
     ///
-    /// From the stored value and not from the client: that is an actor, and a line of
+    /// Not ``lastServer``: that is the last address typed on the sign-in screen and
+    /// names the wrong host after an account switch or with a second server.
+    /// From the session and not from the client: that is an actor, and a line of
     /// text is not worth a hop across the actor boundary.
-    var serverAddress: String? { lastServer?.address }
+    var serverAddress: String? {
+        session?.serverURL.host(percentEncoded: false).flatMap { $0.isEmpty ? nil : $0 }
+    }
 
     func serverRemember(address: String, name: String, version: String) {
         let e = ServerReminder(address: address, name: name, version: version)

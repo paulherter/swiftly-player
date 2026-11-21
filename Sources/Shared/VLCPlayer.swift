@@ -320,6 +320,9 @@ final class VLCPlayerView: BaseView {
     /// What the lookup found for the running title (next episode, sections), kept until the core's backend exists.
     /// The next title comes from a quality choice (the new core model says when the original plays).
     var coreQualityWish = false
+    /// The stream the core reloads (quality or subtitle) was paused: the next backend pauses once it is loaded. The
+    /// backend sets it when it hands out the core's calls, the next `startEngine` takes it.
+    var coreReloadPaused = false
     var corePendingChapters: [Chapter]?
     var corePendingTrickplay: Trickplay?
     var corePendingNext: Item?

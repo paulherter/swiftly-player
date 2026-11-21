@@ -13,6 +13,9 @@ extension VLCPlayerView {
         avCall += 1
         avEngine?.stop(resetDisplay: false)
         avEngine = nil
+        // Taken for this start only, whichever route it plays by.
+        let reloadPaused = coreReloadPaused
+        coreReloadPaused = false
         let start = JumpTarget.seconds(offSeconds) ?? 0
         let wish = trackRequest
         // A download has no server description: the engine plays the file with the tracks it finds.
@@ -51,6 +54,8 @@ extension VLCPlayerView {
                     coreQualityWish = false
                     (avEngine as? CorePlaybackBackend)?.afterQualitySwitch()
                 }
+                // A reload builds a new core model; the old one's pause does not carry over by itself.
+                if reloadPaused { (avEngine as? CorePlaybackBackend)?.startPaused() }
                 if let backend = avEngine as? CorePlaybackBackend {
                     if let corePendingChapters { backend.adopt(chapters: corePendingChapters) }
                     if let corePendingTrickplay { backend.adopt(trickplay: corePendingTrickplay) }

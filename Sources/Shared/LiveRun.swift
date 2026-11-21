@@ -639,6 +639,7 @@ extension LiveRun {
         case "chapters": await scenarioChapters(model, open: open, close: close)
         case "chapters-remote": await scenarioChaptersRemote(model, open: open, close: close)
         case "pausedseek": await scenarioPausedSeek(model, open: open, close: close)
+        case "pausedpick": await scenarioPausedPick(model, open: open, close: close)
         case "chain": await scenarioChain(model, open: open, close: close)
         case "soak": await scenarioSoak(model, open: open, close: close)
         case "exit": await scenarioExit(model, open: open, close: close)
@@ -772,6 +773,44 @@ extension LiveRun {
         }
         model.downloadsAn = before
         event(["kind": "result", "ok": true])
+    }
+
+    /// The user flow "pause, then pick a picture subtitle" on a title the server transcodes (`bm-dv5-transcode`): the pick reloads the
+    /// title into a new engine, and the title must stay paused. Events `pausedpick`: before the pick, after the reload, then every
+    /// 0.5 s whether it plays and where it is; the result is `ok` when it never played.
+    private static func scenarioPausedPick(_ model: AppModel, open: @escaping (PlayRequest) -> Void, close: @escaping () -> Void) async {
+        let id = titles.first ?? "bm-dv5-transcode"
+        guard var view = await openTitle(model, id, open: open) else { return }
+        NotificationCenter.default.post(name: hideControls, object: nil)
+        _ = await waitFor(12) { view.positionSeconds >= 2 }
+        view.pause()
+        try? await Task.sleep(for: .seconds(1))
+        event(["kind": "pausedpick", "step": "paused", "playing": view.isPlaying, "position": view.positionSeconds])
+        guard let pick = view.subtitleTracks.first(where: { $0.stream?.codec == "hdmv_pgs_subtitle" }) else {
+            event(["kind": "result", "ok": false, "why": "no picture subtitle track"])
+            await closeTitle(view, id, close: close)
+            return
+        }
+        let engineBefore = view.avEngine.map { ObjectIdentifier($0 as AnyObject) }
+        let viewBefore = view
+        view.selectSubtitle(pick)
+        let reloading = await waitFor(8) {
+            current() !== viewBefore || current()?.avEngine.map { ObjectIdentifier($0 as AnyObject) } != engineBefore
+        }
+        let ready = await waitFor(40) {
+            guard let now = current(), now.showsImage else { return false }
+            return now.avEngine.map { ObjectIdentifier($0 as AnyObject) } != engineBefore || now !== viewBefore
+        }
+        if let next = current() { view = next }
+        event(["kind": "pausedpick", "step": "reloaded", "reloading": reloading, "ready": ready, "playing": view.isPlaying, "position": view.positionSeconds])
+        var everPlayed = false
+        for n in 0..<12 {
+            try? await Task.sleep(for: .seconds(0.5))
+            everPlayed = everPlayed || view.isPlaying
+            event(["kind": "pausedpick", "step": "watch", "n": n, "playing": view.isPlaying, "position": view.positionSeconds])
+        }
+        event(["kind": "result", "ok": reloading && ready && !everPlayed, "reloading": reloading, "everPlayed": everPlayed])
+        await closeTitle(view, id, close: close)
     }
 
     /// The picture after a seek while PAUSED must be the frame at the target (the burned-in clock of the bench clips shows it).

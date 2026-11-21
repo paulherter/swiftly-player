@@ -47,6 +47,7 @@ pub mod headless;
 pub mod home;
 pub mod home_choices;
 pub mod home_data;
+pub(crate) mod home_notice;
 pub mod hub;
 pub mod ime;
 pub mod latency;

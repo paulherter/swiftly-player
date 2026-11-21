@@ -20,7 +20,7 @@ final class RustController: UIViewController {
 
     override func loadView() {
         let ground = UIView(frame: UIScreen.main.bounds)
-        // The same colour as the launch screen: generated from `surface.base` (gen_tokens), never typed in here.
+        // The same colour as the launch screen: generated from `surface.base`, never typed in here.
         ground.backgroundColor = UIColor(named: "StartBackground") ?? .black
         engine.view.frame = ground.bounds
         engine.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]

@@ -54,10 +54,13 @@ impl PlayerCalls {
         for e in effects {
             match e {
                 PlayerEffect::Close => c.close = true,
+                // `paused` is for a host that builds a new model per plan; the desktop calls `load_title` on the model
+                // it has, which keeps the transport itself.
                 PlayerEffect::StartEpisode {
                     id,
                     from_card,
                     since,
+                    ..
                 } => {
                     c.switch_to = Some(SwitchTo {
                         id,
@@ -69,6 +72,7 @@ impl PlayerCalls {
                     id,
                     subtitle,
                     since,
+                    ..
                 } => {
                     c.switch_to = Some(SwitchTo {
                         id,
@@ -414,6 +418,7 @@ mod tests {
             id: "e1".into(),
             subtitle: 4,
             since: 12.0,
+            paused: false,
         }]);
         assert_eq!(
             c.switch_to,
@@ -440,6 +445,7 @@ mod tests {
                 id: "e1".into(),
                 from_card: false,
                 since: 30.0,
+                paused: false,
             },
         ]);
         assert_eq!(c.quality, Some(q));

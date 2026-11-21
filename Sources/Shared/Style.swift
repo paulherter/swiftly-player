@@ -2252,7 +2252,7 @@ enum Region: Int, CaseIterable, Identifiable {
         }
     }
 
-    /// Bottom-bar icon (`Sources/iOS/Icons.xcassets`, drawn from `design/icons/mapping.json`, `tab-*`):
+    /// Bottom-bar icon (`Sources/iOS/Icons.xcassets`, `tab-*`):
     /// outline when not selected, the filled variant when selected, as in Apple's tab bars.
     func tabAsset(selected: Bool) -> String? {
         let base: String

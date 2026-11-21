@@ -666,7 +666,8 @@ fn outro_card_counts_down_and_starts_the_next_episode() {
         effects.contains(&PlayerEffect::StartEpisode {
             id: "ep2".into(),
             from_card: true,
-            since: 0.0
+            since: 0.0,
+            paused: false
         }),
         "{effects:?}"
     );
@@ -1941,6 +1942,7 @@ fn reload_of(effects: &[PlayerEffect]) -> Option<(String, i64, f64)> {
             id,
             subtitle,
             since,
+            ..
         } => Some((id.clone(), *subtitle, *since)),
         _ => None,
     })
@@ -1989,6 +1991,136 @@ fn a_bitmap_subtitle_on_a_transcode_reloads_at_the_position_with_the_track() {
     // Dropping the burned track, or taking another, needs a new plan again.
     r.vm.send(PlayerIntent::SelectSubtitle(-1), 107.0);
     assert_eq!(reload_of(&r.vm.take_effects()).map(|(_, s, _)| s), Some(-1));
+}
+
+/// Pause, pick a picture subtitle on a transcode, let the reloaded stream arrive: it pauses once it is loaded.
+fn reload_after_pick(pause_first: bool) -> Rig {
+    let r = transcode_rig(PlayMethod::Transcode, HLS);
+    if pause_first {
+        r.vm.send(PlayerIntent::TogglePlay, 104.0);
+        // The engine confirms the pause (the stage reads the transport from it).
+        r.vm.engine_event(EngineEvent::State(EngineState::Paused), 104.1);
+    }
+    r.vm.take_effects();
+    r.vm.send(PlayerIntent::SelectSubtitle(4), 105.0);
+    let (_, _, since) = reload_of(&r.vm.take_effects()).expect("a reload for the subtitle");
+    let mut sp = spec(since, false);
+    sp.plan.method = PlayMethod::Transcode;
+    sp.request.url = format!("{HLS}&SubtitleMethod=Encode&SubtitleStreamIndex=4");
+    sp.request
+        .streams
+        .push(stream(4, "Subtitle", "eng", "hdmv_pgs_subtitle"));
+    sp.subtitle_index = 4;
+    r.vm.load_title(sp, 106.0);
+    let before = r.engine.calls().iter().filter(|c| *c == "pause").count();
+    r.picture(107.0, since, 3600.0);
+    let after = r.engine.calls().iter().filter(|c| *c == "pause").count();
+    assert_eq!(
+        after > before,
+        pause_first,
+        "pause calls {before} -> {after}"
+    );
+    r
+}
+
+/// What the Apple hosts do with the reload: the plan for it goes to a NEW model (`startEngine` builds one per plan), so
+/// the old model's switch state is gone and `load_title` never runs. The old model's effect says whether the stream was
+/// paused; the host hands that to the new model (`start_paused`) before the engine's load finishes. Returns the effect's
+/// `paused` and the transport commands the new model gave its engine.
+fn new_model_after_pick(pause_first: bool, tell_the_new_model: bool) -> (bool, Vec<String>) {
+    let r = transcode_rig(PlayMethod::Transcode, HLS);
+    if pause_first {
+        r.vm.send(PlayerIntent::TogglePlay, 104.0);
+        r.vm.engine_event(EngineEvent::State(EngineState::Paused), 104.1);
+    }
+    r.vm.take_effects();
+    r.vm.send(PlayerIntent::SelectSubtitle(4), 105.0);
+    let effects = r.vm.take_effects();
+    let (_, _, since) = reload_of(&effects).expect("a reload for the subtitle");
+    let paused = effects
+        .iter()
+        .find_map(|e| match e {
+            PlayerEffect::ReloadForSubtitle { paused, .. } => Some(*paused),
+            _ => None,
+        })
+        .expect("the reload effect");
+    // The host drops the old model and builds the next one for the burned-in plan.
+    let engine = Arc::new(Fake::default());
+    let mut sp = spec(since, false);
+    sp.plan.method = PlayMethod::Transcode;
+    sp.request.url = format!("{HLS}&SubtitleMethod=Encode&SubtitleStreamIndex=4");
+    sp.request
+        .streams
+        .push(stream(4, "Subtitle", "eng", "hdmv_pgs_subtitle"));
+    sp.subtitle_index = 4;
+    let vm = PlayerVm::new(
+        engine.clone(),
+        Arc::new(Reports::default()),
+        Arc::new(Words),
+        PlayerPrefs::default(),
+        sp,
+        106.0,
+    );
+    if paused && tell_the_new_model {
+        vm.start_paused();
+    }
+    vm.start(106.0);
+    // The engine's answers, in the order it gives them.
+    for event in [
+        EngineEvent::LoadFinished { attempt: 1 },
+        EngineEvent::Duration(3600.0),
+        EngineEvent::FirstFrame,
+        EngineEvent::Clock {
+            position: since,
+            source_time: since,
+        },
+    ] {
+        vm.engine_event(event, 107.0);
+    }
+    let transport = engine
+        .calls()
+        .into_iter()
+        .filter(|c| c == "play" || c == "pause")
+        .collect();
+    (paused, transport)
+}
+
+#[test]
+fn a_paused_title_stays_paused_when_the_host_builds_a_new_model_for_the_reload() {
+    let (paused, transport) = new_model_after_pick(true, true);
+    assert!(paused, "the effect says the old stream was paused");
+    // The load finished: the last word to the engine is pause, and no play comes after it.
+    assert_eq!(
+        transport.last().map(String::as_str),
+        Some("pause"),
+        "{transport:?}"
+    );
+}
+
+#[test]
+fn the_new_model_that_is_not_told_plays_on() {
+    // The measured failure: the effect said paused, the host built the new model without it, the engine got `play`
+    // and no `pause` (`load, play, pause, load, play` at the engine).
+    let (paused, transport) = new_model_after_pick(true, false);
+    assert!(paused);
+    assert_eq!(transport, vec!["play".to_string()]);
+}
+
+#[test]
+fn a_playing_title_is_not_paused_by_the_reload() {
+    let (paused, transport) = new_model_after_pick(false, true);
+    assert!(!paused);
+    assert_eq!(transport, vec!["play".to_string()]);
+}
+
+#[test]
+fn a_subtitle_reload_keeps_a_paused_title_paused() {
+    reload_after_pick(true);
+}
+
+#[test]
+fn a_subtitle_reload_of_a_playing_title_keeps_playing() {
+    reload_after_pick(false);
 }
 
 #[test]

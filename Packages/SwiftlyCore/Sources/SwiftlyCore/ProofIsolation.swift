@@ -28,6 +28,17 @@ public enum ProofIsolation {
         debugBuild && isProofRun(arguments) ? proofKeychainService : realKeychainService
     }
 
+    /// Whether this launch keeps accounts and secrets in memory only (`SecretGate`): a DEBUG `-SwiftlyLiveMemory` run. It then
+    /// reads no stored account and writes none, not even into the proof service; a Release build never does.
+    public static func usesMemoryOnly(arguments: [String] = ProcessInfo.processInfo.arguments) -> Bool {
+        memoryOnly(arguments: arguments, debugBuild: isDebugBuild)
+    }
+
+    /// The same decision with the build kind given (for tests).
+    public static func memoryOnly(arguments: [String], debugBuild: Bool) -> Bool {
+        debugBuild && arguments.contains("-SwiftlyLiveMemory")
+    }
+
     private static var isDebugBuild: Bool {
         #if DEBUG
         true

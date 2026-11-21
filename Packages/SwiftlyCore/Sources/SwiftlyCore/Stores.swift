@@ -206,13 +206,17 @@ public final class KeychainSecretStore: SecretStore {
     private let service: String
     private let accessGroup: String?
     private let dataProtection: Bool
+    private let gate: SecretGate
 
     /// - Parameter dataProtection: Mac only; `false` skips the data-protection keychain and the migration
     ///   (an unsigned test host has no entitlement for it).
-    public init(service: String = "de.paulherter.swiftly", accessGroup: String? = nil, dataProtection: Bool = true) {
+    /// - Parameter gate: the door to the system Keychain; a memory-only gate (`-SwiftlyLiveMemory`) never touches it.
+    public init(service: String = "de.paulherter.swiftly", accessGroup: String? = nil, dataProtection: Bool = true,
+                gate: SecretGate = .shared) {
         self.service = service
         self.accessGroup = accessGroup
         self.dataProtection = dataProtection
+        self.gate = gate
     }
 
     func query(_ name: String, oldCache: Bool = false) -> [String: Any] {
@@ -243,9 +247,9 @@ public final class KeychainSecretStore: SecretStore {
     public func set(name: String, value: String) { _ = save(Data(value.utf8), name) }
 
     public func remove(name: String) {
-        SecItemDelete(query(name) as CFDictionary)
+        gate.delete(query(name) as CFDictionary)
         #if os(macOS)
-        if dataProtection { SecItemDelete(query(name, oldCache: true) as CFDictionary) }
+        if dataProtection { gate.delete(query(name, oldCache: true) as CFDictionary) }
         #endif
     }
 
@@ -254,7 +258,7 @@ public final class KeychainSecretStore: SecretStore {
         request[kSecReturnData as String] = true
         request[kSecMatchLimit as String] = kSecMatchLimitOne
         var found: CFTypeRef?
-        guard SecItemCopyMatching(request as CFDictionary, &found) == errSecSuccess else { return nil }
+        guard gate.copyMatching(request as CFDictionary, &found) == errSecSuccess else { return nil }
         return found as? Data
     }
 
@@ -263,13 +267,13 @@ public final class KeychainSecretStore: SecretStore {
         var add = query(name)
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        var status = SecItemAdd(add as CFDictionary, nil)
+        var status = gate.add(add as CFDictionary)
         if status == errSecDuplicateItem {
             let new: [String: Any] = [
                 kSecValueData as String: data,
                 kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             ]
-            status = SecItemUpdate(query(name) as CFDictionary, new as CFDictionary)
+            status = gate.update(query(name) as CFDictionary, new as CFDictionary)
         }
         return status
     }

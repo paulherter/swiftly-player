@@ -38,7 +38,7 @@ enum Region: String, Hashable, CaseIterable {
         }
     }
 
-    /// Tab icon set A, the same assets as the iPhone tab bar (`design/icons/mapping.json`, `tab-*`):
+    /// Tab icon set A, the same assets as the iPhone tab bar (`tab-*`):
     /// outline when idle, filled when selected. `nil` keeps `symbol` (search, watchlist).
     func tabAsset(selected: Bool) -> String? {
         let base: String

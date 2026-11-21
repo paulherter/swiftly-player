@@ -11,7 +11,7 @@ import Testing
 
     @Test func everyEffectHasItsPlace() {
         let calls = PlayerCalls([
-            .startEpisode(id: "ep2", fromCard: true, since: 0),
+            .startEpisode(id: "ep2", fromCard: true, since: 0, paused: false),
             .qualityChosen(directPlay: false, limit: 8),
             .forgetPrepared,
             .close,
@@ -31,8 +31,8 @@ import Testing
 
     @Test func theNewestOfTheSameKindWins() {
         let calls = PlayerCalls([
-            .startEpisode(id: "a", fromCard: false, since: 1),
-            .startEpisode(id: "b", fromCard: true, since: 2),
+            .startEpisode(id: "a", fromCard: false, since: 1, paused: false),
+            .startEpisode(id: "b", fromCard: true, since: 2, paused: false),
             .nudge(rating: true), .nudge(rating: false),
         ])
         #expect(calls.switchTo?.id == "b" && calls.switchTo?.since == 2)
@@ -40,19 +40,26 @@ import Testing
     }
 
     @Test func aSubtitleOnATranscodeIsAReloadOfTheRunningTitleWithTheTrack() {
-        let calls = PlayerCalls([.reloadForSubtitle(id: "ep1", subtitle: 4, since: 601.5)])
+        let calls = PlayerCalls([.reloadForSubtitle(id: "ep1", subtitle: 4, since: 601.5, paused: false)])
         #expect(calls.switchTo?.id == "ep1" && calls.switchTo?.since == 601.5 && calls.switchTo?.fromCard == false)
         #expect(calls.reloadSubtitle == 4)
         #expect(calls.quality == nil && !calls.isEmpty)
         // Off is a track choice too: a burned track has to leave the picture.
-        #expect(PlayerCalls([.reloadForSubtitle(id: "ep1", subtitle: -1, since: 0)]).reloadSubtitle == -1)
+        #expect(PlayerCalls([.reloadForSubtitle(id: "ep1", subtitle: -1, since: 0, paused: false)]).reloadSubtitle == -1)
         // A plain episode switch carries no subtitle.
-        #expect(PlayerCalls([.startEpisode(id: "ep2", fromCard: true, since: 0)]).reloadSubtitle == nil)
+        #expect(PlayerCalls([.startEpisode(id: "ep2", fromCard: true, since: 0, paused: false)]).reloadSubtitle == nil)
+    }
+
+    @Test func aReloadOfAPausedStreamSaysSoForTheNewModel() {
+        #expect(PlayerCalls([.reloadForSubtitle(id: "ep1", subtitle: 4, since: 601.5, paused: true)]).reloadPaused)
+        #expect(PlayerCalls([.startEpisode(id: "ep1", fromCard: false, since: 601, paused: true)]).reloadPaused)
+        #expect(!PlayerCalls([.reloadForSubtitle(id: "ep1", subtitle: 4, since: 601.5, paused: false)]).reloadPaused)
+        #expect(!PlayerCalls([.startEpisode(id: "ep2", fromCard: true, since: 0, paused: false)]).reloadPaused)
     }
 
     @Test func aQualityReloadIsTheSameIdAsTheRunningTitle() {
         let calls = PlayerCalls([.qualityChosen(directPlay: true, limit: 0), .forgetPrepared,
-                                 .startEpisode(id: "ep1", fromCard: false, since: 601)])
+                                 .startEpisode(id: "ep1", fromCard: false, since: 601, paused: false)])
         #expect(calls.switchTo?.id == "ep1" && calls.quality?.directPlay == true && calls.forgetPrepared)
         #expect(calls.close == false && calls.prepareNext == nil)
     }

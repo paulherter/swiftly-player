@@ -124,7 +124,7 @@ val Inter = androidx.compose.ui.text.font.FontFamily(
 object Theme {
     /**
      * Android TV keeps its own look for now (separate pass); the phone reads every colour, radius and spacing below
-     * from `DesignTokens` (touch layout, generated from `design/tokens.json`). Set once in `TvActivity.onCreate`.
+     * from `DesignTokens` (touch layout, generated). Set once in `TvActivity.onCreate`.
      */
     @JvmStatic var tvMode: Boolean = false
 

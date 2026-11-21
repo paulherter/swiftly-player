@@ -44,6 +44,24 @@ struct HomeView: View {
     @State private var loadsNew = false
     /// How far the page has scrolled, **only for the header gradient.**
     @State private var distance = ScrollDistance()
+    /// **A silent server over rows that are already there** (the stored page, shown at once): the core says
+    /// `Offline` once the refresh failed. The rows stay and the notice stands above them. Only for the two
+    /// failures whose words are "does not answer"; the page without any rows has its full-page notice.
+    private var noticeOverRows: Bool {
+        state.disrupted && !state.allEmpty && (state.trouble == .unreachable || state.trouble == .server)
+    }
+    /// **Whether the notice stands above the rows.** It is a block of about 250 pt: coming or going, it moves
+    /// every row below it. So it changes only while the page is at the top (`atTop`; scrolled down, the change
+    /// waits for the way back, instead of pushing what the reader is looking at) and always in an explicit
+    /// transaction, one eased move (`Motion.noticeMove`, none under Reduce Motion), never in one frame.
+    @State private var noticeOpen = false
+    @State private var atTop = true
+    private var noticeShown: Bool { noticeOpen }
+    private func settleNotice() {
+        let want = noticeOverRows
+        guard atTop, noticeOpen != want else { return }
+        withAnimation(Motion.noticeMove) { noticeOpen = want }
+    }
     /// **An account switch is running** (experiment `experiment-glas`): the rows are
     /// off and only return once there is content and the profile page is closed,
     /// then staggered (``Reihenauftritt``).
@@ -216,21 +234,16 @@ struct HomeView: View {
     ///
     /// Content visibly scrolls underneath instead of being cut off at a hard black
     /// edge. The magnifier is gone; Search is now its own section in the bar below.
+    ///
+    /// **Wide as well as narrow.** On iPad the first page used to start straight with its first row
+    /// and the system bar above it said "Swiftly": every other root page there shows its own title.
     @ViewBuilder private var header: some View {
-        if wide {
-            // **No gradient.** On iPhone it carries the top header bar; here the bar is on
-            // the left, and above the content there is nothing for it to run under. A
-            // gradient without a header bar is decoration, which this design does not have.
-            EmptyView()
-        } else {
-            headerLine
-        }
+        headerLine
     }
 
     private var headerLine: some View {
         // **The gradient only pulls in when scrolling.** At rest there is no content
-        // under the header yet, so it covers nothing. `headerLine` only exists in narrow
-        // layout anyway.
+        // under the header yet, so it covers nothing.
         HeaderReader(distance: distance) {
             HStack(alignment: .center, spacing: 0) {
                 // **A title like every other root page**: the first tab's own name, set the way
@@ -252,8 +265,11 @@ struct HomeView: View {
                 // **The offer is no longer here** but in `HeaderTargets` itself: it belongs with
                 // Watchlist and Profile and so on every root page, not just this one.
                 // **The heart is in `HeaderTargets` itself**, on every main page.
-                HeaderTargets(name: model.session?.userName ?? "?",
-                          image: model.userImageURL())
+                // Wide, the sidebar carries these.
+                if !wide {
+                    HeaderTargets(name: model.session?.userName ?? "?",
+                              image: model.userImageURL())
+                }
             }
             .foregroundStyle(Theme.font)
             .disabled(previewing)
@@ -318,7 +334,7 @@ struct HomeView: View {
                 // the full-page notice (`notPresent`) only comes when there are no rows. The rows stay; the
                 // same section notice as everywhere else stands above them. Only for the two failures whose
                 // words are "does not answer" (a refused sign-in or an unreadable answer have their own page).
-                if state.disrupted, !state.allEmpty, state.trouble == .unreachable || state.trouble == .server {
+                if noticeShown {
                     DisturbHint(model: model, retry: { newTry() }, spacingTop: 0, loads: loadsNew)
                         .transition(.opacity)
                 }
@@ -385,6 +401,10 @@ struct HomeView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .animation(Theme.reveal, value: state.loaded)
+        // The notice above the rows opens and closes in an explicit transaction (`settleNotice`), only at the top.
+        .onAppear { noticeOpen = noticeOverRows }
+        .onChange(of: noticeOverRows) { _, _ in settleNotice() }
+        .onChange(of: atTop) { _, _ in settleNotice() }
         // The "when" for the "how" above: the genre rows cross-fade when they arrive.
         .animation(Theme.reveal, value: state.genreRails.map(\.name))
         .scrollIndicators(.hidden)
@@ -392,7 +412,7 @@ struct HomeView: View {
         //
         // When wide there is no bar at the bottom; it is on the left. The space
         // `stripHeight` keeps free would be an empty strip there.
-        .contentMargins(.top, (wide ? Theme.headerTop + 20 : 58)
+        .contentMargins(.top, (wide ? Theme.headerTop + 58 : 58)
                         + (duoColumn ? Theme.duoTop : 0)
                         + (windowButtons ? WindowButtons.height : 0),
                         for: .scrollContent)
@@ -409,6 +429,12 @@ struct HomeView: View {
             // Now only the header reads it, and above 240 nothing visibly changes anymore.
             let value = min(max(new, 0), 240)
             if abs(value - distance.value) >= 0.5 { distance.value = value }
+        }
+        // Only the flip changes anything here, so scrolling does not rebuild the page.
+        .onScrollGeometryChange(for: Bool.self) {
+            $0.contentOffset.y + $0.contentInsets.top < 40
+        } action: { _, atTop in
+            self.atTop = atTop
         }
         .refreshable {
             await load()

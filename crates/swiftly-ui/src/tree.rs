@@ -257,8 +257,13 @@ pub(crate) fn reconcile(rec: &mut Rec, mut n: Node, id: u64) -> RNode {
         let (w, h, align) = (*w, *h, *align);
         if !st.frame_seen {
             st.frame_seen = true;
-            st.frame_w = Animated::new(f64::from(w.unwrap_or(0.0)));
-            st.frame_h = Animated::new(f64::from(h.unwrap_or(0.0)));
+            let from = if rec.reduce || (rec.first && n.appear_skip_first) {
+                None
+            } else {
+                n.frame_appear
+            };
+            st.frame_w = Animated::new(f64::from(from.and_then(|f| f.0).or(w).unwrap_or(0.0)));
+            st.frame_h = Animated::new(f64::from(from.and_then(|f| f.1).or(h).unwrap_or(0.0)));
         }
         if let Some(w) = w {
             st.frame_w.set_target(f64::from(w), rec.now, fm);

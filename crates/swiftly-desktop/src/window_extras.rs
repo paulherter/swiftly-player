@@ -2,7 +2,7 @@
 //! arrive (command line, second launch, drag and drop), the scripted wheel run and the input-to-present timer.
 //! `app.rs` holds one [`Extras`] and calls it at a few well-defined points, so this logic stays out of the loop.
 
-use crate::app_icon::icon_rgba;
+use crate::app_icon::shell_icon_rgba;
 use crate::cli::Options;
 use crate::deep_link::{self, Launch};
 use crate::latency::{self, InputLatency};
@@ -25,7 +25,7 @@ pub const PRODUCT_NAME: &str = "Swiftly Player";
 /// The Swiftly logo as a window icon (`small`: the 64 px picture for the title bar and taskbar corner; otherwise the large
 /// one). `None` when the embedded picture cannot be decoded.
 pub fn window_icon(small: bool) -> Option<winit::window::Icon> {
-    let (rgba, w, h) = icon_rgba(small)?;
+    let (rgba, w, h) = shell_icon_rgba(small)?;
     winit::window::Icon::from_rgba(rgba, w, h).ok()
 }
 
@@ -37,7 +37,7 @@ pub fn window_icon(small: bool) -> Option<winit::window::Icon> {
 pub fn toplevel_pictures() -> Vec<crate::toplevel_icon::Picture> {
     [true, false]
         .into_iter()
-        .filter_map(icon_rgba)
+        .filter_map(shell_icon_rgba)
         .filter(|(_, w, h)| w == h)
         .map(|(rgba, side, _)| crate::toplevel_icon::Picture { side, rgba })
         .collect()

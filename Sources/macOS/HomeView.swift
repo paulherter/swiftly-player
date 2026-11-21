@@ -43,6 +43,18 @@ struct HomeView: View {
     private var noticeOverRows: Bool {
         loaded && state.disrupted && !state.allEmpty && (state.trouble == .unreachable || state.trouble == .server)
     }
+    /// **Whether the notice stands above the rows.** It is a block of about 250 pt: coming or going, it moves
+    /// every row below it. So it changes only while the page is at the top (`atTop`; scrolled down, the change
+    /// waits for the way back, instead of pushing what the reader is looking at) and always in an explicit
+    /// transaction, one eased move (`Motion.noticeMove`, none under Reduce Motion), never in one frame.
+    @State private var noticeOpen = false
+    @State private var atTop = true
+    private var noticeShown: Bool { noticeOpen }
+    private func settleNotice() {
+        let want = noticeOverRows
+        guard atTop, noticeOpen != want else { return }
+        withAnimation(Motion.noticeMove) { noticeOpen = want }
+    }
     /// A retry from the notice is running.
     @State private var retries = false
 
@@ -172,7 +184,7 @@ struct HomeView: View {
 
                 // **The server notice above the stored rows**, directly under the title. The rows below
                 // are what was stored; the notice says why they may be old.
-                if noticeOverRows {
+                if noticeShown {
                     DisturbHint(model: model, retry: { newTry() }, spacingTop: 0, loads: retries)
                         .padding(.horizontal, Theme.edgeSpacing)
                         .transition(.opacity)
@@ -268,6 +280,10 @@ struct HomeView: View {
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, new in
             headerState.offset = new
         }
+        // Only the flip changes anything here, so scrolling does not rebuild the page.
+        .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.contentInsets.top < 40 } action: { _, atTop in
+            self.atTop = atTop
+        }
         // **The frosted bar at the top edge.** macOS 26 places it over every scroll view
         // by itself; it was never in our code, so it is easy to look in the wrong place.
         // Over the image it disappeared, and on plain background it showed up as a bar.
@@ -292,7 +308,9 @@ struct HomeView: View {
             }
         }
         .animation(Theme.reveal, value: loaded)
-        .animation(Theme.reveal, value: noticeOverRows)
+        .onAppear { noticeOpen = noticeOverRows }
+        .onChange(of: noticeOverRows) { _, _ in settleNotice() }
+        .onChange(of: atTop) { _, _ in settleNotice() }
         // Seerr signs in after the first rows: read again when the connection comes or a switch changes.
         .seerrHomeReload(seerr, model: model)
         .task { await load() }

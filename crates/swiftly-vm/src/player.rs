@@ -261,6 +261,10 @@ pub enum PlayerEffect {
         from_card: bool,
         /// Start position; not zero for a quality switch of the same title.
         since: f64,
+        /// A reload of the same title (a quality choice) whose old stream was paused. A host that builds a new model
+        /// for the new plan calls [`PlayerVm::start_paused`] on it; a host that calls [`PlayerVm::load_title`] on this
+        /// model needs nothing (that call keeps the transport itself). Always `false` for another episode.
+        paused: bool,
     },
     /// A subtitle was picked (or dropped) while a transcoded stream plays, and the server can only deliver it
     /// in the picture: ask the plan again with this subtitle (`play_plan_only(..., subtitle)`), then
@@ -273,6 +277,8 @@ pub enum PlayerEffect {
         subtitle: i64,
         /// Resume position in seconds.
         since: f64,
+        /// The old stream was paused: see [`PlayerEffect::StartEpisode::paused`].
+        paused: bool,
     },
     /// The user chose another quality: write `alwaysDirectPlay` / `bitratesLimit`.
     QualityChosen(Quality),
@@ -1020,6 +1026,14 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
         });
     }
 
+    /// This model replaces one whose stream was paused when it was reloaded (`paused` of
+    /// [`PlayerEffect::StartEpisode`] / [`PlayerEffect::ReloadForSubtitle`]); the host builds a new model for every
+    /// plan, so the old model's switch state is gone. Call before the engine's load finishes: the title pauses
+    /// once it is loaded.
+    pub fn start_paused(&self) {
+        self.update(|_, l| l.extra.pause_after_load = true);
+    }
+
     /// A limit was chosen but the original plays: say so instead of staying silent.
     fn original_quality_hint(l: &mut Live, now: f64) {
         if l.quality_switched
@@ -1100,7 +1114,16 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
         // A plan that arrives after the player was closed does not open it again.
         self.update(|vm, l| {
             if !l.closed {
+                // A reload of the same title (a picture subtitle on a transcode, or a quality choice) comes back in
+                // the transport the old stream left in: a paused title stays paused. The next episode starts playing.
+                // (This is the way of a host that keeps one model; a host that builds a new model per plan uses
+                // `start_paused`, told by the effect.)
+                let paused = l
+                    .switch
+                    .planning()
+                    .is_some_and(|(back, reload)| reload && back == Back::Paused);
                 vm.install_title(l, spec, now);
+                l.extra.pause_after_load = paused;
             }
         });
     }
@@ -1590,6 +1613,7 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
             id,
             from_card,
             since,
+            paused: reload && back == Back::Paused,
         });
     }
 
@@ -1844,11 +1868,15 @@ impl<E: PlaybackEngine, R: Reporter> PlayerVm<E, R> {
                     let (id, since) = (l.spec.item_id.clone(), l.snap.position);
                     self.switch_to(l, id, false, since, now);
                     // `switch_to` pushed the plain restart: the host needs the subtitle with it.
-                    if let Some(PlayerEffect::StartEpisode { id, since, .. }) = l.effects.pop() {
+                    if let Some(PlayerEffect::StartEpisode {
+                        id, since, paused, ..
+                    }) = l.effects.pop()
+                    {
                         l.effects.push(PlayerEffect::ReloadForSubtitle {
                             id,
                             subtitle: i,
                             since,
+                            paused,
                         });
                     }
                 } else {

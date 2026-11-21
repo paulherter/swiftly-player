@@ -265,14 +265,27 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
         }
     }
 
-    // The notice over the rows (below): a LazyColumn keeps its first visible row where it is when an item appears above it, so a page that
-    // stood at the top would show the notice scrolled out of view. Bring it back when the page was at the top.
-    val noticeShown = homeSilent(failure) && !rails.isNullOrEmpty() && !AccountSwitchTransition.waits
-    LaunchedEffect(noticeShown) {
-        if (!noticeShown) return@LaunchedEffect
-        androidx.compose.runtime.withFrameNanos { }; androidx.compose.runtime.withFrameNanos { }
-        if (list.firstVisibleItemIndex == 1 && list.firstVisibleItemScrollOffset == 0) list.animateScrollToItem(0)
+    // **The notice over the rows** (below; `HomeView` on iPhone). Coming or going, it moves every row below it. So it changes only while the
+    // page is at the top (scrolled down, the change waits for the way back, instead of pushing what the reader is looking at), and the rows
+    // make room in ONE eased move (`Motion.change`, 280 ms), never in one frame. With animations off the system sets Compose's durations
+    // to zero, so nothing moves then.
+    val noticeWanted = homeSilent(failure) && !rails.isNullOrEmpty() && !AccountSwitchTransition.waits
+    var noticeOpen by remember { mutableStateOf(noticeWanted) }
+    // From the flip until the move is over: only then do the rows below carry a placement animation (a reorder elsewhere stays instant).
+    var noticeMoving by remember { mutableStateOf(false) }
+    val topEdge = with(density) { 40.dp.toPx() }
+    val atTop by remember { androidx.compose.runtime.derivedStateOf { list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset < topEdge } }
+    LaunchedEffect(noticeWanted, atTop) {
+        if (!atTop || noticeOpen == noticeWanted) return@LaunchedEffect
+        noticeMoving = true
+        noticeOpen = noticeWanted
+        // A LazyColumn keeps its first visible row where it is when an item appears above it, so a page at the top would show the notice
+        // scrolled out of view. Stay on the first item instead: the notice takes the top and the rows below move down to make room.
+        if (noticeWanted) list.requestScrollToItem(0, 0)
     }
+    LaunchedEffect(noticeMoving) { if (noticeMoving) { kotlinx.coroutines.delay(500); noticeMoving = false } }
+    val noticeShown = noticeOpen
+    val moveSpec: androidx.compose.animation.core.FiniteAnimationSpec<androidx.compose.ui.unit.IntOffset>? = if (noticeMoving) Motion.change() else null
 
     // **No glow.** A colored glow used to sit behind the header; on iPhone it is gone, the home page
     // carries the same dark header gradient as every other page, and that only builds up when
@@ -331,7 +344,7 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
             }
             // Genres either as chips or as rows, never both; the facade then omits the rows.
             if (e.genreChips && e.startGenres.isNotEmpty() && !switches) item(key = "gattungschips") {
-                Box(Modifier.railEntrance(0)) { GenreChips(e.startGenres) { g -> open(Destination(g, g, "Genre")) } }
+                Box(Modifier.animateItem(fadeInSpec = null, placementSpec = moveSpec, fadeOutSpec = null).railEntrance(0)) { GenreChips(e.startGenres) { g -> open(Destination(g, g, "Genre")) } }
             }
             // The rows in the core's Home order (`startReihenfolge`): Seerr's two sections stand where the user put them, and the
             // block holds its room (skeleton cards) until Seerr answers, so the rows below never move.
@@ -342,14 +355,14 @@ fun StartPage(app: SwiftlyApplication, open: (Destination) -> Unit,
                 is HomeRowItem.SeerrRow -> "seerr-${row.part}"
             } }) { row ->
                 when (row) {
-                    is HomeRowItem.SeerrRow -> SeerrHomePartView(app, seerr, row.part, open)
+                    is HomeRowItem.SeerrRow -> Box(Modifier.animateItem(fadeInSpec = null, placementSpec = moveSpec, fadeOutSpec = null)) { SeerrHomePartView(app, seerr, row.part, open) }
                     is HomeRowItem.RailRow -> RailView(row.rail, open, libraryJump, if (row.rail.landscape) { k -> continueWatching(k) } else null, afterwards,
-                        Modifier.animateItem(fadeInSpec = Motion.reveal(), placementSpec = null, fadeOutSpec = null).railEntrance(row.index + 1))
+                        Modifier.animateItem(fadeInSpec = Motion.reveal(), placementSpec = moveSpec, fadeOutSpec = null).railEntrance(row.index + 1))
                 }
             }
             // "Support Swiftly" at the very end, only when the package says so (`SupportPrompt`).
             if (shown.isNotEmpty()) item(key = "unterstuetzen") {
-                Box(Modifier.padding(top = 4.dp)) { de.paulherter.swiftly.support.SupportHomeCard(app) }
+                Box(Modifier.animateItem(fadeInSpec = null, placementSpec = moveSpec, fadeOutSpec = null).padding(top = 4.dp)) { de.paulherter.swiftly.support.SupportHomeCard(app) }
             }
         }
         }

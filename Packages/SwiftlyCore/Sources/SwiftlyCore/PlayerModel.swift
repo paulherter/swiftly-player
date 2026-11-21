@@ -29,6 +29,9 @@ public final class PlayerModel {
     public func loadTitle(_ start: PlayerStart) { vm.loadTitle(start: start) }
     /// This model replaces one that reloaded the title after a quality choice.
     public func afterQualitySwitch() { vm.afterQualitySwitch() }
+    /// This model replaces one whose stream was paused when a reload (`PlayerCalls.reloadPaused`) built it: the title
+    /// pauses once it is loaded. Call before the engine's load finishes.
+    public func startPaused() { vm.startPaused() }
     /// The host got no plan for a `startEpisode` / `reloadForSubtitle` effect: the old title comes back (playing or
     /// paused at its position, or still over) with one hint, and nothing asks again by itself.
     public func switchFailed() { vm.switchFailed() }
@@ -88,6 +91,9 @@ public struct PlayerCalls: Equatable, Sendable {
     /// Set with `switchTo` when a subtitle was picked on a transcoded stream: ask the plan with this server index
     /// (`-1` off) so the server burns it in (or drops it), then reload at `switchTo.since`.
     public var reloadSubtitle: Int64?
+    /// Set with `switchTo` when the stream that is reloaded (quality or subtitle) was paused: the new model is told
+    /// (`PlayerModel.startPaused`), or it would start playing.
+    public var reloadPaused = false
     public var quality: (directPlay: Bool, limit: Int64)?
     public var forgetPrepared = false
     public var close = false
@@ -101,10 +107,13 @@ public struct PlayerCalls: Equatable, Sendable {
     public init(_ effects: [PlayerEffectOut]) {
         for effect in effects {
             switch effect {
-            case let .startEpisode(id, fromCard, since): switchTo = (id, fromCard, since)
-            case let .reloadForSubtitle(id, subtitle, since):
+            case let .startEpisode(id, fromCard, since, paused):
+                switchTo = (id, fromCard, since)
+                reloadPaused = paused
+            case let .reloadForSubtitle(id, subtitle, since, paused):
                 switchTo = (id, false, since)
                 reloadSubtitle = subtitle
+                reloadPaused = paused
             case let .qualityChosen(directPlay, limit): quality = (directPlay, limit)
             case .forgetPrepared: forgetPrepared = true
             case .close: close = true
@@ -121,7 +130,7 @@ public struct PlayerCalls: Equatable, Sendable {
     public static func == (a: PlayerCalls, b: PlayerCalls) -> Bool {
         a.switchTo?.id == b.switchTo?.id && a.switchTo?.fromCard == b.switchTo?.fromCard
             && a.switchTo?.since == b.switchTo?.since
-            && a.reloadSubtitle == b.reloadSubtitle
+            && a.reloadSubtitle == b.reloadSubtitle && a.reloadPaused == b.reloadPaused
             && a.quality?.directPlay == b.quality?.directPlay && a.quality?.limit == b.quality?.limit
             && a.forgetPrepared == b.forgetPrepared && a.close == b.close && a.prepareNext == b.prepareNext
             && a.nudge == b.nudge && a.handOver?.subtitle == b.handOver?.subtitle

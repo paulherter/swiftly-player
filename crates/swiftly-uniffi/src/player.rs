@@ -1036,6 +1036,9 @@ pub enum PlayerEffectOut {
         id: String,
         from_card: bool,
         since: f64,
+        /// A reload of the same title (a quality choice) whose old stream was paused: the host that builds a new model
+        /// for the new plan calls `start_paused` on it. Always `false` for another episode.
+        paused: bool,
     },
     /// A subtitle on a transcoded stream: `playPlanOnly(..., subtitle)`, then `loadTitle` at `since`, starting on
     /// `subtitle` (`-1` off). The old stop is reported already.
@@ -1043,6 +1046,8 @@ pub enum PlayerEffectOut {
         id: String,
         subtitle: i64,
         since: f64,
+        /// The old stream was paused: see `StartEpisode`.
+        paused: bool,
     },
     /// Write `alwaysDirectPlay` / `bitratesLimit`.
     QualityChosen {
@@ -1783,6 +1788,12 @@ impl PlayerVm {
         self.inner.vm.after_quality_switch();
     }
 
+    /// This model replaces one whose stream was paused when `StartEpisode` / `ReloadForSubtitle` reloaded it (their
+    /// `paused`): the title pauses once it is loaded. Call before the engine's load finishes.
+    pub fn start_paused(&self) {
+        self.inner.vm.start_paused();
+    }
+
     /// The host got no plan for `StartEpisode` / `ReloadForSubtitle`: the old title comes back (playing or paused at
     /// the same position, or still over) with one hint, and nothing asks again by itself.
     pub fn switch_failed(&self) {
@@ -1880,19 +1891,23 @@ impl PlayerVm {
                     id,
                     from_card,
                     since,
+                    paused,
                 } => PlayerEffectOut::StartEpisode {
                     id,
                     from_card,
                     since,
+                    paused,
                 },
                 PlayerEffect::ReloadForSubtitle {
                     id,
                     subtitle,
                     since,
+                    paused,
                 } => PlayerEffectOut::ReloadForSubtitle {
                     id,
                     subtitle,
                     since,
+                    paused,
                 },
                 PlayerEffect::QualityChosen(Quality { direct_play, limit }) => {
                     PlayerEffectOut::QualityChosen { direct_play, limit }

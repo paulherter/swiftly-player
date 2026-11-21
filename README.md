@@ -1,6 +1,6 @@
 <div align="center">
 
-<a href="https://swiftlyplayer.com"><img src=".github/images/banner.webp" alt="Swiftly Player: your player for Jellyfin. Plex and Emby in beta." width="100%"></a>
+<a href="https://swiftlyplayer.com"><img src=".github/images/banner.webp" alt="Swiftly Player: your player for Jellyfin, Plex and Emby" width="100%"></a>
 
 <p>
 For iPhone, iPad, Apple TV, Mac, Android, Android TV, Linux and Windows.<br>
@@ -38,6 +38,8 @@ Windows, with the same look on every one of them: Direct Play, Picture in
 Picture, several accounts on one server, and a running film that follows you
 from one device to the next.
 
+<img src=".github/images/05-platforms.webp" alt="Swiftly Player on the Mac and the iPhone" width="100%">
+
 <br>
 
 ## Screenshots
@@ -56,10 +58,6 @@ from one device to the next.
 <td align="center"><sub>Profile and servers</sub></td>
 </tr>
 </table>
-
-<img src=".github/images/screens-mac.webp" alt="Swiftly Player on the Mac, with the subtitle settings on the iPhone">
-
-<sub>The Mac app, and the subtitle look on the iPhone.</sub>
 
 <br>
 
@@ -100,6 +98,8 @@ from one device to the next.
 
 ### Continue on this device
 
+<img src=".github/images/01-continue.webp" alt="Hand a running film over to another device" width="100%">
+
 You are watching on the Apple TV. You get up, take your phone, and there is a
 badge next to your profile picture. **Tap it, and the film carries on here,
 from the same second.** The television stops on its own; you do not pause
@@ -129,6 +129,8 @@ in or out; the television already asked who is watching.
 
 ### Watching
 
+<img src=".github/images/02-direct-play.webp" alt="Direct Play mark on the film page" width="100%">
+
 - **Never transcode.** The device profile declares containers, codecs and every
   subtitle format, so the server has no reason to re-encode. Undeclared
   subtitles are the most common cause of a needless transcode.
@@ -138,7 +140,11 @@ in or out; the television already asked who is watching.
 - **Playback speed**, with the position reported back to the server as you
   watch.
 
+<img src=".github/images/03-subtitles.webp" alt="Subtitles and audio menu in the player" width="100%">
+
 ### Finding things
+
+<img src=".github/images/04-seerr.webp" alt="Requesting a missing film through Seerr" width="100%">
 
 - **Several libraries** of the same kind; the app remembers which one you were in.
 - **Search** across your libraries, with the season and episode you meant.
@@ -239,7 +245,7 @@ it. The checksums are listed with each release.
 |---|---|---|
 | Debian, Ubuntu, Linux Mint, Pop!_OS, elementary, Zorin | `swiftly-jellyfin_<version>_amd64.deb` | `sudo apt install ./swiftly-jellyfin_<version>_amd64.deb` |
 | Fedora, Nobara, RHEL, Rocky, AlmaLinux, openSUSE | `swiftly-jellyfin-<version>-1.x86_64.rpm` | `sudo dnf install ./swiftly-jellyfin-<version>-1.x86_64.rpm` (openSUSE: `sudo zypper install ./…`) |
-| Arch, CachyOS, Manjaro and everything else | `swiftly-player-<version>-linux-x64.tar.gz` | unpack it and run `./swiftly-player`, no installation needed |
+| Arch, CachyOS, Manjaro and everything else | `swiftly-player-<version>-linux-x64.tar.gz` | unpack it and run `./install.sh` (for your user, no root; `./install.sh --uninstall` removes it). It then shows up as "Swiftly Player" in the app menu and the search. `./swiftly-player` starts it without installing. |
 
 The packages keep the name `swiftly-jellyfin` from the time the app was called
 Swiftly for Jellyfin, so a new package replaces an older one in place.

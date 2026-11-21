@@ -57,10 +57,6 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
         run: cargo test --workspace --locked
-      - name: Design tokens up to date (design/tokens.json to Rust, Swift, Kotlin)
-        run: cargo run --locked -p swiftly-design --bin gen_tokens -- --semantic --check
-      - name: Token lint (no new raw colour, radius, spacing or font outside the tokens)
-        run: cargo run --locked -p swiftly-design --bin token_lint -- --enforce
       # The Apple core builds the desktop crate without its window (winit has no iOS or tvOS backend). A module that
       # needs winit but is not behind the `window` feature breaks only that build, which no test above compiles.
       - name: Apple core without the window feature

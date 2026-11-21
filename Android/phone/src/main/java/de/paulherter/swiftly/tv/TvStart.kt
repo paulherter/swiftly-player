@@ -3,6 +3,7 @@ package de.paulherter.swiftly.tv
 import de.paulherter.swiftly.KernRules
 
 import de.paulherter.swiftly.shared.Glyph
+import de.paulherter.swiftly.shared.Motion
 import de.paulherter.swiftly.shared.Symbol
 import de.paulherter.swiftly.shared.Strength
 import androidx.compose.animation.Crossfade
@@ -636,13 +637,18 @@ fun TvStartPage(app: SwiftlyApplication, open: (Destination) -> Unit) {
                         // (no debounce as for the image), just softly.
                         // While the server is silent over the rows, the notice takes the place of the readout: the readout belongs to a
                         // title, the notice to the whole page (tvOS `HomeView`).
-                        if (noticeOverRows) TvDisturbNotice(app, loads = retryBusy || running > 0,
-                            modifier = Modifier.padding(start = TvTheme.edgePage, top = 98.dp), retry = retryNow)
-                        else Crossfade(shown, animationSpec = tween(200), label = "kopfauskunft") { k ->
-                            if (k != null) {
-                                HeaderInfo(k.name, k.episodeName, k.detailsRow, k.rating, k.sharing, k.description,
-                                             Modifier.padding(start = TvTheme.edgePage, top = 98.dp)) {
-                                    TvRemainingTimeMark(k.remainingTime, k.watched)
+                        //
+                        // The swap is one eased crossfade (`Motion.change`, 280 ms; none with animations off), not a cut. The zone has its own
+                        // height and the rows sit below it in their own scroll area, so nothing below moves, scrolled or not.
+                        Crossfade(noticeOverRows, animationSpec = Motion.change(), label = "serverhinweis") { notice ->
+                            if (notice) TvDisturbNotice(app, loads = retryBusy || running > 0,
+                                modifier = Modifier.padding(start = TvTheme.edgePage, top = 98.dp), retry = retryNow)
+                            else Crossfade(shown, animationSpec = tween(200), label = "kopfauskunft") { k ->
+                                if (k != null) {
+                                    HeaderInfo(k.name, k.episodeName, k.detailsRow, k.rating, k.sharing, k.description,
+                                                 Modifier.padding(start = TvTheme.edgePage, top = 98.dp)) {
+                                        TvRemainingTimeMark(k.remainingTime, k.watched)
+                                    }
                                 }
                             }
                         }

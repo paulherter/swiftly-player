@@ -597,13 +597,13 @@ class SwiftlyApplication : Application(), coil3.SingletonImageLoader.Factory {
     }.orEmpty().ifEmpty { "?" }
 
     /**
-     * **Who did not answer**, mirrors `AppModel.serverAddress`. The server's host name, else
-     * "The server".
+     * **Who did not answer**, mirrors `AppModel.serverAddress`. The host name of the active
+     * account's server (not the last typed address), else "The server".
      * This is the real gain in the failure state: it shows at a glance whether the server is down
      * or you are on the wrong network.
      */
     fun serverAddress(): String =
-        store.lastServer?.let { runCatching { java.net.URI(it).host }.getOrNull() }
+        activeServer()?.let { runCatching { java.net.URI(it).host }.getOrNull() }
             ?.takeIf { it.isNotEmpty() } ?: de.paulherter.swiftly.shared.translated("Der Server")
 
     /** Takes a fresh session; if accounts already existed, this is a switch. */

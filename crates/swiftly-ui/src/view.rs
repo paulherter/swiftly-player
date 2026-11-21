@@ -352,6 +352,8 @@ pub struct Node {
     /// Set on a frame wrapper whose width or height follows its target with this motion (`.frame(width: open ? 96 : 0)`
     /// inside `withAnimation`): the layout is redone every frame while it moves.
     pub frame_motion: Option<Motion>,
+    /// The width and height an animated frame starts from when it first appears (`Node::appear_frame`).
+    pub frame_appear: Option<(Option<f32>, Option<f32>)>,
     /// What a screen reader gets for this node (role, name, value); without it the tree is inferred from text and taps.
     pub a11y: Option<Box<crate::a11y::A11yNode>>,
 }
@@ -386,6 +388,7 @@ impl Node {
             appear_offset: None,
             exit_offset: None,
             frame_motion: None,
+            frame_appear: None,
             a11y: None,
         }
     }
@@ -808,6 +811,33 @@ impl Node {
         let mut n = self.frame(w, h, align);
         n.frame_motion = Some(motion);
         n
+    }
+
+    /// Where an animated frame (`animated_frame`) starts when its node first appears: it grows from this width and height
+    /// to the declared ones with its motion, so a block that comes into a column opens instead of shoving what is
+    /// below it by its whole height in one frame. Skipped on the first build of the tree (`appear_after_first_build`)
+    /// and under Reduce Motion, where the node is simply there.
+    #[must_use]
+    pub fn appear_frame(mut self, w: Option<f32>, h: Option<f32>) -> Node {
+        self.frame_appear = Some((w, h));
+        self
+    }
+
+    /// The height this node takes when it is offered `width` and as much height as it wants, before any animation or
+    /// state is applied: the target an animated frame around it grows to.
+    #[must_use]
+    pub fn fitted_height(&self, width: f32) -> f32 {
+        fn lower(n: &Node) -> swiftly_layout::Node {
+            let mut l =
+                swiftly_layout::Node::new(n.kind.clone(), n.children.iter().map(lower).collect());
+            l.priority = n.priority;
+            l
+        }
+        swiftly_layout::size_that_fits(
+            &lower(self),
+            swiftly_layout::Proposal::new(Some(width), None),
+        )
+        .h
     }
 
     // ---- pointer interaction (see `crate::interact`) -----------------------------------------------------------------

@@ -607,7 +607,7 @@ struct HomeView: View {
                     .padding(.top, Theme.contentTop)
             }
         }
-        .animation(Theme.reveal, value: noticeOverRows)
+        .animation(Motion.noticeMove, value: noticeOverRows)
         // Full 510, measured from the screen edge.
         //
         // The outer stack leaves out the top margin, so the zone starts at zero and the

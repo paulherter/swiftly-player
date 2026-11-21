@@ -5,7 +5,7 @@ use core::fmt;
 /// The three layout sets of the design: input device and viewing distance decide, not the operating system.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LayoutSet {
-    /// Finger on a phone or tablet (Swiftly iOS values, `JerkKind` group in the design file).
+    /// Finger on a phone or tablet (Swiftly iOS values).
     Touch,
     /// Pointer and keyboard in a window (Swiftly macOS values, `BodyShell` group).
     Desktop,

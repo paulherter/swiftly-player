@@ -756,7 +756,11 @@ class PlayItem(
         session.setMetadata(metadata(image))
     }
 
-    fun launch(new: PlayPlan, since: Double?) {
+    /**
+     * Opens `new` at `since`. `paused` is the core's word for a reload of the same title whose old stream was paused
+     * (`SwitchAnswer.Switched.paused`): the new stream is loaded and shown, not started. Every other start plays.
+     */
+    fun launch(new: PlayPlan, since: Double?, paused: Boolean = false) {
         // Delay: the same title or series keeps it, otherwise null (iOS `episodeApply`).
         plan?.let { alt ->
             fun keep(ms: Int) = KernRules.delayForNewTitle(ms.toLong(), alt.itemId, alt.seriesIdentifier.orEmpty(),
@@ -791,7 +795,7 @@ class PlayItem(
         waitsNetwork = false
         lastGoodPoint = since ?: 0.0
         handoffFadeIn = Handoff.receives(new.itemId)
-        mediaOpen(new.url, since)
+        mediaOpen(new.url, since, paused)
         if (handoffFadeIn) { onPlayer("stumm") { player.volume = 0 }; AppLog.writeOut("[Ton] stumm unter der Übergabe-Karte") }
         lookUp(new)
     }
@@ -812,8 +816,8 @@ class PlayItem(
         }
     }
 
-    /** Build the media and play it, at start and on rebuild after a drop (`newConnect`). */
-    private fun mediaOpen(url: String, since: Double?) {
+    /** Build the media and play it, at start and on rebuild after a drop (`newConnect`); `paused`: load it, do not start it. */
+    private fun mediaOpen(url: String, since: Double?, paused: Boolean = false) {
         filesPrepare()
         // Behind a proxy, the forwarder (OkHttp) fetches the stream with the user's own headers.
         // Without headers the URL stays as it is.
@@ -841,7 +845,7 @@ class PlayItem(
             (if (dv7NoDecoder) " · das Gerät hat keinen Profil-7-Dekoder" else if (dvNoDecoder) " · das Gerät hat keinen Dolby-Vision-Dekoder" else if (dvFirstFrameFailed) " · kein Bild mit Dolby Vision" else ""))
         player.media3Configure(retryPassthrough ?: app.settings.passthrough, dvOff)
         player.openMedia3(address, since, subtitles, subtitleFormats)
-        player.play()
+        if (paused) player.pause() else player.play()
         // The speed the viewer set (shown in the UI) goes on now.
         if (tempo != 1f) player.rateSet(tempo)
     }
@@ -988,7 +992,7 @@ class PlayItem(
                             hint = translated("Läuft in Originalqualität. Der Server wandelt nichts um.")
                         }
                         stopNow("Qualitaet")
-                        launch(newPlan, spot)
+                        launch(newPlan, spot, paused = answer.paused)
                     }
                 }
                 else -> switchOutcomeShow(answer, "Die Folge konnte nicht geladen werden.")
@@ -1016,7 +1020,7 @@ class PlayItem(
             val new = (answer as? SwitchAnswer.Switched)?.plan?.let { playPlanRead(it) }
             if (new != null && new.method == "Transcode" && !ended[0]) {
                 stopNow("Dekoder")
-                launch(new, spot)
+                launch(new, spot, paused = (answer as SwitchAnswer.Switched).paused)
             } else {
                 AppLog.writeOut("[Media3] Kein Umwandlungsplan: Start scheitert")
                 if (!ended[0]) startMoves(PlayerStartVeilEvent.ENGINE_ERROR)
@@ -1600,6 +1604,16 @@ class PlayItem(
             AppLog.writeOut("[Spuren] spaeter ${plan?.itemId} untertitel=" + names() + " gewaehlt=${player.spuTrack}")
             DebugPlay.subtitle?.let { i -> nowOrAfter("Test-Untertitel") { player.spuTrack = if (i < 0) -1 else list.getOrNull(i)?.id ?: -1 }; AppLog.writeOut("[Spuren] Test: Untertitel $i von ${list.size}") }
             DebugPlay.pauseAt?.let { at -> DebugPlay.pauseAt = null; nowOrAfter("Test-Pause") { player.pause() }; delay(700); vault(at); delay(2000); AppLog.writeOut("[Test] pausiert bei $at") }
+            DebugPlay.reload?.let { what ->
+                DebugPlay.reload = null
+                val before = player.isPlaying
+                when (what) {
+                    "quality" -> qualitySwitch()
+                    "subtitle" -> { AppLog.writeOut("[Test] Untertitel von Hand: Spur ${list.firstOrNull()?.id} von ${list.size}"); subtitleFromHand(list.firstOrNull()?.id ?: -1) }
+                }
+                delay(4000)
+                AppLog.writeOut("[Test] nach $what: vorher spielt=$before, jetzt spielt=${player.isPlaying} laeuft=$running position=${position.toInt()}")
+            }
             if (DebugPlay.next && !debugNextDone) {
                 debugNextDone = true
                 delay(1500); AppLog.writeOut("[Test] naechste Folge"); nextEpisode()

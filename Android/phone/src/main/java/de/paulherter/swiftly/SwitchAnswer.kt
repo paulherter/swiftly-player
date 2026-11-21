@@ -15,8 +15,11 @@ sealed interface SwitchAnswer {
     /** A stop the server did not take, to be sent later (`toStop`). */
     val pending: String?
 
-    /** The new episode is planned; `plan` is its play plan JSON (null: the core moved on without one). */
-    data class Switched(val plan: String?, override val pending: String?) : SwitchAnswer
+    /**
+     * The new episode is planned; `plan` is its play plan JSON (null: the core moved on without one). `paused`: the core
+     * says the stream this one replaces was paused (a reload of the same title), so the new one is loaded without being started.
+     */
+    data class Switched(val plan: String?, override val pending: String?, val paused: Boolean = false) : SwitchAnswer
 
     /** A switch was already running, or the player is closed. The old episode stays. */
     data class Locked(override val pending: String?) : SwitchAnswer
@@ -35,7 +38,7 @@ sealed interface SwitchAnswer {
             val o = runCatching { JSONObject(text) }.getOrElse { return Unknown("keine Antwort", null) }
             val pending = o.fieldText("nachmeldung")
             return when (val word = o.optString("ergebnis")) {
-                CoreWords.Ergebnis.SWITCHED -> Switched(o.fieldText("spielplan"), pending)
+                CoreWords.Ergebnis.SWITCHED -> Switched(o.fieldText("spielplan"), pending, o.optBoolean("pausiert", false))
                 CoreWords.Ergebnis.LOCKED -> Locked(pending)
                 CoreWords.Ergebnis.CANCELLED -> Cancelled(pending)
                 CoreWords.Ergebnis.FAILED -> Failed(o.fieldText("fehler"), pending)

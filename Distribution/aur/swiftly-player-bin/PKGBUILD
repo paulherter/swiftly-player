@@ -3,8 +3,10 @@
 # Prebuilt package from the GitHub release, not a source build. The release
 # tarball `swiftly-player-<version>-linux-x64.tar.gz` (built by
 # `Werkzeuge/package-desktop.sh`) contains one folder with the stripped
-# `swiftly-player` binary, the desktop entry, a 256 px icon and a README; this
-# file installs them under /usr like the .deb and .rpm packages do.
+# `swiftly-player` binary, the desktop entry, the launcher icons (corners already
+# cut: Linux shells draw an icon as given), an `install.sh` for users without a
+# package manager and a README; this file installs the first three under /usr
+# like the .deb and .rpm packages do.
 #
 # The binary is linked against glibc 2.35 or newer and loads libmpv, Vulkan and
 # the window system libraries at run time, so those are listed as dependencies.
@@ -42,8 +44,11 @@ package() {
     install -Dm755 "$d/swiftly-player" "$pkgdir/usr/bin/swiftly-player"
     install -Dm644 "$d/de.paulherter.swiftly.player.desktop" \
         "$pkgdir/usr/share/applications/de.paulherter.swiftly.player.desktop"
-    install -Dm644 "$d/app-icon-256.png" \
-        "$pkgdir/usr/share/icons/hicolor/256x256/apps/swiftly-player.png"
+    local s
+    for s in 32 48 64 128 256; do
+        install -Dm644 "$d/icons/swiftly-player-$s.png" \
+            "$pkgdir/usr/share/icons/hicolor/${s}x${s}/apps/swiftly-player.png"
+    done
 
     install -Dm644 "$srcdir/LICENSE-${pkgver}" \
         "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

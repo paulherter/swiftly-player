@@ -34,8 +34,11 @@ OUT=target/desktop-dist
 MPVDLL=${SWIFTLY_LIBMPV_DLL:-$HOME/swiftly-vendor/libmpv-2.dll}
 export NSISDIR=${NSISDIR:-$HOME/.local/nsis}
 A=Distribution/desktop
-ICON=crates/swiftly-desktop/assets/app-icon-256.png
+# The launcher icons have their corners cut already (Werkzeuge/round-linux-icons.py): Linux shells draw an icon as given.
+ICONS=$A/icons
+ICON_SIZES="32 48 64 128 256"
 rm -rf "${OUT:?}"; mkdir -p "${OUT:?}"
+LINUX_README="Swiftly Player $V. ./swiftly-player starts it from this folder; ./install.sh adds it to the app menu and the search (\"Swiftly Player\") for your user, ./install.sh --uninstall removes it. Needs libmpv (package mpv-libs / libmpv2)."
 README="Swiftly Player $V. Starts without installation. Linux needs libmpv (package mpv-libs / libmpv2). Windows: libmpv-2.dll stays next to the exe; to update libmpv replace that file."
 
 if [ -z "${SWIFTLY_WINDOWS_ONLY:-}" ]; then
@@ -73,16 +76,17 @@ bash Werkzeuge/glibc-check.sh "$STRIPPED" "$GLIBC_BASELINE"
 
 # tar.gz
 T="$OUT/tar/swiftly-player-$V-linux-x64"; mkdir -p "$T"
-cp "$STRIPPED" "$T/swiftly-player"; cp "$A/de.paulherter.swiftly.player.desktop" "$ICON" "$T/"
-echo "$README" > "$T/README.txt"
+cp "$STRIPPED" "$T/swiftly-player"; cp "$A/de.paulherter.swiftly.player.desktop" "$T/"
+install -m755 "$A/install.sh" "$T/install.sh"
+mkdir -p "$T/icons"; for s in $ICON_SIZES; do cp "$ICONS/swiftly-player-$s.png" "$T/icons/"; done
+echo "$LINUX_README" > "$T/README.txt"
 tar -C "$OUT/tar" -czf "$OUT/swiftly-player-$V-linux-x64.tar.gz" "swiftly-player-$V-linux-x64"
 
 # root tree shared by deb and rpm
 R="$OUT/root"
 install -Dm755 "$STRIPPED" "$R/usr/bin/swiftly-player"
 install -Dm644 "$A/de.paulherter.swiftly.player.desktop" "$R/usr/share/applications/de.paulherter.swiftly.player.desktop"
-install -Dm644 "$ICON" "$R/usr/share/icons/hicolor/256x256/apps/swiftly-player.png"
-install -Dm644 crates/swiftly-desktop/assets/app-icon-64.png "$R/usr/share/icons/hicolor/64x64/apps/swiftly-player.png"
+for s in $ICON_SIZES; do install -Dm644 "$ICONS/swiftly-player-$s.png" "$R/usr/share/icons/hicolor/${s}x${s}/apps/swiftly-player.png"; done
 
 # deb
 D="$OUT/deb"; mkdir -p "$D/DEBIAN"; cp -a "$R/usr" "$D/"
@@ -132,8 +136,7 @@ cp -a $PWD/$R/usr %{buildroot}/usr
 %files
 /usr/bin/swiftly-player
 /usr/share/applications/de.paulherter.swiftly.player.desktop
-/usr/share/icons/hicolor/256x256/apps/swiftly-player.png
-/usr/share/icons/hicolor/64x64/apps/swiftly-player.png
+$(for s in $ICON_SIZES; do echo "/usr/share/icons/hicolor/${s}x${s}/apps/swiftly-player.png"; done)
 EOT
 rpmbuild -bb --define "_topdir $RB" "$RB/SPECS/$PKG.spec" >/dev/null 2>"$OUT/rpm.log" || { tail -20 "$OUT/rpm.log"; exit 1; }
 cp "$RB"/RPMS/*/*.rpm "$OUT/"

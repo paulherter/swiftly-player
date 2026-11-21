@@ -1,6 +1,6 @@
 [package]
 name = "swiftly-design"
-description = "Design tokens (colours, spacing, radii, sizes, type, shadow, motion) generated from the Swiftly design file"
+description = "Token constants (colours, spacing, radii, sizes, type, shadow, motion) shared by the Swiftly UIs"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,15 +10,8 @@ publish.workspace = true
 [lib]
 path = "src/lib.rs"
 
-[[bin]]
-name = "gen_tokens"
-path = "src/bin/gen_tokens.rs"
-
-[[bin]]
-name = "token_lint"
-path = "src/bin/token_lint.rs"
-
-# Only the generator binary uses these; a crate that depends on the library does not compile them.
+# The generator and lint binaries (src/bin) are found by their file names; they are not part of the public tree.
+# Only they use these dependencies; a crate that depends on the library does not compile them.
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

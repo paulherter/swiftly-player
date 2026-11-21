@@ -38,7 +38,7 @@ settings:
     # The counter applies per version, so it restarts at 1 for a new version.
     # Before resetting it, check the highest build number already uploaded for
     # that version on all platforms in App Store Connect.
-    CURRENT_PROJECT_VERSION: "50"
+    CURRENT_PROJECT_VERSION: "51"
     # Same identifier as in the free-account days: Apple converted the personal
     # team into the paid one instead of creating a second one.
     DEVELOPMENT_TEAM: 63L6TSM2Y9
@@ -102,7 +102,7 @@ targets:
         CFBundleDisplayName: Swiftly
         CFBundleShortVersionString: $(MARKETING_VERSION)
         # Without a color, white flashes briefly before the launch animation.
-        # `StartBackground` is generated from `surface.base` (gen_tokens --semantic), never edit it by hand.
+        # `StartBackground` is generated from `surface.base`, never edit it by hand.
         UILaunchScreen:
           UIColorName: StartBackground
         # All four are required: without UIRequiresFullScreen an app with "1,2"
@@ -231,7 +231,7 @@ targets:
       - path: Sources/Shared/LoginModel.swift
       - path: Sources/Shared/PlayRequest.swift
       - path: Sources/Shared/Colors.swift
-      # The generated design tokens (`design/tokens.json`, layout set `tv`): Apple TV reads its values from here, not from literals.
+      # The generated design tokens (layout set `tv`): Apple TV reads its values from here, not from literals.
       - path: Sources/Shared/Tokens.generated.swift
       - path: Sources/Shared/AppFont.swift
       - path: Sources/Shared/AppIcon.swift
@@ -415,7 +415,7 @@ targets:
     info:
       path: Sources/tvOS/Info.plist
       properties:
-        # The launch colour is generated from `surface.base` (gen_tokens --semantic): the first frame
+        # The launch colour is generated from `surface.base`: the first frame
         # must be the app's ground, not the system default.
         UILaunchScreen:
           UIColorName: StartBackground

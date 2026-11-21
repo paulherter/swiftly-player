@@ -128,3 +128,98 @@ fn an_animated_frame_pushes_its_neighbour_with_the_curve() {
     assert_eq!(x_of_button(&u.frame(1200.0)), Some(96.0));
     assert!(!u.needs_frame());
 }
+
+/// A row of a slot that comes into the tree and the button after it; `from` is the slot's `appear_frame` width.
+fn slot_then_button(from: Option<f32>, skip_first: bool) -> impl Fn(&bool, &Env, &Cx) -> Node {
+    move |open: &bool, _: &Env, _: &Cx| {
+        let mut kids = Vec::new();
+        if *open {
+            let mut slot = Node::rect(Color::new(0.0, 1.0, 0.0, 1.0), 0.0).animated_frame(
+                Some(96.0),
+                Some(30.0),
+                Alignment::LEADING,
+                Motion::of(Id::ControlsIn),
+            );
+            if let Some(w) = from {
+                slot = slot.appear_frame(Some(w), None);
+            }
+            if skip_first {
+                slot = slot.appear_after_first_build();
+            }
+            kids.push(slot.key("slot"));
+        }
+        kids.push(Node::rect(Color::new(0.0, 0.0, 1.0, 1.0), 0.0).frame(
+            Some(30.0),
+            Some(30.0),
+            Alignment::LEADING,
+        ));
+        Node::hstack(Align::Start, Some(0.0), kids).frame(
+            Some(400.0),
+            Some(300.0),
+            Alignment::TOP_LEADING,
+        )
+    }
+}
+
+fn button_x(list: &swiftly_render::DrawList) -> Option<f32> {
+    list.quads()
+        .iter()
+        .find(|q| q.kind == QuadKind::Shape && (q.color.b - 1.0).abs() < 1e-3)
+        .map(|q| q.rect.x)
+}
+
+#[test]
+fn a_frame_that_comes_in_grows_from_its_appear_frame_and_never_jumps() {
+    let curve = Id::ControlsIn.curve();
+    let mut u = Ui::new(
+        slot_then_button(Some(0.0), false),
+        false,
+        env(),
+        Cx::deterministic(),
+    );
+    let _ = u.frame(0.0);
+    assert_eq!(button_x(&u.frame(8.0)), Some(0.0));
+    u.set_parts(true);
+    let mut last = 0.0_f32;
+    let mut worst_step: f32 = 0.0;
+    let mut worst: f32 = 0.0;
+    for ms in (16..=300).step_by(8) {
+        let x = button_x(&u.frame(8.0 + f64::from(ms))).expect("button drawn");
+        worst_step = worst_step.max(x - last);
+        last = x;
+        let want = 96.0 * curve.progress(f64::from(ms) / 1000.0) as f32;
+        worst = worst.max((x - want).abs());
+    }
+    assert!(worst < 96.0 * 0.06, "slot width off by {worst}");
+    assert!(
+        worst_step < 96.0 * 0.5,
+        "one frame moved the button by {worst_step}"
+    );
+    run(&mut u, 400.0, 1200.0);
+    assert_eq!(button_x(&u.frame(1200.0)), Some(96.0));
+    assert!(!u.needs_frame());
+}
+
+#[test]
+fn an_appear_frame_is_skipped_on_the_first_build_and_under_reduce_motion() {
+    // First build of the tree with `appear_after_first_build`: simply there.
+    let mut u = Ui::new(
+        slot_then_button(Some(0.0), true),
+        true,
+        env(),
+        Cx::deterministic(),
+    );
+    assert_eq!(button_x(&u.frame(0.0)), Some(96.0));
+    // Reduce Motion: the node is simply there, whenever it comes.
+    let mut e = env();
+    e.reduce_motion = true;
+    let mut u = Ui::new(
+        slot_then_button(Some(0.0), false),
+        false,
+        e,
+        Cx::deterministic(),
+    );
+    let _ = u.frame(0.0);
+    u.set_parts(true);
+    assert_eq!(button_x(&u.frame(16.0)), Some(96.0));
+}

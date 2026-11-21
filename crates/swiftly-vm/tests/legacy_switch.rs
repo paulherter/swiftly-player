@@ -438,3 +438,31 @@ fn a_last_episode_gets_no_closing_card() {
     let (card, advance) = walk_to_the_end(&core, 120.0, 100.0, 20.0);
     assert_eq!((card, advance), (None, None));
 }
+
+/// A quality change (or a decoder retry, or a new subtitle from the search) replans the same title. The host loads the
+/// new stream without starting it exactly when the old one was paused: the core says so in the answer (`pausiert`), and
+/// it keeps saying so for the next reload until the host reports that the title plays again.
+#[test]
+fn a_reload_of_a_paused_title_says_paused_and_a_playing_one_does_not() {
+    fn says_paused(answer: &str) -> bool {
+        let o: serde_json::Value = serde_json::from_str(answer).unwrap();
+        assert_eq!(o["ergebnis"], "gewechselt", "the switch failed: {answer}");
+        o["pausiert"].as_bool().unwrap_or(false)
+    }
+    let net = server_without_the_next_plan();
+    let core = core_on(&net, &host());
+    block_on(core.open("e1", "")).unwrap();
+    tick_at(&core, 2.0);
+
+    // Playing: the reload plays on.
+    assert!(!says_paused(&block_on(core.quality_switch(3.0))));
+
+    // Paused, then a reload: the new stream is to stay paused, and so is the one after it.
+    core.run_state_reported(false, 3.2);
+    assert!(says_paused(&block_on(core.quality_switch(3.2))));
+    assert!(says_paused(&block_on(core.decoder_retry(3.2))));
+
+    // Played again, then reloaded: playing.
+    core.run_state_reported(true, 3.4);
+    assert!(!says_paused(&block_on(core.quality_switch(3.4))));
+}

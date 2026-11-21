@@ -60,6 +60,13 @@ enum Motion {
         #endif
     }
 
+    /// **A notice opening or closing above rows that are already on screen**: the rows make room in one
+    /// eased move (the standard change, 0.28 s, no overshoot) instead of jumping a notice's height in one
+    /// frame. Under Reduce Motion nothing moves.
+    static var noticeMove: Animation? {
+        Theme.motionReduced ? nil : change
+    }
+
     /// **A small selection**: the segments' surface, the ring around a chosen dot.
     static var select: Animation {
         #if os(iOS) || os(macOS)

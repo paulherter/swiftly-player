@@ -12,7 +12,7 @@ import Testing
     }
 
     private func started(_ effects: [PlayerEffectOut]) -> [(String, Double)] {
-        effects.compactMap { if case let .startEpisode(id, _, since) = $0 { (id, since) } else { nil } }
+        effects.compactMap { if case let .startEpisode(id, _, since, _) = $0 { (id, since) } else { nil } }
     }
 
     @Test @MainActor func aQualityChoiceReloadsTheSameTitleOnceAndForgetsThePreparedPlan() async throws {

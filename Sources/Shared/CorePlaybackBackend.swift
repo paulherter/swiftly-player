@@ -186,6 +186,8 @@ final class CorePlaybackBackend: PlaybackBackend {
         // A subtitle on a transcoded stream: the screen reloads the title like after a quality choice, and the
         // plan it asks for next carries this track (`AppModel.plan` takes the wish).
         if let subtitle = calls.reloadSubtitle, let id = calls.switchTo?.id { app.subtitleWish[id] = subtitle }
+        // The reload gets a new model (`startEngine`): the old stream's pause goes to it through the view.
+        if calls.reloadPaused { host?.coreReloadPaused = true }
         return calls
     }
 
@@ -198,9 +200,16 @@ final class CorePlaybackBackend: PlaybackBackend {
     /// The model of a title reloaded after a quality choice says when the original plays.
     func afterQualitySwitch() { model.afterQualitySwitch() }
 
+    /// The stream this model replaces was paused when the core reloaded it: pause once loaded.
+    func startPaused() { model.startPaused() }
+
     /// The screen got no plan for the switch the core asked for: the core puts the old title back (a no-op when it
     /// asked for nothing, so a switch the screen started on its own is not touched).
-    func switchFailed() { model.switchFailed() }
+    func switchFailed() {
+        // No new model comes: the old title is put back by the core, nothing is left to carry over.
+        host?.coreReloadPaused = false
+        model.switchFailed()
+    }
 
     /// The press on the offer and the dismissal (Back on the card/button) as core intents, so its countdown stops too.
     /// The core's chapter list. Reading the position here ties a view's body to the clock, so the running chapter follows.

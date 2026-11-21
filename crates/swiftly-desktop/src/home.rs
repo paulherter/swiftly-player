@@ -4,6 +4,7 @@
 
 use crate::art;
 use crate::home_data::{self, Scenario};
+use crate::home_notice::{self, NoticeFlow};
 use crate::hub::{HubSlot, HubSlotExt, ImageHub, remote_node};
 use crate::net::AppTransport;
 use std::cell::RefCell;
@@ -221,6 +222,8 @@ struct Parts {
     status: Arc<StatusPart>,
     /// The page is still `Loading` but says so as trouble (see [`waiting_trouble`]): the error page with a busy button.
     waiting: Option<swiftly_vm::LoadFailure>,
+    /// The server notice above stored rows: absent, open or closing (see [`home_notice`]).
+    notice: NoticeFlow,
     rails: Arc<RailsPart>,
     /// The tab in front (0 = Start).
     tab: usize,
@@ -1223,6 +1226,62 @@ fn server_notice(
     )
 }
 
+/// The slot of the server notice in the column above the rows.
+const NOTICE_SLOT: &str = "home.notice";
+
+/// How long the notice's closing move takes (the standard change curve), so the block is dropped when it has got there.
+fn notice_settle_ms() -> f64 {
+    swiftly_ui::feel::change()
+        .curve()
+        .map_or(0.0, |c| c.settle_seconds() * 1000.0)
+}
+
+/// The server notice over stored rows as a block that makes room: a frame whose height follows the notice's own height
+/// (plus `gap`, what the rows' spacing gave it) with the standard change curve, and whose content fades with it, so
+/// the rows below move in one eased move instead of a notice's height in one frame. Closing, it keeps the words it
+/// showed. Under Reduce Motion nothing moves. Not in the tree (`Gone`) it is an empty node of the same slot.
+fn notice_slot(
+    cx: &Cx,
+    icons: &Icons,
+    server: &str,
+    flow: NoticeFlow,
+    width: f32,
+    gap: f32,
+    reduce: bool,
+) -> Node {
+    let empty = || Node::fixed(0.0, 0.0).key(NOTICE_SLOT);
+    let (words, open) = match flow {
+        NoticeFlow::Gone => return empty(),
+        NoticeFlow::Open(words) => (words, true),
+        NoticeFlow::Closing { words, .. } => (words, false),
+    };
+    let Some(block) = server_notice(cx, icons, server, words.failure, words.busy) else {
+        return empty();
+    };
+    let block = block.padding(ins(0.0, 0.0, gap, 0.0));
+    let height = block.fitted_height(width);
+    let motion = if reduce {
+        swiftly_ui::Motion::Instant
+    } else {
+        swiftly_ui::feel::change()
+    };
+    block
+        // The content keeps its own height; the frame around it grows and shrinks and cuts it.
+        .fixed_size(false, true)
+        .animated_frame(
+            None,
+            Some(if open { height } else { 0.0 }),
+            Alignment::TOP_LEADING,
+            motion,
+        )
+        .appear_frame(None, Some(0.0))
+        .appear_after_first_build()
+        .clipped()
+        .opacity(if open { 1.0 } else { 0.0 }, motion)
+        .appear_from(1.0, 0.0)
+        .key(NOTICE_SLOT)
+}
+
 const RETRY: &str = "home.retry";
 
 /// How long a Start page that shows nothing waits before it says the server is not answering (the answer may still
@@ -1555,7 +1614,7 @@ pub(crate) fn header(cx: &Cx, env: &Env, p: &Bar, title: &str) -> Node {
 /// icon set A, outline idle and filled selected ([`tab_icon`]).
 const WATCHLIST_ICON: &str = "bookmark-simple.fill";
 
-/// The icon of a tab and whether it is drawn with a stroke weight: tab icons A (design/icons/mapping.json), outline
+/// The icon of a tab and whether it is drawn with a stroke weight: tab icons A, outline
 /// while idle and the filled variant while selected.
 fn tab_icon(i: usize, selected: bool) -> (&'static str, bool) {
     let (outline, filled) = match i {
@@ -2337,8 +2396,34 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
         Form::Tv => 48.0,
     };
     // Mac: a 30 pt "Start" heading, 22 pt above the first rail.
-    let with_heading = |rails: Vec<Node>| -> Node {
-        let stack = Node::vstack(Align::Start, Some(m.rails_spacing), rails);
+    // The server notice over stored rows stands in its own slot above the rows (always the first child of the same
+    // column, so the rows keep their identity when it comes and goes) and carries the gap the rows' spacing gave it.
+    let notice = |flow: NoticeFlow| -> Node {
+        let page_w = env.size.w
+            - if form == Form::Desktop {
+                dsk::SIZE_SIDEBAR_WIDTH
+            } else {
+                0.0
+            };
+        notice_slot(
+            cx,
+            &ctx.icons,
+            &p.card.server_name(),
+            flow,
+            page_w,
+            m.rails_spacing,
+            env.reduce_motion,
+        )
+    };
+    let with_heading = |rails: Vec<Node>, flow: NoticeFlow| -> Node {
+        let stack = Node::vstack(
+            Align::Start,
+            Some(0.0),
+            vec![
+                notice(flow),
+                Node::vstack(Align::Start, Some(m.rails_spacing), rails),
+            ],
+        );
         if form == Form::Desktop {
             if p.chips.is_empty() {
                 Node::vstack(Align::Start, Some(22.0), vec![heading("Start"), stack])
@@ -2378,10 +2463,10 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
                 )
             }
             Status::Loading => {
-                let column = with_heading(vec![
-                    rails_placeholder(&m, true),
-                    rails_placeholder(&m, false),
-                ])
+                let column = with_heading(
+                    vec![rails_placeholder(&m, true), rails_placeholder(&m, false)],
+                    NoticeFlow::Gone,
+                )
                 .padding(ins(
                     if form == Form::Tv {
                         tv::CONTENT_TOP + 40.0
@@ -2466,16 +2551,6 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
             }
         }
     }
-    // A silent server over rows that are already there (the stored page): the rows stay, the server notice stands above
-    // them. While a retry runs (`waiting`) the button waits instead of vanishing, so the block keeps its height.
-    let notice_busy = p.status.status == Status::Loading && p.waiting.is_some();
-    if p.status.status == Status::Offline || notice_busy {
-        let failure = p.waiting.unwrap_or_else(|| ctx.vm.failure());
-        if let Some(n) = server_notice(cx, &ctx.icons, &p.card.server_name(), failure, notice_busy)
-        {
-            rails.insert(0, n);
-        }
-    }
     // At the very end, after the last row; never above the content.
     if let (Some(hours), Form::Desktop) = (p.support, form) {
         rails.push(support_card(cx, hours).reveal_as("home.support"));
@@ -2499,7 +2574,7 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
             vec![hero(cx, &m, ctx, focused.or(first)), stack],
         )
     } else {
-        with_heading(rails).padding(ins(top, 0.0, bottom, 0.0))
+        with_heading(rails, p.notice).padding(ins(top, 0.0, bottom, 0.0))
     };
     fill_frame(
         Node::scroll(Axis::Vertical, None, column).key("home-scroll"),
@@ -2660,6 +2735,8 @@ pub struct HomeScreen {
     retrying: Option<swiftly_vm::LoadFailure>,
     /// Since when the page has been `Loading` with nothing to show.
     loading_from: Option<f64>,
+    /// The server notice over stored rows: when it comes and goes (only at the top of the page).
+    notice: NoticeFlow,
     tab: usize,
     now: f64,
     pulling: bool,
@@ -2742,6 +2819,7 @@ impl HomeScreen {
             glow: (crate::look_glow::Glow::default(), 0),
             status: vm.status(),
             waiting: None,
+            notice: NoticeFlow::Gone,
             rails: vm.rails(),
             tab: 0,
             header: 0,
@@ -2795,6 +2873,7 @@ impl HomeScreen {
             support: None,
             support_taps: Vec::new(),
             notice_seen: 0,
+            notice: NoticeFlow::Gone,
             answer_since: None,
             answer_due: 0.0,
             desk: None,
@@ -2950,6 +3029,33 @@ impl HomeScreen {
         if status.status != Status::Loading {
             self.retrying = None;
         }
+        // Over stored rows a retry in flight also counts (the server notice's button waits).
+        let waiting = waiting_trouble(
+            status.status,
+            !rails.rails.is_empty(),
+            holding,
+            self.retrying,
+            &mut self.loading_from,
+            self.now,
+        )
+        .or_else(|| {
+            (status.status == Status::Loading && !rails.rails.is_empty())
+                .then_some(self.retrying)
+                .flatten()
+        });
+        // The notice over stored rows opens and closes in one eased move, and only while the page is at the top.
+        let reduce = self.ui.env().reduce_motion;
+        self.notice = self.notice.step(
+            home_notice::wanted(
+                status.status,
+                !rails.rails.is_empty(),
+                waiting,
+                self.vm.failure(),
+            ),
+            offset < home_notice::AT_TOP,
+            self.now,
+            if reduce { 0.0 } else { notice_settle_ms() },
+        );
         self.ui.set_parts(Parts {
             downloads: crate::desk::downloads_front(),
             settings: crate::desk::settings_front(),
@@ -2957,20 +3063,8 @@ impl HomeScreen {
             offer: crate::desk::offer(),
             mine: crate::desk::mine(),
             glow: crate::look_glow::bar_state(offset as f64),
-            // Over stored rows a retry in flight also counts (the server notice's button waits).
-            waiting: waiting_trouble(
-                status.status,
-                !rails.rails.is_empty(),
-                holding,
-                self.retrying,
-                &mut self.loading_from,
-                self.now,
-            )
-            .or_else(|| {
-                (status.status == Status::Loading && !rails.rails.is_empty())
-                    .then_some(self.retrying)
-                    .flatten()
-            }),
+            waiting,
+            notice: self.notice,
             status,
             rails,
             tab: self.tab,
@@ -3672,6 +3766,7 @@ impl HomeScreen {
             || self.hub.busy()
             || self.answer_awaited()
             || self.notice_waiting()
+            || self.notice.closing()
             || self.now < self.answer_due
             || self
                 .desk
@@ -4696,5 +4791,134 @@ mod waiting_tests {
             waiting_trouble(Status::Offline, false, false, Some(denied), &mut from, 20.0),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod notice_slot_tests {
+    use super::*;
+    use crate::home_notice::Words;
+    use swiftly_render::{Color, QuadKind};
+
+    const WORDS: Words = Words {
+        failure: swiftly_vm::LoadFailure::Offline,
+        busy: false,
+    };
+    const GAP: f32 = 40.0;
+
+    fn mark() -> Color {
+        Color::new(0.0, 0.0, 1.0, 1.0)
+    }
+
+    /// Where the first row below the notice slot starts.
+    fn row_y(list: &swiftly_render::DrawList) -> f32 {
+        list.quads()
+            .iter()
+            .find(|q| q.kind == QuadKind::Shape && q.color == mark())
+            .map(|q| q.rect.y)
+            .expect("the row is drawn")
+    }
+
+    fn ui(reduce: bool) -> Ui<NoticeFlow> {
+        let mut env = Env::new(
+            swiftly_layout::Size::new(1200.0, 900.0),
+            2.0,
+            Idiom::Desktop,
+        );
+        env.reduce_motion = reduce;
+        Ui::new(
+            move |flow: &NoticeFlow, _: &Env, cx: &Cx| {
+                let icons = Icons::new(cx, 2.0);
+                Node::vstack(
+                    Align::Start,
+                    Some(0.0),
+                    vec![
+                        notice_slot(cx, &icons, "Server", *flow, 1200.0, GAP, reduce),
+                        Node::rect(mark(), 0.0).frame(
+                            Some(100.0),
+                            Some(20.0),
+                            Alignment::TOP_LEADING,
+                        ),
+                    ],
+                )
+            },
+            NoticeFlow::Gone,
+            env,
+            Cx::deterministic(),
+        )
+    }
+
+    /// The rows move down by the notice's height plus the gap in one eased move (never one frame), stay there, and move
+    /// back up the same way when the notice goes; once it is dropped nothing moves.
+    #[test]
+    fn the_notice_makes_room_for_the_rows_in_one_eased_move_and_gives_it_back() {
+        let mut u = ui(false);
+        let _ = u.frame(0.0);
+        assert_eq!(row_y(&u.frame(8.0)), 0.0, "no notice, no room");
+        u.set_parts(NoticeFlow::Open(WORDS));
+        let mut ys = vec![0.0_f32];
+        let mut t = 8.0;
+        for _ in 0..60 {
+            t += 8.0;
+            ys.push(row_y(&u.frame(t)));
+        }
+        let room = *ys.last().expect("frames");
+        assert!(room > 150.0, "the block has its own height: {room}");
+        let step = ys.windows(2).map(|w| w[1] - w[0]).fold(0.0_f32, f32::max);
+        assert!(
+            step < room * 0.3,
+            "one frame moved the rows by {step} of {room}"
+        );
+        assert!(ys.windows(2).all(|w| w[1] >= w[0] - 0.01), "opens one way");
+        assert!(ys[1] < room * 0.1, "starts from closed: {}", ys[1]);
+        // Going: the same move back, the block still in the tree until it is dropped.
+        u.set_parts(NoticeFlow::Closing {
+            words: WORDS,
+            since_ms: t,
+        });
+        let mut back = vec![room];
+        for _ in 0..60 {
+            t += 8.0;
+            back.push(row_y(&u.frame(t)));
+        }
+        assert!(back.last().is_some_and(|y| y.abs() < 0.5), "closed again");
+        let step = back.windows(2).map(|w| w[0] - w[1]).fold(0.0_f32, f32::max);
+        assert!(
+            step < room * 0.3,
+            "one frame moved the rows by {step} of {room}"
+        );
+        assert!(
+            back.windows(2).all(|w| w[1] <= w[0] + 0.01),
+            "closes one way"
+        );
+        u.set_parts(NoticeFlow::Gone);
+        t += 8.0;
+        assert!(
+            row_y(&u.frame(t)).abs() < 0.5,
+            "dropping the closed block moves nothing"
+        );
+        assert!(
+            (room - ys[ys.len() - 2]).abs() < 0.5,
+            "it stood still when it had got there"
+        );
+    }
+
+    /// Under Reduce Motion nothing moves: the rows are where they go at the next frame.
+    #[test]
+    fn under_reduce_motion_the_rows_do_not_travel() {
+        let mut u = ui(true);
+        let _ = u.frame(0.0);
+        u.set_parts(NoticeFlow::Open(WORDS));
+        let first = row_y(&u.frame(16.0));
+        let last = row_y(&u.frame(600.0));
+        assert!(
+            first > 150.0 && (first - last).abs() < 0.5,
+            "{first} then {last}"
+        );
+        u.set_parts(NoticeFlow::Closing {
+            words: WORDS,
+            since_ms: 600.0,
+        });
+        assert!(row_y(&u.frame(616.0)).abs() < 0.5);
     }
 }

@@ -349,21 +349,25 @@ pub fn apply(action: Action, window: &Window, shell: &mut Shell, now: f64) -> bo
 mod tests {
     use super::*;
 
-    /// The window's empty colour is the page ground of `design/tokens.json`, read from the source file itself (not from
+    /// The window's empty colour is the page ground of the token source file, read from that file itself (not from
     /// the generated copy), and the window code never types a colour in: the old `#101010` stayed in `app.rs` as a literal
-    /// when the ground changed to `#0A0A0B`.
+    /// when the ground changed to `#0A0A0B`. The token source is not part of the public tree: where the publish allow-list
+    /// (`scripts/public-paths.txt`) is absent only the literal check runs; in our own tree the file is required.
     #[test]
     fn the_window_ground_is_the_surface_base_token_everywhere() {
-        let json = std::fs::read_to_string(crate::manifest_dir().join("../../design/tokens.json"))
-            .expect("design/tokens.json");
-        let at = json.find("\"surface.base\"").expect("surface.base token");
-        let rest = &json[at..];
-        let dark = rest.find("\"dark\": \"#").expect("dark value") + "\"dark\": \"#".len();
-        let hex = u32::from_str_radix(&rest[dark..dark + 6], 16).expect("hex value");
-        assert_eq!(
-            GROUND_RGB, hex,
-            "GROUND_RGB must be surface.base of tokens.json"
-        );
+        let root = crate::manifest_dir().join("../..");
+        if root.join("scripts/public-paths.txt").is_file() {
+            let json = std::fs::read_to_string(root.join("design/tokens.json"))
+                .expect("design/tokens.json");
+            let at = json.find("\"surface.base\"").expect("surface.base token");
+            let rest = &json[at..];
+            let dark = rest.find("\"dark\": \"#").expect("dark value") + "\"dark\": \"#".len();
+            let hex = u32::from_str_radix(&rest[dark..dark + 6], 16).expect("hex value");
+            assert_eq!(
+                GROUND_RGB, hex,
+                "GROUND_RGB must be surface.base of tokens.json"
+            );
+        }
         let app = include_str!("app.rs");
         let calls: Vec<&str> = app
             .lines()

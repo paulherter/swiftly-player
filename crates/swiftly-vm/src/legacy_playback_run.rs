@@ -3,6 +3,7 @@
 //! prebuffering, the report queue, episode and quality switch): the glue between the packages' rules, in the same
 //! order and with the same answers and log rows as the Swift code. See `legacy_playback` for the open title.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -897,10 +898,25 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
         error: Option<String>,
         pending: Option<String>,
     ) -> String {
+        Self::switch_answer_with(result, plan, error, pending, false)
+    }
+
+    /// As [`Self::switch_answer`]; `paused` (`pausiert`) is only written when it is true: the new stream of a reload
+    /// of the same title replaces one that was paused, and the host loads it without starting it.
+    fn switch_answer_with(
+        result: Outcome,
+        plan: Option<String>,
+        error: Option<String>,
+        pending: Option<String>,
+        paused: bool,
+    ) -> String {
         let mut o = serde_json::Map::new();
         o.insert("ergebnis".into(), json!(Self::outcome_word(result)));
         if let Some(p) = plan {
             o.insert("spielplan".into(), json!(p));
+        }
+        if paused {
+            o.insert("pausiert".into(), json!(true));
         }
         if let Some(e) = error {
             o.insert("fehler".into(), json!(e));
@@ -934,6 +950,9 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
         let pending = Arc::new(Mutex::new(String::new()));
         let error = Arc::new(Mutex::new(None::<String>));
         let plan_text = Arc::new(Mutex::new(None::<String>));
+        // Whether the stream this switch replaces was paused when the new plan went in (read before the title's state
+        // is renewed). Only a reload of the same title carries it: another episode always starts playing.
+        let was_paused = Arc::new(AtomicBool::new(false));
         let fetched = Arc::new(Mutex::new(None::<(ReadyStart, PlayDisplay)>));
         let stop_msg = self.locked(|s| self.stop_message(s, position));
         let old_key = StopLock::key(&old.item.id, old.plan.play_session_id.as_deref());
@@ -978,11 +997,17 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
             }),
             apply: Box::new({
                 let plan_text = Arc::clone(&plan_text);
+                let was_paused = Arc::clone(&was_paused);
                 move |p: &(ReadyStart, PlayDisplay)| {
                     let text = me.plan_json(&p.0, &p.1).ok();
+                    // `install` starts a fresh `Live`: read the pause before it. A reload of the same title keeps it (the
+                    // title is still paused until the host reports `Playing`), so the next reload carries it too.
+                    let paused_since = me.locked(|s| s.live.paused_since).filter(|_| quality);
+                    was_paused.store(paused_since.is_some(), Ordering::SeqCst);
                     me.install(p.0.clone(), p.1.clone());
                     let now = me.run.now();
                     me.locked(|s| {
+                        s.live.paused_since = paused_since;
                         s.live.switched_title(now);
                         if quality && position > 0.0 {
                             playback_tick::jumped(&mut s.live.snap, position, now);
@@ -1030,7 +1055,8 @@ impl<T: HttpTransport + 'static> LegacyPlayback<T> {
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
                     .clone();
-                Self::switch_answer(Outcome::Switched, plan, None, pending)
+                let paused = was_paused.load(Ordering::SeqCst);
+                Self::switch_answer_with(Outcome::Switched, plan, None, pending, paused)
             }
             Outcome::Failed => {
                 if kind == Switch::Queued {

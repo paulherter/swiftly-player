@@ -112,7 +112,7 @@ import JellyfinKit
         #expect(r.switches.isEmpty, "not yet")
         await r.play(from: 3513, seconds: 8)
         #expect(r.switches.count == 1, "one switch call: \(r.effects)")
-        if case let .startEpisode(id, fromCard, _)? = r.switches.first {
+        if case let .startEpisode(id, fromCard, _, _)? = r.switches.first {
             #expect(id == "ep2" && fromCard)
         }
         // The screen now plans ep2 and the next backend plays it on the same queue.

@@ -27,6 +27,8 @@ enum Keychain {
     /// A DEBUG proof or fixture launch uses its own service (`ProofIsolation`), so it can never write accounts into the
     /// Keychain items of the real app; a Release build always has the real one.
     private static let service = ProofIsolation.keychainService()
+    /// The only door to the system Keychain; a `-SwiftlyLiveMemory` run keeps its entries in memory instead (`SecretGate`).
+    private static let gate = SecretGate.shared
 
     enum Failure: Error, CustomStringConvertible {
         case write(OSStatus)
@@ -92,13 +94,13 @@ enum Keychain {
         // entry got today's protection level. `SecItemUpdate` only changes what it is
         // told, which is why `kSecAttrAccessible` is listed explicitly here. Without it,
         // an entry from an older version would silently keep its old level.
-        var status = SecItemAdd(add as CFDictionary, nil)
+        var status = gate.add(add as CFDictionary)
         if status == errSecDuplicateItem {
             let new: [String: Any] = [
                 kSecValueData as String: data,
                 kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             ]
-            status = SecItemUpdate(query as CFDictionary, new as CFDictionary)
+            status = gate.update(query as CFDictionary, new as CFDictionary)
         }
         guard status == errSecSuccess else { throw Failure.write(status) }
     }
@@ -140,7 +142,7 @@ enum Keychain {
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &out)
+        let status = gate.copyMatching(query as CFDictionary, &out)
         if status != errSecSuccess, status != errSecItemNotFound {
             log.error("Lesen: \(text(status), privacy: .public)")
         }
@@ -156,9 +158,9 @@ enum Keychain {
         #if DEBUG
         if snapshotBlind { return }
         #endif
-        SecItemDelete(query(key) as CFDictionary)
+        gate.delete(query(key) as CFDictionary)
         #if os(macOS)
-        SecItemDelete(query(key, oldCache: true) as CFDictionary)
+        gate.delete(query(key, oldCache: true) as CFDictionary)
         #endif
     }
 }
