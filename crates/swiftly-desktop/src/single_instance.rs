@@ -296,43 +296,88 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// The hand-over of a second launch must be done well inside 200 ms (`windows-desktop.md`): the first instance
-    /// looked into its inbox only every 300 ms, so the second one alone took that long.
+    /// Functional: a second launch reaches the running instance. Event based, no clock: `hand_over` returns
+    /// `Delivered` once the first one took the line, and the first one's callback (its acknowledgement) delivers the
+    /// very arguments, in order. The only bound is a hang guard that fails a stuck hand-over instead of hanging the run;
+    /// it says nothing about speed (see `a_second_launch_is_handed_over_within_200_ms` for that).
     #[test]
-    fn a_second_launch_is_handed_over_within_200_ms() {
-        use std::time::{Duration, Instant};
-        let dir = temp("fast");
+    fn a_second_launch_is_handed_over_to_the_watching_first_one() {
+        use std::time::Duration;
+        const HANG_GUARD: Duration = Duration::from_secs(10);
+        let dir = temp("handed");
         let Role::Primary(first) = acquire(&dir).unwrap() else {
             panic!()
         };
         let (tx, rx) = std::sync::mpsc::channel();
         first.watch(move |args| tx.send(args).is_ok());
-        // One unmeasured hand-over first: the watcher thread may not be scheduled yet right after `watch`, which on a
-        // busy machine alone takes longer than the bound below.
-        let r = hand_over(&dir, &["swiftly://warm".to_owned()], Duration::from_secs(3)).unwrap();
-        assert!(matches!(r, HandOver::Delivered), "{r:?}");
-        assert_eq!(
-            rx.recv_timeout(Duration::from_secs(1)).unwrap(),
-            vec!["swiftly://warm".to_owned()]
+        for n in 0..5 {
+            let args = vec![format!("swiftly://titel/{n}"), "a b.mkv".to_owned()];
+            let r = hand_over(&dir, &args, HANG_GUARD).unwrap();
+            assert!(matches!(r, HandOver::Delivered), "launch {n}: {r:?}");
+            assert_eq!(rx.recv_timeout(HANG_GUARD).unwrap(), args, "launch {n}");
+        }
+        // The first one is still the app: the lock stayed with it.
+        assert!(matches!(acquire(&dir).unwrap(), Role::Secondary));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The promise of `windows-desktop.md`: a second launch hands over and is gone within 200 ms. It was broken once
+    /// because the first instance looked into its inbox only every 300 ms.
+    ///
+    /// The time is taken at the events themselves, not around a process start: when the second launch sends (the
+    /// inbox write, the first step of `hand_over`), when the first one receives (inside its `watch` callback), and when
+    /// the second one is free again (`hand_over` returned). No sleep, no retry: every round starts right after the
+    /// previous line was taken, which is the worst moment of the watcher's period, so each round measures the longest
+    /// wait the design allows.
+    ///
+    /// Budget: the promise itself (200 ms) on a machine that runs nothing else (a developer's Mac, also in `ci-local.sh
+    /// --macos-tests`). Where `CI` is set (GitHub Actions and shared build machines) it is `CI_TOLERANCE`: the design
+    /// needs at most 45 ms
+    /// (`INBOX_POLL` + `HAND_OVER_POLL`), yet the public macos-15 runner (3 vCPUs shared with the other test threads and
+    /// other VMs) once measured 208 ms, a scheduling stall of the watcher thread of about 160 ms that the code does not
+    /// cause. Waiting 1 s there still catches a hand-over that took a slow path; the poll periods themselves are
+    /// pinned without any clock by the first assertion, so a return to a 300 ms poll fails on CI too.
+    #[test]
+    fn a_second_launch_is_handed_over_within_200_ms() {
+        use std::time::{Duration, Instant};
+        const PROMISE: Duration = Duration::from_millis(200);
+        const CI_TOLERANCE: Duration = Duration::from_secs(1);
+        const HANG_GUARD: Duration = Duration::from_secs(10);
+        // The design bound, no clock: both polls added still leave a fourfold margin to the promise.
+        assert!(
+            (INBOX_POLL + HAND_OVER_POLL) * 4 <= PROMISE,
+            "polls {INBOX_POLL:?} + {HAND_OVER_POLL:?} leave no margin to {PROMISE:?}"
         );
-        for round in 0..5 {
-            // Start at a different moment of the watcher's period each round.
-            std::thread::sleep(Duration::from_millis(7 * round));
-            let started = Instant::now();
-            let r = hand_over(
-                &dir,
-                &["swiftly://titel/1".to_owned()],
-                Duration::from_secs(3),
-            )
-            .unwrap();
-            let took = started.elapsed();
-            assert!(matches!(r, HandOver::Delivered), "{r:?}");
-            // The contract bound itself: a busy CI runner adds scheduling delay on top of the 40 ms inbox poll.
-            assert!(took < Duration::from_millis(200), "round {round}: {took:?}");
-            assert_eq!(
-                rx.recv_timeout(Duration::from_secs(1)).unwrap(),
-                vec!["swiftly://titel/1".to_owned()]
+        let on_ci = std::env::var_os("CI").is_some();
+        let budget = if on_ci { CI_TOLERANCE } else { PROMISE };
+
+        let dir = temp("fast");
+        let Role::Primary(first) = acquire(&dir).unwrap() else {
+            panic!()
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        first.watch(move |args| tx.send((Instant::now(), args)).is_ok());
+        // Round 0 is not judged: the running instance has been up for a long time when a second launch comes, but the
+        // watcher thread of this test may not have been scheduled yet right after `watch`.
+        for round in 0..=8 {
+            let args = vec![format!("swiftly://titel/{round}")];
+            let sent = Instant::now();
+            let r = hand_over(&dir, &args, HANG_GUARD).unwrap();
+            let gone = Instant::now();
+            assert!(matches!(r, HandOver::Delivered), "round {round}: {r:?}");
+            let (received, got) = rx.recv_timeout(HANG_GUARD).unwrap();
+            assert_eq!(got, args, "round {round}");
+            let to_first = received.saturating_duration_since(sent);
+            let to_gone = gone.saturating_duration_since(sent);
+            eprintln!(
+                "round {round}: first one received after {to_first:?}, second one gone after {to_gone:?} (budget {budget:?})"
             );
+            if round > 0 {
+                assert!(
+                    to_first < budget && to_gone < budget,
+                    "round {round}: received after {to_first:?}, gone after {to_gone:?}, budget {budget:?} (CI: {on_ci})"
+                );
+            }
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
