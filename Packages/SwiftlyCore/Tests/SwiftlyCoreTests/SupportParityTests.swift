@@ -6,14 +6,16 @@ import JellyfinKit
 
 /// The core's `SupportModel` against the old Swift rules (`SupportStore`, `SupportPrompt`, `WatchTimeCounter`)
 /// on the same stored bytes: equal status, equal decisions, and a write by the core reads back through the old store.
-@Suite(.serialized) struct SupportParityTests {
+@Suite(.serialized) final class SupportParityTests: Sendable {
+    deinit { TestDefaults.remove(for: Self.self) }
+
     private static let day = 86_400.0
     private static let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     /// The old store and a core over copies of the same bytes.
     /// The core runs over the app's own `UserDefaultsKeyValueStore`, so the stored bytes are the old plain keys.
     private static func suite() -> (UserDefaults, UserDefaultsKeyValueStore) {
-        let defaults = UserDefaults(suiteName: "support-parity-\(UUID().uuidString)")!
+        let defaults = TestDefaults.make(for: Self.self)
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         return (defaults, UserDefaultsKeyValueStore(defaults: defaults, downloadsFolder: tmp))
     }
@@ -90,6 +92,7 @@ import JellyfinKit
 
     @Test func writesByTheCoreReadBackThroughTheOldStore() throws {
         let (defaults, kv) = Self.suite()
+        defer { kv.flush() }
         let core = makeCore(store: kv).supportModel()
         try core.recordLaunch(now: Self.now.timeIntervalSince1970)
         try core.setStatus(status: SupportStatusInfo(supporter: true, source: "key", since: Self.now.timeIntervalSince1970))

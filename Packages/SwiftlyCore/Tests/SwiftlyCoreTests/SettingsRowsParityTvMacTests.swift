@@ -8,7 +8,9 @@ import Testing
 /// the core's rows for `.tv` / `.desktop`, with `SettingsWording` where those devices read
 /// differently from the iPhone, give the same title, second line, value, dimming and options.
 /// Looked up by key: the two pages group the rows their own way.
-struct SettingsRowsParityTvMacTests {
+@Suite(.serialized) final class SettingsRowsParityTvMacTests: Sendable {
+    deinit { TestDefaults.remove(for: Self.self) }
+
     struct Old {
         let key: String
         let title: String
@@ -21,10 +23,12 @@ struct SettingsRowsParityTvMacTests {
 
     @MainActor
     private func model(_ facts: SettingsFacts, _ prepare: (UserDefaults) -> Void = { _ in }) throws -> SettingsModel {
-        let defaults = try #require(UserDefaults(suiteName: "swiftly.parity.\(UUID().uuidString)"))
+        let defaults = TestDefaults.make(for: Self.self)
         prepare(defaults)
         let store = UserDefaultsSettingsStore(defaults: defaults)
-        return SettingsModel(vm: makeCore().settingsVmNative(store: store, locale: "de", facts: facts))
+        let model = SettingsModel(vm: makeCore().settingsVmNative(store: store, locale: "de", facts: facts))
+        store.flush()
+        return model
     }
 
     private func facts(_ platform: SettingsPlatform, downloads: Bool, plugin: Bool = true) -> SettingsFacts {

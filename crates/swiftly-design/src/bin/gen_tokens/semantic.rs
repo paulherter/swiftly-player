@@ -648,6 +648,31 @@ fn launch_files(m: &Model, repo: &Path) -> Result<Vec<(PathBuf, String)>> {
     ])
 }
 
+/// Project folders that only the full working tree has: the public snapshot (`scripts/public-paths.txt`) does not carry
+/// them, so their generated files cannot be read or written there. An output below one of these folders is checked and
+/// written where the folder exists and skipped, with a printed note, where it does not. Every other output stays
+/// mandatory: a missing file there is a real error, never a skip.
+const PRIVATE_PROJECTS: &[&str] = &["Android/rust-shell"];
+
+/// Drops the outputs of private projects whose folder is not in this tree and says so.
+fn present_outputs(outputs: Vec<(PathBuf, String)>, repo: &Path) -> Vec<(PathBuf, String)> {
+    outputs
+        .into_iter()
+        .filter(|(path, _)| {
+            let missing = PRIVATE_PROJECTS.iter().find(|project| {
+                path.starts_with(repo.join(project)) && !repo.join(project).is_dir()
+            });
+            if let Some(project) = missing {
+                println!(
+                    "note: skipped {}: {project} is not part of this tree",
+                    path.display()
+                );
+            }
+            missing.is_none()
+        })
+        .collect()
+}
+
 pub struct Args {
     repo: PathBuf,
     tokens: PathBuf,
@@ -700,9 +725,11 @@ pub fn run(a: &Args) -> Result<bool> {
         (a.out_kt.clone(), render_generic(&model, &kotlin())),
     ];
     outputs.extend(launch_files(&model, &a.repo)?);
+    let outputs = present_outputs(outputs, &a.repo);
     if a.check {
         let mut ok = true;
         for (path, fresh) in &outputs {
+            println!("checking {}", path.display());
             match std::fs::read_to_string(path) {
                 Ok(old) if old == *fresh => {}
                 Ok(_) => {
@@ -716,7 +743,7 @@ pub fn run(a: &Args) -> Result<bool> {
             }
         }
         if ok {
-            println!("semantic tokens up to date");
+            println!("semantic tokens up to date ({} outputs)", outputs.len());
         } else {
             eprintln!("run: cargo run -p swiftly-design --bin gen_tokens -- --semantic");
         }
@@ -756,5 +783,47 @@ mod launch_tests {
                 );
             }
         }
+    }
+
+    /// A scratch tree under the system temp folder; `name` is fixed per test so a rerun reuses (and first empties) it.
+    fn scratch_tree(name: &str) -> PathBuf {
+        let tree = std::env::temp_dir().join(format!("swiftly-gen-tokens-{name}"));
+        if tree.exists() {
+            std::fs::remove_dir_all(&tree).unwrap();
+        }
+        std::fs::create_dir_all(&tree).unwrap();
+        tree
+    }
+
+    fn launch_outputs(repo: &Path) -> Vec<(PathBuf, String)> {
+        let m = Model {
+            colours: vec![("surface.base".to_owned(), 0x0A0A_0BFF)],
+            curves: vec![],
+            sets: BTreeMap::new(),
+        };
+        launch_files(&m, repo).unwrap()
+    }
+
+    #[test]
+    fn a_tree_without_a_private_project_skips_only_its_outputs() {
+        // The public snapshot: the shared files are there, `Android/rust-shell` is not.
+        let tree = scratch_tree("snapshot");
+        let kept = present_outputs(launch_outputs(&tree), &tree);
+        assert_eq!(kept.len(), 5);
+        assert!(
+            kept.iter()
+                .all(|(p, _)| !p.starts_with(tree.join("Android/rust-shell")))
+        );
+        assert!(
+            kept.iter()
+                .any(|(p, _)| p.starts_with(tree.join("Android/phone")))
+        );
+    }
+
+    #[test]
+    fn a_full_tree_keeps_every_output() {
+        let tree = scratch_tree("full");
+        std::fs::create_dir_all(tree.join("Android/rust-shell")).unwrap();
+        assert_eq!(present_outputs(launch_outputs(&tree), &tree).len(), 6);
     }
 }

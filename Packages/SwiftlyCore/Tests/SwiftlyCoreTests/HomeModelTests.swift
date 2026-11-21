@@ -243,14 +243,13 @@ func eventuallyOnMain(_ condition: @MainActor () -> Bool) async -> Bool {
         #expect(core.hasSecret(name: "token"))
         #expect(!core.hasSecret(name: "other"))
 
-        let defaults = try #require(UserDefaults(suiteName: "swiftly-core-tests"))
-        defaults.removePersistentDomain(forName: "swiftly-core-tests")
+        let defaults = TestDefaults.make(for: Self.self)
+        defer { TestDefaults.remove(for: Self.self) }
         let store = UserDefaultsKeyValueStore(defaults: defaults)
         store.set(key: "a", value: Data([1, 2, 3]))
         #expect(store.get(key: "a") == Data([1, 2, 3]))
         store.remove(key: "a")
         #expect(store.get(key: "a") == nil)
-        defaults.removePersistentDomain(forName: "swiftly-core-tests")
     }
 
     @Test func measureFirstLoadAndReadingTwoHundredTiles() async throws {

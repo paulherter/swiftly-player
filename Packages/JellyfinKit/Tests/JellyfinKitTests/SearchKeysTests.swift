@@ -106,13 +106,12 @@ struct SearchKeysTests {
 
     @Test("Der Verlauf eines Kontos beginnt mit dem gemeinsamen von früher")
     func storeMigration() {
-        let suite = UserDefaults(suiteName: "SearchKeysTests")!
-        suite.removePersistentDomain(forName: "SearchKeysTests")
+        let suite = TestDefaults.make(for: Self.self)
+        defer { TestDefaults.remove(for: Self.self) }
         suite.set("Dune", forKey: SearchHistory.key)
         #expect(SearchHistoryStore.load(account: "abc", store: suite) == "Dune")
         SearchHistoryStore.save("Alien", account: "abc", store: suite)
         #expect(SearchHistoryStore.load(account: "abc", store: suite) == "Alien")
         #expect(SearchHistoryStore.load(account: nil, store: suite) == "Dune")
-        suite.removePersistentDomain(forName: "SearchKeysTests")
     }
 }

@@ -275,9 +275,8 @@ struct TrackRuleTests {
 
     @Test("Gedächtnis je Serie, für Ton und Untertitel, übersteht einen Neustart")
     func memory() throws {
-        let name = "SpurregelTests"
-        let store = try #require(UserDefaults(suiteName: name))
-        store.removePersistentDomain(forName: name)
+        let store = TestDefaults.make(for: Self.self, slot: "memory")
+        defer { TestDefaults.remove(for: Self.self, slot: "memory") }
         // An entry from the old version.
         store.set(["alt": "English"], forKey: "utJeTitel")
         let imprint = TrackImprint(feed: audio(2, "eng"), in: [audio(1, "ger"), audio(2, "eng")])
@@ -295,9 +294,8 @@ struct TrackRuleTests {
 
     @Test("Gedächtnis-Schlüssel trägt das Konto, alte Schlüssel bleiben lesbar, Server stoßen sich nicht")
     func memoryPerAccount() throws {
-        let name = "SpurregelKontoTests"
-        let store = try #require(UserDefaults(suiteName: name))
-        store.removePersistentDomain(forName: name)
+        let store = TestDefaults.make(for: Self.self, slot: "memoryPerAccount")
+        defer { TestDefaults.remove(for: Self.self, slot: "memoryPerAccount") }
         let imprint = TrackImprint(feed: audio(2, "eng"), in: [audio(1, "ger"), audio(2, "eng")])
         let episode = Item(id: "e1", name: "E", type: "Episode", seriesId: "42")
         // Entry written before the account went into the key (Jellyfin).

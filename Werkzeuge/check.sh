@@ -93,6 +93,39 @@ grep -q "as? CorePlaybackBackend)?.close()" Sources/Shared/VLCPlayer.swift || cl
 if [ -n "$closeGuard" ]; then
     report "Start nach Stopp" "${red}Schutz fehlt:$closeGuard${reset}"; error=1
 fi
+# **No UUID- or random-named `UserDefaults` suites in tests** (21.11.): every suite a test writes becomes a persistent domain file in
+# ~/Library/Preferences with a directory handle held by `cfprefsd`. 531 UUID-named domains from repeated runs pushed `cfprefsd` past its
+# file-handle limit ("Too many open files"), and then every app on the Mac stopped reading its settings. A test gets its suite only from
+# `TestDefaults.make(for: Self.self)` (TestDefaults.swift in the test target: one fixed, wiped name per test class), so a test file may not
+# call `UserDefaults(suiteName:)` itself; the helper may not build a name from a UUID or a random number.
+if suites=$( (git ls-files -z --cached --others --exclude-standard -- 'Packages/*/Tests/*.swift' 'Tests/*.swift' 'LiveTests/*.swift' 'LiveTests-tvOS/*.swift') | python3 -I -c '
+import re, sys
+risk = re.compile(r"UUID|random|Date\(\)|CFAbsoluteTime|timeIntervalSince")
+call = re.compile(r"UserDefaults(?:\.init)?\s*\(\s*suiteName:\s*([^\n]*)")
+for path in sys.stdin.read().split("\0"):
+    if not path: continue
+    helper = path.endswith("/TestDefaults.swift")
+    text = open(path, encoding="utf-8", errors="replace").read()
+    if helper:
+        for i, l in enumerate(text.splitlines(), 1):
+            if not l.lstrip().startswith("//") and risk.search(l):
+                print(f"{path}:{i}: the helper must not build a suite name from a UUID, a random number or the time")
+    for m in call.finditer(text):
+        line = text.count("\n", 0, m.start()) + 1
+        if not helper:
+            print(f"{path}:{line}: UserDefaults(suiteName:) in a test: use TestDefaults.make(for: Self.self) (one fixed, wiped name per test class)")
+            continue
+        arg = m.group(1)
+        ident = re.match(r"\s*([A-Za-z_]\w*)\s*\)", arg)
+        traced = [l for l in text.splitlines() if ident and re.search(r"\b(?:let|var)\s+" + ident.group(1) + r"\b", l)]
+        if risk.search(arg) or any(risk.search(l) for l in traced):
+            print(f"{path}:{line}: the suite name must be fixed, not a UUID or random")
+' 2>&1 | head -8) && [ -n "$suites" ]; then
+    report "Tests: feste Defaults-Namen" "${red}UUID-/Zufallsname oder eigener Suite-Aufruf${reset}"; echo "$suites" | sed 's/^/      /'; error=1
+else
+    report "Tests: feste Defaults-Namen" "${green}ok${reset}"
+fi
+
 echo "── Pakettests ─────────────────────────────────────────"
 # GitHub builds the package on Linux, where Apple-only modules do not exist.
 # An unguarded import there failed the public check once (StoreKitTest).

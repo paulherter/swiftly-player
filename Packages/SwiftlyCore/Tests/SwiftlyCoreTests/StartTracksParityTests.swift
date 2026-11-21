@@ -10,7 +10,7 @@ import JellyfinKit
 /// another device (a good, a bad and an "off" one), and every kind of remembered choice (nothing, a hand
 /// chosen audio, subtitles off, a subtitle track, the old name-only entry), with and without the engine's
 /// own audio track standing in. `StartTracks.swift` is the app's file, linked into this test target.
-@Suite struct StartTracksParityTests {
+@Suite(.serialized) struct StartTracksParityTests {
     static let streamsJSON = """
         {"Id":"s","MediaStreams":[
          {"Index":0,"Type":"Video","Codec":"hevc"},
@@ -71,9 +71,9 @@ import JellyfinKit
 
     @Test func theGridGivesTheSameTracks() throws {
         let streams = try Self.streams()
-        let name = "StartTracksParity-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
+        let name = TestDefaults.name(for: Self.self)
+        let defaults = TestDefaults.make(for: Self.self)
+        defer { TestDefaults.remove(for: Self.self) }
         var checked = 0
         var different: [String] = []
         for kind in ["none", "audio-ger", "audio-jpn", "sub-off", "sub-ger-sdh", "sub-eng-forced", "sub-name-de",
@@ -123,9 +123,8 @@ import JellyfinKit
     /// the full German track. A probe once read the first case as a bug.
     @Test func displayNamesStartLikeTheOldRule() throws {
         let streams = try Self.streams()
-        let name = "StartTracksParity-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
+        let defaults = TestDefaults.make(for: Self.self)
+        defer { TestDefaults.remove(for: Self.self) }
         for (audio, expected) in [("English", 8), ("", 5), ("Deutsch", 7), ("Japanese", 5)] {
             let old = Self.old(streams, defaults: defaults, defaultAudio: 1, defaultSubtitle: nil, audio: audio,
                                subtitle: "Deutsch", automatic: true, ordered: nil, fallback: 1)
@@ -143,12 +142,11 @@ import JellyfinKit
     /// and the start must read it back the same way.
     @Test func aHandChoiceIsStoredLikeBefore() throws {
         let streams = try Self.streams()
-        func store() throws -> (UserDefaults, () -> Void) {
-            let name = "StartTracksParity-\(UUID().uuidString)"
-            let defaults = try #require(UserDefaults(suiteName: name))
+        func store(_ slot: String) throws -> (UserDefaults, () -> Void) {
+            let defaults = TestDefaults.make(for: Self.self, slot: slot)
             defaults.set(["acct|other": "Deutsch", "bare": ""], forKey: "utJeTitel")
             defaults.set(["acct|other": #"{"sprache":"eng","erzwungen":false,"extern":false}"#], forKey: "tonJeTitel")
-            return (defaults, { defaults.removePersistentDomain(forName: name) })
+            return (defaults, { TestDefaults.remove(for: Self.self, slot: slot) })
         }
         func entries(_ defaults: UserDefaults, _ key: String) -> [String: String] {
             defaults.dictionary(forKey: key) as? [String: String] ?? [:]
@@ -161,7 +159,7 @@ import JellyfinKit
             let kind: StartTracks.Kind? = stream.type == "Audio" ? .audio : stream.type == "Subtitle" ? .subtitle : nil
             guard let kind else { continue }
             for name in [nil, "Deutsch", "English [Forced]"] as [String?] {
-                let (old, closeOld) = try store(), (new, closeNew) = try store()
+                let (old, closeOld) = try store("old"), (new, closeNew) = try store("new")
                 defer { closeOld(); closeNew() }
                 let imprint = TrackImprint(feed: stream, in: streams, name: name)
                 if kind == .audio {
@@ -181,7 +179,7 @@ import JellyfinKit
             }
         }
         // Subtitles switched off.
-        let (old, closeOld) = try store(), (new, closeNew) = try store()
+        let (old, closeOld) = try store("old"), (new, closeNew) = try store("new")
         defer { closeOld(); closeNew() }
         TrackMemory(store: old).rememberSubtitle(.off, for: Self.title)
         StartTracks.remember(.subtitle, streams: streams, index: nil, name: nil, title: Self.title, defaults: new)
@@ -191,9 +189,8 @@ import JellyfinKit
 
     @Test func withoutATitleNothingIsRemembered() throws {
         let streams = try Self.streams()
-        let name = "StartTracksParity-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
+        let defaults = TestDefaults.make(for: Self.self)
+        defer { TestDefaults.remove(for: Self.self) }
         Self.memory("sub-off", in: streams, defaults)
         // The old call site passed no remembered choice when the request had no title.
         var shown = -1

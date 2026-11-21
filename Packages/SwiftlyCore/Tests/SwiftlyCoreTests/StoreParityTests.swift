@@ -7,11 +7,10 @@ import Testing
 /// Data written by the OLD code paths (UserDefaults strings, `liste.json`, Keychain entries made like
 /// `Sources/Shared/Keychain.swift`) must be read by the core's stores, and what the core writes must be
 /// read by the old code.
-@Suite("Store parity (old and new read each other)")
+@Suite("Store parity (old and new read each other)", .serialized)
 struct StoreParityTests {
     private func suite() -> (UserDefaults, String) {
-        let name = "swiftly.parity.\(UUID().uuidString)"
-        return (UserDefaults(suiteName: name)!, name)
+        (TestDefaults.make(for: Self.self), TestDefaults.name(for: Self.self))
     }
 
     private func folder() -> URL {

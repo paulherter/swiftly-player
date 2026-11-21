@@ -6,9 +6,11 @@ import JellyfinKit
 
 /// The core's `LookModel` against the old Swift `LookTryOn` rules on the same stored bytes (the old `setting.look.*`
 /// UserDefaults keys): equal shown/saved/owned after scripted steps, and bytes written by the core read back as before.
-@Suite(.serialized) struct LookParityTests {
+@Suite(.serialized) final class LookParityTests: Sendable {
+    deinit { TestDefaults.remove(for: Self.self) }
+
     private static func suite() -> (UserDefaults, UserDefaultsKeyValueStore) {
-        let defaults = UserDefaults(suiteName: "look-parity-\(UUID().uuidString)")!
+        let defaults = TestDefaults.make(for: Self.self)
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         return (defaults, UserDefaultsKeyValueStore(defaults: defaults, downloadsFolder: tmp))
     }
@@ -36,6 +38,7 @@ import JellyfinKit
         var steps = 0
         for script in Self.scripts() {
             let (defaults, kv) = Self.suite()
+            defer { kv.flush() }
             defaults.set(LookSelection().encoded, forKey: LookStorageKey.selection)
             var old = LookTryOn(saved: LookSelection.decoded(from: defaults.data(forKey: LookStorageKey.selection)), owned: [])
             let core = makeCore(store: kv).lookModel()
@@ -80,6 +83,7 @@ import JellyfinKit
             let now = Date(timeIntervalSince1970: 1_767_225_600 + Double(day) * 86_400 + 12 * 3_600)
             for owned in [Set<String>(), Set(Look.all.filter(\.isGift).prefix(1).map(\.id))] {
                 let (_, kv) = Self.suite()
+                defer { kv.flush() }
                 let core = makeCore(store: kv).lookModel()
                 if let id = owned.first { _ = try core.claim(lookId: id) }
                 let free = Look.free.filter { LookGift.isAvailable($0, owned: owned, now: now) }.map(\.id)
@@ -95,6 +99,7 @@ import JellyfinKit
     @Test func oldStoredDataSurvivesAndCoreWritesReadBack() throws {
         let gift = Look.all.first { $0.isGift }!
         let (defaults, kv) = Self.suite()
+        defer { kv.flush() }
         let chosen = LookSelection(lookID: Look.all.last!.id, accentID: nil, glow: .bright, usesLookIcon: false)
         defaults.set(chosen.encoded, forKey: LookStorageKey.selection)
         defaults.set([gift.id], forKey: LookStorageKey.owned)

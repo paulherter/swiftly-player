@@ -388,8 +388,9 @@ mod tests {
         let d = Key::Character("d".into());
         let g = Key::Character("g".into());
         let i = Key::Character("i".into());
-        let ctrl = ModifiersState::CONTROL;
-        let both = ModifiersState::CONTROL | ModifiersState::SHIFT;
+        // The shortcut key of the host: Cmd on macOS, Ctrl elsewhere (`shortcut_held`), like every other test here.
+        let ctrl = ctrl();
+        let both = ctrl | ModifiersState::SHIFT;
         let command = |a: Option<Action>| match a {
             Some(Action::Command(c)) => Some(c),
             _ => None,

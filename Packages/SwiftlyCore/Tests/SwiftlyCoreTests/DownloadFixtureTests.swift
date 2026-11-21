@@ -24,8 +24,8 @@ import Testing
         """
 
     private func setup() throws -> (URL, UserDefaultsKeyValueStore, UserDefaults, String) {
-        let name = "swiftly.downloads.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: name)!
+        let name = TestDefaults.name(for: Self.self)
+        let defaults = TestDefaults.make(for: Self.self)
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("dl-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try Data(Self.oldList.utf8).write(to: dir.appendingPathComponent("liste.json"))

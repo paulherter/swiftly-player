@@ -7,7 +7,9 @@ import Testing
 /// `PresentationView`, written down below by section, order, title, second line and value text)
 /// and compares it with what `SettingsModel` serves, on a fresh install and on a few states that
 /// change the rows. The old screens read the same `UserDefaults` keys, so the values come from there.
-struct SettingsRowsParityTests {
+@Suite(.serialized) final class SettingsRowsParityTests: Sendable {
+    deinit { TestDefaults.remove(for: Self.self) }
+
     struct Old {
         let key: String
         let title: String
@@ -19,11 +21,12 @@ struct SettingsRowsParityTests {
 
     @MainActor
     private func model(_ facts: SettingsFacts, _ prepare: (UserDefaults) -> Void = { _ in }) throws -> SettingsModel {
-        let suite = "swiftly.parity.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
+        let defaults = TestDefaults.make(for: Self.self)
         prepare(defaults)
         let store = UserDefaultsSettingsStore(defaults: defaults)
-        return SettingsModel(vm: makeCore().settingsVmNative(store: store, locale: "de", facts: facts))
+        let model = SettingsModel(vm: makeCore().settingsVmNative(store: store, locale: "de", facts: facts))
+        store.flush()
+        return model
     }
 
     private func value(_ row: SettingsRow) -> String? {
@@ -175,8 +178,7 @@ struct SettingsRowsParityTests {
 
     /// Old screen: choosing a subtitle language switches "automatic" on (it starts on; this is a user who turned it off).
     @Test @MainActor func subtitleLanguageSwitchesAutomaticOn() throws {
-        let suite = "swiftly.parity.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
+        let defaults = TestDefaults.make(for: Self.self)
         let store = UserDefaultsSettingsStore(defaults: defaults)
         let m = SettingsModel(vm: makeCore().settingsVmNative(store: store, locale: "de", facts: settingsFacts()))
         try m.setSwitch("utAuto", false)

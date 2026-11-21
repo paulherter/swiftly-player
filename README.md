@@ -17,7 +17,7 @@ Every file plays as Direct Play or Direct Stream, never transcoded.
 </p>
 
 <p>
-<sub><a href="https://testflight.apple.com/join/BKtrBmbz">TestFlight beta</a> · <a href="https://github.com/paulherter/swiftly-player/releases/latest">Android APK</a> · <a href="#windows">Windows</a> · <a href="#linux">Linux</a> · <a href="https://discord.gg/MeGwfv3UwN">Discord</a></sub>
+<sub><a href="https://testflight.apple.com/join/BKtrBmbz">TestFlight beta</a> · <a href="https://github.com/paulherter/swiftly-player/releases">Android APK</a> · <a href="#windows">Windows</a> · <a href="#linux">Linux</a> · <a href="https://discord.gg/MeGwfv3UwN">Discord</a></sub>
 </p>
 
 </div>
@@ -176,8 +176,8 @@ distance, input or window size demand it.
 |---|---|
 | iPhone, iPad, Mac, Apple TV | [App Store](https://apps.apple.com/app/id6806824067), one download for all four; the newest version lands first on [TestFlight](https://testflight.apple.com/join/BKtrBmbz) |
 | Android, Android TV | Google Play beta and APK, see [Android](#android) |
-| Linux | packages for apt, dnf, pacman and zypper, see [Linux](#linux) |
-| Windows | installer, see [Windows](#windows) |
+| Linux | `.deb`, `.rpm` and `.tar.gz` from the [releases page](https://github.com/paulherter/swiftly-player/releases), see [Linux](#linux) |
+| Windows | installer and portable zip from the [releases page](https://github.com/paulherter/swiftly-player/releases), see [Windows](#windows) |
 
 The TestFlight build's release notes name the handful of things to test. That
 is usually five specific things, not "have a look around".
@@ -215,7 +215,7 @@ step**, the one signed in to the Play Store on your device.
 </details>
 
 **Rather install it yourself?** Take the APK from the
-[latest release](https://github.com/paulherter/swiftly-player/releases/latest):
+[releases page](https://github.com/paulherter/swiftly-player/releases) (newest at the top):
 one APK for phones and Android TV. On a TV without a browser, use an app like
 Downloader or `adb install`.
 
@@ -229,6 +229,34 @@ installing the other.
 <br>
 
 ## Linux
+
+Download the package for your distribution from the
+**[releases page](https://github.com/paulherter/swiftly-player/releases)**
+(the newest version is at the top; betas are marked *Pre-release*) and install
+it. The checksums are listed with each release.
+
+| Distribution | File | Install |
+|---|---|---|
+| Debian, Ubuntu, Linux Mint, Pop!_OS, elementary, Zorin | `swiftly-jellyfin_<version>_amd64.deb` | `sudo apt install ./swiftly-jellyfin_<version>_amd64.deb` |
+| Fedora, Nobara, RHEL, Rocky, AlmaLinux, openSUSE | `swiftly-jellyfin-<version>-1.x86_64.rpm` | `sudo dnf install ./swiftly-jellyfin-<version>-1.x86_64.rpm` (openSUSE: `sudo zypper install ./…`) |
+| Arch, CachyOS, Manjaro and everything else | `swiftly-player-<version>-linux-x64.tar.gz` | unpack it and run `./swiftly-player`, no installation needed |
+
+The packages keep the name `swiftly-jellyfin` from the time the app was called
+Swiftly for Jellyfin, so a new package replaces an older one in place.
+
+To build it yourself with Cargo, see [Building](Documentation/Building.md).
+`Werkzeuge/package-desktop.sh` makes the same `.deb`, `.rpm` and `.tar.gz`.
+
+**Requirements: libmpv (package `libmpv2` or `mpv-libs`, depending on the
+distribution), glibc 2.35 or newer, and a graphics driver with Vulkan or
+OpenGL.** The `.deb` and `.rpm` pull libmpv in; with the `.tar.gz` you install
+it yourself. glibc 2.35 means Debian 12, Ubuntu 22.04 and everything newer.
+
+<details>
+<summary>Package source for apt, dnf, pacman and zypper</summary>
+
+The package source currently carries the earlier 1.0.x release line, not the
+1.1 betas. Install the betas from the releases page as described above.
 
 > **Renamed in September 2026.** The app used to be called Swiftly for
 > Jellyfin. The packages keep the name `swiftly-jellyfin`, so the commands
@@ -249,17 +277,6 @@ installing the other.
 > awkward part: your package manager keeps getting valid replies, just from
 > somewhere else, and you stop receiving updates without ever seeing an
 > error.
-
-One command. It works out which distribution you are on, adds the Swiftly
-package source, and installs from it — so **updates arrive with your normal
-system update**, like any other program.
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/paulherter/swiftly-player/main/Linux/Installieren/swiftly-installieren.sh | bash
-```
-
-<details>
-<summary>Or add the source yourself</summary>
 
 **Debian, Ubuntu, Linux Mint, Pop!_OS, elementary, Zorin**
 
@@ -306,18 +323,10 @@ sudo zypper addrepo -f https://paulherter.github.io/swiftly-player/rpm swiftly
 sudo zypper install swiftly-jellyfin
 ```
 
-**Anything else** — build it yourself with Cargo, see
-[Building](Documentation/Building.md). `Werkzeuge/package-desktop.sh` also makes
-a `.tar.gz` that starts without installation.
-
-</details>
-
 The packages are signed; the key's fingerprint is
 `705D 676A 71BF 0121 804A  90BA C858 9885 A042 FB8B`.
 
-**Requirements: libmpv and a graphics driver with Vulkan or OpenGL.** The
-packages are built against glibc 2.35, so they run on Debian 12, Ubuntu 22.04
-and everything newer.
+</details>
 
 **Why packages and not a Flatpak.** Measured, not assumed: the GNOME 48
 runtime carries not a single libmpv library. A Flatpak would have to build mpv
@@ -327,10 +336,14 @@ and its FFmpeg itself.
 
 ## Windows
 
-**[Download the installer](https://github.com/paulherter/swiftly-player/releases/latest)**
-(`Swiftly-<version>-Setup.exe`), Windows 10 and 11, 64-bit. It installs over an
+**[Download the installer](https://github.com/paulherter/swiftly-player/releases)**
+(`Swiftly-Player-<version>-win-x64-Setup.exe`), Windows 10 and 11, 64-bit. The
+newest version is at the top of the page; betas are marked *Pre-release*. It installs over an
 older version and updates itself: Settings → Check for updates asks GitHub for a
 newer version, downloads the installer and runs it.
+
+Prefer no installation? `Swiftly-Player-<version>-win-x64-portable.zip` holds the
+same program: unzip it anywhere and run it.
 
 The installer puts Swiftly in Program Files (or your own folder if you run it
 without admin rights), adds a Start menu entry and an optional desktop icon,
@@ -343,7 +356,7 @@ says. Jellyfin's own desktop app is in the same position. The checksum is
 listed with each release so you can verify the download.
 
 It is the same program as on Linux, built from the same Rust code. libmpv ships
-inside the installer.
+inside the installer and the zip.
 
 <br>
 
@@ -361,7 +374,7 @@ inside the installer.
 - Your own server: Jellyfin **10.8 or newer**, or Plex or Emby (beta). Swiftly
   Player hosts nothing and has no account of its own.
 - iOS 18, tvOS 18, macOS 15, Android 9, Windows 10, or a Linux desktop with
-  libmpv, which the installer takes care of.
+  glibc 2.35 or newer and libmpv, which the `.deb` and `.rpm` pull in.
 
 <br>
 

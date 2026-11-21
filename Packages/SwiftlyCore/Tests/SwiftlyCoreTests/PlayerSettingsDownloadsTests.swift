@@ -135,9 +135,8 @@ let playerPrefs = PlayerPrefs(
     }
 
     @Test @MainActor func settingsShareTheUserDefaultsKeysWithAppStorage() async throws {
-        let suite = "swiftly.test.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = TestDefaults.make(for: Self.self)
+        defer { TestDefaults.remove(for: Self.self) }
         let store = UserDefaultsSettingsStore(defaults: defaults)
         let vm = makeCore().settingsVmNative(store: store, locale: "de", facts: settingsFacts())
         let model = SettingsModel(vm: vm)
