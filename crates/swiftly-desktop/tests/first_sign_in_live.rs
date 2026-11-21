@@ -5,6 +5,8 @@
 //! temporary `SWIFTLY_CONFIG_DIR` (file secrets, no keychain).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+mod common;
+
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -119,7 +121,7 @@ fn start_loads_after_the_very_first_sign_in() {
         assert!(out.status.success(), "{text}");
         return;
     }
-    let xtask = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/xtask");
+    let xtask = common::manifest_dir().join("../../target/debug/xtask");
     if !xtask.exists() {
         println!("skipped: build xtask first (cargo build -p xtask)");
         return;

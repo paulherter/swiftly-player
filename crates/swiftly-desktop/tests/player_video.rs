@@ -7,7 +7,6 @@
     clippy::arc_with_non_send_sync
 )]
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use swiftly_desktop::frame_surface::{FrameSurface, GpuSurface};
 use swiftly_desktop::player_screen::{PlayerScenario, PlayerScreen, VideoSurface};
@@ -82,7 +81,7 @@ fn synthetic(w: u32, h: u32) -> Vec<u8> {
 mod common;
 
 fn check(name: &str, img: &RgbaImage) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(format!("{name}.png"));
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {

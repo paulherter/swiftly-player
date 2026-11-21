@@ -354,11 +354,8 @@ mod tests {
     /// when the ground changed to `#0A0A0B`.
     #[test]
     fn the_window_ground_is_the_surface_base_token_everywhere() {
-        let json = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../design/tokens.json"
-        ))
-        .expect("design/tokens.json");
+        let json = std::fs::read_to_string(crate::manifest_dir().join("../../design/tokens.json"))
+            .expect("design/tokens.json");
         let at = json.find("\"surface.base\"").expect("surface.base token");
         let rest = &json[at..];
         let dark = rest.find("\"dark\": \"#").expect("dark value") + "\"dark\": \"#".len();

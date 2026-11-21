@@ -91,7 +91,7 @@ mod tests {
     /// Wayland the page then loads behind the app's window: the click seems to do nothing.
     #[test]
     fn screens_open_addresses_only_through_the_effect() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let dir = crate::manifest_dir().join("src");
         let mut offenders = Vec::new();
         let mut stack = vec![dir];
         while let Some(d) = stack.pop() {

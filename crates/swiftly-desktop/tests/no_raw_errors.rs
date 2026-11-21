@@ -4,14 +4,14 @@
 //! which print to a terminal and never to a window.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::Path;
+mod common;
 
 /// File and how many raw error texts it may keep. `live_play.rs`: the `smoke_*` runs (terminal only).
 const ALLOWED: &[(&str, usize)] = &[("live_play.rs", 5)];
 
 #[test]
 fn no_error_text_reaches_the_screen_as_debug_output() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let src = common::manifest_dir().join("src");
     let mut found: Vec<(String, usize)> = Vec::new();
     for entry in std::fs::read_dir(&src).unwrap() {
         let path = entry.unwrap().path();

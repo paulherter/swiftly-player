@@ -4,6 +4,16 @@
 
 #![deny(missing_docs)]
 
+/// The crate directory the unit tests that read the source tree start from: `CARGO_MANIFEST_DIR` at run time (set by
+/// cargo; set by hand for the macOS test executables cross-built elsewhere), else the compiled-in path.
+#[cfg(test)]
+pub(crate) fn manifest_dir() -> std::path::PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR").map_or_else(
+        || std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+        std::path::PathBuf::from,
+    )
+}
+
 pub mod a11y_bridge;
 #[cfg(feature = "window")]
 pub mod app;

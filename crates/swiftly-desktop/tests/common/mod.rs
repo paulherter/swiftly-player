@@ -8,6 +8,16 @@
 //! a pixel limit.
 #![allow(dead_code)]
 
+/// The crate directory the tests read goldens and sources from. `CARGO_MANIFEST_DIR` at run time (cargo sets it for
+/// `cargo test`; the macOS test executables are cross-built on another machine and run from a checkout, so they get it
+/// from the environment), else the path compiled in.
+pub fn manifest_dir() -> std::path::PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR").map_or_else(
+        || std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+        std::path::PathBuf::from,
+    )
+}
+
 /// The largest allowed difference in levels.
 pub const TOLERANCE: u8 = 12;
 /// On macOS: the share of pixels that may differ by more than 2 levels.

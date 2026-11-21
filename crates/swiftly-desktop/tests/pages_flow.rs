@@ -4,7 +4,8 @@
 //! a panel before it goes back, and the new pages (person, playlist, genre, collection, Seerr) have goldens.
 //! `UPDATE_GOLDENS=1` rewrites the goldens in `swiftly-ui/tests/golden`; tolerance as in `detail_frames`.
 
-use std::path::PathBuf;
+mod common;
+
 use swiftly_desktop::detail_screen::DetailScreen;
 use swiftly_desktop::home_data::Scenario;
 use swiftly_desktop::pages_screen::{Kind, PageScreen};
@@ -22,7 +23,7 @@ fn env() -> Env {
 const TOLERANCE: u8 = if cfg!(target_os = "macos") { 2 } else { 12 };
 
 fn check(name: &str, img: &RgbaImage) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(format!("{name}.png"));
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {

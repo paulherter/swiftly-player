@@ -12,8 +12,10 @@
     clippy::cast_precision_loss
 )]
 
+mod common;
+
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -154,7 +156,7 @@ fn fx() -> Option<&'static Fx> {
         let piped = Command::new("ffmpeg").args(["-v", "quiet", "-y", "-i"]).arg(p("emb_srt.mkv")).args(["-map", "0", "-c", "copy", "-f", "matroska", "pipe:1"]).output().ok()?;
         std::fs::write(p("headerless.mkv"), piped.stdout).ok()?;
         // PGS: written by hand (ffmpeg cannot encode it), muxed as a copy.
-        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/make_pgs.py");
+        let script = common::manifest_dir().join("tests/fixtures/make_pgs.py");
         Command::new("python3").arg("-I").arg(&script).arg(p("pgs.sup")).status().ok().filter(|s| s.success())?;
         // `-copyts`: the file starts at 1 s, ffmpeg must not shift it to 0.
         let mut a: Vec<String> = vec!["-copyts".to_owned()];
@@ -273,7 +275,7 @@ fn ink_of(f: &Frame) -> Ink {
 fn ink_of_reference(name: &str) -> (Ink, f64) {
     // On a machine that only has the made files, the reference PNGs sit in `<fixtures>/reference`.
     let dir = std::env::var_os("SWIFTLY_SUBS_FIXTURES").map_or_else(
-        || Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Tests/SubtitleRender/reference"),
+        || common::manifest_dir().join("../../Tests/SubtitleRender/reference"),
         |d| PathBuf::from(d).join("reference"),
     );
     let img = RgbaImage::read_png(&dir.join(name)).expect("reference png");

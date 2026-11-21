@@ -1,6 +1,8 @@
 //! Frame goldens and behaviour tests of the Library and Search screens (software renderer, bundled Inter, three form
 //! factors). PNGs live in `swiftly-ui/tests/golden`; `UPDATE_GOLDENS=1` rewrites them. Tolerance: see `check`.
 
+mod common;
+
 use std::path::PathBuf;
 use swiftly_desktop::browse::Scenario;
 use swiftly_desktop::library_screen::{Kind, LibraryScreen};
@@ -49,7 +51,7 @@ fn env(f: &Form) -> Env {
 }
 
 fn check(name: &str, img: &RgbaImage) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(format!("{name}.png"));
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {

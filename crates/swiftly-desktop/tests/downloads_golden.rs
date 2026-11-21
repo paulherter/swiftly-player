@@ -1,8 +1,9 @@
 //! Frame goldens and behaviour tests of the Downloads page after `MacDownloads.swift` (software renderer, bundled Inter).
 //! PNGs live in `swiftly-ui/tests/golden`; `UPDATE_GOLDENS=1` rewrites them.
 
+mod common;
+
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Mutex;
 use swiftly_desktop::downloads_screen::{DownloadsScreen, LoadRequest, Scenario};
 use swiftly_desktop::net_watch::{NetState, NetworkWatcher, Pump};
@@ -21,7 +22,7 @@ fn mac() -> Env {
 }
 
 fn check(name: &str, img: &RgbaImage) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(format!("{name}.png"));
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {

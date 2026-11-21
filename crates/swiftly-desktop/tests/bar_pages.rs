@@ -2,6 +2,8 @@
 //! Settings pages and the title/person/genre pages, plus its worst cases (long and right-to-left titles, empty pages).
 //! PNGs live in `swiftly-ui/tests/golden`; `UPDATE_GOLDENS=1` rewrites them (same tolerance rules as `forms_golden`).
 
+mod common;
+
 use std::path::PathBuf;
 use swiftly_desktop::detail_screen::DetailScreen;
 use swiftly_desktop::home_data::Scenario;
@@ -23,7 +25,7 @@ fn env(w: f32, h: f32) -> Env {
 }
 
 fn check(name: &str, img: &RgbaImage) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(format!("{name}.png"));
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {
@@ -84,6 +86,8 @@ fn settings_pages_get_the_glow_and_the_small_title_when_scrolled() {
     // A short window so the Allgemein page scrolls.
     for page in ["general", "playback", "presentation"] {
         let mut s = SettingsScreen::new(env(1100.0, 330.0), Cx::deterministic(), true);
+        // The Windows/Linux page, with its Discord row, on every OS (the Mac build has no such row).
+        s.set_discord_presence(true);
         s.open_page(page);
         let mut now = 0.0;
         let rest = drive!(s, &mut now, 400.0);

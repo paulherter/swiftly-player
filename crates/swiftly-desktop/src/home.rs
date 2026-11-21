@@ -4607,11 +4607,8 @@ mod sidebar_icon_fill {
     use super::*;
 
     fn mac_source() -> Option<String> {
-        std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../Sources/macOS/MainView.swift"),
-        )
-        .ok()
+        std::fs::read_to_string(crate::manifest_dir().join("../../Sources/macOS/MainView.swift"))
+            .ok()
     }
 
     /// Mac: `.watchlist: "bookmark.fill"` and no tab asset pair for it, so the row is filled idle and selected.

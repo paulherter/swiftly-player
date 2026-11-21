@@ -2,6 +2,8 @@
 //! Bundled Inter only (`Cx::deterministic`), fixed clock, so the pixels are the same on every host. The PNGs live in
 //! `swiftly-ui/tests/golden`; `UPDATE_GOLDENS=1` rewrites them. Tolerance: 2 levels per channel.
 
+mod common;
+
 use std::path::PathBuf;
 use swiftly_desktop::demo::Demo;
 use swiftly_layout::Size;
@@ -44,7 +46,7 @@ const TV: Form = Form {
 };
 
 fn golden_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(name)
 }

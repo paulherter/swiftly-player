@@ -1,13 +1,11 @@
 //! The Windows release exe is a GUI program (no console window next to the app) and carries its program icon.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
+mod common;
 
 #[test]
 fn main_rs_asks_for_the_gui_subsystem_in_release() {
-    let src =
-        std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/main.rs"))
-            .unwrap();
+    let src = std::fs::read_to_string(common::manifest_dir().join("src/main.rs")).unwrap();
     assert!(
         src.contains("windows_subsystem = \"windows\"") && src.contains("not(debug_assertions)"),
         "release builds on Windows must use the GUI subsystem"
@@ -25,7 +23,7 @@ fn subsystem(exe: &[u8]) -> u16 {
 
 #[test]
 fn a_built_windows_release_exe_has_no_console_subsystem() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let root = common::manifest_dir()
         .join("../../target/x86_64-pc-windows-msvc/release/swiftly-desktop.exe");
     let Ok(bytes) = std::fs::read(&root) else {
         eprintln!("no cross-built exe at {}, skipped", root.display());

@@ -6,6 +6,8 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+mod common;
+
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -96,7 +98,7 @@ fn the_film_page_downloads_the_title_and_it_plays_offline_with_its_subtitle() {
     // `SWIFTLY_XTASK` points at the fixture server's binary when the test exe runs on another machine (the Windows VM).
     let xtask = std::env::var_os("SWIFTLY_XTASK").map_or_else(
         || {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            common::manifest_dir()
                 .join("../../target/debug")
                 .join(format!("xtask{}", std::env::consts::EXE_SUFFIX))
         },

@@ -1,7 +1,8 @@
 //! Frame goldens of the shared text field (caret, selection, preedit, placeholder, password) in three form factors, plus
 //! blink, candidate-window and accessibility checks. PNGs live in `swiftly-ui/tests/golden`; `UPDATE_GOLDENS=1` rewrites.
 
-use std::path::PathBuf;
+mod common;
+
 use swiftly_design::tokens::colour;
 use swiftly_layout::{Alignment, EdgeInsets, Size};
 use swiftly_render::{Color, RgbaImage};
@@ -63,7 +64,7 @@ fn look(f: &Form) -> FieldLook {
 }
 
 fn check(name: &str, img: &RgbaImage) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(format!("{name}.png"));
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {

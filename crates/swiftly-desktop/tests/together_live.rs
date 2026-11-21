@@ -4,6 +4,8 @@
 //! `target/debug/xtask` (`cargo build -p xtask`); without it the test says so and passes.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+mod common;
+
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -81,7 +83,7 @@ impl Drop for Rig {
 
 /// The fixture, two signed-in desktop clients and one group they are both in; `None` without the xtask binary.
 fn rig() -> Option<Rig> {
-    let xtask = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/xtask");
+    let xtask = common::manifest_dir().join("../../target/debug/xtask");
     if !xtask.exists() {
         println!("skipped: build xtask first (cargo build -p xtask)");
         return None;

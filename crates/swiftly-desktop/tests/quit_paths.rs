@@ -2,9 +2,11 @@
 //! player and lets its report (position, stop) go out first. A path that only called `exit` left the server with a film
 //! that never stopped (a quit while paused sent Playing and Progress, no Stopped).
 
+mod common;
+
 #[test]
 fn only_startup_failures_and_leave_call_exit_directly() {
-    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/app.rs"))
+    let source = std::fs::read_to_string(common::manifest_dir().join("src/app.rs"))
         .expect("app.rs is readable");
     let lines: Vec<&str> = source.lines().collect();
     let mut stray = Vec::new();
@@ -31,7 +33,7 @@ fn only_startup_failures_and_leave_call_exit_directly() {
 
 #[test]
 fn leave_stops_the_player_before_it_exits() {
-    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/app.rs"))
+    let source = std::fs::read_to_string(common::manifest_dir().join("src/app.rs"))
         .expect("app.rs is readable");
     let at = source.find("fn leave(").expect("Running::leave exists");
     let body = &source[at..at + 400];

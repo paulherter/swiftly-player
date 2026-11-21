@@ -2,6 +2,8 @@
 //! room for the icons after the poster region took its rows. The release app drew no server marks, no wordmark and no
 //! player centre buttons: the names were fine, the page had no rows left for them.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use swiftly_ui::icons::{path_data, stroke_suffix};
@@ -70,7 +72,7 @@ fn looks_like_asset(s: &str) -> bool {
 /// Literals that sit in a call that takes an asset name (`node(`, `node_template(`) or on a line that talks about
 /// icons, symbols, glyphs or marks.
 fn asked_for() -> BTreeSet<String> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = common::manifest_dir();
     let mut files = Vec::new();
     rust_files(&root.join("src"), &mut files);
     rust_files(&root.join("../swiftly-ui/src"), &mut files);

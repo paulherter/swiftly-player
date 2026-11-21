@@ -1,9 +1,11 @@
 //! The desktop app's version (Settings, update check, crash log) is the one the Apple apps ship: `MARKETING_VERSION` in
 //! `project.yml`, which `Werkzeuge/package-desktop.sh` also reads for the packages. A snapshot without `project.yml` skips.
 
+mod common;
+
 #[test]
 fn the_desktop_version_is_the_marketing_version() {
-    let project = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../project.yml");
+    let project = common::manifest_dir().join("../../project.yml");
     let Ok(text) = std::fs::read_to_string(&project) else {
         println!("skipped: no project.yml here");
         return;
@@ -24,7 +26,7 @@ fn the_desktop_version_is_the_marketing_version() {
 /// placeholder; `Werkzeuge/package-desktop.sh` checks the same row inside the packaged binaries.
 #[test]
 fn the_settings_row_names_the_apple_build_number() {
-    let project = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../project.yml");
+    let project = common::manifest_dir().join("../../project.yml");
     let Ok(text) = std::fs::read_to_string(&project) else {
         println!("skipped: no project.yml here");
         return;

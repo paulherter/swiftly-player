@@ -1,7 +1,8 @@
 //! Frame goldens and focus-plan checks of the Detail and Series screens (software renderer, bundled Inter, fixed clock)
 //! for touch, desktop and tv. PNGs live in `swiftly-ui/tests/golden`; `UPDATE_GOLDENS=1` rewrites them. Tolerance 2.
 
-use std::path::PathBuf;
+mod common;
+
 use swiftly_desktop::detail_screen::DetailScreen;
 use swiftly_desktop::home_data::Scenario;
 use swiftly_desktop::series_screen::SeriesScreen;
@@ -48,7 +49,7 @@ const TOLERANCE: u8 = if cfg!(target_os = "macos") { 16 } else { 12 };
 const MAC_PIXEL_SHARE: f64 = 0.0005;
 
 fn check(name: &str, img: &RgbaImage) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(format!("{name}.png"));
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {

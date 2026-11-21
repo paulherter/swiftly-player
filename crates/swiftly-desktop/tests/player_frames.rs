@@ -2,7 +2,6 @@
 //! clock) for touch, desktop and tv. PNGs live in `swiftly-ui/tests/golden`; `UPDATE_GOLDENS=1` rewrites them.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
 use swiftly_desktop::player_screen::{DURATION, PlayerKey, PlayerScenario, PlayerScreen};
 use swiftly_layout::Size;
 use swiftly_render::RgbaImage;
@@ -44,7 +43,7 @@ fn env(f: &Form) -> Env {
 mod common;
 
 fn check(name: &str, img: &RgbaImage) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(format!("{name}.png"));
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {

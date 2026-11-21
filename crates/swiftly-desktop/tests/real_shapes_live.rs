@@ -6,6 +6,8 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+mod common;
+
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -20,7 +22,7 @@ use swiftly_ui::{Cx, Env, Idiom};
 /// The fixture server binary: built on the spot when `target/debug/xtask` is missing (a workspace test run does not
 /// build it), so the live tests start their own fixture; when it cannot be built the test says so and passes.
 fn fixture_binary() -> Option<PathBuf> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = common::manifest_dir().join("../..");
     let xtask = root.join("target/debug/xtask");
     if !xtask.exists() {
         let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());

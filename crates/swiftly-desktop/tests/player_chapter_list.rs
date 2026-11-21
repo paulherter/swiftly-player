@@ -2,7 +2,6 @@
 //! only for a title with chapters, the panel draws the core's rows, and a press sends the core's `JumpToChapter`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
 use swiftly_desktop::player_screen::{PlayerKey, PlayerScenario, PlayerScreen};
 use swiftly_layout::Size;
 use swiftly_render::RgbaImage;
@@ -82,8 +81,8 @@ fn the_chapter_list_golden() {
     now = settle(&mut s, now);
     let (list, _) = s.frame(now + 16.7);
     let img = s.render_software(&list);
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../swiftly-ui/tests/golden/player_desktop_chapters.png");
+    let path =
+        common::manifest_dir().join("../swiftly-ui/tests/golden/player_desktop_chapters.png");
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {
         img.write_png(&path).expect("golden");
         return;

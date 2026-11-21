@@ -2,7 +2,6 @@
 //! squeezed to "Leert... Abspielen"). The golden pins the picture; `UPDATE_GOLDENS=1` rewrites it.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
 use swiftly_desktop::player_screen::{PlayerKey, PlayerScenario, PlayerScreen};
 use swiftly_layout::Size;
 use swiftly_render::RgbaImage;
@@ -26,8 +25,8 @@ fn paused_key_hint_is_not_truncated() {
     }
     let (list, _) = s.frame(now + 16.7);
     let img = s.render_software(&list);
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../swiftly-ui/tests/golden/player_desktop_paused_hint.png");
+    let path =
+        common::manifest_dir().join("../swiftly-ui/tests/golden/player_desktop_paused_hint.png");
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {
         img.write_png(&path).expect("golden");
         return;

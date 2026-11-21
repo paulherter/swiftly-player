@@ -1,6 +1,8 @@
 //! Frame goldens and behaviour tests of the Settings, Downloads and sign-in screens (software renderer, bundled
 //! Inter, three form factors). PNGs live in `swiftly-ui/tests/golden`; `UPDATE_GOLDENS=1` rewrites them.
 
+mod common;
+
 use std::path::PathBuf;
 use swiftly_desktop::downloads_screen::{DownloadsScreen, Scenario};
 use swiftly_desktop::login_screen::{LoginScreen, Start, Step};
@@ -51,7 +53,7 @@ fn env(f: &Form) -> Env {
 }
 
 fn check(name: &str, img: &RgbaImage) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(format!("{name}.png"));
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {
@@ -144,6 +146,8 @@ fn scenes(f: &Form) {
         &shoot!(s, &mut now, 400.0),
     );
     let mut s = SettingsScreen::new(env(f), Cx::deterministic(), true);
+    // The Windows/Linux page, with its Discord row, on every OS (the Mac build has no such row).
+    s.set_discord_presence(true);
     let mut now = 0.0;
     check(
         &format!("settings_{}_page", f.name),

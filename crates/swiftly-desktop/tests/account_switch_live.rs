@@ -6,6 +6,8 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+mod common;
+
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -99,7 +101,7 @@ fn switching_accounts_keeps_posters_and_stops_requests() {
         assert!(out.status.success(), "{text}");
         return;
     }
-    let xtask = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/xtask");
+    let xtask = common::manifest_dir().join("../../target/debug/xtask");
     if !xtask.exists() {
         println!("skipped: build xtask first (cargo build -p xtask)");
         return;

@@ -6,6 +6,8 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+mod common;
+
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -93,7 +95,7 @@ fn start_refetches_after_the_grace_period_when_it_comes_back() {
         assert!(out.status.success(), "{text}");
         return;
     }
-    let xtask = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/xtask");
+    let xtask = common::manifest_dir().join("../../target/debug/xtask");
     if !xtask.exists() {
         println!("skipped: build xtask first (cargo build -p xtask)");
         return;
@@ -164,7 +166,7 @@ fn start_loads_again_when_its_settings_change_while_it_runs() {
         assert!(out.status.success(), "{text}");
         return;
     }
-    let xtask = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/xtask");
+    let xtask = common::manifest_dir().join("../../target/debug/xtask");
     if !xtask.exists() {
         println!("skipped: build xtask first (cargo build -p xtask)");
         return;

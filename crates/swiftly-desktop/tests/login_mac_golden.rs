@@ -2,7 +2,6 @@
 //! Quick Connect, the Plex steps and the account list. `UPDATE_GOLDENS=1 cargo test --test login_mac_golden` rewrites them.
 //! The four `login_desktop_*` goldens are shared with `forms_golden.rs` (same scenes, same names).
 
-use std::path::PathBuf;
 use swiftly_desktop::login_mac::PlexStep;
 use swiftly_desktop::login_screen::{LoginScreen, Start, Step};
 use swiftly_layout::Size;
@@ -17,7 +16,7 @@ fn env() -> Env {
 }
 
 fn check(name: &str, img: &RgbaImage) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(format!("{name}.png"));
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {

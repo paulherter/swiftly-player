@@ -1,6 +1,8 @@
 //! The panel of watching together and continuing elsewhere: frame goldens of the four panels (software renderer,
 //! bundled Inter) and what a click, Return and Escape choose. PNGs live in `swiftly-ui/tests/golden`.
 
+mod common;
+
 use std::path::PathBuf;
 use swiftly_desktop::together_ui::{
     Act, ExitPlan, ExitStill, Mode, PickRow, PickTarget, TogetherUi,
@@ -20,7 +22,7 @@ const TOLERANCE: u8 = if cfg!(target_os = "macos") { 16 } else { 12 };
 const MAC_PIXEL_SHARE: f64 = 0.0005;
 
 fn check(name: &str, img: &RgbaImage) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(format!("{name}.png"));
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {

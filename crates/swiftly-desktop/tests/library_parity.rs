@@ -1,7 +1,8 @@
 //! Parity audit 10: title menu, collection cards, alphabet strip, strip jumps and scroll restore of the Library screen (software renderer, bundled Inter, three form
 //! factors). PNGs live in `swiftly-ui/tests/golden`; `UPDATE_GOLDENS=1` rewrites them. Tolerance: 2 levels per channel.
 
-use std::path::PathBuf;
+mod common;
+
 use swiftly_desktop::browse::Scenario;
 use swiftly_desktop::library_screen::{Kind, LibraryScreen};
 use swiftly_layout::Size;
@@ -42,7 +43,7 @@ fn env(f: &Form) -> Env {
 }
 
 fn check(name: &str, img: &RgbaImage) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(format!("{name}.png"));
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {

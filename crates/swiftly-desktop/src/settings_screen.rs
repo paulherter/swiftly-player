@@ -2019,6 +2019,16 @@ impl SettingsScreen {
         self
     }
 
+    /// Pins whether the Discord row is offered. The row follows the OS (`discord_link::AVAILABLE`: Windows and Linux; the
+    /// Mac app has its own presence client), so the frame goldens of the Windows/Linux page pin it on and read the same
+    /// on every OS, the macOS test run included.
+    pub fn set_discord_presence(&mut self, offered: bool) {
+        self.context.discord_presence = offered;
+        let _ = self
+            .vm
+            .send(SettingsIntent::Context(Box::new(self.context.clone())));
+    }
+
     /// Replaces the scripted server check of the demo with the real one.
     #[must_use]
     pub fn with_check(mut self, check: Box<dyn ServerCheck>) -> SettingsScreen {
@@ -3487,6 +3497,25 @@ mod tests {
         s.back(0.0);
         let _ = s.frame(200.0);
         assert!(sent.lock().unwrap().contains(&"Stop".to_owned()));
+    }
+
+    /// The Discord row follows the OS by default and can be pinned either way (the frame goldens pin it on).
+    #[test]
+    fn the_discord_row_can_be_pinned_on_and_off() {
+        let mut s = SettingsScreen::new(desktop(), Cx::deterministic(), true);
+        let has_row = |s: &SettingsScreen| {
+            s.vm()
+                .sections()
+                .sections
+                .iter()
+                .flat_map(|sec| sec.rows.iter())
+                .any(|r| r.key == "discordAnzeigen")
+        };
+        assert_eq!(has_row(&s), crate::discord_link::AVAILABLE);
+        s.set_discord_presence(true);
+        assert!(has_row(&s));
+        s.set_discord_presence(false);
+        assert!(!has_row(&s));
     }
 
     #[test]

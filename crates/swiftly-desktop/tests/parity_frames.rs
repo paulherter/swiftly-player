@@ -7,7 +7,6 @@
 //! = address page) stay in the measurement as history lines; these `*_suite_*` and `login_desktop_signin` ones are fair.
 #![allow(clippy::unwrap_used)]
 
-use std::path::PathBuf;
 use swiftly_desktop::downloads_screen::{DownloadsScreen, Scenario};
 use swiftly_desktop::login_screen::{LoginScreen, Start, Step};
 use swiftly_desktop::suite::Suite;
@@ -23,7 +22,7 @@ fn env() -> Env {
 }
 
 fn check(name: &str, img: &RgbaImage) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = common::manifest_dir()
         .join("../swiftly-ui/tests/golden")
         .join(format!("{name}.png"));
     if std::env::var_os("UPDATE_GOLDENS").is_some() || !path.exists() {
@@ -71,7 +70,10 @@ fn settings_general_in_the_suite() {
     let (mut s, mut now) = suite();
     assert!(s.open_settings(now));
     let _ = settle(&mut s, &mut now, 900.0);
-    s.settings().unwrap().open_page("general");
+    let page = s.settings().unwrap();
+    // The Windows/Linux page, with its Discord row, on every OS (the Mac build has no such row).
+    page.set_discord_presence(true);
+    page.open_page("general");
     check("settings_suite_general", &settle(&mut s, &mut now, 600.0));
 }
 

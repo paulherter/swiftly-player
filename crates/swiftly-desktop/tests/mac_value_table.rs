@@ -5,13 +5,15 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+mod common;
+
 use swiftly_motion::catalogue::Id;
 use swiftly_motion::profile::{Glide, Os, ScrollTuning};
 use swiftly_motion::{scroll, tuning};
 use swiftly_ui::nav::tuning as nav;
 
 fn mac(file: &str) -> String {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = common::manifest_dir().join("../..");
     std::fs::read_to_string(root.join(file)).unwrap_or_else(|e| panic!("{file}: {e}"))
 }
 
