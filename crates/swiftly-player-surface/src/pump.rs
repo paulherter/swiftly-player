@@ -333,10 +333,13 @@ fn run(shared: &Shared, mut renderer: impl Renderer, wake: &WakeSlot) {
 mod tests {
     use super::*;
 
-    /// A renderer that takes `cost` per frame and has a new picture whenever asked (a video that never waits).
+    /// A renderer that takes `cost` per frame and has a new picture whenever asked (a video that never waits). With `made` it
+    /// reports the number of every frame it draws (from inside `render`, before the pump stores the frame), so a test can
+    /// wait for that event instead of for a time.
     struct Slow {
         cost: Duration,
         frames: Arc<AtomicU64>,
+        made: Option<std::sync::mpsc::Sender<u64>>,
     }
 
     impl Renderer for Slow {
@@ -348,6 +351,9 @@ mod tests {
             let n = self.frames.fetch_add(1, Ordering::Relaxed) + 1;
             rgba[0] = (n % 251) as u8;
             assert_eq!(rgba.len(), w as usize * h as usize * 4);
+            if let Some(made) = &self.made {
+                let _ = made.send(n);
+            }
             true
         }
     }
@@ -357,9 +363,23 @@ mod tests {
         let pump = RenderPump::spawn(Slow {
             cost: Duration::from_millis(cost_ms),
             frames: Arc::clone(&frames),
+            made: None,
         })
         .expect("thread starts");
         (pump, frames)
+    }
+
+    /// Like `slow_pump`, plus the receiver of the number of every frame the renderer has drawn.
+    fn counting_pump(cost_ms: u64) -> (RenderPump, Arc<AtomicU64>, std::sync::mpsc::Receiver<u64>) {
+        let frames = Arc::new(AtomicU64::new(0));
+        let (made, drawn) = std::sync::mpsc::channel();
+        let pump = RenderPump::spawn(Slow {
+            cost: Duration::from_millis(cost_ms),
+            frames: Arc::clone(&frames),
+            made: Some(made),
+        })
+        .expect("thread starts");
+        (pump, frames, drawn)
     }
 
     /// The UI side of a host: asks for a frame every `tick` and measures how long each ask took. With `wait_for_frame`
@@ -429,12 +449,24 @@ mod tests {
         assert_eq!(fresh, 100, "only {fresh} of 100 ticks had a new frame");
     }
 
+    /// The UI does not look for a while: the pump keeps drawing, only the newest frame stays and the buffers do not pile up.
+    /// The test waits for the event (the renderer has drawn `MADE` frames, bounded by a hang guard) instead of sleeping a
+    /// time: a 2 ms renderer drew only 9 frames in 120 ms on a shared CI runner, and how fast the pump thread is scheduled
+    /// is not what this promises.
     #[test]
     fn the_ui_gets_the_newest_frame_and_old_ones_are_dropped() {
-        let (pump, frames) = slow_pump(2);
+        const MADE: u64 = 20;
+        const HANG_GUARD: Duration = Duration::from_secs(10);
+        let (pump, frames, drawn_frames) = counting_pump(2);
         pump.want(64, 64, false);
-        // The UI does not look for a while: the pump keeps drawing and only the newest frame stays.
-        std::thread::sleep(Duration::from_millis(120));
+        loop {
+            let n = drawn_frames
+                .recv_timeout(HANG_GUARD)
+                .expect("the pump keeps drawing while the UI does not look");
+            if n >= MADE {
+                break;
+            }
+        }
         let mut buf = FrameBuffer::default();
         assert_eq!(pump.take(&mut buf), FrameStatus::New);
         assert_eq!(
@@ -442,14 +474,21 @@ mod tests {
             (64, 64, 64 * 64 * 4)
         );
         let drawn = frames.load(Ordering::Relaxed);
-        assert!(drawn >= 10, "{drawn} frames drawn");
-        // The frame on hand is a late one (the counter in its first byte), not the first.
+        assert!(drawn >= MADE, "{drawn} frames drawn");
+        // The frame on hand is a late one, not the first: when frame `MADE` was announced, the frames before it were all
+        // finished and stored (one pump thread, one frame at a time), and the UI took none of them. The counter in the
+        // first byte wraps at 251.
         assert!(
-            drawn > 250 || buf.rgba[0] > 3,
-            "stale frame {}",
+            drawn > 250 || u64::from(buf.rgba[0]) >= MADE - 1,
+            "stale frame {} after {drawn} drawn",
             buf.rgba[0]
         );
-        assert!(pump.stats().superseded >= 5);
+        // Every finished frame the UI did not take was replaced by the next one.
+        assert!(
+            pump.stats().superseded >= MADE - 2,
+            "{} frames superseded after {drawn} drawn",
+            pump.stats().superseded
+        );
         // The ring is bounded: the buffers do not pile up while the UI sleeps.
         assert!(lock(&pump.shared.slots).spare.len() <= SPARE_LIMIT);
     }

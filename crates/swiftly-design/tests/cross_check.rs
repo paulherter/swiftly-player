@@ -508,6 +508,43 @@ fn headline_values_from_apple_screens() {
     assert_eq!((tv::POSTER_WIDTH, tv::POSTER_HEIGHT), (208.0, 312.0));
 }
 
+/// The values where `data/system.json` deliberately differs from the kit file: (path, kit value, snapshot value). The snapshot is the
+/// kit file plus these corrections, so it is not byte-equal to it. A new difference, or a correction that the kit has taken over
+/// while it is still listed, fails the test below.
+const KIT_CORRECTIONS: &[(&str, &str, &str)] = &[
+    // Section title tracking on the Mac: the kit took -0.308 from the comment in `Shared/Style.swift`; the Mac code
+    // (`macOS/Style.swift:325` `lockSection`) and the design file say -0.484 (NOTES.md, 09.11.).
+    ("type.section.macos.tracking", "-0.308", "-0.484"),
+];
+
+/// Every leaf where the two documents differ: (path, value in `kit`, value in `mine`).
+fn differences(kit: &Value, mine: &Value, path: &str, out: &mut Vec<(String, String, String)>) {
+    match (kit, mine) {
+        (Value::Object(k), Value::Object(m)) => {
+            let mut keys: Vec<&String> = k.keys().chain(m.keys()).collect();
+            keys.sort();
+            keys.dedup();
+            for key in keys {
+                let at = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                match (k.get(key), m.get(key)) {
+                    (Some(a), Some(b)) => differences(a, b, &at, out),
+                    (a, b) => out.push((
+                        at,
+                        a.map_or("(missing)".into(), Value::to_string),
+                        b.map_or("(missing)".into(), Value::to_string),
+                    )),
+                }
+            }
+        }
+        _ if kit != mine => out.push((path.into(), kit.to_string(), mine.to_string())),
+        _ => {}
+    }
+}
+
 #[test]
 fn snapshot_equals_the_kit_file() {
     let Some(home) = std::env::var_os("HOME") else {
@@ -519,9 +556,17 @@ fn snapshot_equals_the_kit_file() {
         eprintln!("skipped: {} not found", kit.display());
         return;
     };
-    let mine = std::fs::read_to_string(manifest().join("data/system.json")).expect("snapshot");
+    let kit_json: Value = serde_json::from_str(&kit_text).expect("kit file is JSON");
+    let mut found = Vec::new();
+    differences(&kit_json, &system(), "", &mut found);
+    let mut want: Vec<(String, String, String)> = KIT_CORRECTIONS
+        .iter()
+        .map(|(path, kit, mine)| ((*path).into(), (*kit).into(), (*mine).into()))
+        .collect();
+    want.sort();
+    found.sort();
     assert_eq!(
-        mine, kit_text,
-        "data/system.json differs from the kit; copy the kit file and regenerate"
+        found, want,
+        "data/system.json differs from the kit beyond KIT_CORRECTIONS: copy the kit file and regenerate, or list the correction"
     );
 }
