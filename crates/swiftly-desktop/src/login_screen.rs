@@ -187,7 +187,9 @@ fn quick_body(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
     let mut b = vec![
         text(
             cx,
-            "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.",
+            swiftly_l10n::tr(
+                "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.",
+            ),
             st(15.0, 400),
             color::TEXT_SECONDARY,
             Some(4),
@@ -280,7 +282,7 @@ fn quick_body(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
                 .padding(ins(0.0, 0.0, 14.0, 0.0)),
                 text(
                     cx,
-                    "So gehts",
+                    swiftly_l10n::tr("So gehts"),
                     swiftly_design::TextStyle {
                         tracking: -0.2,
                         ..st(22.0, 700)
@@ -289,9 +291,18 @@ fn quick_body(cx: &Cx, f: &Fm, p: &Parts) -> Vec<Node> {
                     Some(1),
                     swiftly_text::Align::Start,
                 ),
-                step(1, "Jellyfin im Browser öffnen und anmelden"),
-                step(2, "Oben rechts aufs Profil, dann Quick Connect"),
-                step(3, "Code eingeben, dann geht es hier von selbst weiter"),
+                step(
+                    1,
+                    swiftly_l10n::tr("Jellyfin im Browser öffnen und anmelden"),
+                ),
+                step(
+                    2,
+                    swiftly_l10n::tr("Oben rechts aufs Profil, dann Quick Connect"),
+                ),
+                step(
+                    3,
+                    swiftly_l10n::tr("Code eingeben, dann geht es hier von selbst weiter"),
+                ),
             ],
         )
         .padding(ins(38.0, 0.0, 0.0, 0.0)),
@@ -308,7 +319,7 @@ fn pinned_new_code(cx: &Cx, f: &Fm, env: &Env, ctx: &Ctx) -> Node {
         &ctx.icons,
         f,
         "newcode",
-        "Neuen Code holen",
+        swiftly_l10n::tr("Neuen Code holen"),
         None,
         false,
         false,
@@ -338,7 +349,7 @@ fn address_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
         wide(
             text(
                 cx,
-                "Wo steht dein Jellyfin-Server?",
+                swiftly_l10n::tr("Wo steht dein Jellyfin-Server?"),
                 st(15.0, 400),
                 color::TEXT_SECONDARY,
                 Some(2),
@@ -354,9 +365,9 @@ fn address_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             "field:addr",
             "globe",
             if f.form == crate::home::Form::Tv {
-                "tv.beispiel.de"
+                swiftly_l10n::tr("tv.beispiel.de")
             } else {
-                "jellyfin.beispiel.de"
+                swiftly_l10n::tr("jellyfin.beispiel.de")
             },
             &p.shown(Field::Address),
             false,
@@ -368,9 +379,11 @@ fn address_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             cx,
             f,
             if f.form == crate::home::Form::Tv {
-                "https:// kannst du weglassen."
+                swiftly_l10n::tr("https:// kannst du weglassen.")
             } else {
-                "https:// kannst du weglassen. Du bleibst auch beim anderen Server angemeldet."
+                swiftly_l10n::tr(
+                    "https:// kannst du weglassen. Du bleibst auch beim anderen Server angemeldet.",
+                )
             },
             false,
             false,
@@ -382,9 +395,9 @@ fn address_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             f,
             "connect",
             if p.checking {
-                "Verbinden…"
+                swiftly_l10n::tr("Verbinden…")
             } else {
-                "Verbinden"
+                swiftly_l10n::tr("Verbinden")
             },
             None,
             true,
@@ -423,7 +436,7 @@ fn credentials_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             f,
             "field:user",
             "user",
-            "Benutzername",
+            swiftly_l10n::tr("Benutzername"),
             &p.shown(Field::User),
             false,
             p.field == Field::User,
@@ -436,7 +449,7 @@ fn credentials_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             f,
             "field:pass",
             "lock",
-            "Passwort",
+            swiftly_l10n::tr("Passwort"),
             &p.shown(Field::Password),
             true,
             p.field == Field::Password,
@@ -449,9 +462,9 @@ fn credentials_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             f,
             "signin",
             if p.checking {
-                "Anmelden…"
+                swiftly_l10n::tr("Anmelden…")
             } else {
-                "Anmelden"
+                swiftly_l10n::tr("Anmelden")
             },
             None,
             true,
@@ -473,7 +486,7 @@ fn credentials_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                 ),
                 text(
                     cx,
-                    "oder",
+                    swiftly_l10n::tr("oder"),
                     st(12.0, 400),
                     color::TEXT_TERTIARY,
                     Some(1),
@@ -495,7 +508,7 @@ fn credentials_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             &ctx.icons,
             f,
             "quick",
-            "Mit Quick Connect anmelden",
+            swiftly_l10n::tr("Mit Quick Connect anmelden"),
             Some("television"),
             false,
             true,
@@ -553,13 +566,13 @@ fn accounts_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
         .collect();
     vec![
         forms::setting_group(cx, f, "Konten", 18.0, rows),
-        forms::setting_group(cx, f, "Abmelden", 18.0, outs),
+        forms::setting_group(cx, f, swiftly_l10n::tr("Abmelden"), 18.0, outs),
         forms::button(
             cx,
             &ctx.icons,
             f,
             "add",
-            "Server hinzufügen",
+            swiftly_l10n::tr("Server hinzufügen"),
             Some("plug"),
             false,
             false,
@@ -598,7 +611,9 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
         tv_title(cx, "Quick Connect"),
         text(
             cx,
-            "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.",
+            swiftly_l10n::tr(
+                "Gib diesen Code in Jellyfin auf einem Gerät ein, an dem du schon angemeldet bist.",
+            ),
             st(30.0, 400),
             color::TEXT_SECONDARY,
             Some(3),
@@ -666,7 +681,7 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
             vec![
                 text(
                     cx,
-                    "So gehts",
+                    swiftly_l10n::tr("So gehts"),
                     swiftly_design::TextStyle {
                         tracking: -0.2,
                         ..st(34.0, 700)
@@ -675,9 +690,18 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                     Some(1),
                     swiftly_text::Align::Start,
                 ),
-                step(1, "Jellyfin im Browser öffnen und anmelden"),
-                step(2, "Oben rechts aufs Profil, dann Quick Connect"),
-                step(3, "Code eingeben, dann geht es hier von selbst weiter"),
+                step(
+                    1,
+                    swiftly_l10n::tr("Jellyfin im Browser öffnen und anmelden"),
+                ),
+                step(
+                    2,
+                    swiftly_l10n::tr("Oben rechts aufs Profil, dann Quick Connect"),
+                ),
+                step(
+                    3,
+                    swiftly_l10n::tr("Code eingeben, dann geht es hier von selbst weiter"),
+                ),
             ],
         )
         .frame(Some(900.0), None, Alignment::LEADING)
@@ -693,7 +717,7 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                     &ctx.icons,
                     f,
                     "newcode",
-                    "Neuer Code",
+                    swiftly_l10n::tr("Neuer Code"),
                     None,
                     false,
                     false,
@@ -705,7 +729,7 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                     &ctx.icons,
                     f,
                     "password",
-                    "Lieber Name und Passwort",
+                    swiftly_l10n::tr("Lieber Name und Passwort"),
                     None,
                     false,
                     false,
@@ -713,7 +737,15 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                 )
                 .frame(Some(560.0), None, Alignment::CENTER),
                 forms::button(
-                    cx, &ctx.icons, f, "back", "Zurück", None, false, false, true,
+                    cx,
+                    &ctx.icons,
+                    f,
+                    "back",
+                    swiftly_l10n::tr("Zurück"),
+                    None,
+                    false,
+                    false,
+                    true,
                 )
                 .frame(Some(260.0), None, Alignment::CENTER),
             ],
@@ -726,7 +758,7 @@ fn tv_quick(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
 /// tvOS user name and password ("Anmelden", placeholder "Kennwort", "Lieber Quick Connect").
 fn tv_password(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
     let mut rows = vec![
-        tv_title(cx, "Anmelden"),
+        tv_title(cx, swiftly_l10n::tr("Anmelden")),
         Node::vstack(
             Align::Start,
             Some(20.0),
@@ -737,7 +769,7 @@ fn tv_password(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                     f,
                     "field:user",
                     "user",
-                    "Benutzername",
+                    swiftly_l10n::tr("Benutzername"),
                     &p.shown(Field::User),
                     false,
                     p.field == Field::User,
@@ -749,7 +781,7 @@ fn tv_password(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                     f,
                     "field:pass",
                     "lock",
-                    "Kennwort",
+                    swiftly_l10n::tr("Kennwort"),
                     &p.shown(Field::Password),
                     true,
                     p.field == Field::Password,
@@ -785,9 +817,9 @@ fn tv_password(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                     f,
                     "signin",
                     if p.checking {
-                        "Anmelden…"
+                        swiftly_l10n::tr("Anmelden…")
                     } else {
-                        "Anmelden"
+                        swiftly_l10n::tr("Anmelden")
                     },
                     None,
                     true,
@@ -800,7 +832,7 @@ fn tv_password(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
                     &ctx.icons,
                     f,
                     "quick",
-                    "Lieber Quick Connect",
+                    swiftly_l10n::tr("Lieber Quick Connect"),
                     None,
                     false,
                     false,
@@ -838,7 +870,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
                 &ctx.icons,
                 env,
                 &f,
-                "Profil wechseln",
+                swiftly_l10n::tr("Profil wechseln"),
                 None,
                 accounts_body(cx, &f, p, ctx),
                 None,
@@ -846,7 +878,10 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
         });
     }
     let (title, body) = match p.step {
-        Step::Address => ("Server hinzufügen", address_body(cx, &f, p, ctx)),
+        Step::Address => (
+            swiftly_l10n::tr("Server hinzufügen"),
+            address_body(cx, &f, p, ctx),
+        ),
         Step::Credentials => ("demo.swiftly.test", credentials_body(cx, &f, p, ctx)),
         Step::Quick => ("Quick Connect", quick_body(cx, &f, p)),
         Step::Accounts => ("Konto wechseln", accounts_body(cx, &f, p, ctx)),
@@ -854,9 +889,10 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
             "Quick Connect",
             login_mac::share_rows(cx, &ctx.icons, &f, p),
         ),
-        Step::Kind | Step::EmbyAddress | Step::EmbyCredentials | Step::Plex => {
-            ("Server hinzufügen", address_body(cx, &f, p, ctx))
-        }
+        Step::Kind | Step::EmbyAddress | Step::EmbyCredentials | Step::Plex => (
+            swiftly_l10n::tr("Server hinzufügen"),
+            address_body(cx, &f, p, ctx),
+        ),
     };
     let pinned = (p.step == Step::Quick).then(|| pinned_new_code(cx, &f, env, ctx));
     forms::page(cx, &ctx.icons, env, &f, title, None, body, pinned)
@@ -970,7 +1006,7 @@ pub trait SignInBackend {
     /// Approves the code another device shows with the signed-in account (`quickConnectShare`).
     fn quick_share(&self, _code: &str) -> Pending<Result<(), String>> {
         let (tx, rx) = Pending::channel();
-        let _ = tx.send(Err("Nicht angemeldet.".to_owned()));
+        let _ = tx.send(Err(swiftly_l10n::tr("Nicht angemeldet.").to_owned()));
         rx
     }
     /// Starts the Plex sign-in. The worker sends the page to open, then the profiles, or a failure.
@@ -1217,7 +1253,7 @@ impl LoginScreen {
     /// is kept. The Mac window keeps the code on screen; the touch and tv pages show the sentence.
     fn quick_ended(&mut self, last: QuickConnectState) {
         self.p.left = 0;
-        let tr = swiftly_l10n::Translator::new(swiftly_l10n::Locale::parse("de"));
+        let tr = swiftly_l10n::Translator::new(swiftly_l10n::current_locale());
         self.p.error = Some(swiftly_l10n::error_text::quick_connect_end_text(
             &tr,
             last == QuickConnectState::Failed,
@@ -1707,7 +1743,8 @@ impl LoginScreen {
             return;
         }
         if self.p.password == "falsch" {
-            self.p.error = Some("Benutzername oder Passwort stimmt nicht.".into());
+            self.p.error =
+                Some(swiftly_l10n::tr("Benutzername oder Passwort stimmt nicht.").into());
         } else {
             self.signed_in = Some(self.p.user.clone());
             self.closed = true;

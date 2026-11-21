@@ -15,8 +15,8 @@ pub const CONTACT: &str = "info@swiftlyplayer.com";
 /// The plan word of the stored status ("Monatlich" / "Für immer").
 fn plan_word(plan: Option<SupportPlan>) -> &'static str {
     match plan {
-        Some(SupportPlan::Monthly) => "Monatlich",
-        _ => "Für immer",
+        Some(SupportPlan::Monthly) => swiftly_l10n::tr("Monatlich"),
+        _ => swiftly_l10n::tr("Für immer"),
     }
 }
 

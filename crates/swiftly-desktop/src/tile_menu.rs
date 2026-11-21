@@ -183,22 +183,22 @@ pub fn more_icon(kind: &swiftly_vm::MenuKind) -> &'static str {
 /// The wording of one entry (Swift catalog keys).
 pub fn label(e: &Entry, cx: &Cx, tile: Option<&Tile>) -> &'static str {
     match e {
-        Entry::Play if !is_series(tile) && begun(tile) => "Fortsetzen",
-        Entry::Play => "Abspielen",
-        Entry::FromStart => "Von vorn",
-        Entry::Overview => "Zur Übersicht",
-        Entry::Remember if cx.favourite => "Nicht mehr merken",
-        Entry::Remember => "Merken",
-        Entry::Watched => "Als gesehen markieren",
-        Entry::Unwatched => "Als ungesehen markieren",
-        Entry::Load => "Laden",
-        Entry::PlayOn => "Abspielen auf \u{2026}",
-        Entry::Together => "Gemeinsam schauen",
-        Entry::Report => "Problem melden",
-        Entry::Delete => "Vom Server löschen",
-        Entry::ToSeries => "Zur Serie",
-        Entry::Info => "Info",
-        Entry::Remove => "Aus Weiterschauen entfernen",
+        Entry::Play if !is_series(tile) && begun(tile) => swiftly_l10n::tr("Fortsetzen"),
+        Entry::Play => swiftly_l10n::tr("Abspielen"),
+        Entry::FromStart => swiftly_l10n::tr("Von vorn"),
+        Entry::Overview => swiftly_l10n::tr("Zur Übersicht"),
+        Entry::Remember if cx.favourite => swiftly_l10n::tr("Nicht mehr merken"),
+        Entry::Remember => swiftly_l10n::tr("Merken"),
+        Entry::Watched => swiftly_l10n::tr("Als gesehen markieren"),
+        Entry::Unwatched => swiftly_l10n::tr("Als ungesehen markieren"),
+        Entry::Load => swiftly_l10n::tr("Laden"),
+        Entry::PlayOn => swiftly_l10n::tr("Abspielen auf \u{2026}"),
+        Entry::Together => swiftly_l10n::tr("Gemeinsam schauen"),
+        Entry::Report => swiftly_l10n::tr("Problem melden"),
+        Entry::Delete => swiftly_l10n::tr("Vom Server löschen"),
+        Entry::ToSeries => swiftly_l10n::tr("Zur Serie"),
+        Entry::Info => swiftly_l10n::tr("Info"),
+        Entry::Remove => swiftly_l10n::tr("Aus Weiterschauen entfernen"),
     }
 }
 

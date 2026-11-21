@@ -104,7 +104,7 @@ impl AudioTrackRules for TrackNames {
 }
 
 impl TrackNames {
-    /// The rules in German (the desktop's language until it has a language switch).
+    /// The rules in German, the key language (tests; an app words them in the language of the device with `new`).
     pub fn german() -> Self {
         Self::new("de")
     }

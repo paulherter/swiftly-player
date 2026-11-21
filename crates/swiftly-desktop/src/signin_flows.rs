@@ -205,7 +205,9 @@ pub type SharedPlex = Arc<Mutex<PlexState>>;
 pub fn plex_text(e: &PlexError) -> String {
     match e {
         PlexError::Request(k) => match k {
-            ErrorKind::Certificate(_) => "Dem Zertifikat wird nicht vertraut.".into(),
+            ErrorKind::Certificate(_) => {
+                swiftly_l10n::tr("Dem Zertifikat wird nicht vertraut.").into()
+            }
             ErrorKind::Network { .. } => "Plex ist gerade nicht erreichbar. Läuft das Netz?".into(),
             _ => "Plex hat nicht geantwortet. Versuch es noch mal.".into(),
         },
@@ -272,19 +274,19 @@ pub async fn plex_sign_in<T: HttpTransport + 'static>(
 /// The line under a server's name (`MacPlexSignIn.serverLine`): whose it is, and where it can be reached.
 pub fn plex_server_line(s: &PlexServerResource) -> String {
     let owner = if s.owned {
-        "Dein Server".to_owned()
+        swiftly_l10n::tr("Dein Server").to_owned()
     } else {
         match s.source_title.as_deref() {
             Some(x) => format!("Von {x} freigegeben"),
-            None => "Dein Server".to_owned(),
+            None => swiftly_l10n::tr("Dein Server").to_owned(),
         }
     };
     let place = if !s.presence {
-        "laut Plex offline"
+        swiftly_l10n::tr("laut Plex offline")
     } else if s.connections.iter().any(|c| c.is_local) {
-        "im WLAN"
+        swiftly_l10n::tr("im WLAN")
     } else {
-        "über das Internet"
+        swiftly_l10n::tr("über das Internet")
     };
     format!("{owner} · {place}")
 }

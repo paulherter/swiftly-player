@@ -148,13 +148,13 @@ type CardsWait = (
 
 /// What the made-up player's overlay says about its made-up file.
 fn demo_tech() -> crate::player_host::TechFacts {
-    let mut video = stream(0, "Video", "", "h264");
+    let mut video = stream(0, swiftly_l10n::tr("Video"), "", "h264");
     video.width = Some(1920);
     video.height = Some(1080);
-    let mut audio = stream(1, "Audio", "ger", "eac3");
+    let mut audio = stream(1, swiftly_l10n::tr("Audio"), "ger", "eac3");
     audio.channels = Some(6);
     crate::player_host::TechFacts {
-        delivery: "Direct Play".to_owned(),
+        delivery: swiftly_l10n::tr("Direct Play").to_owned(),
         good: true,
         video: Some(video),
         audios: vec![audio],
@@ -511,8 +511,8 @@ fn spec() -> PlayerSpec {
         request: EngineRequest {
             item_id: "demo-ep".into(),
             streams: vec![
-                stream(1, "Audio", "deu", "eac3"),
-                stream(2, "Audio", "eng", "ac3"),
+                stream(1, swiftly_l10n::tr("Audio"), "deu", "eac3"),
+                stream(2, swiftly_l10n::tr("Audio"), "eng", "ac3"),
                 stream(3, "Subtitle", "deu", "subrip"),
                 stream(4, "Subtitle", "eng", "subrip"),
             ],
@@ -805,21 +805,21 @@ fn act(c: &Ctx<'_>, n: Node, on: bool, key: &str, action: &str) -> Node {
         return n;
     }
     let name = match action {
-        "toggle" if matches!(c.p.t.phase, Phase::Playing) => "Pause".to_owned(),
-        "toggle" => "Wiedergabe".to_owned(),
+        "toggle" if matches!(c.p.t.phase, Phase::Playing) => swiftly_l10n::tr("Pause").to_owned(),
+        "toggle" => swiftly_l10n::tr("Wiedergabe").to_owned(),
         "back" => format!("{} Sekunden zurück", c.p.c.jump_seconds.0),
         "fwd" => format!("{} Sekunden vor", c.p.c.jump_seconds.1),
-        "tracks" => "Ton und Untertitel".to_owned(),
-        "fullscreen" if c.p.fullscreen => "Vollbild verlassen".to_owned(),
-        "fullscreen" => "Vollbild".to_owned(),
-        "mute" if c.p.muted || c.p.volume <= 0 => "Ton an".to_owned(),
-        "mute" => "Ton aus".to_owned(),
-        "episodes" | "folgen" => "Folgen".to_owned(),
+        "tracks" => swiftly_l10n::tr("Ton und Untertitel").to_owned(),
+        "fullscreen" if c.p.fullscreen => swiftly_l10n::tr("Vollbild verlassen").to_owned(),
+        "fullscreen" => swiftly_l10n::tr("Vollbild").to_owned(),
+        "mute" if c.p.muted || c.p.volume <= 0 => swiftly_l10n::tr("Ton an").to_owned(),
+        "mute" => swiftly_l10n::tr("Ton aus").to_owned(),
+        "episodes" | "folgen" => swiftly_l10n::tr("Folgen").to_owned(),
         "chapters" => swiftly_l10n::t("Kapitel"),
-        "settings" => "Einstellungen".to_owned(),
+        "settings" => swiftly_l10n::tr("Einstellungen").to_owned(),
         "handover" => "Auf anderem Gerät fortsetzen".to_owned(),
-        "close" => "Player schließen".to_owned(),
-        "layer-close" | "fail-close" => "Schließen".to_owned(),
+        "close" => swiftly_l10n::tr("Player schließen").to_owned(),
+        "layer-close" | "fail-close" => swiftly_l10n::tr("Schließen").to_owned(),
         other => other.to_owned(),
     };
     let n = n
@@ -1073,7 +1073,7 @@ fn bar_capsule(c: &Ctx<'_>, ok: bool) -> Node {
             c,
             "stack",
             "folgen",
-            "Folgen",
+            swiftly_l10n::tr("Folgen"),
             open == Some(Half::Folgen),
             ok,
         ));
@@ -1090,7 +1090,7 @@ fn bar_capsule(c: &Ctx<'_>, ok: bool) -> Node {
         c,
         "sliders",
         "settings",
-        "Einstellungen",
+        swiftly_l10n::tr("Einstellungen"),
         open == Some(Half::Settings),
         ok,
     ));
@@ -1099,7 +1099,7 @@ fn bar_capsule(c: &Ctx<'_>, ok: bool) -> Node {
             c,
             "television",
             "handover",
-            "Übergeben an …",
+            swiftly_l10n::tr("Übergeben an …"),
             open == Some(Half::Handoff),
             ok,
         ));
@@ -1108,9 +1108,9 @@ fn bar_capsule(c: &Ctx<'_>, ok: bool) -> Node {
         // The speaker is the last half of the desktop capsule (the drop-down hangs under it).
         let level = c.p.volume.clamp(0, 100);
         let (glyph, tip) = if level == 0 {
-            ("speaker-slash", "Ton an")
+            ("speaker-slash", swiftly_l10n::tr("Ton an"))
         } else {
-            ("speaker", "Ton aus")
+            ("speaker", swiftly_l10n::tr("Ton aus"))
         };
         halves.push(capsule_half(
             c,
@@ -1671,13 +1671,17 @@ fn footer(c: &Ctx<'_>) -> Node {
         sl = sl.focusable(focus_id("bar"), None);
     }
     let sl = sl.a11y(
-        swiftly_ui::a11y::A11yNode::new("scrubber", swiftly_ui::a11y::Role::Slider, "Position")
-            .with_range(p.t.position, 0.0, p.t.duration.max(1.0))
-            .with_value(format!(
-                "{} von {}",
-                play_time(p.t.position),
-                play_time(p.t.duration)
-            )),
+        swiftly_ui::a11y::A11yNode::new(
+            "scrubber",
+            swiftly_ui::a11y::Role::Slider,
+            swiftly_l10n::tr("Position"),
+        )
+        .with_range(p.t.position, 0.0, p.t.duration.max(1.0))
+        .with_value(format!(
+            "{} von {}",
+            play_time(p.t.position),
+            play_time(p.t.duration)
+        )),
     );
     let row = Node::hstack(Align::Center, Some(m.bar_gap), vec![left, sl, right])
         .padding(ins(0.0, m.edge, m.bottom, m.edge));
@@ -1766,7 +1770,7 @@ fn pill(c: &Ctx<'_>) -> Node {
             share,
             seconds_left,
         } => (
-            "Nächste Folge".to_owned(),
+            swiftly_l10n::tr("Nächste Folge").to_owned(),
             Some(format!("{title} · Startet in {seconds_left} Sekunden")),
             Some(*share),
             true,
@@ -1850,7 +1854,7 @@ fn pill(c: &Ctx<'_>) -> Node {
                 .a11y(swiftly_ui::a11y::A11yNode::new(
                     "offer-x",
                     swiftly_ui::a11y::Role::Button,
-                    "Nicht überspringen",
+                    swiftly_l10n::tr("Nicht überspringen"),
                 ))
                 .on_tap(Action::from("offer-x"));
         let x = Node::vstack(
@@ -2086,8 +2090,13 @@ fn key_hints(c: &Ctx<'_>) -> Node {
         vec![
             one("←", format!("{back} s")),
             one(
-                "Leertaste",
-                (if playing { "Pause" } else { "Abspielen" }).to_owned(),
+                swiftly_l10n::tr("Leertaste"),
+                (if playing {
+                    swiftly_l10n::tr("Pause")
+                } else {
+                    swiftly_l10n::tr("Abspielen")
+                })
+                .to_owned(),
             ),
             one("→", format!("{fwd} s")),
         ],
@@ -2313,7 +2322,13 @@ fn delay_row(c: &Ctx<'_>, tag: &str, ms: i64) -> Node {
         Align::Center,
         Some(6.0),
         vec![
-            label(c, "Verzögerung", size, 400, color::TEXT_SECONDARY),
+            label(
+                c,
+                swiftly_l10n::tr("Verzögerung"),
+                size,
+                400,
+                color::TEXT_SECONDARY,
+            ),
             Node::spacer(),
             step("-", "−"),
             label(c, &format!("{ms} ms"), size, 500, color::TEXT_PRIMARY),
@@ -2664,7 +2679,13 @@ fn delay_row_desktop(c: &Ctx<'_>, tag: &str, ms: i64) -> Node {
             .on_tap(Action::from(key.as_str()))
     };
     let mut kids = vec![
-        label(c, "Verzögerung", 13.0, 400, color::TEXT_SECONDARY),
+        label(
+            c,
+            swiftly_l10n::tr("Verzögerung"),
+            13.0,
+            400,
+            color::TEXT_SECONDARY,
+        ),
         Node::spacer(),
         step(
             format!("delay:{tag}:-"),
@@ -2759,7 +2780,7 @@ fn layer_desktop(c: &Ctx<'_>, which: PlayerLayer) -> Node {
             c,
             "sub:-1",
             "sub:-1",
-            "Aus",
+            swiftly_l10n::tr("Aus"),
             p.tracks.subtitles_off,
         )];
         subs.extend(p.tracks.subtitles.iter().map(|t| {
@@ -2777,19 +2798,24 @@ fn layer_desktop(c: &Ctx<'_>, which: PlayerLayer) -> Node {
         }
         subs.push(offset_rows(c, track_column_width(c)));
         vec![
-            column_desktop(c, "Audio", audio, track_column_width(c)),
-            column_desktop(c, "Untertitel", subs, track_column_width(c)),
+            column_desktop(c, swiftly_l10n::tr("Audio"), audio, track_column_width(c)),
+            column_desktop(
+                c,
+                swiftly_l10n::tr("Untertitel"),
+                subs,
+                track_column_width(c),
+            ),
         ]
     } else {
         let picture = vec![
-            row_desktop(c, "fill:0", "fill:0", "Original", !p.fill),
-            row_desktop(c, "fill:1", "fill:1", "Füllen", p.fill),
+            row_desktop(c, "fill:0", "fill:0", swiftly_l10n::tr("Original"), !p.fill),
+            row_desktop(c, "fill:1", "fill:1", swiftly_l10n::tr("Füllen"), p.fill),
         ];
         let mut sleep = vec![row_desktop(
             c,
             "sleep:off",
             "sleep:0",
-            "Aus",
+            swiftly_l10n::tr("Aus"),
             p.c.sleep_minutes.is_none(),
         )];
         for mins in SLEEP_CHOICES {
@@ -2802,8 +2828,8 @@ fn layer_desktop(c: &Ctx<'_>, which: PlayerLayer) -> Node {
             ));
         }
         let shield = vec![
-            row_desktop(c, "tech:0", "tech:0", "Aus", !p.tech),
-            row_desktop(c, "tech:1", "tech:1", "An", p.tech),
+            row_desktop(c, "tech:0", "tech:0", swiftly_l10n::tr("Aus"), !p.tech),
+            row_desktop(c, "tech:1", "tech:1", swiftly_l10n::tr("An"), p.tech),
         ];
         let mut cols = Vec::new();
         // "Gemeinsam" comes first: who is there, and below it the exit (`PlayerLayers.swift:461-487`).
@@ -2822,21 +2848,21 @@ fn layer_desktop(c: &Ctx<'_>, which: PlayerLayer) -> Node {
                 speed_rows(c, true),
                 200.0,
             ),
-            column_desktop(c, "Bild", picture, 200.0),
-            column_desktop(c, "Schlafzeit", sleep, 200.0),
-            column_desktop(c, "Technikschild", shield, 200.0),
+            column_desktop(c, swiftly_l10n::tr("Bild"), picture, 200.0),
+            column_desktop(c, swiftly_l10n::tr("Schlafzeit"), sleep, 200.0),
+            column_desktop(c, swiftly_l10n::tr("Technikschild"), shield, 200.0),
         ]);
         if let Some(q) = &p.c.quality {
             let mut quality = vec![row_desktop(
                 c,
                 "q:dp",
                 "quality:dp",
-                "Direct Play",
+                swiftly_l10n::tr("Direct Play"),
                 q.direct_play,
             )];
             for cap in QUALITY_CAPS {
                 let text = if cap == 0 {
-                    "Unbegrenzt".to_owned()
+                    swiftly_l10n::tr("Unbegrenzt").to_owned()
                 } else {
                     format!("{cap} Mbit/s")
                 };
@@ -2848,7 +2874,12 @@ fn layer_desktop(c: &Ctx<'_>, which: PlayerLayer) -> Node {
                     !q.direct_play && q.limit == cap,
                 ));
             }
-            cols.push(column_desktop(c, "Qualität", quality, 200.0));
+            cols.push(column_desktop(
+                c,
+                swiftly_l10n::tr("Qualität"),
+                quality,
+                200.0,
+            ));
         }
         cols
     };
@@ -3090,7 +3121,7 @@ fn pm_row_old(c: &Ctx<'_>, it: &crate::player_menu_box::Item, hl: Option<usize>)
                         .frame(Some(24.0), Some(24.0), Alignment::CENTER)
                         .hover_surface(hover, 6.0)
                         .key(format!("pm:{a}").as_str())
-                        .a11y_label(swiftly_ui::a11y::Role::Button, "Zurück")
+                        .a11y_label(swiftly_ui::a11y::Role::Button, swiftly_l10n::tr("Zurück"))
                         .on_tap(Action::from(format!("pm:{a}").as_str())),
                 );
             }
@@ -3448,7 +3479,13 @@ fn layer_panel(c: &Ctx<'_>, which: PlayerLayer) -> Node {
                     )
                 })
                 .collect();
-            let mut subs = vec![row(c, "sub:-1", "sub:-1", "Aus", p.tracks.subtitles_off)];
+            let mut subs = vec![row(
+                c,
+                "sub:-1",
+                "sub:-1",
+                swiftly_l10n::tr("Aus"),
+                p.tracks.subtitles_off,
+            )];
             subs.extend(p.tracks.subtitles.iter().map(|t| {
                 row(
                     c,
@@ -3465,21 +3502,21 @@ fn layer_panel(c: &Ctx<'_>, which: PlayerLayer) -> Node {
             }
             subs.push(offset_rows(c, col_w));
             vec![
-                column(c, "Audio", a, Some(col_w)),
-                column(c, "Untertitel", subs, Some(col_w)),
+                column(c, swiftly_l10n::tr("Audio"), a, Some(col_w)),
+                column(c, swiftly_l10n::tr("Untertitel"), subs, Some(col_w)),
             ]
         }
         _ => {
             // `SettingLayer`: columns Bild, Schlafzeit, Qualität (with Technikschild).
             let picture = vec![
-                row(c, "fill:0", "fill:0", "Original", !p.fill),
-                row(c, "fill:1", "fill:1", "Füllen", p.fill),
+                row(c, "fill:0", "fill:0", swiftly_l10n::tr("Original"), !p.fill),
+                row(c, "fill:1", "fill:1", swiftly_l10n::tr("Füllen"), p.fill),
             ];
             let mut sleep = vec![row(
                 c,
                 "sleep:off",
                 "sleep:0",
-                "Aus",
+                swiftly_l10n::tr("Aus"),
                 p.c.sleep_minutes.is_none(),
             )];
             for mins in SLEEP_CHOICES {
@@ -3492,8 +3529,8 @@ fn layer_panel(c: &Ctx<'_>, which: PlayerLayer) -> Node {
                 ));
             }
             let shield = vec![
-                row(c, "tech:0", "tech:0", "Aus", !p.tech),
-                row(c, "tech:1", "tech:1", "An", p.tech),
+                row(c, "tech:0", "tech:0", swiftly_l10n::tr("Aus"), !p.tech),
+                row(c, "tech:1", "tech:1", swiftly_l10n::tr("An"), p.tech),
             ];
             let mut cols = Vec::new();
             if let Some((name, _)) = &p.group {
@@ -3511,15 +3548,21 @@ fn layer_panel(c: &Ctx<'_>, which: PlayerLayer) -> Node {
                     speed_rows(c, false),
                     Some(col_w),
                 ),
-                column(c, "Bild", picture, Some(col_w)),
-                column(c, "Schlafzeit", sleep, Some(col_w)),
-                column(c, "Technikschild", shield, Some(col_w)),
+                column(c, swiftly_l10n::tr("Bild"), picture, Some(col_w)),
+                column(c, swiftly_l10n::tr("Schlafzeit"), sleep, Some(col_w)),
+                column(c, swiftly_l10n::tr("Technikschild"), shield, Some(col_w)),
             ]);
             if let Some(q) = &p.c.quality {
-                let mut quality = vec![row(c, "q:dp", "quality:dp", "Direct Play", q.direct_play)];
+                let mut quality = vec![row(
+                    c,
+                    "q:dp",
+                    "quality:dp",
+                    swiftly_l10n::tr("Direct Play"),
+                    q.direct_play,
+                )];
                 for cap in QUALITY_CAPS {
                     let text = if cap == 0 {
-                        "Unbegrenzt".to_owned()
+                        swiftly_l10n::tr("Unbegrenzt").to_owned()
                     } else {
                         format!("{cap} Mbit/s")
                     };
@@ -3531,15 +3574,20 @@ fn layer_panel(c: &Ctx<'_>, which: PlayerLayer) -> Node {
                         !q.direct_play && q.limit == cap,
                     ));
                 }
-                cols.push(column(c, "Qualität", quality, Some(col_w)));
+                cols.push(column(
+                    c,
+                    swiftly_l10n::tr("Qualität"),
+                    quality,
+                    Some(col_w),
+                ));
             }
             cols
         }
     };
     let title = match which {
-        PlayerLayer::Tracks => "Audio & Untertitel".to_owned(),
+        PlayerLayer::Tracks => swiftly_l10n::tr("Audio & Untertitel").to_owned(),
         PlayerLayer::Chapters => swiftly_l10n::t(p.chapter_list.title),
-        _ => "Einstellungen".to_owned(),
+        _ => swiftly_l10n::tr("Einstellungen").to_owned(),
     };
     let title = title.as_str();
     let head = Node::hstack(
@@ -3671,7 +3719,13 @@ fn group_rows(c: &Ctx<'_>, size: f32) -> Vec<Node> {
             Some(9.0),
             vec![
                 c.g.node("x", size + 2.0, color(crate::look_glow::accent())),
-                label(c, "Gruppe verlassen", size, 400, crate::look_glow::accent()),
+                label(
+                    c,
+                    swiftly_l10n::tr("Gruppe verlassen"),
+                    size,
+                    400,
+                    crate::look_glow::accent(),
+                ),
                 Node::spacer(),
             ],
         )
@@ -3751,7 +3805,7 @@ fn small_hint(c: &Ctx<'_>) -> Option<Node> {
             c.g.node("pip", 30.0, white()),
             label(
                 c,
-                "Läuft im kleinen Fenster",
+                swiftly_l10n::tr("Läuft im kleinen Fenster"),
                 15.0,
                 400,
                 color::TEXT_SECONDARY,
@@ -4456,9 +4510,12 @@ impl PlayerScreen {
                         ));
                     }
                     for (i, lang) in ["fra", "spa", "ita"].iter().enumerate() {
-                        spec.request
-                            .streams
-                            .push(stream(30 + i as i64, "Audio", lang, "ac3"));
+                        spec.request.streams.push(stream(
+                            30 + i as i64,
+                            swiftly_l10n::tr("Audio"),
+                            lang,
+                            "ac3",
+                        ));
                     }
                     // Two subtitles with long track titles (the box must show them whole while the window has room).
                     for (i, title) in [
@@ -6641,7 +6698,7 @@ impl PlayerScreen {
         let button =
             swiftly_layout::Rect::new(right - 2.0 * m.button - 2.0, m.rail_top, m.button, m.button);
         let mut entries = vec![MenuEntry::Item(
-            MenuItem::new("handover-title", "Übergeben an …").disabled(),
+            MenuItem::new("handover-title", swiftly_l10n::tr("Übergeben an …")).disabled(),
         )];
         entries.extend(self.p_targets().iter().enumerate().map(|(i, (_, name))| {
             MenuEntry::Item(MenuItem::new(format!("handover:{i}").as_str(), name))

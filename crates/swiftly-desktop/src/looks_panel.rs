@@ -190,19 +190,28 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &swiftly_ui::icons::Icons) -> Node
             Align::Center,
             Some(8.0),
             vec![
-                chevron("caret-left", "look-prev", "Voriger Look"),
+                chevron("caret-left", "look-prev", swiftly_l10n::tr("Voriger Look")),
                 tile(&look, 40.0),
                 Node::vstack(
                     Align::Start,
                     Some(0.0),
                     vec![
                         t(look.name_key, 15.0, 600, color::TEXT_PRIMARY),
-                        t("Vorschau", 12.0, 400, color::TEXT_TERTIARY),
+                        t(
+                            swiftly_l10n::tr("Vorschau"),
+                            12.0,
+                            400,
+                            color::TEXT_TERTIARY,
+                        ),
                     ],
                 )
                 .frame(Some(150.0), None, Alignment::LEADING),
-                chevron("caret-right", "look-next", "Nächster Look"),
-                button("Freischalten", "look-support", 120.0),
+                chevron(
+                    "caret-right",
+                    "look-next",
+                    swiftly_l10n::tr("Nächster Look"),
+                ),
+                button(swiftly_l10n::tr("Freischalten"), "look-support", 120.0),
             ],
         )
         .padding(ins(8.0, 10.0, 8.0, 12.0));
@@ -230,7 +239,12 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &swiftly_ui::icons::Icons) -> Node
         Some(8.0),
         vec![
             wide(
-                t("Wähl deinen Look", 22.0, 700, color::TEXT_PRIMARY),
+                t(
+                    swiftly_l10n::tr("Wähl deinen Look"),
+                    22.0,
+                    700,
+                    color::TEXT_PRIMARY,
+                ),
                 Alignment::LEADING,
             ),
             tappable(
@@ -244,7 +258,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &swiftly_ui::icons::Icons) -> Node
                     .a11y(swiftly_ui::a11y::A11yNode::new(
                         "",
                         swiftly_ui::a11y::Role::Button,
-                        "Schlie\u{00DF}en",
+                        swiftly_l10n::tr("Schlie\u{00DF}en"),
                     )),
                 "look-close",
             ),
@@ -258,7 +272,12 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &swiftly_ui::icons::Icons) -> Node
             Some(6.0),
             vec![
                 icons.node("lock", 12.0, true, color(color::TEXT_TERTIARY)),
-                t("Nur für Unterstützer", 13.0, 400, color::TEXT_TERTIARY),
+                t(
+                    swiftly_l10n::tr("Nur für Unterstützer"),
+                    13.0,
+                    400,
+                    color::TEXT_TERTIARY,
+                ),
             ],
         )
     }
@@ -343,7 +362,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &swiftly_ui::icons::Icons) -> Node
     if let Some(end) = &p.season_end {
         let _ = end;
         rows.push(line(
-            "Fledermäuse und Spinnennetz",
+            swiftly_l10n::tr("Fledermäuse und Spinnennetz"),
             tappable(crate::forms::toggle_switch(p.effects), "look-effects"),
             true,
         ));
@@ -353,6 +372,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &swiftly_ui::icons::Icons) -> Node
         .iter()
         .enumerate()
         .map(|(i, (g, name))| {
+            let name = swiftly_l10n::tr(name);
             let on = palette.glow == *g;
             tappable(
                 t(
@@ -382,12 +402,12 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &swiftly_ui::icons::Icons) -> Node
             .a11y(swiftly_ui::a11y::A11yNode::new(
                 "",
                 swiftly_ui::a11y::Role::Button,
-                *name,
+                name,
             ))
         })
         .collect();
     rows.push(line(
-        "Startseiten-Schein",
+        swiftly_l10n::tr("Startseiten-Schein"),
         Node::hstack(Align::Center, Some(2.0), glow_pills)
             .padding(ins(2.0, 2.0, 2.0, 2.0))
             .background(
@@ -399,7 +419,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &swiftly_ui::icons::Icons) -> Node
     rows.push(divider());
     let has_icon = look.icon_name.is_some();
     rows.push(line(
-        "App-Icon zum Look",
+        swiftly_l10n::tr("App-Icon zum Look"),
         tappable(
             crate::forms::toggle_switch(has_icon && p.selection.uses_look_icon != Some(false)),
             "look-icon",
@@ -441,21 +461,26 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &swiftly_ui::icons::Icons) -> Node
         )
     } else {
         tappable(
-            t("Unterstützer werden", 13.0, 600, color::TEXT_PRIMARY)
-                .frame(Some(160.0), Some(32.0), Alignment::CENTER)
-                .background(
-                    Node::rect(color(color::SURFACE_CONTROL), 16.0),
-                    Alignment::CENTER,
-                )
-                .hover_surface(
-                    Color::new(1.0, 1.0, 1.0, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
-                    16.0,
-                ),
+            t(
+                swiftly_l10n::tr("Unterstützer werden"),
+                13.0,
+                600,
+                color::TEXT_PRIMARY,
+            )
+            .frame(Some(160.0), Some(32.0), Alignment::CENTER)
+            .background(
+                Node::rect(color(color::SURFACE_CONTROL), 16.0),
+                Alignment::CENTER,
+            )
+            .hover_surface(
+                Color::new(1.0, 1.0, 1.0, swiftly_ui::feel::HOVER_SURFACE_ALPHA),
+                16.0,
+            ),
             "look-support",
         )
     };
     rows.push(line(
-        "Akzentfarbe",
+        swiftly_l10n::tr("Akzentfarbe"),
         accent_trail,
         p.wearable || !p.supporter,
     ));
@@ -464,9 +489,13 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &swiftly_ui::icons::Icons) -> Node
         Alignment::CENTER,
     );
     let action = if p.wearable {
-        button("Verwenden", "look-use", 552.0)
+        button(swiftly_l10n::tr("Verwenden"), "look-use", 552.0)
     } else {
-        button("Unterstützer werden", "look-support", 552.0)
+        button(
+            swiftly_l10n::tr("Unterstützer werden"),
+            "look-support",
+            552.0,
+        )
     };
     let body = Node::vstack(
         Align::Start,

@@ -275,7 +275,10 @@ fn preview(cx: &Cx, look: &SubtitleLook, w: f32) -> Node {
         Node::vstack(
             Align::Center,
             Some(0.0),
-            vec![one("Hörst du das auch?"), one("Da hinten am See.")],
+            vec![
+                one(swiftly_l10n::tr("Hörst du das auch?")),
+                one(swiftly_l10n::tr("Da hinten am See.")),
+            ],
         )
     };
     let mut stack = line(rgb(look.colour.rgb()));
@@ -363,20 +366,20 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
     let appearance = forms::setting_group_at(
         cx,
         f,
-        "Aussehen",
+        swiftly_l10n::tr("Aussehen"),
         22.0,
         vec![
             segment_row(
                 cx,
                 icons,
-                "Größe",
+                swiftly_l10n::tr("Größe"),
                 "text-aa",
                 segments(cx, f, "sub.size", &size_cells, at(&Size::ALL), 46.0),
             ),
             segment_row(
                 cx,
                 icons,
-                "Farbe",
+                swiftly_l10n::tr("Farbe"),
                 "palette",
                 segments(
                     cx,
@@ -393,7 +396,7 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
             segment_row(
                 cx,
                 icons,
-                "Rand",
+                swiftly_l10n::tr("Rand"),
                 "textbox",
                 segments(
                     cx,
@@ -407,17 +410,22 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
                     70.0,
                 ),
             ),
-            on_off("sub.shadow", "copy", "Schatten", look.shadow),
+            on_off(
+                "sub.shadow",
+                "copy",
+                swiftly_l10n::tr("Schatten"),
+                look.shadow,
+            ),
             on_off(
                 "sub.background",
                 "square",
-                "Dunkler Hintergrund",
+                swiftly_l10n::tr("Dunkler Hintergrund"),
                 look.background,
             ),
             segment_row(
                 cx,
                 icons,
-                "Position",
+                swiftly_l10n::tr("Position"),
                 "align-bottom-simple",
                 segments(
                     cx,
@@ -434,7 +442,7 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
     let under = if v.adjustable {
         look.file_style_line().to_owned()
     } else {
-        "Bei Plex-Servern kommt die Gestaltung immer aus der Datei.".to_owned()
+        swiftly_l10n::tr("Bei Plex-Servern kommt die Gestaltung immer aus der Datei.").to_owned()
     };
     let file = forms::row_kb(
         cx,
@@ -442,19 +450,26 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
         f,
         "sub.file",
         "file-text",
-        "Gestaltung aus der Datei übernehmen",
+        swiftly_l10n::tr("Gestaltung aus der Datei übernehmen"),
         Some(&under),
         Trail::Switch(look.keep_file_style || !v.adjustable),
         v.adjustable,
     );
-    let fancy = forms::setting_group_at(cx, f, "Aufwendige Untertitel", 28.0, vec![file], 52.0);
+    let fancy = forms::setting_group_at(
+        cx,
+        f,
+        swiftly_l10n::tr("Aufwendige Untertitel"),
+        28.0,
+        vec![file],
+        52.0,
+    );
     let reset = forms::card_view(vec![forms::row_kb(
         cx,
         icons,
         f,
         "sub.reset",
         "arrow-counter-clockwise",
-        "Zurücksetzen",
+        swiftly_l10n::tr("Zurücksetzen"),
         None,
         Trail::None,
         !look.is_standard(),
@@ -468,13 +483,13 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
     let note = |s: &str| label(cx, s, 12.0, 400, quiet, None, swiftly_text::Align::Start);
     let left = vec![
         preview(cx, look, width).padding(ins(22.0, 0.0, 10.0, 0.0)),
-        wide(note("Gilt für Untertitel aus Text. Die von Blu-rays sind Bilder und bleiben, wie sie sind."), Alignment::LEADING).frame(Some(width), None, Alignment::LEADING),
+        wide(note(swiftly_l10n::tr("Gilt für Untertitel aus Text. Die von Blu-rays sind Bilder und bleiben, wie sie sind.")), Alignment::LEADING).frame(Some(width), None, Alignment::LEADING),
     ];
     let strip = v.undo.then(|| {
         let undo = forms::tappable(
             label(
                 cx,
-                "Rückgängig",
+                swiftly_l10n::tr("Rückgängig"),
                 15.0,
                 400,
                 color(color::TEXT_SECONDARY),
@@ -492,7 +507,7 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
             vec![
                 label(
                     cx,
-                    "Zurückgesetzt",
+                    swiftly_l10n::tr("Zurückgesetzt"),
                     15.0,
                     600,
                     color(color::TEXT_PRIMARY),
@@ -518,7 +533,7 @@ pub fn subtitle_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SubView) -> 
         icons,
         env,
         f,
-        "Untertitel",
+        swiftly_l10n::tr("Untertitel"),
         forms::Cols::Equal,
         vec![left, vec![appearance, fancy, reset]],
         strip,
@@ -561,7 +576,7 @@ pub fn header_editor(
             vec![
                 label(
                     cx,
-                    "Erweitert",
+                    swiftly_l10n::tr("Erweitert"),
                     12.0,
                     400,
                     quiet,
@@ -583,7 +598,7 @@ pub fn header_editor(
     );
     let mut col = vec![wide(toggle, Alignment::LEADING)];
     if v.open {
-        col.push(forms::note(cx, f, "Für einen Dienst vor deinem Server, etwa Cloudflare Access, Authelia oder Pangolin. Swiftly schickt die Header nur an diese Adresse.", false, false));
+        col.push(forms::note(cx, f, swiftly_l10n::tr("Für einen Dienst vor deinem Server, etwa Cloudflare Access, Authelia oder Pangolin. Swiftly schickt die Header nur an diese Adresse."), false, false));
         for (i, (name, value)) in v.rows.iter().enumerate() {
             let locked = swiftly_jellyfin::OwnHeaders::is_locked(name);
             let del = forms::tappable(
@@ -604,7 +619,7 @@ pub fn header_editor(
                         f,
                         &k(&format!("name.{i}")),
                         "text-aa",
-                        "Header-Name",
+                        swiftly_l10n::tr("Header-Name"),
                         name,
                         false,
                         v.focus == Some((i, false)),
@@ -616,7 +631,7 @@ pub fn header_editor(
                         f,
                         &k(&format!("val.{i}")),
                         "key",
-                        "Wert",
+                        swiftly_l10n::tr("Wert"),
                         value,
                         true,
                         v.focus == Some((i, true)),
@@ -629,7 +644,7 @@ pub fn header_editor(
             if locked {
                 one.push(label(
                     cx,
-                    "Den setzt Swiftly selbst.",
+                    swiftly_l10n::tr("Den setzt Swiftly selbst."),
                     12.0,
                     400,
                     color(color::STATE_ERROR),
@@ -650,7 +665,7 @@ pub fn header_editor(
                     icons.node("plus", 12.0, true, color(crate::look_glow::accent())),
                     label(
                         cx,
-                        "Header hinzufügen",
+                        swiftly_l10n::tr("Header hinzufügen"),
                         12.0,
                         400,
                         color(crate::look_glow::accent()),
@@ -673,7 +688,7 @@ pub fn header_editor(
                 icons,
                 f,
                 &k("save"),
-                "Sichern",
+                swiftly_l10n::tr("Sichern"),
                 Some("check"),
                 true,
                 false,
@@ -708,7 +723,7 @@ pub struct SeerrView {
 /// `SeerrSettingsView`.
 pub fn seerr_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SeerrView) -> Node {
     let mut col = vec![wide(
-        label(cx, "Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen.", 15.0, 400, color(color::TEXT_SECONDARY), None, swiftly_text::Align::Start),
+        label(cx, swiftly_l10n::tr("Jellyseerr oder Overseerr. Dann zeigt die Suche auch Titel, die noch nicht auf deinem Server sind, und du kannst sie anfragen."), 15.0, 400, color(color::TEXT_SECONDARY), None, swiftly_text::Align::Start),
         Alignment::LEADING,
     )
     .padding(ins(10.0, 0.0, 0.0, 0.0))];
@@ -732,13 +747,19 @@ pub fn seerr_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SeerrView) -> N
                 f,
                 "seerr.off",
                 "x",
-                "Verbindung trennen",
+                swiftly_l10n::tr("Verbindung trennen"),
                 None,
                 Trail::None,
                 true,
             ),
         ];
-        col.push(forms::setting_group(cx, f, "Verbunden", 26.0, rows));
+        col.push(forms::setting_group(
+            cx,
+            f,
+            swiftly_l10n::tr("Verbunden"),
+            26.0,
+            rows,
+        ));
     } else {
         let input = |i: usize, sym: &str, ph: &str, secret: bool| {
             forms::input_ex(
@@ -755,9 +776,9 @@ pub fn seerr_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SeerrView) -> N
             )
         };
         let mut form = vec![
-            input(0, "plug", "seerr.example.de", false),
-            input(1, "user", "Benutzername", false),
-            input(2, "lock", "Passwort", true),
+            input(0, "plug", swiftly_l10n::tr("seerr.example.de"), false),
+            input(1, "user", swiftly_l10n::tr("Benutzername"), false),
+            input(2, "lock", swiftly_l10n::tr("Passwort"), true),
             header_editor(cx, icons, f, "sh", &v.headers, false),
         ];
         if let Some(e) = &v.conn.error {
@@ -786,9 +807,9 @@ pub fn seerr_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SeerrView) -> N
                     f,
                     "seerr.go",
                     if v.conn.busy {
-                        "Verbinde…"
+                        swiftly_l10n::tr("Verbinde…")
                     } else {
-                        "Verbinden"
+                        swiftly_l10n::tr("Verbinden")
                     },
                     Some("plug"),
                     true,
@@ -801,7 +822,7 @@ pub fn seerr_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SeerrView) -> N
         form.push(forms::note(
             cx,
             f,
-            "Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr.",
+            swiftly_l10n::tr("Swiftly speichert dein Passwort nicht, nur die Anmeldung bei Seerr."),
             false,
             false,
         ));
@@ -877,7 +898,7 @@ pub fn support_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SupportView) 
                 wide(
                     label(
                         cx,
-                        "Hilf Swiftly zu wachsen",
+                        swiftly_l10n::tr("Hilf Swiftly zu wachsen"),
                         22.0,
                         700,
                         color(color::TEXT_PRIMARY),
@@ -889,19 +910,19 @@ pub fn support_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SupportView) 
                 .padding(ins(10.0, 0.0, 0.0, 0.0)),
             );
             col.push(line(
-                "Dein Beitrag hält Swiftly am Laufen.",
+                swiftly_l10n::tr("Dein Beitrag hält Swiftly am Laufen."),
                 15.0,
                 color::TEXT_PRIMARY,
                 8.0,
             ));
             col.push(line(
-                "Open Source, keine Werbung, alles zum Schauen bleibt kostenlos.",
+                swiftly_l10n::tr("Open Source, keine Werbung, alles zum Schauen bleibt kostenlos."),
                 15.0,
                 color::TEXT_SECONDARY,
                 6.0,
             ));
             col.push(line(
-                "Mit deinem Unterstützer-Schlüssel bekommst du ein Herz in „Über“ und zusätzliche App-Icons.",
+                swiftly_l10n::tr("Mit deinem Unterstützer-Schlüssel bekommst du ein Herz in „Über“ und zusätzliche App-Icons."),
                 15.0,
                 color::TEXT_SECONDARY,
                 6.0,
@@ -912,7 +933,7 @@ pub fn support_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SupportView) 
                 f,
                 "key.web",
                 "heart",
-                "Auf der Website unterstützen",
+                swiftly_l10n::tr("Auf der Website unterstützen"),
                 None,
                 Trail::Chevron,
                 true,
@@ -924,7 +945,7 @@ pub fn support_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SupportView) 
                     f,
                     "key.have",
                     "key",
-                    "Ich habe einen Unterstützer-Schlüssel",
+                    swiftly_l10n::tr("Ich habe einen Unterstützer-Schlüssel"),
                     None,
                     Trail::Chevron,
                     true,
@@ -934,7 +955,7 @@ pub fn support_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SupportView) 
         }
         KeyStage::Entering { refused } => {
             col.push(line(
-                "Den Schlüssel bekommst du, nachdem du uns auf der Website unterstützt hast: auf der Danke-Seite und per E-Mail.",
+                swiftly_l10n::tr("Den Schlüssel bekommst du, nachdem du uns auf der Website unterstützt hast: auf der Danke-Seite und per E-Mail."),
                 15.0,
                 color::TEXT_SECONDARY,
                 10.0,
@@ -956,7 +977,7 @@ pub fn support_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SupportView) 
                     wide(
                         label(
                             cx,
-                            "Dieser Schlüssel passt nicht. Prüf ihn auf Tippfehler und versuch es noch einmal.",
+                            swiftly_l10n::tr("Dieser Schlüssel passt nicht. Prüf ihn auf Tippfehler und versuch es noch einmal."),
                             12.0,
                             400,
                             color(color::STATE_ERROR),
@@ -976,7 +997,7 @@ pub fn support_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SupportView) 
                         icons,
                         f,
                         "key.go",
-                        "Aktivieren",
+                        swiftly_l10n::tr("Aktivieren"),
                         Some("key"),
                         true,
                         false,
@@ -991,7 +1012,7 @@ pub fn support_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SupportView) 
                 f,
                 "key.mail",
                 "link",
-                "Schlüssel verloren? Schreib uns an",
+                swiftly_l10n::tr("Schlüssel verloren? Schreib uns an"),
                 Some(crate::support_key::CONTACT),
                 Trail::None,
                 true,
@@ -1014,7 +1035,7 @@ pub fn support_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SupportView) 
                             icons.node("heart.fill", 22.0, true, color(crate::look_glow::accent())),
                             label(
                                 cx,
-                                "Danke. Du bist dabei.",
+                                swiftly_l10n::tr("Danke. Du bist dabei."),
                                 22.0,
                                 700,
                                 color(color::TEXT_PRIMARY),
@@ -1028,7 +1049,7 @@ pub fn support_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SupportView) 
                 .padding(ins(10.0, 0.0, 0.0, 0.0)),
             );
             col.push(line(
-                "Mit deinem Unterstützer-Schlüssel bekommst du ein Herz in „Über“ und zusätzliche App-Icons.",
+                swiftly_l10n::tr("Mit deinem Unterstützer-Schlüssel bekommst du ein Herz in „Über“ und zusätzliche App-Icons."),
                 15.0,
                 color::TEXT_SECONDARY,
                 8.0,
@@ -1039,7 +1060,7 @@ pub fn support_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SupportView) 
                 f,
                 "key.plan",
                 "key",
-                "Unterstützer",
+                swiftly_l10n::tr("Unterstützer"),
                 None,
                 Trail::Value(swiftly_l10n::t(plan)),
                 true,
@@ -1067,7 +1088,7 @@ pub fn support_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, v: &SupportView) 
         icons,
         env,
         f,
-        "Swiftly unterstützen",
+        swiftly_l10n::tr("Swiftly unterstützen"),
         forms::Cols::One,
         vec![vec![Node::vstack(Align::Start, Some(0.0), col)]],
         None,
@@ -1150,7 +1171,7 @@ pub fn licences_page(
         f,
         "lic.offer",
         "text-align-left",
-        "Quelltext und schriftliches Angebot",
+        swiftly_l10n::tr("Quelltext und schriftliches Angebot"),
         Some("Woher libmpv kommt und wie du es ersetzt"),
         Trail::Chevron,
         true,
@@ -1163,21 +1184,27 @@ pub fn licences_page(
         .padding(ins(10.0, 0.0, 4.0, 0.0)),
         forms::setting_group(cx, f, "libmpv und FFmpeg", 22.0, player),
         wide(
-            label(cx, "Frühere Versionen enthielten VLCKit und libVLC (LGPL 2.1 oder später). Das schriftliche Angebot für ihren Quelltext gilt weiter, siehe „Quelltext und schriftliches Angebot“.", 15.0, 400, color(color::TEXT_SECONDARY), None, swiftly_text::Align::Start),
+            label(cx, swiftly_l10n::tr("Frühere Versionen enthielten VLCKit und libVLC (LGPL 2.1 oder später). Das schriftliche Angebot für ihren Quelltext gilt weiter, siehe „Quelltext und schriftliches Angebot“."), 15.0, 400, color(color::TEXT_SECONDARY), None, swiftly_text::Align::Start),
             Alignment::LEADING,
         )
         .padding(ins(10.0, 0.0, 4.0, 0.0)),
     ];
     let rows = group("app");
     if !rows.is_empty() {
-        body.push(forms::setting_group(cx, f, "Weitere Bausteine", 28.0, rows));
+        body.push(forms::setting_group(
+            cx,
+            f,
+            swiftly_l10n::tr("Weitere Bausteine"),
+            28.0,
+            rows,
+        ));
     }
     shell(
         cx,
         icons,
         env,
         f,
-        "Open-Source-Lizenzen",
+        swiftly_l10n::tr("Open-Source-Lizenzen"),
         forms::Cols::One,
         vec![body],
         None,
@@ -1220,11 +1247,11 @@ pub fn licence_detail(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, c: &LicenseComp
         )
     };
     let mut rows = vec![
-        detail("Fassung", &c.version, false),
-        detail("Lizenz", &c.spdx, false),
-        detail("Urheber", &c.author, false),
+        detail(swiftly_l10n::tr("Fassung"), &c.version, false),
+        detail(swiftly_l10n::tr("Lizenz"), &c.spdx, false),
+        detail(swiftly_l10n::tr("Urheber"), &c.author, false),
     ];
-    let source = detail("Quelle", &c.source, true);
+    let source = detail(swiftly_l10n::tr("Quelle"), &c.source, true);
     rows.push(if c.source.starts_with("http") {
         forms::tappable(source, f, "lic.src", 8.0)
     } else {
@@ -1271,7 +1298,7 @@ pub fn licence_detail(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, c: &LicenseComp
                 .collect(),
             None => vec![label(
                 cx,
-                "Der Text fehlt in dieser Fassung.",
+                swiftly_l10n::tr("Der Text fehlt in dieser Fassung."),
                 12.0,
                 400,
                 color(color::TEXT_SECONDARY),
@@ -1283,7 +1310,13 @@ pub fn licence_detail(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, c: &LicenseComp
             Node::vstack(Align::Start, Some(10.0), paras).padding(ins(14.0, 16.0, 14.0, 16.0)),
             Alignment::LEADING,
         );
-        body.push(forms::setting_group(cx, f, "Lizenztext", 28.0, vec![inner]));
+        body.push(forms::setting_group(
+            cx,
+            f,
+            swiftly_l10n::tr("Lizenztext"),
+            28.0,
+            vec![inner],
+        ));
     }
     shell(
         cx,
@@ -1336,7 +1369,7 @@ pub fn offering_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, data: &LicenseDa
         icons,
         env,
         f,
-        "Quelltext und Angebot",
+        swiftly_l10n::tr("Quelltext und Angebot"),
         forms::Cols::One,
         vec![body],
         None,

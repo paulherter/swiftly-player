@@ -7,7 +7,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use swiftly_l10n::Locale;
 use swiftly_library::MemoryStore;
 use swiftly_model::Item;
 use swiftly_net::{ErrorKind, MockTransport};
@@ -38,7 +37,7 @@ fn host() -> Host {
         spawner: Arc::new(Pool(pool.unwrap_or_else(|e| panic!("thread pool: {e}")))),
         clock: Arc::new(FixedClock),
         store: Arc::new(MemoryStore::new()),
-        locale: Locale::parse("de"),
+        locale: swiftly_l10n::current_locale(),
         device_name: "Demo".into(),
         client_version: "0.0.0".into(),
         cache: None,

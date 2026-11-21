@@ -296,7 +296,7 @@ async fn next_episode(
                 id: e.id.clone(),
                 title: e.name.clone(),
             },
-            swiftly_vm::episode_code(swiftly_l10n::Locale::parse("de"), e),
+            swiftly_vm::episode_code(swiftly_l10n::current_locale(), e),
         )
     })
 }
@@ -371,7 +371,7 @@ async fn prepare(
         .or_else(|| {
             streams
                 .iter()
-                .find(|m| m.type_.as_deref() == Some("Audio"))
+                .find(|m| m.type_.as_deref() == Some(swiftly_l10n::tr("Audio")))
                 .and_then(|m| m.index)
         });
     // A transcode carries no bitmap subtitle unless the request names it: ask again with the chosen track (shared rule).
@@ -417,7 +417,7 @@ async fn prepare(
         original_language: item.original_language.clone(),
         season_id: item.season_id.clone(),
         tech: Some(crate::player_host::TechFacts::from_plan(&plan)),
-        code: swiftly_vm::episode_code(swiftly_l10n::Locale::parse("de"), &item),
+        code: swiftly_vm::episode_code(swiftly_l10n::current_locale(), &item),
     };
     let runtime = plan
         .source
@@ -425,7 +425,7 @@ async fn prepare(
         .and_then(|s| s.run_time_ticks)
         .or(item.run_time_ticks)
         .map_or(0.0, |t| t as f64 / 1e7);
-    let head = swiftly_vm::player_head(swiftly_l10n::Locale::parse("de"), &item);
+    let head = swiftly_vm::player_head(swiftly_l10n::current_locale(), &item);
     let spec = PlayerSpec {
         item_id: req.item_id.clone(),
         title: item.name.clone(),
@@ -566,7 +566,7 @@ async fn prepare_plex(
         .and_then(|s| s.run_time_ticks)
         .or(r.item.run_time_ticks)
         .map_or(0.0, |t| t as f64 / 1e7);
-    let head = swiftly_vm::player_head(swiftly_l10n::Locale::parse("de"), &r.item);
+    let head = swiftly_vm::player_head(swiftly_l10n::current_locale(), &r.item);
     let spec = PlayerSpec {
         item_id: req.item_id.clone(),
         title: r.item.name.clone(),
@@ -631,11 +631,11 @@ async fn prepare_plex(
             next_code: r
                 .next
                 .as_ref()
-                .and_then(|n| swiftly_vm::episode_code(swiftly_l10n::Locale::parse("de"), n)),
+                .and_then(|n| swiftly_vm::episode_code(swiftly_l10n::current_locale(), n)),
             original_language: r.item.original_language.clone(),
             season_id: r.item.season_id.clone(),
             tech: Some(crate::player_host::TechFacts::from_plan(&r.plan)),
-            code: swiftly_vm::episode_code(swiftly_l10n::Locale::parse("de"), &r.item),
+            code: swiftly_vm::episode_code(swiftly_l10n::current_locale(), &r.item),
             ..ReadyExtra::default()
         },
     })))

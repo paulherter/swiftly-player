@@ -26,6 +26,8 @@ fn main() -> ExitCode {
 }
 
 fn run() -> ExitCode {
+    // First, before any text: the language of the device (English when it names none of ours).
+    swiftly_desktop::device_language::start_in_device_language();
     let opts = match cli::parse(std::env::args().skip(1)) {
         Ok(Some(o)) => o,
         Ok(None) => {

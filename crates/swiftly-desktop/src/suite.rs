@@ -70,7 +70,7 @@ struct Place {
 pub fn plan_refused_text(server: Option<&str>) -> String {
     format!(
         "Die Wiedergabe hat nicht geklappt. Von {} kamen keine Daten zum Abspielen.",
-        server.unwrap_or("dem Server")
+        server.unwrap_or(swiftly_l10n::tr("dem Server"))
     )
 }
 
@@ -3851,11 +3851,11 @@ impl Suite {
                 .map_or("users.fill", |s| crate::together_ui::device_symbol(s.kind))
                 .to_owned(),
             title: if count > 1 {
-                "Läuft gerade"
+                swiftly_l10n::tr("Läuft gerade")
             } else if sessions.is_empty() {
-                "Gemeinsam schauen"
+                swiftly_l10n::tr("Gemeinsam schauen")
             } else {
-                "Hier weiterschauen"
+                swiftly_l10n::tr("Hier weiterschauen")
             }
             .to_owned(),
             under: sessions
@@ -3898,7 +3898,7 @@ impl Suite {
                 target: PickTarget::Session(s.id.clone()),
                 symbol: crate::together_ui::device_symbol(s.kind).to_owned(),
                 title: if s.device.is_empty() {
-                    "Gerät".to_owned()
+                    swiftly_l10n::tr("Gerät").to_owned()
                 } else {
                     s.device.clone()
                 },
@@ -4472,10 +4472,13 @@ impl Suite {
     /// What a screen reader gets for the screen in front (player, pushed page or tab), with its window-level title.
     pub fn a11y_nodes(&self) -> (&'static str, Vec<swiftly_ui::a11y::A11yNode>) {
         if self.report.open() {
-            return ("Problem melden", self.report.a11y_nodes());
+            return (swiftly_l10n::tr("Problem melden"), self.report.a11y_nodes());
         }
         if self.delete.open() {
-            return ("Vom Server löschen", self.delete.a11y_nodes());
+            return (
+                swiftly_l10n::tr("Vom Server löschen"),
+                self.delete.a11y_nodes(),
+            );
         }
         if self.player.is_none() && self.whats_new.open() {
             return ("Was ist neu", self.whats_new.a11y_nodes());
@@ -4495,7 +4498,7 @@ impl Suite {
             if self.env.idiom == swiftly_ui::Idiom::Desktop {
                 nodes.extend(self.controls.a11y_nodes());
             }
-            return ("Looks", nodes);
+            return (swiftly_l10n::tr("Looks"), nodes);
         }
         let (title, mut nodes) = self.a11y_pages();
         // The player covers the whole window: its nodes are already in window points, with no sidebar beside them.
@@ -4551,21 +4554,21 @@ impl Suite {
 
     fn a11y_pages(&self) -> (&'static str, Vec<swiftly_ui::a11y::A11yNode>) {
         if let Some(p) = &self.player {
-            return ("Player", p.a11y_nodes());
+            return (swiftly_l10n::tr("Player"), p.a11y_nodes());
         }
         if let Some(t) = self.top.as_ref().filter(|_| self.top_shown()) {
             let (title, nodes) = match t {
-                Top::Detail(s) => ("Film", s.a11y_nodes()),
-                Top::Series(s) => ("Serie", s.a11y_nodes()),
-                Top::Settings(s) => ("Einstellungen", s.a11y_nodes()),
-                Top::Downloads(s) => ("Downloads", s.a11y_nodes()),
-                Top::Login(s) => ("Anmelden", s.a11y_nodes()),
+                Top::Detail(s) => (swiftly_l10n::tr("Film"), s.a11y_nodes()),
+                Top::Series(s) => (swiftly_l10n::tr("Serie"), s.a11y_nodes()),
+                Top::Settings(s) => (swiftly_l10n::tr("Einstellungen"), s.a11y_nodes()),
+                Top::Downloads(s) => (swiftly_l10n::tr("Downloads"), s.a11y_nodes()),
+                Top::Login(s) => (swiftly_l10n::tr("Anmelden"), s.a11y_nodes()),
                 Top::Page(s) => (s.window_title(), s.a11y_nodes()),
             };
             // The add sheet floats over a title page: the window is still that page, only its input is the sheet's.
             let title = match &self.under_sheet {
-                Some(Top::Detail(_)) => "Film",
-                Some(Top::Series(_)) => "Serie",
+                Some(Top::Detail(_)) => swiftly_l10n::tr("Film"),
+                Some(Top::Series(_)) => swiftly_l10n::tr("Serie"),
                 Some(Top::Page(p)) => p.window_title(),
                 _ => title,
             };
@@ -4577,11 +4580,11 @@ impl Suite {
     /// The reading list of the tab in front (its sidebar included).
     fn a11y_tab(&self) -> (&'static str, Vec<swiftly_ui::a11y::A11yNode>) {
         match self.tab {
-            0 => ("Start", self.home.a11y_nodes()),
-            1 => ("Filme", self.movies.a11y_nodes()),
-            2 => ("Serien", self.series.a11y_nodes()),
-            4 => ("Merkliste", self.watch.a11y_nodes()),
-            _ => ("Suche", self.search.a11y_nodes()),
+            0 => (swiftly_l10n::tr("Start"), self.home.a11y_nodes()),
+            1 => (swiftly_l10n::tr("Filme"), self.movies.a11y_nodes()),
+            2 => (swiftly_l10n::tr("Serien"), self.series.a11y_nodes()),
+            4 => (swiftly_l10n::tr("Merkliste"), self.watch.a11y_nodes()),
+            _ => (swiftly_l10n::tr("Suche"), self.search.a11y_nodes()),
         }
     }
 

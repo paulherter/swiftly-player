@@ -261,8 +261,20 @@ impl NavArrows {
                     Align::Center,
                     Some(2.0),
                     vec![
-                        arrow(&icons, "caret-left", "Zur\u{fc}ck", "nav.back", p.0),
-                        arrow(&icons, "caret-right", "Vorw\u{e4}rts", "nav.forward", p.1),
+                        arrow(
+                            &icons,
+                            "caret-left",
+                            swiftly_l10n::tr("Zur\u{fc}ck"),
+                            "nav.back",
+                            p.0,
+                        ),
+                        arrow(
+                            &icons,
+                            "caret-right",
+                            swiftly_l10n::tr("Vorw\u{e4}rts"),
+                            "nav.forward",
+                            p.1,
+                        ),
                     ],
                 );
                 home::fill_frame(
@@ -519,7 +531,7 @@ impl DiscordCard {
                 if *p {
                     let title = txt(
                         cx,
-                        "Swiftly hat einen Discord",
+                        swiftly_l10n::tr("Swiftly hat einen Discord"),
                         weight(lk.body, 17.0, 600),
                         color::TEXT_PRIMARY,
                         Some(1),
@@ -531,7 +543,7 @@ impl DiscordCard {
                         .a11y(swiftly_ui::a11y::A11yNode::new(
                             "",
                             swiftly_ui::a11y::Role::Button,
-                            "Schlie\u{00DF}en",
+                            swiftly_l10n::tr("Schlie\u{00DF}en"),
                         ))
                         .key("discord-x")
                         .on_tap(Action::from("discord-x"));
@@ -542,7 +554,9 @@ impl DiscordCard {
                     );
                     let body = txt(
                         cx,
-                        "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst.",
+                        swiftly_l10n::tr(
+                            "Da kannst du Fragen stellen und Fehler melden. Neue Builds stehen da auch zuerst.",
+                        ),
                         weight(lk.body, 14.0, 400),
                         color::TEXT_SECONDARY,
                         Some(3),
@@ -554,7 +568,7 @@ impl DiscordCard {
                             icons.node("chats", 17.0, true, color(color::SURFACE_BASE)),
                             txt(
                                 cx,
-                                "Discord beitreten",
+                                swiftly_l10n::tr("Discord beitreten"),
                                 weight(lk.body, 17.0, 600),
                                 color::SURFACE_BASE,
                                 Some(1),
@@ -733,7 +747,7 @@ impl Card {
         match self {
             Card::Demo => crate::home_data::SERVER.to_owned(),
             Card::Account { server, .. } if !server.is_empty() => server.clone(),
-            _ => "Der Server".to_owned(),
+            _ => swiftly_l10n::tr("Der Server").to_owned(),
         }
     }
 
@@ -1127,14 +1141,18 @@ fn button(icons: &swiftly_ui::icons::Icons, which: WinButton, maximized: bool) -
         WinButton::Min => ("Minimieren", "Minimieren", "win.min"),
         WinButton::Max => (
             if maximized {
-                "Wiederherstellen"
+                swiftly_l10n::tr("Wiederherstellen")
             } else {
                 "Maximieren"
             },
             "Maximieren",
             "win.max",
         ),
-        WinButton::Close => ("Schlie\u{df}en", "Schlie\u{df}en", "win.close"),
+        WinButton::Close => (
+            swiftly_l10n::tr("Schlie\u{df}en"),
+            swiftly_l10n::tr("Schlie\u{df}en"),
+            "win.close",
+        ),
     };
     let _ = label;
     let glyph = match which {

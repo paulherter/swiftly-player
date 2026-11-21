@@ -305,7 +305,7 @@ fn offer(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
     };
     let title = swiftly_l10n::t("Ein Look für dich 🎃");
     let thanks = swiftly_l10n::t_args(
-        "Danke, dass du Swiftly benutzt. %@ ist ein Geschenk an alle.",
+        swiftly_l10n::tr("Danke, dass du Swiftly benutzt. %@ ist ein Geschenk an alle."),
         &[swiftly_l10n::Arg::Str(swiftly_l10n::t(look.name_key))],
     );
     let promise = swiftly_l10n::t("Bleibt für immer in deiner Sammlung.");
@@ -385,7 +385,7 @@ fn claiming(p: &Parts, env: &Env) -> Node {
         .appear_from(0.67, 0.0)
         .key("wn:tile");
     let name = swiftly_l10n::t_args(
-        "%@ gehört dir.",
+        swiftly_l10n::tr("%@ gehört dir."),
         &[swiftly_l10n::Arg::Str(swiftly_l10n::t(look.name_key))],
     );
     let body = Node::zstack(
@@ -420,7 +420,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
         Step::News => {}
     }
     let version = swiftly_l10n::t_args(
-        "Neu in Version %@",
+        swiftly_l10n::tr("Neu in Version %@"),
         &[swiftly_l10n::Arg::Str(p.version.clone())],
     );
     let head = Node::hstack(
@@ -536,14 +536,16 @@ impl WhatsNewSheet {
             entry.primary.label.as_str()
         };
         let (primary_label, primary) = match label {
-            "grab" => ("Hol ihn dir", Primary::Grab),
-            "try" if entry.primary.action == "open:looks" => ("Ausprobieren", Primary::OpenLooks),
-            "tryLook" if entry.primary.action == "open:looks" => {
-                ("Look ausprobieren", Primary::OpenLooks)
+            "grab" => (swiftly_l10n::tr("Hol ihn dir"), Primary::Grab),
+            "try" if entry.primary.action == "open:looks" => {
+                (swiftly_l10n::tr("Ausprobieren"), Primary::OpenLooks)
             }
-            "try" => ("Ausprobieren", Primary::Close),
-            "tryLook" => ("Look ausprobieren", Primary::Close),
-            _ => ("Verstanden", Primary::Close),
+            "tryLook" if entry.primary.action == "open:looks" => {
+                (swiftly_l10n::tr("Look ausprobieren"), Primary::OpenLooks)
+            }
+            "try" => (swiftly_l10n::tr("Ausprobieren"), Primary::Close),
+            "tryLook" => (swiftly_l10n::tr("Look ausprobieren"), Primary::Close),
+            _ => (swiftly_l10n::tr("Verstanden"), Primary::Close),
         };
         let primary = if primary == Primary::Grab && !entry.primary.action.starts_with("applyLook:")
         {

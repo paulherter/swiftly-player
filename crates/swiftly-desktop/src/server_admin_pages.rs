@@ -781,7 +781,7 @@ fn ask_dialog(cx: &Cx, window_h: f32, ask: &ServerAdminAsk) -> Option<Node> {
 
 /// "Abbrechen" in the language of the app (the core has the word).
 fn cancel_label() -> &'static str {
-    "Abbrechen"
+    swiftly_l10n::tr("Abbrechen")
 }
 
 /// A sentence with a button under it (a failed read, a missing right).
@@ -909,7 +909,7 @@ pub fn admin_page(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, hub: &HubSlot, v: &
 }
 
 fn retry_label() -> &'static str {
-    "Erneut versuchen"
+    swiftly_l10n::tr("Erneut versuchen")
 }
 
 /// The log pages: the files, then the end of one file.

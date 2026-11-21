@@ -78,10 +78,10 @@ pub enum Kind {
 impl Kind {
     fn title(&self) -> &str {
         match self {
-            Kind::Movies => "Filme",
-            Kind::Series => "Serien",
+            Kind::Movies => swiftly_l10n::tr("Filme"),
+            Kind::Series => swiftly_l10n::tr("Serien"),
             Kind::Genre(g) => g,
-            Kind::Watchlist => "Merkliste",
+            Kind::Watchlist => swiftly_l10n::tr("Merkliste"),
         }
     }
     fn tab(&self) -> usize {
@@ -178,7 +178,9 @@ fn narrowed(status: &LibraryStatusPart) -> bool {
 }
 
 fn label<T: PartialEq + Copy>(all: &[(T, &'static str)], v: T) -> &'static str {
-    all.iter().find(|(x, _)| *x == v).map_or("", |(_, l)| l)
+    all.iter()
+        .find(|(x, _)| *x == v)
+        .map_or("", |(_, l)| swiftly_l10n::tr(l))
 }
 
 fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
@@ -320,9 +322,9 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
             cx,
             &ctx.icons,
             "hard-drive-x",
-            "Server ist abgetaucht",
+            swiftly_l10n::tr("Server ist abgetaucht"),
             &format!("{} antwortet nicht. Läuft er noch, oder hängt das WLAN?", crate::desk::card().server_name()),
-            "Erneut versuchen",
+            swiftly_l10n::tr("Erneut versuchen"),
         )
         .padding(ins(80.0, 0.0, 0.0, 0.0))),
         // The Merkliste page itself: its filter is the page, so "pick another filter" would make no sense here.
@@ -331,9 +333,9 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                 cx,
                 &ctx.icons,
                 "bookmark-simple",
-                "Noch nichts gemerkt",
-                "Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier.",
-                "Aktualisieren",
+                swiftly_l10n::tr("Noch nichts gemerkt"),
+                swiftly_l10n::tr("Auf jeder Film- und Serienseite steht „Merkliste“ in der Knopfreihe. Was du dort antippst, sammelt sich hier."),
+                swiftly_l10n::tr("Aktualisieren"),
             )
             .padding(ins(80.0, 0.0, 0.0, 0.0)),
         ),
@@ -344,13 +346,13 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                     cx,
                     &ctx.icons,
                     if narrowed { "funnel" } else { "tray" },
-                    if narrowed { "Nichts gefunden" } else { "Hier ist noch nichts" },
+                    if narrowed { swiftly_l10n::tr("Nichts gefunden") } else { swiftly_l10n::tr("Hier ist noch nichts") },
                     &if narrowed {
                         format!("Unter \u{201E}{}\u{201C} liegt gerade nichts. Nimm einen anderen Filter.", p.filter.pill)
                     } else {
-                        "Sobald in dieser Bibliothek etwas liegt, taucht es hier auf.".to_owned()
+                        swiftly_l10n::tr("Sobald in dieser Bibliothek etwas liegt, taucht es hier auf.").to_owned()
                     },
-                    if narrowed { "Filter zurücksetzen" } else { "Aktualisieren" },
+                    if narrowed { swiftly_l10n::tr("Filter zurücksetzen") } else { swiftly_l10n::tr("Aktualisieren") },
                 )
                 .padding(ins(80.0, 0.0, 0.0, 0.0)),
             );
@@ -372,7 +374,7 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
             col.push(Node::vstack(Align::Start, Some(m.row_gap), rows).padding(grid_pad));
             if p.status.load_more_failed {
                 col.push(
-                    crate::home::text(cx, "Erneut versuchen", swiftly_design::TextStyle { size: 15.0, weight: 500, tracking: 0.0, uppercase: false }, crate::look_glow::accent(), Some(1), swiftly_text::Align::Center)
+                    crate::home::text(cx, swiftly_l10n::tr("Erneut versuchen"), swiftly_design::TextStyle { size: 15.0, weight: 500, tracking: 0.0, uppercase: false }, crate::look_glow::accent(), Some(1), swiftly_text::Align::Center)
                         .frame(None, Some(44.0), Alignment::CENTER)
                         .key("more")
                         .on_tap(Action::from("more")),
@@ -482,11 +484,11 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
             cx,
             &ctx.icons,
             &m,
-            "Sortieren",
+            swiftly_l10n::tr("Sortieren"),
             &SORTINGS
                 .iter()
                 .map(|(s, l)| SheetRow {
-                    label: (*l).into(),
+                    label: swiftly_l10n::tr(l).into(),
                     selected: *s == p.status.sorting,
                 })
                 .collect::<Vec<_>>(),
@@ -525,11 +527,11 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
             cx,
             &ctx.icons,
             &m,
-            "Anzeigen",
+            swiftly_l10n::tr("Anzeigen"),
             &KINDS
                 .iter()
                 .map(|(k, l)| SheetRow {
-                    label: (*l).into(),
+                    label: swiftly_l10n::tr(l).into(),
                     selected: *k == p.kind,
                 })
                 .collect::<Vec<_>>(),
@@ -571,7 +573,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
             cx,
             &ctx.icons,
             &m,
-            "Abspielen auf \u{2026}",
+            swiftly_l10n::tr("Abspielen auf \u{2026}"),
             &tile_menu::device_rows(&p.mcx),
             "pick.d.",
             false,
@@ -851,9 +853,9 @@ impl LibraryScreen {
             ..swiftly_model::Item::default()
         };
         let (a, b) = if series {
-            ("Serien", "Anime")
+            (swiftly_l10n::tr("Serien"), "Anime")
         } else {
-            ("Filme", "Filme 4K")
+            (swiftly_l10n::tr("Filme"), "Filme 4K")
         };
         self.vm
             .set_offering(swiftly_playback::section_offering::SectionOffering::new(
@@ -875,7 +877,11 @@ impl LibraryScreen {
             remaining: None,
             facts: swiftly_vm::TileFacts::default(),
         };
-        let unit = if series { "Serien" } else { "Filme" };
+        let unit = if series {
+            swiftly_l10n::tr("Serien")
+        } else {
+            swiftly_l10n::tr("Filme")
+        };
         self.vm.set_cards(
             vec![
                 card(0, "Marvel", &format!("12 {unit}")),
@@ -1307,7 +1313,13 @@ impl LibraryScreen {
                 KINDS
                     .iter()
                     .enumerate()
-                    .map(|(i, (k, l))| (format!("pick.k.{i}"), (*l).to_owned(), *k == cur))
+                    .map(|(i, (k, l))| {
+                        (
+                            format!("pick.k.{i}"),
+                            swiftly_l10n::tr(l).to_owned(),
+                            *k == cur,
+                        )
+                    })
                     .collect()
             }
             "lib.sort" => {
@@ -1315,7 +1327,13 @@ impl LibraryScreen {
                 SORTINGS
                     .iter()
                     .enumerate()
-                    .map(|(i, (s, l))| (format!("pick.s.{i}"), (*l).to_owned(), *s == cur))
+                    .map(|(i, (s, l))| {
+                        (
+                            format!("pick.s.{i}"),
+                            swiftly_l10n::tr(l).to_owned(),
+                            *s == cur,
+                        )
+                    })
                     .collect()
             }
             _ => match self.vm.list() {

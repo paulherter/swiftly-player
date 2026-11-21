@@ -36,12 +36,12 @@ pub const RING_HIT: f32 = 36.0;
 /// Tooltip and accessibility label of the ring (`DownloadRing.help`).
 pub fn ring_label(state: Option<RowState>) -> &'static str {
     match state {
-        None => "Laden",
-        Some(RowState::Waiting) => "Wartet",
-        Some(RowState::Loading) => "L\u{00E4}dt, anhalten",
-        Some(RowState::Paused) => "Angehalten, fortsetzen",
+        None => swiftly_l10n::tr("Laden"),
+        Some(RowState::Waiting) => swiftly_l10n::tr("Wartet"),
+        Some(RowState::Loading) => swiftly_l10n::tr("L\u{00E4}dt, anhalten"),
+        Some(RowState::Paused) => swiftly_l10n::tr("Angehalten, fortsetzen"),
         Some(RowState::Done) => "Auf diesem PC",
-        Some(RowState::Failed) => "Fehlgeschlagen, erneut versuchen",
+        Some(RowState::Failed) => swiftly_l10n::tr("Fehlgeschlagen, erneut versuchen"),
     }
 }
 
@@ -332,18 +332,18 @@ pub fn subline(i: &DownloadItem, loaded: i64) -> String {
             )];
         }
         DownloadState::Waits => {
-            parts.push("wartet".to_owned());
+            parts.push(swiftly_l10n::tr("wartet").to_owned());
             parts.extend(level.filter(|_| i.converted()));
         }
         DownloadState::Halted => {
-            parts.push("angehalten".to_owned());
+            parts.push(swiftly_l10n::tr("angehalten").to_owned());
             parts.extend(level.filter(|_| i.converted()));
         }
         DownloadState::Error => {
             parts = vec![
                 i.reason
                     .clone()
-                    .unwrap_or_else(|| "Fehlgeschlagen".to_owned()),
+                    .unwrap_or_else(|| swiftly_l10n::tr("Fehlgeschlagen").to_owned()),
             ]
         }
         DownloadState::Done => {
@@ -354,7 +354,7 @@ pub fn subline(i: &DownloadItem, loaded: i64) -> String {
                 parts.push(c.to_uppercase());
             }
             if !i.still_on_the_server {
-                parts.push("nicht mehr auf dem Server".to_owned());
+                parts.push(swiftly_l10n::tr("nicht mehr auf dem Server").to_owned());
             }
         }
     }

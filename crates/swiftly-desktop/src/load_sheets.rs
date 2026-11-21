@@ -291,7 +291,7 @@ fn label(q: DownloadQuality) -> String {
     match (q.name(), q.addition(",")) {
         (Some(n), Some(a)) => format!("{n} \u{00B7} {a}"),
         (Some(n), None) => n.to_owned(),
-        _ => "Original".to_owned(),
+        _ => swiftly_l10n::tr("Original").to_owned(),
     }
 }
 
@@ -675,7 +675,7 @@ impl SeasonSheet {
 
 fn numbers(count: usize, bytes: i64) -> String {
     let n = if count == 1 {
-        "1 Folge".to_owned()
+        swiftly_l10n::tr("1 Folge").to_owned()
     } else {
         format!("{count} Folgen")
     };
@@ -732,17 +732,19 @@ fn row(
 ) -> Node {
     let hit = box_image(icons, k);
     let value = match k {
-        CheckboxState::Part => "teilweise",
-        CheckboxState::Present => "geladen",
+        CheckboxState::Part => swiftly_l10n::tr("teilweise"),
+        CheckboxState::Present => swiftly_l10n::tr("geladen"),
         _ => "",
     };
     let bx = if k == CheckboxState::Present {
-        hit.a11y(A11yNode::new("", Role::Button, "Ausw\u{00E4}hlen").with_value(value))
+        hit.a11y(
+            A11yNode::new("", Role::Button, swiftly_l10n::tr("Ausw\u{00E4}hlen")).with_value(value),
+        )
     } else {
         forms::tappable(hit, f, box_key, 18.0)
             .press_style(PressStyle::Button)
             .a11y(
-                A11yNode::new("", Role::Button, "Ausw\u{00E4}hlen")
+                A11yNode::new("", Role::Button, swiftly_l10n::tr("Ausw\u{00E4}hlen"))
                     .with_value(value)
                     .with_selected(k == CheckboxState::Full),
             )
@@ -799,13 +801,13 @@ fn row(
 fn series_right(s: &SeasonSheet) -> String {
     let all: Vec<&Item> = s.sel.all_episodes();
     if s.sel.loads {
-        return "wird gelesen \u{2026}".to_owned();
+        return swiftly_l10n::tr("wird gelesen \u{2026}").to_owned();
     }
     if s.sel.state_all() == CheckboxState::Present {
-        return "alles da".to_owned();
+        return swiftly_l10n::tr("alles da").to_owned();
     }
     if !all.is_empty() && s.sel.visible(&all).is_empty() {
-        return "alles gesehen".to_owned();
+        return swiftly_l10n::tr("alles gesehen").to_owned();
     }
     numbers(s.sel.takeable(&all).len(), s.sel.bytes_from(&all))
 }
@@ -820,7 +822,7 @@ fn series_card(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
         "sel.all",
         "sel.all",
         k,
-        "Ganze Serie",
+        swiftly_l10n::tr("Ganze Serie"),
         &series_right(s),
         false,
         16.0,
@@ -832,17 +834,25 @@ fn series_card(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
         Align::Center,
         Some(13.0),
         vec![
-            plain(cx, "Nur ungesehene", 15.0, 600, color::TEXT_PRIMARY),
+            plain(
+                cx,
+                swiftly_l10n::tr("Nur ungesehene"),
+                15.0,
+                600,
+                color::TEXT_PRIMARY,
+            ),
             Node::spacer(),
             forms::toggle_switch_mac(on),
         ],
     );
     let switch = forms::tappable(wide(switch, Alignment::LEADING), f, "sel.onlyun", 10.0)
         .press_style(PressStyle::Row)
-        .a11y(A11yNode::new("", Role::Switch, "Nur ungesehene").with_selected(on));
+        .a11y(
+            A11yNode::new("", Role::Switch, swiftly_l10n::tr("Nur ungesehene")).with_selected(on),
+        );
     let note = crate::home::text(
         cx,
-        "Entscheidet, was ein Haken ausw\u{00E4}hlt.",
+        swiftly_l10n::tr("Entscheidet, was ein Haken ausw\u{00E4}hlt."),
         swiftly_design::TextStyle {
             size: dtok::TEXT_CAPTION_SMALL.size,
             weight: 400,
@@ -886,11 +896,11 @@ fn season_card(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
                 .sel
                 .season_right(s.sel.episodes.get(&season.id).map(Vec::as_slice), &own, k)
             {
-                SeasonRight::Reading => "wird gelesen \u{2026}".to_owned(),
+                SeasonRight::Reading => swiftly_l10n::tr("wird gelesen \u{2026}").to_owned(),
                 SeasonRight::Dash => "\u{2014}".to_owned(),
-                SeasonRight::NoEpisodes => "Keine Folgen".to_owned(),
-                SeasonRight::AllWatched => "alles gesehen".to_owned(),
-                SeasonRight::AllThere => "alles da".to_owned(),
+                SeasonRight::NoEpisodes => swiftly_l10n::tr("Keine Folgen").to_owned(),
+                SeasonRight::AllWatched => swiftly_l10n::tr("alles gesehen").to_owned(),
+                SeasonRight::AllThere => swiftly_l10n::tr("alles da").to_owned(),
                 SeasonRight::Count(n) => format!("{n} Folgen"),
             };
         let open = s.open.as_deref() == Some(season.id.as_str());
@@ -921,9 +931,9 @@ fn season_card(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
                 let watched = e.user_data.as_ref().and_then(|d| d.played).unwrap_or(false);
                 let size = DownloadRules::size(size_of(e), ",");
                 let right = match stored {
-                    Some(DownloadState::Done) => "geladen".to_owned(),
-                    Some(DownloadState::Loads) => "l\u{00E4}dt".to_owned(),
-                    Some(_) => "wartet".to_owned(),
+                    Some(DownloadState::Done) => swiftly_l10n::tr("geladen").to_owned(),
+                    Some(DownloadState::Loads) => swiftly_l10n::tr("l\u{00E4}dt").to_owned(),
+                    Some(_) => swiftly_l10n::tr("wartet").to_owned(),
                     None if watched => format!("gesehen \u{00B7} {size}"),
                     None => size,
                 };
@@ -950,7 +960,7 @@ fn footer(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
     let n = s.sel.selected.len();
     let bytes = s.sel.bytes();
     let left = if n == 0 {
-        "Nichts gew\u{00E4}hlt".to_owned()
+        swiftly_l10n::tr("Nichts gew\u{00E4}hlt").to_owned()
     } else {
         numbers(n, bytes)
     };
@@ -993,7 +1003,7 @@ fn footer(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
             cx,
             icons,
             "sparkle",
-            "Qualit\u{00E4}t",
+            swiftly_l10n::tr("Qualit\u{00E4}t"),
             &label(s.sel.quality),
             "sel.quality",
         )
@@ -1003,7 +1013,13 @@ fn footer(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
                 Align::Center,
                 Some(10.0),
                 vec![
-                    plain(cx, "Qualit\u{00E4}t", 15.0, 400, color::TEXT_PRIMARY),
+                    plain(
+                        cx,
+                        swiftly_l10n::tr("Qualit\u{00E4}t"),
+                        15.0,
+                        400,
+                        color::TEXT_PRIMARY,
+                    ),
                     Node::spacer(),
                     mono(cx, &label(s.sel.quality), 15.0, color::TEXT_SECONDARY),
                 ],
@@ -1018,13 +1034,13 @@ fn footer(cx: &Cx, icons: &Icons, f: &Fm, s: &SeasonSheet) -> Node {
             cx,
             icons,
             "speaker-high",
-            "Ton",
+            swiftly_l10n::tr("Ton"),
             &sound_label(&s.sel.audio_options(&rules), &s.sound(&rules)),
             "sel.sound",
         )
     });
     let go = if n == 0 {
-        "Laden".to_owned()
+        swiftly_l10n::tr("Laden").to_owned()
     } else if n == 1 {
         "1 Folge laden".to_owned()
     } else {
@@ -1049,7 +1065,7 @@ fn season_content(cx: &Cx, icons: &Icons, env: &Env, s: &SeasonSheet) -> Node {
     if s.sel.disrupted && s.sel.all_episodes().is_empty() {
         let hint = crate::home::text(
             cx,
-            "Der Server hat nicht geantwortet.",
+            swiftly_l10n::tr("Der Server hat nicht geantwortet."),
             swiftly_design::TextStyle {
                 size: dtok::TEXT_BODY_DEFAULT.size,
                 weight: 400,
@@ -1062,8 +1078,15 @@ fn season_content(cx: &Cx, icons: &Icons, env: &Env, s: &SeasonSheet) -> Node {
         );
         col.push(wide(hint, Alignment::LEADING).padding(ins(0.0, 16.0, 10.0, 16.0)));
         col.push(
-            sheet_button(cx, icons, &f, "sel.retry", "Erneut versuchen", true)
-                .padding(ins(0.0, 16.0, 16.0, 16.0)),
+            sheet_button(
+                cx,
+                icons,
+                &f,
+                "sel.retry",
+                swiftly_l10n::tr("Erneut versuchen"),
+                true,
+            )
+            .padding(ins(0.0, 16.0, 16.0, 16.0)),
         );
     } else {
         let body = Node::vstack(

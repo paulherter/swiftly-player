@@ -15,7 +15,6 @@ use swiftly_design::tokens::{touch, tv};
 use swiftly_design::tokens_generated::color;
 use swiftly_design::tokens_generated::desktop as dsk;
 use swiftly_jellyfin::ServerKind;
-use swiftly_l10n::Locale;
 use swiftly_layout::{Align, Alignment, EdgeInsets, Size};
 use swiftly_library::MemoryStore;
 use swiftly_net::{ErrorKind, MockTransport};
@@ -74,7 +73,7 @@ pub fn host() -> Host {
         spawner: Arc::new(Pool(pool.unwrap_or_else(|e| panic!("thread pool: {e}")))),
         clock: Arc::new(FixedClock),
         store: Arc::new(MemoryStore::new()),
-        locale: Locale::parse("de"),
+        locale: swiftly_l10n::current_locale(),
         device_name: "Demo".into(),
         client_version: "0.0.0".into(),
         cache: None,
@@ -388,7 +387,7 @@ pub(crate) fn tile_mark(cx: &Cx, icons: &Icons, tile: &Tile) -> Option<Node> {
     } else {
         tile.badges.iter().find_map(|b| match b {
             Badge::Unplayed { count } => Some(format!("{count} offen")),
-            Badge::Seasons { count: 1 } => Some("1 Staffel".to_owned()),
+            Badge::Seasons { count: 1 } => Some(swiftly_l10n::tr("1 Staffel").to_owned()),
             Badge::Seasons { count } => Some(format!("{count} Staffeln")),
             _ => None,
         })

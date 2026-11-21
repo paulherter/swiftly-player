@@ -131,6 +131,7 @@ pub fn collection_filters(art: Option<&str>) -> Vec<(LibraryFilter, &'static str
         .iter()
         .copied()
         .filter(|(f, _)| art != Some("tvshows") || *f != LibraryFilter::Unwatched)
+        .map(|(f, l)| (f, swiftly_l10n::tr(l)))
         .collect()
 }
 
@@ -517,7 +518,7 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
         .clipped()
         .key("bio-text");
         let toggle = if p.biography_expanded {
-            "Weniger"
+            swiftly_l10n::tr("Weniger")
         } else {
             p.biography_toggle.as_str()
         };
@@ -597,9 +598,9 @@ fn person_page(k: &Kit, p: &PersonPart, art: &PersonArt) -> Node {
         body.push(empty_state(
             k,
             "hard-drive-x",
-            "Server ist abgetaucht",
+            swiftly_l10n::tr("Server ist abgetaucht"),
             "Die Titel kommen gerade nicht an.",
-            Some(("Erneut versuchen", "retry")),
+            Some((swiftly_l10n::tr("Erneut versuchen"), "retry")),
         ));
     }
     // The page tone runs on under the hero and fades into the ground (`LinearGradient([color.audio, reason])`, the hero's
@@ -644,7 +645,7 @@ fn playlist_page(k: &Kit, p: &PlaylistPart) -> Node {
     kids.push(
         primary(
             k,
-            "Abspielen",
+            swiftly_l10n::tr("Abspielen"),
             Some("play.fill"),
             200.0,
             "play",
@@ -661,9 +662,9 @@ fn playlist_page(k: &Kit, p: &PlaylistPart) -> Node {
         empty_state(
             k,
             "hard-drive-x",
-            "Server ist abgetaucht",
+            swiftly_l10n::tr("Server ist abgetaucht"),
             "Der Server antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-            Some(("Erneut versuchen", "retry")),
+            Some((swiftly_l10n::tr("Erneut versuchen"), "retry")),
         )
     } else if let Some(e) = &p.empty {
         empty_state(
@@ -742,15 +743,18 @@ fn grid_page(
         empty_state(
             k,
             "hard-drive-x",
-            "Server ist abgetaucht",
+            swiftly_l10n::tr("Server ist abgetaucht"),
             "Der Server antwortet nicht. Läuft er noch, oder hängt das WLAN?",
-            Some(("Erneut versuchen", "retry")),
+            Some((swiftly_l10n::tr("Erneut versuchen"), "retry")),
         )
     } else if tiles.is_empty() {
         let (t, x, button) = empty.cloned().unwrap_or_else(|| {
             (
-                "Nichts in diesem Genre".into(),
-                "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien.".into(),
+                swiftly_l10n::tr("Nichts in diesem Genre").into(),
+                swiftly_l10n::tr(
+                    "In diesem Genre gibt es auf deinem Server gerade keine Filme und Serien.",
+                )
+                .into(),
                 None,
             )
         });
@@ -865,7 +869,11 @@ pub(crate) fn seerr_tile(k: &Kit, t: &SeerrTile, key: &str) -> Node {
         .padding(ins(0.0, 8.0, 8.0, 0.0));
         img = img.overlay(cap, Alignment::BOTTOM_LEADING);
     }
-    let kind = if t.hit.art == "tv" { "Serie" } else { "Film" };
+    let kind = if t.hit.art == "tv" {
+        swiftly_l10n::tr("Serie")
+    } else {
+        swiftly_l10n::tr("Film")
+    };
     let sub = t
         .hit
         .year
@@ -923,7 +931,7 @@ fn discover_page(k: &Kit, d: &DiscoverPart) -> Node {
         Align::Start,
         Some(0.0),
         vec![
-            header(k, "Über Seerr anfragen", Some(count)),
+            header(k, swiftly_l10n::tr("Über Seerr anfragen"), Some(count)),
             grid.padding(ins(18.0, k.lk.edge, 0.0, 0.0)),
         ],
     )
@@ -1024,7 +1032,7 @@ fn request_label(p: &SeerrPart) -> String {
     }
     let n = p.seasons.iter().filter(|r| r.selected).count();
     if !p.sheet_open || n == 0 {
-        "Staffeln w\u{e4}hlen".to_owned()
+        swiftly_l10n::tr("Staffeln w\u{e4}hlen").to_owned()
     } else {
         format!("{n} Staffeln anfragen")
     }
@@ -1166,9 +1174,9 @@ fn seerr_page(k: &Kit, p: &SeerrPart, address: &str) -> Node {
         kids.push(empty_state(
             k,
             "hard-drive-x",
-            "Server ist abgetaucht",
+            swiftly_l10n::tr("Server ist abgetaucht"),
             &format!("{address} antwortet nicht. L\u{e4}uft er noch, oder h\u{e4}ngt das WLAN?"),
-            Some(("Erneut versuchen", "retry")),
+            Some((swiftly_l10n::tr("Erneut versuchen"), "retry")),
         ));
     }
     let mut rails = Vec::new();
@@ -1196,7 +1204,7 @@ fn seerr_page(k: &Kit, p: &SeerrPart, address: &str) -> Node {
         rails.push(crate::detail_screen::segment(
             k,
             "similar",
-            "Ähnliche Titel",
+            swiftly_l10n::tr("Ähnliche Titel"),
             tiles,
             16.0,
             225.0 + 8.0 + 36.0,
@@ -1237,7 +1245,10 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
             ),
             name.clone(),
         ),
-        Body::Discover(p) => (discover_page(&k, p), "Über Seerr anfragen".to_owned()),
+        Body::Discover(p) => (
+            discover_page(&k, p),
+            swiftly_l10n::tr("Über Seerr anfragen").to_owned(),
+        ),
         Body::Seerr(p) => (seerr_page(&k, p, &d.address), p.hit.title.clone()),
         Body::Title(i, episode_season) => {
             let (n, sheet_node) = seerr_views::title_page(
@@ -1254,12 +1265,12 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
         Body::Requests(i, tabs, over) => {
             let (n, sheet_node) = seerr_views::requests_page(&k, i, tabs, over);
             sheet = sheet_node;
-            (n, "Meine Anfragen".to_owned())
+            (n, swiftly_l10n::tr("Meine Anfragen").to_owned())
         }
         Body::Admin(b) => {
             let (n, sheet_node) = seerr_views::admin_page(&k, b);
             sheet = sheet_node;
-            (n, "Verwaltung".to_owned())
+            (n, swiftly_l10n::tr("Verwaltung").to_owned())
         }
     };
     let scroll = Node::scroll(
@@ -1401,7 +1412,7 @@ impl PageScreen {
     /// A page of `kind` over demo data in `scenario` (`Loading`: the loading state; `Offline`: the server did not answer;
     /// `Empty`: nothing there; `Ready`: filled).
     pub fn new(env: Env, cx: Cx, kind: Kind, scenario: Scenario) -> PageScreen {
-        let locale = Locale::parse("de");
+        let locale = swiftly_l10n::current_locale();
         let (mut person, mut playlist, mut seerr) = (None, None, None);
         let mut grid = (
             "Drama".to_owned(),
@@ -1557,7 +1568,7 @@ impl PageScreen {
             films_applied: false,
             seen_changes: crate::desk::list_changes(),
             settled_once: false,
-            locale: Locale::parse("de"),
+            locale: swiftly_l10n::current_locale(),
         };
         s.refresh();
         s
@@ -1809,27 +1820,34 @@ impl PageScreen {
             crate::library_screen::FILTERS
                 .iter()
                 .find(|(g, _)| *g == f)
-                .map_or("", |(_, l)| *l)
+                .map_or("", |(_, l)| swiftly_l10n::tr(l))
         };
         let sort = crate::library_screen::SORTINGS
             .iter()
             .find(|(g, _)| *g == st.sorting)
-            .map_or("", |(_, l)| *l);
+            .map_or("", |(_, l)| swiftly_l10n::tr(l));
         let narrowed = st.filter != LibraryFilter::All;
         let empty = if narrowed {
             (
-                "Nichts gefunden".to_owned(),
+                swiftly_l10n::tr("Nichts gefunden").to_owned(),
                 format!(
                     "Unter \u{201E}{}\u{201C} liegt gerade nichts. Nimm einen anderen Filter.",
                     label(st.filter)
                 ),
-                Some(("Filter zurücksetzen".to_owned(), "reset-filter".to_owned())),
+                Some((
+                    swiftly_l10n::tr("Filter zurücksetzen").to_owned(),
+                    "reset-filter".to_owned(),
+                )),
             )
         } else {
             (
-                "Hier ist noch nichts".to_owned(),
-                "Sobald in dieser Sammlung etwas liegt, taucht es hier auf.".to_owned(),
-                Some(("Aktualisieren".to_owned(), "refresh".to_owned())),
+                swiftly_l10n::tr("Hier ist noch nichts").to_owned(),
+                swiftly_l10n::tr("Sobald in dieser Sammlung etwas liegt, taucht es hier auf.")
+                    .to_owned(),
+                Some((
+                    swiftly_l10n::tr("Aktualisieren").to_owned(),
+                    "refresh".to_owned(),
+                )),
             )
         };
         Some((
@@ -2280,7 +2298,7 @@ impl PageScreen {
                         (
                             crate::library_screen::SORTINGS
                                 .iter()
-                                .map(|(_, l)| *l)
+                                .map(|(_, l)| swiftly_l10n::tr(l))
                                 .collect(),
                             crate::library_screen::SORTINGS
                                 .iter()

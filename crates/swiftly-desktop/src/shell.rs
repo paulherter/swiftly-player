@@ -168,7 +168,7 @@ impl Shell {
     pub fn a11y_nodes(&self) -> (&'static str, Vec<swiftly_ui::a11y::A11yNode>) {
         match (&self.suite, &self.home) {
             (Some(s), _) => s.a11y_nodes(),
-            (None, Some(h)) => ("Start", h.a11y_nodes()),
+            (None, Some(h)) => (swiftly_l10n::tr("Start"), h.a11y_nodes()),
             (None, None) => ("Swiftly", self.demo.a11y_nodes()),
         }
     }

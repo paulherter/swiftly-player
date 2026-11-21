@@ -628,8 +628,8 @@ fn body(cx: &Cx, s: &str, size: f32, c: swiftly_design::Colour, lines: usize) ->
 
 fn pick_row(cx: &Cx, icons: &Icons, i: usize, r: &PickRow) -> Node {
     let action = match r.target {
-        PickTarget::Session(_) => "Hier weiterschauen",
-        PickTarget::Group(_) => "Beitreten",
+        PickTarget::Session(_) => swiftly_l10n::tr("Hier weiterschauen"),
+        PickTarget::Group(_) => swiftly_l10n::tr("Beitreten"),
     };
     let key = format!("tg:pick:{i}");
     let row = Node::hstack(
@@ -918,11 +918,17 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
     match &p.mode {
         Mode::Closed | Mode::Exit { .. } | Mode::Receive { .. } => {}
         Mode::Create { line: what, .. } => {
-            col.push(heading(cx, "Gemeinsam schauen"));
+            col.push(heading(cx, swiftly_l10n::tr("Gemeinsam schauen")));
             let mut c = vec![
                 body(cx, what, 14.0, color::TEXT_SECONDARY, 2).padding(ins(0.0, 0.0, 16.0, 0.0)),
-                body(cx, "Name der Gruppe", 12.0, color::TEXT_TERTIARY, 1)
-                    .padding(ins(0.0, 0.0, 6.0, 0.0)),
+                body(
+                    cx,
+                    swiftly_l10n::tr("Name der Gruppe"),
+                    12.0,
+                    color::TEXT_TERTIARY,
+                    1,
+                )
+                .padding(ins(0.0, 0.0, 6.0, 0.0)),
             ];
             let field = Node::hstack(
                 Align::Center,
@@ -943,13 +949,13 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
                     .a11y(swiftly_ui::a11y::A11yNode::new(
                         "tg:field",
                         swiftly_ui::a11y::Role::TextField,
-                        "Name der Gruppe",
+                        swiftly_l10n::tr("Name der Gruppe"),
                     )),
             );
             c.push(
                 body(
                     cx,
-                    "Alle auf deinem Server sehen die Gruppe und können mit einsteigen. Pause und Springen gelten dann für alle.",
+                    swiftly_l10n::tr("Alle auf deinem Server sehen die Gruppe und können mit einsteigen. Pause und Springen gelten dann für alle."),
                     14.0,
                     color::TEXT_SECONDARY,
                     4,
@@ -960,7 +966,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
                 cx,
                 icons,
                 "tg:open",
-                "Gruppe öffnen",
+                swiftly_l10n::tr("Gruppe öffnen"),
                 "users.fill",
                 !p.works,
             ));
@@ -978,7 +984,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
             c.push(
                 body(
                     cx,
-                    "Pause und Springen gelten für alle.",
+                    swiftly_l10n::tr("Pause und Springen gelten für alle."),
                     12.0,
                     color::TEXT_TERTIARY,
                     2,
@@ -989,21 +995,21 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
                 cx,
                 icons,
                 "tg:join",
-                "Beitreten",
+                swiftly_l10n::tr("Beitreten"),
                 "users.fill",
                 !p.works,
             ));
             col.push(Node::vstack(Align::Start, Some(0.0), c).padding(ins(0.0, 20.0, 20.0, 20.0)));
         }
         Mode::Pick => {
-            col.push(heading(cx, "Läuft gerade"));
+            col.push(heading(cx, swiftly_l10n::tr("Läuft gerade")));
             for (i, r) in p.rows.iter().enumerate() {
                 col.push(line(w));
                 col.push(pick_row(cx, icons, i, r));
             }
         }
         Mode::Failed(message) => {
-            col.push(heading(cx, "Weiterschauen"));
+            col.push(heading(cx, swiftly_l10n::tr("Weiterschauen")));
             col.push(
                 body(cx, message, 14.0, color::TEXT_SECONDARY, 4)
                     .padding(ins(0.0, 20.0, 20.0, 20.0)),
@@ -1015,7 +1021,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
         wide(
             text(
                 cx,
-                "Abbrechen",
+                swiftly_l10n::tr("Abbrechen"),
                 st(14.0, 400),
                 color::TEXT_SECONDARY,
                 Some(1),
@@ -1032,7 +1038,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, icons: &Icons) -> Node {
         .a11y(swiftly_ui::a11y::A11yNode::new(
             "",
             swiftly_ui::a11y::Role::Button,
-            "Abbrechen",
+            swiftly_l10n::tr("Abbrechen"),
         ))
         .key("tg:cancel")
         .on_tap(Action::from("tg:cancel")),
@@ -1099,7 +1105,7 @@ impl TogetherUi {
         let parts = Parts {
             mode: Mode::Closed,
             rows: Vec::new(),
-            field: field.view(DEFAULT_NAME, false, 0.0),
+            field: field.view(swiftly_l10n::tr(DEFAULT_NAME), false, 0.0),
             works: false,
             origin: (0.0, 0.0),
             exit: None,
@@ -1145,7 +1151,7 @@ impl TogetherUi {
     pub fn show(&mut self, mode: Mode) {
         if let Mode::Create { .. } = mode {
             self.field = FieldState::new(TextEditor::single_line());
-            self.field.editor.set_text(DEFAULT_NAME);
+            self.field.editor.set_text(swiftly_l10n::tr(DEFAULT_NAME));
             self.field.set_focused(true, self.now);
         } else {
             self.field.set_focused(false, self.now);
@@ -1290,7 +1296,9 @@ impl TogetherUi {
         self.ui.set_parts(Parts {
             mode: self.mode.clone(),
             rows: self.rows.clone(),
-            field: self.field.view(DEFAULT_NAME, false, self.now),
+            field: self
+                .field
+                .view(swiftly_l10n::tr(DEFAULT_NAME), false, self.now),
             works: self.works,
             origin: self.origin,
             exit: self.run.as_ref().and_then(|r| {

@@ -595,7 +595,7 @@ fn root_page(cx: &Cx, env: &Env, art: &Art) -> Node {
         vec![
             txt(
                 cx,
-                "Zuletzt hinzugefügt",
+                swiftly_l10n::tr("Zuletzt hinzugefügt"),
                 lk.rail,
                 color::TEXT_PRIMARY,
                 Some(1),
@@ -1022,7 +1022,7 @@ pub(crate) fn proof_row(k: &Kit, h: &Head) -> Node {
             kids.push(mark(
                 k,
                 Some(("check", color(crate::look_glow::accent()))),
-                "Direct Play",
+                swiftly_l10n::tr("Direct Play"),
                 crate::look_glow::accent(),
                 600,
                 quiet(crate::look_glow::accent()),
@@ -1326,14 +1326,20 @@ pub(crate) fn action_rail(k: &Kit, h: &Head) -> Node {
             DownloadState::Ready => ("arrow-circle-down.fill", true),
             _ => ("arrow-circle-down", false),
         };
-        kids.push(action_button(k, "download", icon, "Laden", active));
+        kids.push(action_button(
+            k,
+            "download",
+            icon,
+            swiftly_l10n::tr("Laden"),
+            active,
+        ));
     }
     if h.trailer && k.lk.form != Form::Tv {
         kids.push(action_button(
             k,
             "trailer",
             "monitor-play",
-            "Trailer",
+            swiftly_l10n::tr("Trailer"),
             false,
         ));
     }
@@ -1350,17 +1356,23 @@ pub(crate) fn action_rail(k: &Kit, h: &Head) -> Node {
             // The Mac's tooltip names what the click does (`DetailView.swift:659`).
             if k.lk.form == Form::Desktop {
                 if h.watched {
-                    "Als ungesehen markieren"
+                    swiftly_l10n::tr("Als ungesehen markieren")
                 } else {
-                    "Als gesehen markieren"
+                    swiftly_l10n::tr("Als gesehen markieren")
                 }
             } else {
-                "Gesehen"
+                swiftly_l10n::tr("Gesehen")
             },
             h.watched,
         ));
     }
-    kids.push(action_button(k, "more", "dots-three", "Mehr", false));
+    kids.push(action_button(
+        k,
+        "more",
+        "dots-three",
+        swiftly_l10n::tr("Mehr"),
+        false,
+    ));
     let gap = match k.lk.form {
         Form::Touch => 8.0,
         Form::Desktop => 4.0,
@@ -1475,7 +1487,7 @@ pub(crate) fn description(k: &Kit, h: &Head, open: bool) -> Option<Node> {
             let more_style = TextStyle::from(weight(k.lk.body, 14.0, 600));
             let more = Node::text(
                 k.cx,
-                "Mehr",
+                swiftly_l10n::tr("Mehr"),
                 &more_style,
                 color(crate::look_glow::accent()),
                 Some(1),
@@ -1485,7 +1497,13 @@ pub(crate) fn description(k: &Kit, h: &Head, open: bool) -> Option<Node> {
             let word =
                 k.cx.text
                     .borrow_mut()
-                    .layout("Mehr", &more_style, None, None, swiftly_text::Align::Start)
+                    .layout(
+                        swiftly_l10n::tr("Mehr"),
+                        &more_style,
+                        None,
+                        None,
+                        swiftly_text::Align::Start,
+                    )
                     .lines()
                     .last()
                     .map_or(0.0, |w| w.width);
@@ -1526,7 +1544,7 @@ pub(crate) fn description(k: &Kit, h: &Head, open: bool) -> Option<Node> {
             vec![
                 txt(
                     k.cx,
-                    "Regie",
+                    swiftly_l10n::tr("Regie"),
                     s,
                     if mac {
                         color::TEXT_TERTIARY
@@ -2117,7 +2135,7 @@ pub(crate) fn segment(
             if show && left {
                 arrow(
                     "caret-left",
-                    "Zur\u{fc}ckbl\u{e4}ttern",
+                    swiftly_l10n::tr("Zur\u{fc}ckbl\u{e4}ttern"),
                     format!("page.l:{key}"),
                     false,
                 )
@@ -2130,7 +2148,7 @@ pub(crate) fn segment(
             if show && right {
                 arrow(
                     "caret-right",
-                    "Weiterbl\u{e4}ttern",
+                    swiftly_l10n::tr("Weiterbl\u{e4}ttern"),
                     format!("page.r:{key}"),
                     true,
                 )
@@ -2327,7 +2345,7 @@ pub(crate) fn cast_rail(k: &Kit, cast: &[CastTile]) -> Node {
         return segment(
             k,
             "cast",
-            "Besetzung",
+            swiftly_l10n::tr("Besetzung"),
             kids,
             22.0,
             84.0 + 7.0 + 15.0 * 2.0 + 14.0,
@@ -2372,7 +2390,7 @@ pub(crate) fn cast_rail(k: &Kit, cast: &[CastTile]) -> Node {
     segment(
         k,
         "cast",
-        "Besetzung",
+        swiftly_l10n::tr("Besetzung"),
         kids,
         if k.lk.form == Form::Tv { 30.0 } else { 14.0 },
         size + 8.0 + 70.0,
@@ -2447,7 +2465,7 @@ fn disturbed(k: &Kit, title: &str, retry: &str) -> Node {
             ),
             txt(
                 k.cx,
-                "Erneut versuchen",
+                swiftly_l10n::tr("Erneut versuchen"),
                 weight(k.lk.body, k.lk.body.size, 600),
                 crate::look_glow::accent(),
                 Some(1),
@@ -2553,7 +2571,7 @@ pub(crate) fn watchers_rail(k: &Kit, ws: &[swiftly_vm::WatcherTile]) -> Node {
     segment(
         k,
         "watchers",
-        "Gesehen von",
+        swiftly_l10n::tr("Gesehen von"),
         items,
         if tvf { 0.0 } else { 22.0 },
         if tvf { size + 70.0 } else { size },
@@ -2607,7 +2625,14 @@ pub(crate) fn bottom_head(k: &Kit, b: &BottomPart) -> Vec<Node> {
                 .frame(Some(64.0), None, Alignment::TOP)
             })
             .collect();
-        kids.push(segment(k, "watchers", "Gesehen von", items, 12.0, 80.0));
+        kids.push(segment(
+            k,
+            "watchers",
+            swiftly_l10n::tr("Gesehen von"),
+            items,
+            12.0,
+            80.0,
+        ));
     }
     if b.watchers.is_empty() && b.watchers_pending && k.lk.form == Form::Desktop {
         kids.push(watchers_slot(k));
@@ -2628,7 +2653,7 @@ pub(crate) fn bottom_rest(k: &Kit, b: &BottomPart) -> Vec<Node> {
         kids.push(tile_rail(
             k,
             "extras",
-            "Extras",
+            swiftly_l10n::tr("Extras"),
             &b.extras,
             k.lk.form != Form::Desktop,
         ));
@@ -2644,14 +2669,18 @@ pub(crate) fn bottom_rest(k: &Kit, b: &BottomPart) -> Vec<Node> {
     }
     if !b.similar.is_empty() {
         let title = if k.lk.form == Form::Desktop {
-            "Ähnliches"
+            swiftly_l10n::tr("Ähnliches")
         } else {
-            "Ähnliche Titel"
+            swiftly_l10n::tr("Ähnliche Titel")
         };
         kids.push(tile_rail(k, "similar", title, &b.similar, false));
     } else if b.similar_failed && k.lk.form != Form::Desktop {
         // The Mac's film page shows nothing for a failed list of similar titles (`TitleRail` of an empty list).
-        kids.push(disturbed(k, "Ähnliche Titel", "retry-similar"));
+        kids.push(disturbed(
+            k,
+            swiftly_l10n::tr("Ähnliche Titel"),
+            "retry-similar",
+        ));
     }
     if let Some(f) = file_excerpt(k, b) {
         kids.push(f);
@@ -2671,7 +2700,7 @@ fn cast_slot(k: &Kit) -> Node {
     segment(
         k,
         "cast",
-        "Besetzung",
+        swiftly_l10n::tr("Besetzung"),
         kids,
         22.0,
         84.0 + 7.0 + 15.0 * 2.0 + 14.0,
@@ -2689,7 +2718,14 @@ fn watchers_slot(k: &Kit) -> Node {
             )
         })
         .collect();
-    segment(k, "watchers", "Gesehen von", kids, 22.0, 60.0)
+    segment(
+        k,
+        "watchers",
+        swiftly_l10n::tr("Gesehen von"),
+        kids,
+        22.0,
+        60.0,
+    )
 }
 
 /// A sheet over the page: scrim and a list of rows (the More panel, the season list).
@@ -2822,7 +2858,7 @@ pub(crate) fn top_bar(k: &Kit, title: &str, strength: u8) -> Node {
                 Node::rect(color(color::SCRIM_BUTTON), 18.0),
                 Alignment::CENTER,
             )
-            .a11y_label(swiftly_ui::a11y::Role::Button, "Zurück")
+            .a11y_label(swiftly_ui::a11y::Role::Button, swiftly_l10n::tr("Zurück"))
             .key("back-button")
             .on_tap(Action::from("back"))
             .padding(ins(top + 4.0, lk.edge.min(16.0), 0.0, 0.0));
@@ -2883,7 +2919,7 @@ pub(crate) fn top_bar(k: &Kit, title: &str, strength: u8) -> Node {
             Node::rect(color(color::SCRIM_BUTTON), 18.0),
             Alignment::CENTER,
         )
-        .a11y_label(swiftly_ui::a11y::Role::Button, "Zurück")
+        .a11y_label(swiftly_ui::a11y::Role::Button, swiftly_l10n::tr("Zurück"))
         .key("back-button")
         .on_tap(Action::from("back"))
         .padding(ins(top + 4.0, lk.edge.min(16.0), 0.0, 0.0));
@@ -3134,7 +3170,7 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
                     "wifi-x",
                     title,
                     &text,
-                    Some(("Erneut versuchen", "retry")),
+                    Some((swiftly_l10n::tr("Erneut versuchen"), "retry")),
                 ),
                 Alignment::CENTER,
             )
@@ -3176,7 +3212,12 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
         4 => {
             let rows: Vec<(String, bool)> = d.devices.iter().map(|s| (s.clone(), false)).collect();
             page = page.overlay(
-                sheet(&k, "Abspielen auf \u{2026}", &rows, "tdev"),
+                sheet(
+                    &k,
+                    swiftly_l10n::tr("Abspielen auf \u{2026}"),
+                    &rows,
+                    "tdev",
+                ),
                 Alignment::CENTER,
             );
         }
@@ -3610,7 +3651,7 @@ impl DetailScreen {
             PlayAction::Resolve { .. } | PlayAction::Wait if now - began < RESOLVE_WAIT_MS => {}
             PlayAction::Resolve { .. } | PlayAction::Wait => {
                 self.resolving = None;
-                self.notice = Some((FAILED_VERSIONS.into(), now));
+                self.notice = Some((swiftly_l10n::tr(FAILED_VERSIONS).into(), now));
             }
             again => {
                 self.resolving = None;
@@ -4062,7 +4103,8 @@ impl DetailScreen {
             .collect();
         if self.vm.actions().download.is_some() {
             items.push(PopEntry::Item(
-                MenuItem::new(Action::from("download"), "Laden").icon("arrow-circle-down"),
+                MenuItem::new(Action::from("download"), swiftly_l10n::tr("Laden"))
+                    .icon("arrow-circle-down"),
             ));
         }
         // Seerr's entry (the core's title menu rule, told to the suite as `desk::report_offered`).

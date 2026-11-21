@@ -108,6 +108,15 @@ pub fn set_locale(locale: Locale) {
     *guard = Some(locale);
 }
 
+/// Starts the process in the language of the device: sets the process-wide locale from the device's language tag
+/// ([`Locale::for_device`]: the device's language, English when it names none) and returns it. Every app calls this once at
+/// start, before the first text; the German default of [`current_locale`] is the key language, not a start language.
+pub fn set_device_locale(tag: Option<&str>) -> Locale {
+    let locale = Locale::for_device(tag);
+    set_locale(locale.clone());
+    locale
+}
+
 /// The process-wide locale; German until set.
 pub fn current_locale() -> Locale {
     CURRENT
@@ -115,6 +124,26 @@ pub fn current_locale() -> Locale {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone()
         .unwrap_or_default()
+}
+
+/// A fixed screen text of the source (the German wording, which is the key) in the process-wide language, as the
+/// catalogue's own static text: no allocation, so it stands wherever a `&'static str` literal stood. German (the key
+/// language), a key the catalogue does not know and a key that is a counted phrase come back as the key itself; texts
+/// with arguments go through [`t_args`] / [`plural`] instead.
+pub fn tr(key: &'static str) -> &'static str {
+    let guard = CURRENT
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(locale) = guard.as_ref() else {
+        return key;
+    };
+    if locale.language() == Locale::SOURCE_LANGUAGE {
+        return key;
+    }
+    match Catalog::builtin().lookup(locale, key).text {
+        Some(Text::Simple(text)) => text,
+        _ => key,
+    }
 }
 
 /// Translates with the process-wide locale.

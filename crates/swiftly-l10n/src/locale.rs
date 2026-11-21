@@ -15,6 +15,28 @@ impl Locale {
     /// Parses a tag. `_` and `-` both separate; `.UTF-8` or `@calendar` suffixes are
     /// dropped; an empty or broken tag gives the source language.
     pub fn parse(tag: &str) -> Self {
+        Self::try_parse(tag).unwrap_or_default()
+    }
+
+    /// English, the language of every device that names none of ours.
+    pub fn english() -> Self {
+        Self {
+            language: "en".to_owned(),
+            region: None,
+        }
+    }
+
+    /// The language the user interface starts in, from the language of the device (`de-DE`, `en_US.UTF-8`, ...):
+    /// the device's language when the tag names one, **English** when it names none (`None`, empty, "C", broken).
+    /// A language without a catalogue (`fr`) keeps its tag and reads English through the fallback chain. The one rule
+    /// every app uses for its start language; the German default of [`Locale::default`] is the key language of the
+    /// catalogue and is never the start language of an app.
+    pub fn for_device(tag: Option<&str>) -> Self {
+        tag.and_then(Self::try_parse).unwrap_or_else(Self::english)
+    }
+
+    /// Like [`Locale::parse`], but `None` for a tag that names no language (empty, broken; `C` and `POSIX` are too short to be one).
+    pub fn try_parse(tag: &str) -> Option<Self> {
         let cut = tag.split(['.', '@']).next().unwrap_or("");
         let mut parts = cut.split(['-', '_']).filter(|p| !p.is_empty());
         let language = match parts.next() {
@@ -23,7 +45,7 @@ impl Locale {
             {
                 l.to_ascii_lowercase()
             }
-            _ => return Self::default(),
+            _ => return None,
         };
         let region = parts
             .find(|p| {
@@ -31,7 +53,7 @@ impl Locale {
                     || (p.len() == 3 && p.chars().all(|c| c.is_ascii_digit()))
             })
             .map(str::to_ascii_uppercase);
-        Self { language, region }
+        Some(Self { language, region })
     }
 
     /// The primary language subtag, lower case (`"pt"`).

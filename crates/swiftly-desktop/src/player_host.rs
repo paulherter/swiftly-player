@@ -240,8 +240,8 @@ impl TechFacts {
         TechFacts {
             delivery: td::delivery(plan.method, &swiftly_model::Source),
             good: td::weight(plan.method) == td::Weight::Good,
-            video: of("Video").into_iter().next(),
-            audios: of("Audio"),
+            video: of(swiftly_l10n::tr("Video")).into_iter().next(),
+            audios: of(swiftly_l10n::tr("Audio")),
             subtitles: of("Subtitle"),
             container: plan.source.as_ref().and_then(|s| s.container.clone()),
             size: plan.source.as_ref().and_then(|s| s.size),

@@ -15,7 +15,6 @@ use swiftly_downloads::{
     Art, DownloadItem, DownloadManagerState, DownloadRules, DownloadState, DownloadTransport,
     Effect, Intent, ProgressEstimator, RunningTransfer, TaskParts,
 };
-use swiftly_l10n::Locale;
 use swiftly_layout::{Align, Alignment, Point, Rect};
 use swiftly_ui::a11y::{A11yNode, Role};
 use swiftly_ui::components::color;
@@ -667,7 +666,7 @@ fn empty_state(cx: &Cx, ctx: &Ctx) -> Node {
                 disc.padding(ins(0.0, 0.0, 16.0, 0.0)),
                 text(
                     cx,
-                    "Noch nichts geladen",
+                    swiftly_l10n::tr("Noch nichts geladen"),
                     st(20.0, 600),
                     color::TEXT_PRIMARY,
                     Some(1),
@@ -675,7 +674,7 @@ fn empty_state(cx: &Cx, ctx: &Ctx) -> Node {
                 ),
                 text(
                     cx,
-                    "Lad was runter, bevor der Zug ins Funkloch f\u{00E4}hrt.",
+                    swiftly_l10n::tr("Lad was runter, bevor der Zug ins Funkloch f\u{00E4}hrt."),
                     st(15.0, 400),
                     color::TEXT_SECONDARY,
                     Some(3),
@@ -712,7 +711,7 @@ fn mac_empty_state(cx: &Cx, ctx: &Ctx) -> Node {
             disc.padding(ins(0.0, 0.0, 22.0, 0.0)),
             text(
                 cx,
-                "Noch nichts geladen",
+                swiftly_l10n::tr("Noch nichts geladen"),
                 st(20.0, 600),
                 color::TEXT_PRIMARY,
                 Some(1),
@@ -721,7 +720,7 @@ fn mac_empty_state(cx: &Cx, ctx: &Ctx) -> Node {
             .padding(ins(0.0, 0.0, 7.0, 0.0)),
             text(
                 cx,
-                "Lad was runter, bevor der Zug ins Funkloch f\u{00E4}hrt.",
+                swiftly_l10n::tr("Lad was runter, bevor der Zug ins Funkloch f\u{00E4}hrt."),
                 st(15.0, 400),
                 color::TEXT_SECONDARY,
                 Some(3),
@@ -780,11 +779,11 @@ fn body(cx: &Cx, env: &Env, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
         out.push(heading(
             cx,
             if all_failed {
-                "Fehlgeschlagen"
+                swiftly_l10n::tr("Fehlgeschlagen")
             } else if s.offline {
-                "Wartet auf Netz"
+                swiftly_l10n::tr("Wartet auf Netz")
             } else {
-                "L\u{00E4}dt gerade"
+                swiftly_l10n::tr("L\u{00E4}dt gerade")
             },
         ));
         out.extend(with_lines(
@@ -937,14 +936,14 @@ fn episodes_of<'a>(p: &'a Parts, id: &str) -> Vec<&'a DownloadItem> {
 /// takes it from `DownloadRules.nextEpisode` and `TitleText`.
 fn next_label(next: Option<&DownloadItem>) -> String {
     let Some(next) = next else {
-        return "Abspielen".to_owned();
+        return swiftly_l10n::tr("Abspielen").to_owned();
     };
     let list = serde_json::to_string(&[next]).unwrap_or_default();
-    let answer = swiftly_vm::download_next_episode(&list, Locale::parse("de"));
+    let answer = swiftly_vm::download_next_episode(&list, swiftly_l10n::current_locale());
     serde_json::from_str::<serde_json::Value>(&answer)
         .ok()
         .and_then(|v| v["knopftext"].as_str().map(str::to_owned))
-        .unwrap_or_else(|| "Abspielen".to_owned())
+        .unwrap_or_else(|| swiftly_l10n::tr("Abspielen").to_owned())
 }
 
 /// Pencil / cross and, with a selection, the trash button (`EditButton`, `MacDownloadsPage.header`).
@@ -952,10 +951,18 @@ fn buttons(ctx: &Ctx, f: &Fm, p: &Parts, spacing: f32) -> Node {
     let mut v = Vec::new();
     if p.edit && !p.selected.is_empty() {
         v.push(
-            widgets::action_button(&ctx.icons, f, "delete", "trash", false, "Entfernen", false)
-                .appear_from(1.0, 0.0)
-                .exit_to(1.0, 0.0)
-                .opacity(1.0, feel::leap()),
+            widgets::action_button(
+                &ctx.icons,
+                f,
+                "delete",
+                "trash",
+                false,
+                swiftly_l10n::tr("Entfernen"),
+                false,
+            )
+            .appear_from(1.0, 0.0)
+            .exit_to(1.0, 0.0)
+            .opacity(1.0, feel::leap()),
         );
     }
     v.push(widgets::action_button(
@@ -964,7 +971,11 @@ fn buttons(ctx: &Ctx, f: &Fm, p: &Parts, spacing: f32) -> Node {
         "edit",
         if p.edit { "x" } else { "pencil-simple.fill" },
         !p.edit,
-        if p.edit { "Fertig" } else { "Bearbeiten" },
+        if p.edit {
+            swiftly_l10n::tr("Fertig")
+        } else {
+            swiftly_l10n::tr("Bearbeiten")
+        },
         p.edit,
     ));
     Node::hstack(Align::Center, Some(spacing), v)
@@ -1135,7 +1146,10 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
                 b.extend(series_body(cx, env, &f, p, ctx, &r.id));
                 (r.title.clone(), b)
             }
-            None => ("Downloads".to_owned(), body(cx, env, &f, p, ctx)),
+            None => (
+                swiftly_l10n::tr("Downloads").to_owned(),
+                body(cx, env, &f, p, ctx),
+            ),
         };
         b.push(Node::fixed(0.0, 8.0));
         return forms::page(
@@ -1159,7 +1173,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
             let mut row = vec![
                 text(
                     cx,
-                    "Downloads",
+                    swiftly_l10n::tr("Downloads"),
                     t,
                     color::TEXT_PRIMARY,
                     Some(1),
@@ -1247,12 +1261,18 @@ impl DownloadsScreen {
     /// The page for `env` over a scripted download list.
     pub fn new(env: Env, cx: Cx, scenario: Scenario) -> DownloadsScreen {
         let quiet = Arc::new(Quiet::default());
-        let machine =
-            DownloadManagerState::new(1, true, false, Box::new(swiftly_vm::TrackNames::german()));
+        let machine = DownloadManagerState::new(
+            1,
+            true,
+            false,
+            Box::new(swiftly_vm::TrackNames::new(
+                swiftly_l10n::current_locale().language(),
+            )),
+        );
         let vm = DownloadsVm::new(
             Arc::new(Dyn(Arc::clone(&quiet) as Arc<dyn DownloadTransport>)),
             quiet as Arc<dyn DownloadServices>,
-            Locale::parse("de"),
+            swiftly_l10n::current_locale(),
             machine,
             true,
         );
@@ -1418,7 +1438,7 @@ impl DownloadsScreen {
     fn open_menu(&mut self, id: &str, at: Point) {
         let item = MenuItem::new(
             Action::from(format!("ctxdel:{id}").as_str()),
-            "Download entfernen",
+            swiftly_l10n::tr("Download entfernen"),
         )
         .destructive();
         self.menu.open(

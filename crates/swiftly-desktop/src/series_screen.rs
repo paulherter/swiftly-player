@@ -207,7 +207,7 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
                 )
                 .key(format!("epload:{}", e.id).as_str())
                 .on_tap(Action::from("download"))
-                .tooltip("Laden"),
+                .tooltip(swiftly_l10n::tr("Laden")),
             );
         }
         icons.push(
@@ -218,7 +218,7 @@ fn episode_node(k: &Kit, e: &EpisodeRow, key: &str) -> Node {
             )
             .key(format!("epmore:{}", e.id).as_str())
             .on_tap(Action::from(format!("epmenu:{}", e.id).as_str()))
-            .tooltip("Mehr"),
+            .tooltip(swiftly_l10n::tr("Mehr")),
         );
         let icon_w = 18.0 * icons.len() as f32 + 14.0 * (icons.len() as f32 - 1.0) + 12.0;
         let icons = Node::hstack(Align::Start, Some(14.0), icons).padding(ins(2.0, 12.0, 0.0, 0.0));
@@ -403,9 +403,9 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
             k.cx,
             // `SeriesView.swift:344`: without seasons "Keine Folgen", with them the season is empty.
             if d.seasons.seasons.is_empty() {
-                "Keine Folgen"
+                swiftly_l10n::tr("Keine Folgen")
             } else {
-                "Keine Folgen in dieser Staffel"
+                swiftly_l10n::tr("Keine Folgen in dieser Staffel")
             },
             weight(lk.body, 15.0, 400),
             color::TEXT_TERTIARY,
@@ -415,7 +415,7 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
         .padding(ins(40.0, lk.edge, 0.0, 0.0)),
         EpisodesStatus::Empty => txt(
             k.cx,
-            "Keine Folgen in dieser Staffel",
+            swiftly_l10n::tr("Keine Folgen in dieser Staffel"),
             lk.body,
             color::TEXT_SECONDARY,
             Some(1),
@@ -433,7 +433,7 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
                         .padding(ins(0.0, 0.0, 14.0, 0.0)),
                     txt_center(
                         k.cx,
-                        "Server ist abgetaucht",
+                        swiftly_l10n::tr("Server ist abgetaucht"),
                         lk.rail,
                         color::TEXT_PRIMARY,
                         1,
@@ -452,7 +452,7 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
                     .frame(Some(262.0), None, Alignment::CENTER),
                     txt_center(
                         k.cx,
-                        "Erneut versuchen",
+                        swiftly_l10n::tr("Erneut versuchen"),
                         weight(lk.body, 15.0, 500),
                         crate::look_glow::accent(),
                         1,
@@ -473,9 +473,9 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
         EpisodesStatus::Disturbed => status_card(
             k,
             "hard-drive-x",
-            "Server ist abgetaucht",
+            swiftly_l10n::tr("Server ist abgetaucht"),
             "Die Folgen kommen gerade nicht an.",
-            "Erneut versuchen",
+            swiftly_l10n::tr("Erneut versuchen"),
             "retry-episodes",
         )
         .frame(None, Some(300.0), Alignment::CENTER),
@@ -521,7 +521,7 @@ fn episodes_section(k: &Kit, d: &Data) -> Node {
                     }
                     let more = txt(
                         k.cx,
-                        "Mehr Folgen",
+                        swiftly_l10n::tr("Mehr Folgen"),
                         weight(lk.body, 14.0, 600),
                         crate::look_glow::accent(),
                         Some(1),
@@ -547,16 +547,16 @@ fn tabs(k: &Kit, d: &Data, sx: &UiState) -> Node {
             .seasons
             .iter()
             .find(|s| Some(&s.id) == d.seasons.selected.as_ref())
-            .map_or_else(|| "Folgen".to_owned(), |s| s.name.clone()),
+            .map_or_else(|| swiftly_l10n::tr("Folgen").to_owned(), |s| s.name.clone()),
         // The core's rule (`chevron`): decided from facts that are there in frame 1, the same on every platform.
         d.seasons.chevron,
     )];
-    labels.push(("Besetzung".into(), false));
-    labels.push(("Ähnliches".into(), false));
+    labels.push((swiftly_l10n::tr("Besetzung").into(), false));
+    labels.push((swiftly_l10n::tr("Ähnliches").into(), false));
     // Extras stands in the row from frame 1: a quiet, invisible word while the extras are unknown or none, so the tab
     // row never changes when they arrive (the word lights up in place).
     let extras = !d.more.extras.is_empty();
-    labels.push(("Extras".into(), false));
+    labels.push((swiftly_l10n::tr("Extras").into(), false));
     let mac = lk.form == Form::Desktop;
     let size = if lk.form == Form::Tv {
         34.0
@@ -704,7 +704,7 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
                 } else if lk.form == Form::Desktop {
                     txt(
                         cx,
-                        "Keine Besetzung hinterlegt.",
+                        swiftly_l10n::tr("Keine Besetzung hinterlegt."),
                         weight(lk.body, 15.0, 400),
                         color::TEXT_TERTIARY,
                         Some(1),
@@ -722,7 +722,7 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
         3 if !d.more.extras.is_empty() => tile_rail(
             &k,
             "extras",
-            "Extras",
+            swiftly_l10n::tr("Extras"),
             &d.more.extras,
             lk.form != Form::Desktop,
         ),
@@ -761,15 +761,15 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
                     &k,
                     "hard-drive-x",
                     "Das ging schief.",
-                    "Der Server antwortet nicht.",
-                    "Erneut versuchen",
+                    swiftly_l10n::tr("Der Server antwortet nicht."),
+                    swiftly_l10n::tr("Erneut versuchen"),
                     "retry-similar",
                 )
                 .frame(None, Some(200.0), Alignment::CENTER)
             } else if d.more.similar.is_empty() && lk.form == Form::Desktop {
                 txt(
                     cx,
-                    "Nichts Ähnliches gefunden",
+                    swiftly_l10n::tr("Nichts Ähnliches gefunden"),
                     weight(lk.body, 15.0, 400),
                     color::TEXT_TERTIARY,
                     Some(1),
@@ -780,7 +780,7 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
                 let s = if d.more.similar_failed {
                     "Das ging schief. Der Server antwortet nicht."
                 } else {
-                    "Nichts Ähnliches gefunden."
+                    swiftly_l10n::tr("Nichts Ähnliches gefunden.")
                 };
                 txt(cx, s, lk.body, color::TEXT_SECONDARY, Some(2))
                     .padding(ins(0.0, lk.edge, 0.0, lk.edge))
@@ -789,9 +789,9 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
                     &k,
                     "similar",
                     if lk.form == Form::Desktop {
-                        "Ähnliches"
+                        swiftly_l10n::tr("Ähnliches")
                     } else {
-                        "Ähnliche Titel"
+                        swiftly_l10n::tr("Ähnliche Titel")
                     },
                     &d.more.similar,
                     false,
@@ -864,7 +864,7 @@ fn page(d: &Data, sx: &UiState, env: &Env, cx: &Cx, art: &Art, icons: &Icons) ->
                 .map(|s| (s.name.clone(), Some(&s.id) == d.seasons.selected.as_ref()))
                 .collect();
             page = page.overlay(
-                sheet(&k, "Staffel wählen", &rows, "season"),
+                sheet(&k, swiftly_l10n::tr("Staffel wählen"), &rows, "season"),
                 Alignment::CENTER,
             );
         }
@@ -1408,7 +1408,8 @@ impl SeriesScreen {
                     })
                     .collect();
                 items.push(popover::MenuEntry::Item(
-                    MenuItem::new(Action::from("download"), "Laden").icon("arrow-circle-down"),
+                    MenuItem::new(Action::from("download"), swiftly_l10n::tr("Laden"))
+                        .icon("arrow-circle-down"),
                 ));
                 if crate::desk::report_offered() {
                     items.push(popover::MenuEntry::Item(
@@ -1883,21 +1884,21 @@ fn short_episode_menu(id: &str, watched: bool, load: bool) -> Vec<popover::MenuE
     let mut rows = vec![
         popover::MenuEntry::Item(MenuItem::new(
             Action::from(format!("epplay:{id}").as_str()),
-            "Abspielen",
+            swiftly_l10n::tr("Abspielen"),
         )),
         popover::MenuEntry::Item(MenuItem::new(
             Action::from(format!("epseen:{id}").as_str()),
             if watched {
-                "Als ungesehen markieren"
+                swiftly_l10n::tr("Als ungesehen markieren")
             } else {
-                "Als gesehen markieren"
+                swiftly_l10n::tr("Als gesehen markieren")
             },
         )),
     ];
     if load {
         rows.push(popover::MenuEntry::Item(MenuItem::new(
             Action::from(format!("epload:{id}").as_str()),
-            "Laden",
+            swiftly_l10n::tr("Laden"),
         )));
     }
     rows

@@ -19,7 +19,6 @@ use swiftly_downloads::{
     merge_for_write,
 };
 use swiftly_jellyfin::DownloadConversion;
-use swiftly_l10n::Locale;
 use swiftly_playback::media_server::MediaServer;
 use swiftly_vm::{AccountRef, DownloadServices, DownloadsIntent, DownloadsVm, ServerClient};
 
@@ -257,7 +256,10 @@ impl Inner {
             std::fs::File::create(&part)
         };
         let Ok(mut file) = file else {
-            return self.failed(&parts, "Die Datei liess sich nicht ablegen.");
+            return self.failed(
+                &parts,
+                swiftly_l10n::tr("Die Datei liess sich nicht ablegen."),
+            );
         };
         let mut loaded = i64::try_from(have).unwrap_or(0);
         let (mut last, mut quiet_since) = (Instant::now() - Duration::from_secs(1), Instant::now());
@@ -290,7 +292,10 @@ impl Inner {
                 Ok(Ok(Some(chunk))) => {
                     quiet_since = Instant::now();
                     if std::io::Write::write_all(&mut file, &chunk).is_err() {
-                        return self.failed(&parts, "Die Datei liess sich nicht ablegen.");
+                        return self.failed(
+                            &parts,
+                            swiftly_l10n::tr("Die Datei liess sich nicht ablegen."),
+                        );
                     }
                     loaded += i64::try_from(chunk.len()).unwrap_or(0);
                     if last.elapsed() >= Duration::from_millis(200) {
@@ -465,12 +470,18 @@ pub fn build_with(
         tasks: Mutex::new(HashMap::new()),
     });
     let files = Files(inner);
-    let machine =
-        DownloadManagerState::new(1, true, false, Box::new(swiftly_vm::TrackNames::german()));
+    let machine = DownloadManagerState::new(
+        1,
+        true,
+        false,
+        Box::new(swiftly_vm::TrackNames::new(
+            swiftly_l10n::current_locale().language(),
+        )),
+    );
     let vm = DownloadsVm::new(
         Arc::new(Dyn(Arc::new(files.clone()))),
         Arc::new(files.clone()),
-        Locale::parse("de"),
+        swiftly_l10n::current_locale(),
         machine,
         true,
     );

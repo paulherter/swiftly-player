@@ -143,11 +143,15 @@ fn recents_block(cx: &Cx, m: &Metrics, ctx: &Ctx, recents: &[String]) -> Node {
             Align::Center,
             Some(8.0),
             vec![
-                section_title(cx, m, "Zuletzt gesucht", -0.484),
+                section_title(cx, m, swiftly_l10n::tr("Zuletzt gesucht"), -0.484),
                 Node::spacer(),
                 text(
                     cx,
-                    if tv { "Verlauf löschen" } else { "Löschen" },
+                    if tv {
+                        swiftly_l10n::tr("Verlauf löschen")
+                    } else {
+                        swiftly_l10n::tr("Löschen")
+                    },
                     st(if tv { 30.0 } else { 13.0 }, 500),
                     color::TEXT_TERTIARY,
                     Some(1),
@@ -243,9 +247,9 @@ fn group_node(
     title_shown: bool,
 ) -> (Node, usize) {
     let title = if g.kind == SearchKind::Series {
-        "Serien"
+        swiftly_l10n::tr("Serien")
     } else {
-        "Filme"
+        swiftly_l10n::tr("Filme")
     };
     let rows: Vec<Node> = g
         .tiles
@@ -295,7 +299,7 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
     let mut col: Vec<Node> = Vec::new();
     let tv = m.form == Form::Tv;
     if m.form == Form::Desktop {
-        col.push(browse::heading(cx, &m, "Suche"));
+        col.push(browse::heading(cx, &m, swiftly_l10n::tr("Suche")));
     }
     let field = if m.form == Form::Desktop {
         browse::search_field_desktop(cx, &ctx.icons, &p.field)
@@ -343,7 +347,7 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                 ),
                 text(
                     cx,
-                    "Filme, Serien und Folgen durchsuchen",
+                    swiftly_l10n::tr("Filme, Serien und Folgen durchsuchen"),
                     st(if tv { 30.0 } else { 15.0 }, 400),
                     color::TEXT_SECONDARY,
                     Some(1),
@@ -364,7 +368,9 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                     "Nichts gefunden zu \u{201E}{}\u{201C}",
                     if term.is_empty() { typed } else { &term }
                 ),
-                "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe.",
+                swiftly_l10n::tr(
+                    "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe.",
+                ),
                 "",
             )
             .padding(ins(24.0, 0.0, 0.0, 0.0)),
@@ -396,12 +402,12 @@ fn body(cx: &Cx, env: &Env, p: &Parts, ctx: &Ctx) -> Node {
                 cx,
                 &ctx.icons,
                 "hard-drive-x",
-                "Server ist abgetaucht",
+                swiftly_l10n::tr("Server ist abgetaucht"),
                 &format!(
                     "{} antwortet nicht. Läuft er noch, oder hängt das WLAN?",
                     crate::desk::card().server_name()
                 ),
-                "Erneut versuchen",
+                swiftly_l10n::tr("Erneut versuchen"),
             )
             .padding(ins(24.0, 0.0, 0.0, 0.0)),
         ),
@@ -582,7 +588,7 @@ fn tv_field(cx: &Cx, ctx: &Ctx, term: &str) -> Node {
                 caret(),
                 text(
                     cx,
-                    "Titel, Serie, Person",
+                    swiftly_l10n::tr("Titel, Serie, Person"),
                     st(28.0, 400),
                     color::TEXT_TERTIARY,
                     Some(1),
@@ -821,7 +827,7 @@ fn tv_body(cx: &Cx, m: &Metrics, p: &Parts, ctx: &Ctx) -> Node {
                         ctx,
                         w,
                         "magnifying-glass",
-                        "Titel, Serie oder Name. Ab zwei Zeichen wird gesucht.",
+                        swiftly_l10n::tr("Titel, Serie oder Name. Ab zwei Zeichen wird gesucht."),
                     )
                     .padding(ins(240.0, 0.0, 0.0, 0.0)),
                 );
@@ -837,12 +843,12 @@ fn tv_body(cx: &Cx, m: &Metrics, p: &Parts, ctx: &Ctx) -> Node {
             ctx,
             w,
             "hard-drive-x",
-            "Server ist abgetaucht",
+            swiftly_l10n::tr("Server ist abgetaucht"),
             &format!(
                 "{} antwortet nicht. Läuft er noch, oder hängt das WLAN?",
                 crate::desk::card().server_name()
             ),
-            Some("Erneut versuchen"),
+            Some(swiftly_l10n::tr("Erneut versuchen")),
         )),
         SearchStatus::Empty => {
             col.push(tv_empty(
@@ -854,7 +860,9 @@ fn tv_body(cx: &Cx, m: &Metrics, p: &Parts, ctx: &Ctx) -> Node {
                     "Nichts gefunden zu \u{201E}{}\u{201C}",
                     shortened(if term.is_empty() { typed } else { &term })
                 ),
-                "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe.",
+                swiftly_l10n::tr(
+                    "Auf deinem Server steht dazu nichts. Manchmal ist es nur ein Buchstabe.",
+                ),
                 None,
             ));
             if !p.recents.is_empty() {
@@ -910,7 +918,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
         &ctx.icons,
         &ctx.art.hub,
         p.bar.clone(),
-        "Suche",
+        swiftly_l10n::tr("Suche"),
         body(cx, env, p, ctx),
         None,
     );
@@ -1008,7 +1016,11 @@ impl SearchScreen {
             results: vm.results(),
             recents: vm.recents(),
             text: String::new(),
-            field: FieldState::new(TextEditor::single_line()).view(PLACEHOLDER, touch_idiom, 0.0),
+            field: FieldState::new(TextEditor::single_line()).view(
+                swiftly_l10n::tr(PLACEHOLDER),
+                touch_idiom,
+                0.0,
+            ),
             bar: Bar {
                 tab: 3,
                 header: 0,
@@ -1084,7 +1096,11 @@ impl SearchScreen {
     }
     /// The accessibility node of the field.
     pub fn a11y(&self) -> A11yNode {
-        self.field.a11y("field", "Suche", PLACEHOLDER)
+        self.field.a11y(
+            "field",
+            swiftly_l10n::tr("Suche"),
+            swiftly_l10n::tr(PLACEHOLDER),
+        )
     }
     /// The system clipboard the shell provides (default: in memory).
     pub fn set_clipboard(&mut self, clip: Box<dyn Clipboard>) {
@@ -1137,7 +1153,9 @@ impl SearchScreen {
             .frame_of(swiftly_ui::field::CONTENT_KEY)
             .filter(|_| self.field.focused)
             .map(|origin| {
-                let view = self.field.view(PLACEHOLDER, false, self.now);
+                let view = self
+                    .field
+                    .view(swiftly_l10n::tr(PLACEHOLDER), false, self.now);
                 crate::ime::anchor(
                     origin,
                     swiftly_ui::field::candidate_rect(
@@ -1260,7 +1278,7 @@ impl SearchScreen {
             recents: self.vm.recents(),
             text: self.field.editor.text().to_owned(),
             field: self.field.view(
-                PLACEHOLDER,
+                swiftly_l10n::tr(PLACEHOLDER),
                 Form::of(self.ui.env().idiom) == Form::Touch,
                 self.now,
             ),

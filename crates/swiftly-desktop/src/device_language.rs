@@ -12,6 +12,13 @@ pub fn device_language() -> Option<String> {
     imp::device_language()
 }
 
+/// Starts the process in the language of the device: the process-wide locale (`swiftly_l10n::set_locale`) every text of the
+/// app reads becomes the device's language, English when the device names none of ours. Called once, first thing in `main`;
+/// the German default of the l10n core is the key language of the catalogue, not a start language.
+pub fn start_in_device_language() -> swiftly_l10n::Locale {
+    swiftly_l10n::set_device_locale(device_language().as_deref())
+}
+
 /// The first language the variables name, `get` being the environment. Pure, so it is tested without one.
 #[cfg_attr(windows, allow(dead_code))]
 fn from_variables(get: &dyn Fn(&str) -> Option<String>) -> Option<String> {
@@ -123,6 +130,38 @@ mod tests {
             from_variables(&env(&[("LANG", "en_US.UTF-8"), ("LANGUAGE", "de:en")])).as_deref(),
             Some("de")
         );
+    }
+
+    /// The start language of the app: what the device's variables say, English when they name none.
+    fn start_text(pairs: &[(&'static str, &'static str)]) -> String {
+        let locale = swiftly_l10n::Locale::for_device(from_variables(&env(pairs)).as_deref());
+        swiftly_l10n::Translator::new(locale).t("Anmelden")
+    }
+
+    #[test]
+    fn starts_in_english_with_an_english_system_locale() {
+        assert_eq!(start_text(&[("LANG", "en_US.UTF-8")]), "Sign in");
+        assert_eq!(
+            start_text(&[("LANG", "de_DE.UTF-8"), ("LANGUAGE", "en_US:de")]),
+            "Sign in"
+        );
+        assert_eq!(start_text(&[("LC_ALL", "en_GB.UTF-8")]), "Sign in");
+    }
+
+    #[test]
+    fn starts_in_german_with_a_german_system_locale() {
+        assert_eq!(start_text(&[("LANG", "de_DE.UTF-8")]), "Anmelden");
+        assert_eq!(
+            start_text(&[("LANG", "en_US.UTF-8"), ("LC_ALL", "de_AT.UTF-8")]),
+            "Anmelden"
+        );
+    }
+
+    #[test]
+    fn a_device_without_a_language_starts_in_english() {
+        assert_eq!(start_text(&[]), "Sign in");
+        assert_eq!(start_text(&[("LANG", "C.UTF-8")]), "Sign in");
+        assert_eq!(start_text(&[("LANG", "POSIX")]), "Sign in");
     }
 
     #[test]

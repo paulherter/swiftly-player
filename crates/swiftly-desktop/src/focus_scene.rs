@@ -30,10 +30,28 @@ pub fn ui(env: Env, cx: Cx) -> Ui<()> {
             Align::Center,
             Some(24.0),
             vec![
-                themed_button(cx, "btn0", "Abspielen", ButtonStyle::Primary, "act.play")
-                    .default_focus(),
-                themed_button(cx, "btn1", "Merkliste", ButtonStyle::Secondary, "act.list"),
-                themed_button(cx, "btn2", "Mehr", ButtonStyle::Secondary, "act.more"),
+                themed_button(
+                    cx,
+                    "btn0",
+                    swiftly_l10n::tr("Abspielen"),
+                    ButtonStyle::Primary,
+                    "act.play",
+                )
+                .default_focus(),
+                themed_button(
+                    cx,
+                    "btn1",
+                    swiftly_l10n::tr("Merkliste"),
+                    ButtonStyle::Secondary,
+                    "act.list",
+                ),
+                themed_button(
+                    cx,
+                    "btn2",
+                    swiftly_l10n::tr("Mehr"),
+                    ButtonStyle::Secondary,
+                    "act.more",
+                ),
             ],
         )
         .padding(EdgeInsets {

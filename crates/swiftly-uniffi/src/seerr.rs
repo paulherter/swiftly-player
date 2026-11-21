@@ -160,12 +160,18 @@ impl CookieJar for JarAdapter {
     }
 }
 
+/// The sentence for a failed Seerr call, in the process-wide language (the host sets it once at start,
+/// `swiftly_l10n::set_device_locale`).
 pub(crate) fn readable(e: &swiftly_net::ErrorKind) -> CoreError {
+    readable_in(&swiftly_l10n::current_locale(), e)
+}
+
+fn readable_in(locale: &swiftly_l10n::Locale, e: &swiftly_net::ErrorKind) -> CoreError {
     use swiftly_net::{ErrorKind, TransportReason};
     let message = match e {
         ErrorKind::Transport(TransportReason::Other(t)) => t.clone(),
         other => swiftly_l10n::error_text::readable_error(
-            &swiftly_l10n::Translator::new(swiftly_l10n::Locale::parse("de")),
+            &swiftly_l10n::Translator::new(locale.clone()),
             other,
         ),
     };
@@ -343,4 +349,30 @@ pub fn own_headers_cleaned(headers: Vec<OwnHeader>) -> Vec<OwnHeader> {
 #[uniffi::export]
 pub fn own_header_name_suits(name: String) -> bool {
     OwnHeaders::name_suits(&name) && !OwnHeaders::is_locked(&name)
+}
+
+#[cfg(test)]
+mod language_tests {
+    use super::readable_in;
+    use crate::error::CoreError;
+    use swiftly_l10n::Locale;
+    use swiftly_net::ErrorKind;
+
+    fn text(locale: &Locale) -> String {
+        match readable_in(locale, &ErrorKind::NotAuthenticated) {
+            CoreError::Failed { message } => message,
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_error_follows_the_device_language() {
+        assert_eq!(text(&Locale::for_device(Some("en-US"))), "Not signed in.");
+        assert_eq!(
+            text(&Locale::for_device(Some("de-DE"))),
+            "Nicht angemeldet."
+        );
+        // A language with no catalogue falls back to English, not German.
+        assert_eq!(text(&Locale::for_device(None)), "Not signed in.");
+    }
 }

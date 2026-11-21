@@ -322,7 +322,7 @@ pub fn page(
                     let act = p.add(b.action.clone());
                     p.items.push(Item::Season {
                         text: format!("{} {}", words(&b.title), words(&b.value))
-                            .replace("Staffel Staffel", "Staffel"),
+                            .replace("Staffel Staffel", swiftly_l10n::tr("Staffel")),
                         act,
                     });
                 }

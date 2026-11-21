@@ -860,7 +860,7 @@ fn rail_node(
             parts.push(
                 text(
                     cx,
-                    "Alle \u{203a}",
+                    swiftly_l10n::tr("Alle \u{203a}"),
                     swiftly_design::TextStyle {
                         size: 15.0,
                         weight: 500,
@@ -910,7 +910,7 @@ fn rail_node(
                 if show && left {
                     arrow(
                         "caret-left",
-                        "Zur\u{fc}ckbl\u{e4}ttern",
+                        swiftly_l10n::tr("Zur\u{fc}ckbl\u{e4}ttern"),
                         format!("page.l:{}", rail.id),
                         false,
                     )
@@ -923,7 +923,7 @@ fn rail_node(
                 if show && right {
                     arrow(
                         "caret-right",
-                        "Weiterbl\u{e4}ttern",
+                        swiftly_l10n::tr("Weiterbl\u{e4}ttern"),
                         format!("page.r:{}", rail.id),
                         true,
                     )
@@ -1034,7 +1034,7 @@ fn chips_row(
             paging_arrow(
                 icons,
                 "caret-left",
-                "Zur\u{fc}ckbl\u{e4}ttern",
+                swiftly_l10n::tr("Zur\u{fc}ckbl\u{e4}ttern"),
                 &format!("page.l:{CHIPS_RAIL}"),
                 false,
                 4.0,
@@ -1049,7 +1049,7 @@ fn chips_row(
             paging_arrow(
                 icons,
                 "caret-right",
-                "Weiterbl\u{e4}ttern",
+                swiftly_l10n::tr("Weiterbl\u{e4}ttern"),
                 &format!("page.r:{CHIPS_RAIL}"),
                 true,
                 4.0,
@@ -1210,9 +1210,9 @@ fn server_notice(
     }
     let (title, body) = failure.copy(server);
     let button = if busy {
-        "Moment\u{2026}"
+        swiftly_l10n::tr("Moment\u{2026}")
     } else {
-        "Erneut versuchen"
+        swiftly_l10n::tr("Erneut versuchen")
     };
     Some(
         empty_column(cx, icons, "hard-drive-x", title, &body, button, busy)
@@ -1635,6 +1635,7 @@ pub(crate) fn tab_bar(cx: &Cx, env: &Env, p: &Bar, icons: &Icons) -> Node {
         .iter()
         .enumerate()
         .map(|(i, name)| {
+            let name = &swiftly_l10n::tr(name);
             let c = if i == p.tab {
                 crate::look_glow::accent()
             } else {
@@ -1816,13 +1817,18 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
         crate::desk::hint("3"),
         crate::desk::hint("F"),
     ];
-    let tips = ["Start", "Filme", "Serien", "Suche"];
+    let tips = [
+        swiftly_l10n::tr("Start"),
+        swiftly_l10n::tr("Filme"),
+        swiftly_l10n::tr("Serien"),
+        swiftly_l10n::tr("Suche"),
+    ];
     let top: Vec<Node> = (0..TABS.len())
         .map(|i| {
             let (asset, outlined) = tab_icon(i, i == p.tab && !p.downloads && !p.settings);
             row(
                 i == p.tab && !p.downloads && !p.settings,
-                TABS[i],
+                swiftly_l10n::tr(TABS[i]),
                 asset,
                 outlined,
                 Some(hints[i].clone()),
@@ -1834,7 +1840,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
     let mut mine = vec![
         text(
             cx,
-            "Meins",
+            swiftly_l10n::tr("Meins"),
             swiftly_design::TextStyle {
                 size: 12.0,
                 weight: 600,
@@ -1850,19 +1856,19 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
     if p.mine.0 {
         mine.push(row(
             p.tab == 4 && !p.downloads && !p.settings,
-            "Merkliste",
+            swiftly_l10n::tr("Merkliste"),
             WATCHLIST_ICON,
             false,
             None,
             "go:watchlist",
-            "Merkliste",
+            swiftly_l10n::tr("Merkliste"),
         ));
     }
     if p.mine.1 {
         // Tab icon A: outline idle, filled while selected.
         mine.push(row(
             p.downloads,
-            "Downloads",
+            swiftly_l10n::tr("Downloads"),
             if p.downloads {
                 "tab-downloads.fill"
             } else {
@@ -1871,7 +1877,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
             !p.downloads,
             None,
             "go:downloads",
-            "Downloads",
+            swiftly_l10n::tr("Downloads"),
         ));
     }
     if !(p.mine.0 || p.mine.1) {
@@ -1886,7 +1892,7 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
             crate::desk::Card::Account { name, server, .. } => {
                 (name.clone(), Some(server.clone()).filter(|s| !s.is_empty()))
             }
-            crate::desk::Card::Hidden => ("Konto".to_owned(), None),
+            crate::desk::Card::Hidden => (swiftly_l10n::tr("Konto").to_owned(), None),
         };
         let letter = || {
             text(
@@ -1965,10 +1971,14 @@ pub(crate) fn sidebar(cx: &Cx, p: &Bar, icons: &Icons, hub: &crate::hub::HubSlot
             .focusable(focus_id("profile"), None)
             .focus_ring(color(crate::look_glow::accent()), 8.0)
             .a11y(
-                swiftly_ui::a11y::A11yNode::new("", swiftly_ui::a11y::Role::Button, "Konto")
-                    .with_selected(p.settings),
+                swiftly_ui::a11y::A11yNode::new(
+                    "",
+                    swiftly_ui::a11y::Role::Button,
+                    swiftly_l10n::tr("Konto"),
+                )
+                .with_selected(p.settings),
             )
-            .tooltip("Einstellungen")
+            .tooltip(swiftly_l10n::tr("Einstellungen"))
             .key("profile")
             .on_tap(Action::from("profile"))
             .padding(ins(0.0, 10.0, 10.0, 10.0))
@@ -2205,7 +2215,7 @@ pub(crate) fn header_bar(cx: &Cx, p: &Bar, initial: &str) -> Node {
     let mut tabs: Vec<Node> = TABS
         .iter()
         .enumerate()
-        .map(|(i, name)| tv_tab(cx, i, name, i == p.tab))
+        .map(|(i, name)| tv_tab(cx, i, swiftly_l10n::tr(name), i == p.tab))
         .collect();
     tabs.push(Node::spacer());
     let face = text(
@@ -2378,7 +2388,7 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
         let column = Node::vstack(
             Align::Start,
             Some(0.0),
-            vec![heading(TABS[p.tab.min(TABS.len() - 1)])],
+            vec![heading(swiftly_l10n::tr(TABS[p.tab.min(TABS.len() - 1)]))],
         )
         .padding(ins(dsk::SPACE_CONTENT_TOP, 0.0, 0.0, 0.0));
         return fill_frame(column, Alignment::TOP_LEADING);
@@ -2426,14 +2436,18 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
         );
         if form == Form::Desktop {
             if p.chips.is_empty() {
-                Node::vstack(Align::Start, Some(22.0), vec![heading("Start"), stack])
+                Node::vstack(
+                    Align::Start,
+                    Some(22.0),
+                    vec![heading(swiftly_l10n::tr("Start")), stack],
+                )
             } else {
                 // Mac: 22 under the heading, the chips on their 42 frame, then the 40 of the rail spacing.
                 Node::vstack(
                     Align::Start,
                     Some(0.0),
                     vec![
-                        heading("Start"),
+                        heading(swiftly_l10n::tr("Start")),
                         chips_row(cx, &m, &ctx.icons, &p.chips, &p.rail_hover)
                             .padding(ins(22.0, 0.0, 0.0, 0.0)),
                         stack.padding(ins(m.rails_spacing, 0.0, 0.0, 0.0)),
@@ -2458,7 +2472,7 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
                     "hard-drive-x",
                     title,
                     &body,
-                    "Moment…",
+                    swiftly_l10n::tr("Moment…"),
                     true,
                 )
             }
@@ -2489,15 +2503,15 @@ fn content(cx: &Cx, env: &Env, form: Form, pad: bool, p: &Parts, ctx: &Ctx) -> N
                     "hard-drive-x",
                     title,
                     &body,
-                    "Erneut versuchen",
+                    swiftly_l10n::tr("Erneut versuchen"),
                 )
             }
             Status::Ready | Status::SignedOut => empty_state(
                 cx,
                 &ctx.icons,
                 "tray",
-                "Hier ist noch nichts",
-                "Sobald der Server Titel hat, stehen sie hier.",
+                swiftly_l10n::tr("Hier ist noch nichts"),
+                swiftly_l10n::tr("Sobald der Server Titel hat, stehen sie hier."),
                 "",
             ),
         };
@@ -2645,7 +2659,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
             .overlay(tab_bar(cx, env, &p.bar(), &ctx.icons), Alignment::BOTTOM),
         Form::Desktop => {
             // The window's top strip fades in over the content with the scroll, like the Swift toolbar zone.
-            let strip = state_bar(cx, "Start", p.header);
+            let strip = state_bar(cx, swiftly_l10n::tr("Start"), p.header);
             let content_side = crate::look_glow::behind(
                 fill_frame(body, Alignment::TOP_LEADING).overlay(strip, Alignment::TOP),
                 p.glow,
@@ -2683,7 +2697,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx) -> Node {
             cx,
             &ctx.icons,
             &m,
-            "Abspielen auf \u{2026}",
+            swiftly_l10n::tr("Abspielen auf \u{2026}"),
             &crate::tile_menu::device_rows(&mcx(id)),
             "pick.d.",
             false,

@@ -180,7 +180,13 @@ fn detail(cx: &Cx, env: &Env, art: &Rc<Art>, r: usize, i: usize) -> Node {
         Align::Start,
         Some(12.0),
         vec![
-            press_button(cx, "play", "Abspielen", ButtonStyle::Primary, "detail.play"),
+            press_button(
+                cx,
+                "play",
+                swiftly_l10n::tr("Abspielen"),
+                ButtonStyle::Primary,
+                "detail.play",
+            ),
             press_button(
                 cx,
                 "list",

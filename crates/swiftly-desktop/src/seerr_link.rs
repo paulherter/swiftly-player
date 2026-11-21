@@ -58,16 +58,16 @@ pub trait SeerrLink {
 /// The German word of a session state (`SeerrSettingsView.sessionText`).
 pub fn session_word(s: SeerrSessionState) -> &'static str {
     match s {
-        SeerrSessionState::Valid => "Aktiv",
-        SeerrSessionState::Invalid => "Sitzung abgelaufen",
-        SeerrSessionState::Unreachable => "Seerr nicht erreichbar",
+        SeerrSessionState::Valid => swiftly_l10n::tr("Aktiv"),
+        SeerrSessionState::Invalid => swiftly_l10n::tr("Sitzung abgelaufen"),
+        SeerrSessionState::Unreachable => swiftly_l10n::tr("Seerr nicht erreichbar"),
     }
 }
 
 /// The German sentence of a failed sign-in: the core's cause words (`swiftly_vm::cause_text`), the same on every platform.
 fn say(e: &ErrorKind, method: SignInMethod) -> String {
     swiftly_vm::cause_text(
-        &swiftly_l10n::Translator::new(swiftly_l10n::Locale::parse("de")),
+        &swiftly_l10n::Translator::new(swiftly_l10n::current_locale()),
         &SignInCause::classify(e, method),
     )
 }
@@ -86,13 +86,13 @@ impl SeerrLink for ScriptedSeerr {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if password == "falsch" {
-            s.error = Some("Name oder Passwort stimmen nicht.".into());
+            s.error = Some(swiftly_l10n::tr("Name oder Passwort stimmen nicht.").into());
         } else {
             *s = SeerrConn {
                 connected: true,
                 address: swiftly_seerr::Seerr::address(address)
                     .unwrap_or_else(|| address.to_owned()),
-                session: "Aktiv".into(),
+                session: swiftly_l10n::tr("Aktiv").into(),
                 busy: false,
                 error: None,
             };
@@ -184,7 +184,7 @@ impl SeerrLink for LiveSeerr {
                     *s = SeerrConn {
                         connected: true,
                         address: access.address,
-                        session: "Aktiv".into(),
+                        session: swiftly_l10n::tr("Aktiv").into(),
                         busy: false,
                         error: None,
                     };

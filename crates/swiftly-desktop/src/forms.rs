@@ -819,7 +819,7 @@ fn header(cx: &Cx, icons: &Icons, env: &Env, f: &Fm, title: &str, right: Option<
         icons
             .node("caret-left", sz, true, color(color::TEXT_PRIMARY))
             .frame(Some(44.0), Some(44.0), Alignment::CENTER)
-            .a11y_label(swiftly_ui::a11y::Role::Button, "Zurück"),
+            .a11y_label(swiftly_ui::a11y::Role::Button, swiftly_l10n::tr("Zurück")),
         f,
         "back",
         22.0,
@@ -1017,12 +1017,12 @@ pub fn back_arrow(icons: &Icons, f: &Fm) -> Node {
         icons
             .node("caret-left", 16.0, true, color(color::TEXT_PRIMARY))
             .frame(Some(30.0), Some(28.0), Alignment::CENTER)
-            .a11y_label(swiftly_ui::a11y::Role::Button, "Zurück"),
+            .a11y_label(swiftly_ui::a11y::Role::Button, swiftly_l10n::tr("Zurück")),
         f,
         "back",
         6.0,
     )
-    .tooltip("Zurück")
+    .tooltip(swiftly_l10n::tr("Zurück"))
     .padding(ins(12.0, 20.0, 0.0, 0.0))
 }
 

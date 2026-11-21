@@ -52,7 +52,7 @@ impl LoadSpec {
             recomputed: false,
             can_clean: false,
             quality: Some("Original (MKV)".into()),
-            sound: Some("Original".into()),
+            sound: Some(swiftly_l10n::tr("Original").into()),
             free: 48_000_000_000,
             free_after: 45_600_000_000,
             dispensable: 0,
@@ -67,11 +67,15 @@ impl LoadSpec {
 /// The sentence under "Laden" (`LoadPanel`, `MacDownloads.swift:230-236`).
 fn hint_text(spec: &LoadSpec) -> &'static str {
     if spec.recomputed {
-        "Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit."
+        swiftly_l10n::tr(
+            "Der Server wandelt die Datei beim Laden um. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit.",
+        )
     } else if spec.converted {
-        "Der Server legt die Datei beim Laden mit nur einer Tonspur an. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit."
+        swiftly_l10n::tr(
+            "Der Server legt die Datei beim Laden mit nur einer Tonspur an. Die Größe ist geschätzt, Untertitel kommen als eigene Dateien mit.",
+        )
     } else {
-        "Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen."
+        swiftly_l10n::tr("Swiftly lädt die Originaldatei, in derselben Qualität wie beim Streamen.")
     }
 }
 
@@ -202,13 +206,20 @@ pub fn load_sheet(cx: &Cx, icons: &Icons, env: &Env, spec: &LoadSpec) -> Node {
         )
     };
     if !spec.suffices() {
-        col.push(head("Nicht genug Platz"));
-        col.push(line(cx, icons, "hard-drive", "Diese Datei", &sizes, false));
+        col.push(head(swiftly_l10n::tr("Nicht genug Platz")));
         col.push(line(
             cx,
             icons,
             "hard-drive",
-            "Frei auf dem Gerät",
+            swiftly_l10n::tr("Diese Datei"),
+            &sizes,
+            false,
+        ));
+        col.push(line(
+            cx,
+            icons,
+            "hard-drive",
+            swiftly_l10n::tr("Frei auf dem Gerät"),
             &size(spec.free),
             true,
         ));
@@ -217,42 +228,68 @@ pub fn load_sheet(cx: &Cx, icons: &Icons, env: &Env, spec: &LoadSpec) -> Node {
                 cx,
                 icons,
                 "check-circle",
-                "Gesehene Titel",
+                swiftly_l10n::tr("Gesehene Titel"),
                 &size(spec.dispensable),
                 false,
             ));
-            col.push(btn("load.clean", "Gesehene entfernen und laden", true));
-            col.push(btn("load.close", "Abbrechen", false));
+            col.push(btn(
+                "load.clean",
+                swiftly_l10n::tr("Gesehene entfernen und laden"),
+                true,
+            ));
+            col.push(btn("load.close", swiftly_l10n::tr("Abbrechen"), false));
         } else {
-            col.push(hint(cx, "Auch nach dem Entfernen der gesehenen Titel reicht der Platz nicht. In den Einstellungen unter Offline steht, was belegt ist."));
-            col.push(btn("load.close", "Verstanden", false));
+            col.push(hint(cx, swiftly_l10n::tr("Auch nach dem Entfernen der gesehenen Titel reicht der Platz nicht. In den Einstellungen unter Offline steht, was belegt ist.")));
+            col.push(btn("load.close", swiftly_l10n::tr("Verstanden"), false));
         }
     } else if spec.no_wlan {
         col.push(head(&format!("{} laden", spec.title)));
-        col.push(line(cx, icons, "hard-drive", "Größe", &sizes, false));
+        col.push(line(
+            cx,
+            icons,
+            "hard-drive",
+            swiftly_l10n::tr("Größe"),
+            &sizes,
+            false,
+        ));
         col.push(line(
             cx,
             icons,
             "wifi-slash",
-            "Kein WLAN",
-            "Mobilfunk",
+            swiftly_l10n::tr("Kein WLAN"),
+            swiftly_l10n::tr("Mobilfunk"),
             true,
         ));
-        col.push(btn("load.queue", "In die Warteschlange", true));
-        col.push(btn("load.cell", "Jetzt über Mobilfunk laden", false));
+        col.push(btn(
+            "load.queue",
+            swiftly_l10n::tr("In die Warteschlange"),
+            true,
+        ));
+        col.push(btn(
+            "load.cell",
+            swiftly_l10n::tr("Jetzt über Mobilfunk laden"),
+            false,
+        ));
         col.push(hint(
             cx,
-            "Der Download startet von selbst, sobald WLAN da ist.",
+            swiftly_l10n::tr("Der Download startet von selbst, sobald WLAN da ist."),
         ));
     } else {
         col.push(head(&format!("{} laden", spec.title)));
-        col.push(line(cx, icons, "hard-drive", "Größe", &sizes, false));
+        col.push(line(
+            cx,
+            icons,
+            "hard-drive",
+            swiftly_l10n::tr("Größe"),
+            &sizes,
+            false,
+        ));
         if let Some(q) = &spec.quality {
             col.push(line_with(
                 cx,
                 icons,
                 "sparkle",
-                "Qualität",
+                swiftly_l10n::tr("Qualität"),
                 q,
                 false,
                 true,
@@ -264,7 +301,7 @@ pub fn load_sheet(cx: &Cx, icons: &Icons, env: &Env, spec: &LoadSpec) -> Node {
                 cx,
                 icons,
                 "speaker-high",
-                "Ton",
+                swiftly_l10n::tr("Ton"),
                 a,
                 false,
                 true,
@@ -275,11 +312,11 @@ pub fn load_sheet(cx: &Cx, icons: &Icons, env: &Env, spec: &LoadSpec) -> Node {
             cx,
             icons,
             "hard-drive",
-            "Danach frei",
+            swiftly_l10n::tr("Danach frei"),
             &size(spec.free_after),
             false,
         ));
-        col.push(btn("load.go", "Laden", true));
+        col.push(btn("load.go", swiftly_l10n::tr("Laden"), true));
         col.push(hint(cx, hint_text(spec)));
     }
     let handle = Node::rect(Color::new(1.0, 1.0, 1.0, 0.18), 2.5)
@@ -499,7 +536,13 @@ fn mac_hint(cx: &Cx, s: &str) -> Node {
 /// The "Abbrechen" way out, always present (Esc reports the same through the screen's back).
 fn mac_cancel(cx: &Cx, f: &Fm) -> Node {
     let n = wide(
-        plain(cx, "Abbrechen", 15.0, 400, color::TEXT_SECONDARY),
+        plain(
+            cx,
+            swiftly_l10n::tr("Abbrechen"),
+            15.0,
+            400,
+            color::TEXT_SECONDARY,
+        ),
         Alignment::CENTER,
     )
     .padding(ins(0.0, 0.0, 12.0, 0.0));
@@ -546,7 +589,7 @@ pub fn mac_load_panel(
     let head = if spec.suffices() {
         format!("{} laden", spec.title)
     } else {
-        "Nicht genug Platz".to_owned()
+        swiftly_l10n::tr("Nicht genug Platz").to_owned()
     };
     col.push(wide(
         plain(cx, &head, 15.0, 600, color::TEXT_PRIMARY).padding(ins(12.0, 14.0, 10.0, 14.0)),
@@ -561,7 +604,7 @@ pub fn mac_load_panel(
             cx,
             icons,
             "sparkle",
-            "Qualit\u{00E4}t",
+            swiftly_l10n::tr("Qualit\u{00E4}t"),
             q,
             "load.quality",
         )),
@@ -570,16 +613,16 @@ pub fn mac_load_panel(
                 cx,
                 icons,
                 "sparkle",
-                "Qualit\u{00E4}t",
+                swiftly_l10n::tr("Qualit\u{00E4}t"),
                 q,
                 false,
             ));
             // The note of `LoadSelection`: the quality is not a choice because the server offers no smaller version.
             col.push(hint(
                 cx,
-                &swiftly_l10n::t(
+                &swiftly_l10n::t(swiftly_l10n::tr(
                     "Kleinere Fassungen gibt der Server f\u{00FC}r dieses Konto nicht frei.",
-                ),
+                )),
             ));
         }
         _ => {}
@@ -589,7 +632,7 @@ pub fn mac_load_panel(
             cx,
             icons,
             "hard-drive",
-            "Diese Datei",
+            swiftly_l10n::tr("Diese Datei"),
             &sizes,
             false,
         ));
@@ -597,7 +640,14 @@ pub fn mac_load_panel(
             quality(&mut col);
         }
         if let (Some(a), true) = (&spec.sound, sound_pick) {
-            col.push(mac_pick(cx, icons, "speaker-high", "Ton", a, "load.sound"));
+            col.push(mac_pick(
+                cx,
+                icons,
+                "speaker-high",
+                swiftly_l10n::tr("Ton"),
+                a,
+                "load.sound",
+            ));
         }
         col.push(mac_detail(
             cx,
@@ -612,7 +662,7 @@ pub fn mac_load_panel(
                 cx,
                 icons,
                 "check-circle",
-                "Gesehene Titel",
+                swiftly_l10n::tr("Gesehene Titel"),
                 &size(spec.dispensable),
                 false,
             ));
@@ -622,7 +672,7 @@ pub fn mac_load_panel(
                     icons,
                     &f,
                     "load.clean",
-                    "Gesehene entfernen und laden",
+                    swiftly_l10n::tr("Gesehene entfernen und laden"),
                     true,
                 )
                 .padding(ins(6.0, 14.0, 12.0, 14.0)),
@@ -630,7 +680,9 @@ pub fn mac_load_panel(
         } else {
             col.push(mac_hint(
                 cx,
-                "Auch nach dem Entfernen der gesehenen Titel reicht der Platz nicht.",
+                swiftly_l10n::tr(
+                    "Auch nach dem Entfernen der gesehenen Titel reicht der Platz nicht.",
+                ),
             ));
         }
     } else if spec.no_wlan {
@@ -638,7 +690,7 @@ pub fn mac_load_panel(
             cx,
             icons,
             "hard-drive",
-            "Gr\u{00F6}\u{00DF}e",
+            swiftly_l10n::tr("Gr\u{00F6}\u{00DF}e"),
             &sizes,
             false,
         ));
@@ -646,41 +698,60 @@ pub fn mac_load_panel(
             cx,
             icons,
             "wifi-slash",
-            "Kein WLAN",
-            "Mobilfunk",
+            swiftly_l10n::tr("Kein WLAN"),
+            swiftly_l10n::tr("Mobilfunk"),
             true,
         ));
         col.push(
-            sheet_button(cx, icons, &f, "load.queue", "In die Warteschlange", true)
-                .padding(ins(6.0, 14.0, 12.0, 14.0)),
+            sheet_button(
+                cx,
+                icons,
+                &f,
+                "load.queue",
+                swiftly_l10n::tr("In die Warteschlange"),
+                true,
+            )
+            .padding(ins(6.0, 14.0, 12.0, 14.0)),
         );
     } else {
         col.push(mac_detail(
             cx,
             icons,
             "hard-drive",
-            "Gr\u{00F6}\u{00DF}e",
+            swiftly_l10n::tr("Gr\u{00F6}\u{00DF}e"),
             &sizes,
             false,
         ));
         quality(&mut col);
         match (&spec.sound, sound_pick) {
-            (Some(a), true) => {
-                col.push(mac_pick(cx, icons, "speaker-high", "Ton", a, "load.sound"))
-            }
-            (Some(a), false) => col.push(mac_detail(cx, icons, "speaker-high", "Ton", a, false)),
+            (Some(a), true) => col.push(mac_pick(
+                cx,
+                icons,
+                "speaker-high",
+                swiftly_l10n::tr("Ton"),
+                a,
+                "load.sound",
+            )),
+            (Some(a), false) => col.push(mac_detail(
+                cx,
+                icons,
+                "speaker-high",
+                swiftly_l10n::tr("Ton"),
+                a,
+                false,
+            )),
             _ => {}
         }
         col.push(mac_detail(
             cx,
             icons,
             "hard-drive",
-            "Danach frei",
+            swiftly_l10n::tr("Danach frei"),
             &size(spec.free_after),
             false,
         ));
         col.push(
-            sheet_button(cx, icons, &f, "load.go", "Laden", true)
+            sheet_button(cx, icons, &f, "load.go", swiftly_l10n::tr("Laden"), true)
                 .padding(ins(6.0, 14.0, 12.0, 14.0)),
         );
         col.push(mac_hint(cx, hint_text(spec)));

@@ -19,7 +19,9 @@ CV=$(grep -m1 '^version' crates/swiftly-desktop/Cargo.toml | cut -d'"' -f2)
 # The build number is the Apple apps' CURRENT_PROJECT_VERSION: the packaged app shows it in Settings ("Swiftly Player 1.1.0 (Build 49)"),
 # sends it with the update check and carries it in the Windows file version. build.rs reads it from the same file; the variable
 # makes it explicit here, and the packaging stops when the built binary does not carry exactly that row.
-B=$(grep -m1 'CURRENT_PROJECT_VERSION:' project.yml | sed -E 's/.*CURRENT_PROJECT_VERSION: *"?([0-9]+)"?.*/\1/')
+# SWIFTLY_PACKAGE_BUILD sets the number for this packaging run only (a desktop-only build that is numbered ahead of the Apple apps);
+# project.yml and with it the Apple and Android numbers stay untouched.
+B=${SWIFTLY_PACKAGE_BUILD:-$(grep -m1 'CURRENT_PROJECT_VERSION:' project.yml | sed -E 's/.*CURRENT_PROJECT_VERSION: *"?([0-9]+)"?.*/\1/')}
 case "$B" in ''|*[!0-9]*) echo "no build number: CURRENT_PROJECT_VERSION in project.yml reads '$B'" >&2; exit 1 ;; esac
 export SWIFTLY_BUILD_NUMBER=$B
 ROW="Swiftly Player $V (Build $B)"

@@ -15,7 +15,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use swiftly_design::tokens_generated::color;
 use swiftly_jellyfin::{OwnHeader, OwnHeaders};
-use swiftly_l10n::Locale;
 use swiftly_layout::{Align, Alignment};
 use swiftly_library::StartRail;
 use swiftly_library::start_libraries::StartLibrary;
@@ -226,7 +225,7 @@ fn looks_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
             Node::spacer(),
             text(
                 cx,
-                "Ändern",
+                swiftly_l10n::tr("Ändern"),
                 small(17.0, 400),
                 crate::look_glow::accent(),
                 Some(1),
@@ -242,7 +241,7 @@ fn looks_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
             .a11y(swiftly_ui::a11y::A11yNode::new(
                 "",
                 swiftly_ui::a11y::Role::Button,
-                "Ändern",
+                swiftly_l10n::tr("Ändern"),
             )),
     ];
     if let Some(end) = &p.look.season_end {
@@ -252,13 +251,13 @@ fn looks_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
             f,
             "look:effects",
             "sparkle",
-            "Fledermäuse und Spinnennetz",
+            swiftly_l10n::tr("Fledermäuse und Spinnennetz"),
             Some(&format!("Bis {end} dabei. Farbe und Icon bleiben.")),
             Trail::Switch(p.look.effects),
             true,
         ));
     }
-    forms::setting_group_at(cx, f, "Looks", 28.0, rows, 52.0)
+    forms::setting_group_at(cx, f, swiftly_l10n::tr("Looks"), 28.0, rows, 52.0)
 }
 
 struct Ctx {
@@ -315,9 +314,9 @@ fn settings_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
         // `SupportSettingsGroup`: always reachable, below the device settings, before the version line. The tv row
         // (`TVSupportEntryRow`) names that everything stays free.
         let under = if f.form == Form::Tv {
-            "Mit einem Kaffee Danke sagen. Alles bleibt für alle kostenlos."
+            swiftly_l10n::tr("Mit einem Kaffee Danke sagen. Alles bleibt für alle kostenlos.")
         } else {
-            "Mit einem Kaffee Danke sagen"
+            swiftly_l10n::tr("Mit einem Kaffee Danke sagen")
         };
         let heart = forms::row_kb(
             cx,
@@ -325,7 +324,7 @@ fn settings_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             f,
             "go:support",
             "heart.fill",
-            "Swiftly unterstützen",
+            swiftly_l10n::tr("Swiftly unterstützen"),
             Some(under),
             Trail::Chevron,
             true,
@@ -531,7 +530,7 @@ fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                 r(
                     "go:server",
                     "plug",
-                    "Server hinzufügen",
+                    swiftly_l10n::tr("Server hinzufügen"),
                     "Du bleibst auch beim anderen angemeldet",
                     Trail::Chevron,
                 ),
@@ -546,29 +545,33 @@ fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                 r(
                     "go:playback",
                     "play",
-                    "Wiedergabe",
-                    "Qualität, Sprache, Player",
+                    swiftly_l10n::tr("Wiedergabe"),
+                    swiftly_l10n::tr("Qualität, Sprache, Player"),
                     Trail::Chevron,
                 ),
                 r(
                     "go:presentation",
                     "squares-four",
-                    "Darstellung",
-                    "Startseite, Reihen, Genres",
+                    swiftly_l10n::tr("Darstellung"),
+                    swiftly_l10n::tr("Startseite, Reihen, Genres"),
                     Trail::Chevron,
                 ),
                 r(
                     "go:settings",
                     "gear",
-                    "Allgemein",
-                    "Downloads, Server, Sync",
+                    swiftly_l10n::tr("Allgemein"),
+                    swiftly_l10n::tr("Downloads, Server, Sync"),
                     Trail::Chevron,
                 ),
                 r(
                     "go:downloads",
                     "arrow-circle-down",
-                    "Downloads",
-                    &swiftly_l10n::plural("%lld Titel auf diesem Gerät", p.stored.0 as i64, &[]),
+                    swiftly_l10n::tr("Downloads"),
+                    &swiftly_l10n::plural(
+                        swiftly_l10n::tr("%lld Titel auf diesem Gerät"),
+                        p.stored.0 as i64,
+                        &[],
+                    ),
                     Trail::ValueChevron(p.stored.1.clone()),
                 ),
             ],
@@ -600,7 +603,7 @@ fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             f,
             "go:signout",
             "sign-out",
-            "Abmelden",
+            swiftly_l10n::tr("Abmelden"),
             None,
             Trail::None,
             true,
@@ -621,7 +624,7 @@ fn profile_body(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                 r(
                     "go:server",
                     "plug",
-                    "Server hinzufügen",
+                    swiftly_l10n::tr("Server hinzufügen"),
                     "Du bleibst auch beim anderen angemeldet",
                     Trail::Chevron,
                 ),
@@ -663,12 +666,22 @@ fn pages_view(p: &Parts, env: &Env, cx: &Cx, ctx: &Ctx, f: &Fm) -> Option<Node> 
             ctx.licences.as_ref()?.components.get(i)?,
         ),
         Page::Offering => settings_pages::offering_page(cx, icons, env, f, ctx.licences.as_ref()?),
-        Page::LibrarySelection => {
-            settings_pages::pick_page(cx, icons, env, f, "Bibliothek hinzufügen", &p.libs_pick)
-        }
-        Page::GenreSelection => {
-            settings_pages::pick_page(cx, icons, env, f, "Genre hinzufügen", &p.genres_pick)
-        }
+        Page::LibrarySelection => settings_pages::pick_page(
+            cx,
+            icons,
+            env,
+            f,
+            swiftly_l10n::tr("Bibliothek hinzufügen"),
+            &p.libs_pick,
+        ),
+        Page::GenreSelection => settings_pages::pick_page(
+            cx,
+            icons,
+            env,
+            f,
+            swiftly_l10n::tr("Genre hinzufügen"),
+            &p.genres_pick,
+        ),
         _ => return None,
     })
 }
@@ -696,11 +709,11 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
             ),
             &[
                 SheetRow {
-                    label: "Behalten".into(),
+                    label: swiftly_l10n::tr("Behalten").into(),
                     selected: false,
                 },
                 SheetRow {
-                    label: "Alles entfernen".into(),
+                    label: swiftly_l10n::tr("Alles entfernen").into(),
                     selected: false,
                 },
             ],
@@ -714,7 +727,7 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
             &m,
             &format!("Von {} abmelden?", p.user),
             &[SheetRow {
-                label: "Abmelden".into(),
+                label: swiftly_l10n::tr("Abmelden").into(),
                 selected: false,
             }],
             "pick.o.",
@@ -750,10 +763,16 @@ fn view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>) -> Node {
         None
     };
     let (title, body) = match p.page {
-        Page::Profile => ("Profil", profile_body(cx, &f, p, ctx)),
-        Page::Playback => ("Wiedergabe", settings_body(cx, &f, p, ctx)),
-        Page::Presentation => ("Darstellung", settings_body(cx, &f, p, ctx)),
-        _ => ("Allgemein", settings_body(cx, &f, p, ctx)),
+        Page::Profile => (swiftly_l10n::tr("Profil"), profile_body(cx, &f, p, ctx)),
+        Page::Playback => (
+            swiftly_l10n::tr("Wiedergabe"),
+            settings_body(cx, &f, p, ctx),
+        ),
+        Page::Presentation => (
+            swiftly_l10n::tr("Darstellung"),
+            settings_body(cx, &f, p, ctx),
+        ),
+        _ => (swiftly_l10n::tr("Allgemein"), settings_body(cx, &f, p, ctx)),
     };
     forms::page(cx, &ctx.icons, env, &f, title, None, body, overlay)
 }
@@ -932,8 +951,10 @@ fn libs_pick_view(
     };
     settings_pages::PickView {
         offer,
-        none: "Auf deinem Server gibt es keine Bibliotheken.",
-        all_chosen: "Alle Bibliotheken und Sammlungen stehen schon auf der Startseite.",
+        none: swiftly_l10n::tr("Auf deinem Server gibt es keine Bibliotheken."),
+        all_chosen: swiftly_l10n::tr(
+            "Alle Bibliotheken und Sammlungen stehen schon auf der Startseite.",
+        ),
         total,
         libraries: true,
     }
@@ -957,8 +978,8 @@ fn genres_pick_view(offer: &Offer<String>, chosen: &[String]) -> settings_pages:
     };
     settings_pages::PickView {
         offer,
-        none: "Auf deinem Server sind keine Genres hinterlegt.",
-        all_chosen: "Alle Genres stehen schon auf der Startseite.",
+        none: swiftly_l10n::tr("Auf deinem Server sind keine Genres hinterlegt."),
+        all_chosen: swiftly_l10n::tr("Alle Genres stehen schon auf der Startseite."),
         total,
         libraries: false,
     }
@@ -1125,13 +1146,13 @@ fn home_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
             f,
             "home.add",
             "plus",
-            "Bibliothek hinzufügen",
+            swiftly_l10n::tr("Bibliothek hinzufügen"),
             None,
             Trail::Chevron,
             true,
         ),
     ];
-    forms::setting_group_at(cx, f, "Startseite", 28.0, rows, 52.0)
+    forms::setting_group_at(cx, f, swiftly_l10n::tr("Startseite"), 28.0, rows, 52.0)
 }
 
 /// The group "Genres" (`AppearanceView.genres`): the two forms as check rows, the chosen genres, "Genre hinzufügen".
@@ -1192,12 +1213,12 @@ fn genres_group(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Node {
         f,
         "genre.add",
         "plus",
-        "Genre hinzufügen",
+        swiftly_l10n::tr("Genre hinzufügen"),
         None,
         Trail::Chevron,
         true,
     ));
-    forms::setting_group_at(cx, f, "Genres", 20.0, rows, 52.0)
+    forms::setting_group_at(cx, f, swiftly_l10n::tr("Genres"), 20.0, rows, 52.0)
 }
 
 fn version_line(cx: &Cx, s: &str, top: f32) -> Node {
@@ -1299,7 +1320,11 @@ fn profile_left(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                     Some(1.0),
                     vec![
                         line(name, small(15.0, 600), false),
-                        line("Klicken zum Wechseln", small(13.0, 400), true),
+                        line(
+                            swiftly_l10n::tr("Klicken zum Wechseln"),
+                            small(13.0, 400),
+                            true,
+                        ),
                     ],
                 )
                 .layout_priority(1.0),
@@ -1324,7 +1349,11 @@ fn profile_left(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             ctx.icons
                 .node("plus", 20.0, false, color(color::TEXT_PRIMARY))
                 .frame(Some(26.0), None, Alignment::CENTER),
-            line("Konto hinzufügen", small(17.0, 600), false),
+            line(
+                swiftly_l10n::tr("Konto hinzufügen"),
+                small(17.0, 600),
+                false,
+            ),
             Node::spacer(),
         ],
     )
@@ -1362,7 +1391,7 @@ fn profile_left(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                 "look:open",
                 "palette",
                 p.look.look.name_key,
-                "Dein aktueller Look",
+                swiftly_l10n::tr("Dein aktueller Look"),
                 Trail::Chevron,
             )],
         ),
@@ -1373,8 +1402,8 @@ fn profile_left(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             vec![r(
                 "go:support",
                 "heart",
-                "Swiftly unterstützen",
-                "Mit einem Kaffee Danke sagen",
+                swiftly_l10n::tr("Swiftly unterstützen"),
+                swiftly_l10n::tr("Mit einem Kaffee Danke sagen"),
                 Trail::Chevron,
             )],
         ),
@@ -1386,22 +1415,22 @@ fn profile_left(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                 r(
                     "go:playback",
                     "play",
-                    "Wiedergabe",
-                    "Qualität, Sprache, Player",
+                    swiftly_l10n::tr("Wiedergabe"),
+                    swiftly_l10n::tr("Qualität, Sprache, Player"),
                     Trail::Chevron,
                 ),
                 r(
                     "go:presentation",
                     "text-aa",
-                    "Darstellung",
-                    "Startseite, Reihen, Genres",
+                    swiftly_l10n::tr("Darstellung"),
+                    swiftly_l10n::tr("Startseite, Reihen, Genres"),
                     Trail::Chevron,
                 ),
                 r(
                     "go:settings",
                     "gear",
-                    "Allgemein",
-                    "Downloads, Server, Sync",
+                    swiftly_l10n::tr("Allgemein"),
+                    swiftly_l10n::tr("Downloads, Server, Sync"),
                     Trail::Chevron,
                 ),
             ],
@@ -1425,8 +1454,8 @@ fn profile_right(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
     let mut account = vec![r(
         "go:server",
         "plug",
-        "Server hinzufügen",
-        Some("Jellyfin, Emby oder Plex, auch gemischt"),
+        swiftly_l10n::tr("Server hinzufügen"),
+        Some(swiftly_l10n::tr("Jellyfin, Emby oder Plex, auch gemischt")),
         Trail::Chevron,
     )];
     if p.quick_connect {
@@ -1434,11 +1463,17 @@ fn profile_right(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
             "go:quick",
             "monitor-play",
             "Quick Connect",
-            Some("Code vom Fernseher eingeben"),
+            Some(swiftly_l10n::tr("Code vom Fernseher eingeben")),
             Trail::Chevron,
         ));
     }
-    account.push(r("go:signout", "sign-out", "Abmelden", None, Trail::None));
+    account.push(r(
+        "go:signout",
+        "sign-out",
+        swiftly_l10n::tr("Abmelden"),
+        None,
+        Trail::None,
+    ));
     vec![
         gapped(cx, f, 0.0, account),
         gapped(
@@ -1451,28 +1486,28 @@ fn profile_right(cx: &Cx, f: &Fm, p: &Parts, ctx: &Ctx) -> Vec<Node> {
                 r(
                     "link:discord",
                     "users",
-                    "Discord beitreten",
+                    swiftly_l10n::tr("Discord beitreten"),
                     None,
                     Trail::External,
                 ),
                 r(
                     "link:bug",
                     "warning",
-                    "Fehler melden",
+                    swiftly_l10n::tr("Fehler melden"),
                     None,
                     Trail::External,
                 ),
                 r(
                     "link:log",
                     "text-align-left",
-                    "Protokoll teilen",
+                    swiftly_l10n::tr("Protokoll teilen"),
                     None,
                     Trail::None,
                 ),
                 r(
                     "go:licenses",
                     "stack",
-                    "Open-Source-Lizenzen",
+                    swiftly_l10n::tr("Open-Source-Lizenzen"),
                     None,
                     Trail::Chevron,
                 ),
@@ -1514,7 +1549,7 @@ fn confirm_dialog(cx: &Cx, p: &Parts, window_h: f32) -> Node {
         vec![
             text(
                 cx,
-                "Downloads ausschalten?",
+                swiftly_l10n::tr("Downloads ausschalten?"),
                 small(15.0, 700),
                 color::TEXT_PRIMARY,
                 Some(2),
@@ -1537,9 +1572,9 @@ fn confirm_dialog(cx: &Cx, p: &Parts, window_h: f32) -> Node {
                 swiftly_text::Align::Center,
             )
             .padding(ins(0.0, 0.0, 6.0, 0.0)),
-            button(0, "Behalten", color::TEXT_PRIMARY),
-            button(1, "Alles entfernen", color::STATE_ERROR),
-            button(2, "Abbrechen", color::TEXT_PRIMARY),
+            button(0, swiftly_l10n::tr("Behalten"), color::TEXT_PRIMARY),
+            button(1, swiftly_l10n::tr("Alles entfernen"), color::STATE_ERROR),
+            button(2, swiftly_l10n::tr("Abbrechen"), color::TEXT_PRIMARY),
         ],
     )
     .padding(ins(20.0, 20.0, 20.0, 20.0))
@@ -1567,28 +1602,53 @@ fn desktop_view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>, f: &Fm) -> Node {
         .then(|| confirm_dialog(cx, p, env.size.h));
     let (title, gap, cols, columns, footer) = match p.page {
         Page::Profile => (
-            "Profil",
+            swiftly_l10n::tr("Profil"),
             18.0,
             forms::Cols::Fixed,
             vec![profile_left(cx, f, p, ctx), profile_right(cx, f, p, ctx)],
             vec![version_line(cx, &crate::build_info::version_row(), 26.0)],
         ),
         Page::Playback => (
-            "Wiedergabe",
+            swiftly_l10n::tr("Wiedergabe"),
             0.0,
             forms::Cols::Equal,
             vec![
-                desk_groups(cx, f, p, ctx, &["Qualität", "Sprache"]),
-                desk_groups(cx, f, p, ctx, &["Ablauf", "Im Player", "Verhalten"]),
+                desk_groups(
+                    cx,
+                    f,
+                    p,
+                    ctx,
+                    &[swiftly_l10n::tr("Qualität"), swiftly_l10n::tr("Sprache")],
+                ),
+                desk_groups(
+                    cx,
+                    f,
+                    p,
+                    ctx,
+                    &[
+                        swiftly_l10n::tr("Ablauf"),
+                        swiftly_l10n::tr("Im Player"),
+                        swiftly_l10n::tr("Verhalten"),
+                    ],
+                ),
             ],
             vec![],
         ),
         Page::Presentation => (
-            "Darstellung",
+            swiftly_l10n::tr("Darstellung"),
             0.0,
             forms::Cols::Equal,
             {
-                let mut left = desk_groups(cx, f, p, ctx, &["Filme und Serien", "Allgemein"]);
+                let mut left = desk_groups(
+                    cx,
+                    f,
+                    p,
+                    ctx,
+                    &[
+                        swiftly_l10n::tr("Filme und Serien"),
+                        swiftly_l10n::tr("Allgemein"),
+                    ],
+                );
                 left.push(looks_group(cx, f, p, ctx));
                 left.push(home_group(cx, f, p, ctx));
                 left.push(forms::note(
@@ -1598,17 +1658,32 @@ fn desktop_view(p: &Parts, env: &Env, cx: &Cx, ctx: &Rc<Ctx>, f: &Fm) -> Node {
                     false,
                     false,
                 ));
-                left.extend(desk_groups(cx, f, p, ctx, &["Neuzugänge"]));
+                left.extend(desk_groups(
+                    cx,
+                    f,
+                    p,
+                    ctx,
+                    &[swiftly_l10n::tr("Neuzugänge")],
+                ));
                 vec![left, vec![genres_group(cx, f, p, ctx)]]
             },
             vec![],
         ),
         _ => {
             // The support entry is on the Profile page; Allgemein has no second copy of it.
-            let left = desk_groups(cx, f, p, ctx, &["Offline"]);
-            let right = desk_groups(cx, f, p, ctx, &["Server und Dienste", "Synchronisierung"]);
+            let left = desk_groups(cx, f, p, ctx, &[swiftly_l10n::tr("Offline")]);
+            let right = desk_groups(
+                cx,
+                f,
+                p,
+                ctx,
+                &[
+                    swiftly_l10n::tr("Server und Dienste"),
+                    swiftly_l10n::tr("Synchronisierung"),
+                ],
+            );
             (
-                "Allgemein",
+                swiftly_l10n::tr("Allgemein"),
                 0.0,
                 forms::Cols::Fixed,
                 vec![left, right],
@@ -1829,7 +1904,7 @@ impl SettingsScreen {
             watchers_plugin: true,
             stored_downloads: stored.0,
             stored_bytes: 4_200_000_000,
-            subtitle_look_summary: "Standard".into(),
+            subtitle_look_summary: swiftly_l10n::tr("Standard").into(),
             ..SettingsContext::default()
         };
         let store = Mem(Arc::new(MemoryStore::new()));
@@ -1862,7 +1937,7 @@ impl SettingsScreen {
                 .as_ref()
                 .map(|e| e.server_part().to_owned())
                 .unwrap_or_default(),
-            subtitle_look_summary: "Standard".into(),
+            subtitle_look_summary: swiftly_l10n::tr("Standard").into(),
             ..SettingsContext::default()
         };
         let base = entry
@@ -2070,7 +2145,7 @@ impl SettingsScreen {
         let sink = Arc::clone(&fx);
         let vm = SettingsVm::new(
             store.clone(),
-            Locale::parse("de"),
+            swiftly_l10n::current_locale(),
             context.clone(),
             move |e| {
                 sink.lock()

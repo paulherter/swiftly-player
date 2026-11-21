@@ -4,7 +4,7 @@
 
 use std::sync::{Arc, Mutex};
 use swiftly_jellyfin::ServerKind;
-use swiftly_l10n::{Locale, Translator};
+use swiftly_l10n::Translator;
 
 /// The longest a check may take before the answer is "no answer" (`connectionCheck(deadline: .seconds(12))`).
 pub const DEADLINE: f64 = 12.0;
@@ -114,7 +114,7 @@ impl LiveCheck {
     /// `shown`: the button was pressed, so the row says "Moment…" and then the sentence.
     fn spawn(&self, shown: bool) {
         let (core, out) = (Arc::clone(&self.core), Arc::clone(&self.now));
-        let tr = Translator::new(Locale::parse("de"));
+        let tr = Translator::new(swiftly_l10n::current_locale());
         let Some(account) = core.account() else {
             if shown && let Ok(mut s) = out.lock() {
                 s.result = Some(tr.t("Nicht angemeldet."));

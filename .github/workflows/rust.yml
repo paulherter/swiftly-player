@@ -56,7 +56,18 @@ jobs:
       - name: Clippy (warnings are errors)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
-        run: cargo test --workspace --locked
+        run: |
+          mkdir -p "$GOLDEN_ACTUAL_DIR"
+          cargo test --workspace --locked
+        env:
+          GOLDEN_ACTUAL_DIR: ${{ runner.temp }}/golden-actual
+      - name: Keep the pictures of failed golden tests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-actual-${{ matrix.os }}
+          path: ${{ runner.temp }}/golden-actual
+          if-no-files-found: ignore
       # The Apple core builds the desktop crate without its window (winit has no iOS or tvOS backend). A module that
       # needs winit but is not behind the `window` feature breaks only that build, which no test above compiles.
       - name: Apple core without the window feature

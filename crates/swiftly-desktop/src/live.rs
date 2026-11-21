@@ -16,7 +16,6 @@ use swiftly_jellyfin::discovery::FoundServer;
 use swiftly_jellyfin::{
     ClientConfig, JellyfinClient, LoginCode, OwnHeader, OwnHeaders, QuickConnectState, ServerKind,
 };
-use swiftly_l10n::Locale;
 use swiftly_library::KeyValue;
 use swiftly_net::{ErrorKind, ReqwestTransport, TlsOptions, TransportConfig};
 use swiftly_seerr::Seerr;
@@ -215,7 +214,7 @@ impl Core {
             spawner: Arc::new(Pool(pool)),
             clock: Arc::new(SystemClock),
             store: Arc::new(DirStore(cache_dir().join("home"))),
-            locale: Locale::parse("de"),
+            locale: swiftly_l10n::current_locale(),
             device_name: device_name(),
             client_version: env!("CARGO_PKG_VERSION").into(),
             // The stored lists, titles and series structures (as the other hosts keep them): a page opens complete from the
@@ -382,13 +381,16 @@ struct Backend {
 
 /// The line for a failed step: the core's `readableError`, the same sentences as the Mac.
 pub(crate) fn say(e: &ErrorKind) -> String {
-    swiftly_l10n::error_text::readable_error(&swiftly_l10n::Translator::new(Locale::parse("de")), e)
+    swiftly_l10n::error_text::readable_error(
+        &swiftly_l10n::Translator::new(swiftly_l10n::current_locale()),
+        e,
+    )
 }
 
 /// The line for a failed address check (`AppModel.connectionError`).
 fn connection_say(e: &ErrorKind, address: &str) -> String {
     swiftly_vm::connection_error_text(
-        &swiftly_l10n::Translator::new(Locale::parse("de")),
+        &swiftly_l10n::Translator::new(swiftly_l10n::current_locale()),
         e,
         address,
     )
@@ -902,7 +904,7 @@ impl Wiring {
         } else {
             kind
         };
-        let json = serde_json::json!({ "Id": id, "Name": name, "Type": kind });
+        let json = serde_json::json!({ "Id": id, swiftly_l10n::tr("Name"): name, "Type": kind });
         serde_json::from_value(json).unwrap_or_else(|e| panic!("stand-in: {e}"))
     }
 }
